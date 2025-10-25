@@ -11,6 +11,16 @@ defmodule ClippsterServerWeb.AuthController do
   Chain ID: mainnet-beta
   """
 
+  # Handle OPTIONS requests for CORS preflight
+  def options(conn, _params) do
+    conn
+    |> put_resp_header("access-control-allow-origin", get_req_header(conn, "origin") |> List.first() || "*")
+    |> put_resp_header("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS")
+    |> put_resp_header("access-control-allow-headers", "Authorization, Content-Type, Accept, Origin, X-Requested-With")
+    |> put_resp_header("access-control-max-age", "86400")
+    |> send_resp(200, "")
+  end
+
   def request_challenge(conn, %{"client_id" => client_id}) do
     challenge = ChallengeStore.create_challenge(client_id)
 

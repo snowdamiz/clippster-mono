@@ -3,11 +3,28 @@ defmodule ClippsterServerWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
-    plug CORSPlug, origin: ["tauri://localhost", "http://localhost:5173", "http://localhost:*"]
+    plug CORSPlug,
+      origin: &__MODULE__.cors_origins/0,
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+      max_age: 86400
+  end
+
+  # Define CORS origins as a function to handle regex properly
+  def cors_origins do
+    [
+      "tauri://localhost",
+      "http://localhost:5173",
+      "http://localhost:1420",
+      ~r/http:\/\/localhost:\d+/
+    ]
   end
 
   scope "/api", ClippsterServerWeb do
     pipe_through :api
+
+    # Handle OPTIONS requests for CORS preflight
+    options "/*path", AuthController, :options
 
     # Wallet authentication routes
     post "/auth/challenge", AuthController, :request_challenge
