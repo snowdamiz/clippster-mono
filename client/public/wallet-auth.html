@@ -1,80 +1,256 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Connect Wallet</title>
+  <title>Connect Wallet - Clippster</title>
   <style>
+    :root {
+      /* Dark theme colors matching Tauri app */
+      --background: oklch(0.145 0 0);
+      --foreground: oklch(0.985 0 0);
+      --card: oklch(0.145 0 0);
+      --card-foreground: oklch(0.985 0 0);
+      --primary: oklch(0.985 0 0);
+      --primary-foreground: oklch(0.205 0 0);
+      --secondary: oklch(0.269 0 0);
+      --muted: oklch(0.269 0 0);
+      --muted-foreground: oklch(0.708 0 0);
+      --destructive: oklch(0.396 0.141 25.723);
+      --destructive-foreground: oklch(0.637 0.237 25.331);
+      --border: oklch(0.269 0 0);
+      --success: oklch(0.696 0.17 162.48);
+      --success-bg: oklch(0.269 0.05 162.48);
+      --radius: 0.625rem;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      height: 100vh;
-      margin: 0;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
+      min-height: 100vh;
+      background: var(--background);
+      color: var(--foreground);
+      padding: 1.5rem;
     }
+
     .container {
-      text-align: center;
-      padding: 2rem;
-      background: rgba(255, 255, 255, 0.1);
+      max-width: 28rem;
+      width: 100%;
+    }
+
+    .card {
+      position: relative;
+      overflow: hidden;
+      border-radius: calc(var(--radius) * 2);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      background: var(--card);
       backdrop-filter: blur(10px);
-      border-radius: 16px;
-      box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
     }
-    h1 {
+
+    .gradient-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, transparent 50%, rgba(147, 51, 234, 0.03) 100%);
+      pointer-events: none;
+    }
+
+    .content {
+      position: relative;
+      padding: 2rem;
+    }
+
+    .icon-container {
+      display: flex;
+      justify-content: center;
       margin-bottom: 1.5rem;
+    }
+
+    .icon-wrapper {
+      padding: 1rem;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .icon {
+      width: 3rem;
+      height: 3rem;
+      color: var(--primary);
+    }
+
+    .text-center {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    h1 {
       font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      color: var(--foreground);
     }
+
+    .subtitle {
+      font-size: 0.875rem;
+      color: var(--muted-foreground);
+    }
+
     #connect-btn {
-      background: #512DA8;
-      color: white;
+      width: 100%;
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius);
+      background: linear-gradient(to right, rgb(147, 51, 234), rgb(79, 70, 229));
       border: none;
-      padding: 12px 24px;
-      border-radius: 8px;
-      font-size: 1rem;
+      padding: 0;
       cursor: pointer;
-      transition: all 0.3s;
+      transition: all 0.3s ease;
     }
-    #connect-btn:hover {
-      background: #673AB7;
-      transform: translateY(-2px);
+
+    #connect-btn:hover:not(:disabled) {
+      box-shadow: 0 10px 25px -5px rgba(147, 51, 234, 0.5);
     }
+
     #connect-btn:disabled {
       opacity: 0.5;
       cursor: not-allowed;
     }
+
+    .btn-inner {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      font-weight: 600;
+      color: white;
+      transition: all 0.3s ease;
+    }
+
+    #connect-btn:hover:not(:disabled) .btn-inner {
+      background: linear-gradient(to right, rgba(147, 51, 234, 0.9), rgba(79, 70, 229, 0.9));
+    }
+
+    .spinner {
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
     .status {
       margin-top: 1rem;
-      font-size: 0.9rem;
-      opacity: 0.9;
+      font-size: 0.875rem;
+      color: var(--muted-foreground);
+      text-align: center;
     }
+
+    .message-box {
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      border-radius: calc(var(--radius) - 2px);
+      font-size: 0.875rem;
+      display: none;
+    }
+
     .error {
-      color: #ff6b6b;
-      background: rgba(255, 107, 107, 0.1);
-      padding: 8px;
-      border-radius: 4px;
-      margin-top: 1rem;
+      color: var(--destructive-foreground);
+      background: rgba(var(--destructive), 0.1);
+      border: 1px solid rgba(var(--destructive-foreground), 0.2);
     }
+
     .success {
-      color: #51cf66;
-      background: rgba(81, 207, 102, 0.1);
-      padding: 12px;
-      border-radius: 4px;
-      margin-top: 1rem;
+      color: var(--success);
+      background: var(--success-bg);
+      border: 1px solid rgba(var(--success), 0.2);
       font-weight: 500;
+    }
+
+    .divider {
+      margin-top: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .info-text {
+      font-size: 0.75rem;
+      color: var(--muted-foreground);
+      text-align: center;
+    }
+
+    .info-link {
+      color: var(--primary);
+      text-decoration: none;
+      transition: text-decoration 0.2s;
+    }
+
+    .info-link:hover {
+      text-decoration: underline;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>Connect Your Phantom Wallet</h1>
-    <button id="connect-btn">Connect Wallet</button>
-    <div id="status" class="status"></div>
-    <div id="error" class="error" style="display: none;"></div>
-    <div id="success" class="success" style="display: none;"></div>
+    <div class="card">
+      <div class="gradient-overlay"></div>
+      <div class="content">
+        <!-- Icon -->
+        <div class="icon-container">
+          <div class="icon-wrapper">
+            <svg xmlns="http://www.w3.org/2000/svg" class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3" />
+            </svg>
+          </div>
+        </div>
+
+        <!-- Title -->
+        <div class="text-center">
+          <h1>Connect Your Wallet</h1>
+          <p class="subtitle">Sign in securely with your Phantom wallet to access Clippster</p>
+        </div>
+
+        <!-- Connect Button -->
+        <button id="connect-btn">
+          <div class="btn-inner">
+            <svg id="wallet-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6.5 2h11c1.1 0 2 .9 2 2v16c0 1.1-.9 2-2 2h-11c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2zm0 2v16h11V4h-11zm2 2h7v2h-7V6zm0 4h7v2h-7v-2zm0 4h4v2h-4v-2z"/>
+            </svg>
+            <svg id="spinner" class="spinner" width="20" height="20" style="display: none;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span id="btn-text">Connect Phantom Wallet</span>
+          </div>
+        </button>
+
+        <!-- Status Messages -->
+        <div id="status" class="status"></div>
+        <div id="error" class="message-box error"></div>
+        <div id="success" class="message-box success"></div>
+
+        <!-- Info Section -->
+        <div class="divider">
+          <p class="info-text">
+            Don't have Phantom? 
+            <a href="https://phantom.app/" target="_blank" rel="noopener noreferrer" class="info-link">
+              Download here
+            </a>
+          </p>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -111,10 +287,21 @@
       document.getElementById('error').style.display = 'none';
     };
 
+    const setLoading = (loading, text = 'Connecting...') => {
+      const btn = document.getElementById('connect-btn');
+      const walletIcon = document.getElementById('wallet-icon');
+      const spinner = document.getElementById('spinner');
+      const btnText = document.getElementById('btn-text');
+      
+      btn.disabled = loading;
+      walletIcon.style.display = loading ? 'none' : 'block';
+      spinner.style.display = loading ? 'block' : 'none';
+      btnText.textContent = loading ? text : 'Connect Phantom Wallet';
+    };
+
     // Connect wallet flow
     document.getElementById('connect-btn').addEventListener('click', async () => {
-      const btn = document.getElementById('connect-btn');
-      btn.disabled = true;
+      setLoading(true, 'Connecting...');
 
       try {
         provider = getProvider();
@@ -122,7 +309,7 @@
         if (!provider) {
           window.open('https://phantom.app/', '_blank');
           showError('Please install Phantom wallet extension and refresh this page');
-          btn.disabled = false;
+          setLoading(false);
           return;
         }
 
@@ -132,6 +319,7 @@
         const resp = await provider.connect();
         const publicKey = resp.publicKey.toString();
 
+        setLoading(true, 'Getting challenge...');
         updateStatus('Getting authentication challenge...');
 
         // Get challenge from server
@@ -150,13 +338,15 @@
         const challengeData = await challengeResponse.json();
         const challenge = challengeData.challenge;
 
-        // Construct message
-        const message = `${challenge.domain} wants you to sign in with your Solana account:\n` +
-                       `${publicKey}\n\n` +
-                       `Nonce: ${challenge.nonce}\n` +
-                       `Issued At: ${challenge.timestamp}\n` +
-                       `Chain ID: mainnet-beta`;
+        // Construct message - must match server template exactly
+        const message = `${challenge.domain} wants you to sign in with your Solana account:
+${publicKey}
 
+Nonce: ${challenge.nonce}
+Issued At: ${challenge.timestamp}
+Chain ID: mainnet-beta`;
+
+        setLoading(true, 'Awaiting signature...');
         updateStatus('Please approve the signature request in Phantom...');
 
         // Request signature
@@ -185,22 +375,24 @@
           });
 
           if (callbackResponse.ok) {
+            setLoading(false);
             updateStatus('');
             showSuccess('✓ Authentication complete! You can close this tab now.');
-            btn.disabled = true;
+            document.getElementById('connect-btn').disabled = true;
           } else {
+            setLoading(false);
             showError('Failed to send auth result to app. Please try again.');
-            btn.disabled = false;
           }
         } catch (error) {
           console.error('Callback error:', error);
+          setLoading(false);
           showError('Failed to communicate with app. Please ensure the app is running.');
         }
 
       } catch (error) {
         console.error('Auth error:', error);
+        setLoading(false);
         showError(error.message || 'Authentication failed');
-        btn.disabled = false;
         updateStatus('');
       }
     });
