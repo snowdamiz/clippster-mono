@@ -1,0 +1,17 @@
+{
+  "name": "clippster-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "client": "cd client && yarn dev",
+    "server": "cd server && mix phx.server",
+    "tauri": "cd client && yarn tauri dev",
+    "dev": "concurrently \"yarn server\" \"yarn client\" --names \"server,client\" --prefix-colors \"blue,magenta\"",
+    "dev:tauri": "concurrently \"yarn server\" \"yarn tauri\" --names \"server,tauri\" --prefix-colors \"blue,green\"",
+    "install:all": "cd client && yarn && cd ../server && mix deps.get",
+    "setup": "cd server && mix setup && cd ../client && yarn"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
