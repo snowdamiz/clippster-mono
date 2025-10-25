@@ -18,7 +18,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://localhost:4000 https://*; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:4000 https://api.clippster.example.com https://*; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'"
     },
     "withGlobalTauri": true
   },
@@ -31,6 +31,17 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": [
+      "binaries/ffmpeg*"
+    ],
+    "externalBin": [
+      "binaries/ffmpeg"
+    ],
+    "windows": {
+      "wix": {
+        "language": "en-US"
+      }
+    }
   }
 }

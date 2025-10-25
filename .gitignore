@@ -39,6 +39,7 @@ client/*.sublime-*
 client/src-tauri/target/
 client/src-tauri/WixTools/
 client/src-tauri/gen/
+client/src-tauri/binaries/
 
 # ===========================
 # Server (Elixir/Phoenix)
