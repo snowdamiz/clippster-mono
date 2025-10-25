@@ -1,0 +1,94 @@
+# ===========================
+# General
+# ===========================
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+*.swo
+*~
+
+# ===========================
+# Client (Node.js/Vue/Tauri)
+# ===========================
+
+# Dependencies
+client/node_modules/
+client/.pnp/
+client/.pnp.js
+
+# Build outputs
+client/dist/
+client/dist-ssr/
+client/build/
+client/.vite/
+
+# Environment files
+client/.env
+client/.env.local
+client/.env.*.local
+
+# Editor directories
+client/.vscode/
+client/.idea/
+client/*.sublime-*
+
+# Tauri specific
+client/src-tauri/target/
+client/src-tauri/WixTools/
+client/src-tauri/gen/
+
+# ===========================
+# Server (Elixir/Phoenix)
+# ===========================
+
+# Compiled artifacts
+server/_build/
+server/deps/
+server/*.ez
+
+# Coverage
+server/cover/
+
+# Generated docs
+server/doc/
+
+# VM dumps
+server/erl_crash.dump
+
+# Temporary files
+server/tmp/
+
+# Package tarballs
+server/clippster_server-*.tar
+
+# Database
+server/*.db
+server/*.db-*
+
+# Phoenix specific
+server/priv/static/
+
+# Fetch files
+server/.fetch
+
+# ===========================
+# Environment & Secrets
+# ===========================
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+
+# ===========================
+# OS & IDE
+# ===========================
+.DS_Store
+.AppleDouble
+.LSOverride
+.vscode/
+.idea/
+*.iml
