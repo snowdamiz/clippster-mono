@@ -377,8 +377,21 @@ Chain ID: mainnet-beta`;
           if (callbackResponse.ok) {
             setLoading(false);
             updateStatus('');
-            showSuccess('✓ Authentication complete! You can close this tab now.');
+            showSuccess('✓ Authentication complete! Closing window...');
             document.getElementById('connect-btn').disabled = true;
+            
+            // Close the window after a short delay
+            setTimeout(() => {
+              window.close();
+              
+              // If window.close() fails (some browsers block it), show message
+              setTimeout(() => {
+                const successEl = document.getElementById('success');
+                if (successEl.style.display !== 'none') {
+                  successEl.textContent = '✓ Authentication complete! You can close this tab now.';
+                }
+              }, 500);
+            }, 1500);
           } else {
             setLoading(false);
             showError('Failed to send auth result to app. Please try again.');
