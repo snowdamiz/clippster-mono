@@ -41,9 +41,12 @@ defmodule ClippsterServerWeb.AuthController do
         "message" => message,
         "nonce" => nonce
       }) do
+    IO.puts("\nStarting signature verification...")
+    
     with {:ok, challenge} <- ChallengeStore.consume_challenge(nonce),
          :ok <- validate_message(message, challenge, public_key),
          :ok <- verify_ed25519_signature(message, signature, public_key) do
+      IO.puts("Signature verification successful!")
       # Generate JWT token
       token_claims = %{
         "sub" => public_key,
@@ -96,26 +99,90 @@ defmodule ClippsterServerWeb.AuthController do
         nonce: challenge.nonce,
         timestamp: challenge.timestamp
       )
+      # Normalize line endings to Unix style
+      |> String.replace("\r\n", "\n")
+      |> String.trim()
 
-    if message == expected_message do
+    # Normalize the received message too
+    normalized_message = String.trim(message)
+
+    IO.puts("Message validation:")
+    IO.puts("Expected: #{inspect(expected_message)}")
+    IO.puts("Received: #{inspect(normalized_message)}")
+    IO.puts("Match: #{normalized_message == expected_message}")
+
+    if normalized_message == expected_message do
       :ok
     else
       {:error, :invalid_message}
     end
   end
 
-  defp verify_ed25519_signature(message, signature_b58, public_key_b58) do
-    try do
-      signature = Base58.decode(signature_b58)
-      public_key = Base58.decode(public_key_b58)
-      message_bytes = :erlang.binary_to_list(message)
+  defp verify_ed25519_signature(message, signature_b64, public_key_b58) do
+    # Use Node.js script for proper Solana signature verification
+    payload = Jason.encode!(%{
+      message: message,
+      signature: signature_b64,
+      public_key: public_key_b58
+    })
 
-      case :crypto.verify(:eddsa, :none, message_bytes, signature, [public_key, :ed25519]) do
-        true -> :ok
-        false -> {:error, :invalid_signature}
-      end
-    rescue
-      _ -> {:error, :invalid_signature}
+    IO.puts("\n=== Calling Node.js signature verification ===")
+    IO.puts("Message: #{String.slice(message, 0, 100)}...")
+    IO.puts("Public key: #{public_key_b58}")
+    IO.puts("Signature (base64): #{String.slice(signature_b64, 0, 20)}...")
+
+    # Write payload to temp file
+    temp_file = Path.join(System.tmp_dir!(), "sig_verify_#{:erlang.unique_integer([:positive])}.json")
+    File.write!(temp_file, payload)
+
+    # Call the Node.js verification script
+    script_path = Path.join([Path.dirname(__ENV__.file), "../../../sig_verify.js"]) |> Path.expand()
+    
+    # Find node.exe (not yarn wrapper) - check common locations
+    node_path = cond do
+      File.exists?("C:/Program Files/nodejs/node.exe") -> "C:/Program Files/nodejs/node.exe"
+      File.exists?("C:/Program Files (x86)/nodejs/node.exe") -> "C:/Program Files (x86)/nodejs/node.exe"
+      true -> 
+        # Fall back to PATH search, filter out yarn temp files
+        case System.find_executable("node") do
+          nil -> "node"
+          path when is_binary(path) ->
+            if String.contains?(path, "yarn--") do
+              # Yarn temp wrapper, try to find real node
+              System.get_env("ProgramFiles", "C:/Program Files") <> "/nodejs/node.exe"
+            else
+              path
+            end
+        end
     end
+    
+    IO.puts("Node path: #{node_path}")
+    IO.puts("Script path: #{script_path}")
+    IO.puts("Temp file: #{temp_file}")
+    
+    result = case System.cmd(node_path, [script_path, temp_file], 
+      stderr_to_stdout: true
+    ) do
+      {output, 0} ->
+        case Jason.decode(output) do
+          {:ok, %{"valid" => true}} ->
+            IO.puts("✓ Signature valid!")
+            :ok
+          {:ok, %{"valid" => false}} ->
+            IO.puts("✗ Signature invalid!")
+            {:error, :invalid_signature}
+          {:error, _} ->
+            IO.puts("Error parsing verification result")
+            {:error, :invalid_signature}
+        end
+
+      {output, _exit_code} ->
+        IO.puts("Node.js verification failed: #{output}")
+        {:error, :invalid_signature}
+    end
+
+    # Clean up temp file
+    File.rm(temp_file)
+    result
   end
 end
