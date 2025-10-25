@@ -64,3 +64,8 @@ config :phoenix, :plug_init_mode, :runtime
 
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false
+
+# Wallet authentication configuration
+config :clippster_server,
+  domain: "localhost",
+  jwt_secret: System.get_env("JWT_SECRET") || "dev_secret_key_change_in_production"

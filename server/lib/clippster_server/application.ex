@@ -14,6 +14,8 @@ defmodule ClippsterServer.Application do
       {Phoenix.PubSub, name: ClippsterServer.PubSub},
       # Start a worker by calling: ClippsterServer.Worker.start_link(arg)
       # {ClippsterServer.Worker, arg},
+      # Wallet authentication challenge store
+      ClippsterServer.Auth.ChallengeStore,
       # Start to serve requests, typically the last entry
       ClippsterServerWeb.Endpoint
     ]

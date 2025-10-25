@@ -13,13 +13,14 @@
     "windows": [
       {
         "title": "clippster-ui",
-        "width": 800,
-        "height": 600
+        "width": 1200,
+        "height": 800
       }
     ],
     "security": {
-      "csp": null
-    }
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:4000 https://*; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'"
+    },
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": true,

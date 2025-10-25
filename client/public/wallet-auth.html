@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connect Wallet</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    .container {
+      text-align: center;
+      padding: 2rem;
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 16px;
+      box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    }
+    h1 {
+      margin-bottom: 1.5rem;
+      font-size: 1.5rem;
+    }
+    #connect-btn {
+      background: #512DA8;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    #connect-btn:hover {
+      background: #673AB7;
+      transform: translateY(-2px);
+    }
+    #connect-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .status {
+      margin-top: 1rem;
+      font-size: 0.9rem;
+      opacity: 0.9;
+    }
+    .error {
+      color: #ff6b6b;
+      background: rgba(255, 107, 107, 0.1);
+      padding: 8px;
+      border-radius: 4px;
+      margin-top: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Connect Your Phantom Wallet</h1>
+    <button id="connect-btn">Connect Wallet</button>
+    <div id="status" class="status"></div>
+    <div id="error" class="error" style="display: none;"></div>
+  </div>
+
+  <script>
+    const API_BASE = 'http://localhost:4000';
+    let provider = null;
+
+    // Check for Phantom
+    const getProvider = () => {
+      if ('phantom' in window) {
+        const provider = window.phantom?.solana;
+        if (provider?.isPhantom) {
+          return provider;
+        }
+      }
+      return null;
+    };
+
+    // Update status
+    const updateStatus = (message) => {
+      document.getElementById('status').textContent = message;
+    };
+
+    const showError = (message) => {
+      const errorEl = document.getElementById('error');
+      errorEl.textContent = message;
+      errorEl.style.display = 'block';
+    };
+
+    // Connect wallet flow
+    document.getElementById('connect-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('connect-btn');
+      btn.disabled = true;
+
+      try {
+        provider = getProvider();
+
+        if (!provider) {
+          window.open('https://phantom.app/', '_blank');
+          showError('Please install Phantom wallet extension and refresh this page');
+          btn.disabled = false;
+          return;
+        }
+
+        updateStatus('Connecting to Phantom...');
+
+        // Connect to Phantom
+        const resp = await provider.connect();
+        const publicKey = resp.publicKey.toString();
+
+        updateStatus('Getting authentication challenge...');
+
+        // Get challenge from server
+        const challengeResponse = await fetch(`${API_BASE}/api/auth/challenge`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            client_id: localStorage.getItem('client_id') || crypto.randomUUID()
+          })
+        });
+
+        if (!challengeResponse.ok) {
+          throw new Error('Failed to get challenge from server');
+        }
+
+        const challengeData = await challengeResponse.json();
+        const challenge = challengeData.challenge;
+
+        // Construct message
+        const message = `${challenge.domain} wants you to sign in with your Solana account:\n` +
+                       `${publicKey}\n\n` +
+                       `Nonce: ${challenge.nonce}\n` +
+                       `Issued At: ${challenge.timestamp}\n` +
+                       `Chain ID: mainnet-beta`;
+
+        updateStatus('Please approve the signature request in Phantom...');
+
+        // Request signature
+        const encodedMessage = new TextEncoder().encode(message);
+        const signedMessage = await provider.signMessage(encodedMessage, "utf8");
+
+        updateStatus('Authentication successful! Closing window...');
+
+        // Convert signature to base58 format for backend
+        const signatureArray = Array.from(signedMessage.signature);
+        const signatureBase58 = btoa(String.fromCharCode(...signatureArray));
+
+        // Send result back to main window
+        const authResult = {
+          signature: signatureBase58,
+          publicKey: publicKey,
+          message: message,
+          nonce: challenge.nonce
+        };
+
+        // Emit event for Tauri
+        window.dispatchEvent(new CustomEvent('wallet-auth-complete', {
+          detail: authResult
+        }));
+
+        // Also try to send to opener window if available
+        if (window.opener) {
+          window.opener.postMessage({
+            type: 'wallet-auth-complete',
+            data: authResult
+          }, '*');
+        }
+
+        // Close window after short delay
+        setTimeout(() => {
+          window.close();
+        }, 1500);
+
+      } catch (error) {
+        console.error('Auth error:', error);
+        showError(error.message || 'Authentication failed');
+        btn.disabled = false;
+        updateStatus('');
+      }
+    });
+
+    // Check for Phantom on load
+    window.addEventListener('load', () => {
+      provider = getProvider();
+      if (!provider) {
+        updateStatus('Phantom wallet not detected');
+      }
+    });
+  </script>
+</body>
+</html>

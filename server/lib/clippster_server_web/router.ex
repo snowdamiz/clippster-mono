@@ -3,10 +3,15 @@ defmodule ClippsterServerWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
+    plug CORSPlug, origin: ["tauri://localhost", "http://localhost:5173", "http://localhost:*"]
   end
 
   scope "/api", ClippsterServerWeb do
     pipe_through :api
+
+    # Wallet authentication routes
+    post "/auth/challenge", AuthController, :request_challenge
+    post "/auth/verify", AuthController, :verify_signature
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

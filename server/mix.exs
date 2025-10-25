@@ -51,7 +51,13 @@ defmodule ClippsterServer.MixProject do
       {:gettext, "~> 0.26"},
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
-      {:bandit, "~> 1.5"}
+      {:bandit, "~> 1.5"},
+      # Wallet authentication dependencies
+      {:joken, "~> 2.6"},
+      {:ed25519, "~> 1.4"},
+      {:base58, "~> 0.1.0"},
+      {:cachex, "~> 3.6"},
+      {:cors_plug, "~> 3.0"}
     ]
   end
 
