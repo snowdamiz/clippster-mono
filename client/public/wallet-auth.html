@@ -58,6 +58,14 @@
       border-radius: 4px;
       margin-top: 1rem;
     }
+    .success {
+      color: #51cf66;
+      background: rgba(81, 207, 102, 0.1);
+      padding: 12px;
+      border-radius: 4px;
+      margin-top: 1rem;
+      font-weight: 500;
+    }
   </style>
 </head>
 <body>
@@ -66,6 +74,7 @@
     <button id="connect-btn">Connect Wallet</button>
     <div id="status" class="status"></div>
     <div id="error" class="error" style="display: none;"></div>
+    <div id="success" class="success" style="display: none;"></div>
   </div>
 
   <script>
@@ -92,6 +101,14 @@
       const errorEl = document.getElementById('error');
       errorEl.textContent = message;
       errorEl.style.display = 'block';
+      document.getElementById('success').style.display = 'none';
+    };
+
+    const showSuccess = (message) => {
+      const successEl = document.getElementById('success');
+      successEl.textContent = message;
+      successEl.style.display = 'block';
+      document.getElementById('error').style.display = 'none';
     };
 
     // Connect wallet flow
@@ -146,37 +163,39 @@
         const encodedMessage = new TextEncoder().encode(message);
         const signedMessage = await provider.signMessage(encodedMessage, "utf8");
 
-        updateStatus('Authentication successful! Closing window...');
+        updateStatus('Authentication successful!');
 
         // Convert signature to base58 format for backend
         const signatureArray = Array.from(signedMessage.signature);
         const signatureBase58 = btoa(String.fromCharCode(...signatureArray));
 
-        // Send result back to main window
+        // Send result to local callback server
         const authResult = {
           signature: signatureBase58,
-          publicKey: publicKey,
+          public_key: publicKey,
           message: message,
           nonce: challenge.nonce
         };
 
-        // Emit event for Tauri
-        window.dispatchEvent(new CustomEvent('wallet-auth-complete', {
-          detail: authResult
-        }));
+        try {
+          const callbackResponse = await fetch('http://localhost:48274/auth-callback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(authResult)
+          });
 
-        // Also try to send to opener window if available
-        if (window.opener) {
-          window.opener.postMessage({
-            type: 'wallet-auth-complete',
-            data: authResult
-          }, '*');
+          if (callbackResponse.ok) {
+            updateStatus('');
+            showSuccess('✓ Authentication complete! You can close this tab now.');
+            btn.disabled = true;
+          } else {
+            showError('Failed to send auth result to app. Please try again.');
+            btn.disabled = false;
+          }
+        } catch (error) {
+          console.error('Callback error:', error);
+          showError('Failed to communicate with app. Please ensure the app is running.');
         }
-
-        // Close window after short delay
-        setTimeout(() => {
-          window.close();
-        }, 1500);
 
       } catch (error) {
         console.error('Auth error:', error);

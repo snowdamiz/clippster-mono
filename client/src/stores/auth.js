@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
@@ -31,24 +32,48 @@ export const useAuthStore = defineStore('auth', {
       this.error = null
 
       try {
-        // Open wallet auth window
+        // Open wallet auth in browser
         await invoke('open_wallet_auth_window')
 
-        // Listen for auth result
+        // Listen for auth result via Tauri event or polling
         const result = await new Promise((resolve, reject) => {
-          const handleAuthComplete = (event) => {
-            window.removeEventListener('wallet-auth-complete', handleAuthComplete)
-            resolve(event.detail)
+          let unlisten = null
+          let pollInterval = null
+          let timeoutId = null
+
+          const cleanup = () => {
+            if (unlisten) unlisten()
+            if (pollInterval) clearInterval(pollInterval)
+            if (timeoutId) clearTimeout(timeoutId)
           }
 
-          window.addEventListener('wallet-auth-complete', handleAuthComplete)
+          // Listen for event from Rust backend
+          listen('wallet-auth-complete', (event) => {
+            cleanup()
+            resolve(event.payload)
+          }).then(u => { unlisten = u })
 
-          // Timeout after 2 minutes
-          setTimeout(() => {
-            window.removeEventListener('wallet-auth-complete', handleAuthComplete)
-            reject(new Error('Auth timeout'))
-          }, 120000)
+          // Fallback: poll for result every second
+          pollInterval = setInterval(async () => {
+            try {
+              const polledResult = await invoke('poll_auth_result')
+              if (polledResult) {
+                cleanup()
+                resolve(polledResult)
+              }
+            } catch (error) {
+              console.error('Poll error:', error)
+            }
+          }, 1000)
+
+          // Timeout after 5 minutes
+          timeoutId = setTimeout(() => {
+            cleanup()
+            reject(new Error('Authentication timeout - please try again'))
+          }, 300000)
         })
+
+        console.log('Received auth result:', result)
 
         // Verify signature with backend
         const verifyResponse = await fetch(`${API_BASE}/api/auth/verify`, {
@@ -56,7 +81,7 @@ export const useAuthStore = defineStore('auth', {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             signature: result.signature,
-            public_key: result.publicKey,
+            public_key: result.public_key,
             message: result.message,
             nonce: result.nonce
           })
@@ -81,9 +106,6 @@ export const useAuthStore = defineStore('auth', {
         // Store in localStorage for persistence
         localStorage.setItem('auth_token', data.token)
         localStorage.setItem('wallet_address', data.wallet_address)
-
-        // Close auth window
-        await invoke('close_auth_window')
 
         return { success: true }
 
