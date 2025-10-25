@@ -10,15 +10,25 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "vue": "^3.5.13",
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-opener": "^2"
+    "@tauri-apps/plugin-opener": "^2",
+    "radix-vue": "^1.9.17",
+    "vue": "^3.5.13"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.16",
+    "@tauri-apps/cli": "^2",
+    "@types/node": "^24.9.1",
     "@vitejs/plugin-vue": "^5.2.1",
+    "@vueuse/core": "^14.0.0",
+    "autoprefixer": "^10.4.21",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "postcss": "^8.5.6",
+    "tailwind-merge": "^3.3.1",
+    "tailwindcss": "^4.1.16",
     "typescript": "~5.6.2",
     "vite": "^6.0.3",
-    "vue-tsc": "^2.1.10",
-    "@tauri-apps/cli": "^2"
+    "vue-tsc": "^2.1.10"
   }
 }
