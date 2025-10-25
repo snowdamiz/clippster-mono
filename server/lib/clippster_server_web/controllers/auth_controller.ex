@@ -137,24 +137,7 @@ defmodule ClippsterServerWeb.AuthController do
 
     # Call the Node.js verification script
     script_path = Path.join([Path.dirname(__ENV__.file), "../../../sig_verify.js"]) |> Path.expand()
-    
-    # Find node.exe (not yarn wrapper) - check common locations
-    node_path = cond do
-      File.exists?("C:/Program Files/nodejs/node.exe") -> "C:/Program Files/nodejs/node.exe"
-      File.exists?("C:/Program Files (x86)/nodejs/node.exe") -> "C:/Program Files (x86)/nodejs/node.exe"
-      true -> 
-        # Fall back to PATH search, filter out yarn temp files
-        case System.find_executable("node") do
-          nil -> "node"
-          path when is_binary(path) ->
-            if String.contains?(path, "yarn--") do
-              # Yarn temp wrapper, try to find real node
-              System.get_env("ProgramFiles", "C:/Program Files") <> "/nodejs/node.exe"
-            else
-              path
-            end
-        end
-    end
+    node_path = find_node_executable()
     
     IO.puts("Node path: #{node_path}")
     IO.puts("Script path: #{script_path}")
@@ -184,5 +167,60 @@ defmodule ClippsterServerWeb.AuthController do
     # Clean up temp file
     File.rm(temp_file)
     result
+  end
+
+  # Find the actual node executable, avoiding wrapper scripts
+  defp find_node_executable do
+    case :os.type() do
+      {:win32, _} ->
+        # On Windows, use 'where' to find all node executables
+        case System.cmd("where", ["node"], stderr_to_stdout: true) do
+          {output, 0} ->
+            # Parse output and find first real node.exe (not in temp/yarn directory)
+            output
+            |> String.split("\n", trim: true)
+            |> Enum.map(&String.trim/1)
+            |> Enum.reject(&String.contains?(&1, "yarn--"))
+            |> Enum.reject(&String.contains?(&1, "Temp"))
+            |> Enum.find(&String.ends_with?(&1, "node.exe"))
+            |> case do
+              nil -> "node"  # Fallback
+              path -> path
+            end
+
+          _ ->
+            # Fallback: try common Windows installation paths
+            [
+              System.get_env("ProgramFiles") <> "\\nodejs\\node.exe",
+              System.get_env("ProgramFiles(x86)") <> "\\nodejs\\node.exe",
+              "C:\\Program Files\\nodejs\\node.exe",
+              "C:\\Program Files (x86)\\nodejs\\node.exe"
+            ]
+            |> Enum.find(&File.exists?/1)
+            |> case do
+              nil -> "node"
+              path -> path
+            end
+        end
+
+      {:unix, _} ->
+        # On Unix/Linux/Mac, use 'which' to find node
+        case System.cmd("which", ["node"], stderr_to_stdout: true) do
+          {output, 0} ->
+            output
+            |> String.split("\n", trim: true)
+            |> List.first()
+            |> String.trim()
+
+          _ ->
+            # Try common Unix paths
+            ["/usr/bin/node", "/usr/local/bin/node", "/opt/homebrew/bin/node"]
+            |> Enum.find(&File.exists?/1)
+            |> case do
+              nil -> "node"
+              path -> path
+            end
+        end
+    end
   end
 end
