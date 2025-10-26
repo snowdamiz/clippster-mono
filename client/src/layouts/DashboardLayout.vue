@@ -55,6 +55,9 @@
           <div class="flex items-center gap-2">
             <div class="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
             <span class="text-sm text-muted-foreground">Connected</span>
+            <span v-if="authStore.user?.is_admin" class="px-2 py-0.5 text-xs font-medium rounded-full bg-primary/10 text-primary border border-primary/20">
+              Admin
+            </span>
           </div>
         </div>
         <div class="flex items-center justify-between">
