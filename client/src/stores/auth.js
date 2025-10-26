@@ -9,6 +9,7 @@ export const useAuthStore = defineStore('auth', {
     isAuthenticated: false,
     walletAddress: null,
     token: null,
+    user: null,
     loading: false,
     error: null
   }),
@@ -101,11 +102,13 @@ export const useAuthStore = defineStore('auth', {
         // Store auth data
         this.token = data.token
         this.walletAddress = data.wallet_address
+        this.user = data.user
         this.isAuthenticated = true
 
         // Store in localStorage for persistence
         localStorage.setItem('auth_token', data.token)
         localStorage.setItem('wallet_address', data.wallet_address)
+        localStorage.setItem('user', JSON.stringify(data.user))
 
         return { success: true }
 
@@ -131,20 +134,27 @@ export const useAuthStore = defineStore('auth', {
       this.isAuthenticated = false
       this.walletAddress = null
       this.token = null
+      this.user = null
       localStorage.removeItem('auth_token')
       localStorage.removeItem('wallet_address')
+      localStorage.removeItem('user')
     },
 
     async checkAuth() {
       const token = localStorage.getItem('auth_token')
       const walletAddress = localStorage.getItem('wallet_address')
+      const userJson = localStorage.getItem('user')
 
-      if (token && walletAddress) {
-        // Optionally verify token with backend
-        this.token = token
-        this.walletAddress = walletAddress
-        this.isAuthenticated = true
-        return true
+      if (token && walletAddress && userJson) {
+        try {
+          this.token = token
+          this.walletAddress = walletAddress
+          this.user = JSON.parse(userJson)
+          this.isAuthenticated = true
+          return true
+        } catch (error) {
+          console.error('Failed to parse user data:', error)
+        }
       }
       return false
     }
