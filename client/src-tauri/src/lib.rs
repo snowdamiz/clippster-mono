@@ -105,6 +105,11 @@ fn start_callback_server(app: tauri::AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_sql::Builder::default()
+                .add_migrations("sqlite:clippster.db", vec![])
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
             greet,
             open_wallet_auth_window,

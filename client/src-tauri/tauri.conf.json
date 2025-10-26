@@ -22,6 +22,17 @@
     },
     "withGlobalTauri": true
   },
+  "plugins": {
+    "sql": {
+      "scope": {
+        "allowed": [
+          {
+            "path": "sqlite:clippster.db"
+          }
+        ]
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
