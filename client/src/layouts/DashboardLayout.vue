@@ -130,7 +130,7 @@ const disconnect = () => {
   align-items: center;
   gap: 0.75rem;
   padding: 0.625rem 0.75rem;
-  border-radius: 0.5rem;
+  border-radius: 0.35rem;
   color: var(--muted-foreground);
   transition: all 0.2s;
 }
@@ -141,14 +141,14 @@ const disconnect = () => {
 }
 
 .nav-link-active {
-  background-color: rgb(147 51 234 / 0.1);
-  color: rgb(168 85 247);
-  border-left: 2px solid rgb(147 51 234);
+  background-color: rgb(255 255 255 / 0.1);
+  color: white;
+  border-left: 3px solid rgb(255 255 255);
   padding-left: calc(0.75rem - 2px);
 }
 
 .nav-link-active:hover {
-  background-color: rgb(147 51 234 / 0.15);
-  color: rgb(168 85 247);
+  background-color: rgb(255 255 255 / 0.15);
+  color: rgb(255 255 255);
 }
 </style>
