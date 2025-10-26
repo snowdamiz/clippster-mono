@@ -74,12 +74,15 @@
 
     <!-- Main content area with left margin to account for fixed sidebar -->
     <main class="flex-1 ml-64">
-      <!-- Header -->
-      <header class="sticky top-0 z-10 h-16 px-8 flex items-center justify-between border-b border-border bg-card">
-        <h2 class="text-lg font-semibold text-foreground capitalize">{{ currentPageTitle }}</h2>
-        <div class="text-sm text-muted-foreground">
-          {{ new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) }}
-        </div>
+      <!-- Header: Minimal breadcrumb bar -->
+      <header class="h-16 px-8 flex items-center border-b border-border/40 bg-background">
+        <nav class="flex items-center gap-2 text-sm">
+          <span class="text-muted-foreground">Dashboard</span>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-muted-foreground/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+          </svg>
+          <span class="text-foreground capitalize">{{ currentPageTitle }}</span>
+        </nav>
       </header>
 
       <!-- Page content -->
