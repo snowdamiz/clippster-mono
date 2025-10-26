@@ -1,7 +1,7 @@
 <template>
-  <div class="flex items-center justify-center min-h-[calc(100vh-12rem)]">
-    <!-- Not Authenticated - Login Card -->
-    <div v-if="!authStore.isAuthenticated" class="w-full max-w-md">
+  <div class="flex items-center justify-center min-h-screen">
+    <!-- Login Card -->
+    <div class="w-full max-w-md">
       <div class="relative overflow-hidden rounded-2xl border border-border/50 bg-card backdrop-blur-sm">
         <!-- Gradient overlay -->
         <div class="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-purple-500/5 pointer-events-none" />
@@ -64,68 +64,24 @@
         </div>
       </div>
     </div>
-
-    <!-- Authenticated - Connected Card -->
-    <div v-else class="w-full max-w-md">
-      <div class="relative overflow-hidden rounded-2xl border border-primary/30 bg-card backdrop-blur-sm">
-        <!-- Success gradient overlay -->
-        <div class="absolute inset-0 bg-gradient-to-br from-green-500/10 via-transparent to-primary/10 pointer-events-none" />
-        
-        <div class="relative p-8">
-          <!-- Success Icon -->
-          <div class="flex justify-center mb-6">
-            <div class="p-4 rounded-full bg-green-500/10 ring-1 ring-green-500/20">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-          </div>
-
-          <!-- Title -->
-          <div class="text-center mb-8">
-            <h3 class="text-2xl font-bold text-foreground mb-2">Connected Successfully</h3>
-            <p class="text-muted-foreground text-sm mb-4">Your wallet is connected to Clippster</p>
-            
-            <!-- Wallet Address Badge -->
-            <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20">
-              <div class="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-              <span class="font-mono text-sm font-medium text-primary">{{ formatAddress(authStore.walletAddress) }}</span>
-            </div>
-          </div>
-
-          <!-- Disconnect Button -->
-          <button
-            @click="disconnect"
-            class="w-full group relative overflow-hidden rounded-lg bg-destructive/10 border border-destructive/20 px-6 py-3 transition-all hover:bg-destructive hover:border-destructive"
-          >
-            <span class="flex items-center justify-center gap-2 font-semibold text-destructive group-hover:text-white transition-colors">
-              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-              Disconnect Wallet
-            </span>
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup>
 import { useAuthStore } from '../stores/auth'
 import { onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 
 const authStore = useAuthStore()
+const router = useRouter()
 
 const connectWallet = async () => {
   const result = await authStore.authenticateWithWallet()
   if (result.success) {
     console.log('Authentication successful!')
+    // Redirect to dashboard after successful authentication
+    router.push('/dashboard')
   }
-}
-
-const disconnect = () => {
-  authStore.logout()
 }
 
 const formatAddress = (address) => {
@@ -134,7 +90,10 @@ const formatAddress = (address) => {
 }
 
 onMounted(() => {
-  // Check if already authenticated
+  // Check if already authenticated and redirect if so
   authStore.checkAuth()
+  if (authStore.isAuthenticated) {
+    router.push('/dashboard')
+  }
 })
 </script>
