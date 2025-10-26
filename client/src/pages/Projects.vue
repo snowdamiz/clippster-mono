@@ -7,7 +7,7 @@
           <h1 class="text-2xl font-bold text-foreground">Projects</h1>
           <p class="text-muted-foreground mt-1">Manage and organize your video projects</p>
         </div>
-        <button class="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2">
+        <button class="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-lg transition-all flex items-center gap-2">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
@@ -57,7 +57,7 @@
       </div>
       <h3 class="text-lg font-semibold text-foreground mb-2">No projects yet</h3>
       <p class="text-muted-foreground text-sm mb-4">Create your first project to get started</p>
-      <button class="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors">
+      <button class="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-lg transition-colors">
         Create Project
       </button>
     </div>

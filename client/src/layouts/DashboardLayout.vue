@@ -55,7 +55,7 @@
           <div class="flex items-center gap-2">
             <div class="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
             <span class="text-sm text-muted-foreground">Connected</span>
-            <span v-if="authStore.user?.is_admin" class="px-2 py-0.5 text-xs font-medium rounded-full bg-primary/10 text-primary border border-primary/20">
+            <span v-if="authStore.user?.is_admin" class="px-2 py-0.5 text-xs font-medium rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
               Admin
             </span>
           </div>
@@ -141,12 +141,14 @@ const disconnect = () => {
 }
 
 .nav-link-active {
-  background-color: rgba(var(--primary-rgb), 0.1);
-  color: var(--primary);
+  background-color: rgb(147 51 234 / 0.1);
+  color: rgb(168 85 247);
+  border-left: 2px solid rgb(147 51 234);
+  padding-left: calc(0.75rem - 2px);
 }
 
 .nav-link-active:hover {
-  background-color: rgba(var(--primary-rgb), 0.15);
-  color: var(--primary);
+  background-color: rgb(147 51 234 / 0.15);
+  color: rgb(168 85 247);
 }
 </style>

@@ -16,7 +16,7 @@
             <input type="text" placeholder="Search clips..." class="pl-10 pr-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 w-64">
           </div>
           <!-- Upload Button -->
-          <button class="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2">
+          <button class="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-lg transition-colors flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
@@ -24,14 +24,6 @@
           </button>
         </div>
       </div>
-    </div>
-
-    <!-- Filters -->
-    <div class="flex items-center gap-4 mb-6">
-      <button class="px-3 py-1.5 text-sm bg-primary/10 text-primary rounded-lg border border-primary/20">All Clips</button>
-      <button class="px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent rounded-lg transition-colors">Recent</button>
-      <button class="px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent rounded-lg transition-colors">Favorites</button>
-      <button class="px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent rounded-lg transition-colors">Archived</button>
     </div>
 
     <!-- Clips Grid -->
