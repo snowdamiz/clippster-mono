@@ -188,4 +188,9 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Overlay scrollbar to prevent layout shift */
+  html {
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
+  }
 }
