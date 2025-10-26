@@ -7,13 +7,9 @@
         <div class="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-purple-500/5 pointer-events-none" />
         
         <div class="relative p-8">
-          <!-- Icon -->
+          <!-- Logo -->
           <div class="flex justify-center mb-6">
-            <div class="p-4 rounded-full bg-primary/10 ring-1 ring-primary/20">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3" />
-              </svg>
-            </div>
+            <img src="/logo.svg" alt="Clippster" class="h-12 w-auto" />
           </div>
 
           <!-- Title -->

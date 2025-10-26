@@ -4,7 +4,7 @@
     <aside class="fixed left-0 top-0 h-full w-64 bg-card border-r border-border">
       <!-- Logo/Brand -->
       <div class="h-16 px-6 flex items-center border-b border-border">
-        <h1 class="text-xl font-bold text-foreground">Clippster</h1>
+        <img src="/logo.svg" alt="Clippster" class="h-8 w-auto" />
       </div>
 
       <!-- Navigation -->
