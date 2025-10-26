@@ -1,6 +1,7 @@
 defmodule ClippsterServerWeb.AuthController do
   use ClippsterServerWeb, :controller
   alias ClippsterServer.Auth.{ChallengeStore, TokenGenerator}
+  alias ClippsterServer.Accounts
 
   @sign_message_template """
   <%= domain %> wants you to sign in with your Solana account:
@@ -47,12 +48,18 @@ defmodule ClippsterServerWeb.AuthController do
          :ok <- validate_message(message, challenge, public_key),
          :ok <- verify_ed25519_signature(message, signature, public_key) do
       IO.puts("Signature verification successful!")
+      
+      # Create or get user
+      {:ok, user} = Accounts.get_or_create_user(public_key)
+      
       # Generate JWT token
       token_claims = %{
         "sub" => public_key,
         "iat" => DateTime.utc_now() |> DateTime.to_unix(),
         "exp" => DateTime.utc_now() |> DateTime.add(7, :day) |> DateTime.to_unix(),
-        "wallet_address" => public_key
+        "wallet_address" => public_key,
+        "user_id" => user.id,
+        "is_admin" => user.is_admin
       }
 
       case TokenGenerator.generate_token(token_claims) do
@@ -60,7 +67,12 @@ defmodule ClippsterServerWeb.AuthController do
           json(conn, %{
             success: true,
             token: token,
-            wallet_address: public_key
+            wallet_address: public_key,
+            user: %{
+              id: user.id,
+              wallet_address: user.wallet_address,
+              is_admin: user.is_admin
+            }
           })
 
         {:error, _reason} ->
