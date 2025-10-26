@@ -107,7 +107,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
-                .add_migrations("sqlite:clippster.db", vec![])
+                .add_migrations(
+                    "sqlite:clippster.db",
+                    vec![tauri_plugin_sql::Migration {
+                        version: 1,
+                        description: "initial_schema",
+                        sql: include_str!("../migrations/001_initial_schema.sql"),
+                        kind: tauri_plugin_sql::MigrationKind::Up,
+                    }],
+                )
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
