@@ -7,6 +7,19 @@ defmodule ClippsterServer.Application do
 
   @impl true
   def start(_type, _args) do
+    # Load environment variables from .env file
+    env_file = Path.join(File.cwd!(), ".env")
+    
+    if File.exists?(env_file) do
+      try do
+        # Load and parse .env file, then set each environment variable
+        env_vars = Dotenvy.source!(env_file)
+        Enum.each(env_vars, fn {key, value} -> System.put_env(key, value) end)
+      rescue
+        e -> IO.puts("[warning] Failed to load .env file: #{inspect(e)}")
+      end
+    end
+
     # Run migrations automatically on startup
     ClippsterServer.Release.migrate()
 

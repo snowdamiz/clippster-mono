@@ -59,7 +59,9 @@ defmodule ClippsterServer.MixProject do
       {:cachex, "~> 3.6"},
       {:cors_plug, "~> 3.0"},
       # HTTP client for price fetching
-      {:httpoison, "~> 2.2"}
+      {:httpoison, "~> 2.2"},
+      # Environment variable loading
+      {:dotenvy, "~> 0.8.0"}
     ]
   end
 

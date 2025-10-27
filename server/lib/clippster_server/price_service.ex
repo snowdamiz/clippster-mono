@@ -1,13 +1,13 @@
 defmodule ClippsterServer.PriceService do
   @moduledoc """
-  Service for fetching real-time SOL/USD prices from Jupiter API.
+  Service for fetching real-time SOL/USD prices from Alchemy Prices API.
   Includes caching to avoid rate limits.
   """
 
   use GenServer
   require Logger
 
-  @jupiter_api_url "https://price.jup.ag/v6/price"
+  @alchemy_prices_api_url "https://api.g.alchemy.com/prices/v1"
   @coingecko_api_url "https://api.coingecko.com/api/v3/simple/price"
   @cache_ttl_seconds 30
   @sol_mint "So11111111111111111111111111111111111111112"
@@ -103,14 +103,14 @@ defmodule ClippsterServer.PriceService do
   end
 
   defp fetch_price_from_api do
-    # Try Jupiter API first (Solana-native, most accurate)
-    case fetch_from_jupiter() do
+    # Try Alchemy Prices API first (reliable and accurate)
+    case fetch_from_alchemy() do
       {:ok, price} -> 
-        Logger.info("Price fetched from Jupiter: $#{price}")
+        Logger.info("Price fetched from Alchemy: $#{price}")
         {:ok, price}
       
       {:error, reason} ->
-        Logger.warning("Jupiter API failed (#{inspect(reason)}), trying CoinGecko...")
+        Logger.warning("Alchemy API failed (#{inspect(reason)}), trying CoinGecko...")
         
         # Fallback to CoinGecko free API
         case fetch_from_coingecko() do
@@ -119,34 +119,55 @@ defmodule ClippsterServer.PriceService do
             {:ok, price}
           
           {:error, cg_reason} ->
-            Logger.error("All price sources failed - Jupiter: #{inspect(reason)}, CoinGecko: #{inspect(cg_reason)}")
+            Logger.error("All price sources failed - Alchemy: #{inspect(reason)}, CoinGecko: #{inspect(cg_reason)}")
             {:error, :all_sources_failed}
         end
     end
   end
 
-  defp fetch_from_jupiter do
-    url = "#{@jupiter_api_url}?ids=#{@sol_mint}"
+  defp fetch_from_alchemy do
+    api_key = System.get_env("ALCHEMY_API_KEY")
+    
+    if !api_key || api_key == "" do
+      Logger.error("ALCHEMY_API_KEY not set")
+      {:error, :missing_api_key}
+    else
+      url = "#{@alchemy_prices_api_url}/#{api_key}/tokens/by-address"
+      
+      payload = Jason.encode!(%{
+        addresses: [
+          %{
+            network: "solana-mainnet",
+            address: @sol_mint
+          }
+        ]
+      })
+      
+      headers = [{"Content-Type", "application/json"}]
 
-    case HTTPoison.get(url, [], recv_timeout: 10_000) do
-      {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
-        case Jason.decode(body) do
-          {:ok, %{"data" => %{@sol_mint => %{"price" => price}}}} when is_number(price) ->
-            {:ok, price}
+      case HTTPoison.post(url, payload, headers, recv_timeout: 10_000) do
+        {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
+          case Jason.decode(body) do
+            {:ok, %{"data" => [%{"prices" => [%{"currency" => "usd", "value" => price_str}]}]}} ->
+              case Float.parse(price_str) do
+                {price, _} -> {:ok, price}
+                :error -> {:error, :invalid_price_format}
+              end
 
-          {:ok, response} ->
-            Logger.debug("Unexpected Jupiter response: #{inspect(response)}")
-            {:error, :invalid_response}
+            {:ok, response} ->
+              Logger.debug("Unexpected Alchemy response: #{inspect(response)}")
+              {:error, :invalid_response}
 
-          {:error, reason} ->
-            {:error, {:decode_error, reason}}
-        end
+            {:error, reason} ->
+              {:error, {:decode_error, reason}}
+          end
 
-      {:ok, %HTTPoison.Response{status_code: status_code}} ->
-        {:error, {:http_error, status_code}}
+        {:ok, %HTTPoison.Response{status_code: status_code}} ->
+          {:error, {:http_error, status_code}}
 
-      {:error, %HTTPoison.Error{reason: reason}} ->
-        {:error, {:http_error, reason}}
+        {:error, %HTTPoison.Error{reason: reason}} ->
+          {:error, {:http_error, reason}}
+      end
     end
   end
 
