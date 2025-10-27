@@ -79,7 +79,11 @@
       <!-- Page content -->
       <div class="p-8">
         <div class="max-w-7xl mx-auto">
-          <router-view />
+          <router-view v-slot="{ Component }">
+            <transition name="fade" mode="out-in">
+              <component :is="Component" />
+            </transition>
+          </router-view>
         </div>
       </div>
     </main>
@@ -158,5 +162,15 @@ const disconnect = () => {
   color: rgb(248 113 113);
   border-color: rgb(248 113 113 / 0.3);
   background-color: rgb(248 113 113 / 0.05);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.1s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>
