@@ -1,25 +1,20 @@
 <template>
-  <div>
-    <!-- Page Title and Actions -->
-    <div v-if="!loading && projects.length > 0" class="mb-8">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-3xl font-bold text-foreground">Projects</h1>
-          <p class="text-muted-foreground mt-2">Manage and organize your video projects</p>
-        </div>
-        <button class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
-          New Project
-        </button>
-      </div>
-    </div>
+  <PageLayout
+    title="Projects"
+    description="Manage and organize your video projects"
+    :show-header="!loading && projects.length > 0"
+  >
+    <template #actions>
+      <button class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        New Project
+      </button>
+    </template>
 
     <!-- Loading State -->
-    <div v-if="loading" class="flex items-center justify-center py-20">
-      <div class="text-muted-foreground">Loading projects...</div>
-    </div>
+    <LoadingState v-if="loading" message="Loading projects..." />
 
     <!-- Projects Grid -->
     <div v-else-if="projects.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -53,28 +48,27 @@
     </div>
 
     <!-- Empty State -->
-    <div v-else class="flex flex-col items-center justify-center min-h-[calc(100vh-16rem)]">
-      <div class="p-5 bg-muted rounded-full mb-6">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-      </div>
-      <h3 class="text-xl font-semibold text-foreground mb-2">No projects yet</h3>
-      <p class="text-muted-foreground mb-6">Create your first project to get started</p>
-      <button class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg font-medium shadow-sm transition-all">
-        Create Project
-      </button>
-    </div>
-  </div>
+    <EmptyState
+      v-else
+      title="No projects yet"
+      description="Create your first project to get started"
+      button-text="Create Project"
+    />
+  </PageLayout>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { getAllProjects, getClipsByProjectId, deleteProject, type Project } from '@/services/database'
+import { useFormatters } from '@/composables/useFormatters'
+import PageLayout from '@/components/PageLayout.vue'
+import LoadingState from '@/components/LoadingState.vue'
+import EmptyState from '@/components/EmptyState.vue'
 
 const projects = ref<Project[]>([])
 const loading = ref(true)
 const clipCounts = ref<Record<string, number>>({})
+const { getRelativeTime } = useFormatters()
 
 async function loadProjects() {
   loading.value = true
@@ -95,18 +89,6 @@ async function loadProjects() {
 
 function getClipCount(projectId: string): number {
   return clipCounts.value[projectId] || 0
-}
-
-function getRelativeTime(timestamp: number): string {
-  const now = Math.floor(Date.now() / 1000)
-  const diff = now - timestamp
-  
-  if (diff < 60) return 'just now'
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`
-  if (diff < 2592000) return `${Math.floor(diff / 604800)}w ago`
-  return `${Math.floor(diff / 2592000)}mo ago`
 }
 
 function editProject(project: Project) {

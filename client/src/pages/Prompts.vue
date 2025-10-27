@@ -1,25 +1,20 @@
 <template>
-  <div>
-    <!-- Page Title and Actions -->
-    <div v-if="!loading && prompts.length > 0" class="mb-8">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-3xl font-bold text-foreground">Prompts</h1>
-          <p class="text-muted-foreground mt-2">Manage your AI prompts and templates</p>
-        </div>
-        <button class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
-          New Prompt
-        </button>
-      </div>
-    </div>
+  <PageLayout
+    title="Prompts"
+    description="Manage your AI prompts and templates"
+    :show-header="!loading && prompts.length > 0"
+  >
+    <template #actions>
+      <button class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        New Prompt
+      </button>
+    </template>
 
     <!-- Loading State -->
-    <div v-if="loading" class="flex items-center justify-center py-20">
-      <div class="text-muted-foreground">Loading prompts...</div>
-    </div>
+    <LoadingState v-if="loading" message="Loading prompts..." />
 
     <!-- Prompts List -->
     <div v-else-if="prompts.length > 0" class="space-y-4">
@@ -68,27 +63,32 @@
     </div>
 
     <!-- Empty State -->
-    <div v-else class="flex flex-col items-center justify-center min-h-[calc(100vh-16rem)]">
-      <div class="p-5 bg-muted rounded-full mb-6">
+    <EmptyState
+      v-else
+      title="No prompts yet"
+      description="Create your first prompt template to get started"
+      button-text="Create Prompt"
+    >
+      <template #icon>
         <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-4l-4 4v-4z" />
         </svg>
-      </div>
-      <h3 class="text-xl font-semibold text-foreground mb-2">No prompts yet</h3>
-      <p class="text-muted-foreground mb-6">Create your first prompt template to get started</p>
-      <button class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg font-medium shadow-sm transition-all">
-        Create Prompt
-      </button>
-    </div>
-  </div>
+      </template>
+    </EmptyState>
+  </PageLayout>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { getAllPrompts, deletePrompt, type Prompt } from '@/services/database'
+import { useFormatters } from '@/composables/useFormatters'
+import PageLayout from '@/components/PageLayout.vue'
+import LoadingState from '@/components/LoadingState.vue'
+import EmptyState from '@/components/EmptyState.vue'
 
 const prompts = ref<Prompt[]>([])
 const loading = ref(true)
+const { getRelativeTime } = useFormatters()
 
 async function loadPrompts() {
   loading.value = true
@@ -99,18 +99,6 @@ async function loadPrompts() {
   } finally {
     loading.value = false
   }
-}
-
-function getRelativeTime(timestamp: number): string {
-  const now = Math.floor(Date.now() / 1000)
-  const diff = now - timestamp
-  
-  if (diff < 60) return 'just now'
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`
-  if (diff < 2592000) return `${Math.floor(diff / 604800)}w ago`
-  return `${Math.floor(diff / 2592000)}mo ago`
 }
 
 async function copyPrompt(prompt: Prompt) {

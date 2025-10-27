@@ -1,25 +1,20 @@
 <template>
-  <div>
-    <!-- Page Title and Actions -->
-    <div v-if="!loading && videos.length > 0" class="mb-8">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-3xl font-bold text-foreground">Videos</h1>
-          <p class="text-muted-foreground mt-2">Browse and manage your raw video files</p>
-        </div>
-        <button class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-          </svg>
-          Upload Video
-        </button>
-      </div>
-    </div>
+  <PageLayout
+    title="Videos"
+    description="Browse and manage your raw video files"
+    :show-header="!loading && videos.length > 0"
+  >
+    <template #actions>
+      <button class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+        </svg>
+        Upload Video
+      </button>
+    </template>
 
     <!-- Loading State -->
-    <div v-if="loading" class="flex items-center justify-center py-20">
-      <div class="text-muted-foreground">Loading videos...</div>
-    </div>
+    <LoadingState v-if="loading" message="Loading videos..." />
 
     <!-- Videos Grid -->
     <div v-else-if="videos.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
@@ -61,27 +56,32 @@
     </div>
 
     <!-- Empty State -->
-    <div v-else class="flex flex-col items-center justify-center min-h-[calc(100vh-16rem)]">
-      <div class="p-5 bg-muted rounded-full mb-6">
+    <EmptyState
+      v-else
+      title="No videos yet"
+      description="Upload your first raw video to get started"
+      button-text="Upload Video"
+    >
+      <template #icon>
         <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
         </svg>
-      </div>
-      <h3 class="text-xl font-semibold text-foreground mb-2">No videos yet</h3>
-      <p class="text-muted-foreground mb-6">Upload your first raw video to get started</p>
-      <button class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg font-medium shadow-sm transition-all">
-        Upload Video
-      </button>
-    </div>
-  </div>
+      </template>
+    </EmptyState>
+  </PageLayout>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { getAllProjects, deleteProject, type Project } from '@/services/database'
+import { useFormatters } from '@/composables/useFormatters'
+import PageLayout from '@/components/PageLayout.vue'
+import LoadingState from '@/components/LoadingState.vue'
+import EmptyState from '@/components/EmptyState.vue'
 
 const videos = ref<Project[]>([])
 const loading = ref(true)
+const { getRelativeTime } = useFormatters()
 
 async function loadVideos() {
   loading.value = true
@@ -94,18 +94,6 @@ async function loadVideos() {
   } finally {
     loading.value = false
   }
-}
-
-function getRelativeTime(timestamp: number): string {
-  const now = Math.floor(Date.now() / 1000)
-  const diff = now - timestamp
-  
-  if (diff < 60) return 'just now'
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`
-  if (diff < 2592000) return `${Math.floor(diff / 604800)}w ago`
-  return `${Math.floor(diff / 2592000)}mo ago`
 }
 
 async function confirmDelete(video: Project) {
