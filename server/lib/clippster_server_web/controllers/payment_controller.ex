@@ -19,6 +19,7 @@ defmodule ClippsterServerWeb.PaymentController do
   def get_pricing(conn, _params) do
     packs = Credits.get_credit_packs()
     company_wallet = Credits.get_company_wallet_address()
+    rpc_url = Credits.get_solana_rpc_url()
 
     case ClippsterServer.PriceService.get_sol_price() do
       {:ok, sol_usd_rate} ->
@@ -34,7 +35,8 @@ defmodule ClippsterServerWeb.PaymentController do
           success: true,
           packs: packs_with_sol,
           sol_usd_rate: sol_usd_rate,
-          company_wallet_address: company_wallet
+          company_wallet_address: company_wallet,
+          rpc_url: rpc_url
         })
 
       {:error, _reason} ->

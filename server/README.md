@@ -1,5 +1,21 @@
 # ClippsterServer
 
+## Environment Variables
+
+Required environment variables:
+
+* `PAYMENT_ADDRESS` - Solana wallet address for receiving payments
+* `ALCHEMY_API_KEY` - API key for Alchemy price service
+* `SOLANA_RPC_URL` - (Optional) Solana RPC endpoint URL. Defaults to public mainnet endpoint if not set.
+
+**Note:** The public Solana RPC endpoint (`https://api.mainnet-beta.solana.com`) has rate limits and restricted access. For production, use a dedicated RPC provider like:
+- Helius (https://helius.dev)
+- Alchemy (https://alchemy.com)
+- QuickNode (https://quicknode.com)
+- Triton One (https://triton.one)
+
+## Getting Started
+
 To start your Phoenix server:
 
 * Run `mix setup` to install and setup dependencies

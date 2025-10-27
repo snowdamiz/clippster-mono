@@ -9,10 +9,12 @@ const { Connection, PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
  * @param {string} rpcUrl - Solana RPC URL (defaults to mainnet)
  * @returns {Promise<object>} - Verification result
  */
-async function verifyPayment(txSignature, fromAddress, toAddress, expectedSolAmount, rpcUrl = 'https://api.mainnet-beta.solana.com') {
+async function verifyPayment(txSignature, fromAddress, toAddress, expectedSolAmount, rpcUrl) {
+  // Use provided RPC URL or fallback to environment variable or default
+  const solanaRpcUrl = rpcUrl || process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
   try {
     // Connect to Solana
-    const connection = new Connection(rpcUrl, 'confirmed');
+    const connection = new Connection(solanaRpcUrl, 'confirmed');
     
     // Get transaction details
     const transaction = await connection.getTransaction(txSignature, {

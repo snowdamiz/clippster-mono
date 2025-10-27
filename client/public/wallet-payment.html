@@ -214,7 +214,8 @@
       usd: urlParams.get('usd'),
       sol: urlParams.get('sol'),
       companyWallet: urlParams.get('companyWallet'),
-      authToken: urlParams.get('authToken')
+      authToken: urlParams.get('authToken'),
+      rpcUrl: null // Will be fetched from API
     };
 
     // Display payment details
@@ -264,9 +265,21 @@
     };
 
     document.getElementById('pay-btn').addEventListener('click', async () => {
-      setLoading(true, 'Connecting...');
+      setLoading(true, 'Loading...');
 
       try {
+        // Fetch RPC URL if not already loaded
+        if (!paymentData.rpcUrl) {
+          updateStatus('Loading configuration...');
+          const pricingResponse = await fetch(`${API_BASE}/api/pricing`);
+          if (!pricingResponse.ok) {
+            throw new Error('Failed to load configuration');
+          }
+          const pricingData = await pricingResponse.json();
+          paymentData.rpcUrl = pricingData.rpc_url || 'https://api.mainnet-beta.solana.com';
+        }
+
+        setLoading(true, 'Connecting...');
         const provider = getProvider();
 
         if (!provider) {
@@ -289,7 +302,7 @@
         updateStatus('Creating transaction...');
         setLoading(true, 'Creating transaction...');
         
-        const connection = new solanaWeb3.Connection('https://api.mainnet-beta.solana.com', 'confirmed');
+        const connection = new solanaWeb3.Connection(paymentData.rpcUrl, 'confirmed');
         const fromPubkey = provider.publicKey;
         const toPubkey = new solanaWeb3.PublicKey(paymentData.companyWallet);
         

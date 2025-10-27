@@ -35,6 +35,14 @@ defmodule ClippsterServer.Credits do
   end
 
   @doc """
+  Gets the Solana RPC URL for client connections
+  Defaults to public endpoint if not set (not recommended for production)
+  """
+  def get_solana_rpc_url do
+    System.get_env("SOLANA_RPC_URL") || "https://api.mainnet-beta.solana.com"
+  end
+
+  @doc """
   Gets or creates user credit record
   """
   def get_or_create_user_credits(user_id) do
