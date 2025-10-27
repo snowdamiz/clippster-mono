@@ -8,6 +8,13 @@ defmodule ClippsterServer.Accounts do
   alias ClippsterServer.Accounts.User
 
   @doc """
+  Gets a user by ID.
+  """
+  def get_user(id) do
+    Repo.get(User, id)
+  end
+
+  @doc """
   Gets a user by wallet address.
   """
   def get_user_by_wallet(wallet_address) do

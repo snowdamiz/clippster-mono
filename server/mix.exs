@@ -57,7 +57,9 @@ defmodule ClippsterServer.MixProject do
       {:ed25519, "~> 1.4"},
       {:base58, "~> 0.1.0"},
       {:cachex, "~> 3.6"},
-      {:cors_plug, "~> 3.0"}
+      {:cors_plug, "~> 3.0"},
+      # HTTP client for price fetching
+      {:httpoison, "~> 2.2"}
     ]
   end
 

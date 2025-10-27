@@ -19,6 +19,8 @@ defmodule ClippsterServer.Application do
       # {ClippsterServer.Worker, arg},
       # Wallet authentication challenge store
       ClippsterServer.Auth.ChallengeStore,
+      # Price service for SOL/USD rates
+      ClippsterServer.PriceService,
       # Start to serve requests, typically the last entry
       ClippsterServerWeb.Endpoint
     ]

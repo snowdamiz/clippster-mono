@@ -29,6 +29,12 @@ defmodule ClippsterServerWeb.Router do
     # Wallet authentication routes
     post "/auth/challenge", AuthController, :request_challenge
     post "/auth/verify", AuthController, :verify_signature
+
+    # Payment and credit routes
+    get "/pricing", PaymentController, :get_pricing
+    get "/credits/balance", PaymentController, :get_balance
+    post "/payments/quote", PaymentController, :get_quote
+    post "/payments/confirm", PaymentController, :confirm_payment
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
