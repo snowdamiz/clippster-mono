@@ -14,8 +14,6 @@ defmodule ClippsterServer.Credits do
     "studio" => %{hours: 300, usd: 180.00}
   }
 
-  @company_wallet_address System.get_env("COMPANY_WALLET_ADDRESS", "YOUR_COMPANY_WALLET_ADDRESS")
-
   @doc """
   Gets the pricing information for all credit packs
   """
@@ -30,8 +28,11 @@ defmodule ClippsterServer.Credits do
 
   @doc """
   Gets the company wallet address for receiving payments
+  Loads from PAYMENT_ADDRESS environment variable at runtime
   """
-  def get_company_wallet_address, do: @company_wallet_address
+  def get_company_wallet_address do
+    System.get_env("PAYMENT_ADDRESS") || raise "PAYMENT_ADDRESS not set in environment"
+  end
 
   @doc """
   Gets or creates user credit record
