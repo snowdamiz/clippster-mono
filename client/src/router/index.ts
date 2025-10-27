@@ -49,6 +49,11 @@ const router = createRouter({
           path: 'prompts',
           name: 'prompts',
           component: () => import('@/pages/Prompts.vue')
+        },
+        {
+          path: 'pricing',
+          name: 'pricing',
+          component: () => import('@/pages/Pricing.vue')
         }
       ]
     }
