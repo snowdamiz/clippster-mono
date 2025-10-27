@@ -59,7 +59,7 @@
     <EmptyState
       v-else
       title="No videos yet"
-      description="Upload your first raw video to get started"
+      description="Upload your first raw video or download directly from Pump.fun to get started"
       button-text="Upload Video"
     >
       <template #icon>

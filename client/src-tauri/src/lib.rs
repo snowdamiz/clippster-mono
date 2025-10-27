@@ -4,6 +4,8 @@ use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 use warp::Filter;
 
+mod storage;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AuthResult {
     signature: String,
@@ -120,13 +122,20 @@ pub fn run() {
         .setup(|_app| {
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
+            
+            // Initialize storage directories
+            if let Err(e) = storage::init_storage_dirs() {
+                eprintln!("[Rust] Warning: Failed to initialize storage directories: {}", e);
+            }
+            
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             greet,
             open_wallet_auth_window,
             close_auth_window,
-            poll_auth_result
+            poll_auth_result,
+            storage::get_storage_paths
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
