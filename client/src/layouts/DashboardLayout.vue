@@ -51,20 +51,11 @@
 
       <!-- User info and logout at bottom -->
       <div class="absolute bottom-0 w-64 p-4 border-t border-border">
-        <div class="flex items-center justify-between mb-3">
-          <div class="flex items-center gap-2">
-            <div class="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-            <span class="text-sm text-muted-foreground">Connected</span>
-            <span v-if="authStore.user?.is_admin" class="px-2 py-0.5 text-xs font-medium rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
-              Admin
-            </span>
-          </div>
-        </div>
         <div class="flex items-center justify-between">
           <span class="font-mono text-xs text-primary">{{ formatAddress(authStore.walletAddress) }}</span>
           <button
             @click="disconnect"
-            class="text-xs text-muted-foreground hover:text-destructive transition-colors"
+            class="disconnect-btn"
           >
             Disconnect
           </button>
@@ -150,5 +141,22 @@ const disconnect = () => {
 .nav-link-active:hover {
   background-color: rgb(255 255 255 / 0.15);
   color: rgb(255 255 255);
+}
+
+.disconnect-btn {
+  padding: 0.375rem 0.625rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: rgb(239 68 68);
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.disconnect-btn:hover {
+  color: rgb(248 113 113);
+  border-color: rgb(248 113 113 / 0.3);
+  background-color: rgb(248 113 113 / 0.05);
 }
 </style>
