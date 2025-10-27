@@ -7,6 +7,9 @@ defmodule ClippsterServer.Application do
 
   @impl true
   def start(_type, _args) do
+    # Run migrations automatically on startup
+    ClippsterServer.Release.migrate()
+
     children = [
       ClippsterServerWeb.Telemetry,
       ClippsterServer.Repo,
