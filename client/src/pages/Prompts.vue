@@ -7,7 +7,7 @@
           <h1 class="text-3xl font-bold text-foreground">Prompts</h1>
           <p class="text-muted-foreground mt-2">Manage your AI prompts and templates</p>
         </div>
-        <button class="px-5 py-2.5 bg-foreground hover:bg-foreground/90 text-background rounded-lg flex items-center gap-2 font-medium">
+        <button class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
@@ -76,7 +76,7 @@
       </div>
       <h3 class="text-xl font-semibold text-foreground mb-2">No prompts yet</h3>
       <p class="text-muted-foreground mb-6">Create your first prompt template to get started</p>
-      <button class="px-5 py-2.5 bg-foreground hover:bg-foreground/90 text-background rounded-lg font-medium">
+      <button class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg font-medium shadow-sm transition-all">
         Create Prompt
       </button>
     </div>

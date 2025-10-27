@@ -16,7 +16,7 @@
             <input type="text" placeholder="Search clips..." class="pl-9 pr-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-foreground/30 w-64 text-sm">
           </div>
           <!-- Upload Button -->
-          <button class="px-5 py-2.5 bg-foreground hover:bg-foreground/90 text-background rounded-lg flex items-center gap-2 font-medium">
+          <button class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
@@ -82,7 +82,7 @@
       </div>
       <h3 class="text-xl font-semibold text-foreground mb-2">No clips yet</h3>
       <p class="text-muted-foreground mb-6">Upload your first video clip to get started</p>
-      <button class="px-5 py-2.5 bg-foreground hover:bg-foreground/90 text-background rounded-lg font-medium">
+      <button class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg font-medium shadow-sm transition-all">
         Upload Clip
       </button>
     </div>
