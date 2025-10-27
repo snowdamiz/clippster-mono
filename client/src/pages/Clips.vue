@@ -26,10 +26,14 @@
       </div>
     </div>
 
+    <!-- Loading State -->
+    <div v-if="loading" class="flex items-center justify-center py-20">
+      <div class="text-muted-foreground">Loading clips...</div>
+    </div>
+
     <!-- Clips Grid -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-      <!-- Sample Clip Cards -->
-      <div v-for="i in 12" :key="i" class="group relative bg-card border border-border rounded-xl overflow-hidden hover:border-foreground/20 cursor-pointer">
+    <div v-else-if="clips.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+      <div v-for="clip in clips" :key="clip.id" class="group relative bg-card border border-border rounded-xl overflow-hidden hover:border-foreground/20 cursor-pointer">
         <!-- Thumbnail -->
         <div class="aspect-video bg-muted/50 relative">
           <div class="absolute inset-0 flex items-center justify-center">
@@ -39,7 +43,7 @@
             </svg>
           </div>
           <!-- Duration -->
-          <span class="absolute bottom-2 right-2 px-2 py-0.5 bg-black/80 text-white text-xs font-medium rounded">2:45</span>
+          <span v-if="clip.duration" class="absolute bottom-2 right-2 px-2 py-0.5 bg-black/80 text-white text-xs font-medium rounded">{{ formatDuration(clip.duration) }}</span>
           <!-- Hover Overlay -->
           <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2">
             <button class="p-2.5 bg-white rounded-lg hover:bg-white/90" title="Play">
@@ -53,18 +57,86 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
               </svg>
             </button>
+            <button class="p-2.5 bg-white rounded-lg hover:bg-white/90" title="Delete" @click.stop="confirmDelete(clip)">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
           </div>
         </div>
         <!-- Info -->
         <div class="p-4">
-          <h4 class="font-semibold text-foreground truncate mb-1">Clip {{ i }}</h4>
-          <p class="text-xs text-muted-foreground">Added 3 days ago</p>
+          <h4 class="font-semibold text-foreground truncate mb-1">{{ clip.name || 'Untitled Clip' }}</h4>
+          <p class="text-xs text-muted-foreground">Added {{ getRelativeTime(clip.created_at) }}</p>
         </div>
       </div>
+    </div>
+
+    <!-- Empty State -->
+    <div v-else class="flex flex-col items-center justify-center py-20">
+      <div class="p-5 bg-muted rounded-full mb-6">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </div>
+      <h3 class="text-xl font-semibold text-foreground mb-2">No clips yet</h3>
+      <p class="text-muted-foreground mb-6">Upload your first video clip to get started</p>
+      <button class="px-5 py-2.5 bg-foreground hover:bg-foreground/90 text-background rounded-lg font-medium">
+        Upload Clip
+      </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-// Clips logic will go here
+import { ref, onMounted } from 'vue'
+import { getAllClips, deleteClip, type Clip } from '@/services/database'
+
+const clips = ref<Clip[]>([])
+const loading = ref(true)
+
+async function loadClips() {
+  loading.value = true
+  try {
+    clips.value = await getAllClips()
+  } catch (error) {
+    console.error('Failed to load clips:', error)
+  } finally {
+    loading.value = false
+  }
+}
+
+function getRelativeTime(timestamp: number): string {
+  const now = Math.floor(Date.now() / 1000)
+  const diff = now - timestamp
+  
+  if (diff < 60) return 'just now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`
+  if (diff < 2592000) return `${Math.floor(diff / 604800)}w ago`
+  return `${Math.floor(diff / 2592000)}mo ago`
+}
+
+function formatDuration(seconds: number): string {
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.floor(seconds % 60)
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+async function confirmDelete(clip: Clip) {
+  if (confirm(`Are you sure you want to delete "${clip.name || 'this clip'}"?`)) {
+    try {
+      await deleteClip(clip.id)
+      await loadClips()
+    } catch (error) {
+      console.error('Failed to delete clip:', error)
+    }
+  }
+}
+
+onMounted(() => {
+  loadClips()
+})
 </script>

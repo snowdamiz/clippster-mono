@@ -373,6 +373,13 @@ export async function createClip(
   return id
 }
 
+export async function getAllClips(): Promise<Clip[]> {
+  const db = await getDatabase()
+  return await db.select<Clip[]>(
+    'SELECT * FROM clips ORDER BY created_at DESC'
+  )
+}
+
 export async function getClipsByProjectId(projectId: string): Promise<Clip[]> {
   const db = await getDatabase()
   return await db.select<Clip[]>(
