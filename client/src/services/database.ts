@@ -66,6 +66,7 @@ export interface Project {
   id: string
   name: string
   description: string | null
+  raw_video_path: string | null
   created_at: number
   updated_at: number
 }
@@ -145,14 +146,14 @@ export function generateId(): string {
 }
 
 // Project queries
-export async function createProject(name: string, description?: string): Promise<string> {
+export async function createProject(name: string, description?: string, rawVideoPath?: string): Promise<string> {
   const db = await getDatabase()
   const id = generateId()
   const now = timestamp()
   
   await db.execute(
-    'INSERT INTO projects (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-    [id, name, description || null, now, now]
+    'INSERT INTO projects (id, name, description, raw_video_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+    [id, name, description || null, rawVideoPath || null, now, now]
   )
   
   return id
@@ -169,7 +170,7 @@ export async function getAllProjects(): Promise<Project[]> {
   return await db.select<Project[]>('SELECT * FROM projects ORDER BY updated_at DESC')
 }
 
-export async function updateProject(id: string, name?: string, description?: string): Promise<void> {
+export async function updateProject(id: string, name?: string, description?: string, rawVideoPath?: string): Promise<void> {
   const db = await getDatabase()
   const now = timestamp()
   
@@ -183,6 +184,10 @@ export async function updateProject(id: string, name?: string, description?: str
   if (description !== undefined) {
     updates.push('description = ?')
     values.push(description)
+  }
+  if (rawVideoPath !== undefined) {
+    updates.push('raw_video_path = ?')
+    values.push(rawVideoPath)
   }
   
   updates.push('updated_at = ?')

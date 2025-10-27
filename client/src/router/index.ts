@@ -36,6 +36,11 @@ const router = createRouter({
           component: () => import('@/pages/Projects.vue')
         },
         {
+          path: 'videos',
+          name: 'videos',
+          component: () => import('@/pages/Videos.vue')
+        },
+        {
           path: 'clips',
           name: 'clips',
           component: () => import('@/pages/Clips.vue')

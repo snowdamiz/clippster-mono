@@ -1,7 +1,7 @@
 <template>
   <div>
     <!-- Page Title and Actions -->
-    <div class="mb-8">
+    <div v-if="!loading && projects.length > 0" class="mb-8">
       <div class="flex items-center justify-between">
         <div>
           <h1 class="text-3xl font-bold text-foreground">Projects</h1>
@@ -53,7 +53,7 @@
     </div>
 
     <!-- Empty State -->
-    <div v-else class="flex flex-col items-center justify-center py-20">
+    <div v-else class="flex flex-col items-center justify-center min-h-[calc(100vh-16rem)]">
       <div class="p-5 bg-muted rounded-full mb-6">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
