@@ -16,29 +16,33 @@
       </div>
     </div>
 
+    <!-- Loading State -->
+    <div v-if="loading" class="flex items-center justify-center py-20">
+      <div class="text-muted-foreground">Loading projects...</div>
+    </div>
+
     <!-- Projects Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-      <!-- Sample Project Cards -->
-      <div v-for="i in 6" :key="i" class="bg-card border border-border rounded-xl p-6 hover:border-foreground/20 cursor-pointer group">
+    <div v-else-if="projects.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+      <div v-for="project in projects" :key="project.id" class="bg-card border border-border rounded-xl p-6 hover:border-foreground/20 cursor-pointer group">
         <div class="flex items-start justify-between mb-5">
           <div class="p-3 bg-muted rounded-lg">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
             </svg>
           </div>
-          <span class="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-md">2 days ago</span>
+          <span class="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-md">{{ getRelativeTime(project.updated_at) }}</span>
         </div>
-        <h3 class="text-lg font-semibold text-foreground mb-2 group-hover:text-foreground/80">Project {{ i }}</h3>
-        <p class="text-sm text-muted-foreground mb-5 line-clamp-2">Sample project description with some details about the content.</p>
+        <h3 class="text-lg font-semibold text-foreground mb-2 group-hover:text-foreground/80">{{ project.name }}</h3>
+        <p class="text-sm text-muted-foreground mb-5 line-clamp-2">{{ project.description || 'No description' }}</p>
         <div class="flex items-center justify-between pt-4 border-t border-border">
-          <span class="text-sm text-muted-foreground font-medium">12 clips</span>
+          <span class="text-sm text-muted-foreground font-medium">{{ getClipCount(project.id) }} clips</span>
           <div class="flex items-center gap-1">
-            <button class="p-2 hover:bg-muted rounded-md" title="Edit">
+            <button class="p-2 hover:bg-muted rounded-md" title="Edit" @click.stop="editProject(project)">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground hover:text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
             </button>
-            <button class="p-2 hover:bg-muted rounded-md" title="Delete">
+            <button class="p-2 hover:bg-muted rounded-md" title="Delete" @click.stop="confirmDelete(project)">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground hover:text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
@@ -48,8 +52,8 @@
       </div>
     </div>
 
-    <!-- Empty State (hidden when projects exist) -->
-    <div v-if="false" class="flex flex-col items-center justify-center py-20">
+    <!-- Empty State -->
+    <div v-else class="flex flex-col items-center justify-center py-20">
       <div class="p-5 bg-muted rounded-full mb-6">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -65,5 +69,64 @@
 </template>
 
 <script setup lang="ts">
-// Projects logic will go here
+import { ref, onMounted } from 'vue'
+import { getAllProjects, getClipsByProjectId, deleteProject, type Project } from '@/services/database'
+
+const projects = ref<Project[]>([])
+const loading = ref(true)
+const clipCounts = ref<Record<string, number>>({})
+
+async function loadProjects() {
+  loading.value = true
+  try {
+    projects.value = await getAllProjects()
+    
+    // Load clip counts for each project
+    for (const project of projects.value) {
+      const clips = await getClipsByProjectId(project.id)
+      clipCounts.value[project.id] = clips.length
+    }
+  } catch (error) {
+    console.error('Failed to load projects:', error)
+  } finally {
+    loading.value = false
+  }
+}
+
+function getClipCount(projectId: string): number {
+  return clipCounts.value[projectId] || 0
+}
+
+function getRelativeTime(timestamp: number): string {
+  const now = Math.floor(Date.now() / 1000)
+  const diff = now - timestamp
+  
+  if (diff < 60) return 'just now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`
+  if (diff < 2592000) return `${Math.floor(diff / 604800)}w ago`
+  return `${Math.floor(diff / 2592000)}mo ago`
+}
+
+function editProject(project: Project) {
+  // TODO: Implement edit functionality
+  console.log('Edit project:', project)
+}
+
+async function confirmDelete(project: Project) {
+  // TODO: Add proper confirmation dialog
+  if (confirm(`Are you sure you want to delete "${project.name}"?`)) {
+    try {
+      await deleteProject(project.id)
+      await loadProjects()
+    } catch (error) {
+      console.error('Failed to delete project:', error)
+    }
+  }
+}
+
+onMounted(() => {
+  loadProjects()
+})
 </script>

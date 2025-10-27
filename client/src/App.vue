@@ -1,11 +1,20 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { Toaster } from '@/components/ui/sonner'
+import { initDatabase } from '@/services/database'
 
-// Ensure dark mode is always applied
-onMounted(() => {
+// Ensure dark mode is always applied and initialize database
+onMounted(async () => {
   document.documentElement.classList.add('dark')
   document.body.classList.add('dark')
+  
+  // Initialize database connection
+  try {
+    await initDatabase()
+    console.log('[App] Database initialized successfully')
+  } catch (error) {
+    console.error('[App] Failed to initialize database:', error)
+  }
 })
 </script>
 

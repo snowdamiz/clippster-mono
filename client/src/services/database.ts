@@ -1,13 +1,59 @@
 import Database from '@tauri-apps/plugin-sql'
+import { invoke } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 
 let db: Database | null = null
+let initializing: Promise<Database> | null = null
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function waitForRuntimeReady(timeoutMs = 7000) {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    try {
+      // Any simple invoke ensures the runtime is ready for this window
+      await invoke<string>('greet', { name: 'db-init' })
+      return
+    } catch {
+      // Not ready yet
+    }
+    await sleep(100)
+  }
+  throw new Error('Tauri runtime not ready')
+}
 
 // Initialize database connection
 export async function initDatabase() {
-  if (!db) {
-    db = await Database.load('sqlite:clippster.db')
-  }
-  return db
+  if (db) return db
+  if (initializing) return initializing
+
+  initializing = (async () => {
+    try {
+      await waitForRuntimeReady()
+      const label = getCurrentWindow().label
+      console.debug('[Frontend] Tauri window label:', label)
+      
+      // Debug: Check if Database is available
+      console.log('[Frontend] Database object:', Database)
+      console.log('[Frontend] Database.load:', Database.load)
+      console.log('[Frontend] Attempting to load sqlite:clippster.db')
+
+      const instance = await Database.load('sqlite:clippster.db')
+      console.log('[Frontend] Database loaded successfully')
+      db = instance
+      return instance
+    } catch (error) {
+      console.error('[Frontend] Database load error:', error)
+      console.error('[Frontend] Error details:', JSON.stringify(error, null, 2))
+      throw error
+    } finally {
+      initializing = null
+    }
+  })()
+
+  return initializing
 }
 
 // Get database instance

@@ -12,25 +12,21 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "clippster-ui",
         "width": 1200,
         "height": 800
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://localhost:4000 https://api.clippster.example.com https://*; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:4000 https://api.clippster.example.com https://*; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'",
+      "dangerousDisableAssetCspModification": [".*/.*"]
     },
     "withGlobalTauri": true
   },
   "plugins": {
     "sql": {
-      "scope": {
-        "allowed": [
-          {
-            "path": "sqlite:clippster.db"
-          }
-        ]
-      }
+      "preload": ["sqlite:clippster.db"]
     }
   },
   "bundle": {
