@@ -14,8 +14,17 @@ struct AuthResult {
     nonce: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PaymentResult {
+    signature: String,
+    pack_key: String,
+    auth_token: String,
+}
+
 static AUTH_RESULT: Lazy<Arc<Mutex<Option<AuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
-static SERVER_PORT: u16 = 48274; // Random high port
+static PAYMENT_RESULT: Lazy<Arc<Mutex<Option<PaymentResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+static AUTH_SERVER_PORT: u16 = 48274;
+static PAYMENT_SERVER_PORT: u16 = 48275;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -26,12 +35,45 @@ fn greet(name: &str) -> String {
 #[tauri::command]
 async fn open_wallet_auth_window(app: tauri::AppHandle) -> Result<(), String> {
     // Start local callback server if not already running
-    start_callback_server(app.clone());
+    start_auth_callback_server(app.clone());
 
     // Open the wallet auth page in the user's default browser
-    let auth_url = format!("http://localhost:{}/wallet-auth", SERVER_PORT);
+    let auth_url = format!("http://localhost:{}/wallet-auth", AUTH_SERVER_PORT);
 
     tauri_plugin_opener::open_url(auth_url, None::<&str>)
+        .map_err(|e| format!("Failed to open browser: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn open_wallet_payment_window(
+    app: tauri::AppHandle,
+    pack_key: String,
+    pack_name: String,
+    hours: u32,
+    usd: f64,
+    sol: f64,
+    company_wallet: String,
+    auth_token: String
+) -> Result<(), String> {
+    // Start payment callback server
+    start_payment_callback_server(app.clone());
+
+    // Build payment URL with query parameters
+    let payment_url = format!(
+        "http://localhost:{}/wallet-payment?packKey={}&packName={}&hours={}&usd={}&sol={}&companyWallet={}&authToken={}",
+        PAYMENT_SERVER_PORT,
+        urlencoding::encode(&pack_key),
+        urlencoding::encode(&pack_name),
+        hours,
+        usd,
+        sol,
+        urlencoding::encode(&company_wallet),
+        urlencoding::encode(&auth_token)
+    );
+
+    tauri_plugin_opener::open_url(payment_url, None::<&str>)
         .map_err(|e| format!("Failed to open browser: {}", e))?;
 
     Ok(())
@@ -53,7 +95,17 @@ async fn poll_auth_result() -> Result<Option<AuthResult>, String> {
     Ok(result)
 }
 
-fn start_callback_server(app: tauri::AppHandle) {
+#[tauri::command]
+async fn poll_payment_result() -> Result<Option<PaymentResult>, String> {
+    let result = PAYMENT_RESULT.lock().unwrap().clone();
+    if result.is_some() {
+        // Clear after retrieval
+        *PAYMENT_RESULT.lock().unwrap() = None;
+    }
+    Ok(result)
+}
+
+fn start_auth_callback_server(app: tauri::AppHandle) {
     use std::sync::atomic::{AtomicBool, Ordering};
     static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
 
@@ -94,8 +146,54 @@ fn start_callback_server(app: tauri::AppHandle) {
 
         let routes = wallet_auth_page.or(auth_callback).with(cors);
 
-        println!("Starting local auth server on port {}", SERVER_PORT);
-        warp::serve(routes).run(([127, 0, 0, 1], SERVER_PORT)).await;
+        println!("Starting local auth server on port {}", AUTH_SERVER_PORT);
+        warp::serve(routes).run(([127, 0, 0, 1], AUTH_SERVER_PORT)).await;
+    });
+}
+
+fn start_payment_callback_server(app: tauri::AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
+
+    if SERVER_STARTED.swap(true, Ordering::SeqCst) {
+        return; // Server already running
+    }
+
+    tokio::spawn(async move {
+        let payment_result = PAYMENT_RESULT.clone();
+        let app_handle = app.clone();
+
+        // Serve the wallet-payment.html page
+        let wallet_payment_page = warp::path("wallet-payment")
+            .map(|| warp::reply::html(include_str!("../../public/wallet-payment.html")));
+
+        // Callback endpoint for payment result
+        let payment_callback = warp::path("payment-callback")
+            .and(warp::post())
+            .and(warp::body::json())
+            .map(move |result: PaymentResult| {
+                // Store the result
+                *payment_result.lock().unwrap() = Some(result.clone());
+
+                // Emit event to frontend
+                let _ = app_handle.emit("wallet-payment-complete", result);
+
+                warp::reply::json(&serde_json::json!({
+                    "success": true,
+                    "message": "Payment received. You can close this tab."
+                }))
+            });
+
+        // CORS configuration
+        let cors = warp::cors()
+            .allow_any_origin()
+            .allow_methods(vec!["GET", "POST", "OPTIONS"])
+            .allow_headers(vec!["Content-Type"]);
+
+        let routes = wallet_payment_page.or(payment_callback).with(cors);
+
+        println!("Starting local payment server on port {}", PAYMENT_SERVER_PORT);
+        warp::serve(routes).run(([127, 0, 0, 1], PAYMENT_SERVER_PORT)).await;
     });
 }
 
@@ -133,8 +231,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             open_wallet_auth_window,
+            open_wallet_payment_window,
             close_auth_window,
             poll_auth_result,
+            poll_payment_result,
             storage::get_storage_paths
         ])
         .run(tauri::generate_context!())

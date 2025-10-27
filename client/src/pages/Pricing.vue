@@ -394,86 +394,73 @@ function selectPack(key: string, pack: any) {
 async function initiatePayment() {
   processing.value = true
   paymentStep.value = 'processing'
-  paymentStatus.value = 'Opening Phantom wallet...'
+  paymentStatus.value = 'Opening payment window...'
 
   try {
-    // Check for Phantom wallet
-    const provider = (window as any).phantom?.solana
-    if (!provider?.isPhantom) {
-      throw new Error('Phantom wallet not found. Please install Phantom extension.')
-    }
+    const { invoke } = await import('@tauri-apps/api/core')
+    const { listen } = await import('@tauri-apps/api/event')
 
-    // Ensure wallet is connected
-    if (!provider.isConnected) {
-      paymentStatus.value = 'Connecting to Phantom...'
-      await provider.connect()
-    }
+    // Set up listener for payment completion
+    const unlisten = await listen('wallet-payment-complete', async (event: any) => {
+      console.log('Payment complete:', event.payload)
+      const paymentResult = event.payload
 
-    // Create transfer transaction
-    paymentStatus.value = 'Creating transaction...'
-    const { Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } = await import('@solana/web3.js')
-    
-    const connection = new Connection('https://api.mainnet-beta.solana.com', 'confirmed')
-    const fromPubkey = provider.publicKey
-    const toPubkey = new PublicKey(companyWallet.value)
-    
-    const lamports = Math.floor(selectedPack.value.solAmount * LAMPORTS_PER_SOL)
-    
-    const transaction = new Transaction().add(
-      SystemProgram.transfer({
-        fromPubkey,
-        toPubkey,
-        lamports
-      })
-    )
+      // Verify payment with backend
+      paymentStatus.value = 'Verifying payment...'
+      try {
+        const confirmResponse = await fetch(`${API_BASE}/api/payments/confirm`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authStore.token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            tx_signature: paymentResult.signature,
+            pack_type: paymentResult.pack_key
+          })
+        })
 
-    // Get recent blockhash
-    transaction.feePayer = fromPubkey
-    const { blockhash } = await connection.getLatestBlockhash()
-    transaction.recentBlockhash = blockhash
-
-    // Request signature from Phantom
-    paymentStatus.value = 'Awaiting signature...'
-    const signedTransaction = await provider.signTransaction(transaction)
-
-    // Send transaction
-    paymentStatus.value = 'Sending transaction...'
-    const signature = await connection.sendRawTransaction(signedTransaction.serialize())
-
-    // Wait for confirmation
-    paymentStatus.value = 'Confirming transaction...'
-    await connection.confirmTransaction(signature, 'confirmed')
-
-    // Confirm payment with backend (server validates pricing)
-    paymentStatus.value = 'Verifying payment...'
-    const confirmResponse = await fetch(`${API_BASE}/api/payments/confirm`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${authStore.token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        tx_signature: signature,
-        pack_type: selectedPack.value.key
-        // Note: sol_amount and sol_usd_rate removed - server calculates
-      })
+        const confirmData = await confirmResponse.json()
+        
+        if (confirmData.success) {
+          balance.value = confirmData.balance
+          paymentStep.value = 'success'
+          processing.value = false
+          
+          // Cleanup listener
+          unlisten()
+          
+          // Refresh balance
+          await fetchBalance()
+        } else {
+          throw new Error(confirmData.error || 'Payment confirmation failed')
+        }
+      } catch (error: any) {
+        console.error('Payment verification error:', error)
+        errorMessage.value = error.message || 'Payment verification failed'
+        paymentStep.value = 'error'
+        processing.value = false
+        unlisten()
+      }
     })
 
-    const confirmData = await confirmResponse.json()
-    
-    if (confirmData.success) {
-      balance.value = confirmData.balance
-      paymentStep.value = 'success'
-      // Refresh balance in header
-      window.location.reload()
-    } else {
-      throw new Error(confirmData.error || 'Payment confirmation failed')
-    }
+    // Open payment window in browser
+    await invoke('open_wallet_payment_window', {
+      packKey: selectedPack.value.key,
+      packName: selectedPack.value.key.charAt(0).toUpperCase() + selectedPack.value.key.slice(1),
+      hours: selectedPack.value.hours,
+      usd: selectedPack.value.usd,
+      sol: selectedPack.value.solAmount,
+      companyWallet: companyWallet.value,
+      authToken: authStore.token
+    })
+
+    paymentStatus.value = 'Complete payment in your browser...'
+
   } catch (error: any) {
     console.error('Payment error:', error)
-    errorMessage.value = error.message || 'An unexpected error occurred'
+    errorMessage.value = error.message || 'Failed to open payment window'
     paymentStep.value = 'error'
-  } finally {
     processing.value = false
   }
 }

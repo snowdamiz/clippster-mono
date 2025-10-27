@@ -23,7 +23,7 @@
 
       <!-- Credit Balance -->
       <router-link 
-        to="/pricing" 
+        to="/dashboard/pricing" 
         class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all cursor-pointer shadow-sm hover:shadow-md"
         title="View Pricing & Purchase Credits"
       >

@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Complete Payment - Clippster</title>
+  <style>
+    :root {
+      --background: oklch(0.145 0 0);
+      --foreground: oklch(0.985 0 0);
+      --card: oklch(0.145 0 0);
+      --primary: oklch(0.985 0 0);
+      --muted-foreground: oklch(0.708 0 0);
+      --destructive-foreground: oklch(0.637 0.237 25.331);
+      --success: oklch(0.696 0.17 162.48);
+      --success-bg: oklch(0.269 0.05 162.48);
+      --radius: 0.625rem;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: var(--background);
+      color: var(--foreground);
+      padding: 1.5rem;
+    }
+
+    .container {
+      max-width: 28rem;
+      width: 100%;
+    }
+
+    .card {
+      position: relative;
+      overflow: hidden;
+      border-radius: calc(var(--radius) * 2);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      background: var(--card);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    }
+
+    .gradient-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, transparent 50%, rgba(147, 51, 234, 0.03) 100%);
+      pointer-events: none;
+    }
+
+    .content {
+      position: relative;
+      padding: 2rem;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+
+    .payment-details {
+      margin: 1.5rem 0;
+      padding: 1rem;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: var(--radius);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 0.5rem 0;
+      font-size: 0.875rem;
+    }
+
+    .detail-label {
+      color: var(--muted-foreground);
+    }
+
+    .detail-value {
+      font-weight: 600;
+    }
+
+    #pay-btn {
+      width: 100%;
+      margin-top: 1.5rem;
+      border-radius: var(--radius);
+      background: linear-gradient(to right, rgb(147, 51, 234), rgb(79, 70, 229));
+      border: none;
+      padding: 0.75rem 1.5rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      color: white;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    #pay-btn:hover:not(:disabled) {
+      box-shadow: 0 10px 25px -5px rgba(147, 51, 234, 0.5);
+    }
+
+    #pay-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .spinner {
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .status {
+      margin-top: 1rem;
+      font-size: 0.875rem;
+      color: var(--muted-foreground);
+      text-align: center;
+    }
+
+    .message-box {
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      border-radius: calc(var(--radius) - 2px);
+      font-size: 0.875rem;
+      display: none;
+    }
+
+    .error {
+      color: var(--destructive-foreground);
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+
+    .success {
+      color: var(--success);
+      background: var(--success-bg);
+      border: 1px solid rgba(var(--success), 0.2);
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="gradient-overlay"></div>
+      <div class="content">
+        <h1>Complete Payment</h1>
+
+        <div class="payment-details">
+          <div class="detail-row">
+            <span class="detail-label">Package</span>
+            <span class="detail-value" id="pack-name">-</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Hours</span>
+            <span class="detail-value" id="pack-hours">-</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Amount (USD)</span>
+            <span class="detail-value" id="pack-usd">-</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Amount (SOL)</span>
+            <span class="detail-value" id="pack-sol">-</span>
+          </div>
+        </div>
+
+        <button id="pay-btn">
+          <svg id="wallet-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+          </svg>
+          <svg id="spinner" class="spinner" width="20" height="20" style="display: none;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <span id="btn-text">Pay with Phantom</span>
+        </button>
+
+        <div id="status" class="status"></div>
+        <div id="error" class="message-box error"></div>
+        <div id="success" class="message-box success"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+  <script>
+    const API_BASE = 'http://localhost:4000';
+    const CALLBACK_PORT = 48275; // Different port from auth
+    
+    // Get payment details from URL params
+    const urlParams = new URLSearchParams(window.location.search);
+    const paymentData = {
+      packKey: urlParams.get('packKey'),
+      packName: urlParams.get('packName'),
+      hours: urlParams.get('hours'),
+      usd: urlParams.get('usd'),
+      sol: urlParams.get('sol'),
+      companyWallet: urlParams.get('companyWallet'),
+      authToken: urlParams.get('authToken')
+    };
+
+    // Display payment details
+    document.getElementById('pack-name').textContent = paymentData.packName || '-';
+    document.getElementById('pack-hours').textContent = paymentData.hours ? `${paymentData.hours} hours` : '-';
+    document.getElementById('pack-usd').textContent = paymentData.usd ? `$${paymentData.usd}` : '-';
+    document.getElementById('pack-sol').textContent = paymentData.sol ? `${parseFloat(paymentData.sol).toFixed(6)} SOL` : '-';
+
+    const getProvider = () => {
+      if ('phantom' in window) {
+        const provider = window.phantom?.solana;
+        if (provider?.isPhantom) {
+          return provider;
+        }
+      }
+      return null;
+    };
+
+    const updateStatus = (message) => {
+      document.getElementById('status').textContent = message;
+    };
+
+    const showError = (message) => {
+      const errorEl = document.getElementById('error');
+      errorEl.textContent = message;
+      errorEl.style.display = 'block';
+      document.getElementById('success').style.display = 'none';
+    };
+
+    const showSuccess = (message) => {
+      const successEl = document.getElementById('success');
+      successEl.textContent = message;
+      successEl.style.display = 'block';
+      document.getElementById('error').style.display = 'none';
+    };
+
+    const setLoading = (loading, text = 'Processing...') => {
+      const btn = document.getElementById('pay-btn');
+      const walletIcon = document.getElementById('wallet-icon');
+      const spinner = document.getElementById('spinner');
+      const btnText = document.getElementById('btn-text');
+      
+      btn.disabled = loading;
+      walletIcon.style.display = loading ? 'none' : 'block';
+      spinner.style.display = loading ? 'block' : 'none';
+      btnText.textContent = loading ? text : 'Pay with Phantom';
+    };
+
+    document.getElementById('pay-btn').addEventListener('click', async () => {
+      setLoading(true, 'Connecting...');
+
+      try {
+        const provider = getProvider();
+
+        if (!provider) {
+          window.open('https://phantom.app/', '_blank');
+          showError('Please install Phantom wallet extension and refresh this page');
+          setLoading(false);
+          return;
+        }
+
+        updateStatus('Connecting to Phantom...');
+
+        // Connect to Phantom if not already connected
+        if (!provider.isConnected) {
+          await provider.connect();
+        }
+
+        const publicKey = provider.publicKey.toString();
+
+        // Create transfer transaction
+        updateStatus('Creating transaction...');
+        setLoading(true, 'Creating transaction...');
+        
+        const connection = new solanaWeb3.Connection('https://api.mainnet-beta.solana.com', 'confirmed');
+        const fromPubkey = provider.publicKey;
+        const toPubkey = new solanaWeb3.PublicKey(paymentData.companyWallet);
+        
+        const lamports = Math.floor(parseFloat(paymentData.sol) * solanaWeb3.LAMPORTS_PER_SOL);
+        
+        const transaction = new solanaWeb3.Transaction().add(
+          solanaWeb3.SystemProgram.transfer({
+            fromPubkey,
+            toPubkey,
+            lamports
+          })
+        );
+
+        // Get recent blockhash
+        transaction.feePayer = fromPubkey;
+        const { blockhash } = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = blockhash;
+
+        // Request signature from Phantom
+        updateStatus('Please approve the transaction in Phantom...');
+        setLoading(true, 'Awaiting signature...');
+        const signedTransaction = await provider.signTransaction(transaction);
+
+        // Send transaction
+        updateStatus('Sending transaction...');
+        setLoading(true, 'Sending transaction...');
+        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+
+        // Wait for confirmation
+        updateStatus('Confirming transaction...');
+        setLoading(true, 'Confirming...');
+        await connection.confirmTransaction(signature, 'confirmed');
+
+        updateStatus('Transaction confirmed!');
+
+        // Send result to local callback server
+        const paymentResult = {
+          signature,
+          packKey: paymentData.packKey,
+          authToken: paymentData.authToken
+        };
+
+        try {
+          const callbackResponse = await fetch(`http://localhost:${CALLBACK_PORT}/payment-callback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(paymentResult)
+          });
+
+          if (callbackResponse.ok) {
+            setLoading(false);
+            updateStatus('');
+            showSuccess('✓ Payment successful! Closing window...');
+            document.getElementById('pay-btn').disabled = true;
+            
+            setTimeout(() => {
+              window.close();
+              
+              setTimeout(() => {
+                const successEl = document.getElementById('success');
+                if (successEl.style.display !== 'none') {
+                  successEl.textContent = '✓ Payment successful! You can close this tab now.';
+                }
+              }, 500);
+            }, 1500);
+          } else {
+            setLoading(false);
+            showError('Failed to send payment result to app. Please try again.');
+          }
+        } catch (error) {
+          console.error('Callback error:', error);
+          setLoading(false);
+          showError('Failed to communicate with app. Please ensure the app is running.');
+        }
+
+      } catch (error) {
+        console.error('Payment error:', error);
+        setLoading(false);
+        showError(error.message || 'Payment failed');
+        updateStatus('');
+      }
+    });
+
+    // Check for Phantom on load
+    window.addEventListener('load', () => {
+      const provider = getProvider();
+      if (!provider) {
+        updateStatus('Phantom wallet not detected');
+        showError('Phantom wallet extension not found. Please install it to continue.');
+      }
+    });
+  </script>
+</body>
+</html>
