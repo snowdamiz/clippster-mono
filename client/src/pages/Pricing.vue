@@ -33,7 +33,7 @@
     </div>
 
     <!-- Credit Packs Grid -->
-    <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-2">
+    <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-2">
       <div
         v-for="packKey in packOrder"
         :key="packKey"
@@ -95,19 +95,7 @@
                 <svg class="h-4 w-4 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
-                <span>~{{ Math.floor(packs[packKey].hours * 2) }}-{{ Math.floor(packs[packKey].hours * 3) }} videos</span>
-              </li>
-              <li v-if="packKey !== 'starter'" class="flex items-center gap-2 text-sm text-muted-foreground">
-                <svg class="h-4 w-4 text-purple-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                <span>Priority processing</span>
-              </li>
-              <li v-if="packKey === 'pro' || packKey === 'studio'" class="flex items-center gap-2 text-sm text-muted-foreground">
-                <svg class="h-4 w-4 text-purple-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                </svg>
-                <span>API access included</span>
+                <span>~{{ Math.floor(packs[packKey].hours / 2) }}-{{ packs[packKey].hours }} videos</span>
               </li>
             </ul>
 
@@ -310,7 +298,7 @@ const authStore = useAuthStore()
 
 const loading = ref(true)
 const packs = ref<any>({})
-const packOrder = ref(['starter', 'creator', 'pro', 'studio'])
+const packOrder = ref(['starter', 'creator', 'pro'])
 const companyWallet = ref('')
 const solUsdRate = ref(0)
 const balance = ref({ hours_remaining: 0, hours_used: 0 })

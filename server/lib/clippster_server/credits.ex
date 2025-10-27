@@ -9,9 +9,8 @@ defmodule ClippsterServer.Credits do
 
   @credit_packs %{
     "starter" => %{hours: 10, usd: 10.00},
-    "creator" => %{hours: 30, usd: 24.00},
-    "pro" => %{hours: 100, usd: 70.00},
-    "studio" => %{hours: 300, usd: 180.00}
+    "creator" => %{hours: 30, usd: 27.00},
+    "pro" => %{hours: 100, usd: 80.00}
   }
 
   @doc """
