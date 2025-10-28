@@ -139,6 +139,8 @@ export interface RawVideo {
   id: string
   project_id: string | null
   file_path: string
+  original_filename: string | null
+  thumbnail_path: string | null
   duration: number | null
   width: number | null
   height: number | null
@@ -566,6 +568,8 @@ export async function createRawVideo(
   filePath: string,
   options?: {
     projectId?: string
+    originalFilename?: string
+    thumbnailPath?: string
     duration?: number
     width?: number
     height?: number
@@ -579,11 +583,13 @@ export async function createRawVideo(
   const now = timestamp()
   
   await db.execute(
-    'INSERT INTO raw_videos (id, project_id, file_path, duration, width, height, frame_rate, codec, file_size, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO raw_videos (id, project_id, file_path, original_filename, thumbnail_path, duration, width, height, frame_rate, codec, file_size, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       id,
       options?.projectId || null,
       filePath,
+      options?.originalFilename || null,
+      options?.thumbnailPath || null,
       options?.duration || null,
       options?.width || null,
       options?.height || null,

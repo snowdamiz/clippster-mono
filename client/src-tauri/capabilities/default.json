@@ -9,6 +9,8 @@
     "core:window:allow-minimize",
     "core:window:allow-maximize",
     "core:event:default",
+    "core:path:default",
+    "core:path:allow-resolve",
     "sql:default",
     "sql:allow-load",
     "sql:allow-execute",
@@ -16,7 +18,9 @@
     "sql:allow-close",
     "dialog:default",
     "dialog:allow-open",
-    "dialog:allow-message"
+    "dialog:allow-message",
+    "shell:allow-execute",
+    "shell:allow-open"
   ],
   "platforms": ["windows", "macOS", "linux"]
 }

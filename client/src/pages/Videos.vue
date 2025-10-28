@@ -25,7 +25,13 @@
       <div v-for="video in videos" :key="video.id" class="group relative bg-card border border-border rounded-xl overflow-hidden hover:border-foreground/20 cursor-pointer">
         <!-- Thumbnail -->
         <div class="aspect-video bg-muted/50 relative">
-          <div class="absolute inset-0 flex items-center justify-center">
+          <img 
+            v-if="getThumbnailUrl(video)"
+            :src="getThumbnailUrl(video)!"
+            :alt="video.original_filename || 'Video thumbnail'"
+            class="w-full h-full object-cover"
+          />
+          <div v-else class="absolute inset-0 flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-14 w-14 text-muted-foreground/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
@@ -52,7 +58,7 @@
         </div>
         <!-- Info -->
         <div class="p-4">
-          <h4 class="font-semibold text-foreground truncate mb-1">{{ video.file_path.split(/[\\\/]/).pop() || 'Untitled Video' }}</h4>
+          <h4 class="font-semibold text-foreground truncate mb-1">{{ video.original_filename || video.file_path.split(/[\\\/]/).pop() || 'Untitled Video' }}</h4>
           <p class="text-xs text-muted-foreground mb-2" v-if="video.duration">Duration: {{ Math.round(video.duration) }}s</p>
           <p class="text-xs text-muted-foreground">Added {{ getRelativeTime(video.created_at) }}</p>
         </div>
@@ -73,6 +79,37 @@
         </svg>
       </template>
     </EmptyState>
+
+    <!-- Delete Confirmation Modal -->
+    <div
+      v-if="showDeleteDialog"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+      @click.self="showDeleteDialog = false"
+    >
+      <div class="bg-card rounded-2xl p-8 max-w-md w-full mx-4 border border-border">
+        <h2 class="text-2xl font-bold mb-4">Delete Video</h2>
+        
+        <div class="space-y-4">
+          <p class="text-muted-foreground">
+            Are you sure you want to delete "<span class="font-semibold text-foreground">{{ videoToDelete?.original_filename || videoToDelete?.file_path.split(/[\\\\/]/).pop() }}</span>"? This action cannot be undone.
+          </p>
+
+          <button
+            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg font-semibold hover:from-red-700 hover:to-red-800 transition-all"
+            @click="deleteVideoConfirmed"
+          >
+            Delete
+          </button>
+
+          <button
+            class="w-full py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 transition-all"
+            @click="showDeleteDialog = false"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
   </PageLayout>
 </template>
 
@@ -89,17 +126,37 @@ import EmptyState from '@/components/EmptyState.vue'
 const videos = ref<RawVideo[]>([])
 const loading = ref(true)
 const uploading = ref(false)
+const showDeleteDialog = ref(false)
+const videoToDelete = ref<RawVideo | null>(null)
+const thumbnailCache = ref<Map<string, string>>(new Map())
 const { getRelativeTime } = useFormatters()
 
 async function loadVideos() {
   loading.value = true
   try {
     videos.value = await getAllRawVideos()
+    // Load thumbnails
+    for (const video of videos.value) {
+      if (video.thumbnail_path && !thumbnailCache.value.has(video.id)) {
+        try {
+          const dataUrl = await invoke<string>('read_file_as_data_url', {
+            filePath: video.thumbnail_path
+          })
+          thumbnailCache.value.set(video.id, dataUrl)
+        } catch (error) {
+          console.warn('Failed to load thumbnail for video:', video.id, error)
+        }
+      }
+    }
   } catch (error) {
     console.error('Failed to load videos:', error)
   } finally {
     loading.value = false
   }
+}
+
+function getThumbnailUrl(video: RawVideo): string | null {
+  return thumbnailCache.value.get(video.id) || null
 }
 
 async function handleUpload() {
@@ -120,12 +177,25 @@ async function handleUpload() {
     uploading.value = true
     
     // Copy video to storage directory
-    const destinationPath = await invoke<string>('copy_video_to_storage', {
+    const result = await invoke<{ destination_path: string; original_filename: string }>('copy_video_to_storage', {
       sourcePath: selected
     })
     
-    // Create raw_videos record
-    await createRawVideo(destinationPath)
+    // Generate thumbnail
+    let thumbnailPath: string | undefined
+    try {
+      thumbnailPath = await invoke<string>('generate_thumbnail', {
+        videoPath: result.destination_path
+      })
+    } catch (error) {
+      console.warn('Failed to generate thumbnail:', error)
+    }
+    
+    // Create raw_videos record with original filename and thumbnail
+    await createRawVideo(result.destination_path, {
+      originalFilename: result.original_filename,
+      thumbnailPath
+    })
     
     // Reload videos list
     await loadVideos()
@@ -137,15 +207,23 @@ async function handleUpload() {
   }
 }
 
-async function confirmDelete(video: RawVideo) {
-  const videoName = video.file_path.split(/[\\/]/).pop() || 'this video'
-  if (confirm(`Are you sure you want to delete "${videoName}"?`)) {
-    try {
-      await deleteRawVideo(video.id)
-      await loadVideos()
-    } catch (error) {
-      console.error('Failed to delete video:', error)
-    }
+function confirmDelete(video: RawVideo) {
+  videoToDelete.value = video
+  showDeleteDialog.value = true
+}
+
+async function deleteVideoConfirmed() {
+  if (!videoToDelete.value) return
+  
+  try {
+    await deleteRawVideo(videoToDelete.value.id)
+    await loadVideos()
+  } catch (error) {
+    console.error('Failed to delete video:', error)
+    alert(`Failed to delete video: ${error}`)
+  } finally {
+    showDeleteDialog.value = false
+    videoToDelete.value = null
   }
 }
 

@@ -107,9 +107,120 @@ pub struct StoragePathsResponse {
     pub temp: String,
 }
 
+/// Response structure for copy_video_to_storage
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CopyVideoResponse {
+    pub destination_path: String,
+    pub original_filename: String,
+}
+
+/// Tauri command to generate a thumbnail from a video
+#[tauri::command]
+pub async fn generate_thumbnail(app: tauri::AppHandle, video_path: String) -> Result<String, String> {
+    use std::path::Path;
+    use tauri_plugin_shell::ShellExt;
+    
+    let video = Path::new(&video_path);
+    
+    // Validate video file exists
+    if !video.exists() {
+        return Err("Video file does not exist".to_string());
+    }
+    
+    // Get storage paths
+    let paths = init_storage_dirs()?;
+    
+    // Generate thumbnail filename based on video filename
+    let video_stem = video
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or("Failed to get video filename")?;
+    
+    let thumbnail_filename = format!("{}_thumb.jpg", video_stem);
+    let thumbnail_path = paths.thumbnails.join(&thumbnail_filename);
+    
+    // Use ffmpeg sidecar to generate thumbnail at 1 second mark
+    let output = app.shell()
+        .sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args([
+            "-i", &video_path,
+            "-ss", "00:00:01",
+            "-vframes", "1",
+            "-vf", "scale=320:-1",
+            "-y",
+            thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ffmpeg failed: {}", stderr));
+    }
+    
+    Ok(thumbnail_path.to_string_lossy().to_string())
+}
+
+/// Tauri command to read a file as base64 data URL
+#[tauri::command]
+pub fn read_file_as_data_url(file_path: String) -> Result<String, String> {
+    use std::fs;
+    use std::path::Path;
+    
+    let path = Path::new(&file_path);
+    
+    if !path.exists() {
+        return Err("File does not exist".to_string());
+    }
+    
+    let bytes = fs::read(path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+    
+    // Determine MIME type based on extension
+    let mime_type = match path.extension().and_then(|e| e.to_str()) {
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("png") => "image/png",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        _ => "application/octet-stream",
+    };
+    
+    // Encode as base64
+    let base64 = base64_encode(&bytes);
+    
+    Ok(format!("data:{};base64,{}", mime_type, base64))
+}
+
+// Simple base64 encoding
+fn base64_encode(data: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = String::new();
+    
+    for chunk in data.chunks(3) {
+        let mut buf = [0u8; 3];
+        for (i, &byte) in chunk.iter().enumerate() {
+            buf[i] = byte;
+        }
+        
+        let b1 = (buf[0] >> 2) as usize;
+        let b2 = (((buf[0] & 0x03) << 4) | (buf[1] >> 4)) as usize;
+        let b3 = (((buf[1] & 0x0f) << 2) | (buf[2] >> 6)) as usize;
+        let b4 = (buf[2] & 0x3f) as usize;
+        
+        result.push(CHARS[b1] as char);
+        result.push(CHARS[b2] as char);
+        result.push(if chunk.len() > 1 { CHARS[b3] as char } else { '=' });
+        result.push(if chunk.len() > 2 { CHARS[b4] as char } else { '=' });
+    }
+    
+    result
+}
+
 /// Tauri command to copy a video file to storage
 #[tauri::command]
-pub fn copy_video_to_storage(source_path: String) -> Result<String, String> {
+pub fn copy_video_to_storage(source_path: String) -> Result<CopyVideoResponse, String> {
     use std::fs;
     use std::path::Path;
     
@@ -119,6 +230,12 @@ pub fn copy_video_to_storage(source_path: String) -> Result<String, String> {
     if !source.exists() {
         return Err("Source file does not exist".to_string());
     }
+    
+    // Get original filename
+    let original_filename = source
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("Failed to get filename")?;
     
     // Get file extension
     let extension = source
@@ -143,6 +260,9 @@ pub fn copy_video_to_storage(source_path: String) -> Result<String, String> {
     fs::copy(source, &destination)
         .map_err(|e| format!("Failed to copy file: {}", e))?;
     
-    // Return the destination path as a string
-    Ok(destination.to_string_lossy().to_string())
+    // Return the destination path and original filename
+    Ok(CopyVideoResponse {
+        destination_path: destination.to_string_lossy().to_string(),
+        original_filename: original_filename.to_string(),
+    })
 }

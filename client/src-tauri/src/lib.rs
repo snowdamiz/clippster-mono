@@ -238,12 +238,25 @@ pub fn run() {
                             sql: include_str!("../migrations/005_make_project_id_nullable.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 6,
+                            description: "add_original_filename",
+                            sql: include_str!("../migrations/006_add_original_filename.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 7,
+                            description: "add_thumbnail_path",
+                            sql: include_str!("../migrations/007_add_thumbnail_path.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .setup(|_app| {
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
@@ -263,7 +276,9 @@ pub fn run() {
             poll_auth_result,
             poll_payment_result,
             storage::get_storage_paths,
-            storage::copy_video_to_storage
+            storage::copy_video_to_storage,
+            storage::generate_thumbnail,
+            storage::read_file_as_data_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

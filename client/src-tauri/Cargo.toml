@@ -22,9 +22,10 @@ tar = "0.4"
 xz2 = "0.1"
 
 [dependencies]
-tauri = { version = "2.3.0", features = ["native-tls-vendored"] }
+tauri = { version = "2.3.0", features = ["protocol-asset", "native-tls-vendored"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
