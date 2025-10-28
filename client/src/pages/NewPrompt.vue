@@ -234,60 +234,38 @@ interface Example {
 
 const examples: Example[] = [
   {
-    name: 'Viral Shorts Creator',
-    preview: 'Create engaging short-form content optimized for viral reach',
-    content: `Create a 30-60 second viral short video script.
+    name: 'Default Clip Detector',
+    preview: 'Comprehensive clip detection for TikTok, Shorts, and X - optimized for viral moments',
+    content: `Analyze this stream transcript and identify ALL clip-worthy moments for TikTok/Shorts/X.
 
-Requirements:
-- Hook viewers in the first 3 seconds with a compelling question or statement
-- Use trending audio/music that fits the content
-- Include text overlays for key points and emphasis
-- End with a strong call-to-action (like, follow, comment)
-- Optimize for vertical mobile viewing (9:16)
-- Keep pacing fast and energetic
+**DETECTION PHILOSOPHY:**
+- BIAS TOWARDS FINDING CLIPS — when in doubt, include it, BUT NEVER at the cost of coherence.
+- Prioritize moments that stand alone: a clear setup → development → payoff.
+- Extract moments at different stages: setup, peak, aftermath, reactions.
+- Lower your threshold — if something stands out from normal conversation, it's likely clip-worthy.
 
-Format the output as a structured script with timestamps, visual descriptions, and text overlay suggestions. Include suggestions for B-roll footage and transitions.`
-  },
-  {
-    name: 'Tutorial Introduction',
-    preview: 'Professional intro for educational and how-to videos',
-    content: `Create an engaging 20-30 second introduction for a tutorial video.
+**CLIP QUALITY & BOUNDARY RULES:**
+1) Start of clip MUST be a natural beginning of a sentence or thought.
+   - Avoid starting mid-sentence or on connective fillers ("and", "so", "but", "because", "like") unless they naturally begin a new bit.
+   - If the hook begins mid-thought, scan backward within the chunk to the prior sentence boundary, speaker turn, or a pause ≥ 0.35s.
+   - Add a pre-roll pad of 0.15–0.30s before the first spoken word (if available in the chunk).
+2) End of clip MUST complete the thought.
+   - Extend to the end of the sentence or the natural resolution/punchline.
+   - Do NOT end at the first word of a new sentence. Stop just before the next sentence begins, then add a post-roll pad of 0.30–0.60s.
+   - Prefer ending at ., ?, !, or at a pause ≥ 0.45s.
+3) Consistency & coherence.
+   - The clip should make sense without external context. Include the smallest necessary setup for clarity.
+   - If a complete coherent thought cannot fit within duration limits, SKIP it.
+4) Spliced clips.
+   - Each segment must independently follow the same start/end rules (sentence boundary + pads).
+   - Segments must be chronological, non-overlapping, and thematically unified.
+   - Only splice to remove dull filler between high-value moments or to tighten a single topic.
+5) Hard constraints.
+   - Minimum 15s, maximum 120s total per clip.
+   - Prefer 20–75s when possible for short-form platforms.
 
-Include:
-1. Brief hook explaining the problem viewers want to solve
-2. What viewers will learn by the end of the video
-3. A brief credibility statement
-4. Quick teaser showing the final result
-
-Tone: Professional yet approachable. Keep it concise and energetic. Avoid overpromising. Use conversational language that builds trust with the audience.`
-  },
-  {
-    name: 'Product Showcase',
-    preview: 'Highlight product features and benefits effectively',
-    content: `Create a compelling 60-90 second product showcase video script.
-
-Structure:
-1. Problem statement - What pain point does this product solve?
-2. Product introduction with clear value proposition
-3. Demonstrate 3-5 key features with visual examples
-4. Show real-world use cases and benefits
-5. Include social proof or testimonials if available
-6. Strong call-to-action with limited-time offer or special deal
-
-Focus on benefits over features. Show, don't just tell. Use lifestyle shots that help viewers envision themselves using the product.`
-  },
-  {
-    name: 'Storytime Narrative',
-    preview: 'Engaging storytelling format for personal or brand stories',
-    content: `Write a compelling 2-3 minute storytime narrative script.
-
-Structure:
-- Setup: Introduce the situation, setting, and key people involved
-- Conflict: Present the main challenge or turning point that creates tension
-- Resolution: Show how the situation was resolved and what changed
-- Reflection: Connect the story to a broader lesson or meaning
-
-Include natural pauses for dramatic effect, emphasis points for key moments, and emotional beats that help viewers connect. Make it relatable and authentic. Use present tense to make it more immediate and engaging.`
+**WHAT TO LOOK FOR:**
+- Strong emotions or shifts; humor/awkwardness; drama/tension/conflict; surprises/reveals; bold claims; unusual behavior; struggle/vulnerability; high energy; relatable/resonant lines; quotable statements; notable reactions or audience moments.`
   }
 ]
 
