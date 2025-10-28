@@ -107,6 +107,37 @@
         </svg>
       </template>
     </EmptyState>
+
+    <!-- Delete Confirmation Modal -->
+    <div
+      v-if="showDeleteDialog"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+      @click.self="showDeleteDialog = false"
+    >
+      <div class="bg-card rounded-2xl p-8 max-w-md w-full mx-4 border border-border">
+        <h2 class="text-2xl font-bold mb-4">Delete Prompt</h2>
+        
+        <div class="space-y-4">
+          <p class="text-muted-foreground">
+            Are you sure you want to delete "<span class="font-semibold text-foreground">{{ promptToDelete?.name }}</span>"? This action cannot be undone.
+          </p>
+
+          <button
+            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg font-semibold hover:from-red-700 hover:to-red-800 transition-all"
+            @click="deletePromptConfirmed"
+          >
+            Delete
+          </button>
+
+          <button
+            class="w-full py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 transition-all"
+            @click="showDeleteDialog = false"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
   </PageLayout>
 </template>
 
@@ -124,6 +155,8 @@ const prompts = ref<Prompt[]>([])
 const loading = ref(true)
 const { getRelativeTime } = useFormatters()
 const copiedId = ref<string | null>(null)
+const showDeleteDialog = ref(false)
+const promptToDelete = ref<Prompt | null>(null)
 
 function navigateToNew() {
   router.push('/dashboard/prompts/new')
@@ -157,15 +190,22 @@ function editPrompt(prompt: Prompt) {
   router.push(`/dashboard/prompts/${prompt.id}/edit`)
 }
 
-async function confirmDelete(prompt: Prompt) {
-  // TODO: Add proper confirmation dialog
-  if (confirm(`Are you sure you want to delete "${prompt.name}"?`)) {
-    try {
-      await deletePrompt(prompt.id)
-      await loadPrompts()
-    } catch (error) {
-      console.error('Failed to delete prompt:', error)
-    }
+function confirmDelete(prompt: Prompt) {
+  promptToDelete.value = prompt
+  showDeleteDialog.value = true
+}
+
+async function deletePromptConfirmed() {
+  if (!promptToDelete.value) return
+  
+  try {
+    await deletePrompt(promptToDelete.value.id)
+    await loadPrompts()
+  } catch (error) {
+    console.error('Failed to delete prompt:', error)
+  } finally {
+    showDeleteDialog.value = false
+    promptToDelete.value = null
   }
 }
 
