@@ -35,4 +35,5 @@ tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 dirs = "5"
 urlencoding = "2"
 rand = "0.8"
+base64 = "0.22"
 

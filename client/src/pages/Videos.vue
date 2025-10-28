@@ -38,7 +38,7 @@
           </div>
           <!-- Hover Overlay -->
           <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2">
-            <button class="p-2.5 bg-white rounded-lg hover:bg-white/90" title="Play">
+            <button class="p-2.5 bg-white rounded-lg hover:bg-white/90" title="Play" @click.stop="playVideo(video)">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -79,6 +79,27 @@
         </svg>
       </template>
     </EmptyState>
+
+    <!-- Video Player Dialog -->
+    <Dialog v-model:open="showVideoPlayer">
+      <DialogContent class="max-w-[calc(100vw-80px)] max-h-[calc(100vh-80px)] p-0">
+        <div class="relative w-full h-full">
+          <DialogTitle class="sr-only">
+            {{ videoToPlay?.original_filename || videoToPlay?.file_path.split(/[\\\/]/).pop() || 'Video Player' }}
+          </DialogTitle>
+          <DialogDescription class="sr-only">
+            Video player for {{ videoToPlay?.original_filename || 'selected video' }}
+          </DialogDescription>
+          <video
+            v-if="videoSrc"
+            :src="videoSrc"
+            controls
+            autoplay
+            class="w-full h-full max-h-[calc(100vh-80px)] bg-black"
+          />
+        </div>
+      </DialogContent>
+    </Dialog>
 
     <!-- Delete Confirmation Modal -->
     <div
@@ -122,12 +143,19 @@ import { invoke } from '@tauri-apps/api/core'
 import PageLayout from '@/components/PageLayout.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import Dialog from '@/components/ui/dialog/Dialog.vue'
+import DialogContent from '@/components/ui/dialog/DialogContent.vue'
+import DialogTitle from '@/components/ui/dialog/DialogTitle.vue'
+import DialogDescription from '@/components/ui/dialog/DialogDescription.vue'
 
 const videos = ref<RawVideo[]>([])
 const loading = ref(true)
 const uploading = ref(false)
 const showDeleteDialog = ref(false)
 const videoToDelete = ref<RawVideo | null>(null)
+const showVideoPlayer = ref(false)
+const videoToPlay = ref<RawVideo | null>(null)
+const videoSrc = ref<string | null>(null)
 const thumbnailCache = ref<Map<string, string>>(new Map())
 const { getRelativeTime } = useFormatters()
 
@@ -204,6 +232,21 @@ async function handleUpload() {
     alert(`Failed to upload video: ${error}`)
   } finally {
     uploading.value = false
+  }
+}
+
+async function playVideo(video: RawVideo) {
+  try {
+    videoToPlay.value = video
+    // Get video server port
+    const port = await invoke<number>('get_video_server_port')
+    // Encode file path as base64 for URL
+    const encodedPath = btoa(video.file_path)
+    videoSrc.value = `http://localhost:${port}/video/${encodedPath}`
+    showVideoPlayer.value = true
+  } catch (error) {
+    console.error('Failed to prepare video:', error)
+    alert(`Failed to load video: ${error}`)
   }
 }
 

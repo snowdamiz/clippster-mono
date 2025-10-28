@@ -545,6 +545,7 @@ dependencies = [
 name = "clippster-ui"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "dirs 5.0.1",
  "once_cell",
  "rand 0.8.5",

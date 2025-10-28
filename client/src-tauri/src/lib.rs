@@ -25,6 +25,7 @@ static AUTH_RESULT: Lazy<Arc<Mutex<Option<AuthResult>>>> = Lazy::new(|| Arc::new
 static PAYMENT_RESULT: Lazy<Arc<Mutex<Option<PaymentResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 static AUTH_SERVER_PORT: u16 = 48274;
 static PAYMENT_SERVER_PORT: u16 = 48275;
+static VIDEO_SERVER_PORT: u16 = 48276;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -151,6 +152,100 @@ fn start_auth_callback_server(app: tauri::AppHandle) {
     });
 }
 
+#[tauri::command]
+fn get_video_server_port() -> u16 {
+    VIDEO_SERVER_PORT
+}
+
+async fn start_video_server_impl() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
+
+    if SERVER_STARTED.swap(true, Ordering::SeqCst) {
+        return; // Server already running
+    }
+
+    {
+        use std::path::PathBuf;
+        use warp::Reply;
+
+        let video_route = warp::path!("video" / String)
+            .and(warp::get())
+            .and_then(|encoded_path: String| async move {
+                // Decode the base64-encoded path
+                use base64::{Engine as _, engine::general_purpose};
+                let decoded = match general_purpose::STANDARD.decode(encoded_path) {
+                    Ok(d) => d,
+                    Err(_) => {
+                        return Ok::<_, warp::Rejection>(warp::reply::with_status(
+                            warp::reply::json(&serde_json::json!({"error": "Invalid path encoding"})),
+                            warp::http::StatusCode::BAD_REQUEST
+                        ).into_response());
+                    }
+                };
+                
+                let path_str = match String::from_utf8(decoded) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        return Ok(warp::reply::with_status(
+                            warp::reply::json(&serde_json::json!({"error": "Invalid path encoding"})),
+                            warp::http::StatusCode::BAD_REQUEST
+                        ).into_response());
+                    }
+                };
+
+                let file_path = PathBuf::from(&path_str);
+                
+                if !file_path.exists() {
+                    return Ok(warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"error": "File not found"})),
+                        warp::http::StatusCode::NOT_FOUND
+                    ).into_response());
+                }
+
+                // Read the entire file into memory (simpler approach)
+                let bytes = match tokio::fs::read(&file_path).await {
+                    Ok(b) => b,
+                    Err(_) => {
+                        return Ok(warp::reply::with_status(
+                            warp::reply::json(&serde_json::json!({"error": "Cannot read file"})),
+                            warp::http::StatusCode::INTERNAL_SERVER_ERROR
+                        ).into_response());
+                    }
+                };
+
+                // Determine content type
+                let content_type = match file_path.extension().and_then(|e| e.to_str()) {
+                    Some("mp4") => "video/mp4",
+                    Some("webm") => "video/webm",
+                    Some("mov") => "video/quicktime",
+                    Some("avi") => "video/x-msvideo",
+                    Some("mkv") => "video/x-matroska",
+                    _ => "application/octet-stream",
+                };
+
+                Ok(warp::reply::with_header(
+                    warp::reply::with_status(
+                        bytes,
+                        warp::http::StatusCode::OK
+                    ),
+                    "Content-Type",
+                    content_type
+                ).into_response())
+            });
+
+        let cors = warp::cors()
+            .allow_any_origin()
+            .allow_methods(vec!["GET", "OPTIONS"])
+            .allow_headers(vec!["Content-Type", "Range"]);
+
+        let routes = video_route.with(cors);
+
+    println!("Starting local video server on port {}", VIDEO_SERVER_PORT);
+    warp::serve(routes).run(([127, 0, 0, 1], VIDEO_SERVER_PORT)).await;
+    }
+}
+
 fn start_payment_callback_server(app: tauri::AppHandle) {
     use std::sync::atomic::{AtomicBool, Ordering};
     static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
@@ -257,7 +352,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .setup(|_app| {
+        .setup(|app| {
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
             
@@ -265,6 +360,12 @@ pub fn run() {
             if let Err(e) = storage::init_storage_dirs() {
                 eprintln!("[Rust] Warning: Failed to initialize storage directories: {}", e);
             }
+            
+            // Start video streaming server in Tauri's async runtime
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                start_video_server_impl().await;
+            });
             
             Ok(())
         })
@@ -275,6 +376,7 @@ pub fn run() {
             close_auth_window,
             poll_auth_result,
             poll_payment_result,
+            get_video_server_port,
             storage::get_storage_paths,
             storage::copy_video_to_storage,
             storage::generate_thumbnail,
