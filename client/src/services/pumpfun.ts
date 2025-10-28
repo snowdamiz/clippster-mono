@@ -1,5 +1,67 @@
 import { invoke } from '@tauri-apps/api/core'
 
+/**
+ * Extract mint ID from a PumpFun URL or return the input if it's already a mint ID
+ * Supports various PumpFun URL formats:
+ * - https://pump.fun/coin/9ezFthWrDUpSSeMdpLW6SDD9TJigHdc4AuQ5QN5bpump
+ * - https://pump.fun/coin/9ezFthWrDUpSSeMdpLW6SDD9TJigHdc4AuQ5QN5bpump?clip=20251027_003639%3A1430550_20251027_003524
+ * - https://pump.fun/base/xyz...
+ * @param input - Either a mint ID string or a PumpFun URL
+ * @returns The extracted mint ID or null if invalid
+ */
+export function extractMintId(input: string): string | null {
+  if (!input || typeof input !== 'string') {
+    return null
+  }
+
+  const trimmed = input.trim()
+
+  // If it looks like a mint ID already (base58-like string), return as-is
+  // Mint IDs are typically 43-44 characters and contain specific characters
+  if (/^[1-9A-HJ-NP-Za-km-z]{43,44}$/.test(trimmed)) {
+    return trimmed
+  }
+
+  // Try to parse as URL and extract mint ID
+  try {
+    const url = new URL(trimmed)
+
+    // Check if it's a pump.fun domain
+    if (!url.hostname.includes('pump.fun')) {
+      return null
+    }
+
+    // Extract path segments and look for mint ID
+    const pathSegments = url.pathname.split('/').filter(segment => segment.length > 0)
+
+    // Look for patterns like /coin/{mintId} or /base/{mintId}
+    for (let i = 0; i < pathSegments.length - 1; i++) {
+      const segment = pathSegments[i]
+      const nextSegment = pathSegments[i + 1]
+
+      // Check if this segment indicates a mint ID follows
+      if (segment === 'coin' || segment === 'base' || segment === 'mint') {
+        const potentialMintId = nextSegment
+        if (/^[1-9A-HJ-NP-Za-km-z]{43,44}$/.test(potentialMintId)) {
+          return potentialMintId
+        }
+      }
+    }
+
+    // If no explicit segment found, look for mint-like strings in the path
+    for (const segment of pathSegments) {
+      if (/^[1-9A-HJ-NP-Za-km-z]{43,44}$/.test(segment)) {
+        return segment
+      }
+    }
+
+    return null
+  } catch {
+    // Invalid URL, check if it might be a mint ID that doesn't match the pattern
+    return /^[1-9A-HJ-NP-Za-km-z]+$/.test(trimmed) ? trimmed : null
+  }
+}
+
 export interface PumpFunClip {
   clipId: string
   sessionId?: string

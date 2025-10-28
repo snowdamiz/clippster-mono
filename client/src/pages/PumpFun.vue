@@ -9,7 +9,7 @@
         <input
           v-model="mintId"
           type="text"
-          placeholder="Mint ID"
+          placeholder="Mint ID or PumpFun URL"
           class="px-4 py-2.5 bg-muted border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all"
           @keyup.enter="handleSearch"
           :disabled="loading"
@@ -38,7 +38,7 @@
         <input
           v-model="mintId"
           type="text"
-          placeholder="Mint ID"
+          placeholder="Mint ID or PumpFun URL"
           class="px-4 py-2.5 bg-muted border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all"
           disabled
         />
@@ -96,7 +96,7 @@
     <EmptyState
       v-else
       title="Search VODs on Pump"
-      description="Enter a mint ID to search for PumpFun VODs"
+      description="Enter a mint ID or PumpFun URL to search for VODs"
     >
       <template #icon>
         <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -108,7 +108,7 @@
           <input
             v-model="mintId"
             type="text"
-            placeholder="Mint ID"
+            placeholder="Mint ID or PumpFun URL"
             class="px-4 py-2.5 bg-muted border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all"
             @keyup.enter="handleSearch"
           />
@@ -134,7 +134,7 @@ import PageLayout from '@/components/PageLayout.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import VodCard from '@/components/VodCard.vue'
-import { getPumpFunClips, type PumpFunClip } from '@/services/pumpfun'
+import { getPumpFunClips, extractMintId, type PumpFunClip } from '@/services/pumpfun'
 import { useToast } from '@/composables/useToast'
 
 const { success, error: showError } = useToast()
@@ -147,25 +147,38 @@ const hasMore = ref(false)
 const total = ref(0)
 
 async function handleSearch() {
-  const trimmedMintId = mintId.value.trim()
-  
-  if (!trimmedMintId) {
-    showError('Invalid Input', 'Please enter a mint ID')
+  const input = mintId.value.trim()
+
+  if (!input) {
+    showError('Invalid Input', 'Please enter a mint ID or PumpFun URL')
     return
   }
-  
+
+  // Extract mint ID from input (supports both direct mint IDs and PumpFun URLs)
+  const extractedMintId = extractMintId(input)
+
+  if (!extractedMintId) {
+    showError('Invalid Input', 'Please enter a valid mint ID or PumpFun URL')
+    return
+  }
+
+  // Update the input field to show the extracted mint ID for clarity
+  if (input !== extractedMintId) {
+    mintId.value = extractedMintId
+  }
+
   loading.value = true
   error.value = ''
   clips.value = []
-  
+
   try {
-    const result = await getPumpFunClips(trimmedMintId, 20)
-    
+    const result = await getPumpFunClips(extractedMintId, 20)
+
     if (result.success) {
       clips.value = result.clips
       hasMore.value = result.hasMore
       total.value = result.total
-      
+
       if (result.total === 0) {
         showError('No VODs Found', 'This mint ID has no available VODs')
       } else {
