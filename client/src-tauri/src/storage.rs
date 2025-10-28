@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use tauri::Manager;
 
 /// Get the base storage directory for Clippster based on the OS
 pub fn get_storage_base_dir() -> Result<PathBuf, String> {

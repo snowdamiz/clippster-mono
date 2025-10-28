@@ -32,7 +32,7 @@
     <LoadingState v-if="loading" message="Loading videos..." />
 
     <!-- Videos Grid -->
-    <div v-else-if="videos.length > 0 || uploading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+    <div v-else-if="videos.length > 0 || uploading || activeDownloads.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
       <!-- Skeleton loader card for uploading -->
       <div v-if="uploading" class="relative bg-card border border-border rounded-xl overflow-hidden animate-pulse">
         <!-- Thumbnail skeleton -->
@@ -54,7 +54,39 @@
           <div class="h-3 bg-muted/50 rounded w-2/3"></div>
         </div>
       </div>
-      
+
+      <!-- Active download cards -->
+      <div v-for="download in activeDownloads" :key="download.id" class="relative bg-card border border-border rounded-xl overflow-hidden">
+        <!-- Thumbnail with progress overlay -->
+        <div class="aspect-video bg-muted/50 relative">
+          <div class="absolute inset-0 flex items-center justify-center">
+            <div class="flex flex-col items-center gap-3">
+              <svg class="animate-spin h-8 w-8 text-purple-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span class="text-sm text-muted-foreground">{{ download.progress.status }}</span>
+              <span class="text-xs text-purple-400">{{ Math.round(download.progress.progress) }}%</span>
+            </div>
+          </div>
+
+          <!-- Progress bar at bottom of thumbnail -->
+          <div class="absolute bottom-0 left-0 right-0 h-1 bg-black/20">
+            <div
+              class="h-full bg-gradient-to-r from-purple-500 to-indigo-500 transition-all duration-300 ease-out"
+              :style="{ width: `${download.progress.progress}%` }"
+            ></div>
+          </div>
+        </div>
+
+        <!-- Download info -->
+        <div class="p-4">
+          <h4 class="font-semibold text-foreground truncate mb-1">{{ download.title }}</h4>
+          <p class="text-xs text-muted-foreground mb-2">PumpFun Stream</p>
+          <p class="text-xs text-purple-400">{{ download.progress.status }}</p>
+        </div>
+      </div>
+
       <!-- Existing video cards -->
       <div v-for="video in videos" :key="video.id" class="group relative bg-card border border-border rounded-xl overflow-hidden hover:border-foreground/20 cursor-pointer">
         <!-- Thumbnail -->
@@ -169,10 +201,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { getAllRawVideos, createRawVideo, deleteRawVideo, type RawVideo } from '@/services/database'
 import { useFormatters } from '@/composables/useFormatters'
 import { useToast } from '@/composables/useToast'
+import { useDownloads } from '@/composables/useDownloads'
 import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
@@ -197,6 +230,18 @@ const thumbnailCache = ref<Map<string, string>>(new Map())
 const { getRelativeTime } = useFormatters()
 const { success, error } = useToast()
 
+// Downloads setup
+const {
+  initialize: initializeDownloads,
+  getActiveDownloads,
+  cleanupOldDownloads,
+  getAllDownloads
+} = useDownloads()
+
+const activeDownloads = computed(() => getActiveDownloads())
+
+let cleanupInterval: number | null = null
+
 async function loadVideos() {
   loading.value = true
   try {
@@ -218,6 +263,17 @@ async function loadVideos() {
     console.error('Failed to load videos:', error)
   } finally {
     loading.value = false
+  }
+}
+
+// Check if any downloads have completed and should be added to videos list
+async function checkForCompletedDownloads() {
+  const allDownloads = getAllDownloads()
+  const completedDownloads = allDownloads.filter(d => d.result?.success && d.rawVideoId)
+
+  if (completedDownloads.length > 0) {
+    // Reload videos list to show newly completed downloads
+    await loadVideos()
   }
 }
 
@@ -347,7 +403,23 @@ async function openVideosFolder() {
   }
 }
 
-onMounted(() => {
-  loadVideos()
+onMounted(async () => {
+  // Initialize downloads system
+  await initializeDownloads()
+
+  // Load videos
+  await loadVideos()
+
+  // Set up periodic cleanup and check for completed downloads
+  cleanupInterval = setInterval(() => {
+    cleanupOldDownloads()
+    checkForCompletedDownloads()
+  }, 2000) // Check every 2 seconds
+})
+
+onUnmounted(() => {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval)
+  }
 })
 </script>

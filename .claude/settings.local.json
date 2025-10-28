@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/brand/OneDrive/Documents/dev/clippster-prototype/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

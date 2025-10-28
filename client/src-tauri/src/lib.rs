@@ -1,6 +1,7 @@
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 use tauri::Emitter;
 use warp::Filter;
 
@@ -21,8 +22,32 @@ struct PaymentResult {
     auth_token: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DownloadProgress {
+    download_id: String,
+    progress: f64,
+    current_time: Option<f64>,
+    total_time: Option<f64>,
+    status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DownloadResult {
+    download_id: String,
+    success: bool,
+    file_path: Option<String>,
+    thumbnail_path: Option<String>,
+    duration: Option<f64>,
+    width: Option<u32>,
+    height: Option<u32>,
+    codec: Option<String>,
+    file_size: Option<u64>,
+    error: Option<String>,
+}
+
 static AUTH_RESULT: Lazy<Arc<Mutex<Option<AuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 static PAYMENT_RESULT: Lazy<Arc<Mutex<Option<PaymentResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+static ACTIVE_DOWNLOADS: Lazy<Arc<Mutex<HashMap<String, bool>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 static AUTH_SERVER_PORT: u16 = 48274;
 static PAYMENT_SERVER_PORT: u16 = 48275;
 static VIDEO_SERVER_PORT: u16 = 48276;
@@ -155,6 +180,476 @@ fn start_auth_callback_server(app: tauri::AppHandle) {
 #[tauri::command]
 fn get_video_server_port() -> u16 {
     VIDEO_SERVER_PORT
+}
+
+#[tauri::command]
+async fn test_download_command(message: String) -> Result<String, String> {
+    println!("[Rust] Test command called with message: {}", message);
+    Ok(format!("Test command received: {}", message))
+}
+
+#[tauri::command]
+async fn download_pumpfun_vod(
+    app: tauri::AppHandle,
+    download_id: String,
+    title: String,
+    video_url: String,
+    mint_id: String
+) -> Result<(), String> {
+    use tauri_plugin_shell::ShellExt;
+
+    println!("[Rust] download_pumpfun_vod called with:");
+    println!("[Rust]   download_id: {}", download_id);
+    println!("[Rust]   title: {}", title);
+    println!("[Rust]   video_url: {}", video_url);
+    println!("[Rust]   mint_id: {}", mint_id);
+
+    // Check if download already exists
+    {
+        let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
+        if downloads.contains_key(&download_id) {
+            println!("[Rust] Download already in progress: {}", download_id);
+            return Err("Download already in progress".to_string());
+        }
+        downloads.insert(download_id.clone(), true);
+        println!("[Rust] Download registered: {}", download_id);
+    }
+
+    // Clean up when done
+    let cleanup_download = {
+        let download_id = download_id.clone();
+        let downloads = ACTIVE_DOWNLOADS.clone();
+        move || {
+            println!("[Rust] Cleaning up download: {}", download_id);
+            let mut downloads = downloads.lock().unwrap();
+            downloads.remove(&download_id);
+        }
+    };
+
+    // Get storage paths
+    println!("[Rust] Getting storage paths...");
+    let paths = storage::init_storage_dirs()
+        .map_err(|e| {
+            println!("[Rust] Failed to get storage paths: {}", e);
+            format!("Failed to get storage paths: {}", e)
+        })?;
+
+    println!("[Rust] Storage paths retrieved. Videos dir: {}", paths.videos.display());
+
+    // Generate filename
+    let safe_title = title
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect::<String>();
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get timestamp: {}", e))?
+        .as_secs();
+
+    let mint_prefix = if mint_id.len() >= 8 { &mint_id[..8] } else { &mint_id };
+    let filename = format!("pumpfun_{}_{}_{}.mp4", mint_prefix, safe_title, timestamp);
+    let video_path = paths.videos.join(&filename);
+
+    println!("[Rust] Generated filename: {}", filename);
+    println!("[Rust] Full video path: {}", video_path.display());
+
+    // Send initial progress
+    println!("[Rust] Sending initial progress event...");
+    let progress_result = app.emit("download-progress", DownloadProgress {
+        download_id: download_id.clone(),
+        progress: 0.0,
+        current_time: None,
+        total_time: None,
+        status: "Starting download...".to_string(),
+    });
+
+    if let Err(e) = progress_result {
+        println!("[Rust] Failed to emit initial progress: {}", e);
+    } else {
+        println!("[Rust] Initial progress sent successfully");
+    }
+
+    // Clone app handle for use in async block
+    let app_clone = app.clone();
+    let download_id_clone = download_id.clone();
+    println!("[Rust] Starting async download task...");
+
+    let result = tokio::spawn(async move {
+        println!("[Rust] Async task started for download: {}", download_id_clone);
+
+        let shell = app_clone.shell();
+        println!("[Rust] Shell created successfully");
+
+        // Send progress update
+        println!("[Rust] Sending 'Getting video info...' progress");
+        let _ = app_clone.emit("download-progress", DownloadProgress {
+            download_id: download_id_clone.clone(),
+            progress: 5.0,
+            current_time: None,
+            total_time: None,
+            status: "Getting video info...".to_string(),
+        });
+
+        // First, get video info to get duration
+        println!("[Rust] Running ffmpeg to get video info for URL: {}", video_url);
+        let info_output = match shell.sidecar("ffmpeg") {
+            Ok(ffmpeg) => {
+                println!("[Rust] FFmpeg sidecar obtained, running info command...");
+                match ffmpeg.args([
+                    "-i", &video_url,
+                    "-f", "null",
+                    "-t", "1",  // Only read first second to get metadata quickly
+                    "-"
+                ]).output().await {
+                    Ok(output) => {
+                        println!("[Rust] FFmpeg info command completed");
+                        output
+                    }
+                    Err(e) => {
+                        println!("[Rust] Failed to run ffmpeg info command: {}", e);
+                        return Err(format!("Failed to run ffmpeg info: {}", e));
+                    }
+                }
+            }
+            Err(e) => {
+                println!("[Rust] Failed to get ffmpeg sidecar: {}", e);
+                return Err(format!("Failed to get ffmpeg sidecar: {}", e));
+            }
+        };
+
+        // Extract duration from stderr
+        let stderr = String::from_utf8_lossy(&info_output.stderr);
+        let duration = extract_duration_from_ffmpeg_output(&stderr);
+        println!("[Rust] Video duration extracted: {:?}", duration);
+
+        // Send progress update
+        println!("[Rust] Sending 'Starting download...' progress");
+        let _ = app_clone.emit("download-progress", DownloadProgress {
+            download_id: download_id_clone.clone(),
+            progress: 10.0,
+            current_time: None,
+            total_time: None,
+            status: "Starting download...".to_string(),
+        });
+
+        // Now download the video
+        println!("[Rust] Starting video download...");
+        let _ = app_clone.emit("download-progress", DownloadProgress {
+            download_id: download_id_clone.clone(),
+            progress: 20.0,
+            current_time: None,
+            total_time: None,
+            status: "Downloading video (this may take a while)...".to_string(),
+        });
+
+        let output = match shell.sidecar("ffmpeg") {
+            Ok(ffmpeg) => {
+                println!("[Rust] FFmpeg sidecar obtained for download");
+                match ffmpeg.args([
+                    "-i", &video_url,
+                    "-c:v", "copy",
+                    "-c:a", "aac",
+                    "-b:a", "128k",
+                    "-movflags", "+faststart",
+                    "-progress", "pipe:2",
+                    "-v", "error",
+                    "-y",
+                    video_path.to_str().ok_or("Invalid video path")?,
+                ]).output().await {
+                    Ok(output) => {
+                        println!("[Rust] FFmpeg download command completed");
+                        output
+                    }
+                    Err(e) => {
+                        println!("[Rust] Failed to run ffmpeg download command: {}", e);
+                        return Err(format!("Failed to run ffmpeg download: {}", e));
+                    }
+                }
+            }
+            Err(e) => {
+                println!("[Rust] Failed to get ffmpeg sidecar for download: {}", e);
+                return Err(format!("Failed to get ffmpeg sidecar for download: {}", e));
+            }
+        };
+
+        if !output.status.success() {
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            println!("[Rust] FFmpeg download failed: {}", error_msg);
+            return Err(format!("FFmpeg download failed: {}", error_msg));
+        }
+
+        println!("[Rust] Download completed successfully");
+
+        // Get file metadata
+        let metadata = match std::fs::metadata(&video_path) {
+            Ok(meta) => {
+                println!("[Rust] File metadata obtained, size: {} bytes", meta.len());
+                meta
+            }
+            Err(e) => {
+                println!("[Rust] Failed to get file metadata: {}", e);
+                return Err(format!("Failed to get file metadata: {}", e));
+            }
+        };
+        let file_size = metadata.len();
+
+        // Generate thumbnail
+        println!("[Rust] Generating thumbnail...");
+        let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
+        let thumbnail_result = match shell.sidecar("ffmpeg") {
+            Ok(ffmpeg) => {
+                match ffmpeg.args([
+                    "-i", video_path.to_str().ok_or("Invalid video path")?,
+                    "-ss", "00:00:01",
+                    "-vframes", "1",
+                    "-vf", "scale=320:-1",
+                    "-y",
+                    thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
+                ]).output().await {
+                    Ok(output) => {
+                        println!("[Rust] Thumbnail generation completed, success: {}", output.status.success());
+                        Some(output)
+                    }
+                    Err(e) => {
+                        println!("[Rust] Failed to generate thumbnail: {}", e);
+                        None
+                    }
+                }
+            }
+            Err(e) => {
+                println!("[Rust] Failed to get ffmpeg for thumbnail: {}", e);
+                None
+            }
+        };
+
+        let thumbnail_path_str = if let Some(ref result) = thumbnail_result {
+            if result.status.success() {
+                println!("[Rust] Thumbnail saved to: {}", thumbnail_path.display());
+                Some(thumbnail_path.to_string_lossy().to_string())
+            } else {
+                println!("[Rust] Thumbnail generation failed");
+                None
+            }
+        } else {
+            println!("[Rust] No thumbnail result");
+            None
+        };
+
+        // Get video dimensions and codec info
+        println!("[Rust] Getting detailed video info...");
+        let video_info = get_video_info(&app_clone, &video_path).await.ok();
+        let (width, height, codec) = if let Some(ref info) = video_info {
+            println!("[Rust] Video info - width: {}, height: {}, codec: {}", info.width, info.height, info.codec);
+            (Some(info.width), Some(info.height), Some(info.codec.clone()))
+        } else {
+            println!("[Rust] Could not get detailed video info");
+            (None, None, None)
+        };
+
+        println!("[Rust] Download task completed successfully");
+        Ok(DownloadResult {
+            download_id: download_id_clone,
+            success: true,
+            file_path: Some(video_path.to_string_lossy().to_string()),
+            thumbnail_path: thumbnail_path_str,
+            duration,
+            width,
+            height,
+            codec,
+            file_size: Some(file_size),
+            error: None,
+        })
+    }).await;
+
+    println!("[Rust] Async task completed");
+
+    cleanup_download();
+
+    println!("[Rust] Processing download result...");
+    match result {
+        Ok(Ok(download_result)) => {
+            println!("[Rust] Download successful! File: {:?}", download_result.file_path);
+
+            // Send final progress
+            println!("[Rust] Sending completion progress (100%)");
+            let progress_result = app.emit("download-progress", DownloadProgress {
+                download_id: download_id.clone(),
+                progress: 100.0,
+                current_time: None,
+                total_time: None,
+                status: "Download completed!".to_string(),
+            });
+
+            if let Err(e) = progress_result {
+                println!("[Rust] Failed to send completion progress: {}", e);
+            }
+
+            // Send completion event
+            println!("[Rust] Sending completion event...");
+            let completion_result = app.emit("download-complete", download_result);
+            if let Err(e) = completion_result {
+                println!("[Rust] Failed to send completion event: {}", e);
+            } else {
+                println!("[Rust] Completion event sent successfully");
+            }
+
+            Ok(())
+        }
+        Ok(Err(e)) => {
+            let error_msg = format!("Download failed: {}", e);
+            println!("[Rust] Download failed: {}", error_msg);
+
+            // Send error progress
+            let _ = app.emit("download-progress", DownloadProgress {
+                download_id: download_id.clone(),
+                progress: 0.0,
+                current_time: None,
+                total_time: None,
+                status: error_msg.clone(),
+            });
+
+            // Send error event
+            let _ = app.emit("download-complete", DownloadResult {
+                download_id,
+                success: false,
+                file_path: None,
+                thumbnail_path: None,
+                duration: None,
+                width: None,
+                height: None,
+                codec: None,
+                file_size: None,
+                error: Some(error_msg),
+            });
+
+            Err(e)
+        }
+        Err(e) => {
+            let error_msg = format!("Download task failed: {}", e);
+            println!("[Rust] Download task failed: {}", error_msg);
+
+            // Send error progress
+            let _ = app.emit("download-progress", DownloadProgress {
+                download_id: download_id.clone(),
+                progress: 0.0,
+                current_time: None,
+                total_time: None,
+                status: error_msg.clone(),
+            });
+
+            // Send error event
+            let _ = app.emit("download-complete", DownloadResult {
+                download_id,
+                success: false,
+                file_path: None,
+                thumbnail_path: None,
+                duration: None,
+                width: None,
+                height: None,
+                codec: None,
+                file_size: None,
+                error: Some(error_msg),
+            });
+
+            Err(format!("Download task failed: {}", e))
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct VideoInfo {
+    width: u32,
+    height: u32,
+    codec: String,
+}
+
+async fn get_video_info(app: &tauri::AppHandle, video_path: &std::path::Path) -> Result<VideoInfo, String> {
+    use tauri_plugin_shell::ShellExt;
+
+    let output = app.shell()
+        .sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args([
+            "-i", video_path.to_str().ok_or("Invalid video path")?,
+            "-f", "null",
+            "-"
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg info: {}", e))?;
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    parse_video_info_from_ffmpeg_output(&stderr)
+}
+
+fn parse_video_info_from_ffmpeg_output(output: &str) -> Result<VideoInfo, String> {
+    // Parse video stream info from FFmpeg output
+    let mut width = None;
+    let mut height = None;
+    let mut codec = None;
+
+    for line in output.lines() {
+        if line.contains("Video:") {
+            // Extract resolution
+            if let Some(res_start) = line.find('(') {
+                if let Some(res_end) = line[res_start..].find(')') {
+                    let res_end_absolute = res_start + res_end;
+                    let resolution = &line[res_start + 1..res_end_absolute];
+                    if let Some(space_pos) = resolution.find(' ') {
+                        let res_parts: Vec<&str> = resolution[..space_pos].split('x').collect();
+                        if res_parts.len() == 2 {
+                            width = res_parts[0].parse().ok();
+                            height = res_parts[1].parse().ok();
+                        }
+                    }
+                }
+            }
+
+            // Extract codec
+            if let Some(codec_start) = line.find("Video: ") {
+                let codec_part = &line[codec_start + 7..];
+                if let Some(space_pos) = codec_part.find(' ') {
+                    codec = Some(codec_part[..space_pos].to_string());
+                }
+            }
+        }
+    }
+
+    match (width, height, codec) {
+        (Some(w), Some(h), Some(c)) => Ok(VideoInfo { width: w, height: h, codec: c }),
+        _ => Err("Could not parse video info".to_string()),
+    }
+}
+
+fn extract_duration_from_ffmpeg_output(output: &str) -> Option<f64> {
+    // Look for duration in format: Duration: 00:01:23.45
+    for line in output.lines() {
+        if line.contains("Duration:") {
+            if let Some(duration_start) = line.find("Duration: ") {
+                let duration_part = &line[duration_start + 10..];
+                if let Some(comma_pos) = duration_part.find(',') {
+                    let duration_str = &duration_part[..comma_pos];
+                    return parse_duration_string(duration_str);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn parse_duration_string(duration_str: &str) -> Option<f64> {
+    // Parse format HH:MM:SS.ms
+    let parts: Vec<&str> = duration_str.split(':').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+
+    let hours: f64 = parts[0].parse().ok()?;
+    let minutes: f64 = parts[1].parse().ok()?;
+    let seconds: f64 = parts[2].parse().ok()?;
+
+    Some(hours * 3600.0 + minutes * 60.0 + seconds)
 }
 
 #[tauri::command]
@@ -424,7 +919,7 @@ pub fn run() {
             }
             
             // Start video streaming server in Tauri's async runtime
-            let app_handle = app.handle().clone();
+            let _app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 start_video_server_impl().await;
             });
@@ -440,6 +935,8 @@ pub fn run() {
             poll_payment_result,
             get_video_server_port,
             get_pumpfun_clips,
+            test_download_command,
+            download_pumpfun_vod,
             storage::get_storage_paths,
             storage::copy_video_to_storage,
             storage::generate_thumbnail,

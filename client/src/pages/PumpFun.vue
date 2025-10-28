@@ -204,8 +204,11 @@ import EmptyState from '@/components/EmptyState.vue'
 import VodCard from '@/components/VodCard.vue'
 import { getPumpFunClips, extractMintId, type PumpFunClip } from '@/services/pumpfun'
 import { useToast } from '@/composables/useToast'
+import { useDownloads } from '@/composables/useDownloads'
+import { invoke } from '@tauri-apps/api/core'
 
 const { success, error: showError } = useToast()
+const { startDownload } = useDownloads()
 
 const mintId = ref('')
 const loading = ref(false)
@@ -309,8 +312,37 @@ async function downloadClipConfirmed() {
   if (!clipToDownload.value) return
 
   try {
-    // TODO: Implement actual download logic
-    console.log('Download clip:', clipToDownload.value)
+    console.log('[PumpFun] Starting download for clip:', clipToDownload.value)
+
+    // Get the best available video URL
+    const videoUrl = clipToDownload.value.mp4Url || clipToDownload.value.playlistUrl
+
+    console.log('[PumpFun] Video URL:', videoUrl)
+    console.log('[PumpFun] Mint ID:', mintId.value)
+
+    if (!videoUrl) {
+      throw new Error('No video URL available for this VOD')
+    }
+
+    // Test invoke functionality first
+    console.log('[PumpFun] Testing invoke functionality...')
+    try {
+      const testResult = await invoke('test_download_command', { message: 'Test from frontend' })
+      console.log('[PumpFun] Test invoke result:', testResult)
+    } catch (testError) {
+      console.error('[PumpFun] Test invoke failed:', testError)
+      throw new Error(`Invoke system not working: ${testError}`)
+    }
+
+    // Start the download
+    console.log('[PumpFun] Calling startDownload...')
+    const downloadId = await startDownload(
+      clipToDownload.value.title,
+      videoUrl,
+      mintId.value
+    )
+
+    console.log('[PumpFun] Download started with ID:', downloadId)
 
     // Show success toast
     success('Download Started', `Downloading "${clipToDownload.value.title}"`)
@@ -318,9 +350,14 @@ async function downloadClipConfirmed() {
     // Close dialog
     showDownloadDialog.value = false
     clipToDownload.value = null
+
+    console.log('[PumpFun] Dialog closed, download process initiated')
+
+    // Optionally navigate to Videos page to see progress
+    // router.push('/videos')
   } catch (err) {
     console.error('Failed to download clip:', err)
-    showError('Download Failed', `Failed to download "${clipToDownload.value?.title}"`)
+    showError('Download Failed', `Failed to download "${clipToDownload.value?.title}": ${err}`)
   }
 }
 </script>
