@@ -201,8 +201,11 @@ function confirmDelete(prompt: Prompt) {
 async function deletePromptConfirmed() {
   if (!promptToDelete.value) return
   
+  const deletedPromptName = promptToDelete.value.name
+  
   try {
     await deletePrompt(promptToDelete.value.id)
+    success('Prompt deleted', `"${deletedPromptName}" has been deleted successfully`)
     await loadPrompts()
   } catch (error) {
     console.error('Failed to delete prompt:', error)
