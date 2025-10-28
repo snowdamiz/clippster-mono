@@ -83,11 +83,12 @@
       </div>
       
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <VodCard 
-          v-for="clip in clips" 
-          :key="clip.clipId" 
+        <VodCard
+          v-for="clip in clips"
+          :key="clip.clipId"
           :clip="clip"
           @click="handleClipClick(clip)"
+          @download="handleDownloadClip"
         />
       </div>
     </div>
@@ -125,11 +126,54 @@
         </div>
       </template>
     </EmptyState>
+
+    <!-- Download Confirmation Modal -->
+    <div
+      v-if="showDownloadDialog"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+      @click.self="showDownloadDialog = false"
+    >
+      <div class="bg-card rounded-2xl p-8 max-w-md w-full mx-4 border border-border">
+        <h2 class="text-2xl font-bold mb-4">Download Stream</h2>
+
+        <div class="space-y-4">
+          <p class="text-muted-foreground">
+            Are you sure you want to download "<span class="font-semibold text-foreground">{{ clipToDownload?.title }}</span>"? This will download the full stream to your device.
+          </p>
+
+          <!-- Stream Details -->
+          <div class="bg-muted/50 rounded-lg p-4 space-y-2">
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-muted-foreground">Stream Length:</span>
+              <span class="font-medium text-foreground">{{ formatDuration(clipToDownload?.duration) }}</span>
+            </div>
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-muted-foreground">Estimated Download Time:</span>
+              <span class="font-medium text-foreground">{{ estimatedDownloadTime }}</span>
+            </div>
+          </div>
+
+          <button
+            class="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all"
+            @click="downloadClipConfirmed"
+          >
+            Download
+          </button>
+
+          <button
+            class="w-full py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 transition-all"
+            @click="showDownloadDialog = false"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
   </PageLayout>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import PageLayout from '@/components/PageLayout.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -145,6 +189,37 @@ const error = ref('')
 const clips = ref<PumpFunClip[]>([])
 const hasMore = ref(false)
 const total = ref(0)
+const showDownloadDialog = ref(false)
+const clipToDownload = ref<PumpFunClip | null>(null)
+
+// Computed properties for dialog
+const formatDuration = (duration?: number) => {
+  if (!duration) return 'Unknown'
+  const hours = Math.floor(duration / 3600)
+  const minutes = Math.floor((duration % 3600) / 60)
+  const seconds = Math.floor(duration % 60)
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds}s`
+  } else {
+    return `${seconds}s`
+  }
+}
+
+const estimatedDownloadTime = computed(() => {
+  if (!clipToDownload.value?.duration) return 'Unknown'
+
+  // Estimate based on 1 GB per hour of video content
+  const estimatedSizeGB = (clipToDownload.value.duration / 3600) * 1
+  // Assume average download speed of 50 Mbps
+  const avgDownloadSpeedMbps = 50
+  // Convert GB to Mb and calculate download time in seconds
+  const downloadTimeSeconds = (estimatedSizeGB * 8000) / avgDownloadSpeedMbps
+
+  return formatDuration(downloadTimeSeconds)
+})
 
 async function handleSearch() {
   const input = mintId.value.trim()
@@ -199,5 +274,29 @@ async function handleSearch() {
 function handleClipClick(clip: PumpFunClip) {
   console.log('Clicked clip:', clip)
   // TODO: Implement clip playback or details view
+}
+
+function handleDownloadClip(clip: PumpFunClip) {
+  clipToDownload.value = clip
+  showDownloadDialog.value = true
+}
+
+async function downloadClipConfirmed() {
+  if (!clipToDownload.value) return
+
+  try {
+    // TODO: Implement actual download logic
+    console.log('Download clip:', clipToDownload.value)
+
+    // Show success toast
+    success('Download Started', `Downloading "${clipToDownload.value.title}"`)
+
+    // Close dialog
+    showDownloadDialog.value = false
+    clipToDownload.value = null
+  } catch (err) {
+    console.error('Failed to download clip:', err)
+    showError('Download Failed', `Failed to download "${clipToDownload.value?.title}"`)
+  }
 }
 </script>
