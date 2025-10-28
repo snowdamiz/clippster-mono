@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import Toast from '@/components/Toast.vue'
-import { initDatabase } from '@/services/database'
+import { initDatabase, seedDefaultPrompt } from '@/services/database'
 
 // Ensure dark mode is always applied and initialize database
 onMounted(async () => {
@@ -12,6 +12,9 @@ onMounted(async () => {
   try {
     await initDatabase()
     console.log('[App] Database initialized successfully')
+    
+    // Seed default prompt if it doesn't exist
+    await seedDefaultPrompt()
   } catch (error) {
     console.error('[App] Failed to initialize database:', error)
   }
