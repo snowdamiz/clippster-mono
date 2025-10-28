@@ -172,6 +172,7 @@
 import { ref, onMounted } from 'vue'
 import { getAllRawVideos, createRawVideo, deleteRawVideo, type RawVideo } from '@/services/database'
 import { useFormatters } from '@/composables/useFormatters'
+import { useToast } from '@/composables/useToast'
 import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
@@ -194,6 +195,7 @@ const videoToPlay = ref<RawVideo | null>(null)
 const videoSrc = ref<string | null>(null)
 const thumbnailCache = ref<Map<string, string>>(new Map())
 const { getRelativeTime } = useFormatters()
+const { success, error } = useToast()
 
 async function loadVideos() {
   loading.value = true
@@ -261,11 +263,14 @@ async function handleUpload() {
       thumbnailPath
     })
     
+    // Show success toast
+    success('Video uploaded', `"${result.original_filename}" has been uploaded successfully`)
+    
     // Reload videos list
     await loadVideos()
-  } catch (error) {
-    console.error('Failed to upload video:', error)
-    alert(`Failed to upload video: ${error}`)
+  } catch (err) {
+    console.error('Failed to upload video:', err)
+    error('Upload failed', `Failed to upload video: ${err}`)
   } finally {
     uploading.value = false
   }
@@ -280,9 +285,9 @@ async function playVideo(video: RawVideo) {
     const encodedPath = btoa(video.file_path)
     videoSrc.value = `http://localhost:${port}/video/${encodedPath}`
     showVideoPlayer.value = true
-  } catch (error) {
-    console.error('Failed to prepare video:', error)
-    alert(`Failed to load video: ${error}`)
+  } catch (err) {
+    console.error('Failed to prepare video:', err)
+    error('Playback failed', 'Unable to load the video for playback')
   }
 }
 
@@ -293,6 +298,8 @@ function confirmDelete(video: RawVideo) {
 
 async function deleteVideoConfirmed() {
   if (!videoToDelete.value) return
+  
+  const deletedVideoName = videoToDelete.value.original_filename || videoToDelete.value.file_path.split(/[\\\/]/).pop() || 'Video'
   
   try {
     // Delete the video file and thumbnail from the filesystem first
@@ -309,10 +316,13 @@ async function deleteVideoConfirmed() {
       thumbnailCache.value.delete(videoToDelete.value.id)
     }
     
+    // Show success toast
+    success('Video deleted', `"${deletedVideoName}" has been deleted successfully`)
+    
     await loadVideos()
-  } catch (error) {
-    console.error('Failed to delete video:', error)
-    alert(`Failed to delete video: ${error}`)
+  } catch (err) {
+    console.error('Failed to delete video:', err)
+    error('Delete failed', `Failed to delete video: ${err}`)
   } finally {
     showDeleteDialog.value = false
     videoToDelete.value = null
@@ -331,9 +341,9 @@ async function openVideosFolder() {
       // The file doesn't need to exist, revealItemInDir will still open the parent folder
       await revealItemInDir(videosPath + '\\dummy.mp4')
     }
-  } catch (error) {
-    console.error('Failed to open videos folder:', error)
-    alert(`Failed to open videos folder: ${error}`)
+  } catch (err) {
+    console.error('Failed to open videos folder:', err)
+    error('Failed to open folder', 'Unable to open the videos folder')
   }
 }
 
