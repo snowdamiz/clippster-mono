@@ -152,7 +152,7 @@ import LoadingState from '@/components/LoadingState.vue'
 import EmptyState from '@/components/EmptyState.vue'
 
 const router = useRouter()
-const { success } = useToast()
+const { success, error } = useToast()
 const prompts = ref<Prompt[]>([])
 const loading = ref(true)
 const { getRelativeTime } = useFormatters()
@@ -168,8 +168,9 @@ async function loadPrompts() {
   loading.value = true
   try {
     prompts.value = await getAllPrompts()
-  } catch (error) {
-    console.error('Failed to load prompts:', error)
+  } catch (err) {
+    console.error('Failed to load prompts:', err)
+    error('Failed to load prompts', 'An error occurred while loading prompts. Please try again.')
   } finally {
     loading.value = false
   }
@@ -207,8 +208,9 @@ async function deletePromptConfirmed() {
     await deletePrompt(promptToDelete.value.id)
     success('Prompt deleted', `"${deletedPromptName}" has been deleted successfully`)
     await loadPrompts()
-  } catch (error) {
-    console.error('Failed to delete prompt:', error)
+  } catch (err) {
+    console.error('Failed to delete prompt:', err)
+    error('Failed to delete prompt', 'An error occurred while deleting the prompt. Please try again.')
   } finally {
     showDeleteDialog.value = false
     promptToDelete.value = null

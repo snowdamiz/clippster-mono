@@ -296,7 +296,7 @@ import { useToast } from '@/composables/useToast'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 const authStore = useAuthStore()
-const { success: showSuccessToast } = useToast()
+const { success: showSuccessToast, error: showErrorToast } = useToast()
 
 const loading = ref(true)
 const packs = ref<any>({})
@@ -433,6 +433,7 @@ async function initiatePayment() {
         errorMessage.value = error.message || 'Payment verification failed'
         paymentStep.value = 'error'
         processing.value = false
+        showErrorToast('Payment verification failed', error.message || 'An error occurred while verifying your payment. Please contact support.')
         unlisten()
       }
     })
@@ -455,6 +456,7 @@ async function initiatePayment() {
     errorMessage.value = error.message || 'Failed to open payment window'
     paymentStep.value = 'error'
     processing.value = false
+    showErrorToast('Payment failed', error.message || 'An error occurred while processing your payment. Please try again.')
   }
 }
 

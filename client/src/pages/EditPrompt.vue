@@ -207,7 +207,7 @@ import LoadingState from '@/components/LoadingState.vue'
 
 const router = useRouter()
 const route = useRoute()
-const { success } = useToast()
+const { success, error } = useToast()
 const loading = ref(true)
 const saving = ref(false)
 const prompt = ref<Prompt | null>(null)
@@ -295,8 +295,9 @@ async function loadPrompt() {
       // Set breadcrumb title
       setBreadcrumbTitle(data.name)
     }
-  } catch (error) {
-    console.error('Failed to load prompt:', error)
+  } catch (err) {
+    console.error('Failed to load prompt:', err)
+    error('Failed to load prompt', 'An error occurred while loading the prompt. Please try again.')
   } finally {
     loading.value = false
   }
@@ -315,8 +316,9 @@ async function handleSubmit() {
     await updatePrompt(prompt.value.id, formData.name.trim(), formData.content.trim())
     success('Prompt updated', `"${formData.name.trim()}" has been updated successfully`)
     router.push('/dashboard/prompts')
-  } catch (error) {
-    console.error('Failed to update prompt:', error)
+  } catch (err) {
+    console.error('Failed to update prompt:', err)
+    error('Failed to update prompt', 'An error occurred while updating the prompt. Please try again.')
   } finally {
     saving.value = false
   }

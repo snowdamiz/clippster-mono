@@ -215,7 +215,7 @@ import { useToast } from '@/composables/useToast'
 import PageLayout from '@/components/PageLayout.vue'
 
 const router = useRouter()
-const { success } = useToast()
+const { success, error } = useToast()
 const saving = ref(false)
 const nameInput = ref<HTMLInputElement | null>(null)
 const nameError = ref('')
@@ -360,9 +360,9 @@ async function handleSubmit() {
     success('Prompt created', `"${formData.name.trim()}" has been created successfully`)
     // Navigate back to prompts list
     router.push('/dashboard/prompts')
-  } catch (error) {
-    console.error('Failed to create prompt:', error)
-    // TODO: Add error notification
+  } catch (err) {
+    console.error('Failed to create prompt:', err)
+    error('Failed to create prompt', 'An error occurred while creating the prompt. Please try again.')
   } finally {
     saving.value = false
   }
