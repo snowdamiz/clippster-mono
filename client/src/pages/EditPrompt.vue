@@ -25,9 +25,9 @@
     </div>
 
     <!-- Edit Form -->
-    <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-5">
-      <!-- Main Form - Left Side (2/3 width) -->
-      <div class="lg:col-span-2">
+    <div v-else>
+      <!-- Main Form -->
+      <div>
         <!-- Form Card -->
         <div class="bg-card border border-border rounded-xl p-6 shadow-sm">
           <form @submit.prevent="handleSubmit" class="space-y-6">
@@ -49,15 +49,7 @@
                 placeholder="e.g., Viral Shorts Creator, Tutorial Intro Template"
                 class="w-full px-3.5 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/10 text-foreground placeholder:text-muted-foreground transition-all"
                 required
-                :class="{ 'border-red-500/50 focus:border-red-500/50 focus:ring-red-500/10': nameError }"
-                @blur="validateName"
               />
-              <p v-if="nameError" class="text-xs text-red-500 flex items-center gap-1.5 mt-1">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
-                </svg>
-                {{ nameError }}
-              </p>
             </div>
 
             <!-- Content Field -->
@@ -66,8 +58,7 @@
               label="Prompt Content"
               :required="true"
               placeholder="Write your AI prompt here... Be specific about the task and desired output."
-              :error="contentError"
-              @blur="validateContent"
+              height="600px"
             />
 
             <!-- Actions -->
@@ -112,10 +103,9 @@
             </div>
           </form>
         </div>
-      </div>
 
-      <!-- Tips & Help - Right Side (1/3 width) -->
-      <div class="space-y-4">
+        <!-- Tips & Help - Bottom Section -->
+        <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
         <!-- Quick Tips Card -->
         <div class="bg-gradient-to-br from-purple-500/5 to-indigo-500/5 border border-purple-500/20 rounded-xl p-5 space-y-3">
           <div class="flex items-center gap-2.5">
@@ -153,6 +143,7 @@
             </li>
           </ul>
         </div>
+        </div>
       </div>
     </div>
   </PageLayout>
@@ -175,8 +166,6 @@ const loading = ref(true)
 const saving = ref(false)
 const prompt = ref<Prompt | null>(null)
 const nameInput = ref<HTMLInputElement | null>(null)
-const nameError = ref('')
-const contentError = ref('')
 
 // Use breadcrumb composable
 const { setBreadcrumbTitle, clearBreadcrumbTitle } = useBreadcrumb()
@@ -193,9 +182,7 @@ const originalData = reactive({
 
 const isFormValid = computed(() => {
   return formData.name.trim().length > 0 && 
-         formData.content.trim().length > 0 &&
-         !nameError.value &&
-         !contentError.value
+         formData.content.trim().length > 0
 })
 
 const hasChanges = computed(() => {
@@ -203,36 +190,10 @@ const hasChanges = computed(() => {
          formData.content !== originalData.content
 })
 
-function validateName() {
-  if (!formData.name.trim()) {
-    nameError.value = 'Prompt name is required'
-  } else if (formData.name.trim().length < 3) {
-    nameError.value = 'Name must be at least 3 characters'
-  } else {
-    nameError.value = ''
-  }
-}
-
-function validateContent() {
-  if (!formData.content.trim()) {
-    contentError.value = 'Prompt content is required'
-  } else if (formData.content.trim().length < 10) {
-    contentError.value = 'Content must be at least 10 characters'
-  } else {
-    contentError.value = ''
-  }
-}
-
-function clearContent() {
-  formData.content = ''
-  contentError.value = ''
-}
 
 function resetForm() {
   formData.name = originalData.name
   formData.content = originalData.content
-  nameError.value = ''
-  contentError.value = ''
   nameInput.value?.focus()
 }
 
@@ -261,9 +222,6 @@ async function loadPrompt() {
 }
 
 async function handleSubmit() {
-  validateName()
-  validateContent()
-  
   if (!isFormValid.value || !hasChanges.value || !prompt.value) {
     return
   }
