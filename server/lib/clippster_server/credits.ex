@@ -138,6 +138,17 @@ defmodule ClippsterServer.Credits do
   end
 
   @doc """
+  Adds hours to user balance
+  """
+  def add_credits(user_id, hours) do
+    {:ok, user_credit} = get_or_create_user_credits(user_id)
+
+    user_credit
+    |> UserCredit.add_hours_changeset(hours)
+    |> Repo.update()
+  end
+
+  @doc """
   Deducts hours from user balance (for video processing)
   """
   def deduct_credits(user_id, hours) do

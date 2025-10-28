@@ -6,6 +6,7 @@ defmodule ClippsterServer.Accounts do
   import Ecto.Query, warn: false
   alias ClippsterServer.Repo
   alias ClippsterServer.Accounts.User
+  alias ClippsterServer.Credits
 
   @doc """
   Gets a user by ID.
@@ -33,16 +34,29 @@ defmodule ClippsterServer.Accounts do
 
   @doc """
   Creates a user. If this is the first user, they are marked as admin.
+  New users automatically receive 1 free hour of credits.
   """
   def create_user(wallet_address) do
     is_first_user = Repo.aggregate(User, :count) == 0
 
-    %User{}
-    |> User.changeset(%{
-      wallet_address: wallet_address,
-      is_admin: is_first_user
-    })
-    |> Repo.insert()
+    Repo.transaction(fn ->
+      # Create the user
+      user = %User{}
+        |> User.changeset(%{
+          wallet_address: wallet_address,
+          is_admin: is_first_user
+        })
+        |> Repo.insert!()
+
+      # Give new user 1 free hour of credits
+      {:ok, _user_credit} = Credits.add_credits(user.id, 1)
+
+      user
+    end)
+    |> case do
+      {:ok, user} -> {:ok, user}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   @doc """
