@@ -32,7 +32,30 @@
     <LoadingState v-if="loading" message="Loading videos..." />
 
     <!-- Videos Grid -->
-    <div v-else-if="videos.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+    <div v-else-if="videos.length > 0 || uploading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+      <!-- Skeleton loader card for uploading -->
+      <div v-if="uploading" class="relative bg-card border border-border rounded-xl overflow-hidden animate-pulse">
+        <!-- Thumbnail skeleton -->
+        <div class="aspect-video bg-muted/50 relative">
+          <div class="absolute inset-0 flex items-center justify-center">
+            <div class="flex flex-col items-center gap-3">
+              <svg class="animate-spin h-8 w-8 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span class="text-sm text-muted-foreground">Uploading...</span>
+            </div>
+          </div>
+        </div>
+        <!-- Info skeleton -->
+        <div class="p-4">
+          <div class="h-5 bg-muted/50 rounded mb-2 w-3/4"></div>
+          <div class="h-3 bg-muted/50 rounded mb-2 w-1/2"></div>
+          <div class="h-3 bg-muted/50 rounded w-2/3"></div>
+        </div>
+      </div>
+      
+      <!-- Existing video cards -->
       <div v-for="video in videos" :key="video.id" class="group relative bg-card border border-border rounded-xl overflow-hidden hover:border-foreground/20 cursor-pointer">
         <!-- Thumbnail -->
         <div class="aspect-video bg-muted/50 relative">
@@ -78,7 +101,7 @@
 
     <!-- Empty State -->
     <EmptyState
-      v-else
+      v-else-if="!uploading"
       title="No videos yet"
       description="Upload your first raw video or download directly from Pump.fun to get started"
       button-text="Upload Video"
@@ -272,7 +295,20 @@ async function deleteVideoConfirmed() {
   if (!videoToDelete.value) return
   
   try {
+    // Delete the video file and thumbnail from the filesystem first
+    await invoke('delete_video_file', {
+      filePath: videoToDelete.value.file_path,
+      thumbnailPath: videoToDelete.value.thumbnail_path || undefined
+    })
+    
+    // Then delete from database
     await deleteRawVideo(videoToDelete.value.id)
+    
+    // Remove from thumbnail cache if exists
+    if (videoToDelete.value.id && thumbnailCache.value.has(videoToDelete.value.id)) {
+      thumbnailCache.value.delete(videoToDelete.value.id)
+    }
+    
     await loadVideos()
   } catch (error) {
     console.error('Failed to delete video:', error)

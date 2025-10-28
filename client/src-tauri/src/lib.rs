@@ -380,7 +380,8 @@ pub fn run() {
             storage::get_storage_paths,
             storage::copy_video_to_storage,
             storage::generate_thumbnail,
-            storage::read_file_as_data_url
+            storage::read_file_as_data_url,
+            storage::delete_video_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

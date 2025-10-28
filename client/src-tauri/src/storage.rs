@@ -28,6 +28,32 @@ pub fn get_storage_base_dir() -> Result<PathBuf, String> {
     Ok(base_dir)
 }
 
+/// Tauri command to delete a video file from the filesystem
+#[tauri::command]
+pub fn delete_video_file(file_path: String, thumbnail_path: Option<String>) -> Result<(), String> {
+    use std::fs;
+    use std::path::Path;
+    
+    let video_path = Path::new(&file_path);
+    
+    // Delete the video file if it exists
+    if video_path.exists() {
+        fs::remove_file(video_path)
+            .map_err(|e| format!("Failed to delete video file: {}", e))?;
+    }
+    
+    // Delete the thumbnail file if it exists
+    if let Some(thumb_path) = thumbnail_path {
+        let thumbnail = Path::new(&thumb_path);
+        if thumbnail.exists() {
+            // Ignore thumbnail deletion errors (not critical)
+            let _ = fs::remove_file(thumbnail);
+        }
+    }
+    
+    Ok(())
+}
+
 /// Initialize storage directories, creating them if they don't exist
 pub fn init_storage_dirs() -> Result<StoragePaths, String> {
     let base_dir = get_storage_base_dir()?;
