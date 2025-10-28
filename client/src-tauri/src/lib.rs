@@ -207,16 +207,43 @@ pub fn run() {
             tauri_plugin_sql::Builder::default()
                 .add_migrations(
                     "sqlite:clippster.db",
-                    vec![tauri_plugin_sql::Migration {
-                        version: 1,
-                        description: "initial_schema",
-                        sql: include_str!("../migrations/001_initial_schema.sql"),
-                        kind: tauri_plugin_sql::MigrationKind::Up,
-                    }],
+                    vec![
+                        tauri_plugin_sql::Migration {
+                            version: 1,
+                            description: "initial_schema",
+                            sql: include_str!("../migrations/001_initial_schema.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 2,
+                            description: "add_raw_video_path",
+                            sql: include_str!("../migrations/002_add_raw_video_path.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 3,
+                            description: "add_raw_videos_table",
+                            sql: include_str!("../migrations/003_add_raw_videos_table.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 4,
+                            description: "transcripts_reference_raw_videos",
+                            sql: include_str!("../migrations/004_transcripts_reference_raw_videos.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 5,
+                            description: "make_project_id_nullable",
+                            sql: include_str!("../migrations/005_make_project_id_nullable.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                    ],
                 )
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|_app| {
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
@@ -235,7 +262,8 @@ pub fn run() {
             close_auth_window,
             poll_auth_result,
             poll_payment_result,
-            storage::get_storage_paths
+            storage::get_storage_paths,
+            storage::copy_video_to_storage
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

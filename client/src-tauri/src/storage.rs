@@ -106,3 +106,43 @@ pub struct StoragePathsResponse {
     pub outros: String,
     pub temp: String,
 }
+
+/// Tauri command to copy a video file to storage
+#[tauri::command]
+pub fn copy_video_to_storage(source_path: String) -> Result<String, String> {
+    use std::fs;
+    use std::path::Path;
+    
+    let source = Path::new(&source_path);
+    
+    // Validate source file exists
+    if !source.exists() {
+        return Err("Source file does not exist".to_string());
+    }
+    
+    // Get file extension
+    let extension = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .ok_or("File has no extension")?;
+    
+    // Generate unique filename using timestamp and random component
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get timestamp: {}", e))?
+        .as_secs();
+    
+    let random_suffix: u32 = rand::random();
+    let filename = format!("video_{}_{}.{}", timestamp, random_suffix, extension);
+    
+    // Get storage paths
+    let paths = init_storage_dirs()?;
+    let destination = paths.videos.join(&filename);
+    
+    // Copy the file
+    fs::copy(source, &destination)
+        .map_err(|e| format!("Failed to copy file: {}", e))?;
+    
+    // Return the destination path as a string
+    Ok(destination.to_string_lossy().to_string())
+}

@@ -135,6 +135,20 @@ export interface Thumbnail {
   created_at: number
 }
 
+export interface RawVideo {
+  id: string
+  project_id: string | null
+  file_path: string
+  duration: number | null
+  width: number | null
+  height: number | null
+  frame_rate: number | null
+  codec: string | null
+  file_size: number | null
+  created_at: number
+  updated_at: number
+}
+
 // Helper to generate timestamps
 export function timestamp(): number {
   return Math.floor(Date.now() / 1000)
@@ -545,4 +559,62 @@ export async function getThumbnailByClipId(clipId: string): Promise<Thumbnail | 
     [clipId]
   )
   return result[0] || null
+}
+
+// RawVideo queries
+export async function createRawVideo(
+  filePath: string,
+  options?: {
+    projectId?: string
+    duration?: number
+    width?: number
+    height?: number
+    frameRate?: number
+    codec?: string
+    fileSize?: number
+  }
+): Promise<string> {
+  const db = await getDatabase()
+  const id = generateId()
+  const now = timestamp()
+  
+  await db.execute(
+    'INSERT INTO raw_videos (id, project_id, file_path, duration, width, height, frame_rate, codec, file_size, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [
+      id,
+      options?.projectId || null,
+      filePath,
+      options?.duration || null,
+      options?.width || null,
+      options?.height || null,
+      options?.frameRate || null,
+      options?.codec || null,
+      options?.fileSize || null,
+      now,
+      now,
+    ]
+  )
+  
+  return id
+}
+
+export async function getAllRawVideos(): Promise<RawVideo[]> {
+  const db = await getDatabase()
+  return await db.select<RawVideo[]>(
+    'SELECT * FROM raw_videos ORDER BY created_at DESC'
+  )
+}
+
+export async function getRawVideo(id: string): Promise<RawVideo | null> {
+  const db = await getDatabase()
+  const result = await db.select<RawVideo[]>(
+    'SELECT * FROM raw_videos WHERE id = ?',
+    [id]
+  )
+  return result[0] || null
+}
+
+export async function deleteRawVideo(id: string): Promise<void> {
+  const db = await getDatabase()
+  await db.execute('DELETE FROM raw_videos WHERE id = ?', [id])
 }

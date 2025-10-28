@@ -5,11 +5,15 @@
     :show-header="!loading && videos.length > 0"
   >
     <template #actions>
-      <button class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all">
+      <button 
+        @click="handleUpload"
+        :disabled="uploading"
+        class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+      >
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
         </svg>
-        Upload Video
+        {{ uploading ? 'Uploading...' : 'Upload Video' }}
       </button>
     </template>
 
@@ -48,8 +52,8 @@
         </div>
         <!-- Info -->
         <div class="p-4">
-          <h4 class="font-semibold text-foreground truncate mb-1">{{ video.name || 'Untitled Video' }}</h4>
-          <p class="text-xs text-muted-foreground mb-2" v-if="video.description">{{ video.description }}</p>
+          <h4 class="font-semibold text-foreground truncate mb-1">{{ video.file_path.split(/[\\\/]/).pop() || 'Untitled Video' }}</h4>
+          <p class="text-xs text-muted-foreground mb-2" v-if="video.duration">Duration: {{ Math.round(video.duration) }}s</p>
           <p class="text-xs text-muted-foreground">Added {{ getRelativeTime(video.created_at) }}</p>
         </div>
       </div>
@@ -61,6 +65,7 @@
       title="No videos yet"
       description="Upload your first raw video or download directly from Pump.fun to get started"
       button-text="Upload Video"
+      @action="handleUpload"
     >
       <template #icon>
         <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -73,22 +78,23 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { getAllProjects, deleteProject, type Project } from '@/services/database'
+import { getAllRawVideos, createRawVideo, deleteRawVideo, type RawVideo } from '@/services/database'
 import { useFormatters } from '@/composables/useFormatters'
+import { open } from '@tauri-apps/plugin-dialog'
+import { invoke } from '@tauri-apps/api/core'
 import PageLayout from '@/components/PageLayout.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import EmptyState from '@/components/EmptyState.vue'
 
-const videos = ref<Project[]>([])
+const videos = ref<RawVideo[]>([])
 const loading = ref(true)
+const uploading = ref(false)
 const { getRelativeTime } = useFormatters()
 
 async function loadVideos() {
   loading.value = true
   try {
-    // Get all projects that have a raw_video_path
-    const allProjects = await getAllProjects()
-    videos.value = allProjects.filter(p => p.raw_video_path != null)
+    videos.value = await getAllRawVideos()
   } catch (error) {
     console.error('Failed to load videos:', error)
   } finally {
@@ -96,10 +102,46 @@ async function loadVideos() {
   }
 }
 
-async function confirmDelete(video: Project) {
-  if (confirm(`Are you sure you want to delete "${video.name || 'this video'}"?`)) {
+async function handleUpload() {
+  if (uploading.value) return
+  
+  try {
+    // Open file dialog with video file filters
+    const selected = await open({
+      multiple: false,
+      filters: [{
+        name: 'Video',
+        extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v']
+      }]
+    })
+    
+    if (!selected) return // User cancelled
+    
+    uploading.value = true
+    
+    // Copy video to storage directory
+    const destinationPath = await invoke<string>('copy_video_to_storage', {
+      sourcePath: selected
+    })
+    
+    // Create raw_videos record
+    await createRawVideo(destinationPath)
+    
+    // Reload videos list
+    await loadVideos()
+  } catch (error) {
+    console.error('Failed to upload video:', error)
+    alert(`Failed to upload video: ${error}`)
+  } finally {
+    uploading.value = false
+  }
+}
+
+async function confirmDelete(video: RawVideo) {
+  const videoName = video.file_path.split(/[\\/]/).pop() || 'this video'
+  if (confirm(`Are you sure you want to delete "${videoName}"?`)) {
     try {
-      await deleteProject(video.id)
+      await deleteRawVideo(video.id)
       await loadVideos()
     } catch (error) {
       console.error('Failed to delete video:', error)
