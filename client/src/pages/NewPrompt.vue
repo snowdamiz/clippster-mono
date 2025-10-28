@@ -40,52 +40,14 @@
             </div>
 
             <!-- Content Field -->
-            <div class="space-y-1.5">
-              <div class="flex items-center justify-between">
-                <label for="content" class="block text-sm font-medium text-foreground">
-                  Prompt Content
-                  <span class="text-red-500 ml-1">*</span>
-                </label>
-                <div class="flex items-center gap-3">
-                  <span class="text-xs text-muted-foreground">{{ characterCount }} characters</span>
-                  <span class="text-xs text-muted-foreground">≈ {{ wordCount }} words</span>
-                </div>
-              </div>
-              <div class="relative">
-                <textarea
-                  id="content"
-                  v-model="formData.content"
-                  placeholder="Write your AI prompt here... Be specific about the task and desired output."
-                  rows="14"
-                  class="w-full px-3.5 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/10 text-foreground placeholder:text-muted-foreground resize-y transition-all font-mono text-sm leading-relaxed"
-                  required
-                  :class="{ 'border-red-500/50 focus:border-red-500/50 focus:ring-red-500/10': contentError }"
-                  @blur="validateContent"
-                ></textarea>
-                <!-- Character limit indicator -->
-                <div 
-                  v-if="formData.content.length > 0"
-                  class="absolute bottom-3 right-3 flex items-center gap-2"
-                >
-                  <button
-                    type="button"
-                    @click="clearContent"
-                    class="p-1.5 bg-background/80 backdrop-blur-sm hover:bg-muted rounded-lg transition-all text-muted-foreground hover:text-foreground"
-                    title="Clear content"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              <p v-if="contentError" class="text-xs text-red-500 flex items-center gap-1.5">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
-                </svg>
-                {{ contentError }}
-              </p>
-            </div>
+            <MarkdownEditor
+              v-model="formData.content"
+              label="Prompt Content"
+              :required="true"
+              placeholder="Write your AI prompt here... Be specific about the task and desired output."
+              :error="contentError"
+              @blur="validateContent"
+            />
 
             <!-- Actions -->
             <div class="flex items-center justify-between">
@@ -213,6 +175,7 @@ import { useRouter } from 'vue-router'
 import { createPrompt } from '@/services/database'
 import { useToast } from '@/composables/useToast'
 import PageLayout from '@/components/PageLayout.vue'
+import MarkdownEditor from '@/components/MarkdownEditor.vue'
 
 const router = useRouter()
 const { success, error } = useToast()
@@ -268,12 +231,6 @@ const examples: Example[] = [
 - Strong emotions or shifts; humor/awkwardness; drama/tension/conflict; surprises/reveals; bold claims; unusual behavior; struggle/vulnerability; high energy; relatable/resonant lines; quotable statements; notable reactions or audience moments.`
   }
 ]
-
-const characterCount = computed(() => formData.content.length)
-const wordCount = computed(() => {
-  const words = formData.content.trim().split(/\s+/)
-  return words[0] === '' ? 0 : words.length
-})
 
 const isFormValid = computed(() => {
   return formData.name.trim().length > 0 && 
