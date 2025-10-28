@@ -211,9 +211,11 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { createPrompt } from '@/services/database'
+import { useToast } from '@/composables/useToast'
 import PageLayout from '@/components/PageLayout.vue'
 
 const router = useRouter()
+const { success } = useToast()
 const saving = ref(false)
 const nameInput = ref<HTMLInputElement | null>(null)
 const nameError = ref('')
@@ -355,6 +357,7 @@ async function handleSubmit() {
   saving.value = true
   try {
     await createPrompt(formData.name.trim(), formData.content.trim())
+    success('Prompt created', `"${formData.name.trim()}" has been created successfully`)
     // Navigate back to prompts list
     router.push('/dashboard/prompts')
   } catch (error) {

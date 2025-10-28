@@ -146,11 +146,13 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getAllPrompts, deletePrompt, type Prompt } from '@/services/database'
 import { useFormatters } from '@/composables/useFormatters'
+import { useToast } from '@/composables/useToast'
 import PageLayout from '@/components/PageLayout.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import EmptyState from '@/components/EmptyState.vue'
 
 const router = useRouter()
+const { success } = useToast()
 const prompts = ref<Prompt[]>([])
 const loading = ref(true)
 const { getRelativeTime } = useFormatters()
@@ -177,6 +179,7 @@ async function copyPrompt(prompt: Prompt) {
   try {
     await navigator.clipboard.writeText(prompt.content)
     copiedId.value = prompt.id
+    success('Prompt copied', `"${prompt.name}" has been copied to clipboard`)
     // Clear the copied state after 2 seconds
     setTimeout(() => {
       copiedId.value = null

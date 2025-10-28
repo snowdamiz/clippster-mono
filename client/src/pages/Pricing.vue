@@ -292,9 +292,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useToast } from '@/composables/useToast'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 const authStore = useAuthStore()
+const { success: showSuccessToast } = useToast()
 
 const loading = ref(true)
 const packs = ref<any>({})
@@ -414,6 +416,9 @@ async function initiatePayment() {
           balance.value = confirmData.balance
           paymentStep.value = 'success'
           processing.value = false
+          
+          // Show success toast
+          showSuccessToast('Purchase successful', `${paymentResult.pack_hours} hours have been added to your account`)
           
           // Cleanup listener
           unlisten()

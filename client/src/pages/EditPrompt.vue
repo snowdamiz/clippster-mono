@@ -201,11 +201,13 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { getPrompt, updatePrompt, type Prompt } from '@/services/database'
 import { useBreadcrumb } from '@/composables/useBreadcrumb'
+import { useToast } from '@/composables/useToast'
 import PageLayout from '@/components/PageLayout.vue'
 import LoadingState from '@/components/LoadingState.vue'
 
 const router = useRouter()
 const route = useRoute()
+const { success } = useToast()
 const loading = ref(true)
 const saving = ref(false)
 const prompt = ref<Prompt | null>(null)
@@ -311,6 +313,7 @@ async function handleSubmit() {
   saving.value = true
   try {
     await updatePrompt(prompt.value.id, formData.name.trim(), formData.content.trim())
+    success('Prompt updated', `"${formData.name.trim()}" has been updated successfully`)
     router.push('/dashboard/prompts')
   } catch (error) {
     console.error('Failed to update prompt:', error)
