@@ -1,5 +1,5 @@
 <template>
-  <header class="h-16 px-8 flex items-center justify-between border-b border-border/40 bg-background">
+  <header class="fixed top-0 left-64 right-0 h-16 px-8 flex items-center justify-between border-b border-border/40 bg-background z-10">
     <nav class="flex items-center gap-2 text-sm">
       <span class="text-muted-foreground">Dashboard</span>
       <template v-for="(crumb, index) in breadcrumbs" :key="index">
@@ -18,18 +18,6 @@
     </nav>
     
     <div class="flex items-center gap-4">
-      <!-- Global Search -->
-      <div class="relative">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-        <input 
-          type="text" 
-          placeholder="Search..." 
-          class="pl-9 pr-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-foreground/30 w-64 text-sm"
-        >
-      </div>
-
       <!-- Credit Balance -->
       <router-link 
         to="/dashboard/pricing" 

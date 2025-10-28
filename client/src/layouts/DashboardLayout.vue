@@ -6,8 +6,8 @@
     <main class="flex-1 ml-64">
       <DashboardHeader />
 
-      <!-- Page content -->
-      <div class="p-8">
+      <!-- Page content with top margin to account for fixed header -->
+      <div class="p-8 pt-24">
         <div class="max-w-7xl mx-auto">
           <router-view v-slot="{ Component }">
             <transition name="fade" mode="out-in">
