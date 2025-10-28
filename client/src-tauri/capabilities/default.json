@@ -20,7 +20,16 @@
     "dialog:allow-open",
     "dialog:allow-message",
     "shell:allow-execute",
-    "shell:allow-open"
+    "shell:allow-open",
+    "opener:default",
+    {
+      "identifier": "opener:allow-reveal-item-in-dir",
+      "allow": [
+        {
+          "path": "$APPLOCALDATA/**"
+        }
+      ]
+    }
   ],
   "platforms": ["windows", "macOS", "linux"]
 }

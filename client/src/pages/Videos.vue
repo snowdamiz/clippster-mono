@@ -5,16 +5,27 @@
     :show-header="!loading && videos.length > 0"
   >
     <template #actions>
-      <button 
-        @click="handleUpload"
-        :disabled="uploading"
-        class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-        </svg>
-        {{ uploading ? 'Uploading...' : 'Upload Video' }}
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          @click="openVideosFolder"
+          title="Open videos folder"
+          class="p-2.5 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-all"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+          </svg>
+        </button>
+        <button 
+          @click="handleUpload"
+          :disabled="uploading"
+          class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+          </svg>
+          {{ uploading ? 'Uploading...' : 'Upload Video' }}
+        </button>
+      </div>
     </template>
 
     <!-- Loading State -->
@@ -140,6 +151,8 @@ import { getAllRawVideos, createRawVideo, deleteRawVideo, type RawVideo } from '
 import { useFormatters } from '@/composables/useFormatters'
 import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
+import { getStoragePath } from '@/services/storage'
 import PageLayout from '@/components/PageLayout.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -267,6 +280,24 @@ async function deleteVideoConfirmed() {
   } finally {
     showDeleteDialog.value = false
     videoToDelete.value = null
+  }
+}
+
+async function openVideosFolder() {
+  try {
+    const videosPath = await getStoragePath('videos')
+    // Use the first video file if available, otherwise use a dummy path
+    if (videos.value.length > 0) {
+      // Reveal the first video file, which will open the videos folder
+      await revealItemInDir(videos.value[0].file_path)
+    } else {
+      // If no videos, append a dummy filename to open the videos folder
+      // The file doesn't need to exist, revealItemInDir will still open the parent folder
+      await revealItemInDir(videosPath + '\\dummy.mp4')
+    }
+  } catch (error) {
+    console.error('Failed to open videos folder:', error)
+    alert(`Failed to open videos folder: ${error}`)
   }
 }
 
