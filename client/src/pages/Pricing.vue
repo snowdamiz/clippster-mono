@@ -330,9 +330,12 @@ async function fetchPricing() {
       packs.value = data.packs
       solUsdRate.value = data.sol_usd_rate
       companyWallet.value = data.company_wallet_address
+    } else {
+      throw new Error(data.error || 'Failed to fetch pricing')
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to fetch pricing:', error)
+    showErrorToast('Failed to load pricing', error.message || 'An error occurred while loading credit pack prices. Please try again.')
   }
 }
 
@@ -347,9 +350,12 @@ async function fetchBalance() {
     const data = await response.json()
     if (data.success) {
       balance.value = data.balance
+    } else {
+      throw new Error(data.error || 'Failed to fetch balance')
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to fetch balance:', error)
+    showErrorToast('Failed to load balance', error.message || 'An error occurred while loading your credit balance. Please try again.')
   }
 }
 
