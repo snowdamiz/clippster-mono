@@ -101,7 +101,6 @@ const handleDisconnect = () => {
   padding: 0.625rem 0.75rem;
   border-radius: 0.35rem;
   color: var(--muted-foreground);
-  transition: all 0.2s;
 }
 
 .nav-link:hover {
@@ -113,7 +112,6 @@ const handleDisconnect = () => {
   background-color: rgb(255 255 255 / 0.1);
   color: white;
   border-left: 3px solid rgb(255 255 255);
-  padding-left: calc(0.75rem - 2px);
 }
 
 .nav-link-active:hover {
@@ -128,7 +126,6 @@ const handleDisconnect = () => {
   color: rgb(239 68 68);
   border: 1px solid transparent;
   border-radius: 0.25rem;
-  transition: all 0.2s;
   cursor: pointer;
 }
 

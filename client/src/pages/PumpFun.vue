@@ -95,7 +95,7 @@
     <!-- Empty State -->
     <EmptyState
       v-else
-      title="No VODs yet"
+      title="Search VODs on Pump"
       description="Enter a mint ID to search for PumpFun VODs"
     >
       <template #icon>
