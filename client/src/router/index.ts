@@ -51,6 +51,16 @@ const router = createRouter({
           component: () => import('@/pages/Prompts.vue')
         },
         {
+          path: 'prompts/new',
+          name: 'prompts-new',
+          component: () => import('@/pages/NewPrompt.vue')
+        },
+        {
+          path: 'prompts/:id/edit',
+          name: 'prompts-edit',
+          component: () => import('@/pages/EditPrompt.vue')
+        },
+        {
           path: 'pricing',
           name: 'pricing',
           component: () => import('@/pages/Pricing.vue')

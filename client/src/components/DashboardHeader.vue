@@ -2,10 +2,19 @@
   <header class="h-16 px-8 flex items-center justify-between border-b border-border/40 bg-background">
     <nav class="flex items-center gap-2 text-sm">
       <span class="text-muted-foreground">Dashboard</span>
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-muted-foreground/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-      </svg>
-      <span class="text-foreground capitalize">{{ currentPageTitle }}</span>
+      <template v-for="(crumb, index) in breadcrumbs" :key="index">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-muted-foreground/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+        </svg>
+        <router-link 
+          v-if="crumb.path && index < breadcrumbs.length - 1" 
+          :to="crumb.path"
+          class="text-muted-foreground hover:text-foreground capitalize transition-colors"
+        >
+          {{ crumb.title }}
+        </router-link>
+        <span v-else class="text-foreground capitalize">{{ crumb.title }}</span>
+      </template>
     </nav>
     
     <div class="flex items-center gap-4">
@@ -42,9 +51,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useBreadcrumb } from '@/composables/useBreadcrumb'
 
 const route = useRoute()
 const authStore = useAuthStore()
@@ -53,9 +63,72 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 const hoursRemaining = ref(0)
 const loadingBalance = ref(false)
 
-const currentPageTitle = computed(() => {
-  const path = route.path.split('/').pop()
-  return path || 'Dashboard'
+// Get breadcrumb title from composable
+const { breadcrumbTitle } = useBreadcrumb()
+
+interface Breadcrumb {
+  title: string
+  path?: string
+}
+
+const breadcrumbs = computed<Breadcrumb[]>(() => {
+  // Access breadcrumbTitle to make computed reactive to it
+  const dynamicTitle = breadcrumbTitle.value
+  
+  const pathSegments = route.path.split('/').filter(s => s && s !== 'dashboard')
+  const crumbs: Breadcrumb[] = []
+  
+  if (pathSegments.length === 0) return crumbs
+  
+  // Handle nested routes
+  for (let i = 0; i < pathSegments.length; i++) {
+    const segment = pathSegments[i]
+    const isLast = i === pathSegments.length - 1
+    const nextSegment = pathSegments[i + 1]
+    
+    // Check if this is a UUID segment (8-4-4-4-12 format)
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    const isUUID = uuidPattern.test(segment)
+    
+    // Format the title
+    let title = segment
+    let shouldSkip = false
+    
+    if (segment === 'new') {
+      // Get the parent segment to create "New [Parent]"
+      const parent = pathSegments[i - 1] || ''
+      title = `New ${parent.slice(0, -1)}` // Remove trailing 's' for singular
+    } else if (segment === 'edit') {
+      // Show "Edit" in the breadcrumb
+      title = 'Edit'
+    } else if (isUUID) {
+      // Replace UUID with the breadcrumb title from composable
+      console.log('UUID detected:', segment, 'breadcrumbTitle:', dynamicTitle)
+      if (dynamicTitle) {
+        title = dynamicTitle
+        console.log('Using breadcrumb title:', title)
+      } else {
+        console.log('No breadcrumb title, skipping UUID')
+        // Skip UUID segments that don't have a breadcrumb title yet
+        shouldSkip = true
+      }
+    }
+    
+    if (shouldSkip) continue
+    
+    // Build the path - but not for UUIDs (they don't have routes) or if it's the last segment
+    let linkPath: string | undefined = undefined
+    if (!isLast && !isUUID) {
+      linkPath = '/dashboard/' + pathSegments.slice(0, i + 1).join('/')
+    }
+    
+    crumbs.push({
+      title,
+      path: linkPath
+    })
+  }
+  
+  return crumbs
 })
 
 async function fetchBalance() {
@@ -82,6 +155,7 @@ async function fetchBalance() {
     loadingBalance.value = false
   }
 }
+
 
 onMounted(() => {
   fetchBalance()

@@ -193,4 +193,24 @@
     overflow-y: scroll;
     scrollbar-gutter: stable;
   }
+  /* Cursor pointer for interactive elements */
+  button,
+  a,
+  [role="button"],
+  [type="button"],
+  [type="submit"],
+  [type="reset"],
+  label[for],
+  select,
+  summary {
+    cursor: pointer;
+  }
+  /* Restore default cursor for disabled elements */
+  button:disabled,
+  [role="button"]:disabled,
+  [type="button"]:disabled,
+  [type="submit"]:disabled,
+  [type="reset"]:disabled {
+    cursor: not-allowed;
+  }
 }

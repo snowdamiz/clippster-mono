@@ -219,6 +219,12 @@ export async function createPrompt(name: string, content: string): Promise<strin
   return id
 }
 
+export async function getPrompt(id: string): Promise<Prompt | null> {
+  const db = await getDatabase()
+  const result = await db.select<Prompt[]>('SELECT * FROM prompts WHERE id = ?', [id])
+  return result[0] || null
+}
+
 export async function getAllPrompts(): Promise<Prompt[]> {
   const db = await getDatabase()
   return await db.select<Prompt[]>('SELECT * FROM prompts ORDER BY name')
