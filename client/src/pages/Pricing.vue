@@ -33,7 +33,7 @@
     </div>
 
     <!-- Credit Packs Grid -->
-    <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-2">
+    <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-2">
       <div
         v-for="packKey in packOrder"
         :key="packKey"
@@ -68,7 +68,7 @@
 
             <!-- Price -->
             <div class="mb-6" v-if="packs[packKey]">
-              <div class="text-3xl font-bold mb-1">${{ packs[packKey].usd.toFixed(2) }}</div>
+              <div class="text-3xl font-bold mb-1">${{ Math.round(packs[packKey].usd) }}</div>
               <div class="text-sm text-muted-foreground">
                 ≈{{ getSolAmountForPack(packKey).toFixed(4) }} SOL
               </div>
@@ -226,7 +226,7 @@
             </div>
             <div class="flex justify-between mb-2">
               <span class="text-muted-foreground">Price:</span>
-              <span class="font-semibold">${{ selectedPack?.usd.toFixed(2) }}</span>
+              <span class="font-semibold">${{ Math.round(selectedPack?.usd) }}</span>
             </div>
             <div class="flex justify-between">
               <span class="text-muted-foreground">SOL Amount:</span>
@@ -300,7 +300,7 @@ const { success: showSuccessToast, error: showErrorToast } = useToast()
 
 const loading = ref(true)
 const packs = ref<any>({})
-const packOrder = ref(['starter', 'creator', 'pro'])
+const packOrder = ref(['starter', 'creator', 'pro', 'studio'])
 const companyWallet = ref('')
 const solUsdRate = ref(0)
 const balance = ref({ hours_remaining: 0, hours_used: 0 })

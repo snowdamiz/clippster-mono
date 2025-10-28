@@ -8,9 +8,10 @@ defmodule ClippsterServer.Credits do
   alias ClippsterServer.Credits.{CreditTransaction, UserCredit}
 
   @credit_packs %{
-    "starter" => %{hours: 10, usd: 10.00},
-    "creator" => %{hours: 30, usd: 27.00},
-    "pro" => %{hours: 100, usd: 80.00}
+    "starter" => %{hours: 5, usd: 10.00},
+    "creator" => %{hours: 15, usd: 20.00},
+    "pro" => %{hours: 50, usd: 45.00},
+    "studio" => %{hours: 500, usd: 200.00}
   }
 
   @doc """

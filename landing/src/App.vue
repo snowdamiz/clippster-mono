@@ -188,18 +188,18 @@ const getPlatformName = (p: string) => {
         <p class="text-muted-foreground text-lg">Pay once, use forever. No subscriptions, no expiration dates.</p>
       </div>
 
-      <div class="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto">
+      <div class="grid md:grid-cols-4 gap-6 max-w-7xl mx-auto">
         <!-- Starter Pack -->
         <div class="relative overflow-hidden rounded-2xl border border-border bg-card hover:border-purple-500/50 transition-all cursor-pointer h-full flex flex-col">
           <div class="p-6 flex-1 flex flex-col">
             <h3 class="text-2xl font-bold mb-2">Starter</h3>
             <div class="mb-4">
-              <span class="text-4xl font-bold text-foreground">10</span>
+              <span class="text-4xl font-bold text-foreground">5</span>
               <span class="text-muted-foreground ml-2">hours</span>
             </div>
             <div class="mb-6">
-              <div class="text-3xl font-bold mb-1">$10.00</div>
-              <div class="text-xs text-muted-foreground mt-1">$1.00/hour</div>
+              <div class="text-3xl font-bold mb-1">$10</div>
+              <div class="text-xs text-muted-foreground mt-1">$2/hour</div>
             </div>
             <ul class="space-y-2.5 mb-6 flex-1">
               <li class="flex items-center gap-2 text-sm text-muted-foreground">
@@ -212,7 +212,7 @@ const getPlatformName = (p: string) => {
               </li>
               <li class="flex items-center gap-2 text-sm text-muted-foreground">
                 <Check class="h-4 w-4 text-green-500 flex-shrink-0" />
-                <span>~5-10 videos</span>
+                <span>~2-5 videos</span>
               </li>
             </ul>
             <div class="text-center text-sm text-muted-foreground">
@@ -230,12 +230,12 @@ const getPlatformName = (p: string) => {
             <div class="p-6 flex-1 flex flex-col">
               <h3 class="text-2xl font-bold mb-2">Creator</h3>
               <div class="mb-4">
-                <span class="text-4xl font-bold text-foreground">30</span>
+                <span class="text-4xl font-bold text-foreground">15</span>
                 <span class="text-muted-foreground ml-2">hours</span>
               </div>
               <div class="mb-6">
-                <div class="text-3xl font-bold mb-1">$27.00</div>
-                <div class="text-xs text-muted-foreground mt-1">$0.90/hour</div>
+                <div class="text-3xl font-bold mb-1">$20</div>
+                <div class="text-xs text-muted-foreground mt-1">$1.33/hour</div>
               </div>
               <ul class="space-y-2.5 mb-6 flex-1">
                 <li class="flex items-center gap-2 text-sm text-muted-foreground">
@@ -248,7 +248,7 @@ const getPlatformName = (p: string) => {
                 </li>
                 <li class="flex items-center gap-2 text-sm text-muted-foreground">
                   <Check class="h-4 w-4 text-green-500 flex-shrink-0" />
-                  <span>~15-30 videos</span>
+                  <span>~7-15 videos</span>
                 </li>
               </ul>
               <div class="text-center text-sm text-muted-foreground">
@@ -263,12 +263,12 @@ const getPlatformName = (p: string) => {
           <div class="p-6 flex-1 flex flex-col">
             <h3 class="text-2xl font-bold mb-2">Pro</h3>
             <div class="mb-4">
-              <span class="text-4xl font-bold text-foreground">100</span>
+              <span class="text-4xl font-bold text-foreground">50</span>
               <span class="text-muted-foreground ml-2">hours</span>
             </div>
             <div class="mb-6">
-              <div class="text-3xl font-bold mb-1">$80.00</div>
-              <div class="text-xs text-muted-foreground mt-1">$0.80/hour</div>
+              <div class="text-3xl font-bold mb-1">$45</div>
+              <div class="text-xs text-muted-foreground mt-1">$0.90/hour</div>
             </div>
             <ul class="space-y-2.5 mb-6 flex-1">
               <li class="flex items-center gap-2 text-sm text-muted-foreground">
@@ -281,7 +281,39 @@ const getPlatformName = (p: string) => {
               </li>
               <li class="flex items-center gap-2 text-sm text-muted-foreground">
                 <Check class="h-4 w-4 text-green-500 flex-shrink-0" />
-                <span>~50-100 videos</span>
+                <span>~25-50 videos</span>
+              </li>
+            </ul>
+            <div class="text-center text-sm text-muted-foreground">
+              Download the app to purchase
+            </div>
+          </div>
+        </div>
+
+        <!-- Studio Pack -->
+        <div class="relative overflow-hidden rounded-2xl border border-border bg-card hover:border-purple-500/50 transition-all cursor-pointer h-full flex flex-col">
+          <div class="p-6 flex-1 flex flex-col">
+            <h3 class="text-2xl font-bold mb-2">Studio</h3>
+            <div class="mb-4">
+              <span class="text-4xl font-bold text-foreground">500</span>
+              <span class="text-muted-foreground ml-2">hours</span>
+            </div>
+            <div class="mb-6">
+              <div class="text-3xl font-bold mb-1">$200</div>
+              <div class="text-xs text-muted-foreground mt-1">$0.40/hour</div>
+            </div>
+            <ul class="space-y-2.5 mb-6 flex-1">
+              <li class="flex items-center gap-2 text-sm text-muted-foreground">
+                <Check class="h-4 w-4 text-green-500 flex-shrink-0" />
+                <span>Credits never expire</span>
+              </li>
+              <li class="flex items-center gap-2 text-sm text-muted-foreground">
+                <Check class="h-4 w-4 text-green-500 flex-shrink-0" />
+                <span>Use anytime, no limits</span>
+              </li>
+              <li class="flex items-center gap-2 text-sm text-muted-foreground">
+                <Check class="h-4 w-4 text-green-500 flex-shrink-0" />
+                <span>~250-500 videos</span>
               </li>
             </ul>
             <div class="text-center text-sm text-muted-foreground">
