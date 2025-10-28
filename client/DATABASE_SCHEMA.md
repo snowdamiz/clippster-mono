@@ -14,15 +14,13 @@ The schema supports:
 ## Entity Relationship Diagram
 
 ```
-Projects (1) ──→ (1) Transcripts
-    │
-    └──→ (many) Clips (1) ──→ (1) Thumbnails
-                   │
-                   ├──→ (1) Intro (from intro_outros)
-                   ├──→ (1) Outro (from intro_outros)
-                   └──→ (many) Transcript Segments
-
-Transcripts (1) ──→ (many) Transcript Segments
+Projects (1) ──→ (1) Raw Videos (1) ──→ (1) Transcripts (1) ──→ (many) Transcript Segments
+                     │
+                     └──→ (many) Clips (1) ──→ (1) Thumbnails
+                                    │
+                                    ├──→ (1) Intro (from intro_outros)
+                                    ├──→ (1) Outro (from intro_outros)
+                                    └──→ (many) Transcript Segments
 
 Prompts (global templates)
 Intro/Outros (global assets)
@@ -43,6 +41,33 @@ CREATE TABLE projects (
 );
 ```
 
+### raw_videos
+Stores the raw/source video file for each project (1:1 relationship).
+
+```sql
+CREATE TABLE raw_videos (
+  id TEXT PRIMARY KEY,
+  project_id TEXT UNIQUE NOT NULL,
+  file_path TEXT NOT NULL,       -- Path to the raw video file
+  duration REAL,                  -- Video duration in seconds
+  width INTEGER,                  -- Video width in pixels
+  height INTEGER,                 -- Video height in pixels
+  frame_rate REAL,                -- Frames per second
+  codec TEXT,                     -- Video codec information
+  file_size INTEGER,              -- File size in bytes
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_raw_videos_project ON raw_videos(project_id);
+```
+
+**Notes:**
+- Each project has exactly one raw video (1:1 relationship)
+- Contains metadata about the source video file
+- Clips are extracted from this raw video
+
 ### prompts
 Global reusable prompt templates for AI operations.
 
@@ -57,26 +82,27 @@ CREATE TABLE prompts (
 ```
 
 ### transcripts
-Stores Whisper AI transcription results for each project.
+Stores Whisper AI transcription results for each raw video.
 
 ```sql
 CREATE TABLE transcripts (
   id TEXT PRIMARY KEY,
-  project_id TEXT UNIQUE NOT NULL,
+  raw_video_id TEXT UNIQUE NOT NULL,
   raw_json TEXT NOT NULL,      -- Full verbose_json output from Whisper API
   text TEXT NOT NULL,           -- Plain text extraction for quick access
   language TEXT,                -- Detected language
   duration REAL,                -- Total duration in seconds
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
-  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+  FOREIGN KEY (raw_video_id) REFERENCES raw_videos(id) ON DELETE CASCADE
 );
 ```
 
 **Notes:**
 - `raw_json` contains the complete Whisper verbose_json response with word-level timestamps
 - `text` is extracted for quick display and search indexing
-- One transcript per project (1:1 relationship)
+- One transcript per raw video (1:1 relationship)
+- Transcript is generated from the raw video file
 
 ### transcript_segments
 Individual segments/sentences from the transcript with precise timestamps.
@@ -131,6 +157,7 @@ Video segments cut from projects, optionally with intro/outro attachments.
 CREATE TABLE clips (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,
+  raw_video_id TEXT,            -- Link to source raw video
   name TEXT,
   file_path TEXT NOT NULL,
   duration REAL,
@@ -142,16 +169,20 @@ CREATE TABLE clips (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (raw_video_id) REFERENCES raw_videos(id) ON DELETE SET NULL,
   FOREIGN KEY (intro_id) REFERENCES intro_outros(id) ON DELETE SET NULL,
   FOREIGN KEY (outro_id) REFERENCES intro_outros(id) ON DELETE SET NULL
 );
 
 CREATE INDEX idx_clips_project ON clips(project_id);
+CREATE INDEX idx_clips_raw_video ON clips(raw_video_id);
 ```
 
 **Notes:**
+- Each clip is linked to a raw_video (the source it was extracted from)
 - Each clip can have one intro and one outro
 - If intro/outro is deleted, clip reference is set to NULL
+- start_time and end_time reference timestamps in the raw_video
 
 ### thumbnails
 Preview images for clips (1:1 relationship).
@@ -234,7 +265,8 @@ END;
 ```sql
 SELECT DISTINCT p.* 
 FROM projects p
-JOIN transcripts t ON t.project_id = p.id
+JOIN raw_videos rv ON rv.project_id = p.id
+JOIN transcripts t ON t.raw_video_id = rv.id
 JOIN transcripts_fts fts ON fts.rowid = t.rowid
 WHERE transcripts_fts MATCH 'funny moment';
 ```
