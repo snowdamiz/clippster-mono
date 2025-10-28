@@ -64,6 +64,11 @@ const router = createRouter({
           path: 'pricing',
           name: 'pricing',
           component: () => import('@/pages/Pricing.vue')
+        },
+        {
+          path: 'pumpfun',
+          name: 'pumpfun',
+          component: () => import('@/pages/PumpFun.vue')
         }
       ]
     }

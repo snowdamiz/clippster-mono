@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/brand/OneDrive/Documents/dev/clippster-mono/client/src/services/**)",
+      "Read(//c/Users/brand/OneDrive/Documents/dev/clippster-mono/client/src-tauri/src/**)",
+      "Read(//c/Users/brand/OneDrive/Documents/dev/clippster-mono/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

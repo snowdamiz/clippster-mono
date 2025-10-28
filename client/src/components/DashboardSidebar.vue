@@ -8,18 +8,42 @@
     <!-- Navigation -->
     <nav class="p-4">
       <ul class="space-y-1">
-        <li v-for="item in navigationItems" :key="item.path">
-          <router-link
-            :to="item.path"
-            class="nav-link"
-            :class="{ 'nav-link-active': isActive(item.path) }"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon" />
-            </svg>
-            <span>{{ item.name }}</span>
-          </router-link>
-        </li>
+        <template v-for="(item, index) in navigationItems" :key="item.path">
+          <!-- Category Label -->
+          <li v-if="item.category && shouldShowCategory(item.category, index)" class="pt-4 pb-2 px-3">
+            <span class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{{ item.category }}</span>
+          </li>
+          
+          <!-- Navigation Item -->
+          <li>
+            <router-link
+              :to="item.path"
+              class="nav-link"
+              :class="{ 'nav-link-active': isActive(item.path) }"
+            >
+              <svg 
+                v-if="item.name === 'PumpFun'"
+                xmlns="http://www.w3.org/2000/svg" 
+                class="h-5 w-5" 
+                :fill="isActive(item.path) ? 'white' : 'currentColor'" 
+                viewBox="0 0 24 24"
+              >
+                <path :d="item.icon" />
+              </svg>
+              <svg 
+                v-else
+                xmlns="http://www.w3.org/2000/svg" 
+                class="h-5 w-5" 
+                fill="none" 
+                viewBox="0 0 24 24" 
+                stroke="currentColor"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon" />
+              </svg>
+              <span>{{ item.name }}</span>
+            </router-link>
+          </li>
+        </template>
       </ul>
     </nav>
 
@@ -52,6 +76,13 @@ const { formatAddress } = useWallet()
 
 const isActive = (path: string) => {
   return route.path.startsWith(path)
+}
+
+const shouldShowCategory = (category: string, index: number) => {
+  // Only show category label for the first item with that category
+  if (index === 0) return true
+  const previousItem = navigationItems[index - 1]
+  return previousItem.category !== category
 }
 
 const formattedAddress = computed(() => formatAddress(authStore.walletAddress))
