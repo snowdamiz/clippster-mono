@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Read(//c/Users/brand/OneDrive/Documents/dev/clippster-prototype/**)"
+      "Read(//c/Users/brand/OneDrive/Documents/dev/clippster-prototype/**)",
+      "WebSearch",
+      "WebFetch(domain:tauri.app)",
+      "WebFetch(domain:docs.rs)"
     ],
     "deny": [],
     "ask": []

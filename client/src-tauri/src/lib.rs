@@ -2,6 +2,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+use std::process::Stdio;
 use tauri::Emitter;
 use warp::Filter;
 
@@ -333,50 +334,142 @@ async fn download_pumpfun_vod(
             status: "Starting download...".to_string(),
         });
 
-        // Now download the video
-        println!("[Rust] Starting video download...");
+        // Now download the video with real-time progress tracking
+        println!("[Rust] Starting video download with real-time progress...");
+        let app_clone_for_progress = app_clone.clone();
+        let download_id_for_progress = download_id_clone.clone();
+        let duration_for_progress = duration;
+
         let _ = app_clone.emit("download-progress", DownloadProgress {
             download_id: download_id_clone.clone(),
             progress: 20.0,
-            current_time: None,
-            total_time: None,
-            status: "Downloading video (this may take a while)...".to_string(),
+            current_time: Some(0.0),
+            total_time: duration_for_progress,
+            status: "Downloading video...".to_string(),
         });
 
-        let output = match shell.sidecar("ffmpeg") {
-            Ok(ffmpeg) => {
-                println!("[Rust] FFmpeg sidecar obtained for download");
-                match ffmpeg.args([
-                    "-i", &video_url,
-                    "-c:v", "copy",
-                    "-c:a", "aac",
-                    "-b:a", "128k",
-                    "-movflags", "+faststart",
-                    "-progress", "pipe:2",
-                    "-v", "error",
-                    "-y",
-                    video_path.to_str().ok_or("Invalid video path")?,
-                ]).output().await {
-                    Ok(output) => {
-                        println!("[Rust] FFmpeg download command completed");
-                        output
+        // Use tokio::process::Command for real-time progress tracking
+        let mut cmd = tokio::process::Command::new("ffmpeg");
+        cmd.args([
+            "-i", &video_url,
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-movflags", "+faststart",
+            "-progress", "pipe:2",
+            "-v", "error",
+            "-y",
+            video_path.to_str().ok_or("Invalid video path")?,
+        ]);
+
+        println!("[Rust] Spawning FFmpeg process with real-time progress...");
+
+        let result = tokio::spawn(async move {
+            let mut child = cmd.stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("Failed to spawn ffmpeg: {}", e))?;
+
+            // Clone for progress tracking
+            let app_progress = app_clone_for_progress.clone();
+            let download_id_progress = download_id_for_progress.clone();
+            let total_duration = duration_for_progress.unwrap_or(600.0);
+
+            // Spawn a task to read stderr and parse progress
+            let stderr = child.stderr.take().unwrap();
+            let stderr_handle = tokio::spawn(async move {
+                use tokio::io::AsyncBufReadExt;
+                use tokio::io::BufReader;
+
+                let mut reader = BufReader::new(stderr);
+                let mut line = String::new();
+                let mut last_progress_time = std::time::Instant::now();
+                let mut lines_processed = 0;
+
+                while let Ok(bytes_read) = reader.read_line(&mut line).await {
+                    if bytes_read == 0 {
+                        break; // EOF
+                    }
+
+                    lines_processed += 1;
+
+                    // Log every 50th line to avoid spam
+                    if lines_processed % 50 == 0 {
+                        println!("[Rust] Processed {} lines from FFmpeg stderr", lines_processed);
+                    }
+
+                    // Parse FFmpeg progress output
+                    let line_trimmed = line.trim();
+
+                    // Look for out_time= lines (current time in HH:MM:SS.ms format)
+                    if line_trimmed.starts_with("out_time=") {
+                        if let Some(time_str) = line_trimmed.strip_prefix("out_time=") {
+                            println!("[Rust] Found progress line: out_time={}", time_str);
+                            if let Some(current_time) = parse_ffmpeg_time(time_str) {
+                                let progress = ((current_time / total_duration) * 100.0).min(95.0).max(20.0);
+                                println!("[Rust] Real progress: {:.1}% ({}s / {}s)", progress, current_time, total_duration);
+
+                                // Only emit progress if it's been at least 1 second since last update
+                                if last_progress_time.elapsed().as_secs() >= 1 {
+                                    let progress_result = app_progress.emit("download-progress", DownloadProgress {
+                                        download_id: download_id_progress.clone(),
+                                        progress,
+                                        current_time: Some(current_time),
+                                        total_time: Some(total_duration),
+                                        status: "Downloading video...".to_string(),
+                                    });
+
+                                    if let Err(e) = progress_result {
+                                        println!("[Rust] Failed to emit progress: {}", e);
+                                    }
+                                    last_progress_time = std::time::Instant::now();
+                                }
+                            } else {
+                                println!("[Rust] Failed to parse time from: {}", time_str);
+                            }
+                        }
+                    }
+
+                    line.clear();
+                }
+
+                println!("[Rust] FFmpeg stderr reading completed, processed {} lines", lines_processed);
+            });
+
+            // Wait for the process to complete
+            let status = child.wait().await;
+
+            // Wait for stderr reading to finish
+            let _ = stderr_handle.await;
+
+            if let Ok(exit_status) = status {
+                if exit_status.success() {
+                    println!("[Rust] FFmpeg download completed successfully");
+                    Ok(())
+                } else {
+                    println!("[Rust] FFmpeg download failed with status: {:?}", exit_status);
+                    Err("FFmpeg download failed".to_string())
+                }
+            } else {
+                println!("[Rust] Failed to get FFmpeg process status: {:?}", status);
+                Err("Failed to get FFmpeg process status".to_string())
+            }
+        }).await;
+
+        match result {
+            Ok(inner_result) => {
+                match inner_result {
+                    Ok(()) => {
+                        // Download completed successfully
                     }
                     Err(e) => {
-                        println!("[Rust] Failed to run ffmpeg download command: {}", e);
-                        return Err(format!("Failed to run ffmpeg download: {}", e));
+                        return Err(e);
                     }
                 }
             }
             Err(e) => {
-                println!("[Rust] Failed to get ffmpeg sidecar for download: {}", e);
-                return Err(format!("Failed to get ffmpeg sidecar for download: {}", e));
+                return Err(format!("Task join error: {}", e));
             }
-        };
-
-        if !output.status.success() {
-            let error_msg = String::from_utf8_lossy(&output.stderr);
-            println!("[Rust] FFmpeg download failed: {}", error_msg);
-            return Err(format!("FFmpeg download failed: {}", error_msg));
         }
 
         println!("[Rust] Download completed successfully");
@@ -641,6 +734,20 @@ fn extract_duration_from_ffmpeg_output(output: &str) -> Option<f64> {
 fn parse_duration_string(duration_str: &str) -> Option<f64> {
     // Parse format HH:MM:SS.ms
     let parts: Vec<&str> = duration_str.split(':').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+
+    let hours: f64 = parts[0].parse().ok()?;
+    let minutes: f64 = parts[1].parse().ok()?;
+    let seconds: f64 = parts[2].parse().ok()?;
+
+    Some(hours * 3600.0 + minutes * 60.0 + seconds)
+}
+
+fn parse_ffmpeg_time(time_str: &str) -> Option<f64> {
+    // Parse format HH:MM:SS.ms or HH:MM:SS
+    let parts: Vec<&str> = time_str.split(':').collect();
     if parts.len() != 3 {
         return None;
     }

@@ -9,6 +9,10 @@ const router = createRouter({
       redirect: '/dashboard'
     },
     {
+      path: '/videos',
+      redirect: '/dashboard/videos'
+    },
+    {
       path: '/login',
       name: 'login',
       component: () => import('@/components/WalletAuth.vue'),
