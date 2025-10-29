@@ -38,49 +38,58 @@
             </div>
           </div>
           <div class="flex items-center gap-1 flex-shrink-0">
-            <button 
-              class="p-2 hover:bg-muted rounded-md transition-all relative group/copy" 
-              :title="copiedId === prompt.id ? 'Copied!' : 'Copy to clipboard'" 
+            <button
+              class="p-2 hover:bg-muted rounded-md transition-all relative group/copy"
+              :title="copiedId === prompt.id ? 'Copied!' : 'Copy to clipboard'"
               @click.stop="copyPrompt(prompt)"
             >
-              <svg 
+              <svg
                 v-if="copiedId !== prompt.id"
-                xmlns="http://www.w3.org/2000/svg" 
-                class="h-4 w-4 text-muted-foreground group-hover/copy:text-foreground transition-colors" 
-                fill="none" 
-                viewBox="0 0 24 24" 
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-4 w-4 text-muted-foreground group-hover/copy:text-foreground transition-colors"
+                fill="none"
+                viewBox="0 0 24 24"
                 stroke="currentColor"
               >
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
               </svg>
-              <svg 
+              <svg
                 v-else
-                xmlns="http://www.w3.org/2000/svg" 
-                class="h-4 w-4 text-green-500" 
-                viewBox="0 0 20 20" 
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-4 w-4 text-green-500"
+                viewBox="0 0 20 20"
                 fill="currentColor"
               >
                 <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
               </svg>
             </button>
-            <button 
-              class="p-2 hover:bg-muted rounded-md transition-all group/edit" 
-              title="Edit prompt" 
+            <button
+              class="p-2 hover:bg-muted rounded-md transition-all group/edit"
+              title="Edit prompt"
               @click.stop="editPrompt(prompt)"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground group-hover/edit:text-foreground transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
             </button>
-            <button 
-              class="p-2 hover:bg-muted rounded-md transition-all group/delete" 
-              title="Delete prompt" 
+            <!-- Show delete button for non-default prompts -->
+            <button
+              v-if="!isDefaultPrompt(prompt)"
+              class="p-2 hover:bg-muted rounded-md transition-all group/delete"
+              title="Delete prompt"
               @click.stop="confirmDelete(prompt)"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground group-hover/delete:text-red-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
             </button>
+            <!-- Show default badge for default prompt -->
+            <span
+              v-else
+              class="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs font-medium rounded-md border border-purple-200 dark:border-purple-700"
+            >
+              default prompt
+            </span>
           </div>
         </div>
         <div class="flex items-center gap-5 text-xs text-muted-foreground py-4 px-4 border-t border-border bg-[#141414] rounded-b-lg">
@@ -163,6 +172,10 @@ const promptToDelete = ref<Prompt | null>(null)
 
 function navigateToNew() {
   router.push('/dashboard/prompts/new')
+}
+
+function isDefaultPrompt(prompt: Prompt): boolean {
+  return prompt.name === 'Default Clip Detector'
 }
 
 async function loadPrompts() {
