@@ -5,12 +5,12 @@
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
           <div>
-            <div class="flex items-center gap-3">
-              <div v-if="icon" class="p-1.5 bg-muted rounded-lg flex-shrink-0">
+            <div class="flex items-center gap-2.5">
+              <div v-if="icon" class="p-2 bg-muted rounded-md flex-shrink-0">
                 <!-- SVG file reference -->
-                <img v-if="icon.endsWith('.svg')" :src="icon" :alt="title" class="h-5 w-5 text-foreground invert" />
+                <img v-if="icon.endsWith('.svg')" :src="icon" :alt="title" class="h-4 w-4 text-foreground invert" />
                 <!-- Inline SVG path -->
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="icon" />
                 </svg>
               </div>

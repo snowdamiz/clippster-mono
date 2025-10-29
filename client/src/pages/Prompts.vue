@@ -22,8 +22,8 @@
 
     <!-- Prompts List -->
     <div v-else-if="prompts.length > 0" class="space-y-4">
-      <div v-for="prompt in prompts" :key="prompt.id" class="bg-card border border-border rounded-lg p-5">
-        <div class="flex items-start justify-between mb-4">
+      <div v-for="prompt in prompts" :key="prompt.id" class="bg-card border border-border rounded-lg">
+        <div class="flex items-start justify-between p-5">
           <div class="flex items-start gap-4 flex-1">
             <div class="p-2.5 bg-muted rounded-lg flex-shrink-0">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -83,7 +83,7 @@
             </button>
           </div>
         </div>
-        <div class="flex items-center gap-5 text-xs text-muted-foreground pt-4 -mx-5 px-5 border-t border-border">
+        <div class="flex items-center gap-5 text-xs text-muted-foreground py-4 px-4 border-t border-border bg-[#141414] rounded-b-lg">
           <span class="flex items-center gap-1.5">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />

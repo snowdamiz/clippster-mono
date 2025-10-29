@@ -1,52 +1,68 @@
 <template>
-  <PageLayout
-    title="Raw Videos"
-    description="Browse and manage your raw video files"
-    :show-header="!loading && (videos.length > 0 || uploading || activeDownloads.length > 0)"
-    icon="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-  >
-    <template #actions>
-      <div class="flex items-center gap-2">
-        <button
-          @click="openVideosFolder"
-          title="Open videos folder"
-          class="p-2.5 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-all"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-          </svg>
-        </button>
-        <button 
-          @click="handleUpload"
-          :disabled="uploading"
-          class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-          </svg>
-          {{ uploading ? 'Uploading...' : 'Upload Video' }}
-        </button>
+  <div class="videos-page-wrapper">
+    <div class="pb-20 min-h-full">
+    <!-- Page Title and Actions (always rendered for consistent structure) -->
+    <div class="mb-8">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div>
+            <div class="flex items-center gap-2.5">
+              <div class="p-2 bg-muted rounded-md flex-shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <h1 class="text-2xl font-bold text-foreground">Raw Videos</h1>
+            </div>
+            <p class="text-sm text-muted-foreground mt-2">Browse and manage your raw video files</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            @click="openVideosFolder"
+            title="Open videos folder"
+            class="p-2.5 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-all"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+          </button>
+          <button
+            @click="handleUpload"
+            :disabled="uploading"
+            class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            {{ uploading ? 'Uploading...' : 'Upload Video' }}
+          </button>
+        </div>
       </div>
-    </template>
-
-    <!-- Loading State -->
-    <LoadingState v-if="loading" message="Loading videos..." />
-
-    <!-- Always show header when there's content -->
-    <div v-if="!loading && (videos.length > 0 || uploading || activeDownloads.length > 0)" class="flex items-center justify-between mb-4">
-      <p class="text-sm text-muted-foreground">
-        <span v-if="activeDownloads.length > 0">
-          {{ activeDownloads.length }} download{{ activeDownloads.length !== 1 ? 's' : '' }} in progress
-          <span v-if="videos.length > 0">• {{ videos.length }} video{{ videos.length !== 1 ? 's' : '' }}</span>
-        </span>
-        <span v-else-if="videos.length > 0">
-          {{ videos.length }} video{{ videos.length !== 1 ? 's' : '' }}
-        </span>
-      </p>
     </div>
 
-    <!-- Videos Grid -->
-    <div v-if="!loading && (videos.length > 0 || uploading || activeDownloads.length > 0)" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+    <!-- Content area -->
+    <div class="content-area">
+      <!-- Loading State -->
+      <LoadingState v-if="loading" message="Loading videos..." />
+
+      <!-- Content when not loading -->
+      <div v-else>
+        <!-- Header with stats -->
+        <div v-if="videos.length > 0 || uploading || activeDownloads.length > 0" class="flex items-center justify-between mb-4">
+          <p class="text-sm text-muted-foreground">
+            <span v-if="activeDownloads.length > 0">
+              {{ activeDownloads.length }} download{{ activeDownloads.length !== 1 ? 's' : '' }} in progress
+              <span v-if="videos.length > 0">• {{ videos.length }} video{{ videos.length !== 1 ? 's' : '' }}</span>
+            </span>
+            <span v-else-if="videos.length > 0">
+              {{ videos.length }} video{{ videos.length !== 1 ? 's' : '' }}
+            </span>
+          </p>
+        </div>
+
+        <!-- Videos Grid -->
+        <div v-if="videos.length > 0 || uploading || activeDownloads.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
       <!-- Skeleton loader card for uploading -->
       <div v-if="uploading" class="relative bg-card border border-border rounded-lg overflow-hidden animate-pulse">
         <!-- Thumbnail skeleton -->
@@ -116,7 +132,7 @@
       </div>
 
       <!-- Existing video cards -->
-      <div v-for="video in videos" :key="video.id" class="group relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer">
+      <div v-for="video in paginatedVideos" :key="video.id" class="group relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer">
         <!-- Thumbnail -->
         <div class="aspect-video bg-muted/50 relative">
           <img
@@ -165,20 +181,23 @@
       </div>
     </div>
 
-    <!-- Empty State -->
-    <EmptyState
-      v-else-if="!uploading"
-      title="No videos yet"
-      description="Upload your first raw video or download directly from Pump.fun to get started"
-      button-text="Upload Video"
-      @action="handleUpload"
-    >
+  
+        <!-- Empty State -->
+        <EmptyState
+          v-else
+          title="No videos yet"
+          description="Upload your first raw video or download directly from Pump.fun to get started"
+          button-text="Upload Video"
+          @action="handleUpload"
+        >
       <template #icon>
         <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-        </svg>
+          </svg>
       </template>
     </EmptyState>
+      </div> <!-- Close content when not loading -->
+    </div> <!-- Close content-area -->
 
     <!-- Video Player Dialog -->
     <div
@@ -381,7 +400,105 @@
         </div>
       </div>
     </div>
-  </PageLayout>
+  </div>
+
+  <!-- Fixed Pagination Footer (styled like breadcrumbs header) -->
+  <footer
+    v-if="!loading && videos.length > 0 && totalPages > 1"
+    class="fixed bottom-0 left-64 right-0 h-16 px-8 flex items-center justify-between border-t border-border/40 bg-background/95 backdrop-blur-sm z-10"
+  >
+    <!-- Page info -->
+    <div class="text-sm text-muted-foreground">
+      <span v-if="videos.length > 0">
+        {{ videos.length }} video{{ videos.length !== 1 ? 's' : '' }} •
+        Page {{ currentPage }} of {{ totalPages }}
+      </span>
+    </div>
+
+    <!-- Pagination Controls -->
+    <div class="flex items-center gap-2 rounded-md p-0.5">
+      <!-- Previous Button -->
+      <button
+        @click="previousPage"
+        :disabled="currentPage === 1"
+        class="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-all text-sm"
+        title="Previous page"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+        </svg>
+        Previous
+      </button>
+
+      <!-- Page Numbers -->
+      <div class="flex items-center gap-1">
+        <!-- Generate page numbers with smart ellipsis -->
+        <template v-for="page in totalPages" :key="page">
+          <!-- Show first page -->
+          <button
+            v-if="page === 1"
+            @click="goToPage(page)"
+            :class="[
+              'px-2.5 py-1.5 rounded-md transition-all text-sm font-medium',
+              currentPage === page
+                ? 'text-purple-500'
+                : 'hover:bg-muted/80 text-foreground'
+            ]"
+          >
+            {{ page }}
+          </button>
+
+          <!-- Show ellipsis before current page range -->
+          <span v-else-if="page === currentPage - 2 && page > 2" class="px-1.5 text-muted-foreground text-sm">...</span>
+
+          <!-- Show pages around current -->
+          <button
+            v-else-if="page >= currentPage - 1 && page <= currentPage + 1"
+            @click="goToPage(page)"
+            :class="[
+              'px-2.5 py-1.5 rounded-md transition-all text-sm font-medium',
+              currentPage === page
+                ? 'text-purple-500'
+                : 'hover:bg-muted/80 text-foreground'
+            ]"
+          >
+            {{ page }}
+          </button>
+
+          <!-- Show ellipsis after current page range -->
+          <span v-else-if="page === currentPage + 2 && page < totalPages - 1" class="px-1.5 text-muted-foreground text-sm">...</span>
+
+          <!-- Show last page -->
+          <button
+            v-else-if="page === totalPages && totalPages > 1"
+            @click="goToPage(page)"
+            :class="[
+              'px-2.5 py-1.5 rounded-md transition-all text-sm font-medium',
+              currentPage === page
+                ? 'bg-purple-500 text-white'
+                : 'hover:bg-muted/80 text-foreground'
+            ]"
+          >
+            {{ page }}
+          </button>
+        </template>
+      </div>
+
+      <!-- Next Button -->
+      <button
+        @click="nextPage"
+        :disabled="currentPage === totalPages"
+        class="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-all text-sm"
+        title="Next page"
+      >
+        Next
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
+    </div>
+  </footer>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -394,7 +511,6 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { getStoragePath } from '@/services/storage'
-import PageLayout from '@/components/PageLayout.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import EmptyState from '@/components/EmptyState.vue'
 
@@ -409,6 +525,10 @@ const videoSrc = ref<string | null>(null)
 const thumbnailCache = ref<Map<string, string>>(new Map())
 const { getRelativeTime } = useFormatters()
 const { success, error } = useToast()
+
+// Pagination state
+const currentPage = ref(1)
+const videosPerPage = 10
 
 // Video player state
 const videoElement = ref<HTMLVideoElement | null>(null)
@@ -588,6 +708,38 @@ const {
 
 const activeDownloads = computed(() => getActiveDownloads())
 
+// Pagination computed properties
+const totalPages = computed(() => Math.ceil(videos.value.length / videosPerPage))
+const paginatedVideos = computed(() => {
+  const startIndex = (currentPage.value - 1) * videosPerPage
+  const endIndex = startIndex + videosPerPage
+  return videos.value.slice(startIndex, endIndex)
+})
+
+// Pagination functions
+function goToPage(page: number) {
+  if (page >= 1 && page <= totalPages.value) {
+    currentPage.value = page
+  }
+}
+
+function nextPage() {
+  if (currentPage.value < totalPages.value) {
+    currentPage.value++
+  }
+}
+
+function previousPage() {
+  if (currentPage.value > 1) {
+    currentPage.value--
+  }
+}
+
+// Reset to first page when videos change
+watch(videos, () => {
+  currentPage.value = 1
+})
+
 let cleanupInterval: ReturnType<typeof setInterval> | null = null
 let unregisterDownloadCallback: (() => void) | null = null
 
@@ -595,6 +747,9 @@ async function loadVideos() {
   loading.value = true
   try {
     videos.value = await getAllRawVideos()
+
+    // Reset pagination to first page when loading new videos
+    currentPage.value = 1
     // Load thumbnails
     for (const video of videos.value) {
       if (video.thumbnail_path && !thumbnailCache.value.has(video.id)) {
@@ -800,6 +955,13 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* Root wrapper to ensure single root element for Transition */
+.videos-page-wrapper {
+  position: relative;
+  width: 100%;
+  min-height: 100%;
+}
+
 /* Custom range input styling */
 input[type="range"].slider {
   -webkit-appearance: none;
