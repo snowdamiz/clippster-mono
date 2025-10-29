@@ -36,11 +36,9 @@
     </div>
 
     <!-- Info -->
-    <div class="p-4">
+    <div class="px-4 py-3">
       <h4 class="font-semibold text-foreground truncate mb-1">{{ clip.title }}</h4>
-      <p class="text-xs text-muted-foreground mb-2" v-if="clip.duration">Duration: {{ Math.round(clip.duration) }}s</p>
-      <p class="text-xs text-muted-foreground" v-if="clip.createdAt">Added {{ formattedTime }}</p>
-      <p class="text-xs text-muted-foreground" v-else>Clip ID: {{ truncatedClipId }}</p>
+      <p class="text-xs text-muted-foreground mb-2">Added {{ formattedTime }}</p>
     </div>
   </div>
 </template>
