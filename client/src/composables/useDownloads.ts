@@ -4,6 +4,9 @@ import { invoke } from '@tauri-apps/api/core'
 import { createRawVideo } from '@/services/database'
 import { generateId } from '@/services/database'
 
+// Event emitter for download completion notifications
+const completionCallbacks = new Set<(download: ActiveDownload) => void>()
+
 export interface DownloadProgress {
   download_id: string
   progress: number
@@ -84,6 +87,15 @@ export function useDownloads() {
 
             download.rawVideoId = rawVideoId
             console.log('[Downloads] Database record created with ID:', rawVideoId)
+
+            // Notify all listeners about completion
+            completionCallbacks.forEach(callback => {
+              try {
+                callback(download)
+              } catch (error) {
+                console.error('[Downloads] Error in completion callback:', error)
+              }
+            })
           } catch (error) {
             console.error('Failed to create raw video record:', error)
           }
@@ -190,6 +202,16 @@ export function useDownloads() {
     }
   }
 
+  // Register a callback for download completion events
+  function onDownloadComplete(callback: (download: ActiveDownload) => void): () => void {
+    completionCallbacks.add(callback)
+
+    // Return a function to unregister the callback
+    return () => {
+      completionCallbacks.delete(callback)
+    }
+  }
+
   return {
     activeDownloads,
     isInitialized,
@@ -202,5 +224,6 @@ export function useDownloads() {
     removeDownload,
     clearCompleted,
     cleanupOldDownloads,
+    onDownloadComplete,
   }
 }

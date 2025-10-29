@@ -280,12 +280,14 @@ const {
   initialize: initializeDownloads,
   getActiveDownloads,
   cleanupOldDownloads,
-  getAllDownloads
+  getAllDownloads,
+  onDownloadComplete
 } = useDownloads()
 
 const activeDownloads = computed(() => getActiveDownloads())
 
 let cleanupInterval: number | null = null
+let unregisterDownloadCallback: (() => void) | null = null
 
 async function loadVideos() {
   loading.value = true
@@ -311,14 +313,16 @@ async function loadVideos() {
   }
 }
 
-// Check if any downloads have completed and should be added to videos list
-async function checkForCompletedDownloads() {
-  const allDownloads = getAllDownloads()
-  const completedDownloads = allDownloads.filter(d => d.result?.success && d.rawVideoId)
+// Handle download completion - immediately refresh the videos list
+function handleDownloadComplete(download: any) {
+  console.log('[Videos] Download completed:', download.title)
 
-  if (completedDownloads.length > 0) {
-    // Reload videos list to show newly completed downloads
-    await loadVideos()
+  // Immediately refresh the videos list to show the newly completed download
+  loadVideos()
+
+  // Show a success notification if available
+  if (download.result?.success && download.rawVideoId) {
+    success('Download Complete', `"${download.title}" has been downloaded and added to your videos`)
   }
 }
 
@@ -452,19 +456,35 @@ onMounted(async () => {
   // Initialize downloads system
   await initializeDownloads()
 
-  // Load videos
+  // Register for download completion events for immediate updates
+  unregisterDownloadCallback = onDownloadComplete(handleDownloadComplete)
+
+  // Check for any completed downloads that might have been missed
+  // This handles cases where the user navigates to the page after downloads completed
+  const allDownloads = getAllDownloads()
+  const completedDownloads = allDownloads.filter(d =>
+    d.result?.success && d.rawVideoId
+  )
+
+  // Load videos (will show existing videos + any recently completed downloads)
   await loadVideos()
 
-  // Set up periodic cleanup and check for completed downloads
+  // If there were completed downloads that might not be in the videos list yet,
+  // we'll handle it through the normal loadVideos() process
+  console.log(`[Videos] Found ${completedDownloads.length} completed downloads on mount`)
+
+  // Set up periodic cleanup (no longer need to check for completed downloads)
   cleanupInterval = setInterval(() => {
     cleanupOldDownloads()
-    checkForCompletedDownloads()
-  }, 2000) // Check every 2 seconds
+  }, 2000) // Cleanup every 2 seconds
 })
 
 onUnmounted(() => {
   if (cleanupInterval) {
     clearInterval(cleanupInterval)
+  }
+  if (unregisterDownloadCallback) {
+    unregisterDownloadCallback()
   }
 })
 </script>
