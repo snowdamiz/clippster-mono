@@ -138,13 +138,19 @@ export function useDownloads() {
 
     try {
       console.log('[Downloads] Invoking download_pumpfun_vod command...')
-      await invoke('download_pumpfun_vod', {
+      // Start the download without waiting for it to complete
+      invoke('download_pumpfun_vod', {
         downloadId,
         title,
         videoUrl,
         mintId
+      }).catch(error => {
+        console.error('[Downloads] Error in download command (async):', error)
+        // Remove from active downloads if failed to start
+        activeDownloads.delete(downloadId)
+        // We can't throw here since the async operation has already returned
       })
-      console.log('[Downloads] download_pumpfun_vod command completed successfully')
+      console.log('[Downloads] download_pumpfun_vod command initiated successfully')
     } catch (error) {
       console.error('[Downloads] Error invoking download command:', error)
       // Remove from active downloads if failed to start

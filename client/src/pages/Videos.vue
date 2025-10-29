@@ -152,7 +152,7 @@
         <!-- Info -->
         <div class="p-4">
           <h4 class="font-semibold text-foreground truncate mb-1">{{ video.original_filename || video.file_path.split(/[\\\/]/).pop() || 'Untitled Video' }}</h4>
-          <p class="text-xs text-muted-foreground mb-2" v-if="video.duration">Duration: {{ Math.round(video.duration) }}s</p>
+          <p class="text-xs text-muted-foreground mb-2" v-if="video.duration">Duration: {{ formatDuration(video.duration) }}</p>
           <p class="text-xs text-muted-foreground">Added {{ getRelativeTime(video.created_at) }}</p>
         </div>
       </div>
