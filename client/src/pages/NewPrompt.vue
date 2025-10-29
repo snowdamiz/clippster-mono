@@ -9,7 +9,7 @@
       <!-- Main Form -->
       <div>
         <!-- Form Card -->
-        <div class="bg-card border border-border rounded-xl p-6 shadow-sm">
+        <div class="bg-card border border-border rounded-lg p-6 shadow-sm">
           <form @submit.prevent="handleSubmit" class="space-y-6">
             <!-- Name Field -->
             <div class="space-y-1.5">
@@ -87,7 +87,7 @@
         <!-- Tips & Help - Bottom Section -->
         <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
         <!-- Quick Tips Card -->
-        <div class="bg-gradient-to-br from-purple-500/5 to-indigo-500/5 border border-purple-500/20 rounded-xl p-5 space-y-3">
+        <div class="bg-gradient-to-br from-purple-500/5 to-indigo-500/5 border border-purple-500/20 rounded-lg p-5 space-y-3">
           <div class="flex items-center gap-2.5">
             <div class="p-1.5 bg-purple-500/10 rounded-lg">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-purple-500" viewBox="0 0 20 20" fill="currentColor">
@@ -125,7 +125,7 @@
         </div>
 
         <!-- Example Templates Card -->
-        <div class="bg-card border border-border rounded-xl p-5 space-y-3">
+        <div class="bg-card border border-border rounded-lg p-5 space-y-3">
           <div class="flex items-center gap-2.5">
             <div class="p-1.5 bg-muted rounded-lg">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-foreground" viewBox="0 0 20 20" fill="currentColor">

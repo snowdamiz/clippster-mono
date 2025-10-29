@@ -5,7 +5,7 @@
       :key="toast.id"
       v-model:open="toast.open"
       :duration="toast.duration"
-      class="bg-card border border-border rounded-xl p-4 shadow-lg flex items-start gap-3 data-[state=open]:animate-slideIn data-[state=closed]:animate-hide data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=cancel]:translate-x-0 data-[swipe=end]:animate-swipeOut"
+      class="bg-card border border-border rounded-lg p-4 shadow-lg flex items-start gap-3 data-[state=open]:animate-slideIn data-[state=closed]:animate-hide data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=cancel]:translate-x-0 data-[swipe=end]:animate-swipeOut"
       @update:open="(open) => !open && removeToast(toast.id)"
     >
       <!-- Icon -->

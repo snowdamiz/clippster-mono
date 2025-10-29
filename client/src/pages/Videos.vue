@@ -33,7 +33,7 @@
     <LoadingState v-if="loading" message="Loading videos..." />
 
     <!-- Always show header when there's content -->
-    <div v-if="!loading && (videos.length > 0 || uploading || activeDownloads.length > 0)" class="flex items-center justify-between mb-6">
+    <div v-if="!loading && (videos.length > 0 || uploading || activeDownloads.length > 0)" class="flex items-center justify-between mb-4">
       <p class="text-sm text-muted-foreground">
         <span v-if="activeDownloads.length > 0">
           {{ activeDownloads.length }} download{{ activeDownloads.length !== 1 ? 's' : '' }} in progress
@@ -48,7 +48,7 @@
     <!-- Videos Grid -->
     <div v-if="!loading && (videos.length > 0 || uploading || activeDownloads.length > 0)" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
       <!-- Skeleton loader card for uploading -->
-      <div v-if="uploading" class="relative bg-card border border-border rounded-xl overflow-hidden animate-pulse">
+      <div v-if="uploading" class="relative bg-card border border-border rounded-lg overflow-hidden animate-pulse">
         <!-- Thumbnail skeleton -->
         <div class="aspect-video bg-muted/50 relative">
           <div class="absolute inset-0 flex items-center justify-center">
@@ -70,7 +70,7 @@
       </div>
 
       <!-- Active download cards -->
-      <div v-for="download in activeDownloads" :key="download.id" class="group relative bg-card border border-border rounded-xl overflow-hidden hover:border-foreground/20">
+      <div v-for="download in activeDownloads" :key="download.id" class="group relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20">
         <!-- Thumbnail with progress overlay -->
         <div class="aspect-video bg-muted/50 relative">
           <div class="absolute inset-0 flex items-center justify-center">
@@ -116,7 +116,7 @@
       </div>
 
       <!-- Existing video cards -->
-      <div v-for="video in videos" :key="video.id" class="group relative bg-card border border-border rounded-xl overflow-hidden hover:border-foreground/20 cursor-pointer">
+      <div v-for="video in videos" :key="video.id" class="group relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer">
         <!-- Thumbnail -->
         <div class="aspect-video bg-muted/50 relative">
           <img
@@ -317,7 +317,7 @@
                 <div class="flex items-center gap-3">
                   <button
                     @click="toggleMute"
-                    class="p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-all duration-200 backdrop-blur-sm"
+                    class="p-3 bg-white/10 hover:bg-white/20 rounded-lg transition-all duration-200 backdrop-blur-sm"
                     title="Mute/Unmute"
                   >
                     <svg v-if="isMuted || volume === 0" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">

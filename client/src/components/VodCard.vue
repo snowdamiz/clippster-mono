@@ -1,5 +1,5 @@
 <template>
-  <div class="group relative bg-card border border-border rounded-xl overflow-hidden hover:border-foreground/20 cursor-pointer">
+  <div class="group relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer">
     <!-- Thumbnail -->
     <div class="aspect-video bg-muted/50 relative">
       <img

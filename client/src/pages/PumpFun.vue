@@ -1,7 +1,7 @@
 <template>
   <PageLayout
     title="PumpFun"
-    description="Direct VOD processing for PumpFun streams"
+    description="Download streams direct from PumpFun"
     :show-header="pumpFunStore.clips.length > 0"
     icon="/capsule.svg"
   >
@@ -105,7 +105,7 @@
       <!-- Skeleton Cards Grid -->
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <!-- Show 6 skeleton cards during loading -->
-        <div v-for="i in 6" :key="i" class="relative bg-card border border-border rounded-xl overflow-hidden animate-pulse">
+        <div v-for="i in 6" :key="i" class="relative bg-card border border-border rounded-lg overflow-hidden animate-pulse">
           <!-- Thumbnail skeleton -->
           <div class="aspect-video bg-muted/50 relative">
             <div class="absolute inset-0 flex items-center justify-center">
@@ -129,7 +129,7 @@
     </div>
 
     <!-- Error State -->
-    <div v-else-if="pumpFunStore.error" class="bg-red-500/10 border border-red-500/50 rounded-xl p-6 text-center">
+    <div v-else-if="pumpFunStore.error" class="bg-red-500/10 border border-red-500/50 rounded-lg p-6 text-center">
       <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-red-500 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>

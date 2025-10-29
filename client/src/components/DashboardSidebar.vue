@@ -111,7 +111,6 @@ const handleDisconnect = () => {
 .nav-link-active {
   background-color: rgb(255 255 255 / 0.1);
   color: white;
-  border-left: 3px solid rgb(255 255 255);
 }
 
 .nav-link-active:hover {

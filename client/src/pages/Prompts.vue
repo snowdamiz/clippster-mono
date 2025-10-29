@@ -22,7 +22,7 @@
 
     <!-- Prompts List -->
     <div v-else-if="prompts.length > 0" class="space-y-4">
-      <div v-for="prompt in prompts" :key="prompt.id" class="bg-card border border-border rounded-xl p-5">
+      <div v-for="prompt in prompts" :key="prompt.id" class="bg-card border border-border rounded-lg p-5">
         <div class="flex items-start justify-between mb-4">
           <div class="flex items-start gap-4 flex-1">
             <div class="p-2.5 bg-muted rounded-lg flex-shrink-0">

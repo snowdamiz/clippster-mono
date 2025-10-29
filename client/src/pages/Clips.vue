@@ -19,7 +19,7 @@
 
     <!-- Clips Grid -->
     <div v-else-if="clips.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-      <div v-for="clip in clips" :key="clip.id" class="group relative bg-card border border-border rounded-xl overflow-hidden hover:border-foreground/20 cursor-pointer">
+      <div v-for="clip in clips" :key="clip.id" class="group relative bg-card border border-borderlg overflow-hidden hover:border-foreground/20 cursor-pointer">
         <!-- Thumbnail -->
         <div class="aspect-video bg-muted/50 relative">
           <div class="absolute inset-0 flex items-center justify-center">
