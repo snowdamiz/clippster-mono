@@ -62,13 +62,6 @@ const imageError = ref(false)
 const formattedDuration = computed(() => formatDuration(props.clip.duration))
 const formattedTime = computed(() => formatRelativeTime(props.clip.createdAt))
 
-const truncatedClipId = computed(() => {
-  const id = props.clip.clipId
-  if (!id) return ''
-  if (id.length <= 12) return id
-  return `${id.slice(0, 6)}...${id.slice(-4)}`
-})
-
 const clipTypeBadgeClass = computed(() => {
   return props.clip.clipType === 'COMPLETE'
     ? 'bg-purple-500/80 text-white'

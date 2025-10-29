@@ -80,7 +80,7 @@ export function useDownloads() {
               duration: event.payload.duration,
               width: event.payload.width,
               height: event.payload.height,
-              frameRate: null, // We don't have this info from the basic download
+              frameRate: undefined, // We don't have this info from the basic download
               codec: event.payload.codec,
               fileSize: event.payload.file_size,
             })

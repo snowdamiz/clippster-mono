@@ -171,6 +171,8 @@ const router = useRouter()
 const { success, error } = useToast()
 const saving = ref(false)
 const nameInput = ref<HTMLInputElement | null>(null)
+const nameError = ref('')
+const contentError = ref('')
 
 const formData = reactive({
   name: '',

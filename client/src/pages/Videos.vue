@@ -587,7 +587,7 @@ const {
 
 const activeDownloads = computed(() => getActiveDownloads())
 
-let cleanupInterval: number | null = null
+let cleanupInterval: ReturnType<typeof setInterval> | null = null
 let unregisterDownloadCallback: (() => void) | null = null
 
 async function loadVideos() {

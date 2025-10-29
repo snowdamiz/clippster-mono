@@ -200,9 +200,10 @@ import { ref, watch, reactive } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { getAllRawVideos, type Project, type RawVideo } from '@/services/database'
 
-interface ProjectFormData {
+export interface ProjectFormData {
   name: string
   description: string
+  rawVideoPath: string
 }
 
 const props = defineProps<{
@@ -219,7 +220,8 @@ const loading = ref(false)
 const isEdit = ref(false)
 const formData = reactive<ProjectFormData>({
   name: '',
-  description: ''
+  description: '',
+  rawVideoPath: ''
 })
 
 const errors = reactive<Partial<Record<keyof ProjectFormData, string>>>({})

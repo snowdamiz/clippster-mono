@@ -35,7 +35,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { MdEditor } from 'md-editor-v3'
+import { MdEditor, type ToolbarNames } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
 
 interface Props {
@@ -83,7 +83,7 @@ const wordCount = computed(() => {
 })
 
 // Toolbar configuration with essential markdown tools
-const toolbars = [
+const toolbars: ToolbarNames[] = [
   'bold',
   'italic',
   'strikeThrough',

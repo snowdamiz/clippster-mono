@@ -108,7 +108,7 @@ import { useToast } from '@/composables/useToast'
 import PageLayout from '@/components/PageLayout.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import EmptyState from '@/components/EmptyState.vue'
-import ProjectDialog from '@/components/ProjectDialog.vue'
+import ProjectDialog, { type ProjectFormData } from '@/components/ProjectDialog.vue'
 
 const projects = ref<Project[]>([])
 const loading = ref(true)
@@ -151,7 +151,7 @@ function editProject(project: Project) {
   showDialog.value = true
 }
 
-async function handleProjectSubmit(data: { name: string; description: string; rawVideoPath: string }) {
+async function handleProjectSubmit(data: ProjectFormData) {
   try {
     if (selectedProject.value) {
       // Update existing project

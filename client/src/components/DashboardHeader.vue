@@ -39,7 +39,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useBreadcrumb } from '@/composables/useBreadcrumb'
@@ -72,7 +72,6 @@ const breadcrumbs = computed<Breadcrumb[]>(() => {
   for (let i = 0; i < pathSegments.length; i++) {
     const segment = pathSegments[i]
     const isLast = i === pathSegments.length - 1
-    const nextSegment = pathSegments[i + 1]
     
     // Check if this is a UUID segment (8-4-4-4-12 format)
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

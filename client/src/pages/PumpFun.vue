@@ -209,14 +209,12 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import PageLayout from '@/components/PageLayout.vue'
-import LoadingState from '@/components/LoadingState.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import VodCard from '@/components/VodCard.vue'
 import { type PumpFunClip } from '@/services/pumpfun'
 import { useToast } from '@/composables/useToast'
 import { useDownloads } from '@/composables/useDownloads'
 import { usePumpFunStore } from '@/stores/pumpfun'
-import { invoke } from '@tauri-apps/api/core'
 
 const { success, error: showError } = useToast()
 const { startDownload } = useDownloads()
