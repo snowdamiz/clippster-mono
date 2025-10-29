@@ -3,6 +3,7 @@
     title="Clips"
     description="Browse and manage all your video clips"
     :show-header="!loading && clips.length > 0"
+    icon="M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4"
   >
     <template #actions>
       <button class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all">

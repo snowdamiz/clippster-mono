@@ -3,6 +3,7 @@
     title="PumpFun"
     description="Direct VOD processing for PumpFun streams"
     :show-header="pumpFunStore.clips.length > 0"
+    icon="/capsule.svg"
   >
     <template #actions v-if="pumpFunStore.clips.length > 0">
       <div class="flex items-center gap-3">
