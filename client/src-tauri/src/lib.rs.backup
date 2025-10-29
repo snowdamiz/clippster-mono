@@ -891,9 +891,6 @@ async fn start_video_server_impl() {
                     _ => "application/octet-stream",
                 };
 
-                // Always require range requests for large files to prevent memory overflow
-                const LARGE_FILE_THRESHOLD: u64 = 50 * 1024 * 1024; // 50MB
-
                 // Handle Range header for seeking support
                 match range_header {
                     Some(range) => {
@@ -913,52 +910,39 @@ async fn start_video_server_impl() {
                                     parts[1].parse::<u64>().unwrap_or(file_size - 1)
                                 };
 
-                                // Validate range and ensure it's not too large
+                                // Validate range
                                 if start < file_size && end < file_size && start <= end {
                                     let content_length = end - start + 1;
-
-                                    // For very large ranges, serve the first 50MB chunk instead
-                                    let actual_end = if content_length > LARGE_FILE_THRESHOLD {
-                                        start + LARGE_FILE_THRESHOLD - 1
-                                    } else {
-                                        end
-                                    };
-                                    let actual_content_length = actual_end - start + 1;
 
                                     // Open file and seek to start position
                                     match tokio::fs::File::open(&file_path).await {
                                         Ok(mut file) => {
                                             use tokio::io::{AsyncSeekExt, AsyncReadExt};
 
-                                            if let Err(e) = file.seek(std::io::SeekFrom::Start(start)).await {
-                                                eprintln!("Failed to seek to position {}: {}", start, e);
+                                            if let Err(_) = file.seek(std::io::SeekFrom::Start(start)).await {
                                                 return Ok(warp::reply::with_status(
                                                     warp::reply::json(&serde_json::json!({"error": "Cannot seek in file"})),
                                                     warp::http::StatusCode::INTERNAL_SERVER_ERROR
                                                 ).into_response());
                                             }
 
-                                            let mut buffer = vec![0u8; actual_content_length as usize];
-                                            if let Err(e) = file.read_exact(&mut buffer).await {
-                                                eprintln!("Failed to read range {}-{}: {}", start, actual_end, e);
+                                            let mut buffer = vec![0u8; content_length as usize];
+                                            if let Err(_) = file.read_exact(&mut buffer).await {
                                                 return Ok(warp::reply::with_status(
                                                     warp::reply::json(&serde_json::json!({"error": "Cannot read file range"})),
                                                     warp::http::StatusCode::INTERNAL_SERVER_ERROR
                                                 ).into_response());
                                             }
 
-                                            eprintln!("Serving range {}-{}/{} ({} bytes, requested: {}-{}) for file: {}",
-                                                start, actual_end, file_size, actual_content_length, start, end, file_path.display());
-
-                                            // Return 206 Partial Content with actual served range
+                                            // Return 206 Partial Content
                                             let response = warp::reply::with_header(
                                                 warp::reply::with_header(
                                                     buffer,
                                                     "Content-Range",
-                                                    format!("bytes {}-{}/{}", start, actual_end, file_size)
+                                                    format!("bytes {}-{}/{}", start, end, file_size)
                                                 ),
                                                 "Content-Length",
-                                                actual_content_length.to_string()
+                                                content_length.to_string()
                                             );
 
                                             let response = warp::reply::with_header(
@@ -978,8 +962,7 @@ async fn start_video_server_impl() {
                                                 warp::http::StatusCode::PARTIAL_CONTENT
                                             ).into_response());
                                         }
-                                        Err(e) => {
-                                            eprintln!("Failed to open file for range request: {}", e);
+                                        Err(_) => {
                                             return Ok(warp::reply::with_status(
                                                 warp::reply::json(&serde_json::json!({"error": "Cannot open file"})),
                                                 warp::http::StatusCode::INTERNAL_SERVER_ERROR
@@ -990,58 +973,41 @@ async fn start_video_server_impl() {
                             }
                         }
 
-                        // If range parsing failed, return error
-                        return Ok(warp::reply::with_status(
-                            warp::reply::json(&serde_json::json!({"error": "Invalid range header"})),
-                            warp::http::StatusCode::RANGE_NOT_SATISFIABLE
-                        ).into_response());
+                        // If range parsing failed, serve the whole file
                     }
                     None => {
-                        // No range header - only serve small files entirely
-                        if file_size <= LARGE_FILE_THRESHOLD {
-                            // Small file: serve normally
-                            let bytes = match tokio::fs::read(&file_path).await {
-                                Ok(b) => b,
-                                Err(e) => {
-                                    eprintln!("Failed to read small file {}: {}", file_path.display(), e);
-                                    return Ok(warp::reply::with_status(
-                                        warp::reply::json(&serde_json::json!({"error": "Cannot read file"})),
-                                        warp::http::StatusCode::INTERNAL_SERVER_ERROR
-                                    ).into_response());
-                                }
-                            };
-
-                            let response = warp::reply::with_header(
-                                warp::reply::with_header(
-                                    bytes,
-                                    "Content-Length",
-                                    file_size.to_string()
-                                ),
-                                "Content-Type",
-                                content_type
-                            );
-
-                            let response = warp::reply::with_header(
-                                response,
-                                "Accept-Ranges",
-                                "bytes"
-                            );
-
-                            return Ok(response.into_response());
-                        } else {
-                            // Large file without range: require range request
-                            return Ok(warp::reply::with_status(
-                                warp::reply::json(&serde_json::json!({
-                                    "error": "Range header required",
-                                    "message": "Files larger than 50MB require range requests",
-                                    "file_size": file_size,
-                                    "content_type": content_type
-                                })),
-                                warp::http::StatusCode::RANGE_NOT_SATISFIABLE
-                            ).into_response());
-                        }
+                        // No range header, serve whole file
                     }
                 }
+
+                // Serve entire file (no range request)
+                let bytes = match tokio::fs::read(&file_path).await {
+                    Ok(b) => b,
+                    Err(_) => {
+                        return Ok(warp::reply::with_status(
+                            warp::reply::json(&serde_json::json!({"error": "Cannot read file"})),
+                            warp::http::StatusCode::INTERNAL_SERVER_ERROR
+                        ).into_response());
+                    }
+                };
+
+                let response = warp::reply::with_header(
+                    warp::reply::with_header(
+                        bytes,
+                        "Content-Length",
+                        file_size.to_string()
+                    ),
+                    "Content-Type",
+                    content_type
+                );
+
+                let response = warp::reply::with_header(
+                    response,
+                    "Accept-Ranges",
+                    "bytes"
+                );
+
+                Ok(response.into_response())
             });
 
         let cors = warp::cors()
