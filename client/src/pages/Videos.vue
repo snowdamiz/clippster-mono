@@ -182,20 +182,140 @@
     <!-- Video Player Dialog -->
     <Dialog v-model:open="showVideoPlayer">
       <DialogContent class="max-w-[calc(100vw-80px)] max-h-[calc(100vh-80px)] p-0">
-        <div class="relative w-full h-full">
+        <div class="relative w-full h-full bg-black">
           <DialogTitle class="sr-only">
             {{ videoToPlay?.original_filename || videoToPlay?.file_path.split(/[\\\/]/).pop() || 'Video Player' }}
           </DialogTitle>
           <DialogDescription class="sr-only">
             Video player for {{ videoToPlay?.original_filename || 'selected video' }}
           </DialogDescription>
-          <video
-            v-if="videoSrc"
-            :src="videoSrc"
-            controls
-            autoplay
-            class="w-full h-full max-h-[calc(100vh-80px)] bg-black"
-          />
+
+          <!-- Custom Video Player -->
+          <div v-if="videoSrc" class="relative w-full h-full flex flex-col">
+            <!-- Video Display -->
+            <div class="relative flex-1 flex items-center justify-center">
+              <video
+                ref="videoElement"
+                :src="videoSrc"
+                class="w-full h-full max-h-[calc(100vh-200px)] bg-black"
+                @timeupdate="onTimeUpdate"
+                @loadedmetadata="onLoadedMetadata"
+                @ended="onVideoEnded"
+              />
+
+              <!-- Loading Indicator -->
+              <div v-if="isVideoLoading" class="absolute inset-0 flex items-center justify-center bg-black/50">
+                <svg class="animate-spin h-12 w-12 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              </div>
+            </div>
+
+            <!-- Custom Video Controls -->
+            <div class="bg-black/90 backdrop-blur-sm border-t border-gray-700">
+              <!-- Timeline/Seek Bar -->
+              <div
+                class="relative h-2 bg-gray-700 cursor-pointer group"
+                @click="seekTo($event)"
+                @mousemove="onTimelineHover($event)"
+                @mouseleave="hoverTime = null"
+              >
+                <!-- Progress Bar -->
+                <div
+                  class="absolute h-full bg-purple-500 transition-all duration-100"
+                  :style="{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }"
+                ></div>
+
+                <!-- Buffered segments indicator -->
+                <div
+                  class="absolute h-full bg-purple-300/40"
+                  :style="{ width: `${duration ? (buffered / duration) * 100 : 0}%` }"
+                ></div>
+
+                <!-- Seek thumb -->
+                <div
+                  class="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-purple-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                  :style="{ left: `${duration ? (currentTime / duration) * 100 : 0}%`, transform: 'translate(-50%, -50%)' }"
+                ></div>
+
+                <!-- Hover time preview -->
+                <div
+                  v-if="hoverTime !== null"
+                  class="absolute -top-8 bg-black/80 text-white text-xs px-2 py-1 rounded"
+                  :style="{ left: `${hoverPosition}%`, transform: 'translateX(-50%)' }"
+                >
+                  {{ formatDuration(hoverTime) }}
+                </div>
+              </div>
+
+              <!-- Control Buttons and Time Display -->
+              <div class="flex items-center justify-between p-4">
+                <!-- Left Controls -->
+                <div class="flex items-center gap-4">
+                  <!-- Play/Pause Button -->
+                  <button
+                    @click="togglePlayPause"
+                    class="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                    title="Play/Pause"
+                  >
+                    <svg v-if="!isPlaying" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </button>
+
+                  <!-- Time Display -->
+                  <div class="text-white text-sm font-mono">
+                    {{ formatDuration(currentTime) }} / {{ formatDuration(duration) }}
+                  </div>
+                </div>
+
+                <!-- Right Controls -->
+                <div class="flex items-center gap-4">
+                  <!-- Volume Control -->
+                  <div class="flex items-center gap-2">
+                    <button
+                      @click="toggleMute"
+                      class="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                      title="Mute/Unmute"
+                    >
+                      <svg v-if="isMuted || volume === 0" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                      </svg>
+                      <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                      </svg>
+                    </button>
+                    <input
+                      v-model="volume"
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      class="w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer slider"
+                      @input="updateVolume"
+                    />
+                  </div>
+
+                  <!-- Close Button -->
+                  <button
+                    @click="showVideoPlayer = false"
+                    class="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                    title="Close"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -234,7 +354,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { getAllRawVideos, createRawVideo, deleteRawVideo, type RawVideo } from '@/services/database'
 import { useFormatters } from '@/composables/useFormatters'
 import { useToast } from '@/composables/useToast'
@@ -263,21 +383,172 @@ const thumbnailCache = ref<Map<string, string>>(new Map())
 const { getRelativeTime } = useFormatters()
 const { success, error } = useToast()
 
+// Video player state
+const videoElement = ref<HTMLVideoElement | null>(null)
+const isPlaying = ref(false)
+const currentTime = ref(0)
+const duration = ref(0)
+const volume = ref(1)
+const isMuted = ref(false)
+const isVideoLoading = ref(true)
+const buffered = ref(0)
+const hoverTime = ref<number | null>(null)
+const hoverPosition = ref(0)
+
 // Helper function to format duration in seconds to human readable format
 function formatDuration(seconds: number): string {
+  if (isNaN(seconds) || !isFinite(seconds)) return '0:00'
+
   if (seconds < 60) {
-    return `${Math.round(seconds)}s`
+    return `0:${Math.round(seconds).toString().padStart(2, '0')}`
   } else if (seconds < 3600) {
     const minutes = Math.floor(seconds / 60)
     const remainingSeconds = Math.round(seconds % 60)
-    return `${minutes}m ${remainingSeconds}s`
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
   } else {
     const hours = Math.floor(seconds / 3600)
     const minutes = Math.floor((seconds % 3600) / 60)
     const remainingSeconds = Math.round(seconds % 60)
-    return `${hours}h ${minutes}m ${remainingSeconds}s`
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
   }
 }
+
+// Video player methods
+function togglePlayPause() {
+  if (!videoElement.value) return
+
+  if (videoElement.value.paused) {
+    videoElement.value.play()
+    isPlaying.value = true
+  } else {
+    videoElement.value.pause()
+    isPlaying.value = false
+  }
+}
+
+function seekTo(event: MouseEvent) {
+  if (!videoElement.value) return
+
+  const timeline = event.currentTarget as HTMLElement
+  const rect = timeline.getBoundingClientRect()
+  const clickX = event.clientX - rect.left
+  const clickPercent = Math.max(0, Math.min(1, clickX / rect.width)) // Clamp between 0 and 1
+
+  // Use the video's duration if available, otherwise wait for metadata to load
+  const videoDuration = videoElement.value.duration || duration.value
+  if (!videoDuration || isNaN(videoDuration)) return
+
+  const seekTime = clickPercent * videoDuration
+
+  // Set the current time on the video element directly
+  videoElement.value.currentTime = seekTime
+
+  // Update reactive state
+  currentTime.value = seekTime
+
+  // If video was paused and we seek to a new position, we should show a preview
+  // but don't auto-play unless the user explicitly clicks play
+  console.log(`Seeking to ${seekTime}s (${Math.round(clickPercent * 100)}%)`)
+}
+
+function onTimelineHover(event: MouseEvent) {
+  if (!videoElement.value) return
+
+  const timeline = event.currentTarget as HTMLElement
+  const rect = timeline.getBoundingClientRect()
+  const hoverX = event.clientX - rect.left
+  const hoverPercent = Math.max(0, Math.min(1, hoverX / rect.width)) // Clamp between 0 and 1
+
+  // Use the video's actual duration if available
+  const videoDuration = videoElement.value.duration || duration.value
+  if (!videoDuration || isNaN(videoDuration)) return
+
+  const hoverTimeSeconds = hoverPercent * videoDuration
+
+  hoverPosition.value = hoverPercent * 100
+  hoverTime.value = hoverTimeSeconds
+}
+
+function updateVolume() {
+  if (!videoElement.value) return
+
+  videoElement.value.volume = volume.value
+  if (volume.value === 0) {
+    isMuted.value = true
+  } else if (isMuted.value) {
+    isMuted.value = false
+  }
+}
+
+function toggleMute() {
+  if (!videoElement.value) return
+
+  if (isMuted.value) {
+    videoElement.value.muted = false
+    isMuted.value = false
+    volume.value = 1
+  } else {
+    videoElement.value.muted = true
+    isMuted.value = true
+    volume.value = 0
+  }
+}
+
+function onTimeUpdate() {
+  if (!videoElement.value) return
+
+  currentTime.value = videoElement.value.currentTime
+
+  // Update duration if it changes (some videos report different durations)
+  const currentDuration = videoElement.value.duration
+  if (currentDuration && currentDuration !== duration.value && !isNaN(currentDuration)) {
+    duration.value = currentDuration
+  }
+
+  // Update buffered time
+  if (videoElement.value.buffered.length > 0) {
+    buffered.value = videoElement.value.buffered.end(videoElement.value.buffered.length - 1)
+  }
+}
+
+function onLoadedMetadata() {
+  if (!videoElement.value) return
+
+  isVideoLoading.value = false
+  duration.value = videoElement.value.duration
+
+  // Set initial volume
+  videoElement.value.volume = volume.value
+  videoElement.value.muted = isMuted.value
+
+  // Auto-play
+  videoElement.value.play()
+  isPlaying.value = true
+}
+
+function onVideoEnded() {
+  isPlaying.value = false
+  currentTime.value = 0
+}
+
+// Watch for dialog close to properly reset video state
+watch(showVideoPlayer, (newVal) => {
+  if (!newVal) {
+    // Dialog is closing, reset video
+    if (videoElement.value) {
+      videoElement.value.pause()
+      videoElement.value.currentTime = 0
+    }
+    isPlaying.value = false
+    currentTime.value = 0
+    duration.value = 0
+    isVideoLoading.value = true
+    hoverTime.value = null
+    hoverPosition.value = 0
+    videoSrc.value = null
+    videoToPlay.value = null
+  }
+})
 
 // Downloads setup
 const {
@@ -387,6 +658,14 @@ async function handleUpload() {
 
 async function playVideo(video: RawVideo) {
   try {
+    // Reset video player state
+    isPlaying.value = false
+    currentTime.value = 0
+    duration.value = 0
+    isVideoLoading.value = true
+    hoverTime.value = null
+    hoverPosition.value = 0
+
     videoToPlay.value = video
     // Get video server port
     const port = await invoke<number>('get_video_server_port')
@@ -492,3 +771,71 @@ onUnmounted(() => {
   }
 })
 </script>
+
+<style scoped>
+/* Custom range input styling */
+input[type="range"].slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"].slider::-webkit-slider-track {
+  background: #4b5563;
+  height: 4px;
+  border-radius: 2px;
+}
+
+input[type="range"].slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  background: #a855f7;
+  height: 12px;
+  width: 12px;
+  border-radius: 50%;
+  margin-top: -4px;
+  transition: all 0.2s ease;
+}
+
+input[type="range"].slider::-webkit-slider-thumb:hover {
+  background: #9333ea;
+  transform: scale(1.1);
+}
+
+input[type="range"].slider::-moz-range-track {
+  background: #4b5563;
+  height: 4px;
+  border-radius: 2px;
+}
+
+input[type="range"].slider::-moz-range-thumb {
+  border: none;
+  background: #a855f7;
+  height: 12px;
+  width: 12px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+input[type="range"].slider::-moz-range-thumb:hover {
+  background: #9333ea;
+  transform: scale(1.1);
+}
+
+/* Timeline hover effects */
+.group:hover .group-hover\:opacity-100 {
+  opacity: 1;
+}
+
+/* Video element styling */
+video {
+  object-fit: contain;
+}
+
+/* Ensure video controls don't overflow */
+.max-h-\[calc\(100vh-200px\)\] {
+  max-height: calc(100vh - 200px);
+}
+</style>

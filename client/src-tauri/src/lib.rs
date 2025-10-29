@@ -835,7 +835,8 @@ async fn start_video_server_impl() {
 
         let video_route = warp::path!("video" / String)
             .and(warp::get())
-            .and_then(|encoded_path: String| async move {
+            .and(warp::header::optional::<String>("range"))
+            .and_then(|encoded_path: String, range_header: Option<String>| async move {
                 // Decode the base64-encoded path
                 use base64::{Engine as _, engine::general_purpose};
                 let decoded = match general_purpose::STANDARD.decode(encoded_path) {
@@ -847,7 +848,7 @@ async fn start_video_server_impl() {
                         ).into_response());
                     }
                 };
-                
+
                 let path_str = match String::from_utf8(decoded) {
                     Ok(s) => s,
                     Err(_) => {
@@ -859,7 +860,7 @@ async fn start_video_server_impl() {
                 };
 
                 let file_path = PathBuf::from(&path_str);
-                
+
                 if !file_path.exists() {
                     return Ok(warp::reply::with_status(
                         warp::reply::json(&serde_json::json!({"error": "File not found"})),
@@ -867,16 +868,18 @@ async fn start_video_server_impl() {
                     ).into_response());
                 }
 
-                // Read the entire file into memory (simpler approach)
-                let bytes = match tokio::fs::read(&file_path).await {
-                    Ok(b) => b,
+                // Get file metadata
+                let metadata = match tokio::fs::metadata(&file_path).await {
+                    Ok(m) => m,
                     Err(_) => {
                         return Ok(warp::reply::with_status(
-                            warp::reply::json(&serde_json::json!({"error": "Cannot read file"})),
+                            warp::reply::json(&serde_json::json!({"error": "Cannot read file metadata"})),
                             warp::http::StatusCode::INTERNAL_SERVER_ERROR
                         ).into_response());
                     }
                 };
+
+                let file_size = metadata.len();
 
                 // Determine content type
                 let content_type = match file_path.extension().and_then(|e| e.to_str()) {
@@ -888,14 +891,123 @@ async fn start_video_server_impl() {
                     _ => "application/octet-stream",
                 };
 
-                Ok(warp::reply::with_header(
-                    warp::reply::with_status(
+                // Handle Range header for seeking support
+                match range_header {
+                    Some(range) => {
+                        // Parse Range header: "bytes=start-end"
+                        if let Some(range_str) = range.strip_prefix("bytes=") {
+                            let parts: Vec<&str> = range_str.split('-').collect();
+                            if parts.len() == 2 {
+                                let start = if parts[0].is_empty() {
+                                    0
+                                } else {
+                                    parts[0].parse::<u64>().unwrap_or(0)
+                                };
+
+                                let end = if parts[1].is_empty() {
+                                    file_size - 1
+                                } else {
+                                    parts[1].parse::<u64>().unwrap_or(file_size - 1)
+                                };
+
+                                // Validate range
+                                if start < file_size && end < file_size && start <= end {
+                                    let content_length = end - start + 1;
+
+                                    // Open file and seek to start position
+                                    match tokio::fs::File::open(&file_path).await {
+                                        Ok(mut file) => {
+                                            use tokio::io::{AsyncSeekExt, AsyncReadExt};
+
+                                            if let Err(_) = file.seek(std::io::SeekFrom::Start(start)).await {
+                                                return Ok(warp::reply::with_status(
+                                                    warp::reply::json(&serde_json::json!({"error": "Cannot seek in file"})),
+                                                    warp::http::StatusCode::INTERNAL_SERVER_ERROR
+                                                ).into_response());
+                                            }
+
+                                            let mut buffer = vec![0u8; content_length as usize];
+                                            if let Err(_) = file.read_exact(&mut buffer).await {
+                                                return Ok(warp::reply::with_status(
+                                                    warp::reply::json(&serde_json::json!({"error": "Cannot read file range"})),
+                                                    warp::http::StatusCode::INTERNAL_SERVER_ERROR
+                                                ).into_response());
+                                            }
+
+                                            // Return 206 Partial Content
+                                            let response = warp::reply::with_header(
+                                                warp::reply::with_header(
+                                                    buffer,
+                                                    "Content-Range",
+                                                    format!("bytes {}-{}/{}", start, end, file_size)
+                                                ),
+                                                "Content-Length",
+                                                content_length.to_string()
+                                            );
+
+                                            let response = warp::reply::with_header(
+                                                response,
+                                                "Content-Type",
+                                                content_type
+                                            );
+
+                                            let response = warp::reply::with_header(
+                                                response,
+                                                "Accept-Ranges",
+                                                "bytes"
+                                            );
+
+                                            return Ok(warp::reply::with_status(
+                                                response,
+                                                warp::http::StatusCode::PARTIAL_CONTENT
+                                            ).into_response());
+                                        }
+                                        Err(_) => {
+                                            return Ok(warp::reply::with_status(
+                                                warp::reply::json(&serde_json::json!({"error": "Cannot open file"})),
+                                                warp::http::StatusCode::INTERNAL_SERVER_ERROR
+                                            ).into_response());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // If range parsing failed, serve the whole file
+                    }
+                    None => {
+                        // No range header, serve whole file
+                    }
+                }
+
+                // Serve entire file (no range request)
+                let bytes = match tokio::fs::read(&file_path).await {
+                    Ok(b) => b,
+                    Err(_) => {
+                        return Ok(warp::reply::with_status(
+                            warp::reply::json(&serde_json::json!({"error": "Cannot read file"})),
+                            warp::http::StatusCode::INTERNAL_SERVER_ERROR
+                        ).into_response());
+                    }
+                };
+
+                let response = warp::reply::with_header(
+                    warp::reply::with_header(
                         bytes,
-                        warp::http::StatusCode::OK
+                        "Content-Length",
+                        file_size.to_string()
                     ),
                     "Content-Type",
                     content_type
-                ).into_response())
+                );
+
+                let response = warp::reply::with_header(
+                    response,
+                    "Accept-Ranges",
+                    "bytes"
+                );
+
+                Ok(response.into_response())
             });
 
         let cors = warp::cors()
