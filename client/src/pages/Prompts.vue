@@ -66,6 +66,7 @@
             <button
               class="p-2 hover:bg-muted rounded-md transition-all group/edit"
               title="Edit prompt"
+              v-if="!isDefaultPrompt(prompt)"
               @click.stop="editPrompt(prompt)"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground group-hover/edit:text-foreground transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -86,7 +87,7 @@
             <!-- Show default badge for default prompt -->
             <span
               v-else
-              class="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs font-medium rounded-md border border-purple-200 dark:border-purple-700"
+              class="px-2 py-1 ml-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs font-medium rounded-md border border-purple-200 dark:border-purple-700"
             >
               default prompt
             </span>

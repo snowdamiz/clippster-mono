@@ -1,5 +1,5 @@
 <template>
-  <header class="fixed top-0 left-64 right-0 h-16 px-8 flex items-center justify-between border-b border-border/40 bg-background z-10">
+  <header class="fixed top-0 left-64 right-0 h-16 px-6 flex items-center justify-between border-b border-border/40 bg-background z-10">
     <nav class="flex items-center gap-2 text-sm">
       <span class="text-muted-foreground">Dashboard</span>
       <template v-for="(crumb, index) in breadcrumbs" :key="index">

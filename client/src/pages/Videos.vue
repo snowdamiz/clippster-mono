@@ -528,7 +528,7 @@ const { success, error } = useToast()
 
 // Pagination state
 const currentPage = ref(1)
-const videosPerPage = 10
+const videosPerPage = 20
 
 // Video player state
 const videoElement = ref<HTMLVideoElement | null>(null)

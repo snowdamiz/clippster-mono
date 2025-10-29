@@ -214,3 +214,209 @@
     cursor: not-allowed;
   }
 }
+
+/* Custom scrollbar styles for minimal theme */
+@layer base {
+  /* Custom scrollbar for ALL elements - more specific selectors */
+  *::-webkit-scrollbar {
+    width: 6px !important;
+    height: 6px !important;
+  }
+
+  *::-webkit-scrollbar-button {
+    display: none !important;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent !important;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: oklch(0.35 0 0 / 0.8) !important;
+    border-radius: 3px !important;
+    border: 1px solid oklch(0.145 0 0 / 0.5) !important;
+    transition: background-color 0.2s ease, border-color 0.2s ease !important;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: oklch(0.45 0 0 / 0.9) !important;
+    border-color: oklch(0.145 0 0 / 0.7) !important;
+  }
+
+  *::-webkit-scrollbar-thumb:active {
+    background-color: oklch(0.55 0 0 / 1) !important;
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: transparent !important;
+  }
+
+  /* Firefox */
+  * {
+    scrollbar-width: thin !important;
+    scrollbar-color: oklch(0.35 0 0 / 0.8) transparent !important;
+  }
+
+  /* Specifically target html and body */
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar {
+    width: 6px !important;
+    height: 6px !important;
+  }
+
+  html::-webkit-scrollbar-track,
+  body::-webkit-scrollbar-track {
+    background: transparent !important;
+  }
+
+  html::-webkit-scrollbar-thumb,
+  body::-webkit-scrollbar-thumb {
+    background-color: oklch(0.35 0 0 / 0.8) !important;
+    border-radius: 3px !important;
+    border: 1px solid oklch(0.145 0 0 / 0.5) !important;
+    transition: background-color 0.2s ease, border-color 0.2s ease !important;
+  }
+
+  html::-webkit-scrollbar-thumb:hover,
+  body::-webkit-scrollbar-thumb:hover {
+    background-color: oklch(0.45 0 0 / 0.9) !important;
+    border-color: oklch(0.145 0 0 / 0.7) !important;
+  }
+
+  html::-webkit-scrollbar-thumb:active,
+  body::-webkit-scrollbar-thumb:active {
+    background-color: oklch(0.55 0 0 / 1) !important;
+  }
+
+  /* Fallback for specific classes that might need it */
+  .overflow-y-auto::-webkit-scrollbar,
+  .overflow-x-auto::-webkit-scrollbar,
+  .overflow-auto::-webkit-scrollbar {
+    width: 6px !important;
+    height: 6px !important;
+  }
+
+  .overflow-y-auto::-webkit-scrollbar-button,
+  .overflow-x-auto::-webkit-scrollbar-button,
+  .overflow-auto::-webkit-scrollbar-button {
+    display: none !important;
+  }
+
+  .overflow-y-auto::-webkit-scrollbar-track,
+  .overflow-x-auto::-webkit-scrollbar-track,
+  .overflow-auto::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .overflow-y-auto::-webkit-scrollbar-thumb,
+  .overflow-x-auto::-webkit-scrollbar-thumb,
+  .overflow-auto::-webkit-scrollbar-thumb {
+    background-color: oklch(0.35 0 0 / 0.8) !important;
+    border-radius: 3px !important;
+    border: 1px solid oklch(0.145 0 0 / 0.5) !important;
+    transition: background-color 0.2s ease, border-color 0.2s ease !important;
+  }
+
+  .overflow-y-auto::-webkit-scrollbar-thumb:hover,
+  .overflow-x-auto::-webkit-scrollbar-thumb:hover,
+  .overflow-auto::-webkit-scrollbar-thumb:hover {
+    background-color: oklch(0.45 0 0 / 0.9) !important;
+    border-color: oklch(0.145 0 0 / 0.7) !important;
+  }
+
+  .overflow-y-auto::-webkit-scrollbar-thumb:active,
+  .overflow-x-auto::-webkit-scrollbar-thumb:active,
+  .overflow-auto::-webkit-scrollbar-thumb:active {
+    background-color: oklch(0.55 0 0 / 1) !important;
+  }
+
+  .overflow-y-auto::-webkit-scrollbar-corner,
+  .overflow-x-auto::-webkit-scrollbar-corner,
+  .overflow-auto::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Firefox scrollbar */
+  .overflow-y-auto,
+  .overflow-x-auto,
+  .overflow-auto {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.15 0 0 / 0.6) transparent;
+  }
+
+  /* Dark theme specific scrollbar colors */
+  .dark .overflow-y-auto::-webkit-scrollbar-thumb,
+  .dark .overflow-x-auto::-webkit-scrollbar-thumb,
+  .dark .overflow-auto::-webkit-scrollbar-thumb {
+    background-color: oklch(0.4 0 0 / 0.85) !important;
+    border-color: oklch(0.145 0 0 / 0.6) !important;
+  }
+
+  .dark .overflow-y-auto::-webkit-scrollbar-thumb:hover,
+  .dark .overflow-x-auto::-webkit-scrollbar-thumb:hover,
+  .dark .overflow-auto::-webkit-scrollbar-thumb:hover {
+    background-color: oklch(0.5 0 0 / 0.95) !important;
+    border-color: oklch(0.145 0 0 / 0.8) !important;
+  }
+
+  .dark .overflow-y-auto,
+  .dark .overflow-x-auto,
+  .dark .overflow-auto {
+    scrollbar-color: oklch(0.4 0 0 / 0.85) transparent !important;
+  }
+
+  /* Enhanced scrollbar for ScrollArea components */
+  [data-radix-scroll-area-viewport]::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  [data-radix-scroll-area-viewport]::-webkit-scrollbar-button {
+    display: none;
+  }
+
+  [data-radix-scroll-area-viewport]::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb {
+    background-color: oklch(0.35 0 0 / 0.8) !important;
+    border-radius: 3px !important;
+    border: 1px solid oklch(0.145 0 0 / 0.5) !important;
+    transition: background-color 0.2s ease, border-color 0.2s ease !important;
+  }
+
+  [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb:hover {
+    background-color: oklch(0.45 0 0 / 0.9) !important;
+    border-color: oklch(0.145 0 0 / 0.7) !important;
+  }
+
+  [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb:active {
+    background-color: oklch(0.55 0 0 / 1) !important;
+  }
+
+  [data-radix-scroll-area-viewport]::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Firefox for ScrollArea */
+  [data-radix-scroll-area-viewport] {
+    scrollbar-width: thin !important;
+    scrollbar-color: oklch(0.35 0 0 / 0.8) transparent !important;
+  }
+
+  /* Dark theme for ScrollArea */
+  .dark [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb {
+    background-color: oklch(0.4 0 0 / 0.85) !important;
+    border-color: oklch(0.145 0 0 / 0.6) !important;
+  }
+
+  .dark [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb:hover {
+    background-color: oklch(0.5 0 0 / 0.95) !important;
+    border-color: oklch(0.145 0 0 / 0.8) !important;
+  }
+
+  .dark [data-radix-scroll-area-viewport] {
+    scrollbar-color: oklch(0.4 0 0 / 0.85) transparent !important;
+  }
+}
