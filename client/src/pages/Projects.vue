@@ -21,7 +21,7 @@
     <!-- Projects Grid -->
     <div v-else-if="projects.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
       <div v-for="project in projects" :key="project.id" class="bg-card border border-border rounded-xl overflow-hidden hover:border-foreground/20 cursor-pointer group">
-        <div class="p-6 pb-5">
+        <div class="p-4.5 pb-5">
           <div class="flex items-start justify-between mb-5">
             <div class="p-3 bg-muted rounded-lg">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -33,7 +33,7 @@
           <h3 class="text-lg font-semibold text-foreground mb-2 group-hover:text-foreground/80">{{ project.name }}</h3>
           <p class="text-sm text-muted-foreground line-clamp-2">{{ project.description || 'No description' }}</p>
         </div>
-        <div class="flex items-center justify-between px-6 py-4 border-t border-border">
+        <div class="flex items-center justify-between px-4 py-2 border-t border-border">
           <span class="text-sm text-muted-foreground font-medium">{{ getClipCount(project.id) }} clips</span>
           <div class="flex items-center gap-1">
             <button class="p-2 hover:bg-muted rounded-md" title="Edit" @click.stop="editProject(project)">
