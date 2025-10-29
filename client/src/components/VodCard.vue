@@ -16,7 +16,7 @@
       </div>
 
       <!-- Duration Badge -->
-      <div v-if="clip.duration" class="absolute bottom-2 right-2 px-2 py-1 bg-black/80 rounded text-xs font-medium text-white">
+      <div v-if="clip.duration" class="absolute bottom-2 right-2 px-2 py-1 bg-black/80 text-white text-xs rounded-md backdrop-blur-sm">
         {{ formattedDuration }}
       </div>
 

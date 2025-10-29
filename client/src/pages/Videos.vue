@@ -118,7 +118,7 @@
       <div v-for="video in videos" :key="video.id" class="group relative bg-card border border-border rounded-xl overflow-hidden hover:border-foreground/20 cursor-pointer">
         <!-- Thumbnail -->
         <div class="aspect-video bg-muted/50 relative">
-          <img 
+          <img
             v-if="getThumbnailUrl(video)"
             :src="getThumbnailUrl(video)!"
             :alt="video.original_filename || 'Video thumbnail'"
@@ -128,6 +128,13 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="h-14 w-14 text-muted-foreground/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
+          </div>
+          <!-- Duration overlay -->
+          <div
+            v-if="video.duration"
+            class="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-2 py-1 rounded-md backdrop-blur-sm"
+          >
+            {{ formatDuration(video.duration) }}
           </div>
           <!-- Hover Overlay -->
           <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2">
@@ -151,8 +158,7 @@
         </div>
         <!-- Info -->
         <div class="p-4">
-          <h4 class="font-semibold text-foreground truncate mb-1">{{ video.original_filename || video.file_path.split(/[\\\/]/).pop() || 'Untitled Video' }}</h4>
-          <p class="text-xs text-muted-foreground mb-2" v-if="video.duration">Duration: {{ formatDuration(video.duration) }}</p>
+          <h4 class="font-semibold text-foreground truncate mb-2">{{ video.original_filename || video.file_path.split(/[\\\/]/).pop() || 'Untitled Video' }}</h4>
           <p class="text-xs text-muted-foreground">Added {{ getRelativeTime(video.created_at) }}</p>
         </div>
       </div>
