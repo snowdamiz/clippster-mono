@@ -78,8 +78,6 @@
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              <span class="text-sm text-muted-foreground">{{ download.progress.status }}</span>
-              <span class="text-xs text-purple-400 font-medium">{{ Math.round(download.progress.progress) }}%</span>
               <span v-if="download.progress.current_time && download.progress.total_time" class="text-xs text-muted-foreground">
                 {{ formatDuration(download.progress.current_time) }} / {{ formatDuration(download.progress.total_time) }}
               </span>
