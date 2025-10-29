@@ -282,15 +282,7 @@ async fn download_pumpfun_vod(
         let shell = app_clone.shell();
         println!("[Rust] Shell created successfully");
 
-        // Send progress update
-        println!("[Rust] Sending 'Getting video info...' progress");
-        let _ = app_clone.emit("download-progress", DownloadProgress {
-            download_id: download_id_clone.clone(),
-            progress: 5.0,
-            current_time: None,
-            total_time: None,
-            status: "Getting video info...".to_string(),
-        });
+        // Skip hardcoded progress steps - let real-time download progress handle everything
 
         // First, get video info to get duration
         println!("[Rust] Running ffmpeg to get video info for URL: {}", video_url);
@@ -324,15 +316,7 @@ async fn download_pumpfun_vod(
         let duration = extract_duration_from_ffmpeg_output(&stderr);
         println!("[Rust] Video duration extracted: {:?}", duration);
 
-        // Send progress update
-        println!("[Rust] Sending 'Starting download...' progress");
-        let _ = app_clone.emit("download-progress", DownloadProgress {
-            download_id: download_id_clone.clone(),
-            progress: 10.0,
-            current_time: None,
-            total_time: None,
-            status: "Starting download...".to_string(),
-        });
+        // Download will start immediately with real-time progress
 
         // Now download the video with real-time progress tracking
         println!("[Rust] Starting video download with real-time progress...");
@@ -340,13 +324,8 @@ async fn download_pumpfun_vod(
         let download_id_for_progress = download_id_clone.clone();
         let duration_for_progress = duration;
 
-        let _ = app_clone.emit("download-progress", DownloadProgress {
-            download_id: download_id_clone.clone(),
-            progress: 20.0,
-            current_time: Some(0.0),
-            total_time: duration_for_progress,
-            status: "Downloading video...".to_string(),
-        });
+        // Don't set initial progress here - let real-time progress calculation handle it
+        // This prevents the progress from jumping backward when real-time updates start
 
         // Use tokio::process::Command for real-time progress tracking
         let mut cmd = tokio::process::Command::new("ffmpeg");
@@ -406,7 +385,7 @@ async fn download_pumpfun_vod(
                         if let Some(time_str) = line_trimmed.strip_prefix("out_time=") {
                             println!("[Rust] Found progress line: out_time={}", time_str);
                             if let Some(current_time) = parse_ffmpeg_time(time_str) {
-                                let progress = ((current_time / total_duration) * 100.0).min(95.0).max(20.0);
+                                let progress = ((current_time / total_duration) * 100.0).min(95.0);
                                 println!("[Rust] Real progress: {:.1}% ({}s / {}s)", progress, current_time, total_duration);
 
                                 // Only emit progress if it's been at least 1 second since last update
