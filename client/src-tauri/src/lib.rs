@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use std::process::Stdio;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use warp::Filter;
 
 mod storage;
@@ -739,6 +739,73 @@ fn parse_ffmpeg_time(time_str: &str) -> Option<f64> {
 }
 
 #[tauri::command]
+async fn get_active_downloads_count() -> Result<usize, String> {
+    let downloads = ACTIVE_DOWNLOADS.lock().unwrap();
+    Ok(downloads.len())
+}
+
+#[tauri::command]
+async fn cancel_all_downloads() -> Result<Vec<String>, String> {
+    use std::fs;
+
+    let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
+    let download_ids: Vec<String> = downloads.keys().cloned().collect();
+
+    // Get storage paths to clean up partial files
+    let paths = match storage::init_storage_dirs() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("[Rust] Failed to get storage paths for cleanup: {}", e);
+            return Err(format!("Failed to get storage paths: {}", e));
+        }
+    };
+
+    // Remove partial download files
+    let mut cleaned_files = Vec::new();
+    for download_id in &download_ids {
+        // Look for partial files matching the download ID pattern
+        if let Ok(entries) = fs::read_dir(&paths.videos) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                    if filename.contains(download_id) || filename.starts_with("pumpfun_") {
+                        if let Err(e) = fs::remove_file(&path) {
+                            eprintln!("[Rust] Failed to remove partial file {}: {}", path.display(), e);
+                        } else {
+                            cleaned_files.push(path.to_string_lossy().to_string());
+                            println!("[Rust] Removed partial file: {}", path.display());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also clean up partial thumbnails
+        if let Ok(entries) = fs::read_dir(&paths.thumbnails) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                    if filename.contains(download_id) {
+                        if let Err(e) = fs::remove_file(&path) {
+                            eprintln!("[Rust] Failed to remove partial thumbnail {}: {}", path.display(), e);
+                        } else {
+                            cleaned_files.push(path.to_string_lossy().to_string());
+                            println!("[Rust] Removed partial thumbnail: {}", path.display());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Clear all active downloads
+    downloads.clear();
+    println!("[Rust] Cancelled {} downloads and cleaned up {} files", download_ids.len(), cleaned_files.len());
+
+    Ok(download_ids)
+}
+
+#[tauri::command]
 async fn get_pumpfun_clips(mint_id: String, limit: Option<u32>) -> Result<String, String> {
     use std::process::Command;
     
@@ -1144,18 +1211,46 @@ pub fn run() {
         .setup(|app| {
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
-            
+
             // Initialize storage directories
             if let Err(e) = storage::init_storage_dirs() {
                 eprintln!("[Rust] Warning: Failed to initialize storage directories: {}", e);
             }
-            
+
             // Start video streaming server in Tauri's async runtime
             let _app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 start_video_server_impl().await;
             });
-            
+
+            // Setup window close handler
+            let app_handle = app.handle().clone();
+            let window = app.get_webview_window("main").unwrap();
+
+            window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    println!("[Rust] Window close requested");
+
+                    // Check if there are active downloads
+                    let active_count = {
+                        let downloads = ACTIVE_DOWNLOADS.lock().unwrap();
+                        downloads.len()
+                    };
+
+                    if active_count > 0 {
+                        println!("[Rust] {} active downloads found, preventing close and showing dialog", active_count);
+
+                        // Prevent the window from closing immediately
+                        api.prevent_close();
+
+                        // Emit event to frontend to show confirmation dialog
+                        let _ = app_handle.emit("window-close-requested", active_count);
+                    } else {
+                        println!("[Rust] No active downloads, allowing close");
+                    }
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1169,6 +1264,8 @@ pub fn run() {
             get_pumpfun_clips,
             test_download_command,
             download_pumpfun_vod,
+            get_active_downloads_count,
+            cancel_all_downloads,
             storage::get_storage_paths,
             storage::copy_video_to_storage,
             storage::generate_thumbnail,

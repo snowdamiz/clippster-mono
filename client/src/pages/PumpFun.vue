@@ -97,15 +97,6 @@
 
     <!-- VODs Grid -->
     <div v-else-if="pumpFunStore.clips.length > 0" class="space-y-6">
-      <div class="flex items-center justify-between">
-        <p class="text-sm text-muted-foreground">
-          Found {{ pumpFunStore.total }} VOD{{ pumpFunStore.total !== 1 ? 's' : '' }}
-        </p>
-        <span v-if="pumpFunStore.hasMore" class="text-sm text-purple-400">
-          More available
-        </span>
-      </div>
-
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <VodCard
           v-for="clip in pumpFunStore.clips"
