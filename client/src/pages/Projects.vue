@@ -21,29 +21,99 @@
 
     <!-- Projects Grid -->
     <div v-else-if="projects.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-      <div v-for="project in projects" :key="project.id" class="bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer group" @click="openWorkspace(project)">
-        <div class="p-4.5 pb-5">
+      <div v-for="project in projects" :key="project.id" class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer group" @click="openWorkspace(project)">
+        <!-- Thumbnail background with vignette -->
+        <div
+          v-if="getThumbnailUrl(project.id)"
+          class="absolute inset-0 z-0"
+          :style="{
+            backgroundImage: `url(${getThumbnailUrl(project.id)})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat'
+          }"
+        >
+          <!-- Dark vignette overlay -->
+          <div class="absolute inset-0 bg-gradient-to-br from-black/80 via-black/60 to-black/90"></div>
+        </div>
+
+        <div class="relative z-10 p-4.5 pb-5">
           <div class="flex items-start justify-between mb-5">
-            <div class="p-3 bg-muted rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div :class="[
+              'p-3 rounded-lg',
+              getThumbnailUrl(project.id)
+                ? 'bg-white/10 backdrop-blur-sm'
+                : 'bg-muted'
+            ]">
+              <svg :class="[
+                'h-6 w-6',
+                getThumbnailUrl(project.id)
+                  ? 'text-white'
+                  : 'text-foreground'
+              ]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
               </svg>
             </div>
-            <span class="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-md">{{ getRelativeTime(project.updated_at) }}</span>
+            <span :class="[
+              'text-xs px-2 py-1 rounded-md',
+              getThumbnailUrl(project.id)
+                ? 'text-white/70 bg-white/10 backdrop-blur-sm'
+                : 'text-muted-foreground bg-muted'
+            ]">{{ getRelativeTime(project.updated_at) }}</span>
           </div>
-          <h3 class="text-lg font-semibold text-foreground mb-2 group-hover:text-foreground/80">{{ project.name }}</h3>
-          <p class="text-sm text-muted-foreground line-clamp-2">{{ project.description || 'No description' }}</p>
+          <h3 :class="[
+            'text-lg font-semibold mb-2 group-hover:transition-colors',
+            getThumbnailUrl(project.id)
+              ? 'text-white group-hover:text-white/80'
+              : 'text-foreground group-hover:text-foreground/80'
+          ]">{{ project.name }}</h3>
+          <p :class="[
+            'text-sm line-clamp-2',
+            getThumbnailUrl(project.id)
+              ? 'text-white/80'
+              : 'text-muted-foreground'
+          ]">{{ project.description || 'No description' }}</p>
         </div>
-        <div class="flex items-center justify-between px-4 py-2 border-t border-border bg-[#141414]">
-          <span class="text-sm text-muted-foreground font-medium">{{ getClipCount(project.id) }} clips</span>
+        <div :class="[
+          'flex items-center justify-between px-4 py-2 border-t',
+          getThumbnailUrl(project.id)
+            ? 'border-white/10 bg-black/40 backdrop-blur-sm'
+            : 'border-border bg-[#141414]'
+        ]">
+          <span :class="[
+            'text-sm font-medium',
+            getThumbnailUrl(project.id)
+              ? 'text-white/80'
+              : 'text-muted-foreground'
+          ]">{{ getClipCount(project.id) }} clips</span>
           <div class="flex items-center gap-1">
-            <button class="p-2 hover:bg-muted rounded-md" title="Edit" @click.stop="editProject(project)">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground hover:text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <button :class="[
+              'p-2 rounded-md transition-colors',
+              getThumbnailUrl(project.id)
+                ? 'hover:bg-white/10'
+                : 'hover:bg-muted'
+            ]" title="Edit" @click.stop="editProject(project)">
+              <svg :class="[
+                'h-4 w-4 transition-colors',
+                getThumbnailUrl(project.id)
+                  ? 'text-white/60 hover:text-white'
+                  : 'text-muted-foreground hover:text-foreground'
+              ]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
             </button>
-            <button class="p-2 hover:bg-muted rounded-md" title="Delete" @click.stop="confirmDelete(project)">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground hover:text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <button :class="[
+              'p-2 rounded-md transition-colors',
+              getThumbnailUrl(project.id)
+                ? 'hover:bg-white/10'
+                : 'hover:bg-muted'
+            ]" title="Delete" @click.stop="confirmDelete(project)">
+              <svg :class="[
+                'h-4 w-4 transition-colors',
+                getThumbnailUrl(project.id)
+                  ? 'text-white/60 hover:text-white'
+                  : 'text-muted-foreground hover:text-foreground'
+              ]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
             </button>
@@ -109,7 +179,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { getAllProjects, getClipsByProjectId, deleteProject, createProject, updateProject, type Project } from '@/services/database'
+import { invoke } from '@tauri-apps/api/core'
+import { getAllProjects, getClipsByProjectId, deleteProject, createProject, updateProject, getRawVideoByPath, type Project, type RawVideo } from '@/services/database'
 import { useFormatters } from '@/composables/useFormatters'
 import { useToast } from '@/composables/useToast'
 import PageLayout from '@/components/PageLayout.vue'
@@ -127,6 +198,8 @@ const showDeleteDialog = ref(false)
 const projectToDelete = ref<Project | null>(null)
 const showWorkspaceDialog = ref(false)
 const workspaceProject = ref<Project | null>(null)
+const projectVideos = ref<Record<string, RawVideo[]>>({})
+const thumbnailCache = ref<Map<string, string>>(new Map())
 const { getRelativeTime } = useFormatters()
 const { success, error } = useToast()
 
@@ -134,11 +207,33 @@ async function loadProjects() {
   loading.value = true
   try {
     projects.value = await getAllProjects()
-    
-    // Load clip counts for each project
+
+    // Load clip counts and video thumbnails for each project
     for (const project of projects.value) {
       const clips = await getClipsByProjectId(project.id)
       clipCounts.value[project.id] = clips.length
+
+      console.log(`[Projects] Project ${project.name} (${project.id}):`)
+      console.log(`  - raw_video_path: ${project.raw_video_path}`)
+
+      // Load thumbnail for the project's raw video
+      if (project.raw_video_path && !thumbnailCache.value.has(project.id)) {
+        try {
+          const video = await getRawVideoByPath(project.raw_video_path)
+          if (video && video.thumbnail_path) {
+            console.log(`  - Found video, thumbnail: ${video.thumbnail_path}`)
+            const dataUrl = await invoke<string>('read_file_as_data_url', {
+              filePath: video.thumbnail_path
+            })
+            thumbnailCache.value.set(project.id, dataUrl)
+            console.log(`  - Thumbnail loaded successfully for project ${project.id}`)
+          } else {
+            console.log(`  - No video found or no thumbnail for video`)
+          }
+        } catch (error) {
+          console.warn('Failed to load thumbnail for project:', project.id, error)
+        }
+      }
     }
   } catch (error) {
     console.error('Failed to load projects:', error)
@@ -149,6 +244,10 @@ async function loadProjects() {
 
 function getClipCount(projectId: string): number {
   return clipCounts.value[projectId] || 0
+}
+
+function getThumbnailUrl(projectId: string): string | null {
+  return thumbnailCache.value.get(projectId) || null
 }
 
 function openCreateDialog() {

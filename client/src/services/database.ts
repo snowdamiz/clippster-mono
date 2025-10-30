@@ -620,6 +620,23 @@ export async function getRawVideo(id: string): Promise<RawVideo | null> {
   return result[0] || null
 }
 
+export async function getRawVideosByProjectId(projectId: string): Promise<RawVideo[]> {
+  const db = await getDatabase()
+  return await db.select<RawVideo[]>(
+    'SELECT * FROM raw_videos WHERE project_id = ? ORDER BY created_at DESC',
+    [projectId]
+  )
+}
+
+export async function getRawVideoByPath(filePath: string): Promise<RawVideo | null> {
+  const db = await getDatabase()
+  const result = await db.select<RawVideo[]>(
+    'SELECT * FROM raw_videos WHERE file_path = ?',
+    [filePath]
+  )
+  return result[0] || null
+}
+
 export async function deleteRawVideo(id: string): Promise<void> {
   const db = await getDatabase()
   await db.execute('DELETE FROM raw_videos WHERE id = ?', [id])
