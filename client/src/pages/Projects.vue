@@ -21,7 +21,7 @@
 
     <!-- Projects Grid -->
     <div v-else-if="projects.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-      <div v-for="project in projects" :key="project.id" class="bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer group">
+      <div v-for="project in projects" :key="project.id" class="bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer group" @click="openWorkspace(project)">
         <div class="p-4.5 pb-5">
           <div class="flex items-start justify-between mb-5">
             <div class="p-3 bg-muted rounded-lg">
@@ -67,7 +67,13 @@
       :project="selectedProject"
       @submit="handleProjectSubmit"
     />
-    
+
+    <!-- Project Workspace Dialog -->
+    <ProjectWorkspaceDialog
+      v-model="showWorkspaceDialog"
+      :project="workspaceProject"
+    />
+
     <!-- Delete Confirmation Modal -->
     <div
       v-if="showDeleteDialog"
@@ -110,6 +116,7 @@ import PageLayout from '@/components/PageLayout.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ProjectDialog, { type ProjectFormData } from '@/components/ProjectDialog.vue'
+import ProjectWorkspaceDialog from '@/components/ProjectWorkspaceDialog.vue'
 
 const projects = ref<Project[]>([])
 const loading = ref(true)
@@ -118,6 +125,8 @@ const showDialog = ref(false)
 const selectedProject = ref<Project | null>(null)
 const showDeleteDialog = ref(false)
 const projectToDelete = ref<Project | null>(null)
+const showWorkspaceDialog = ref(false)
+const workspaceProject = ref<Project | null>(null)
 const { getRelativeTime } = useFormatters()
 const { success, error } = useToast()
 
@@ -147,6 +156,11 @@ function openCreateDialog() {
   showDialog.value = true
 }
 
+function openWorkspace(project: Project) {
+  workspaceProject.value = project
+  showWorkspaceDialog.value = true
+}
+
 function editProject(project: Project) {
   selectedProject.value = project
   showDialog.value = true
@@ -172,9 +186,20 @@ async function handleProjectSubmit(data: ProjectFormData) {
       )
       success('Project created', `"${data.name}" has been created successfully`)
     }
-    
-    // Reload projects and close dialog
+
+    // Reload projects
     await loadProjects()
+
+    if (!selectedProject.value) {
+      // For new projects, find the newly created project and open workspace
+      const newProject = projects.value.find(p => p.name === data.name)
+      if (newProject) {
+        workspaceProject.value = newProject
+        showWorkspaceDialog.value = true
+      }
+    }
+
+    // Close dialog
     showDialog.value = false
     selectedProject.value = null
   } catch (err) {
