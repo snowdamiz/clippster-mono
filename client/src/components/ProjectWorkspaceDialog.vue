@@ -184,22 +184,29 @@
                     </svg>
                   </button>
                 </div>
-                <div v-if="!transcriptCollapsed" class="overflow-hidden">
-                  <div ref="transcriptContent" class="text-muted-foreground text-sm space-y-2">
-                    <div class="p-2 hover:bg-black/10 rounded cursor-pointer">
-                      <span class="text-xs text-muted-foreground/60">00:00</span>
-                      <p class="text-xs mt-1">Welcome to the project workspace...</p>
+                <div :class="transcriptCollapsed ? 'h-0' : 'flex-1'" class="overflow-hidden">
+                    <div v-if="!transcriptCollapsed" class="h-full flex flex-col">
+                      <!-- Empty state for transcript -->
+                      <div v-if="!transcriptData" class="flex-1 flex items-center justify-center min-h-[120px]">
+                        <div class="text-center text-muted-foreground">
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <p class="text-xs mb-4">No transcript available</p>
+                          <button class="px-4 py-2 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all mx-auto text-xs">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            Generate Transcript
+                          </button>
+                        </div>
+                      </div>
+                      <!-- Transcript content will appear here when available -->
+                      <div v-else ref="transcriptContent" class="text-muted-foreground text-sm space-y-2">
+                        <!-- Actual transcript content will go here -->
+                      </div>
                     </div>
-                    <div class="p-2 hover:bg-black/10 rounded cursor-pointer">
-                      <span class="text-xs text-muted-foreground/60">00:05</span>
-                      <p class="text-xs mt-1">This is where your transcript will appear...</p>
-                    </div>
-                    <div class="p-2 hover:bg-black/10 rounded cursor-pointer">
-                      <span class="text-xs text-muted-foreground/60">00:10</span>
-                      <p class="text-xs mt-1">Click on any text to jump to that timestamp...</p>
-                    </div>
-                  </div>
-                  </div>
+                </div>
               </div>
 
               <!-- Generated Clips Section -->
@@ -239,24 +246,46 @@
           </div>
 
           <!-- Bottom Row: Timeline -->
-          <div class="h-36 bg-[#0a0a0a]/30 border-t border-border">
+          <div class="h-38 bg-[#0a0a0a]/30 border-t border-border">
             <div class="p-4 h-full">
               <!-- Timeline Header -->
-              <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center justify-between mb-3 pr-1">
                 <h3 class="text-sm font-medium text-foreground">Timeline</h3>
               </div>
 
               <!-- Timeline Tracks -->
-              <div class="bg-muted/20 rounded-lg h-20 relative overflow-hidden">
+              <div class="pr-1 bg-muted/20 rounded-lg h-22 relative overflow-hidden">
                 <!-- Video Track -->
-                <div class="h-full">
-                  <div class="flex items-center h-full px-2">
-                    <!-- Track Label -->
-                    <div class="w-16 h-12 pr-2 flex items-center justify-center text-xs text-center text-muted-foreground/60 border-r border-border/70">Video</div>
+                <div class="flex items-center h-full px-2">
+                  <!-- Track Label -->
+                  <div class="w-16 h-16 pr-2 mt-2 flex items-center justify-center text-xs text-center text-muted-foreground/60">Video</div>
 
-                    <!-- Track Content -->
+                  <!-- Track Content with Timestamps -->
+                  <div class="flex-1 h-16 relative mt-4">
+                    <!-- Timestamp Ruler positioned above track content -->
+                    <div class="absolute -top-3 left-0 right-0 h-5 flex">
+                      <div class="relative flex-1">
+                        <!-- Timestamp markers aligned with track content -->
+                        <div
+                          v-for="timestamp in timelineTimestamps"
+                          :key="timestamp.time"
+                          class="absolute flex flex-col items-center"
+                          :style="{
+                            left: `${timestamp.position}%`,
+                            transform: 'translateX(-50%)'
+                          }"
+                        >
+                          <!-- Time label -->
+                          <span class="text-xs text-foreground/60 mb-1 whitespace-nowrap">{{ timestamp.label }}</span>
+                          <!-- Tick mark -->
+                          <div class="w-px h-1 bg-foreground/40"></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Video Track Content -->
                     <div
-                      class="flex-1 h-12 bg-[#0a0a0a]/50 rounded-md relative cursor-pointer group"
+                      class="flex-1 h-10 bg-[#0a0a0a]/50 rounded-md relative cursor-pointer group mt-3"
                       @click="seekTimeline($event)"
                       @mousemove="onTimelineTrackHover($event)"
                       @mouseleave="timelineHoverTime = null"
@@ -278,7 +307,7 @@
 
                         <!-- Played progress -->
                         <div
-                          class="absolute inset-y-0 left-0 bg-gradient-to-r from-purple-500/60 to-indigo-500/60 rounded-md transition-all duration-100"
+                          class="absolute inset-y-0 left-0 bg-gradient-to-r from-purple-500/60 to-indigo-500/60 rounded-l-md transition-all duration-100"
                           :style="{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }"
                         ></div>
 
@@ -592,7 +621,7 @@ input[type="range"].slider::-moz-range-thumb:hover {
 </style>
 
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted } from 'vue'
+import { ref, watch, nextTick, onMounted, computed } from 'vue'
 import { type Project, getAllRawVideos, type RawVideo } from '@/services/database'
 import { invoke } from '@tauri-apps/api/core'
 
@@ -635,6 +664,107 @@ const timelineHoverPosition = ref(0)
 const availableVideos = ref<RawVideo[]>([])
 const currentVideo = ref<RawVideo | null>(null)
 
+// Transcript data
+const transcriptData = ref(null) // Will hold actual transcript data when available
+
+// Timeline timestamps
+const timelineTimestamps = computed(() => {
+  if (!duration.value || duration.value <= 0) return []
+
+  const timestamps = []
+  const totalDuration = duration.value
+
+  // Smart interval calculation based on video duration
+  // We want approximately 8-12 timestamps for optimal readability
+  let baseInterval: number
+  if (totalDuration <= 30) {
+    baseInterval = 5 // Every 5 seconds for very short videos
+  } else if (totalDuration <= 60) {
+    baseInterval = 10 // Every 10 seconds for short videos
+  } else if (totalDuration <= 180) {
+    baseInterval = 15 // Every 15 seconds for 3-minute videos
+  } else if (totalDuration <= 300) {
+    baseInterval = 30 // Every 30 seconds for 5-minute videos
+  } else if (totalDuration <= 600) {
+    baseInterval = 60 // Every minute for 10-minute videos
+  } else if (totalDuration <= 1800) {
+    baseInterval = 120 // Every 2 minutes for 30-minute videos
+  } else if (totalDuration <= 3600) {
+    baseInterval = 300 // Every 5 minutes for 1-hour videos
+  } else {
+    baseInterval = 600 // Every 10 minutes for very long videos
+  }
+
+  // Adjust interval if we have too many timestamps
+  const estimatedTimestamps = Math.floor(totalDuration / baseInterval)
+  if (estimatedTimestamps > 15) {
+    // Increase interval to reduce timestamp count
+    baseInterval = Math.ceil(totalDuration / 12)
+  } else if (estimatedTimestamps < 6 && totalDuration > 60) {
+    // Decrease interval for better coverage (but not for very short videos)
+    baseInterval = Math.max(baseInterval / 2, 30)
+  }
+
+  // Add timestamp at 0:00
+  timestamps.push({
+    time: 0,
+    position: 0,
+    label: formatDuration(0)
+  })
+
+  // Add intermediate timestamps
+  for (let time = baseInterval; time < totalDuration; time += baseInterval) {
+    const position = (time / totalDuration) * 100
+    timestamps.push({
+      time,
+      position,
+      label: formatDuration(time)
+    })
+  }
+
+  // Add final timestamp at the end
+  if (totalDuration > baseInterval) {
+    timestamps.push({
+      time: totalDuration,
+      position: 99.5, // Slightly inset to prevent overflow
+      label: formatDuration(totalDuration)
+    })
+  }
+
+  // Smart spacing algorithm - adjust minimum spacing based on timestamp density
+  const idealCount = Math.max(6, Math.min(12, timestamps.length))
+  const minSpacing = 100 / idealCount
+
+  const filteredTimestamps = []
+  let lastPosition = -minSpacing
+
+  for (const timestamp of timestamps) {
+    if (timestamp.position - lastPosition >= minSpacing) {
+      filteredTimestamps.push(timestamp)
+      lastPosition = timestamp.position
+    }
+  }
+
+  // Ensure we always have the start and end timestamps
+  if (filteredTimestamps.length === 0 || filteredTimestamps[0].time !== 0) {
+    filteredTimestamps.unshift({
+      time: 0,
+      position: 0,
+      label: formatDuration(0)
+    })
+  }
+
+  if (filteredTimestamps.length === 0 || filteredTimestamps[filteredTimestamps.length - 1].time < totalDuration - 1) {
+    filteredTimestamps.push({
+      time: totalDuration,
+      position: 99.5,
+      label: formatDuration(totalDuration)
+    })
+  }
+
+  return filteredTimestamps
+})
+
 // Debug: Log state changes
 watch([videoLoading, videoSrc, videoElement], () => {
   console.log('[ProjectWorkspaceDialog] State update:', {
@@ -670,16 +800,19 @@ function toggleClips() {
 function formatDuration(seconds: number): string {
   if (isNaN(seconds) || !isFinite(seconds)) return '0:00'
 
-  if (seconds < 60) {
-    return `0:${Math.round(seconds).toString().padStart(2, '0')}`
-  } else if (seconds < 3600) {
-    const minutes = Math.floor(seconds / 60)
-    const remainingSeconds = Math.round(seconds % 60)
+  // Always round down to avoid issues like 1:60
+  const totalSeconds = Math.floor(seconds)
+
+  if (totalSeconds < 60) {
+    return `0:${totalSeconds.toString().padStart(2, '0')}`
+  } else if (totalSeconds < 3600) {
+    const minutes = Math.floor(totalSeconds / 60)
+    const remainingSeconds = totalSeconds % 60
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
   } else {
-    const hours = Math.floor(seconds / 3600)
-    const minutes = Math.floor((seconds % 3600) / 60)
-    const remainingSeconds = Math.round(seconds % 60)
+    const hours = Math.floor(totalSeconds / 3600)
+    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    const remainingSeconds = totalSeconds % 60
     return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
   }
 }
