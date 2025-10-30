@@ -401,8 +401,13 @@ async function handleSearch() {
     return
   }
 
-  // Update the input field to show the extracted mint ID for clarity
-  if (input !== pumpFunStore.currentMintId && pumpFunStore.currentMintId) {
+  // Only update the input field to show the extracted mint ID if it's different from current
+  // and we're not dealing with a recent search selection
+  const isRecentSearchSelection = pumpFunStore.getRecentSearches.some(
+    search => search.displayText === input
+  )
+
+  if (!isRecentSearchSelection && input !== pumpFunStore.currentMintId && pumpFunStore.currentMintId) {
     mintId.value = pumpFunStore.currentMintId
   }
 
