@@ -1,53 +1,40 @@
 <template>
-  <div class="videos-page-wrapper">
-    <div class="pb-20 min-h-full">
-    <!-- Page Title and Actions (always rendered for consistent structure) -->
-    <div class="pl-2 mb-8">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <div>
-            <div class="flex items-center gap-2.5">
-              <div class="p-2 bg-muted rounded-md flex-shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <h1 class="text-2xl font-bold text-foreground">Raw Videos</h1>
-            </div>
-            <p class="text-sm text-muted-foreground mt-2">Browse and manage your raw video files</p>
-          </div>
-        </div>
-        <div class="flex items-center gap-2">
-          <button
-            @click="openVideosFolder"
-            title="Open videos folder"
-            class="p-2.5 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-all"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
-          </button>
-          <button
-            @click="handleUpload"
-            :disabled="uploading"
-            class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-            </svg>
-            {{ uploading ? 'Uploading...' : 'Upload Video' }}
-          </button>
-        </div>
+  <div class="videos-page">
+    <PageLayout
+    title="Raw Videos"
+    description="Browse and manage your raw video files"
+    :show-header="!loading && videos.length > 0"
+    icon="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+  >
+    <template #actions>
+      <div class="flex items-center gap-2">
+        <button
+          @click="openVideosFolder"
+          title="Open videos folder"
+          class="p-3 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-all"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+          </svg>
+        </button>
+        <button
+          @click="handleUpload"
+          :disabled="uploading"
+          class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+          </svg>
+          {{ uploading ? 'Uploading...' : 'Upload Video' }}
+        </button>
       </div>
-    </div>
+    </template>
 
-    <!-- Content area -->
-    <div class="content-area pl-2">
-      <!-- Loading State -->
-      <LoadingState v-if="loading" message="Loading videos..." />
+    <!-- Loading State -->
+    <LoadingState v-if="loading" message="Loading videos..." />
 
-      <!-- Content when not loading -->
-      <div v-else>
+    <!-- Content when not loading -->
+    <div v-else>
         <!-- Header with stats -->
         <div v-if="videos.length > 0 || uploading || activeDownloads.length > 0" class="flex items-center justify-between mb-4">
           <p class="text-sm text-muted-foreground">
@@ -209,7 +196,7 @@
   
         <!-- Empty State -->
         <EmptyState
-          v-else
+          v-if="videos.length === 0 && !uploading && activeDownloads.length === 0"
           title="No videos yet"
           description="Upload your first raw video or download directly from Pump.fun to get started"
           button-text="Upload Video"
@@ -222,9 +209,9 @@
       </template>
     </EmptyState>
       </div> <!-- Close content when not loading -->
-    </div> <!-- Close content-area -->
+  </PageLayout>
 
-    <!-- Video Player Dialog -->
+  <!-- Video Player Dialog -->
     <div
       v-if="showVideoPlayer"
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
@@ -425,7 +412,6 @@
         </div>
       </div>
     </div>
-  </div>
 
   <!-- Fixed Pagination Footer (styled like breadcrumbs header) -->
   <footer
@@ -536,6 +522,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { getStoragePath } from '@/services/storage'
+import PageLayout from '@/components/PageLayout.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import EmptyState from '@/components/EmptyState.vue'
 
@@ -1001,7 +988,7 @@ onUnmounted(() => {
 
 <style scoped>
 /* Root wrapper to ensure single root element for Transition */
-.videos-page-wrapper {
+.videos-page {
   position: relative;
   width: 100%;
   min-height: 100%;
