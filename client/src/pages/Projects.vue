@@ -180,7 +180,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { getAllProjects, getClipsByProjectId, deleteProject, createProject, updateProject, getRawVideoByPath, type Project, type RawVideo } from '@/services/database'
+import { getAllProjects, getClipsByProjectId, deleteProject, createProject, updateProject, getRawVideosByProjectId, getAllRawVideos, updateRawVideo, type Project, type RawVideo } from '@/services/database'
 import { useFormatters } from '@/composables/useFormatters'
 import { useToast } from '@/composables/useToast'
 import PageLayout from '@/components/PageLayout.vue'
@@ -208,28 +208,57 @@ async function loadProjects() {
   try {
     projects.value = await getAllProjects()
 
+    // Get all available videos to help with recovery
+    const allVideos = await getAllRawVideos()
+    console.log(`[Projects] Total videos in database: ${allVideos.length}`)
+
     // Load clip counts and video thumbnails for each project
     for (const project of projects.value) {
       const clips = await getClipsByProjectId(project.id)
       clipCounts.value[project.id] = clips.length
 
-      console.log(`[Projects] Project ${project.name} (${project.id}):`)
-      console.log(`  - raw_video_path: ${project.raw_video_path}`)
+      // Load videos for this project
+      const videos = await getRawVideosByProjectId(project.id)
+      projectVideos.value[project.id] = videos
 
-      // Load thumbnail for the project's raw video
-      if (project.raw_video_path && !thumbnailCache.value.has(project.id)) {
-        try {
-          const video = await getRawVideoByPath(project.raw_video_path)
-          if (video && video.thumbnail_path) {
-            console.log(`  - Found video, thumbnail: ${video.thumbnail_path}`)
-            const dataUrl = await invoke<string>('read_file_as_data_url', {
-              filePath: video.thumbnail_path
-            })
-            thumbnailCache.value.set(project.id, dataUrl)
-            console.log(`  - Thumbnail loaded successfully for project ${project.id}`)
-          } else {
-            console.log(`  - No video found or no thumbnail for video`)
+      console.log(`[Projects] Project ${project.name} (${project.id}):`)
+      console.log(`  - Videos: ${videos.length}`)
+
+      // If no videos associated, try to find unassociated videos
+      if (videos.length === 0 && allVideos.length > 0) {
+        const unassociatedVideos = allVideos.filter(v => !v.project_id)
+        console.log(`  - Unassociated videos available: ${unassociatedVideos.length}`)
+
+        if (unassociatedVideos.length > 0) {
+          // Try to associate the first unassociated video with this project
+          console.log(`  - Attempting to associate video: ${unassociatedVideos[0].original_filename}`)
+          try {
+            await updateRawVideo(unassociatedVideos[0].id, { project_id: project.id })
+            console.log(`  - Successfully associated video with project`)
+
+            // Reload videos for this project
+            const updatedVideos = await getRawVideosByProjectId(project.id)
+            projectVideos.value[project.id] = updatedVideos
+
+            if (updatedVideos.length > 0) {
+              console.log(`  - Now has ${updatedVideos.length} associated video(s)`)
+            }
+          } catch (error) {
+            console.error(`  - Failed to associate video:`, error)
           }
+        }
+      }
+
+      // Load thumbnail for the first video (most recent) to use as background
+      const currentVideos = projectVideos.value[project.id]
+      if (currentVideos.length > 0 && currentVideos[0].thumbnail_path && !thumbnailCache.value.has(project.id)) {
+        console.log(`  - First video thumbnail: ${currentVideos[0].thumbnail_path}`)
+        try {
+          const dataUrl = await invoke<string>('read_file_as_data_url', {
+            filePath: currentVideos[0].thumbnail_path
+          })
+          thumbnailCache.value.set(project.id, dataUrl)
+          console.log(`  - Thumbnail loaded successfully for project ${project.id}`)
         } catch (error) {
           console.warn('Failed to load thumbnail for project:', project.id, error)
         }
@@ -272,17 +301,36 @@ async function handleProjectSubmit(data: ProjectFormData) {
       await updateProject(
         selectedProject.value.id,
         data.name,
-        data.description || undefined,
-        data.rawVideoPath || undefined
+        data.description || undefined
       )
+
+      // Update video association if changed
+      if (data.selectedVideoId !== undefined) {
+        // First, remove existing video associations for this project
+        const existingVideos = await getRawVideosByProjectId(selectedProject.value.id)
+        for (const video of existingVideos) {
+          await updateRawVideo(video.id, { project_id: null })
+        }
+
+        // Then associate the new video
+        if (data.selectedVideoId) {
+          await updateRawVideo(data.selectedVideoId, { project_id: selectedProject.value.id })
+        }
+      }
+
       success('Project updated', `"${data.name}" has been updated successfully`)
     } else {
       // Create new project
-      await createProject(
+      const projectId = await createProject(
         data.name,
-        data.description || undefined,
-        data.rawVideoPath || undefined
+        data.description || undefined
       )
+
+      // Associate the selected video with the new project
+      if (data.selectedVideoId) {
+        await updateRawVideo(data.selectedVideoId, { project_id: projectId })
+      }
+
       success('Project created', `"${data.name}" has been created successfully`)
     }
 

@@ -290,16 +290,10 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
       let videoPath: string | null = null
 
       const projectData = project.value
-      console.log('[VideoPlayer] Project raw_video_path:', projectData.raw_video_path)
       console.log('[VideoPlayer] Available videos:', availableVideos.value.length)
 
-      if (projectData?.raw_video_path) {
-        videoPath = projectData.raw_video_path
-        currentVideo.value = availableVideos.value.find(v => v.file_path === projectData.raw_video_path) || null
-        console.log('[VideoPlayer] Found video via raw_video_path:', videoPath)
-      }
-
-      if (!videoPath && projectData?.id) {
+      // Look for video using project_id relationship
+      if (projectData?.id) {
         const projectVideo = availableVideos.value.find(v => v.project_id === projectData.id)
         if (projectVideo) {
           videoPath = projectVideo.file_path

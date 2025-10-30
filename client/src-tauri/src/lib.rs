@@ -1201,6 +1201,12 @@ pub fn run() {
                             sql: include_str!("../migrations/007_add_thumbnail_path.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 8,
+                            description: "remove_raw_video_path_field",
+                            sql: include_str!("../migrations/008_remove_raw_video_path_field.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

@@ -66,7 +66,6 @@ export interface Project {
   id: string
   name: string
   description: string | null
-  raw_video_path: string | null
   created_at: number
   updated_at: number
 }
@@ -162,16 +161,16 @@ export function generateId(): string {
 }
 
 // Project queries
-export async function createProject(name: string, description?: string, rawVideoPath?: string): Promise<string> {
+export async function createProject(name: string, description?: string): Promise<string> {
   const db = await getDatabase()
   const id = generateId()
   const now = timestamp()
-  
+
   await db.execute(
-    'INSERT INTO projects (id, name, description, raw_video_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-    [id, name, description || null, rawVideoPath || null, now, now]
+    'INSERT INTO projects (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+    [id, name, description || null, now, now]
   )
-  
+
   return id
 }
 
@@ -186,13 +185,13 @@ export async function getAllProjects(): Promise<Project[]> {
   return await db.select<Project[]>('SELECT * FROM projects ORDER BY updated_at DESC')
 }
 
-export async function updateProject(id: string, name?: string, description?: string, rawVideoPath?: string): Promise<void> {
+export async function updateProject(id: string, name?: string, description?: string): Promise<void> {
   const db = await getDatabase()
   const now = timestamp()
-  
+
   const updates: string[] = []
   const values: any[] = []
-  
+
   if (name !== undefined) {
     updates.push('name = ?')
     values.push(name)
@@ -201,15 +200,11 @@ export async function updateProject(id: string, name?: string, description?: str
     updates.push('description = ?')
     values.push(description)
   }
-  if (rawVideoPath !== undefined) {
-    updates.push('raw_video_path = ?')
-    values.push(rawVideoPath)
-  }
-  
+
   updates.push('updated_at = ?')
   values.push(now)
   values.push(id)
-  
+
   await db.execute(
     `UPDATE projects SET ${updates.join(', ')} WHERE id = ?`,
     values
@@ -635,6 +630,28 @@ export async function getRawVideoByPath(filePath: string): Promise<RawVideo | nu
     [filePath]
   )
   return result[0] || null
+}
+
+export async function updateRawVideo(id: string, updates: Partial<{ project_id: string | null }>): Promise<void> {
+  const db = await getDatabase()
+  const dbUpdates: string[] = []
+  const values: any[] = []
+
+  if (updates.project_id !== undefined) {
+    dbUpdates.push('project_id = ?')
+    values.push(updates.project_id)
+  }
+
+  if (dbUpdates.length === 0) return
+
+  dbUpdates.push('updated_at = ?')
+  values.push(timestamp())
+  values.push(id)
+
+  await db.execute(
+    `UPDATE raw_videos SET ${dbUpdates.join(', ')} WHERE id = ?`,
+    values
+  )
 }
 
 export async function deleteRawVideo(id: string): Promise<void> {

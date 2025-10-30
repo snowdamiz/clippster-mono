@@ -498,7 +498,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { getAllRawVideos, createRawVideo, deleteRawVideo, type RawVideo } from '@/services/database'
+import { getAllRawVideos, createRawVideo, deleteRawVideo, getDatabase, type RawVideo } from '@/services/database'
 import { useFormatters } from '@/composables/useFormatters'
 import { useToast } from '@/composables/useToast'
 import { useDownloads } from '@/composables/useDownloads'
@@ -708,7 +708,9 @@ const totalPages = computed(() => Math.ceil(videos.value.length / videosPerPage)
 const paginatedVideos = computed(() => {
   const startIndex = (currentPage.value - 1) * videosPerPage
   const endIndex = startIndex + videosPerPage
-  return videos.value.slice(startIndex, endIndex)
+  const paginated = videos.value.slice(startIndex, endIndex)
+  console.log(`[Videos] Page ${currentPage.value}: Showing ${paginated.length} of ${videos.value.length} videos`)
+  return paginated
 })
 
 // Pagination functions
@@ -742,6 +744,24 @@ async function loadVideos() {
   loading.value = true
   try {
     videos.value = await getAllRawVideos()
+    console.log(`[Videos] Loaded ${videos.value.length} videos`)
+
+    // Debug: Check database directly
+    const db = await getDatabase()
+    try {
+      const allTables = await db.select<any[]>("SELECT name FROM sqlite_master WHERE type='table'")
+      console.log(`[Videos] Database tables:`, allTables.map(t => t.name))
+
+      const rawVideosCount = await db.select<any[]>("SELECT COUNT(*) as count FROM raw_videos")
+      console.log(`[Videos] Raw videos count:`, rawVideosCount[0].count)
+
+      if (rawVideosCount[0].count > 0) {
+        const sampleVideos = await db.select<any[]>("SELECT id, file_path, project_id, original_filename FROM raw_videos LIMIT 5")
+        console.log(`[Videos] Sample videos:`, sampleVideos)
+      }
+    } catch (dbError) {
+      console.error('[Videos] Database debug error:', dbError)
+    }
 
     // Reset pagination to first page when loading new videos
     currentPage.value = 1

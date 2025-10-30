@@ -310,7 +310,7 @@ import { useFormatters } from '@/composables/useFormatters'
 export interface ProjectFormData {
   name: string
   description: string
-  rawVideoPath: string
+  selectedVideoId?: string
 }
 
 const props = defineProps<{
@@ -380,9 +380,9 @@ watch(() => props.project, (newProject) => {
     isEdit.value = true
     formData.name = newProject.name
     formData.description = newProject.description || ''
-    // Try to match existing video path with available videos
-    if (newProject.raw_video_path && availableVideos.value.length > 0) {
-      const matchingVideo = availableVideos.value.find(v => v.file_path === newProject.raw_video_path)
+    // Try to find a video associated with this project
+    if (availableVideos.value.length > 0) {
+      const matchingVideo = availableVideos.value.find(v => v.project_id === newProject.id)
       if (matchingVideo) {
         selectedVideo.value = matchingVideo
       }
@@ -440,7 +440,7 @@ async function handleSubmit() {
     emit('submit', {
       name: formData.name.trim(),
       description: formData.description.trim(),
-      rawVideoPath: selectedVideo.value?.file_path || ''
+      selectedVideoId: selectedVideo.value?.id
     })
   } finally {
     loading.value = false
@@ -463,6 +463,7 @@ function getThumbnailUrl(video: RawVideo): string | null {
 async function loadAvailableVideos() {
   try {
     availableVideos.value = await getAllRawVideos()
+    console.log(`[ProjectDialog] Loaded ${availableVideos.value.length} videos for selection`)
     // Load thumbnails
     for (const video of availableVideos.value) {
       if (video.thumbnail_path && !thumbnailCache.value.has(video.id)) {
