@@ -33,13 +33,20 @@
             </div>
 
             <!-- Content Field -->
-            <MarkdownEditor
-              v-model="formData.content"
-              label="Prompt Content"
-              :required="true"
-              placeholder="Write your AI prompt here... Be specific about the task and desired output."
-              height="600px"
-            />
+            <div class="space-y-1.5">
+              <label for="content" class="block text-sm font-medium text-foreground">
+                Prompt Content
+                <span class="text-red-500 ml-1">*</span>
+              </label>
+              <textarea
+                id="content"
+                v-model="formData.content"
+                rows="20"
+                placeholder="Write your AI prompt here... Be specific about the task and desired output."
+                class="w-full px-3.5 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/10 text-foreground placeholder:text-muted-foreground transition-all resize-vertical"
+                required
+              ></textarea>
+            </div>
 
             <!-- Actions -->
             <div class="flex items-center justify-between">
@@ -166,7 +173,6 @@ import { useRouter } from 'vue-router'
 import { createPrompt } from '@/services/database'
 import { useToast } from '@/composables/useToast'
 import PageLayout from '@/components/PageLayout.vue'
-import MarkdownEditor from '@/components/MarkdownEditor.vue'
 
 const router = useRouter()
 const { success, error } = useToast()
