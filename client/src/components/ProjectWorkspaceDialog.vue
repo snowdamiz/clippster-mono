@@ -55,17 +55,7 @@
                     </svg>
                   </button>
                 </div>
-                <Transition
-                  name="collapse"
-                  mode="out-in"
-                  @before-enter="onBeforeEnter"
-                  @enter="onEnter"
-                  @after-enter="onAfterEnter"
-                  @before-leave="onBeforeLeave"
-                  @leave="onLeave"
-                  @after-leave="onAfterLeave"
-                >
-                  <div v-if="!transcriptCollapsed" class="overflow-hidden">
+                <div v-if="!transcriptCollapsed" class="overflow-hidden">
                   <div ref="transcriptContent" class="text-muted-foreground text-sm space-y-2">
                     <div class="p-2 hover:bg-black/10 rounded cursor-pointer">
                       <span class="text-xs text-muted-foreground/60">00:00</span>
@@ -81,7 +71,6 @@
                     </div>
                   </div>
                   </div>
-                </Transition>
               </div>
 
               <!-- Generated Clips Section -->
@@ -98,33 +87,24 @@
                     </svg>
                   </button>
                 </div>
-                <Transition
-                  name="collapse"
-                  mode="out-in"
-                  @before-enter="onBeforeEnterClips"
-                  @enter="onEnterClips"
-                  @after-enter="onAfterEnterClips"
-                  @before-leave="onBeforeLeaveClips"
-                  @leave="onLeaveClips"
-                  @after-leave="onAfterLeaveClips"
-                >
-                  <div v-if="!clipsCollapsed" class="rounded-lg overflow-hidden">
-                  <div ref="clipsContent" class="h-full flex items-center justify-center">
-                    <div class="text-center text-muted-foreground">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                      </svg>
-                      <p class="text-xs mb-4">No clips generated yet</p>
-                      <button class="px-4 py-2 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all mx-auto text-xs">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        Generate Clips
-                      </button>
+                <div :class="clipsCollapsed ? 'h-0' : 'flex-1'" class="overflow-hidden">
+                    <div v-if="!clipsCollapsed" class="h-full flex flex-col">
+                      <div ref="clipsContent" class="flex-1 flex items-center justify-center min-h-[120px]">
+                        <div class="text-center text-muted-foreground">
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                          </svg>
+                          <p class="text-xs mb-4">No clips generated yet</p>
+                          <button class="px-4 py-2 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all mx-auto text-xs">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            Generate Clips
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  </div>
-                </Transition>
+                </div>
               </div>
             </div>
           </div>
@@ -145,12 +125,12 @@
               </div>
 
               <!-- Timeline Tracks -->
-              <div class="bg-black/20 rounded-lg h-20 relative overflow-hidden">
+              <div class="bg-muted/20 rounded-lg h-20 relative overflow-hidden">
                 <!-- Video Track -->
                 <div class="h-full">
                   <div class="flex items-center h-full px-2">
                     <!-- Track Label -->
-                    <div class="w-16 h-12 pr-2 flex items-center justify-center text-xs text-center text-muted-foreground/60 border-r border-border/30">Video</div>
+                    <div class="w-16 h-12 pr-2 flex items-center justify-center text-xs text-center text-muted-foreground/60 border-r border-border/70">Video</div>
                     <!-- Track Content -->
                     <div class="flex-1 h-full flex items-center justify-center">
                       <div class="text-center text-muted-foreground/40">
@@ -172,7 +152,7 @@
 </style>
 
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
+import { ref } from 'vue'
 import { type Project } from '@/services/database'
 
 const props = defineProps<{
@@ -214,141 +194,4 @@ function toggleClips() {
   }
 }
 
-// Smooth height animation functions
-function animateHeight(element: HTMLElement, startHeight: number, endHeight: number, duration: number = 300) {
-  element.style.height = `${startHeight}px`
-  element.style.overflow = 'hidden'
-
-  // Force reflow
-  element.offsetHeight
-
-  element.style.transition = `height ${duration}ms cubic-bezier(0.4, 0, 0.2, 1)`
-  element.style.height = `${endHeight}px`
-
-  setTimeout(() => {
-    element.style.transition = ''
-    element.style.overflow = ''
-    element.style.height = ''
-  }, duration)
-}
-
-// Transcript animation handlers
-function onBeforeEnter(el: Element) {
-  const element = el as HTMLElement
-  element.style.height = '0'
-  element.style.opacity = '0'
-  element.style.overflow = 'hidden'
-}
-
-function onEnter(el: Element, done: () => void) {
-  const element = el as HTMLElement
-
-  nextTick(() => {
-    const height = element.scrollHeight
-    element.style.transition = 'height 300ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms ease-out'
-    element.style.height = `${height}px`
-    element.style.opacity = '1'
-
-    setTimeout(() => {
-      element.style.transition = ''
-      element.style.height = ''
-      element.style.overflow = ''
-      done()
-    }, 300)
-  })
-}
-
-function onAfterEnter(el: Element) {
-  const element = el as HTMLElement
-  element.style.height = ''
-  element.style.opacity = ''
-}
-
-function onBeforeLeave(el: Element) {
-  const element = el as HTMLElement
-  element.style.height = `${element.scrollHeight}px`
-  element.style.opacity = '1'
-  element.style.overflow = 'hidden'
-}
-
-function onLeave(el: Element, done: () => void) {
-  const element = el as HTMLElement
-
-  // Force reflow
-  element.offsetHeight
-
-  element.style.transition = 'height 250ms cubic-bezier(0.4, 0, 0.2, 1), opacity 150ms ease-in'
-  element.style.height = '0'
-  element.style.opacity = '0'
-
-  setTimeout(() => {
-    done()
-  }, 250)
-}
-
-function onAfterLeave(el: Element) {
-  const element = el as HTMLElement
-  element.style.height = ''
-  element.style.opacity = ''
-}
-
-// Clips animation handlers (same logic, different refs)
-function onBeforeEnterClips(el: Element) {
-  const element = el as HTMLElement
-  element.style.height = '0'
-  element.style.opacity = '0'
-  element.style.overflow = 'hidden'
-}
-
-function onEnterClips(el: Element, done: () => void) {
-  const element = el as HTMLElement
-
-  nextTick(() => {
-    const height = element.scrollHeight
-    element.style.transition = 'height 300ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms ease-out'
-    element.style.height = `${height}px`
-    element.style.opacity = '1'
-
-    setTimeout(() => {
-      element.style.transition = ''
-      element.style.height = ''
-      element.style.overflow = ''
-      done()
-    }, 300)
-  })
-}
-
-function onAfterEnterClips(el: Element) {
-  const element = el as HTMLElement
-  element.style.height = ''
-  element.style.opacity = ''
-}
-
-function onBeforeLeaveClips(el: Element) {
-  const element = el as HTMLElement
-  element.style.height = `${element.scrollHeight}px`
-  element.style.opacity = '1'
-  element.style.overflow = 'hidden'
-}
-
-function onLeaveClips(el: Element, done: () => void) {
-  const element = el as HTMLElement
-
-  // Force reflow
-  element.offsetHeight
-
-  element.style.transition = 'height 250ms cubic-bezier(0.4, 0, 0.2, 1), opacity 150ms ease-in'
-  element.style.height = '0'
-  element.style.opacity = '0'
-
-  setTimeout(() => {
-    done()
-  }, 250)
-}
-
-function onAfterLeaveClips(el: Element) {
-  const element = el as HTMLElement
-  element.style.height = ''
-  element.style.opacity = ''
-}
 </script>
