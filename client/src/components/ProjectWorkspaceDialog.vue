@@ -69,6 +69,7 @@
                 :clips-collapsed="clipsCollapsed"
                 :transcript-data="transcriptData"
                 @toggleTranscript="toggleTranscript"
+                @transcribeAudio="onTranscribeAudio"
               />
 
               <!-- Generated Clips Section -->
@@ -213,6 +214,11 @@ function toggleClips() {
 function onDetectClips() {
   // Handle clip detection - this would integrate with your AI/clip generation logic
   console.log('[ProjectWorkspaceDialog] Detect clips requested')
+}
+
+function onTranscribeAudio() {
+  // Handle audio transcription - this would integrate with your transcription service
+  console.log('[ProjectWorkspaceDialog] Transcribe audio requested')
 }
 
 function onTimelineMouseLeave() {
