@@ -66,7 +66,7 @@
                   {{ selectedVideo.original_filename || selectedVideo.file_path.split(/[\\\/]/).pop() || 'Untitled Video' }}
                 </p>
                 <p class="text-xs text-muted-foreground" v-if="selectedVideo.duration">
-                  Duration: {{ Math.round(selectedVideo.duration) }}s
+                  Duration: {{ formatDuration(selectedVideo.duration) }}
                 </p>
               </div>
               <button
@@ -164,7 +164,7 @@
                   {{ video.original_filename || video.file_path.split(/[\\\/]/).pop() || 'Video' }}
                 </p>
                 <p class="text-xs text-muted-foreground" v-if="video.duration">
-                  {{ Math.round(video.duration) }}s
+                  {{ formatDuration(video.duration) }}
                 </p>
               </div>
             </button>
@@ -199,6 +199,7 @@
 import { ref, watch, reactive } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { getAllRawVideos, type Project, type RawVideo } from '@/services/database'
+import { useFormatters } from '@/composables/useFormatters'
 
 export interface ProjectFormData {
   name: string
@@ -229,6 +230,7 @@ const showVideoSelector = ref(false)
 const availableVideos = ref<RawVideo[]>([])
 const selectedVideo = ref<RawVideo | null>(null)
 const thumbnailCache = ref<Map<string, string>>(new Map())
+const { formatDuration } = useFormatters()
 
 // Watch for project prop changes to populate form for editing
 watch(() => props.project, (newProject) => {
