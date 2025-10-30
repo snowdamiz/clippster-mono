@@ -43,7 +43,7 @@
           <!-- Video Selection -->
           <div>
             <label class="block text-sm font-medium text-foreground mb-2">
-              Video File
+              Video File <span class="text-red-500">*</span>
             </label>
             
             <!-- Selected Video Display -->
@@ -85,13 +85,15 @@
             <button
               type="button"
               @click="showVideoSelector = true"
-              class="w-full px-4 py-3 bg-muted hover:bg-muted/80 border border-border rounded-lg text-foreground transition-all flex items-center justify-center gap-2"
+              class="w-full px-4 py-3 bg-muted hover:bg-muted/80 border rounded-lg text-foreground transition-all flex items-center justify-center gap-2"
+              :class="{ 'border-red-500': errors.rawVideoPath }"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
               </svg>
               Select from Video Library
             </button>
+            <p v-if="errors.rawVideoPath" class="mt-1 text-sm text-red-500">{{ errors.rawVideoPath }}</p>
           </div>
 
           <!-- Action Buttons -->
@@ -101,7 +103,7 @@
               :disabled="loading"
               class="flex-1 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
-              {{ loading ? 'Saving...' : (isEdit ? 'Update Project' : 'Create Project') }}
+              {{ loading ? 'Saving...' : (isEdit ? 'Update Project' : 'Generate Clips') }}
             </button>
             <button
               type="button"
@@ -270,17 +272,23 @@ function resetForm() {
 
 function validateForm(): boolean {
   Object.keys(errors).forEach(key => delete errors[key as keyof ProjectFormData])
-  
+
   if (!formData.name.trim()) {
     errors.name = 'Project name is required'
     return false
   }
-  
+
   if (formData.name.trim().length < 2) {
     errors.name = 'Project name must be at least 2 characters'
     return false
   }
-  
+
+  // Require video selection for new projects (not when editing)
+  if (!isEdit.value && !selectedVideo.value) {
+    errors.rawVideoPath = 'Video file is required'
+    return false
+  }
+
   return true
 }
 
