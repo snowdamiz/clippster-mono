@@ -228,7 +228,7 @@
               <span class="font-semibold capitalize">{{ selectedPack?.key }}</span>
             </div>
             <div class="flex justify-between mb-2">
-              <span class="text-muted-foreground">Hours:</span>
+              <span class="text-muted-foreground">Credit Hours:</span>
               <span class="font-semibold">{{ selectedPack?.hours }}</span>
             </div>
             <div class="flex justify-between mb-2">
@@ -241,15 +241,39 @@
             </div>
           </div>
 
-          <button
-            class="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all"
-            @click="initiatePayment"
-            :disabled="processing"
-          >
-            <span v-if="!processing">Pay with Phantom</span>
-            <span v-else>Processing...</span>
-          </button>
+          <!-- Payment Buttons Row -->
+          <div class="grid grid-cols-2 gap-3 mt-7">
+            <!-- Crypto Payment Button -->
+            <button
+              class="py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all"
+              @click="initiatePayment"
+              :disabled="processing"
+            >
+              <span v-if="!processing">Pay with Phantom</span>
+              <span v-else>Processing...</span>
+            </button>
 
+            <!-- Stripe Payment Button (Coming Soon) -->
+            <div class="relative">
+              <div class="absolute -top-3 -right-3 bg-purple-700 text-white text-[11px] font-bold px-2 py-0.5 rounded-full z-10 whitespace-nowrap">
+                Coming Soon
+              </div>
+              <button
+                class="w-full py-3 bg-gradient-to-r from-[#635bff] to-[#4e44cb] text-white rounded-lg font-semibold opacity-60 cursor-not-allowed transition-all"
+                disabled
+                title="Stripe payments coming soon"
+              >
+                <div class="flex items-center justify-center gap-2">
+                  <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M13.976 9.15c-2.172-.806-3.356-1.426-3.356-2.409 0-.831.683-1.305 1.902-1.305 2.227 0 4.515.858 6.09 1.631l.894-5.494C18.25 1.242 15.908 0 12.183 0 9.735 0 7.735.658 6.332 1.896 4.862 3.193 4.106 5.058 4.106 7.307c0 4.349 2.637 6.172 5.433 7.344 2.33.946 3.231 1.58 3.231 2.583 0 .96-.813 1.413-2.354 1.413-1.876 0-4.938-.919-7.088-2.144l-.894 5.633c2.162 1.242 4.856 1.896 7.828 1.896 2.566 0 4.693-.62 6.162-1.799 1.574-1.242 2.401-3.066 2.401-5.508 0-4.416-2.672-6.228-5.749-7.525zM24 11.757c0 2.532-2.055 4.587-4.587 4.587S14.826 14.289 14.826 11.757 16.881 7.17 19.413 7.17 24 9.225 24 11.757z"/>
+                  </svg>
+                  Pay with Card
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Cancel Button -->
           <button
             class="w-full py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 transition-all"
             @click="closePaymentModal"
