@@ -28,7 +28,7 @@
           <!-- Top Row: Video Player, Transcript, and Clips -->
           <div class="flex flex-1 min-h-0 border-b border-border">
             <!-- Video Player Section -->
-            <div class="w-1/2 min-w-0 p-4 border-r border-border flex flex-col">
+            <div class="w-3/5 min-w-0 p-8 border-r border-border flex flex-col">
               <!-- Video Player Container -->
               <div class="flex-1 min-h-0 rounded-lg bg-black relative overflow-hidden">
                 <!-- Loading State -->
@@ -105,46 +105,7 @@
               </div>
 
               <!-- Video Controls Bar -->
-              <div v-if="videoSrc && !videoLoading" class="mt-3 bg-[#0a0a0a]/50 rounded-lg p-3 backdrop-blur-sm">
-                <!-- Timeline/Seek Bar -->
-                <div
-                  class="relative h-1.5 cursor-pointer group mb-3"
-                  @click="seekTo($event)"
-                  @mousemove="onTimelineHover($event)"
-                  @mouseleave="hoverTime = null"
-                >
-                  <!-- Background track -->
-                  <div class="absolute inset-0 bg-gray-700 rounded-full"></div>
-
-                  <!-- Buffered segments indicator -->
-                  <div
-                    class="absolute h-full bg-purple-400/30 rounded-full transition-all duration-300"
-                    :style="{ width: `${duration ? (buffered / duration) * 100 : 0}%` }"
-                  ></div>
-
-                  <!-- Progress Bar -->
-                  <div
-                    class="absolute h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full transition-all duration-100"
-                    :style="{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }"
-                  ></div>
-
-                  <!-- Seek thumb -->
-                  <div
-                    class="absolute top-1/2 w-3 h-3 bg-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-all duration-200 border border-purple-500"
-                    :style="{ left: `${duration ? (currentTime / duration) * 100 : 0}%`, transform: 'translate(-50%, -50%)' }"
-                  ></div>
-
-                  <!-- Hover time preview -->
-                  <div
-                    v-if="hoverTime !== null"
-                    class="absolute -top-8 bg-black/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-md font-medium"
-                    :style="{ left: `${hoverPosition}%`, transform: 'translateX(-50%)' }"
-                  >
-                    {{ formatDuration(hoverTime) }}
-                    <div class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-1.5 h-1.5 bg-black/90"></div>
-                  </div>
-                </div>
-
+              <div v-if="videoSrc && !videoLoading" class="mt-3 bg-[#0a0a0a]/50 rounded-lg backdrop-blur-sm">
                 <!-- Control Buttons and Time Display -->
                 <div class="flex items-center justify-between">
                   <!-- Left Controls -->
@@ -152,19 +113,19 @@
                     <!-- Play/Pause Button -->
                     <button
                       @click="togglePlayPause"
-                      class="p-1.5 bg-white/10 hover:bg-white/20 rounded-md transition-all duration-200 backdrop-blur-sm"
+                      class="p-1.5 bg-white/5 hover:bg-white/10 rounded-md transition-all duration-200 backdrop-blur-sm"
                       title="Play/Pause"
                     >
-                      <svg v-if="!isPlaying" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg v-if="!isPlaying" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                       </svg>
-                      <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6" />
                       </svg>
                     </button>
 
                     <!-- Time Display -->
-                    <div class="text-white text-xs font-mono font-medium bg-white/10 px-2 py-1 rounded-md backdrop-blur-sm">
+                    <div class="text-white text-sm font-mono font-medium bg-white/5 px-4 py-2 rounded-md backdrop-blur-sm">
                       {{ formatDuration(currentTime) }} / {{ formatDuration(duration) }}
                     </div>
                   </div>
@@ -175,18 +136,18 @@
                     <div class="flex items-center gap-1.5">
                       <button
                         @click="toggleMute"
-                        class="p-1.5 bg-white/10 hover:bg-white/20 rounded-md transition-all duration-200 backdrop-blur-sm"
+                        class="p-3 rounded-md transition-all duration-200 backdrop-blur-sm"
                         title="Mute/Unmute"
                       >
-                        <svg v-if="isMuted || volume === 0" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg v-if="isMuted || volume === 0" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
                         </svg>
-                        <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                         </svg>
                       </button>
-                      <div class="relative w-16 h-1 bg-gray-700 rounded-md">
+                      <div class="relative w-30 h-1.5 bg-gray-700 rounded-md">
                         <div
                           class="absolute left-0 top-0 h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-md transition-all duration-200"
                           :style="{ width: `${volume * 100}%` }"
@@ -197,7 +158,7 @@
                           min="0"
                           max="1"
                           step="0.05"
-                          class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                          class="absolute inset-0 w-full h-full cursor-pointer slider z-10 mt-0.5"
                           @input="updateVolume"
                         />
                       </div>
@@ -208,7 +169,7 @@
             </div>
 
             <!-- Right Side: Transcript and Clips -->
-            <div class="w-1/2 min-w-0 flex flex-col">
+            <div class="w-2/5 min-w-0 flex flex-col">
               <!-- Transcript Section -->
               <div :class="clipsCollapsed ? 'flex-1' : transcriptCollapsed ? 'h-auto' : 'flex-1'" class="p-4 border-b border-border flex flex-col">
                 <div class="flex items-center justify-between">
@@ -283,23 +244,6 @@
               <!-- Timeline Header -->
               <div class="flex items-center justify-between mb-3">
                 <h3 class="text-sm font-medium text-foreground">Timeline</h3>
-                <div class="flex items-center gap-2">
-                  <span v-if="videoSrc && duration > 0" class="text-xs text-muted-foreground">
-                    {{ formatDuration(duration) }}
-                  </span>
-                  <button
-                    @click="togglePlayPause"
-                    :disabled="!videoSrc"
-                    class="px-3 py-1 bg-muted hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs text-foreground transition-colors"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path v-if="!isPlaying" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                      <path v-else stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6" />
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    {{ isPlaying ? 'Pause' : 'Play' }}
-                  </button>
-                </div>
               </div>
 
               <!-- Timeline Tracks -->
@@ -349,7 +293,7 @@
                         <!-- Hover time indicator -->
                         <div
                           v-if="timelineHoverTime !== null"
-                          class="absolute top-0 transform -translate-x-1/2 z-20"
+                          class="absolute -top-2 transform -translate-x-1/2 z-20"
                           :style="{ left: `${timelineHoverPosition}%` }"
                         >
                           <div class="bg-black/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-md font-medium mb-1">
@@ -684,8 +628,6 @@ const duration = ref(0)
 const volume = ref(1)
 const isMuted = ref(false)
 const buffered = ref(0)
-const hoverTime = ref<number | null>(null)
-const hoverPosition = ref(0)
 const timelineHoverTime = ref<number | null>(null)
 const timelineHoverPosition = ref(0)
 
@@ -754,22 +696,6 @@ function togglePlayPause() {
   }
 }
 
-function seekTo(event: MouseEvent) {
-  if (!videoElement.value) return
-
-  const timeline = event.currentTarget as HTMLElement
-  const rect = timeline.getBoundingClientRect()
-  const clickX = event.clientX - rect.left
-  const clickPercent = Math.max(0, Math.min(1, clickX / rect.width))
-
-  const videoDuration = videoElement.value.duration || duration.value
-  if (!videoDuration || isNaN(videoDuration)) return
-
-  const seekTime = clickPercent * videoDuration
-  videoElement.value.currentTime = seekTime
-  currentTime.value = seekTime
-}
-
 function seekTimeline(event: MouseEvent) {
   if (!videoElement.value || !videoSrc.value) return
 
@@ -784,22 +710,6 @@ function seekTimeline(event: MouseEvent) {
   const seekTime = clickPercent * videoDuration
   videoElement.value.currentTime = seekTime
   currentTime.value = seekTime
-}
-
-function onTimelineHover(event: MouseEvent) {
-  if (!videoElement.value) return
-
-  const timeline = event.currentTarget as HTMLElement
-  const rect = timeline.getBoundingClientRect()
-  const hoverX = event.clientX - rect.left
-  const hoverPercent = Math.max(0, Math.min(1, hoverX / rect.width))
-
-  const videoDuration = videoElement.value.duration || duration.value
-  if (!videoDuration || isNaN(videoDuration)) return
-
-  const hoverTimeSeconds = hoverPercent * videoDuration
-  hoverPosition.value = hoverPercent * 100
-  hoverTime.value = hoverTimeSeconds
 }
 
 function onTimelineTrackHover(event: MouseEvent) {
@@ -1043,8 +953,6 @@ watch(() => props.modelValue, async (newValue) => {
     currentTime.value = 0
     duration.value = 0
     videoLoading.value = false
-    hoverTime.value = null
-    hoverPosition.value = 0
     timelineHoverTime.value = null
     timelineHoverPosition.value = 0
   }
