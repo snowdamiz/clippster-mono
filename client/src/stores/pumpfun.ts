@@ -119,9 +119,11 @@ export const usePumpFunStore = defineStore('pumpfun', {
         const result = await getPumpFunClips(extractedMintId, limit)
 
         if (result.success) {
-          this.clips = result.clips
+          // Filter out clips shorter than 3 minutes (180 seconds)
+          const filteredClips = result.clips.filter(clip => clip.duration >= 180)
+          this.clips = filteredClips
           this.hasMore = result.hasMore
-          this.total = result.total
+          this.total = filteredClips.length
           this.lastSearchTime = Date.now()
 
           // Save to recent searches on successful search
@@ -129,8 +131,8 @@ export const usePumpFunStore = defineStore('pumpfun', {
 
           return {
             success: true,
-            clips: result.clips,
-            total: result.total,
+            clips: filteredClips,
+            total: filteredClips.length,
             hasMore: result.hasMore
           }
         } else {
