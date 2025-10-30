@@ -43,7 +43,7 @@
           <!-- Video Selection -->
           <div>
             <label class="block text-sm font-medium text-foreground mb-2">
-              Video File <span class="text-red-500">*</span>
+              Raw Video <span class="text-red-500">*</span>
             </label>
             
             <!-- Selected Video Display -->
@@ -124,14 +124,33 @@
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]"
       @click.self="showVideoSelector = false"
     >
-      <div class="bg-card rounded-2xl p-6 max-w-4xl w-full mx-4 border border-border max-h-[80vh] flex flex-col">
+      <div class="bg-card rounded-2xl p-6 max-w-4xl w-full mx-4 border border-border max-h-[80vh] flex flex-col relative">
+        <!-- Close Button (Top Right) -->
+        <button
+          @click="showVideoSelector = false"
+          class="absolute top-6 right-6 z-30 p-2 bg-black/40 hover:bg-black/60 backdrop-blur-sm rounded-lg transition-colors"
+          title="Close"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+
         <h3 class="text-xl font-bold mb-4">Select a Video</h3>
         
         <!-- Videos Grid -->
         <div class="flex-1 overflow-y-auto">
+          <!-- Header with video count -->
+          <div v-if="availableVideos.length > 0" class="flex items-center justify-between mb-4">
+            <p class="text-sm text-muted-foreground">
+              {{ availableVideos.length }} video{{ availableVideos.length !== 1 ? 's' : '' }}
+              <span v-if="totalPages > 1">• Page {{ currentPage }} of {{ totalPages }}</span>
+            </p>
+          </div>
+
           <div v-if="availableVideos.length > 0" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             <button
-              v-for="video in availableVideos"
+              v-for="video in paginatedVideos"
               :key="video.id"
               type="button"
               @click="selectVideoFromLibrary(video)"
@@ -182,15 +201,100 @@
           </div>
         </div>
         
-        <!-- Footer -->
-        <div class="mt-4 pt-4 border-t border-border">
-          <button
-            type="button"
-            @click="showVideoSelector = false"
-            class="w-full py-2.5 bg-muted text-foreground rounded-lg font-medium hover:bg-muted/80 transition-all"
-          >
-            Close
-          </button>
+        <!-- Pagination Controls (shown when there are multiple pages) -->
+        <div
+          v-if="totalPages > 1"
+          class="mt-6 pt-5 px-5 -mx-6 border-t border-border"
+        >
+          <div class="flex items-center justify-between">
+            <!-- Page info -->
+            <div class="text-sm text-muted-foreground">
+              Page {{ currentPage }} of {{ totalPages }}
+            </div>
+
+            <!-- Pagination Controls -->
+            <div class="flex items-center gap-2 rounded-md">
+              <!-- Previous Button -->
+              <button
+                @click="previousPage"
+                :disabled="currentPage === 1"
+                class="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-all text-sm"
+                title="Previous page"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                </svg>
+                Previous
+              </button>
+
+              <!-- Page Numbers -->
+              <div class="flex items-center gap-1">
+                <!-- Generate page numbers with smart ellipsis -->
+                <template v-for="page in totalPages" :key="page">
+                  <!-- Show first page -->
+                  <button
+                    v-if="page === 1"
+                    @click="goToPage(page)"
+                    :class="[
+                      'px-2.5 py-1.5 rounded-md transition-all text-sm font-medium',
+                      currentPage === page
+                        ? 'text-purple-500'
+                        : 'hover:bg-muted/80 text-foreground'
+                    ]"
+                  >
+                    {{ page }}
+                  </button>
+
+                  <!-- Show ellipsis before current page range -->
+                  <span v-else-if="page === currentPage - 2 && page > 2" class="px-1.5 text-muted-foreground text-sm">...</span>
+
+                  <!-- Show pages around current -->
+                  <button
+                    v-else-if="page >= currentPage - 1 && page <= currentPage + 1"
+                    @click="goToPage(page)"
+                    :class="[
+                      'px-2.5 py-1.5 rounded-md transition-all text-sm font-medium',
+                      currentPage === page
+                        ? 'text-purple-500'
+                        : 'hover:bg-muted/80 text-foreground'
+                    ]"
+                  >
+                    {{ page }}
+                  </button>
+
+                  <!-- Show ellipsis after current page range -->
+                  <span v-else-if="page === currentPage + 2 && page < totalPages - 1" class="px-1.5 text-muted-foreground text-sm">...</span>
+
+                  <!-- Show last page -->
+                  <button
+                    v-else-if="page === totalPages && totalPages > 1"
+                    @click="goToPage(page)"
+                    :class="[
+                      'px-2.5 py-1.5 rounded-md transition-all text-sm font-medium',
+                      currentPage === page
+                        ? 'bg-purple-500 text-white'
+                        : 'hover:bg-muted/80 text-foreground'
+                    ]"
+                  >
+                    {{ page }}
+                  </button>
+                </template>
+              </div>
+
+              <!-- Next Button -->
+              <button
+                @click="nextPage"
+                :disabled="currentPage === totalPages"
+                class="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-all text-sm"
+                title="Next page"
+              >
+                Next
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -198,7 +302,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, reactive } from 'vue'
+import { ref, watch, reactive, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { getAllRawVideos, type Project, type RawVideo } from '@/services/database'
 import { useFormatters } from '@/composables/useFormatters'
@@ -233,6 +337,42 @@ const availableVideos = ref<RawVideo[]>([])
 const selectedVideo = ref<RawVideo | null>(null)
 const thumbnailCache = ref<Map<string, string>>(new Map())
 const { formatDuration } = useFormatters()
+
+// Pagination state
+const currentPage = ref(1)
+const videosPerPage = 8
+
+// Pagination computed properties
+const totalPages = computed(() => Math.ceil(availableVideos.value.length / videosPerPage))
+const paginatedVideos = computed(() => {
+  const startIndex = (currentPage.value - 1) * videosPerPage
+  const endIndex = startIndex + videosPerPage
+  return availableVideos.value.slice(startIndex, endIndex)
+})
+
+// Pagination functions
+function goToPage(page: number) {
+  if (page >= 1 && page <= totalPages.value) {
+    currentPage.value = page
+  }
+}
+
+function nextPage() {
+  if (currentPage.value < totalPages.value) {
+    currentPage.value++
+  }
+}
+
+function previousPage() {
+  if (currentPage.value > 1) {
+    currentPage.value--
+  }
+}
+
+// Reset to first page when available videos change
+watch(availableVideos, () => {
+  currentPage.value = 1
+})
 
 // Watch for project prop changes to populate form for editing
 watch(() => props.project, (newProject) => {
