@@ -2,7 +2,7 @@
   <div class="videos-page-wrapper">
     <div class="pb-20 min-h-full">
     <!-- Page Title and Actions (always rendered for consistent structure) -->
-    <div class="mb-8">
+    <div class="pl-2 mb-8">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
           <div>
@@ -42,7 +42,7 @@
     </div>
 
     <!-- Content area -->
-    <div class="content-area">
+    <div class="content-area pl-2">
       <!-- Loading State -->
       <LoadingState v-if="loading" message="Loading videos..." />
 
@@ -133,45 +133,75 @@
 
       <!-- Existing video cards -->
       <div v-for="video in paginatedVideos" :key="video.id" class="group relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer">
-        <!-- Thumbnail -->
+        <!-- Thumbnail with vignette background -->
         <div class="aspect-video bg-muted/50 relative">
-          <img
-            v-if="getThumbnailUrl(video)"
-            :src="getThumbnailUrl(video)!"
-            :alt="video.original_filename || 'Video thumbnail'"
-            class="w-full h-full object-cover"
-          />
-          <div v-else class="absolute inset-0 flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-14 w-14 text-muted-foreground/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
-          </div>
-          <!-- Duration overlay -->
+          <!-- Thumbnail background with vignette -->
           <div
-            v-if="video.duration"
-            class="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-2 py-1 rounded-md backdrop-blur-sm"
+            v-if="getThumbnailUrl(video)"
+            class="absolute inset-0 z-0"
+            :style="{
+              backgroundImage: `url(${getThumbnailUrl(video)})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat'
+            }"
           >
-            {{ formatDuration(video.duration) }}
+            <!-- Dark vignette overlay -->
+            <div class="absolute inset-0 bg-gradient-to-br from-black/70 via-black/50 to-black/80"></div>
           </div>
-          <!-- Hover Overlay -->
-          <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2">
-            <button class="p-2.5 bg-white rounded-lg hover:bg-white/90" title="Play" @click.stop="playVideo(video)">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+
+          <!-- Content overlay -->
+          <div class="relative z-10 h-full flex flex-col">
+            <!-- Duration overlay -->
+            <div
+              v-if="video.duration"
+              class="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-md backdrop-blur-sm"
+            >
+              {{ formatDuration(video.duration) }}
+            </div>
+
+            <!-- Center placeholder if no thumbnail -->
+            <div v-if="!getThumbnailUrl(video)" class="flex-1 flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-14 w-14 text-white/60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
               </svg>
-            </button>
-            <button class="p-2.5 bg-white rounded-lg hover:bg-white/90" title="Delete" @click.stop="confirmDelete(video)">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
+            </div>
+
+            <!-- Hover Overlay -->
+            <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition-opacity">
+              <button class="p-2.5 bg-white/90 hover:bg-white rounded-lg transition-colors" title="Play" @click.stop="playVideo(video)">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
+              <button class="p-2.5 bg-white/90 hover:bg-white rounded-lg transition-colors" title="Delete" @click.stop="confirmDelete(video)">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
         <!-- Info -->
-        <div class="p-4">
-          <h4 class="font-semibold text-foreground truncate mb-2">{{ video.original_filename || video.file_path.split(/[\\\/]/).pop() || 'Untitled Video' }}</h4>
-          <p class="text-xs text-muted-foreground">Added {{ getRelativeTime(video.created_at) }}</p>
+        <div :class="[
+          'p-4 border-t',
+          getThumbnailUrl(video)
+            ? 'border-white/10 bg-black/20 backdrop-blur-sm'
+            : 'border-border bg-card'
+        ]">
+          <h4 :class="[
+            'font-semibold truncate mb-2',
+            getThumbnailUrl(video)
+              ? 'text-white'
+              : 'text-foreground'
+          ]">{{ video.original_filename || video.file_path.split(/[\\\/]/).pop() || 'Untitled Video' }}</h4>
+          <p :class="[
+            'text-xs',
+            getThumbnailUrl(video)
+              ? 'text-white/80'
+              : 'text-muted-foreground'
+          ]">Added {{ getRelativeTime(video.created_at) }}</p>
         </div>
       </div>
     </div>

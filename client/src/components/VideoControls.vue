@@ -121,7 +121,7 @@ function toggleMute() {
 }
 
 function updateVolume() {
-  emit('updateVolume', parseFloat(localVolume.value))
+  emit('updateVolume', Number(localVolume.value))
 }
 </script>
 

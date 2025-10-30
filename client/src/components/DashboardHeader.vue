@@ -21,14 +21,14 @@
       <!-- Credit Balance -->
       <router-link 
         to="/dashboard/pricing" 
-        class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all cursor-pointer shadow-sm hover:shadow-md"
+        class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-muted/70 to-muted/50 rounded-lg hover:from-purple-500/80 hover:to-indigo-700 transition-all cursor-pointer shadow-sm hover:shadow-md"
         title="View Pricing & Purchase Credits"
       >
         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         <span class="text-sm font-semibold text-white" v-if="!loadingBalance">
-          {{ hoursRemaining }} {{ hoursRemaining === 1 ? 'hr' : 'hrs' }}
+          Credits: {{ hoursRemaining }} {{ hoursRemaining === 1 ? 'hr' : 'hrs' }}
         </span>
         <span class="text-sm font-semibold text-white" v-else>
           <span class="animate-pulse">Loading...</span>

@@ -1,5 +1,5 @@
 <template>
-  <aside class="fixed left-0 top-0 h-full w-64 bg-card border-r border-border">
+  <aside class="fixed left-0 top-0 h-full w-64 bg-muted/12 border-r border-border">
     <!-- Logo/Brand -->
     <div class="h-16 px-6 flex items-center border-b border-border">
       <img src="/logo.svg" alt="Clippster" class="h-7 w-auto" />

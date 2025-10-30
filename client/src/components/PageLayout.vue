@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="pl-2">
     <!-- Page Title and Actions -->
     <div v-if="showHeader" class="mb-8">
       <div class="flex items-center justify-between">
