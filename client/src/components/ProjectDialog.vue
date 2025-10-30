@@ -103,7 +103,7 @@
               :disabled="loading"
               class="flex-1 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
-              {{ loading ? 'Saving...' : (isEdit ? 'Update Project' : 'Generate Clips') }}
+              {{ loading ? 'Saving...' : (isEdit ? 'Update Project' : 'Create Project') }}
             </button>
             <button
               type="button"

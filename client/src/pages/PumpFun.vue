@@ -54,52 +54,27 @@
           </div>
         </div>
 
-        <input
+        <SearchInput
           v-model="mintId"
-          type="text"
           placeholder="Mint ID or PumpFun URL"
-          class="px-4 py-2.5 bg-muted border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all"
-          @keyup.enter="handleSearch"
-          :disabled="pumpFunStore.loading"
+          :loading="pumpFunStore.loading"
+          @search="handleSearch"
+          class="flex-1 max-w-md"
         />
-        <button
-          @click="handleSearch"
-          :disabled="pumpFunStore.loading || !mintId.trim()"
-          class="w-12 h-12 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center justify-center font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          :title="pumpFunStore.loading ? 'Searching...' : 'Search'"
-        >
-          <svg v-if="!pumpFunStore.loading" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <svg v-else class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-        </button>
       </div>
     </template>
 
     <!-- Loading State -->
     <div v-if="pumpFunStore.loading" class="space-y-6">
       <!-- Search Bar -->
-      <div class="flex items-center justify-center gap-3">
-        <input
+      <div class="flex justify-center">
+        <SearchInput
           v-model="mintId"
-          type="text"
           placeholder="Mint ID or PumpFun URL"
-          class="px-4 py-2.5 bg-muted border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all"
-          disabled
+          :loading="true"
+          :disabled="true"
+          class="max-w-md"
         />
-        <button
-          disabled
-          class="w-12 h-12 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 text-white rounded-lg flex items-center justify-center font-medium shadow-sm transition-all opacity-50 cursor-not-allowed"
-          title="Searching..."
-        >
-          <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-        </button>
       </div>
 
       <!-- Skeleton Cards Grid -->
@@ -239,25 +214,12 @@
         </template>
 
         <template #action>
-          <div class="flex items-center gap-3">
-            <input
-              v-model="mintId"
-              type="text"
-              placeholder="Mint ID or PumpFun URL"
-              class="px-4 py-2.5 bg-muted border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all"
-              @keyup.enter="handleSearch"
-            />
-            <button
-              @click="handleSearch"
-              :disabled="!mintId.trim()"
-              class="w-12 h-12 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center justify-center font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Search"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </button>
-          </div>
+          <SearchInput
+            v-model="mintId"
+            placeholder="Mint ID or PumpFun URL"
+            @search="handleSearch"
+            class="w-full max-w-md"
+          />
         </template>
       </EmptyState>
     </div>
@@ -322,6 +284,7 @@ import { useRouter } from 'vue-router'
 import PageLayout from '@/components/PageLayout.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import VodCard from '@/components/VodCard.vue'
+import SearchInput from '@/components/SearchInput.vue'
 import { type PumpFunClip } from '@/services/pumpfun'
 import { useToast } from '@/composables/useToast'
 import { useDownloads } from '@/composables/useDownloads'
