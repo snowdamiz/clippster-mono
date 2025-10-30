@@ -24,15 +24,141 @@
         </div>
 
         <!-- Main Content Area -->
-        <div class="flex-1 p-8 overflow-hidden" style="height: calc(100% - 52px);">
-          <!-- Content will be added here -->
-          <div class="h-full flex items-center justify-center text-muted-foreground">
-            <div class="text-center">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto mb-4 text-muted-foreground/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-              </svg>
-              <p class="text-lg">Project workspace</p>
-              <p class="text-sm mt-2">Content will be added here</p>
+        <div class="flex flex-col h-full" style="height: calc(100% - 52px);">
+          <!-- Top Row: Video Player, Transcript, and Clips -->
+          <div class="flex flex-1 min-h-0 border-b border-border">
+            <!-- Video Player Section -->
+            <div class="w-1/2 min-w-0 p-4 border-r border-border">
+              <div class="h-full rounded-lg flex items-center justify-center">
+                <div class="text-center text-muted-foreground">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  <p class="text-sm">Video Player</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Side: Transcript and Clips -->
+            <div class="w-1/2 min-w-0 flex flex-col">
+              <!-- Transcript Section -->
+              <div :class="clipsCollapsed ? 'flex-1' : transcriptCollapsed ? 'h-auto' : 'flex-1'" class="p-4 border-b border-border flex flex-col">
+                <div class="flex items-center justify-between">
+                  <h3 class="text-sm font-medium text-foreground">Transcript</h3>
+                  <button
+                    @click="toggleTranscript"
+                    class="p-1 hover:bg-muted rounded transition-colors"
+                    :title="transcriptCollapsed ? 'Expand transcript' : 'Collapse transcript'"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground transition-transform duration-300 ease-in-out" :class="{ 'rotate-180': transcriptCollapsed }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
+                <Transition
+                  name="collapse"
+                  mode="out-in"
+                  @before-enter="onBeforeEnter"
+                  @enter="onEnter"
+                  @after-enter="onAfterEnter"
+                  @before-leave="onBeforeLeave"
+                  @leave="onLeave"
+                  @after-leave="onAfterLeave"
+                >
+                  <div v-if="!transcriptCollapsed" class="overflow-hidden">
+                  <div ref="transcriptContent" class="text-muted-foreground text-sm space-y-2">
+                    <div class="p-2 hover:bg-black/10 rounded cursor-pointer">
+                      <span class="text-xs text-muted-foreground/60">00:00</span>
+                      <p class="text-xs mt-1">Welcome to the project workspace...</p>
+                    </div>
+                    <div class="p-2 hover:bg-black/10 rounded cursor-pointer">
+                      <span class="text-xs text-muted-foreground/60">00:05</span>
+                      <p class="text-xs mt-1">This is where your transcript will appear...</p>
+                    </div>
+                    <div class="p-2 hover:bg-black/10 rounded cursor-pointer">
+                      <span class="text-xs text-muted-foreground/60">00:10</span>
+                      <p class="text-xs mt-1">Click on any text to jump to that timestamp...</p>
+                    </div>
+                  </div>
+                  </div>
+                </Transition>
+              </div>
+
+              <!-- Generated Clips Section -->
+              <div :class="transcriptCollapsed ? 'flex-1' : clipsCollapsed ? 'h-auto' : 'flex-1'" class="p-4 flex flex-col">
+                <div class="flex items-center justify-between">
+                  <h3 class="text-sm font-medium text-foreground">Generated Clips</h3>
+                  <button
+                    @click="toggleClips"
+                    class="p-1 hover:bg-muted rounded transition-colors"
+                    :title="clipsCollapsed ? 'Expand clips' : 'Collapse clips'"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground transition-transform duration-300 ease-in-out" :class="{ 'rotate-180': clipsCollapsed }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
+                <Transition
+                  name="collapse"
+                  mode="out-in"
+                  @before-enter="onBeforeEnterClips"
+                  @enter="onEnterClips"
+                  @after-enter="onAfterEnterClips"
+                  @before-leave="onBeforeLeaveClips"
+                  @leave="onLeaveClips"
+                  @after-leave="onAfterLeaveClips"
+                >
+                  <div v-if="!clipsCollapsed" class="rounded-lg overflow-hidden">
+                  <div ref="clipsContent" class="h-full flex items-center justify-center">
+                    <div class="text-center text-muted-foreground">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                      </svg>
+                      <p class="text-xs mb-4">No clips generated yet</p>
+                      <button class="px-4 py-2 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all mx-auto text-xs">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Generate Clips
+                      </button>
+                    </div>
+                  </div>
+                  </div>
+                </Transition>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom Row: Timeline -->
+          <div class="h-36 bg-[#0a0a0a]/30 border-t border-border">
+            <div class="p-4 h-full">
+              <!-- Timeline Header -->
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-medium text-foreground">Timeline</h3>
+                <button class="px-3 py-1 bg-muted hover:bg-muted/80 rounded text-xs text-foreground transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Play
+                </button>
+              </div>
+
+              <!-- Timeline Tracks -->
+              <div class="bg-black/20 rounded-lg h-20 relative overflow-hidden">
+                <!-- Video Track -->
+                <div class="h-full">
+                  <div class="flex items-center h-full px-2">
+                    <!-- Track Label -->
+                    <div class="w-16 h-12 pr-2 flex items-center justify-center text-xs text-center text-muted-foreground/60 border-r border-border/30">Video</div>
+                    <!-- Track Content -->
+                    <div class="flex-1 h-full flex items-center justify-center">
+                      <div class="text-center text-muted-foreground/40">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -41,7 +167,12 @@
   </Teleport>
 </template>
 
+<style scoped>
+/* Remove all the old problematic CSS - we'll handle animations via JavaScript hooks */
+</style>
+
 <script setup lang="ts">
+import { ref, nextTick } from 'vue'
 import { type Project } from '@/services/database'
 
 const props = defineProps<{
@@ -53,7 +184,171 @@ const emit = defineEmits<{
   'update:modelValue': [value: boolean]
 }>()
 
+// Initialize reactive state
+const transcriptCollapsed = ref(false)
+const clipsCollapsed = ref(false)
+
+// Template refs for content measurement
+const transcriptContent = ref<HTMLElement>()
+const clipsContent = ref<HTMLElement>()
+
 function close() {
   emit('update:modelValue', false)
+}
+
+function toggleTranscript() {
+  transcriptCollapsed.value = !transcriptCollapsed.value
+
+  // If we're collapsing transcript, auto-expand clips
+  if (transcriptCollapsed.value) {
+    clipsCollapsed.value = false
+  }
+}
+
+function toggleClips() {
+  clipsCollapsed.value = !clipsCollapsed.value
+
+  // If we're collapsing clips, auto-expand transcript
+  if (clipsCollapsed.value) {
+    transcriptCollapsed.value = false
+  }
+}
+
+// Smooth height animation functions
+function animateHeight(element: HTMLElement, startHeight: number, endHeight: number, duration: number = 300) {
+  element.style.height = `${startHeight}px`
+  element.style.overflow = 'hidden'
+
+  // Force reflow
+  element.offsetHeight
+
+  element.style.transition = `height ${duration}ms cubic-bezier(0.4, 0, 0.2, 1)`
+  element.style.height = `${endHeight}px`
+
+  setTimeout(() => {
+    element.style.transition = ''
+    element.style.overflow = ''
+    element.style.height = ''
+  }, duration)
+}
+
+// Transcript animation handlers
+function onBeforeEnter(el: Element) {
+  const element = el as HTMLElement
+  element.style.height = '0'
+  element.style.opacity = '0'
+  element.style.overflow = 'hidden'
+}
+
+function onEnter(el: Element, done: () => void) {
+  const element = el as HTMLElement
+
+  nextTick(() => {
+    const height = element.scrollHeight
+    element.style.transition = 'height 300ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms ease-out'
+    element.style.height = `${height}px`
+    element.style.opacity = '1'
+
+    setTimeout(() => {
+      element.style.transition = ''
+      element.style.height = ''
+      element.style.overflow = ''
+      done()
+    }, 300)
+  })
+}
+
+function onAfterEnter(el: Element) {
+  const element = el as HTMLElement
+  element.style.height = ''
+  element.style.opacity = ''
+}
+
+function onBeforeLeave(el: Element) {
+  const element = el as HTMLElement
+  element.style.height = `${element.scrollHeight}px`
+  element.style.opacity = '1'
+  element.style.overflow = 'hidden'
+}
+
+function onLeave(el: Element, done: () => void) {
+  const element = el as HTMLElement
+
+  // Force reflow
+  element.offsetHeight
+
+  element.style.transition = 'height 250ms cubic-bezier(0.4, 0, 0.2, 1), opacity 150ms ease-in'
+  element.style.height = '0'
+  element.style.opacity = '0'
+
+  setTimeout(() => {
+    done()
+  }, 250)
+}
+
+function onAfterLeave(el: Element) {
+  const element = el as HTMLElement
+  element.style.height = ''
+  element.style.opacity = ''
+}
+
+// Clips animation handlers (same logic, different refs)
+function onBeforeEnterClips(el: Element) {
+  const element = el as HTMLElement
+  element.style.height = '0'
+  element.style.opacity = '0'
+  element.style.overflow = 'hidden'
+}
+
+function onEnterClips(el: Element, done: () => void) {
+  const element = el as HTMLElement
+
+  nextTick(() => {
+    const height = element.scrollHeight
+    element.style.transition = 'height 300ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms ease-out'
+    element.style.height = `${height}px`
+    element.style.opacity = '1'
+
+    setTimeout(() => {
+      element.style.transition = ''
+      element.style.height = ''
+      element.style.overflow = ''
+      done()
+    }, 300)
+  })
+}
+
+function onAfterEnterClips(el: Element) {
+  const element = el as HTMLElement
+  element.style.height = ''
+  element.style.opacity = ''
+}
+
+function onBeforeLeaveClips(el: Element) {
+  const element = el as HTMLElement
+  element.style.height = `${element.scrollHeight}px`
+  element.style.opacity = '1'
+  element.style.overflow = 'hidden'
+}
+
+function onLeaveClips(el: Element, done: () => void) {
+  const element = el as HTMLElement
+
+  // Force reflow
+  element.offsetHeight
+
+  element.style.transition = 'height 250ms cubic-bezier(0.4, 0, 0.2, 1), opacity 150ms ease-in'
+  element.style.height = '0'
+  element.style.opacity = '0'
+
+  setTimeout(() => {
+    done()
+  }, 250)
+}
+
+function onAfterLeaveClips(el: Element) {
+  const element = el as HTMLElement
+  element.style.height = ''
+  element.style.opacity = ''
 }
 </script>
