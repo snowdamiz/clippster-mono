@@ -34,65 +34,52 @@ defmodule ClippsterServer.AI.WhisperAPI do
           file_content = File.read!(file_path)
           IO.puts("[WhisperAPI] File size: #{byte_size(file_content)} bytes")
 
-          # Use Req library for better HTTP handling
+          # Use Finch HTTP client
           IO.puts("[WhisperAPI] Sending request to Whisper API...")
 
-          # Create multipart form data (matching JavaScript prototype)
-          multipart_form = [
-            {:file, file_content,
-             {"form-data", [{"name", "file"}, {"filename", audio_upload.filename}]},
-             [{"Content-Type", audio_upload.content_type}]},
-            {"language", "english"},  # Use "english" instead of "en" to match prototype
-            {"response_format", "verbose_json"},
-            {"temperature", "0.0"},
-            {"timestamp_granularities[]", "word,segment"}  # Match prototype format
-          ]
+          # Create multipart boundary
+          boundary = "----WebKitFormBoundary#{:crypto.strong_rand_bytes(16) |> Base.encode16()}"
 
-          request_opts = [
-            method: :post,
-            url: @whisper_api_url,
-            headers: build_headers(api_key),
-            form: {:multipart, multipart_form},
-            auth: {:bearer, api_key}
-          ]
+          # Build multipart body
+          multipart_body = build_multipart_body(file_content, audio_upload.filename, audio_upload.content_type, boundary)
 
-          case Req.request(request_opts) do
-            {:ok, %{status: 200, body: body}} ->
+          request = Finch.build(
+            :post,
+            @whisper_api_url,
+            [
+              {"Authorization", "Bearer #{api_key}"},
+              {"User-Agent", "Clippster/1.0"},
+              {"Content-Type", "multipart/form-data; boundary=#{boundary}"}
+            ],
+            multipart_body
+          )
+
+          IO.puts("[WhisperAPI] Making Finch request...")
+          case Finch.request(request, ClippsterFinch, receive_timeout: 60_000) do
+            {:ok, %Finch.Response{status: 200, body: body}} ->
               IO.puts("[WhisperAPI] Received response from API")
-              IO.puts("[WhisperAPI] Response body type: #{inspect(body)}")
+              IO.puts("[WhisperAPI] Response body length: #{byte_size(body)} bytes")
 
-              case body do
-                %{} = response ->
-                  IO.puts("[WhisperAPI] Successfully received structured response")
+              case Jason.decode(body) do
+                {:ok, response} ->
+                  IO.puts("[WhisperAPI] Successfully decoded JSON response")
                   IO.puts("[WhisperAPI] Response keys: #{inspect(Map.keys(response))}")
                   {:ok, response}
 
-                raw_body when is_binary(raw_body) ->
-                  IO.puts("[WhisperAPI] Received raw string, attempting JSON decode")
-                  case Jason.decode(raw_body) do
-                    {:ok, response} ->
-                      IO.puts("[WhisperAPI] Successfully decoded JSON response")
-                      {:ok, response}
-                    {:error, reason} ->
-                      IO.puts("[WhisperAPI] Failed to decode JSON: #{inspect(reason)}")
-                      IO.puts("[WhisperAPI] Response body: #{String.slice(raw_body, 0, 500)}...")
-                      {:error, "Invalid JSON response: #{inspect(reason)}"}
-                  end
-
-                _ ->
-                  IO.puts("[WhisperAPI] Unexpected response body type: #{inspect(body)}")
-                  {:error, "Unexpected response format"}
+                {:error, reason} ->
+                  IO.puts("[WhisperAPI] Failed to decode JSON: #{inspect(reason)}")
+                  IO.puts("[WhisperAPI] Response body: #{String.slice(body, 0, 500)}...")
+                  {:error, "Invalid JSON response: #{inspect(reason)}"}
               end
 
-            {:ok, %{status: status_code, body: body}} ->
+            {:ok, %Finch.Response{status: status_code, body: body}} ->
               IO.puts("[WhisperAPI] API returned error status: #{status_code}")
-              IO.puts("[WhisperAPI] Error body: #{inspect(body)}")
-              {:error, "Whisper API error (#{status_code}): #{inspect(body)}"}
+              IO.puts("[WhisperAPI] Error body: #{body}")
+              {:error, "Whisper API error (#{status_code}): #{body}"}
 
-            {:error, exception} ->
-              IO.puts("[WhisperAPI] Request failed: #{inspect(exception)}")
-              IO.puts("[WhisperAPI] Exception type: #{inspect(Exception.message(exception))}")
-              {:error, "Network error: #{inspect(Exception.message(exception))}"}
+            {:error, reason} ->
+              IO.puts("[WhisperAPI] HTTP request failed: #{inspect(reason)}")
+              {:error, "Network error: #{inspect(reason)}"}
           end
         end
     end
@@ -104,10 +91,37 @@ defmodule ClippsterServer.AI.WhisperAPI do
       {:error, "Unexpected error: #{inspect(error)}"}
   end
 
-  defp build_headers(api_key) do
-    [
-      {"Authorization", "Bearer #{api_key}"},
-      {"User-Agent", "Clippster/1.0"}
+  defp build_multipart_body(file_content, filename, content_type, boundary) do
+    parts = [
+      # File part
+      "--#{boundary}\r\n",
+      "Content-Disposition: form-data; name=\"file\"; filename=\"#{filename}\"\r\n",
+      "Content-Type: #{content_type}\r\n\r\n",
+      file_content,
+      "\r\n",
+      # Language part
+      "--#{boundary}\r\n",
+      "Content-Disposition: form-data; name=\"language\"\r\n\r\n",
+      "english\r\n",
+      # Response format part
+      "--#{boundary}\r\n",
+      "Content-Disposition: form-data; name=\"response_format\"\r\n\r\n",
+      "verbose_json\r\n",
+      # Temperature part
+      "--#{boundary}\r\n",
+      "Content-Disposition: form-data; name=\"temperature\"\r\n\r\n",
+      "0.0\r\n",
+      # Timestamp granularities part
+      "--#{boundary}\r\n",
+      "Content-Disposition: form-data; name=\"timestamp_granularities[]\"\r\n\r\n",
+      "word,segment\r\n",
+      # End boundary
+      "--#{boundary}--\r\n"
     ]
+
+    body = IO.iodata_to_binary(parts)
+    IO.puts("[WhisperAPI] Multipart body length: #{byte_size(body)} bytes")
+    IO.puts("[WhisperAPI] First 200 chars: #{String.slice(body, 0, 200)}")
+    body
   end
 end

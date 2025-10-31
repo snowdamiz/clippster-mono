@@ -28,6 +28,8 @@ defmodule ClippsterServer.Application do
       ClippsterServer.Repo,
       {DNSCluster, query: Application.get_env(:clippster_server, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: ClippsterServer.PubSub},
+      # Start Finch HTTP client
+      {Finch, name: ClippsterFinch},
       # Start a worker by calling: ClippsterServer.Worker.start_link(arg)
       # {ClippsterServer.Worker, arg},
       # Wallet authentication challenge store

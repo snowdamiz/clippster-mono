@@ -20,7 +20,7 @@ defmodule ClippsterServer.MixProject do
   def application do
     [
       mod: {ClippsterServer.Application, []},
-      extra_applications: [:logger, :runtime_tools, :httpoison]
+      extra_applications: [:logger, :runtime_tools, :httpoison, :hackney]
     ]
   end
 
@@ -60,6 +60,7 @@ defmodule ClippsterServer.MixProject do
       {:cors_plug, "~> 3.0"},
       # HTTP client for price fetching
       {:httpoison, "~> 2.2"},
+      {:finch, "~> 0.19"},
       # Environment variable loading
       {:dotenvy, "~> 0.8.0"}
     ]
