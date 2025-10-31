@@ -132,14 +132,106 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <VodCard
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div
           v-for="clip in pumpFunStore.clips"
           :key="clip.clipId"
-          :clip="clip"
+          class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer group aspect-video"
           @click="handleClipClick(clip)"
-          @download="handleDownloadClip"
-        />
+        >
+          <!-- Thumbnail background with vignette -->
+          <div
+            v-if="clip.thumbnailUrl"
+            class="absolute inset-0 z-0"
+            :style="{
+              backgroundImage: `url(${clip.thumbnailUrl})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat'
+            }"
+          >
+            <!-- Dark vignette overlay -->
+            <div class="absolute inset-0 bg-gradient-to-br from-black/40 via-black/30 to-black/50"></div>
+          </div>
+
+  
+          <!-- Top right duration -->
+          <div class="absolute top-4 right-4 z-10">
+            <span :class="[
+              'text-xs px-2 py-1 rounded-md',
+              clip.thumbnailUrl
+                ? 'text-white/70 bg-white/10 backdrop-blur-sm'
+                : 'text-muted-foreground bg-muted'
+            ]">{{ formatDuration(clip.duration) }}</span>
+          </div>
+
+          <!-- Bottom left title and description -->
+          <div class="absolute bottom-4 left-4 right-4 z-10">
+            <h3 :class="[
+              'text-lg font-semibold mb-1 group-hover:transition-colors line-clamp-2',
+              clip.thumbnailUrl
+                ? 'text-white group-hover:text-white/80'
+                : 'text-foreground group-hover:text-foreground/80'
+            ]">{{ clip.title }}</h3>
+            <p :class="[
+              'text-sm line-clamp-2',
+              clip.thumbnailUrl
+                ? 'text-white/80'
+                : 'text-muted-foreground'
+            ]">{{ clip.description || formatRelativeTime(clip.createdAt) }}</p>
+          </div>
+          <!-- Hover Overlay Buttons -->
+          <div
+            v-if="clip.thumbnailUrl"
+            class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20 flex items-center justify-center gap-4"
+          >
+            <button
+              class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+              title="Play"
+              @click.stop="handleClipClick(clip)"
+            >
+              <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </button>
+            <button
+              class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+              title="Download"
+              @click.stop="handleDownloadClip(clip)"
+            >
+              <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Bottom Action Bar (for cards without thumbnails) -->
+          <div v-if="!clip.thumbnailUrl" :class="[
+            'flex items-center justify-between px-4 py-2 border-t border-border bg-[#141414]'
+          ]">
+            <span class="text-sm font-medium text-muted-foreground">{{ clip.clipId }}</span>
+            <div class="flex items-center gap-1">
+              <button
+                class="p-2 rounded-md transition-colors hover:bg-muted"
+                title="Play"
+                @click.stop="handleClipClick(clip)"
+              >
+                <svg class="h-4 w-4 transition-colors text-muted-foreground hover:text-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
+              <button
+                class="p-2 rounded-md transition-colors hover:bg-muted"
+                title="Download"
+                @click.stop="handleDownloadClip(clip)"
+              >
+                <svg class="h-4 w-4 transition-colors text-muted-foreground hover:text-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -283,7 +375,6 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import PageLayout from '@/components/PageLayout.vue'
 import EmptyState from '@/components/EmptyState.vue'
-import VodCard from '@/components/VodCard.vue'
 import SearchInput from '@/components/SearchInput.vue'
 import { type PumpFunClip } from '@/services/pumpfun'
 import { useToast } from '@/composables/useToast'
@@ -350,6 +441,22 @@ const estimatedDownloadTime = computed(() => {
 
   return formatDuration(downloadTimeSeconds)
 })
+
+// Format relative time for stream dates
+function formatRelativeTime(timestamp?: number | string | Date) {
+  if (!timestamp) return 'Streamed recently'
+
+  const date = new Date(timestamp)
+  const now = new Date()
+  const secondsAgo = Math.floor((now.getTime() - date.getTime()) / 1000)
+
+  if (secondsAgo < 60) return 'Streamed just now'
+  if (secondsAgo < 3600) return `Streamed ${Math.floor(secondsAgo / 60)} minutes ago`
+  if (secondsAgo < 86400) return `Streamed ${Math.floor(secondsAgo / 3600)} hours ago`
+  if (secondsAgo < 604800) return `Streamed ${Math.floor(secondsAgo / 86400)} days ago`
+
+  return `Streamed ${Math.floor(secondsAgo / 604800)} weeks ago`
+}
 
 function handleRecentSearchClick(search: { mintId: string; displayText: string }) {
   mintId.value = search.displayText
