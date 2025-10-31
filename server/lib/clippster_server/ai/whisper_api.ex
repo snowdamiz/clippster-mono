@@ -20,6 +20,7 @@ defmodule ClippsterServer.AI.WhisperAPI do
 
       _ ->
         IO.puts("[WhisperAPI] API key configured")
+        IO.puts("[WhisperAPI] API key (first 8 chars): #{String.slice(api_key, 0, 8)}...")
 
         # Read the uploaded file
         file_path = audio_upload.path
@@ -32,7 +33,13 @@ defmodule ClippsterServer.AI.WhisperAPI do
         else
           IO.puts("[WhisperAPI] File exists, reading...")
           file_content = File.read!(file_path)
-          IO.puts("[WhisperAPI] File size: #{byte_size(file_content)} bytes")
+          actual_size = byte_size(file_content)
+          IO.puts("[WhisperAPI] File size: #{actual_size} bytes")
+
+          # Debug: Check if file size matches expected MP3 size
+          if actual_size > 5_000_000 do  # 5MB threshold
+            IO.puts("[WhisperAPI] WARNING: File seems too large for MP3 (#{actual_size} bytes)")
+          end
 
           # Use Finch HTTP client
           IO.puts("[WhisperAPI] Sending request to Whisper API...")
@@ -40,8 +47,8 @@ defmodule ClippsterServer.AI.WhisperAPI do
           # Create multipart boundary
           boundary = "----WebKitFormBoundary#{:crypto.strong_rand_bytes(16) |> Base.encode16()}"
 
-          # Build multipart body
-          multipart_body = build_multipart_body(file_content, audio_upload.filename, audio_upload.content_type, boundary)
+          # Build multipart body EXACTLY matching the prototype
+          multipart_body = build_prototype_multipart_body(file_content, audio_upload.filename, audio_upload.content_type, boundary)
 
           request = Finch.build(
             :post,
@@ -91,27 +98,28 @@ defmodule ClippsterServer.AI.WhisperAPI do
       {:error, "Unexpected error: #{inspect(error)}"}
   end
 
-  defp build_multipart_body(file_content, filename, content_type, boundary) do
+  # Build multipart body EXACTLY matching the prototype TypeScript implementation
+  defp build_prototype_multipart_body(file_content, filename, content_type, boundary) do
     parts = [
-      # File part
+      # File part - exactly like prototype form.append('file', fs.createReadStream(audioFilePath))
       "--#{boundary}\r\n",
       "Content-Disposition: form-data; name=\"file\"; filename=\"#{filename}\"\r\n",
       "Content-Type: #{content_type}\r\n\r\n",
       file_content,
       "\r\n",
-      # Language part
+      # Language part - exactly like prototype form.append('language', finalOptions.language || 'english')
       "--#{boundary}\r\n",
       "Content-Disposition: form-data; name=\"language\"\r\n\r\n",
       "english\r\n",
-      # Response format part
+      # Response format part - exactly like prototype form.append('response_format', finalOptions.responseFormat || 'verbose_json')
       "--#{boundary}\r\n",
       "Content-Disposition: form-data; name=\"response_format\"\r\n\r\n",
       "verbose_json\r\n",
-      # Temperature part
+      # Temperature part - exactly like prototype form.append('temperature', finalOptions.temperature?.toString() || '0.0')
       "--#{boundary}\r\n",
       "Content-Disposition: form-data; name=\"temperature\"\r\n\r\n",
       "0.0\r\n",
-      # Timestamp granularities part
+      # Timestamp granularities part - exactly like prototype form.append('timestamp_granularities[]', finalOptions.timestamp_granularities.join(','))
       "--#{boundary}\r\n",
       "Content-Disposition: form-data; name=\"timestamp_granularities[]\"\r\n\r\n",
       "word,segment\r\n",

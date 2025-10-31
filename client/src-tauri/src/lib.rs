@@ -810,7 +810,7 @@ async fn extract_audio_from_video(
     app: tauri::AppHandle,
     video_path: String,
     output_path: String
-) -> Result<Vec<u8>, String> {
+) -> Result<(String, String), String> {
     use tauri_plugin_shell::ShellExt;
 
     println!("[Rust] extract_audio_from_video called with:");
@@ -824,8 +824,8 @@ async fn extract_audio_from_video(
             format!("Failed to get storage paths: {}", e)
         })?;
 
-    // Create a unique temporary audio file path
-    let temp_audio_path = paths.videos.join(format!("temp_audio_{}.ogg",
+    // Create a unique temporary audio file path - EXACTLY like prototype
+    let temp_audio_path = paths.videos.join(format!("temp_audio_{}_audio_only.mp3",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| format!("Failed to get timestamp: {}", e))?
@@ -834,7 +834,7 @@ async fn extract_audio_from_video(
 
     println!("[Rust] Temporary audio path: {}", temp_audio_path.display());
 
-    // Use FFmpeg to extract audio as OGG
+    // Use FFmpeg to extract audio as MP3 - EXACTLY like prototype
     let shell = app.shell();
     println!("[Rust] Running FFmpeg to extract audio...");
 
@@ -842,12 +842,10 @@ async fn extract_audio_from_video(
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
             "-i", &video_path,
-            "-vn",  // No video
-            "-acodec", "libvorbis",  // Use Vorbis codec for OGG
-            "-ab", "128k",  // Audio bitrate
-            "-ar", "44100",  // Sample rate
-            "-ac", "2",  // Stereo
-            "-y",  // Overwrite output file
+            "-c:a", "mp3",        // Copy audio codec to MP3 (exact prototype parameter)
+            "-b:a", "128k",       // 128k bitrate (exact prototype parameter)
+            "-vn",               // No video (exact prototype parameter)
+            "-y",                // Overwrite output file (exact prototype parameter)
             temp_audio_path.to_str().ok_or("Invalid temporary audio path")?,
         ])
         .output()
@@ -863,9 +861,16 @@ async fn extract_audio_from_video(
         return Err(format!("FFmpeg extraction failed: {}", stderr));
     }
 
+    // Check FFmpeg output for any warnings
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.is_empty() {
+        println!("[Rust] FFmpeg stderr (warnings): {}", stderr);
+    }
+
     println!("[Rust] FFmpeg extraction completed successfully");
 
-    // Read the generated OGG file
+    // Read the MP3 file and return as base64 encoded data
+    println!("[Rust] Reading MP3 file for base64 encoding...");
     let audio_bytes = std::fs::read(&temp_audio_path)
         .map_err(|e| {
             println!("[Rust] Failed to read temporary audio file: {}", e);
@@ -873,6 +878,16 @@ async fn extract_audio_from_video(
         })?;
 
     println!("[Rust] Read {} bytes from audio file", audio_bytes.len());
+
+    // Encode to base64
+    use base64::{Engine as _, engine::general_purpose};
+    let base64_data = general_purpose::STANDARD.encode(&audio_bytes);
+    println!("[Rust] Encoded {} bytes to {} chars of base64", audio_bytes.len(), base64_data.len());
+
+    // Get filename for return
+    let filename = temp_audio_path.file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("audio.mp3");
 
     // Clean up the temporary file
     if let Err(e) = std::fs::remove_file(&temp_audio_path) {
@@ -882,7 +897,7 @@ async fn extract_audio_from_video(
     }
 
     println!("[Rust] Audio extraction completed successfully");
-    Ok(audio_bytes)
+    Ok((filename.to_string(), base64_data))
 }
 
 #[tauri::command]

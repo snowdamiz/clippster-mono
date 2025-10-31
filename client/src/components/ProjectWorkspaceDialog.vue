@@ -235,12 +235,12 @@ async function onDetectClips() {
 
     console.log('[ProjectWorkspaceDialog] Found video for project:', projectVideo.file_path)
 
-    // Step 1: Generate OGG audio file from video using FFmpeg
-    const audioBlob = await generateAudioFromVideo(projectVideo.file_path)
+    // Step 1: Generate MP3 audio file from video using FFmpeg - EXACTLY like prototype
+    const audioFile = await generateAudioFromVideo(projectVideo.file_path)
 
     // Step 2: Transmit audio to server for processing
     const formData = new FormData()
-    formData.append('audio', audioBlob, 'audio.ogg')
+    formData.append('audio', audioFile, audioFile.name)
     formData.append('project_id', props.project.id.toString())
 
     const response = await fetch(`${API_BASE}/api/clips/detect`, {
@@ -266,19 +266,32 @@ async function onDetectClips() {
   }
 }
 
-async function generateAudioFromVideo(videoPath: string): Promise<Blob> {
-  // This uses the bundled FFmpeg to extract audio as OGG
-  console.log('[ProjectWorkspaceDialog] Generating OGG audio from video:', videoPath)
+async function generateAudioFromVideo(videoPath: string): Promise<File> {
+  // This uses the bundled FFmpeg to extract audio as MP3 - EXACTLY like prototype
+  console.log('[ProjectWorkspaceDialog] Generating MP3 audio from video:', videoPath)
 
   try {
-    // Call Tauri command to extract audio using FFmpeg
-    const audioBytes = await invoke<number[]>('extract_audio_from_video', {
+    // Call Tauri command to extract audio using FFmpeg - now returns (filename, base64_data)
+    const [filename, base64Data] = await invoke<[string, string]>('extract_audio_from_video', {
       videoPath: videoPath,
-      outputPath: 'temp_audio.ogg'
+      outputPath: 'temp_audio_audio_only.mp3'
     })
 
-    // Convert the returned bytes to a Blob
-    return new Blob([audioBytes], { type: 'audio/ogg' })
+    console.log('[ProjectWorkspaceDialog] Audio file extracted:', filename)
+    console.log('[ProjectWorkspaceDialog] Base64 data length:', base64Data.length)
+
+    // Convert base64 back to binary
+    const binaryString = atob(base64Data)
+    const bytes = new Uint8Array(binaryString.length)
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i)
+    }
+
+    // Create Blob from binary data
+    const blob = new Blob([bytes], { type: 'audio/mp3' })
+
+    // Convert Blob to File object
+    return new File([blob], filename, { type: 'audio/mp3' })
   } catch (error) {
     console.error('[ProjectWorkspaceDialog] FFmpeg audio extraction failed:', error)
     throw new Error('Failed to extract audio from video')

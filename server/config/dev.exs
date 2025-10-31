@@ -24,7 +24,15 @@ config :clippster_server, ClippsterServerWeb.Endpoint,
   code_reloader: true,
   debug_errors: true,
   secret_key_base: "IKd0f22aVNPECo8OdR849G1WHF8gzBsOIEjXOF6nB+2oYGvp+5Iq8FkzweTZqXn/",
-  watchers: []
+  watchers: [],
+  # Configure Bandit to allow larger request bodies
+  adapter: Bandit.PhoenixAdapter,
+  transport_options: [
+    max_request_line_length: 10_000_000,
+    max_header_value_length: 100_000_000,
+    # Bandit-specific body limit
+    protocol_options: [max_frame_size: 100_000_000]
+  ]
 
 # ## SSL Support
 #
