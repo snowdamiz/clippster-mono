@@ -806,6 +806,86 @@ async fn cancel_all_downloads() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
+async fn extract_audio_from_video(
+    app: tauri::AppHandle,
+    video_path: String,
+    output_path: String
+) -> Result<Vec<u8>, String> {
+    use tauri_plugin_shell::ShellExt;
+
+    println!("[Rust] extract_audio_from_video called with:");
+    println!("[Rust]   video_path: {}", video_path);
+    println!("[Rust]   output_path: {}", output_path);
+
+    // Get storage paths for temporary file
+    let paths = storage::init_storage_dirs()
+        .map_err(|e| {
+            println!("[Rust] Failed to get storage paths: {}", e);
+            format!("Failed to get storage paths: {}", e)
+        })?;
+
+    // Create a unique temporary audio file path
+    let temp_audio_path = paths.videos.join(format!("temp_audio_{}.ogg",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| format!("Failed to get timestamp: {}", e))?
+            .as_secs()
+    ));
+
+    println!("[Rust] Temporary audio path: {}", temp_audio_path.display());
+
+    // Use FFmpeg to extract audio as OGG
+    let shell = app.shell();
+    println!("[Rust] Running FFmpeg to extract audio...");
+
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args([
+            "-i", &video_path,
+            "-vn",  // No video
+            "-acodec", "libvorbis",  // Use Vorbis codec for OGG
+            "-ab", "128k",  // Audio bitrate
+            "-ar", "44100",  // Sample rate
+            "-ac", "2",  // Stereo
+            "-y",  // Overwrite output file
+            temp_audio_path.to_str().ok_or("Invalid temporary audio path")?,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        println!("[Rust] FFmpeg failed:");
+        println!("[Rust]   stderr: {}", stderr);
+        println!("[Rust]   stdout: {}", stdout);
+        return Err(format!("FFmpeg extraction failed: {}", stderr));
+    }
+
+    println!("[Rust] FFmpeg extraction completed successfully");
+
+    // Read the generated OGG file
+    let audio_bytes = std::fs::read(&temp_audio_path)
+        .map_err(|e| {
+            println!("[Rust] Failed to read temporary audio file: {}", e);
+            format!("Failed to read audio file: {}", e)
+        })?;
+
+    println!("[Rust] Read {} bytes from audio file", audio_bytes.len());
+
+    // Clean up the temporary file
+    if let Err(e) = std::fs::remove_file(&temp_audio_path) {
+        eprintln!("[Rust] Warning: Failed to remove temporary audio file {}: {}", temp_audio_path.display(), e);
+    } else {
+        println!("[Rust] Cleaned up temporary audio file");
+    }
+
+    println!("[Rust] Audio extraction completed successfully");
+    Ok(audio_bytes)
+}
+
+#[tauri::command]
 async fn get_pumpfun_clips(mint_id: String, limit: Option<u32>) -> Result<String, String> {
     use std::process::Command;
     
@@ -1272,6 +1352,7 @@ pub fn run() {
             download_pumpfun_vod,
             get_active_downloads_count,
             cancel_all_downloads,
+            extract_audio_from_video,
             storage::get_storage_paths,
             storage::copy_video_to_storage,
             storage::generate_thumbnail,

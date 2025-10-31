@@ -10,6 +10,16 @@ defmodule ClippsterServerWeb.Router do
       max_age: 86400
   end
 
+  pipeline :api_auth do
+    plug :accepts, ["json"]
+    plug ClippsterServerWeb.AuthPlug
+    plug CORSPlug,
+      origin: &__MODULE__.cors_origins/0,
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+      max_age: 86400
+  end
+
   # Define CORS origins as a function to handle regex properly
   def cors_origins do
     [
@@ -35,6 +45,13 @@ defmodule ClippsterServerWeb.Router do
     get "/credits/balance", PaymentController, :get_balance
     post "/payments/quote", PaymentController, :get_quote
     post "/payments/confirm", PaymentController, :confirm_payment
+  end
+
+  # Protected routes (require authentication)
+  scope "/api", ClippsterServerWeb do
+    pipe_through :api_auth
+
+    post "/clips/detect", ClipsController, :detect
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

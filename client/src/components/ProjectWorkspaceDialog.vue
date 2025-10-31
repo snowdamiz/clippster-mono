@@ -122,6 +122,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import { type Project } from '@/services/database'
+import { invoke } from '@tauri-apps/api/core'
 import VideoPlayer from './VideoPlayer.vue'
 import VideoControls from './VideoControls.vue'
 import TranscriptPanel from './TranscriptPanel.vue'
@@ -130,6 +131,8 @@ import Timeline from './Timeline.vue'
 import { useVideoPlayer } from '@/composables/useVideoPlayer'
 
 console.log('[ProjectWorkspaceDialog] Script setup running')
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 const props = defineProps<{
   modelValue: boolean
@@ -211,9 +214,107 @@ function toggleClips() {
   }
 }
 
-function onDetectClips() {
-  // Handle clip detection - this would integrate with your AI/clip generation logic
-  console.log('[ProjectWorkspaceDialog] Detect clips requested')
+async function onDetectClips() {
+  if (!props.project) {
+    console.error('[ProjectWorkspaceDialog] No project available')
+    return
+  }
+
+  try {
+    console.log('[ProjectWorkspaceDialog] Starting clip detection process...')
+
+    // Get the video path from the project's associated raw video
+    const { getAllRawVideos } = await import('@/services/database')
+    const rawVideos = await getAllRawVideos()
+    const projectVideo = rawVideos.find(v => v.project_id === props.project?.id)
+
+    if (!projectVideo) {
+      console.error('[ProjectWorkspaceDialog] No video found for project')
+      return
+    }
+
+    console.log('[ProjectWorkspaceDialog] Found video for project:', projectVideo.file_path)
+
+    // Step 1: Generate OGG audio file from video using FFmpeg
+    const audioBlob = await generateAudioFromVideo(projectVideo.file_path)
+
+    // Step 2: Transmit audio to server for processing
+    const formData = new FormData()
+    formData.append('audio', audioBlob, 'audio.ogg')
+    formData.append('project_id', props.project.id.toString())
+
+    const response = await fetch(`${API_BASE}/api/clips/detect`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+      },
+      body: formData
+    })
+
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status}`)
+    }
+
+    const result = await response.json()
+
+    // Step 3: Display test dialog with returned data
+    showClipDetectionResult(result)
+
+  } catch (error) {
+    console.error('[ProjectWorkspaceDialog] Clip detection failed:', error)
+    // You might want to show an error message to the user here
+  }
+}
+
+async function generateAudioFromVideo(videoPath: string): Promise<Blob> {
+  // This uses the bundled FFmpeg to extract audio as OGG
+  console.log('[ProjectWorkspaceDialog] Generating OGG audio from video:', videoPath)
+
+  try {
+    // Call Tauri command to extract audio using FFmpeg
+    const audioBytes = await invoke<number[]>('extract_audio_from_video', {
+      videoPath: videoPath,
+      outputPath: 'temp_audio.ogg'
+    })
+
+    // Convert the returned bytes to a Blob
+    return new Blob([audioBytes], { type: 'audio/ogg' })
+  } catch (error) {
+    console.error('[ProjectWorkspaceDialog] FFmpeg audio extraction failed:', error)
+    throw new Error('Failed to extract audio from video')
+  }
+}
+
+function showClipDetectionResult(result: any) {
+  // Create a test dialog to show the returned data
+  console.log('[ProjectWorkspaceDialog] Clip detection result:', result)
+
+  // Create a simple modal dialog to display the data
+  const modal = document.createElement('div')
+  modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50'
+  modal.innerHTML = `
+    <div class="bg-card rounded-2xl p-6 max-w-4xl max-h-[80vh] overflow-auto border border-border shadow-2xl">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold text-foreground">Clip Detection Results</h3>
+        <button onclick="this.closest('.fixed').remove()" class="p-2 hover:bg-[#ffffff]/10 rounded-md">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="space-y-4">
+        <div>
+          <h4 class="font-medium text-foreground/80 mb-2">AI Generated Clips:</h4>
+          <pre class="bg-[#0a0a0a] p-4 rounded-lg text-xs overflow-auto max-h-60 text-white/90">${JSON.stringify(result.clips, null, 2)}</pre>
+        </div>
+        <div>
+          <h4 class="font-medium text-foreground/80 mb-2">Whisper Transcript:</h4>
+          <pre class="bg-[#0a0a0a] p-4 rounded-lg text-xs overflow-auto max-h-60 text-white/90">${JSON.stringify(result.transcript, null, 2)}</pre>
+        </div>
+      </div>
+    </div>
+  `
+  document.body.appendChild(modal)
 }
 
 function onTranscribeAudio() {
