@@ -168,7 +168,7 @@
           <!-- Bottom left title and description -->
           <div class="absolute bottom-4 left-4 right-4 z-10">
             <h3 :class="[
-              'text-lg font-semibold mb-1 group-hover:transition-colors line-clamp-2',
+              'text-lg font-semibold mb-0.5 group-hover:transition-colors line-clamp-2',
               clip.thumbnailUrl
                 ? 'text-white group-hover:text-white/80'
                 : 'text-foreground group-hover:text-foreground/80'
