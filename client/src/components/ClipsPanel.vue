@@ -12,7 +12,7 @@
         </svg>
       </button>
     </div>
-    <div :class="clipsCollapsed ? 'h-0' : 'flex-1'" class="overflow-hidden">
+    <div :class="[clipsCollapsed ? 'h-0' : 'flex-1', showPromptDropdown ? 'overflow-visible' : 'overflow-hidden']">
       <div v-if="!clipsCollapsed" class="h-full flex flex-col">
         <div ref="clipsContent" class="flex-1 flex items-center justify-center min-h-[120px]">
           <div class="text-center text-muted-foreground">
@@ -20,20 +20,42 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
             </svg>
             <p class="text-xs mb-3">No clips generated yet</p>
-            <div class="mb-4 w-full max-w-sm mx-auto">
-              <label class="block text-xs font-medium text-foreground/70 mb-2">
+            <div class="mb-4 flex flex-col items-center">
+              <label class="block text-xs font-medium text-foreground/70 mb-2 text-center">
                 Detection Prompt
               </label>
-              <select
-                v-model="selectedPromptId"
-                @change="onPromptChange"
-                class="w-full px-3 py-2 text-xs bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent"
-              >
-                <option value="" disabled>Select a prompt...</option>
-                <option v-for="prompt in prompts" :key="prompt.id" :value="prompt.id">
-                  {{ prompt.name }}
-                </option>
-              </select>
+              <div class="relative">
+                <button
+                  @click="togglePromptDropdown"
+                  class="flex px-3 py-2 text-xs bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent text-left items-center justify-between min-w-[150px]"
+                >
+                  <span class="truncate flex-1 mr-2">
+                    {{ selectedPrompt ? prompts.find(p => p.id === selectedPromptId.value)?.name || 'Select a prompt...' : 'Select a prompt...' }}
+                  </span>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                <!-- Dropdown Menu -->
+                <div
+                  v-if="showPromptDropdown"
+                  class="absolute top-full left-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-[60] max-h-48 overflow-y-auto"
+                  @click.stop
+                >
+                  <div class="p-1 min-w-[150px]">
+                    <button
+                      v-for="prompt in prompts"
+                      :key="prompt.id"
+                      @click="onPromptChange(prompt.id, prompt.content)"
+                      class="block w-full text-left px-3 py-2 rounded-md hover:bg-muted/80 transition-colors text-xs whitespace-nowrap"
+                      :title="`Use prompt: ${prompt.name}`"
+                    >
+                      {{ prompt.name }}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
             <button
               @click="handleDetectClips"
@@ -74,6 +96,7 @@ const clipsContent = ref<HTMLElement>()
 const prompts = ref<Prompt[]>([])
 const selectedPromptId = ref<string>('')
 const selectedPrompt = ref<string>('')
+const showPromptDropdown = ref(false)
 
 onMounted(async () => {
   try {
@@ -82,15 +105,25 @@ onMounted(async () => {
     const defaultPrompt = prompts.value.find(p => p.name === 'Default Clip Detector')
     if (defaultPrompt) {
       selectedPromptId.value = defaultPrompt.id
-      selectedPrompt.value = defaultPrompt.content
+      onPromptChange(defaultPrompt.id)
     } else if (prompts.value.length > 0) {
       selectedPromptId.value = prompts.value[0].id
-      selectedPrompt.value = prompts.value[0].content
+      onPromptChange(prompts.value[0].id)
     }
   } catch (error) {
     console.error('Failed to load prompts:', error)
   }
+
+  // Add click outside handler to close dropdown
+  document.addEventListener('click', handleClickOutside)
 })
+
+function handleClickOutside(event: Event) {
+  const target = event.target as HTMLElement
+  if (!target.closest('.relative')) {
+    showPromptDropdown.value = false
+  }
+}
 
 function toggleClips() {
   emit('toggleClips')
@@ -100,9 +133,14 @@ function handleDetectClips() {
   emit('detectClips', selectedPrompt.value)
 }
 
-function onPromptChange() {
-  const prompt = prompts.value.find(p => p.id === selectedPromptId.value)
-  selectedPrompt.value = prompt?.content || ''
+function onPromptChange(promptId: string, promptContent: string) {
+  selectedPromptId.value = promptId
+  selectedPrompt.value = promptContent
+  showPromptDropdown.value = false
+}
+
+function togglePromptDropdown() {
+  showPromptDropdown.value = !showPromptDropdown.value
 }
 </script>
 
