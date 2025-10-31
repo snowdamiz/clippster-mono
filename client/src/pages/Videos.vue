@@ -49,46 +49,163 @@
         </div>
 
         <!-- Videos Grid -->
-        <div v-if="videos.length > 0 || uploading || activeDownloads.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-      <!-- Skeleton loader card for uploading -->
-      <div v-if="uploading" class="relative bg-card border border-border rounded-lg overflow-hidden animate-pulse">
-        <!-- Thumbnail skeleton -->
-        <div class="aspect-video bg-muted/50 relative">
-          <div class="absolute inset-0 flex items-center justify-center">
-            <div class="flex flex-col items-center gap-3">
-              <svg class="animate-spin h-8 w-8 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              <span class="text-sm text-muted-foreground">Uploading...</span>
+        <div v-if="videos.length > 0 || uploading || activeDownloads.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <!-- Skeleton loader card for uploading -->
+          <div v-if="uploading" class="relative bg-card border border-border rounded-lg overflow-hidden aspect-video animate-pulse">
+            <!-- Thumbnail skeleton -->
+            <div class="absolute inset-0 bg-muted/50 flex items-center justify-center">
+              <div class="flex flex-col items-center gap-3">
+                <svg class="animate-spin h-8 w-8 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span class="text-sm text-muted-foreground">Uploading...</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Active download cards -->
+          <div
+            v-for="download in activeDownloads"
+            :key="download.id"
+            class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer group aspect-video"
+          >
+            <!-- Thumbnail background with vignette -->
+            <div
+              v-if="download.thumbnailUrl"
+              class="absolute inset-0 z-0"
+              :style="{
+                backgroundImage: `url(${download.thumbnailUrl})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                backgroundRepeat: 'no-repeat'
+              }"
+            >
+              <!-- Dark vignette overlay -->
+              <div class="absolute inset-0 bg-gradient-to-br from-black/80 via-black/60 to-black/90"></div>
+            </div>
+
+            <!-- Download progress overlay -->
+            <div class="absolute inset-0 bg-black/60 z-10 flex items-center justify-center">
+              <div class="text-center text-white p-4">
+                <svg class="animate-spin h-8 w-8 mx-auto mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <h3 class="font-semibold text-lg mb-2">{{ download.title }}</h3>
+                <div class="text-sm mb-2">{{ download.progress?.percentage || 0 }}%</div>
+                <div class="w-48 bg-white/20 rounded-full h-2 mb-2">
+                  <div
+                    class="bg-white h-2 rounded-full transition-all duration-300"
+                    :style="{ width: `${download.progress?.percentage || 0}%` }"
+                  ></div>
+                </div>
+                <div class="text-xs opacity-80">{{ formatFileSize(download.progress?.downloadedBytes || 0) }} / {{ formatFileSize(download.fileSize || 0) }}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Existing video cards -->
+          <div
+            v-for="video in paginatedVideos"
+            :key="video.id"
+            class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer group aspect-video"
+            @click="playVideo(video)"
+          >
+            <!-- Thumbnail background with vignette -->
+            <div
+              v-if="getThumbnailUrl(video)"
+              class="absolute inset-0 z-0"
+              :style="{
+                backgroundImage: `url(${getThumbnailUrl(video)})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                backgroundRepeat: 'no-repeat'
+              }"
+            >
+              <!-- Dark vignette overlay -->
+              <div class="absolute inset-0 bg-gradient-to-br from-black/80 via-black/60 to-black/90"></div>
+            </div>
+
+            <!-- Top right video duration -->
+            <div class="absolute top-4 right-4 z-10">
+              <span :class="[
+                'text-xs px-2 py-1 rounded-md',
+                getThumbnailUrl(video)
+                  ? 'text-white/70 bg-white/10 backdrop-blur-sm'
+                  : 'text-muted-foreground bg-muted'
+              ]">{{ formatDuration(video.duration) }}</span>
+            </div>
+
+            <!-- Bottom left title and description -->
+            <div class="absolute bottom-4 left-4 right-4 z-10">
+              <h3 :class="[
+                'text-lg font-semibold mb-1 group-hover:transition-colors line-clamp-2',
+                getThumbnailUrl(video)
+                  ? 'text-white group-hover:text-white/80'
+                  : 'text-foreground group-hover:text-foreground/80'
+              ]">{{ video.original_filename }}</h3>
+              <p :class="[
+                'text-sm line-clamp-2',
+                getThumbnailUrl(video)
+                  ? 'text-white/80'
+                  : 'text-muted-foreground'
+              ]">{{ formatRelativeTime(video.created_at) }}</p>
+            </div>
+
+            <!-- Hover Overlay Buttons -->
+            <div
+              v-if="getThumbnailUrl(video)"
+              class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20 flex items-center justify-center gap-4"
+            >
+              <button
+                class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                title="Play"
+                @click.stop="playVideo(video)"
+              >
+                <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
+              <button
+                class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                title="Delete"
+                @click.stop="confirmDelete(video)"
+              >
+                <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+
+            <!-- Bottom Action Bar (for cards without thumbnails) -->
+            <div v-if="!getThumbnailUrl(video)" :class="[
+              'flex items-center justify-between px-4 py-2 border-t border-border bg-[#141414] absolute bottom-0 left-0 right-0'
+            ]">
+              <span class="text-sm font-medium text-muted-foreground">{{ video.original_filename }}</span>
+              <div class="flex items-center gap-1">
+                <button
+                  class="p-2 rounded-md transition-colors hover:bg-muted"
+                  title="Play"
+                  @click.stop="playVideo(video)"
+                >
+                  <svg class="h-4 w-4 transition-colors text-muted-foreground hover:text-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </button>
+                <button
+                  class="p-2 rounded-md transition-colors hover:bg-muted"
+                  title="Delete"
+                  @click.stop="confirmDelete(video)"
+                >
+                  <svg class="h-4 w-4 transition-colors text-muted-foreground hover:text-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
-        <!-- Info skeleton -->
-        <div class="p-4">
-          <div class="h-5 bg-muted/50 rounded mb-2 w-3/4"></div>
-          <div class="h-3 bg-muted/50 rounded mb-2 w-1/2"></div>
-          <div class="h-3 bg-muted/50 rounded w-2/3"></div>
-        </div>
-      </div>
-
-      <!-- Active download cards -->
-      <DownloadCard
-        v-for="download in activeDownloads"
-        :key="download.id"
-        :download="download"
-      />
-
-      <!-- Existing video cards -->
-      <VideoCard
-        v-for="video in paginatedVideos"
-        :key="video.id"
-        :video="video"
-        :thumbnail-url="getThumbnailUrl(video)"
-        @play="playVideo(video)"
-        @delete="confirmDelete(video)"
-      />
-    </div>
 
   
         <!-- Empty State -->
@@ -152,8 +269,6 @@ import LoadingState from '@/components/LoadingState.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue'
 import DeleteConfirmationModal from '@/components/DeleteConfirmationModal.vue'
-import VideoCard from '@/components/VideoCard.vue'
-import DownloadCard from '@/components/DownloadCard.vue'
 import PaginationFooter from '@/components/PaginationFooter.vue'
 
 const videos = ref<RawVideo[]>([])
@@ -182,6 +297,104 @@ const {
 } = useDownloads()
 
 const activeDownloads = computed(() => getActiveDownloads())
+
+// Format file size utility
+function formatFileSize(bytes?: number): string {
+  if (!bytes || bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
+
+// Format relative time for video dates
+function formatRelativeTime(timestamp?: string | Date | number): string {
+  if (!timestamp) return 'Added recently'
+
+  // Handle different timestamp formats
+  let date: Date
+
+  try {
+    if (typeof timestamp === 'string') {
+      // Handle ISO format or other string formats
+      date = new Date(timestamp)
+    } else if (typeof timestamp === 'number') {
+      // Handle Unix timestamp (could be seconds or milliseconds)
+      // If the number is very small, it's likely seconds, not milliseconds
+      date = new Date(timestamp < 10000000000 ? timestamp * 1000 : timestamp)
+    } else if (timestamp instanceof Date) {
+      date = timestamp
+    } else {
+      console.warn('[Videos] Unknown timestamp format:', timestamp)
+      return 'Added recently'
+    }
+
+    // Check if date is valid
+    if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
+      console.warn('[Videos] Invalid date created from timestamp:', timestamp, 'Result:', date)
+      return 'Added recently'
+    }
+  } catch (error) {
+    console.error('[Videos] Error creating date from timestamp:', timestamp, error)
+    return 'Added recently'
+  }
+
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+
+  // Handle negative differences (future dates)
+  if (diffMs < 0) {
+    return 'Added recently'
+  }
+
+  const secondsAgo = Math.floor(diffMs / 1000)
+  const minutesAgo = Math.floor(secondsAgo / 60)
+  const hoursAgo = Math.floor(minutesAgo / 60)
+  const daysAgo = Math.floor(hoursAgo / 24)
+
+  // Debug logging
+  if (daysAgo > 365) {
+    console.warn('[Videos] Very old date detected:', {
+      timestamp,
+      date: date.toISOString(),
+      now: now.toISOString(),
+      daysAgo
+    })
+  }
+
+  if (secondsAgo < 60) return 'Added just now'
+  if (minutesAgo < 60) return `Added ${minutesAgo} minute${minutesAgo !== 1 ? 's' : ''} ago`
+  if (hoursAgo < 24) return `Added ${hoursAgo} hour${hoursAgo !== 1 ? 's' : ''} ago`
+  if (daysAgo < 7) return `Added ${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago`
+
+  // For dates older than a week, show the actual date
+  const weeksAgo = Math.floor(daysAgo / 7)
+  if (weeksAgo < 4) {
+    return `Added ${weeksAgo} week${weeksAgo !== 1 ? 's' : ''} ago`
+  }
+
+  // For very old dates, show formatted date
+  const options: Intl.DateTimeFormatOptions = {
+    month: 'short',
+    day: 'numeric',
+    year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+  }
+  return `Added ${date.toLocaleDateString('en-US', options)}`
+}
+
+// Format video duration
+function formatDuration(seconds?: number): string {
+  if (!seconds) return 'Unknown'
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = Math.floor(seconds % 60)
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  } else {
+    return `${minutes}:${secs.toString().padStart(2, '0')}`
+  }
+}
 
 // Pagination computed properties
 const totalPages = computed(() => Math.ceil(videos.value.length / videosPerPage))
