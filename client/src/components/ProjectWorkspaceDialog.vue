@@ -214,7 +214,7 @@ function toggleClips() {
   }
 }
 
-async function onDetectClips() {
+async function onDetectClips(prompt: string) {
   if (!props.project) {
     console.error('[ProjectWorkspaceDialog] No project available')
     return
@@ -222,6 +222,7 @@ async function onDetectClips() {
 
   try {
     console.log('[ProjectWorkspaceDialog] Starting clip detection process...')
+    console.log('[ProjectWorkspaceDialog] Using prompt:', prompt.substring(0, 100) + '...')
 
     // Get the video path from the project's associated raw video
     const { getAllRawVideos } = await import('@/services/database')
@@ -242,6 +243,7 @@ async function onDetectClips() {
     const formData = new FormData()
     formData.append('audio', audioFile, audioFile.name)
     formData.append('project_id', props.project.id.toString())
+    formData.append('prompt', prompt)
 
     const response = await fetch(`${API_BASE}/api/clips/detect`, {
       method: 'POST',

@@ -5,96 +5,81 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
 
   @openrouter_api_url "https://openrouter.ai/api/v1/chat/completions"
 
-  def generate_clips(transcript, system_prompt) do
+  def generate_clips(transcript, system_prompt, user_prompt_input) do
     IO.puts("[OpenRouterAPI] Starting clip generation...")
 
-    try do
-      # Get API key from environment
-      api_key = System.get_env("OPENROUTER_API_KEY")
-      IO.puts("[OpenRouterAPI] Checking API key...")
+    # Get API key from environment
+    api_key = System.get_env("OPENROUTER_API_KEY")
 
-      if not api_key do
+    cond do
+      is_nil(api_key) ->
         IO.puts("[OpenRouterAPI] OPENROUTER_API_KEY environment variable not set")
         {:error, "OPENROUTER_API_KEY environment variable not set"}
-      else
 
-    # Get model from environment or use default
-      model = System.get_env("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
-      IO.puts("[OpenRouterAPI] API key configured, using model: #{model}")
+      true ->
+        IO.puts("[OpenRouterAPI] API key configured")
 
-      # Prepare the request payload
-      user_prompt = build_user_prompt(transcript)
+        # Get model from environment or use default
+        model = System.get_env("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+        IO.puts("[OpenRouterAPI] Using model: #{model}")
 
-      payload = %{
-        "model" => model,
-        "messages" => [
-          %{
-            "role" => "system",
-            "content" => system_prompt
-          },
-          %{
-            "role" => "user",
-            "content" => user_prompt
-          }
-        ],
-        "temperature" => 0.7,
-        "max_tokens" => 4000,
-        "reasoning" => %{
-          "effort" => "high",
-          "max_tokens" => 2000
+        # Prepare the request payload
+        user_prompt = build_user_prompt(transcript, user_prompt_input)
+
+        payload = %{
+          "model" => model,
+          "messages" => [
+            %{
+              "role" => "system",
+              "content" => system_prompt
+            },
+            %{
+              "role" => "user",
+              "content" => user_prompt
+            }
+          ],
+          "temperature" => 0.3,
+          "max_tokens" => 8000,
+          "response_format" => %{"type" => "json_object"}
         }
-      }
 
-      IO.puts("[OpenRouterAPI] Request payload prepared")
-      IO.puts("[OpenRouterAPI] Sending request to OpenRouter API...")
+        IO.puts("[OpenRouterAPI] Request payload prepared")
 
-      # Make the HTTP request
-      case HTTPoison.post(@openrouter_api_url, Jason.encode!(payload), build_headers(api_key)) do
-        {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
-          IO.puts("[OpenRouterAPI] Received response from API")
-          IO.puts("[OpenRouterAPI] Response body length: #{byte_size(body)} bytes")
+        # Make the HTTP request
+        json_payload = Jason.encode!(payload)
+        case HTTPoison.post(@openrouter_api_url, json_payload, build_headers(api_key)) do
+          {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
+            IO.puts("[OpenRouterAPI] Received response from API")
 
-          case Jason.decode(body) do
-            {:ok, response} ->
-              IO.puts("[OpenRouterAPI] Successfully decoded JSON response")
+            case Jason.decode(body) do
+              {:ok, response} ->
+                IO.puts("[OpenRouterAPI] Successfully decoded JSON response")
 
-              # Extract the content from the AI response
-              case extract_clips_from_response(response) do
-                {:ok, clips} ->
-                  IO.puts("[OpenRouterAPI] Successfully extracted clips from AI response")
-                  {:ok, clips}
+                # Extract the content from the AI response
+                case extract_clips_from_response(response) do
+                  {:ok, clips} ->
+                    IO.puts("[OpenRouterAPI] Successfully extracted clips from AI response")
+                    {:ok, clips}
 
-                {:error, reason} ->
-                  IO.puts("[OpenRouterAPI] Failed to extract clips: #{reason}")
-                  {:error, reason}
-              end
+                  {:error, reason} ->
+                    IO.puts("[OpenRouterAPI] Failed to extract clips: #{reason}")
+                    {:error, reason}
+                end
 
-            {:error, reason} ->
-              IO.puts("[OpenRouterAPI] Failed to decode JSON: #{inspect(reason)}")
-              IO.puts("[OpenRouterAPI] Response body: #{String.slice(body, 0, 500)}...")
-              {:error, "Invalid JSON response: #{inspect(reason)}"}
-          end
+              {:error, reason} ->
+                IO.puts("[OpenRouterAPI] Failed to decode JSON: #{inspect(reason)}")
+                {:error, "Invalid JSON response: #{inspect(reason)}"}
+            end
 
-        {:ok, %HTTPoison.Response{status_code: status_code, body: body}} ->
-          IO.puts("[OpenRouterAPI] API returned error status: #{status_code}")
-          IO.puts("[OpenRouterAPI] Error body: #{body}")
-          {:error, "OpenRouter API error (#{status_code}): #{body}"}
+          {:ok, %HTTPoison.Response{status_code: status_code, body: body}} ->
+            IO.puts("[OpenRouterAPI] API returned error status: #{status_code}")
+            {:error, "OpenRouter API error (#{status_code}): #{body}"}
 
-        {:error, %HTTPoison.Error{reason: reason}} ->
-          IO.puts("[OpenRouterAPI] HTTP request failed: #{inspect(reason)}")
-          {:error, "Network error: #{inspect(reason)}"}
-      end
+          {:error, %HTTPoison.Error{reason: reason}} ->
+            IO.puts("[OpenRouterAPI] HTTP request failed: #{inspect(reason)}")
+            {:error, "Network error: #{inspect(reason)}"}
+        end
     end
-    else
-      other_result ->
-        IO.puts("[OpenRouterAPI] Unexpected result from if-else: #{inspect(other_result)}")
-        other_result
-    end
-  catch
-    kind, reason ->
-      IO.puts("[OpenRouterAPI] Caught error: #{inspect(kind)} - #{inspect(reason)}")
-      IO.puts("[OpenRouterAPI] Stacktrace: #{inspect(__STACKTRACE__)}")
-      {:error, "Caught exception: #{inspect(kind)} - #{inspect(reason)}"}
   rescue
     reason ->
       IO.puts("[OpenRouterAPI] Rescue error: #{inspect(reason)}")
@@ -106,20 +91,62 @@ defp build_headers(api_key) do
   [
     {"Authorization", "Bearer #{api_key}"},
     {"Content-Type", "application/json"},
-    {"HTTP-Referer", "https://clippster.app"},
-    {"X-Title", "Clippster"},
+    {"HTTP-Referer", "https://github.com/snowdamiz/clippster-prototype"},
+    {"X-Title", "Clippster AI Clip Detection"},
     {"User-Agent", "Clippster/1.0"}
   ]
 end
 
-defp build_user_prompt(transcript) do
-  """
-  **TRANSCRIPT CHUNK:**
+defp build_user_prompt(transcript, user_prompt) do
+  try do
+    transcript_json = Jason.encode!(transcript, pretty: true)
 
-  #{Jason.encode!(transcript, pretty: true)}
+    """
+    **USER INSTRUCTIONS:**
 
-  Please analyze this transcript and generate viral clips according to the system prompt instructions.
-  """
+    #{user_prompt}
+
+    **TRANSCRIPT CHUNK:**
+
+    #{transcript_json}
+
+    Please analyze this transcript and generate viral clips according to the user instructions and system prompt.
+    """
+  rescue
+    e ->
+      IO.puts("[OpenRouterAPI] Error encoding transcript: #{inspect(e)}")
+
+      # Fallback: try to encode just the essential parts
+      simplified_transcript = %{
+        "duration" => Map.get(transcript, "duration"),
+        "language" => Map.get(transcript, "language"),
+        "text" => Map.get(transcript, "text"),
+        "segments" => Map.get(transcript, "segments", [])
+          |> Enum.map(fn segment ->
+            %{
+              "id" => Map.get(segment, "id"),
+              "start" => Map.get(segment, "start"),
+              "end" => Map.get(segment, "end"),
+              "text" => Map.get(segment, "text"),
+              "speaker" => Map.get(segment, "speaker")
+            }
+          end)
+      }
+
+      transcript_json = Jason.encode!(simplified_transcript, pretty: true)
+
+      """
+      **USER INSTRUCTIONS:**
+
+      #{user_prompt}
+
+      **TRANSCRIPT CHUNK:**
+
+      #{transcript_json}
+
+      Please analyze this transcript and generate viral clips according to the user instructions and system prompt.
+      """
+  end
 end
 
 defp extract_clips_from_response(response) do

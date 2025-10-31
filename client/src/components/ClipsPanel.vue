@@ -19,10 +19,26 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
             </svg>
-            <p class="text-xs mb-4">No clips generated yet</p>
+            <p class="text-xs mb-3">No clips generated yet</p>
+            <div class="mb-4 w-full max-w-sm mx-auto">
+              <label class="block text-xs font-medium text-foreground/70 mb-2">
+                Detection Prompt
+              </label>
+              <select
+                v-model="selectedPromptId"
+                @change="onPromptChange"
+                class="w-full px-3 py-2 text-xs bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent"
+              >
+                <option value="" disabled>Select a prompt...</option>
+                <option v-for="prompt in prompts" :key="prompt.id" :value="prompt.id">
+                  {{ prompt.name }}
+                </option>
+              </select>
+            </div>
             <button
-              @click="$emit('detectClips')"
-              class="px-4 py-2 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all mx-auto text-xs"
+              @click="handleDetectClips"
+              :disabled="!selectedPrompt"
+              class="px-4 py-2 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 disabled:from-gray-500/50 disabled:to-gray-600/50 disabled:cursor-not-allowed text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all mx-auto text-xs"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -37,7 +53,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { getAllPrompts, type Prompt } from '@/services/database'
 
 interface Props {
   transcriptCollapsed: boolean
@@ -48,15 +65,44 @@ defineProps<Props>()
 
 interface Emits {
   (e: 'toggleClips'): void
-  (e: 'detectClips'): void
+  (e: 'detectClips', prompt: string): void
 }
 
 const emit = defineEmits<Emits>()
 
 const clipsContent = ref<HTMLElement>()
+const prompts = ref<Prompt[]>([])
+const selectedPromptId = ref<string>('')
+const selectedPrompt = ref<string>('')
+
+onMounted(async () => {
+  try {
+    prompts.value = await getAllPrompts()
+    // Select the default prompt if available
+    const defaultPrompt = prompts.value.find(p => p.name === 'Default Clip Detector')
+    if (defaultPrompt) {
+      selectedPromptId.value = defaultPrompt.id
+      selectedPrompt.value = defaultPrompt.content
+    } else if (prompts.value.length > 0) {
+      selectedPromptId.value = prompts.value[0].id
+      selectedPrompt.value = prompts.value[0].content
+    }
+  } catch (error) {
+    console.error('Failed to load prompts:', error)
+  }
+})
 
 function toggleClips() {
   emit('toggleClips')
+}
+
+function handleDetectClips() {
+  emit('detectClips', selectedPrompt.value)
+}
+
+function onPromptChange() {
+  const prompt = prompts.value.find(p => p.id === selectedPromptId.value)
+  selectedPrompt.value = prompt?.content || ''
 }
 </script>
 

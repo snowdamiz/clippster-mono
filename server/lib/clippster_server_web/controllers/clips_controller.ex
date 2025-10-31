@@ -4,10 +4,11 @@ defmodule ClippsterServerWeb.ClipsController do
   alias ClippsterServer.AI.OpenRouterAPI
   alias ClippsterServer.AI.SystemPrompt
 
-  def detect(conn, %{"audio" => audio_upload, "project_id" => project_id}) do
+  def detect(conn, %{"audio" => audio_upload, "project_id" => project_id, "prompt" => user_prompt}) do
     IO.puts("[ClipsController] Starting clip detection for project #{project_id}")
     IO.puts("[ClipsController] Audio filename: #{audio_upload.filename}")
     IO.puts("[ClipsController] Audio content type: #{audio_upload.content_type}")
+    IO.puts("[ClipsController] User prompt: #{String.slice(user_prompt, 0, 100)}...")
 
     try do
       # Step 1: Forward audio to Whisper API
@@ -33,7 +34,7 @@ defmodule ClippsterServerWeb.ClipsController do
           IO.puts("[ClipsController] Sending transcript to OpenRouter API...")
           system_prompt = SystemPrompt.get()
 
-          ai_result = OpenRouterAPI.generate_clips(processed_transcript, system_prompt)
+          ai_result = OpenRouterAPI.generate_clips(processed_transcript, system_prompt, user_prompt)
           IO.puts("[ClipsController] OpenRouter API call completed")
 
           case ai_result do
