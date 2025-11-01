@@ -16,20 +16,12 @@
       <div v-if="!transcriptCollapsed" class="h-full flex flex-col">
         <!-- Empty state for transcript -->
         <div v-if="!transcriptData" class="flex-1 flex items-center justify-center min-h-[120px]">
-          <div class="text-center text-muted-foreground">
+          <div class="text-center text-muted-foreground px-6">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-            <p class="text-xs mb-4">No transcript available</p>
-            <button
-              @click="$emit('transcribeAudio')"
-              class="px-4 py-2 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all mx-auto text-xs"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-              </svg>
-              Transcribe Audio
-            </button>
+            <p class="text-xs mb-2">No transcript available</p>
+            <p class="text-xs text-foreground/60">Audio is automatically transcribed when clips are detected</p>
           </div>
         </div>
         <!-- Transcript content will appear here when available -->
@@ -54,7 +46,6 @@ defineProps<Props>()
 
 interface Emits {
   (e: 'toggleTranscript'): void
-  (e: 'transcribeAudio'): void
 }
 
 const emit = defineEmits<Emits>()

@@ -1,7 +1,7 @@
 <template>
   <PageLayout
     title="PumpFun"
-    description="Download streams direct from PumpFun"
+    description="Download streams directly from PumpFun"
     :show-header="pumpFunStore.clips.length > 0"
     icon="/capsule.svg"
   >
@@ -178,7 +178,7 @@
               clip.thumbnailUrl
                 ? 'text-white/80'
                 : 'text-muted-foreground'
-            ]">{{ clip.description || formatRelativeTime(clip.createdAt) }}</p>
+            ]">{{ clip.createdAt ? formatRelativeTime(clip.createdAt) : 'No timestamp available' }}</p>
           </div>
           <!-- Hover Overlay Buttons -->
           <div

@@ -16,10 +16,6 @@
       <div v-if="!clipsCollapsed" class="h-full flex flex-col">
         <div ref="clipsContent" class="flex-1 flex items-center justify-center min-h-[120px]">
           <div class="text-center text-muted-foreground">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
-            <p class="text-xs mb-3">No clips generated yet</p>
             <div class="mb-4 flex flex-col items-center">
               <label class="block text-xs font-medium text-foreground/70 mb-2 text-center">
                 Detection Prompt
@@ -30,7 +26,7 @@
                   class="flex px-3 py-2 text-xs bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent text-left items-center justify-between min-w-[150px]"
                 >
                   <span class="truncate flex-1 mr-2">
-                    {{ selectedPrompt ? prompts.find(p => p.id === selectedPromptId.value)?.name || 'Select a prompt...' : 'Select a prompt...' }}
+                    {{ selectedPrompt ? prompts.find(p => p.id === selectedPromptId)?.name || 'Select a prompt...' : 'Select a prompt...' }}
                   </span>
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -105,10 +101,11 @@ onMounted(async () => {
     const defaultPrompt = prompts.value.find(p => p.name === 'Default Clip Detector')
     if (defaultPrompt) {
       selectedPromptId.value = defaultPrompt.id
-      onPromptChange(defaultPrompt.id)
+      onPromptChange(defaultPrompt.id, defaultPrompt.content)
     } else if (prompts.value.length > 0) {
-      selectedPromptId.value = prompts.value[0].id
-      onPromptChange(prompts.value[0].id)
+      const firstPrompt = prompts.value[0]
+      selectedPromptId.value = firstPrompt.id
+      onPromptChange(firstPrompt.id, firstPrompt.content)
     }
   } catch (error) {
     console.error('Failed to load prompts:', error)
