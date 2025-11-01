@@ -1,44 +1,51 @@
 <template>
-  <div class="h-38 bg-[#0a0a0a]/30 border-t border-border">
-    <div class="p-4 h-full">
+  <div class="h-80 bg-[#0a0a0a]/30 border-t border-border">
+    <div class="p-4 h-full flex flex-col">
       <!-- Timeline Header -->
       <div class="flex items-center justify-between mb-3 pr-1">
         <h3 class="text-sm font-medium text-foreground">Timeline</h3>
+        <span class="text-xs text-muted-foreground">{{ placeholderClips.length + 1 }} tracks</span>
       </div>
 
-      <!-- Timeline Tracks -->
-      <div class="pr-1 bg-muted/20 rounded-lg h-22 relative overflow-hidden">
-        <!-- Video Track -->
-        <div class="flex items-center h-full px-2">
+      <!-- Scrollable Timeline Tracks Container -->
+      <div class="flex-1 pr-1 bg-muted/20 rounded-lg relative overflow-y-auto overflow-x-hidden">
+        <!-- Shared Timestamp Ruler -->
+        <!-- <div class="h-6 border-b border-border/30 flex items-center bg-[#0a0a0a]/20 px-2"> -->
+          <!-- Track label spacer -->
+          <!-- <div class="w-16 pr-2"></div> -->
+          <!-- Timestamp ruler -->
+          <!-- <div class="flex-1 relative"> -->
+            <!-- Timestamp markers -->
+            <!-- <div
+              v-for="timestamp in timestamps"
+              :key="timestamp.time"
+              class="absolute flex flex-col items-center -mt-2.5"
+              :style="{
+                left: `${timestamp.position}%`,
+                transform: 'translateX(-50%)'
+              }"
+            > -->
+              <!-- Time label -->
+              <!-- <span class="text-xs text-foreground/30 whitespace-nowrap font-normal">{{ timestamp.label }}</span> -->
+              <!-- Tick mark -->
+              <!-- <div class="w-px h-2 bg-foreground/40 mt-1"></div> -->
+            <!-- </div> -->
+          <!-- </div> -->
+        <!-- </div> -->
+        <!-- Main Video Track -->
+        <div class="flex items-center h-14 px-2 border-b border-border/20">
           <!-- Track Label -->
-          <div class="w-16 h-16 pr-2 mt-2 flex items-center justify-center text-xs text-center text-muted-foreground/60">Video</div>
-
-          <!-- Track Content with Timestamps -->
-          <div class="flex-1 h-16 relative mt-4">
-            <!-- Timestamp Ruler positioned above track content -->
-            <div class="absolute -top-3 left-0 right-0 h-5 flex">
-              <div class="relative flex-1">
-                <!-- Timestamp markers aligned with track content -->
-                <div
-                  v-for="timestamp in timestamps"
-                  :key="timestamp.time"
-                  class="absolute flex flex-col items-center"
-                  :style="{
-                    left: `${timestamp.position}%`,
-                    transform: 'translateX(-50%)'
-                  }"
-                >
-                  <!-- Time label -->
-                  <span class="text-xs text-foreground/60 mb-1 whitespace-nowrap">{{ timestamp.label }}</span>
-                  <!-- Tick mark -->
-                  <div class="w-px h-1 bg-foreground/40"></div>
-                </div>
-              </div>
+          <div class="w-16 h-10 pr-2 flex items-center justify-center text-xs text-center text-muted-foreground/60">
+            <div>
+              <div class="font-medium">Main</div>
+              <div class="text-xs opacity-70">Video</div>
             </div>
+          </div>
 
-            <!-- Video Track Content -->
+          <!-- Video Track Content -->
+          <div class="flex-1 h-10 relative flex items-center">
             <div
-              class="flex-1 h-10 bg-[#0a0a0a]/50 rounded-md relative cursor-pointer group mt-3"
+              class="flex-1 h-8 bg-[#0a0a0a]/50 rounded-md relative cursor-pointer group"
               @click="onSeekTimeline"
               @mousemove="onTimelineTrackHover"
               @mouseleave="onTimelineMouseLeave"
@@ -87,16 +94,75 @@
             </div>
           </div>
         </div>
+
+        <!-- Clip Tracks -->
+        <div
+          v-for="(clip, index) in placeholderClips"
+          :key="clip.id"
+          class="flex items-center min-h-12 px-2 border-b border-border/20"
+        >
+          <!-- Track Label -->
+          <div class="w-16 h-8 pr-2 flex items-center justify-center">
+            <div class="text-xs text-center">
+              <div class="font-medium text-foreground/80">Clip {{ index + 1 }}</div>
+            </div>
+          </div>
+
+          <!-- Clip Track Content -->
+          <div class="flex-1 h-8 relative">
+            <!-- Clip segments on timeline -->
+            <div class="absolute inset-0 flex items-center">
+              <!-- Background track -->
+              <div class="absolute inset-0 bg-[#1a1a1a]/30 rounded-md border border-border/20"></div>
+
+              <!-- Render each segment as a clip on the timeline -->
+              <div
+                v-for="(segment, segIndex) in clip.segments"
+                :key="`${clip.id}_${segIndex}`"
+                class="clip-segment absolute h-6 bg-gradient-to-r from-green-500/40 to-emerald-500/40 border border-green-400/50 rounded-md flex items-center justify-center cursor-pointer hover:from-green-500/60 hover:to-emerald-500/60"
+                :style="{
+                  left: `${duration ? (segment.start_time / duration) * 100 : 0}%`,
+                  width: `${duration ? ((segment.end_time - segment.start_time) / duration) * 100 : 0}%`
+                }"
+                :title="`${clip.title} - ${formatDuration(segment.start_time)} to ${formatDuration(segment.end_time)}`"
+              >
+                <span class="text-xs text-white/90 font-medium truncate px-1">{{ clip.title }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
+
 interface Timestamp {
   time: number
   position: number
   label: string
+}
+
+interface ClipSegment {
+  start_time: number
+  end_time: number
+  duration: number
+  transcript: string
+}
+
+interface Clip {
+  id: string
+  title: string
+  filename: string
+  type: 'continuous' | 'spliced'
+  segments: ClipSegment[]
+  total_duration: number
+  combined_transcript: string
+  virality_score: number
+  reason: string
+  socialMediaPost: string
 }
 
 interface Props {
@@ -117,6 +183,117 @@ interface Emits {
 }
 
 const emit = defineEmits<Emits>()
+
+// Placeholder clips data - this would normally come from props or API
+const placeholderClips = ref<Clip[]>([
+  {
+    id: "clip_1",
+    title: "Epic Rage Quit",
+    filename: "epic_rage_quit_losing_10_eth.mp4",
+    type: "continuous",
+    segments: [
+      {
+        start_time: 1250.5,
+        end_time: 1285.2,
+        duration: 34.7,
+        transcript: "I can't believe this happened! All that money gone in seconds..."
+      }
+    ],
+    total_duration: 34.7,
+    combined_transcript: "I can't believe this happened! All that money gone in seconds...",
+    virality_score: 85,
+    reason: "High emotional content with relatable frustration",
+    socialMediaPost: "When you lose 10 ETH in one trade 😭 #crypto #ragequit #solana"
+  },
+  {
+    id: "clip_2",
+    title: "Perfect Market Call",
+    filename: "perfect_market_call_100x_prediction.mp4",
+    type: "spliced",
+    segments: [
+      {
+        start_time: 14500.0,
+        end_time: 14520.5,
+        duration: 20.5,
+        transcript: "Mark my words, this token is going to 100x by tomorrow"
+      },
+      {
+        start_time: 15230.0,
+        end_time: 15245.0,
+        duration: 15.0,
+        transcript: "See? I told you it would happen! Diamond hands! 💎"
+      }
+    ],
+    total_duration: 35.5,
+    combined_transcript: "Mark my words, this token is going to 100x by tomorrow... See? I told you it would happen! Diamond hands! 💎",
+    virality_score: 92,
+    reason: "Successful prediction with proof, high engagement potential",
+    socialMediaPost: "Called it 100x and it happened! 🚀🚀🚀 #trading #crypto #prediction"
+  },
+  {
+    id: "clip_3",
+    title: "Whale Movement Alert",
+    filename: "whale_moves_500k_sol.mp4",
+    type: "continuous",
+    segments: [
+      {
+        start_time: 8900.0,
+        end_time: 8945.0,
+        duration: 45.0,
+        transcript: "Wait, did you guys see that? Someone just moved 500,000 SOL! This is huge!"
+      }
+    ],
+    total_duration: 45.0,
+    combined_transcript: "Wait, did you guys see that? Someone just moved 500,000 SOL! This is huge!",
+    virality_score: 78,
+    reason: "Market moving event creates FOMO and discussion",
+    socialMediaPost: "WHALE ALERT! 500,000 SOL just moved! 🐋 What do you think they're planning? #solana #crypto"
+  },
+  {
+    id: "clip_4",
+    title: "Beginner's Mistake",
+    filename: "beginner_mistake_gas_fees.mp4",
+    type: "spliced",
+    segments: [
+      {
+        start_time: 3200.0,
+        end_time: 3215.0,
+        duration: 15.0,
+        transcript: "Oh no... I think I just set the gas fee too high"
+      },
+      {
+        start_time: 3245.0,
+        end_time: 3260.0,
+        duration: 15.0,
+        transcript: "I just paid $200 in gas fees for a $5 transaction. I'm done."
+      }
+    ],
+    total_duration: 30.0,
+    combined_transcript: "Oh no... I think I just set the gas fee too high... I just paid $200 in gas fees for a $5 transaction. I'm done.",
+    virality_score: 88,
+    reason: "Relatable beginner mistake, high humor value",
+    socialMediaPost: "Paying $200 in gas for a $5 transaction 💀 #crypto #newbie #gasfees"
+  },
+  {
+    id: "clip_5",
+    title: "Diamond Hands Speech",
+    filename: "diamond_hands_speech_hodl.mp4",
+    type: "continuous",
+    segments: [
+      {
+        start_time: 21000.0,
+        end_time: 21055.0,
+        duration: 55.0,
+        transcript: "They can shake us out, but they can't break our spirit! Diamond hands to the moon! We're not selling! HODL!"
+      }
+    ],
+    total_duration: 55.0,
+    combined_transcript: "They can shake us out, but they can't break our spirit! Diamond hands to the moon! We're not selling! HODL!",
+    virality_score: 81,
+    reason: "Motivational content resonates with crypto community",
+    socialMediaPost: "Diamond hands! 💎🙌 We're not selling! To the moon! 🚀 #hodl #crypto #diamondhands"
+  }
+])
 
 function formatDuration(seconds: number): string {
   if (isNaN(seconds) || !isFinite(seconds)) return '0:00'
@@ -273,21 +450,31 @@ function onTimelineMouseLeave() {
 }
 
 /* Custom scrollbar for timeline */
-.timeline-track::-webkit-scrollbar {
-  height: 4px;
+.overflow-y-auto::-webkit-scrollbar {
+  width: 6px;
 }
 
-.timeline-track::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
+.overflow-y-auto::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
 }
 
-.timeline-track::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 2px;
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
 }
 
-.timeline-track::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.5);
+.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* Clip segment animations */
+.clip-segment {
+  transition: all 0.15s ease;
+}
+
+.clip-segment:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
 }
 </style>
