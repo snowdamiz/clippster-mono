@@ -61,27 +61,16 @@
               />
             </div>
 
-            <!-- Right Side: Transcript and Clips -->
+            <!-- Right Side: Clips Section -->
             <div class="w-2/5 min-w-0 flex flex-col">
-              <!-- Transcript Section -->
-              <TranscriptPanel
-                :transcript-collapsed="transcriptCollapsed"
-                :clips-collapsed="clipsCollapsed"
-                :transcript-data="transcriptData"
-                @toggleTranscript="toggleTranscript"
-              />
-
-              <!-- Generated Clips Section -->
+              <!-- Clips Section -->
               <ClipsPanel
-                :transcript-collapsed="transcriptCollapsed"
-                :clips-collapsed="clipsCollapsed"
                 :is-generating="clipGenerationInProgress"
                 :generation-progress="clipProgress"
                 :generation-stage="clipStage"
                 :generation-message="clipMessage"
                 :generation-error="clipError"
                 :project-id="project?.id"
-                @toggleClips="toggleClips"
                 @detectClips="onDetectClips"
               />
             </div>
@@ -142,7 +131,6 @@ import { type Project } from '@/services/database'
 import { invoke } from '@tauri-apps/api/core'
 import VideoPlayer from './VideoPlayer.vue'
 import VideoControls from './VideoControls.vue'
-import TranscriptPanel from './TranscriptPanel.vue'
 import ClipsPanel from './ClipsPanel.vue'
 import Timeline from './Timeline.vue'
 import ClipGenerationProgress from './ClipGenerationProgress.vue'
@@ -163,13 +151,6 @@ const emit = defineEmits<{
 }>()
 
 console.log('[ProjectWorkspaceDialog] Props defined:', props.modelValue, props.project?.name)
-
-// Initialize reactive state
-const transcriptCollapsed = ref(true)
-const clipsCollapsed = ref(false)
-
-// Transcript data
-const transcriptData = ref(null) // Will hold actual transcript data when available
 
 // Progress state
 const showProgress = ref(false)
@@ -240,23 +221,6 @@ function closeProgress() {
 
 
 
-function toggleTranscript() {
-  transcriptCollapsed.value = !transcriptCollapsed.value
-
-  // If we're collapsing transcript, auto-expand clips
-  if (transcriptCollapsed.value) {
-    clipsCollapsed.value = false
-  }
-}
-
-function toggleClips() {
-  clipsCollapsed.value = !clipsCollapsed.value
-
-  // If we're collapsing clips, auto-expand transcript
-  if (clipsCollapsed.value) {
-    transcriptCollapsed.value = false
-  }
-}
 
 async function onDetectClips(prompt: string) {
   if (!props.project) {

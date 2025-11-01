@@ -1,5 +1,5 @@
 <template>
-  <div :class="transcriptCollapsed ? 'flex-1' : clipsCollapsed ? 'h-auto' : 'flex-1'" class="p-4 flex flex-col" data-clips-panel>
+  <div class="p-4 flex flex-col flex-1 h-full" data-clips-panel>
     <div class="flex items-center justify-between mb-3">
       <h3 class="text-sm font-medium text-foreground">Clips</h3>
       <div class="flex items-center gap-1">
@@ -15,20 +15,10 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
         </button>
-        <button
-          @click="toggleClips"
-          class="p-1 hover:bg-muted rounded transition-colors"
-          :title="clipsCollapsed ? 'Expand clips' : 'Collapse clips'"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground transition-transform duration-300 ease-in-out" :class="{ 'rotate-180': clipsCollapsed }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
       </div>
     </div>
-    <div :class="[clipsCollapsed ? 'h-0' : 'flex-1', showPromptDropdown ? 'overflow-visible' : 'overflow-hidden']">
-      <div v-if="!clipsCollapsed" class="h-full flex flex-col">
-        <div ref="clipsContent" class="flex-1 flex items-start justify-center">
+    <div class="flex-1 overflow-y-auto">
+        <div class="flex-1 flex items-start justify-center">
           <!-- Progress State -->
           <div v-if="isGenerating" class="text-center text-foreground w-full max-w-xs mx-4">
             <!-- Stage Icon -->
@@ -87,14 +77,14 @@
 
   
           <!-- Clips List State -->
-          <div v-else-if="clips.length > 0 && !isGenerating" class="w-full max-h-[400px] overflow-y-auto">
+          <div v-else-if="clips.length > 0 && !isGenerating" class="w-full">
 
             <!-- Clips Grid -->
-            <div class="space-y-2">
+            <div class="space-y-3">
               <div
                 v-for="clip in clips"
                 :key="clip.id"
-                class="p-3 bg-background border border-border rounded-lg hover:border-border/80 transition-colors"
+                class="p-3 bg-muted/15 border border-border rounded-lg hover:border-border/80 transition-colors"
               >
                 <div class="flex items-start justify-between">
                   <div class="flex-1 min-w-0">
@@ -201,8 +191,6 @@
         </div>
       </div>
     </div>
-
-    </div>
 </template>
 
 <script setup lang="ts">
@@ -239,7 +227,6 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 interface Emits {
-  (e: 'toggleClips'): void
   (e: 'detectClips', prompt: string): void
 }
 
@@ -379,9 +366,6 @@ function handleClickOutside(event: Event) {
   }
 }
 
-function toggleClips() {
-  emit('toggleClips')
-}
 
 function handleDetectClips() {
   emit('detectClips', selectedPrompt.value)
