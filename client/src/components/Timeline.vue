@@ -1,21 +1,26 @@
 <template>
-  <div class="bg-[#0a0a0a]/30 border-t border-border transition-all duration-300 ease-in-out" :style="{ height: calculatedHeight + 'px' }">
+  <div class="bg-[#0a0a0a]/30 border-t border-border transition-all duration-300 ease-in-out"
+       :style="{
+         height: timelineMaxHeight + 'px',
+         maxHeight: timelineMaxHeight + 'px'
+       }">
     <div class="pt-3 px-4 pb-1.5 h-full flex flex-col">
       <!-- Timeline Header -->
-      <div class="flex items-center justify-between mb-3 pr-1">
+      <div class="flex items-center justify-between mb-3 pr-1 flex-shrink-0">
         <div class="flex items-center gap-2">
           <h3 class="text-sm font-medium text-foreground">Timeline</h3>
-          <div v-if="props.clips.length > 6" class="text-xs text-muted-foreground/70" title="Scroll to see more clips">
+          <div v-if="props.clips.length > 5" class="text-xs text-muted-foreground/70 flex items-center gap-1" title="Scroll to see more clips">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
             </svg>
+            <span class="text-xs">scroll</span>
           </div>
         </div>
         <span class="text-xs text-muted-foreground">{{ props.clips.length + 1 }} tracks</span>
       </div>
 
       <!-- Scrollable Timeline Tracks Container -->
-      <div class="flex-1 pr-1 bg-muted/20 rounded-lg relative overflow-y-auto overflow-x-hidden">
+      <div class="flex-1 pr-1 bg-muted/20 rounded-lg relative overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
         <!-- Shared Timestamp Ruler -->
         <!-- <div class="h-6 border-b border-border/30 flex items-center bg-[#0a0a0a]/20 px-2"> -->
           <!-- Track label spacer -->
@@ -187,26 +192,9 @@ const props = withDefaults(defineProps<Props>(), {
   clips: () => []
 })
 
-// Calculate dynamic height based on content
-const calculatedHeight = computed(() => {
-  // Base height: header (44px) + padding (top + bottom) + video track height + container gaps
-  const baseHeight = 44 + 14 + 56 + 16 // 44px header, 14px padding, 56px video track, 16px container gaps
-
-  // Add height for each clip track (48px per clip + 8px gap except last)
-  const clipsHeight = props.clips.reduce((total, clip, index) => {
-    return total + 48 + (index < props.clips.length - 1 ? 8 : 0)
-  }, 0)
-
-  // Minimum height to keep timeline usable even with no clips
-  const minHeight = 140
-
-  // Maximum height before we enable scrolling (to prevent timeline from taking too much space)
-  const maxHeight = 400
-
-  const totalHeight = baseHeight + clipsHeight
-
-  return Math.max(Math.min(totalHeight, maxHeight), minHeight)
-})
+// Set fixed maximum height for timeline
+const timelineMaxHeight = 350 // Fixed maximum height in pixels
+const timelineMinHeight = 140 // Minimum height to keep timeline usable
 
 interface Emits {
   (e: 'seekTimeline', event: MouseEvent): void
@@ -373,21 +361,49 @@ function onTimelineMouseLeave() {
 
 /* Custom scrollbar for timeline */
 .overflow-y-auto::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
 }
 
 .overflow-y-auto::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* Custom scrollbar classes */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.5);
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.7);
+}
+
+.scrollbar-thumb-gray-600::-webkit-scrollbar-thumb {
+  background: rgb(75 85 99 / 0.7);
+}
+
+.scrollbar-track-gray-800::-webkit-scrollbar-track {
+  background: rgb(31 41 55 / 0.5);
 }
 
 /* Clip segment animations */
