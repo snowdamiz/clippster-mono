@@ -145,7 +145,7 @@ const emit = defineEmits<{
 console.log('[ProjectWorkspaceDialog] Props defined:', props.modelValue, props.project?.name)
 
 // Initialize reactive state
-const transcriptCollapsed = ref(false)
+const transcriptCollapsed = ref(true)
 const clipsCollapsed = ref(false)
 
 // Transcript data
