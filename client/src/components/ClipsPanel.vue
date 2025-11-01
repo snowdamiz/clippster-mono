@@ -21,10 +21,6 @@
             <div class="mb-4 flex justify-center">
               <div class="relative">
                 <component :is="stageIcon" :class="stageIconClass" class="h-8 w-8" />
-                <!-- Spinning overlay for loading states -->
-                <!-- <div v-if="generationStage !== 'completed' && generationStage !== 'error'" class="absolute inset-0 flex items-center justify-center">
-                  <div class="h-12 w-12 rounded-full border-2 border-current/20 border-t-current animate-spin" />
-                </div> -->
               </div>
             </div>
 
@@ -140,7 +136,8 @@ import {
   BrainIcon,
   CheckCircleIcon,
   XCircleIcon,
-  ActivityIcon
+  ActivityIcon,
+  MicIcon
 } from 'lucide-vue-next'
 
 interface Props {
@@ -226,7 +223,7 @@ const stageIcon = computed(() => {
     case 'starting':
       return PlayIcon
     case 'transcribing':
-      return Loader2Icon
+      return MicIcon
     case 'analyzing':
       return BrainIcon
     case 'validating':
@@ -236,7 +233,7 @@ const stageIcon = computed(() => {
     case 'error':
       return XCircleIcon
     default:
-      return Loader2Icon
+      return PlayIcon
   }
 })
 
