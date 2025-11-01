@@ -80,6 +80,7 @@
                 :generation-stage="clipStage"
                 :generation-message="clipMessage"
                 :generation-error="clipError"
+                :project-id="project?.id"
                 @toggleClips="toggleClips"
                 @detectClips="onDetectClips"
               />
@@ -274,7 +275,7 @@ async function onDetectClips(prompt: string) {
     setProgressProjectId(props.project.id.toString())
 
     // Get the video path from the project's associated raw video
-    const { getAllRawVideos } = await import('@/services/database')
+    const { getAllRawVideos, persistClipDetectionResults } = await import('@/services/database')
     const rawVideos = await getAllRawVideos()
     const projectVideo = rawVideos.find(v => v.project_id === props.project?.id)
 
@@ -287,6 +288,7 @@ async function onDetectClips(prompt: string) {
 
     // Step 1: Generate MP3 audio file from video using FFmpeg - EXACTLY like prototype
     const audioFile = await generateAudioFromVideo(projectVideo.file_path)
+    const processingStartTime = Date.now()
 
     // Step 2: Transmit audio to server for processing
     const formData = new FormData()
@@ -307,9 +309,83 @@ async function onDetectClips(prompt: string) {
     }
 
     const result = await response.json()
+    const processingTimeMs = Date.now() - processingStartTime
 
-    // Step 3: Display test dialog with returned data
-    showClipDetectionResult(result)
+    console.log('[ProjectWorkspaceDialog] Detection results received:', {
+      clipsCount: result.clips?.length || 0,
+      qualityScore: result.validation?.qualityScore,
+      processingTime: processingTimeMs,
+      hasClips: !!result.clips,
+      clipsType: typeof result.clips,
+      firstClip: result.clips?.[0] || 'No clips',
+      fullResult: result
+    })
+
+    // Debug: Log the actual clips and transcript data
+    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - Full result structure:', Object.keys(result))
+    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - Actual clips data:', result.clips)
+    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - result.clips type:', typeof result.clips)
+    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - result.clips length:', result.clips?.length)
+
+    // Check for nested structure
+    if (result.clips && typeof result.clips === 'object' && result.clips.clips) {
+      console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - FOUND NESTED STRUCTURE - Using result.clips.clips')
+      result.clips = result.clips.clips
+      console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - Fixed clips array length:', result.clips?.length)
+    }
+    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - result.clips isArray:', Array.isArray(result.clips))
+    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - Root level clips check:', result.clips || 'No clips at root')
+
+    // Check if clips are nested in a different property
+    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - All root properties:', Object.keys(result))
+    for (const key of Object.keys(result)) {
+      const value = result[key]
+      if (Array.isArray(value) && value.length > 0) {
+        console.log(`[ProjectWorkspaceDialog] CLIPS DEBUG - Found array in property '${key}':`, value.length, 'items')
+        if (value[0]?.id || value[0]?.title) {
+          console.log(`[ProjectWorkspaceDialog] CLIPS DEBUG - '${key}' looks like clips array:`, value[0])
+        }
+      }
+    }
+
+    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - Transcript length:', result.transcript?.text?.length || 0)
+    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - First 500 chars of transcript:', result.transcript?.text?.substring(0, 500) || 'No transcript')
+    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - Validation data:', result.validation)
+
+    // Step 3: Persist detected clips to database with versioning
+    const sessionId = await persistClipDetectionResults(
+      props.project.id,
+      prompt,
+      result,
+      {
+        processingTimeMs,
+        detectionModel: 'claude-3.5-sonnet',
+        serverResponseId: result.jobId || null
+      }
+    )
+
+    console.log('[ProjectWorkspaceDialog] Clips persisted to database with session ID:', sessionId)
+
+    // Step 5: Trigger UI refresh to show the new clips
+    if (props.project) {
+      console.log('[ProjectWorkspaceDialog] Triggering clips refresh for project:', props.project.id)
+      // Force the ClipsPanel to reload clips by directly calling the refresh function
+      setTimeout(() => {
+        const clipsPanel = document.querySelector('[data-clips-panel]') as any
+        if (clipsPanel && clipsPanel.__vueParentComponent && clipsPanel.__vueParentComponent.exposed) {
+          // Try to access the exposed refreshClips method
+          clipsPanel.__vueParentComponent.exposed.refreshClips?.()
+        } else {
+          // Fallback: emit a custom event to trigger refresh
+          const refreshEvent = new CustomEvent('refresh-clips', { detail: { projectId: props.project!.id } })
+          document.dispatchEvent(refreshEvent)
+          console.log('[ProjectWorkspaceDialog] Sent refresh-clips event as fallback')
+        }
+      }, 1000)
+    }
+
+    // Step 4: Display results with session information
+    showClipDetectionResult(result, sessionId)
 
   } catch (error) {
     console.error('[ProjectWorkspaceDialog] Clip detection failed:', error)
@@ -354,15 +430,17 @@ async function generateAudioFromVideo(videoPath: string): Promise<File> {
   }
 }
 
-function showClipDetectionResult(result: any) {
+function showClipDetectionResult(result: any, sessionId?: string) {
   // Create a test dialog to show the returned data with validation information
   console.log('[ProjectWorkspaceDialog] Clip detection result:', result)
+  console.log('[ProjectWorkspaceDialog] Detection session ID:', sessionId)
 
   const validation = result.validation || {}
   const qualityScore = validation.qualityScore || 0
   const issues = validation.issues || []
   const corrections = validation.corrections || []
   const clipsProcessed = validation.clipsProcessed || 0
+  const clipsFound = result.clips?.length || 0
 
   // Determine quality score color
   let qualityColor = 'text-red-400'
@@ -381,14 +459,20 @@ function showClipDetectionResult(result: any) {
   // Create validation summary HTML
   const validationSummary = `
     <div class="bg-[#0a0a0a] rounded-lg p-4 space-y-3">
+      ${sessionId ? `
+        <div class="flex items-center justify-between">
+          <span class="text-foreground/70 text-sm">Detection Session:</span>
+          <span class="text-blue-400 font-mono text-xs">${sessionId.substring(0, 8)}...</span>
+        </div>
+      ` : ''}
       <div class="flex items-center justify-between">
         <span class="text-foreground/70 text-sm">Overall Quality Score:</span>
         <span class="${qualityColor} font-semibold">${qualityLabel} (${Math.round(qualityScore * 100)}%)</span>
       </div>
       <div class="grid grid-cols-3 gap-4 text-sm">
         <div class="text-center">
-          <div class="text-2xl font-bold text-white">${clipsProcessed}</div>
-          <div class="text-foreground/50 text-xs">Clips Validated</div>
+          <div class="text-2xl font-bold text-white">${clipsFound}</div>
+          <div class="text-foreground/50 text-xs">Clips Found</div>
         </div>
         <div class="text-center">
           <div class="text-2xl font-bold text-yellow-400">${issues.length}</div>
@@ -399,6 +483,20 @@ function showClipDetectionResult(result: any) {
           <div class="text-foreground/50 text-xs">Corrections Applied</div>
         </div>
       </div>
+      ${clipsFound === 0 ? `
+        <div class="border-t border-border/30 pt-3">
+          <div class="text-foreground/70 text-sm mb-2">No Clips Found</div>
+          <div class="text-orange-300 text-xs">
+            The AI didn't find any clip-worthy moments in this video. This could be because:
+            <ul class="mt-2 ml-4 list-disc space-y-1">
+              <li>The content doesn't match the detection criteria</li>
+              <li>The audio quality or speech is unclear</li>
+              <li>The video duration is too short</li>
+            </ul>
+            Try using a different detection prompt or check if the video has clear speech content.
+          </div>
+        </div>
+      ` : ''}
       ${issues.length > 0 ? `
         <div class="border-t border-border/30 pt-3">
           <div class="text-foreground/70 text-sm mb-2">Key Issues:</div>
@@ -441,6 +539,7 @@ function showClipDetectionResult(result: any) {
           <h4 class="font-medium text-foreground/80 mb-2 flex items-center gap-2">
             Validated Clips
             <span class="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded-full">${clipsProcessed} clips</span>
+            ${sessionId ? '<span class="text-xs bg-blue-500/20 text-blue-400 px-2 py-1 rounded-full">Saved to database</span>' : ''}
           </h4>
           <pre class="bg-[#0a0a0a] p-4 rounded-lg text-xs overflow-auto max-h-60 text-white/90">${JSON.stringify(result.clips, null, 2)}</pre>
         </div>
@@ -488,6 +587,18 @@ watch(() => props.project?.id, (newProjectId) => {
     setProgressProjectId(newProjectId.toString())
   } else {
     setProgressProjectId(null)
+  }
+})
+
+// Watch for generation completion to trigger clips refresh
+watch([clipGenerationInProgress, clipProgress], ([isInProgress, progress]) => {
+  if (!isInProgress && progress === 100 && props.project) {
+    console.log('[ProjectWorkspaceDialog] Clip generation completed, triggering clips refresh')
+    // Trigger clips refresh with a longer delay to ensure all database operations are complete
+    setTimeout(() => {
+      const refreshEvent = new CustomEvent('refresh-clips', { detail: { projectId: props.project!.id } })
+      document.dispatchEvent(refreshEvent)
+    }, 1500)
   }
 })
 

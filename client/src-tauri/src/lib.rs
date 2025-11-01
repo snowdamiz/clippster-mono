@@ -1252,7 +1252,7 @@ pub fn run() {
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations(
-                    "sqlite:clippster_new.db",
+                    "sqlite:clippster_v2.db",
                     vec![
                         tauri_plugin_sql::Migration {
                             version: 1,
@@ -1302,7 +1302,19 @@ pub fn run() {
                             sql: include_str!("../migrations/008_remove_raw_video_path_field.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
-                      ],
+                        tauri_plugin_sql::Migration {
+                            version: 9,
+                            description: "add_audio_files_table",
+                            sql: include_str!("../migrations/009_add_audio_files_table.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 10,
+                            description: "add_clip_versioning",
+                            sql: include_str!("../migrations/010_add_clip_versioning_fixed.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                          ],
                 )
                 .build(),
         )

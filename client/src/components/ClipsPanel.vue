@@ -1,20 +1,31 @@
 <template>
-  <div :class="transcriptCollapsed ? 'flex-1' : clipsCollapsed ? 'h-auto' : 'flex-1'" class="p-4 flex flex-col">
+  <div :class="transcriptCollapsed ? 'flex-1' : clipsCollapsed ? 'h-auto' : 'flex-1'" class="p-4 flex flex-col" data-clips-panel>
     <div class="flex items-center justify-between">
       <h3 class="text-sm font-medium text-foreground">Clips</h3>
-      <button
-        @click="toggleClips"
-        class="p-1 hover:bg-muted rounded transition-colors"
-        :title="clipsCollapsed ? 'Expand clips' : 'Collapse clips'"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground transition-transform duration-300 ease-in-out" :class="{ 'rotate-180': clipsCollapsed }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
+      <div class="flex items-center gap-1">
+        <button
+          @click="refreshClips"
+          class="p-1 hover:bg-muted rounded transition-colors"
+          title="Refresh clips"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </button>
+        <button
+          @click="toggleClips"
+          class="p-1 hover:bg-muted rounded transition-colors"
+          :title="clipsCollapsed ? 'Expand clips' : 'Collapse clips'"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground transition-transform duration-300 ease-in-out" :class="{ 'rotate-180': clipsCollapsed }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      </div>
     </div>
     <div :class="[clipsCollapsed ? 'h-0' : 'flex-1', showPromptDropdown ? 'overflow-visible' : 'overflow-hidden']">
       <div v-if="!clipsCollapsed" class="h-full flex flex-col">
-        <div ref="clipsContent" class="flex-1 flex items-center justify-center min-h-[120px]">
+        <div ref="clipsContent" class="flex-1 flex items-start justify-center min-h-[120px]">
           <!-- Progress State -->
           <div v-if="isGenerating" class="text-center text-foreground w-full max-w-xs mx-4">
             <!-- Stage Icon -->
@@ -71,6 +82,118 @@
             </div>
           </div>
 
+  
+          <!-- Clips List State -->
+          <div v-else-if="clips.length > 0 && !isGenerating" class="w-full max-h-[400px] overflow-y-auto">
+            <!-- History Header -->
+            <div class="flex items-center justify-between mb-3 pb-2 border-b border-border/30">
+              <div class="flex items-center gap-2">
+                <h4 class="text-xs font-medium text-foreground/80">Detected Clips</h4>
+                <span class="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full">{{ clips.length }} clips</span>
+                <span v-if="detectionSessions.length > 1" class="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full">
+                  {{ detectionSessions.length }} versions
+                </span>
+              </div>
+              <button
+                v-if="detectionSessions.length > 1"
+                @click="toggleHistory"
+                class="p-1 hover:bg-muted/50 rounded transition-colors"
+                :title="showHistory ? 'Hide history' : 'Show detection history'"
+              >
+                <HistoryIcon :class="{ 'text-blue-400': showHistory }" class="h-3 w-3 text-foreground/60" />
+              </button>
+            </div>
+
+            <!-- Detection History Dropdown -->
+            <div v-if="showHistory && detectionSessions.length > 1" class="mb-3 p-2 bg-muted/20 rounded-lg border border-border/30">
+              <div class="text-xs font-medium text-foreground/70 mb-2 flex items-center gap-1">
+                <ClockIcon class="h-3 w-3" />
+                Detection History
+              </div>
+              <div class="space-y-1 max-h-32 overflow-y-auto">
+                <button
+                  v-for="session in detectionSessions"
+                  :key="session.id"
+                  @click="selectSession(session.id)"
+                  class="w-full text-left p-2 rounded hover:bg-muted/50 transition-colors text-xs"
+                  :class="{ 'bg-muted/50 border border-blue-500/30': session.id === (selectedSessionId || detectionSessions[0]?.id) }"
+                >
+                  <div class="flex items-center justify-between">
+                    <span class="font-medium text-foreground/80 truncate">{{ formatTimestamp(session.created_at) }}</span>
+                    <span :class="getQualityColor(session.quality_score || undefined)" class="text-xs">
+                      {{ getQualityLabel(session.quality_score || undefined) }}
+                    </span>
+                  </div>
+                  <div class="text-foreground/60 text-xs mt-1">
+                    {{ session.total_clips_detected }} clips • {{ session.prompt.substring(0, 40) }}...
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <!-- Clips Grid -->
+            <div class="space-y-2">
+              <div
+                v-for="clip in clips"
+                :key="clip.id"
+                class="p-3 bg-background border border-border rounded-lg hover:border-border/80 transition-colors"
+              >
+                <div class="flex items-start justify-between">
+                  <div class="flex-1 min-w-0">
+                    <h5 class="text-xs font-medium text-foreground/90 truncate mb-1">
+                      {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
+                    </h5>
+
+                    <!-- Version Info -->
+                    <div class="flex items-center gap-2 mb-2 text-xs text-foreground/60">
+                      <span>{{ formatDuration(clip.current_version?.end_time - clip.current_version?.start_time || 0) }}</span>
+                      <span>•</span>
+                      <span>{{ Math.floor(clip.current_version?.start_time || 0) }}s - {{ Math.floor(clip.current_version?.end_time || 0) }}s</span>
+                      <span v-if="clip.current_version?.confidence_score" class="flex items-center gap-1">
+                        <TrendingUpIcon class="h-2 w-2" />
+                        {{ Math.round((clip.current_version.confidence_score || 0) * 100) }}%
+                      </span>
+                    </div>
+
+                    <!-- Description -->
+                    <p v-if="clip.current_version?.description" class="text-xs text-foreground/70 line-clamp-2 mb-2">
+                      {{ clip.current_version.description }}
+                    </p>
+
+                    <!-- Tags -->
+                    <div v-if="clip.current_version?.tags" class="flex flex-wrap gap-1 mb-2">
+                      <span
+                        v-for="tag in getTags(clip.current_version.tags)"
+                        :key="tag"
+                        class="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded"
+                      >
+                        {{ tag }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- Clip Actions -->
+                  <div class="flex items-center gap-1 ml-2">
+                    <button
+                      class="p-1 hover:bg-muted/50 rounded transition-colors"
+                      title="Play clip"
+                    >
+                      <PlayIcon class="h-3 w-3 text-foreground/60" />
+                    </button>
+                    <button
+                      v-if="clip.detection_session_id"
+                      @click="openVersionManager(clip.id)"
+                      class="p-1 hover:bg-blue-500/20 rounded transition-colors text-blue-400"
+                      title="View version history"
+                    >
+                      <HistoryIcon class="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Default State -->
           <div v-else class="text-center text-muted-foreground">
             <div class="mb-4 flex flex-col items-center">
@@ -114,6 +237,7 @@
               @click="handleDetectClips"
               :disabled="!selectedPrompt"
               class="px-4 py-2 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 disabled:from-gray-500/50 disabled:to-gray-600/50 disabled:cursor-not-allowed text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all mx-auto text-xs"
+              title="Detect Clips"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -124,12 +248,21 @@
         </div>
       </div>
     </div>
+
+    <!-- Version Manager (outside conditional blocks) -->
+    <ClipVersionManager
+      :clip-id="selectedClipId"
+      :show-versions="showVersionManager"
+      @update:showVersions="showVersionManager = $event"
+      @versionRestored="onVersionRestored"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { getAllPrompts, type Prompt } from '@/services/database'
+import { ref, onMounted, computed, watch, onUnmounted } from 'vue'
+import { getAllPrompts, getClipsWithVersionsByProjectId, getClipDetectionSessionsByProjectId, type Prompt, type ClipWithVersion, type ClipDetectionSession } from '@/services/database'
+import ClipVersionManager from './ClipVersionManager.vue'
 import {
   PlayIcon,
   Loader2Icon,
@@ -137,7 +270,10 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   ActivityIcon,
-  MicIcon
+  MicIcon,
+  HistoryIcon,
+  ClockIcon,
+  TrendingUpIcon
 } from 'lucide-vue-next'
 
 interface Props {
@@ -148,6 +284,7 @@ interface Props {
   generationStage?: string
   generationMessage?: string
   generationError?: string
+  projectId?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -171,6 +308,17 @@ const selectedPromptId = ref<string>('')
 const selectedPrompt = ref<string>('')
 const showPromptDropdown = ref(false)
 
+// Versioned clips state
+const clips = ref<ClipWithVersion[]>([])
+const detectionSessions = ref<ClipDetectionSession[]>([])
+const showHistory = ref(false)
+const selectedSessionId = ref<string>('')
+const loadingClips = ref(false)
+
+// Version manager state
+const selectedClipId = ref<string>('')
+const showVersionManager = ref(false)
+
 onMounted(async () => {
   try {
     prompts.value = await getAllPrompts()
@@ -191,6 +339,130 @@ onMounted(async () => {
   // Add click outside handler to close dropdown
   document.addEventListener('click', handleClickOutside)
 })
+
+// Watch for project changes and load clips
+watch(() => props.projectId, async (projectId) => {
+  if (projectId) {
+    await loadClipsAndHistory(projectId)
+  } else {
+    clips.value = []
+    detectionSessions.value = []
+  }
+}, { immediate: true })
+
+// Watch for generation state changes to refresh clips when generation completes
+watch([() => props.isGenerating, () => props.generationProgress], async ([isGenerating, progress]) => {
+  if (!isGenerating && progress === 100 && props.projectId) {
+    console.log('[ClipsPanel] Generation completed, refreshing clips...')
+    // Add a small delay to ensure database writes are committed
+    setTimeout(async () => {
+      await loadClipsAndHistory(props.projectId!)
+    }, 500)
+  }
+})
+
+// Load clips and detection history
+async function loadClipsAndHistory(projectId: string) {
+  if (!projectId) return
+
+  loadingClips.value = true
+  try {
+    console.log('[ClipsPanel] Loading clips for project:', projectId)
+
+    // Load current clips with versions
+    clips.value = await getClipsWithVersionsByProjectId(projectId)
+    console.log('[ClipsPanel] Loaded clips:', clips.value.length)
+    if (clips.value.length > 0) {
+      console.log('[ClipsPanel] Sample clip data:', {
+        id: clips.value[0].id,
+        name: clips.value[0].current_version?.name || clips.value[0].name,
+        hasCurrentVersion: !!clips.value[0].current_version,
+        sessionId: clips.value[0].detection_session_id
+      })
+    }
+
+    // Load detection sessions for history
+    detectionSessions.value = await getClipDetectionSessionsByProjectId(projectId)
+    console.log('[ClipsPanel] Loaded detection sessions:', detectionSessions.value.length)
+
+  } catch (error) {
+    console.error('[ClipsPanel] Failed to load clips:', error)
+  } finally {
+    loadingClips.value = false
+  }
+}
+
+function formatDuration(seconds: number): string {
+  if (!seconds) return '0:00'
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.floor(seconds % 60)
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+function formatTimestamp(timestamp: number): string {
+  return new Date(timestamp * 1000).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+function getQualityColor(score?: number): string {
+  if (!score) return 'text-gray-400'
+  if (score >= 0.8) return 'text-green-400'
+  if (score >= 0.6) return 'text-yellow-400'
+  if (score >= 0.4) return 'text-orange-400'
+  return 'text-red-400'
+}
+
+function getQualityLabel(score?: number): string {
+  if (!score) return 'Unknown'
+  if (score >= 0.8) return 'Excellent'
+  if (score >= 0.6) return 'Good'
+  if (score >= 0.4) return 'Fair'
+  return 'Poor'
+}
+
+function toggleHistory() {
+  showHistory.value = !showHistory.value
+}
+
+function selectSession(sessionId: string) {
+  selectedSessionId.value = sessionId
+  showHistory.value = false
+  // In a full implementation, this would load clips from that specific session
+  console.log('[ClipsPanel] Selected session:', sessionId)
+}
+
+function getTags(tagsString?: string): string[] {
+  if (!tagsString) return []
+  try {
+    return JSON.parse(tagsString)
+  } catch {
+    return []
+  }
+}
+
+function openVersionManager(clipId: string) {
+  selectedClipId.value = clipId
+  showVersionManager.value = true
+}
+
+async function onVersionRestored(clipId: string) {
+  console.log('[ClipsPanel] Version restored for clip:', clipId)
+  // Reload clips to show the updated version
+  if (props.projectId) {
+    await loadClipsAndHistory(props.projectId)
+  }
+}
+
+async function refreshClips() {
+  console.log('[ClipsPanel] Manual refresh triggered')
+  if (props.projectId) {
+    await loadClipsAndHistory(props.projectId)
+  }
+}
 
 function handleClickOutside(event: Event) {
   const target = event.target as HTMLElement
@@ -309,6 +581,29 @@ const progressBarClass = computed(() => {
     default:
       return 'bg-blue-500'
   }
+})
+
+// Expose methods for external access
+defineExpose({
+  refreshClips
+})
+
+// Event listener for fallback refresh mechanism
+function handleRefreshEvent(event: CustomEvent) {
+  console.log('[ClipsPanel] Received refresh event for project:', event.detail?.projectId)
+  if (event.detail?.projectId === props.projectId) {
+    refreshClips()
+  }
+}
+
+onMounted(() => {
+  // Add event listener for refresh events
+  document.addEventListener('refresh-clips', handleRefreshEvent as EventListener)
+})
+
+onUnmounted(() => {
+  // Remove event listener to prevent memory leaks
+  document.removeEventListener('refresh-clips', handleRefreshEvent as EventListener)
 })
 </script>
 
