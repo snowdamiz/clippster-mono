@@ -235,65 +235,8 @@
       </div>
     </div>
 
-    <!-- Empty State with Recent Searches -->
+    <!-- Empty State -->
     <div v-else class="flex flex-col items-center justify-center min-h-[calc(100vh-16rem)]">
-      <!-- Recent Searches (shown above the empty state) -->
-      <div v-if="pumpFunStore.getRecentSearches.length > 0" class="w-full max-w-md mb-8">
-        <div class="text-center mb-4">
-          <h3 class="text-sm font-medium text-muted-foreground">Recent Searches</h3>
-          <p class="text-xs text-muted-foreground mt-1">Select a previous search to continue</p>
-        </div>
-
-        <!-- Recent Searches Dropdown -->
-        <div class="relative">
-          <button
-            @click="showEmptyRecentDropdown = !showEmptyRecentDropdown"
-            class="w-full px-4 py-3 bg-muted border border-border rounded-lg text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all flex items-center justify-between"
-            title="Select a recent search"
-          >
-            <div class="flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span class="text-sm">Choose a recent search</span>
-            </div>
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 transition-transform" :class="{ 'rotate-180': showEmptyRecentDropdown }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-
-          <!-- Dropdown Menu -->
-          <div
-            v-if="showEmptyRecentDropdown"
-            class="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-10 max-h-64 overflow-y-auto"
-            @click.stop
-          >
-            <div class="p-2">
-              <div class="text-xs font-medium text-muted-foreground px-2 py-1 mb-1">Recent Searches</div>
-              <button
-                v-for="search in pumpFunStore.getRecentSearches.slice(0, 10)"
-                :key="search.mintId"
-                @click="handleRecentSearchClick(search); showEmptyRecentDropdown = false"
-                class="w-full text-left px-3 py-2 rounded-md hover:bg-muted/80 transition-colors flex items-center gap-2 group"
-                :title="`Search: ${search.displayText}`"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-muted-foreground group-hover:text-purple-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span class="text-sm truncate">{{ search.displayText }}</span>
-              </button>
-              <button
-                @click="pumpFunStore.clearRecentSearches(); showEmptyRecentDropdown = false"
-                class="w-full text-left px-3 py-2 rounded-md hover:bg-red-500/10 text-red-400 text-xs transition-colors mt-1"
-                title="Clear all recent searches"
-              >
-                Clear All
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- Empty State Component -->
       <EmptyState
         title="Search VODs on Pump"
@@ -306,12 +249,61 @@
         </template>
 
         <template #action>
-          <SearchInput
-            v-model="mintId"
-            placeholder="Mint ID or PumpFun URL"
-            @search="handleSearch"
-            class="w-full max-w-md"
-          />
+          <div class="flex items-center gap-3 w-full max-w-md">
+            <!-- Recent Searches Dropdown -->
+            <div v-if="pumpFunStore.getRecentSearches.length > 0" class="relative">
+              <button
+                @click="showEmptyRecentDropdown = !showEmptyRecentDropdown"
+                class="h-12 px-3 bg-muted border border-border rounded-lg text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all flex items-center gap-2"
+                title="Recent searches"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span class="text-sm">Recent</span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 transition-transform" :class="{ 'rotate-180': showEmptyRecentDropdown }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              <!-- Dropdown Menu -->
+              <div
+                v-if="showEmptyRecentDropdown"
+                class="absolute top-full left-0 mt-1 w-64 bg-card border border-border rounded-lg shadow-lg z-10 max-h-64 overflow-y-auto"
+                @click.stop
+              >
+                <div class="p-2">
+                  <div class="text-xs font-medium text-muted-foreground px-2 py-1 mb-1">Recent Searches</div>
+                  <button
+                    v-for="search in pumpFunStore.getRecentSearches.slice(0, 10)"
+                    :key="search.mintId"
+                    @click="handleRecentSearchClick(search); showEmptyRecentDropdown = false"
+                    class="w-full text-left px-3 py-2 rounded-md hover:bg-muted/80 transition-colors flex items-center gap-2 group"
+                    :title="`Search: ${search.displayText}`"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-muted-foreground group-hover:text-purple-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span class="text-sm truncate">{{ search.displayText }}</span>
+                  </button>
+                  <button
+                    @click="pumpFunStore.clearRecentSearches(); showEmptyRecentDropdown = false"
+                    class="w-full text-left px-3 py-2 rounded-md hover:bg-red-500/10 text-red-400 text-xs transition-colors mt-1"
+                    title="Clear all recent searches"
+                  >
+                    Clear All
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <SearchInput
+              v-model="mintId"
+              placeholder="Mint ID or PumpFun URL"
+              @search="handleSearch"
+              class="flex-1"
+            />
+          </div>
         </template>
       </EmptyState>
     </div>
