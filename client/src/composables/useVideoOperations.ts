@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { createRawVideo, deleteRawVideo, type RawVideo } from '@/services/database'
+import { createRawVideo, deleteRawVideo, updateRawVideo, type RawVideo } from '@/services/database'
 import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { useToast } from '@/composables/useToast'
@@ -70,13 +70,13 @@ export function useVideoOperations() {
     const deletedVideoName = video.original_filename || video.file_path.split(/[\\\/]/).pop() || 'Video'
 
     try {
-      // Delete the video file and thumbnail from the filesystem first
+      // Delete video file but preserve thumbnail for project cards
       await invoke('delete_video_file', {
         filePath: video.file_path,
-        thumbnailPath: video.thumbnail_path || undefined
+        thumbnailPath: undefined // Don't delete the thumbnail
       })
 
-      // Then delete from database
+      // Delete the database record completely
       await deleteRawVideo(video.id)
 
       // Show success toast

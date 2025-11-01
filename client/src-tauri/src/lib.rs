@@ -1252,7 +1252,7 @@ pub fn run() {
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations(
-                    "sqlite:clippster_v2.db",
+                    "sqlite:clippster_clean.db",
                     vec![
                         tauri_plugin_sql::Migration {
                             version: 1,
@@ -1312,6 +1312,12 @@ pub fn run() {
                             version: 10,
                             description: "add_clip_versioning",
                             sql: include_str!("../migrations/010_add_clip_versioning_fixed.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                                              tauri_plugin_sql::Migration {
+                            version: 11,
+                            description: "add_project_thumbnail",
+                            sql: include_str!("../migrations/013_add_project_thumbnail.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                           ],

@@ -38,9 +38,9 @@ export async function initDatabase() {
       // Debug: Check if Database is available
       console.log('[Frontend] Database object:', Database)
       console.log('[Frontend] Database.load:', Database.load)
-      console.log('[Frontend] Attempting to load sqlite:clippster_v2.db')
+      console.log('[Frontend] Attempting to load sqlite:clippster_clean.db')
 
-      const instance = await Database.load('sqlite:clippster_v2.db')
+      const instance = await Database.load('sqlite:clippster_clean.db')
       console.log('[Frontend] Database loaded successfully')
 
       // Debug: Check if clip versioning tables exist
@@ -106,6 +106,7 @@ export interface Project {
   id: string
   name: string
   description: string | null
+  thumbnail_path: string | null
   created_at: number
   updated_at: number
 }
@@ -186,6 +187,7 @@ export interface RawVideo {
   frame_rate: number | null
   codec: string | null
   file_size: number | null
+  original_project_id: string | null
   created_at: number
   updated_at: number
 }
@@ -373,8 +375,8 @@ export async function createProject(name: string, description?: string): Promise
   const now = timestamp()
 
   await db.execute(
-    'INSERT INTO projects (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-    [id, name, description || null, now, now]
+    'INSERT INTO projects (id, name, description, thumbnail_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+    [id, name, description || null, null, now, now]
   )
 
   return id
@@ -391,7 +393,7 @@ export async function getAllProjects(): Promise<Project[]> {
   return await db.select<Project[]>('SELECT * FROM projects ORDER BY updated_at DESC')
 }
 
-export async function updateProject(id: string, name?: string, description?: string): Promise<void> {
+export async function updateProject(id: string, name?: string, description?: string, thumbnailPath?: string): Promise<void> {
   const db = await getDatabase()
   const now = timestamp()
 
@@ -405,6 +407,10 @@ export async function updateProject(id: string, name?: string, description?: str
   if (description !== undefined) {
     updates.push('description = ?')
     values.push(description)
+  }
+  if (thumbnailPath !== undefined) {
+    updates.push('thumbnail_path = ?')
+    values.push(thumbnailPath)
   }
 
   updates.push('updated_at = ?')
@@ -873,7 +879,19 @@ export async function getRawVideoByPath(filePath: string): Promise<RawVideo | nu
   return result[0] || null
 }
 
-export async function updateRawVideo(id: string, updates: Partial<{ project_id: string | null }>): Promise<void> {
+export async function updateRawVideo(id: string, updates: Partial<{
+  project_id?: string | null,
+  file_path?: string,
+  original_filename?: string,
+  thumbnail_path?: string,
+  duration?: number,
+  width?: number,
+  height?: number,
+  frame_rate?: number,
+  codec?: string,
+  file_size?: number,
+  original_project_id?: string | null
+}>): Promise<void> {
   const db = await getDatabase()
   const dbUpdates: string[] = []
   const values: any[] = []
@@ -881,6 +899,56 @@ export async function updateRawVideo(id: string, updates: Partial<{ project_id: 
   if (updates.project_id !== undefined) {
     dbUpdates.push('project_id = ?')
     values.push(updates.project_id)
+  }
+
+  if (updates.file_path !== undefined) {
+    dbUpdates.push('file_path = ?')
+    values.push(updates.file_path)
+  }
+
+  if (updates.original_filename !== undefined) {
+    dbUpdates.push('original_filename = ?')
+    values.push(updates.original_filename)
+  }
+
+  if (updates.thumbnail_path !== undefined) {
+    dbUpdates.push('thumbnail_path = ?')
+    values.push(updates.thumbnail_path)
+  }
+
+  if (updates.duration !== undefined) {
+    dbUpdates.push('duration = ?')
+    values.push(updates.duration)
+  }
+
+  if (updates.width !== undefined) {
+    dbUpdates.push('width = ?')
+    values.push(updates.width)
+  }
+
+  if (updates.height !== undefined) {
+    dbUpdates.push('height = ?')
+    values.push(updates.height)
+  }
+
+  if (updates.frame_rate !== undefined) {
+    dbUpdates.push('frame_rate = ?')
+    values.push(updates.frame_rate)
+  }
+
+  if (updates.codec !== undefined) {
+    dbUpdates.push('codec = ?')
+    values.push(updates.codec)
+  }
+
+  if (updates.file_size !== undefined) {
+    dbUpdates.push('file_size = ?')
+    values.push(updates.file_size)
+  }
+
+  if (updates.original_project_id !== undefined) {
+    dbUpdates.push('original_project_id = ?')
+    values.push(updates.original_project_id)
   }
 
   if (dbUpdates.length === 0) return

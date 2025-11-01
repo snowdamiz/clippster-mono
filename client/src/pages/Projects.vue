@@ -240,28 +240,33 @@ async function loadProjects() {
       console.log(`[Projects] Project ${project.name} (${project.id}):`)
       console.log(`  - Videos: ${videos.length}`)
 
-      // Note: Removed automatic video association logic to prevent
-      // incorrect thumbnail associations after video deletion
+      // Load project thumbnail or use first video's thumbnail
+      if (!thumbnailCache.value.has(project.id)) {
+        if (project.thumbnail_path) {
+          // Use project's stored thumbnail if available
+          try {
+            const dataUrl = await invoke<string>('read_file_as_data_url', {
+              filePath: project.thumbnail_path
+            })
+            thumbnailCache.value.set(project.id, dataUrl)
+            console.log(`  - Project thumbnail loaded: ${project.thumbnail_path}`)
+          } catch (error) {
+            console.warn('Failed to load project thumbnail:', project.id, error)
+          }
+        } else if (videos.length > 0 && videos[0].thumbnail_path) {
+          // Fall back to first video's thumbnail
+          try {
+            const dataUrl = await invoke<string>('read_file_as_data_url', {
+              filePath: videos[0].thumbnail_path
+            })
+            thumbnailCache.value.set(project.id, dataUrl)
+            console.log(`  - Video thumbnail loaded: ${videos[0].thumbnail_path}`)
 
-      // Load thumbnail for the first video (most recent) to use as background
-      const currentVideos = projectVideos.value[project.id]
-
-      // Clear thumbnail cache if project has no videos
-      if (currentVideos.length === 0) {
-        if (thumbnailCache.value.has(project.id)) {
-          thumbnailCache.value.delete(project.id)
-          console.log(`  - Cleared thumbnail cache for project ${project.id} (no videos)`)
-        }
-      } else if (currentVideos.length > 0 && currentVideos[0].thumbnail_path && !thumbnailCache.value.has(project.id)) {
-        console.log(`  - First video thumbnail: ${currentVideos[0].thumbnail_path}`)
-        try {
-          const dataUrl = await invoke<string>('read_file_as_data_url', {
-            filePath: currentVideos[0].thumbnail_path
-          })
-          thumbnailCache.value.set(project.id, dataUrl)
-          console.log(`  - Thumbnail loaded successfully for project ${project.id}`)
-        } catch (error) {
-          console.warn('Failed to load thumbnail for project:', project.id, error)
+            // Save this thumbnail to the project for future use
+            await updateProject(project.id, undefined, undefined, videos[0].thumbnail_path)
+          } catch (error) {
+            console.warn('Failed to load video thumbnail for project:', project.id, error)
+          }
         }
       }
     }
@@ -403,18 +408,7 @@ async function deleteProjectConfirmed() {
   }
 }
 
-// Define the handler function so we can reference it for cleanup
-const handleVideoDeleted = () => {
-  console.log('[Projects] Video deleted event received, reloading projects')
-  loadProjects()
-}
-
 onMounted(() => {
   loadProjects()
-  window.addEventListener('video-deleted', handleVideoDeleted)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('video-deleted', handleVideoDeleted)
 })
 </script>

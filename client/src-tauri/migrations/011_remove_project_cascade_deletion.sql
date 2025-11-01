@@ -5,6 +5,10 @@
 -- SQLite doesn't support ALTER TABLE to modify foreign key constraints directly
 -- We need to recreate the tables with new constraints
 
+-- Drop existing triggers first to avoid conflicts during table recreation
+DROP TRIGGER IF EXISTS update_clip_current_version;
+DROP TRIGGER IF EXISTS update_clip_current_version_on_modify;
+
 -- 1. Create new versions of the tables with SET NULL constraints
 CREATE TABLE `raw_videos_new` (
   id TEXT PRIMARY KEY,
@@ -46,8 +50,28 @@ CREATE TABLE `clips_new` (
 );
 
 -- 2. Copy data from old tables to new tables
-INSERT INTO raw_videos_new SELECT * FROM raw_videos;
-INSERT INTO clips_new SELECT * FROM clips;
+-- Handle potential NULL values explicitly
+INSERT INTO raw_videos_new (
+  id, project_id, file_path, original_filename, thumbnail_path,
+  duration, width, height, frame_rate, codec, file_size,
+  created_at, updated_at
+)
+SELECT
+  id, project_id, file_path, original_filename, thumbnail_path,
+  duration, width, height, frame_rate, codec, file_size,
+  created_at, COALESCE(updated_at, created_at)
+FROM raw_videos;
+
+INSERT INTO clips_new (
+  id, project_id, name, file_path, duration, start_time, end_time,
+  order_index, intro_id, outro_id, current_version_id, detection_session_id,
+  raw_video_id, created_at, updated_at
+)
+SELECT
+  id, project_id, name, file_path, duration, start_time, end_time,
+  order_index, intro_id, outro_id, current_version_id, detection_session_id,
+  raw_video_id, created_at, COALESCE(updated_at, created_at)
+FROM clips;
 
 -- 3. Drop old tables
 DROP TABLE raw_videos;
@@ -80,7 +104,14 @@ CREATE TABLE `transcripts_new` (
   FOREIGN KEY (raw_video_id) REFERENCES raw_videos(id) ON DELETE SET NULL
 );
 
-INSERT INTO transcripts_new SELECT * FROM transcripts;
+INSERT INTO transcripts_new (
+  id, project_id, raw_video_id, raw_json, text, language,
+  duration, created_at, updated_at
+)
+SELECT
+  id, project_id, raw_video_id, raw_json, text, language,
+  duration, created_at, COALESCE(updated_at, created_at)
+FROM transcripts;
 DROP TABLE transcripts;
 ALTER TABLE transcripts_new RENAME TO transcripts;
 
@@ -98,7 +129,15 @@ CREATE TABLE `transcript_segments_new` (
   FOREIGN KEY (clip_id) REFERENCES clips(id) ON DELETE SET NULL
 );
 
-INSERT INTO transcript_segments_new SELECT * FROM transcript_segments;
+INSERT INTO transcript_segments_new (
+  id, transcript_id, clip_id, start_time, end_time, text,
+  segment_index, created_at
+)
+SELECT
+  id, transcript_id, clip_id, start_time, end_time, text,
+  segment_index, created_at
+FROM transcript_segments;
+
 DROP TABLE transcript_segments;
 ALTER TABLE transcript_segments_new RENAME TO transcript_segments;
 
@@ -122,7 +161,17 @@ CREATE TABLE `clip_detection_sessions_new` (
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
 );
 
-INSERT INTO clip_detection_sessions_new SELECT * FROM clip_detection_sessions;
+INSERT INTO clip_detection_sessions_new (
+  id, project_id, prompt, detection_model, server_response_id,
+  quality_score, total_clips_detected, processing_time_ms,
+  validation_data, created_at
+)
+SELECT
+  id, project_id, prompt, detection_model, server_response_id,
+  quality_score, total_clips_detected, processing_time_ms,
+  validation_data, created_at
+FROM clip_detection_sessions;
+
 DROP TABLE clip_detection_sessions;
 ALTER TABLE clip_detection_sessions_new RENAME TO clip_detection_sessions;
 
@@ -132,3 +181,25 @@ CREATE INDEX IF NOT EXISTS idx_clip_detection_sessions_created_at ON clip_detect
 
 -- Note: clip_versions table still uses CASCADE for clip_id and session_id because versions
 -- should be deleted if their parent clip or session is deleted. This maintains data integrity.
+
+-- Recreate the triggers for the new clips table
+-- Trigger to automatically set current_version_id when new clip versions are created
+CREATE TRIGGER update_clip_current_version
+AFTER INSERT ON clip_versions
+WHEN NEW.change_type = 'detected'
+BEGIN
+    UPDATE clips
+    SET current_version_id = NEW.id,
+        detection_session_id = NEW.session_id
+    WHERE id = NEW.clip_id;
+END;
+
+-- Trigger to update current_version_id when a clip is modified
+CREATE TRIGGER update_clip_current_version_on_modify
+AFTER INSERT ON clip_versions
+WHEN NEW.change_type = 'modified'
+BEGIN
+    UPDATE clips
+    SET current_version_id = NEW.id
+    WHERE id = NEW.clip_id;
+END;
