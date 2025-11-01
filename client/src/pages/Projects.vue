@@ -192,7 +192,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { getAllProjects, getClipsByProjectId, deleteProject, createProject, updateProject, getRawVideosByProjectId, getAllRawVideos, updateRawVideo, hasRawVideosForProject, hasClipsForProject, type Project, type RawVideo } from '@/services/database'
 import { useFormatters } from '@/composables/useFormatters'

@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { createRawVideo, deleteRawVideo, updateRawVideo, type RawVideo } from '@/services/database'
+import { createRawVideo, deleteRawVideo, type RawVideo } from '@/services/database'
 import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { useToast } from '@/composables/useToast'

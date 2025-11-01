@@ -65,6 +65,8 @@
             <div class="w-2/5 min-w-0 flex flex-col flex-1">
               <!-- Clips Section -->
               <ClipsPanel
+                :transcript-collapsed="transcriptCollapsed"
+                :clips-collapsed="clipsCollapsed"
                 :is-generating="clipGenerationInProgress"
                 :generation-progress="clipProgress"
                 :generation-stage="clipStage"
@@ -155,6 +157,10 @@ console.log('[ProjectWorkspaceDialog] Props defined:', props.modelValue, props.p
 // Progress state
 const showProgress = ref(false)
 const clipGenerationInProgress = ref(false)
+
+// Panel collapse state
+const transcriptCollapsed = ref(false)
+const clipsCollapsed = ref(false)
 
 // Use video player composable
 const projectRef = computed(() => props.project)

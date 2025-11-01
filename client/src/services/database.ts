@@ -1358,7 +1358,6 @@ export async function persistClipDetectionResults(
     processingTimeMs?: number
   }
 ): Promise<string> {
-  const db = await getDatabase()
   const startTime = Date.now()
 
   console.log('[Database] Starting persistClipDetectionResults for project:', projectId)

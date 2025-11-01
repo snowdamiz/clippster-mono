@@ -77,7 +77,7 @@
 
 
         <!-- Clips List State -->
-        <div v-else-if="clips.length > 0 && !isGenerating" class="w-full">
+        <div v-else-if="clips.length > 0 && !isGenerating" class="w-full ">
 
           <!-- Clips Grid -->
           <div class="space-y-3">
@@ -232,7 +232,6 @@ interface Emits {
 
 const emit = defineEmits<Emits>()
 
-const clipsContent = ref<HTMLElement>()
 const prompts = ref<Prompt[]>([])
 const selectedPromptId = ref<string>('')
 const selectedPrompt = ref<string>('')
@@ -341,15 +340,6 @@ function formatTimestamp(timestamp: number): string {
     hour: '2-digit',
     minute: '2-digit'
   })
-}
-
-function getTags(tagsString?: string): string[] {
-  if (!tagsString) return []
-  try {
-    return JSON.parse(tagsString)
-  } catch {
-    return []
-  }
 }
 
 async function refreshClips() {
