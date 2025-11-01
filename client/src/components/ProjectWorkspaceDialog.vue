@@ -86,6 +86,7 @@
             :timeline-hover-time="timelineHoverTime"
             :timeline-hover-position="timelineHoverPosition"
             :timestamps="timelineTimestamps"
+            :clips="timelineClips"
             @seekTimeline="seekTimeline"
             @timelineTrackHover="onTimelineTrackHover"
             @timelineMouseLeave="onTimelineMouseLeave"
@@ -129,7 +130,7 @@
 
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
-import { type Project } from '@/services/database'
+import { type Project, type ClipWithVersion, getClipsWithVersionsByProjectId } from '@/services/database'
 import { invoke } from '@tauri-apps/api/core'
 import VideoPlayer from './VideoPlayer.vue'
 import VideoControls from './VideoControls.vue'
@@ -161,6 +162,9 @@ const clipGenerationInProgress = ref(false)
 // Panel collapse state
 const transcriptCollapsed = ref(false)
 const clipsCollapsed = ref(false)
+
+// Timeline clips state
+const timelineClips = ref<any[]>([])
 
 // Use video player composable
 const projectRef = computed(() => props.project)
@@ -528,6 +532,81 @@ function onTimelineMouseLeave() {
   timelineHoverTime.value = null
 }
 
+// Transform ClipWithVersion to Timeline's Clip format
+function transformClipsForTimeline(clipsWithVersion: ClipWithVersion[]): any[] {
+  return clipsWithVersion.map(clip => {
+    const version = clip.current_version
+
+    if (!version) {
+      console.warn('[ProjectWorkspaceDialog] Clip missing current version:', clip.id)
+      return null
+    }
+
+    console.log(`[ProjectWorkspaceDialog] Transforming clip ${clip.id} with ${clip.current_version_segments?.length || 0} segments`)
+
+    // Use segments from database if available, otherwise create single segment from version timing
+    let segments: any[] = []
+    if (clip.current_version_segments && Array.isArray(clip.current_version_segments) && clip.current_version_segments.length > 0) {
+      // Use the proper segments from database
+      segments = clip.current_version_segments.map((segment: any) => ({
+        start_time: segment.start_time,
+        end_time: segment.end_time,
+        duration: segment.duration || (segment.end_time - segment.start_time),
+        transcript: segment.transcript || version.description || 'No transcript available'
+      }))
+      console.log(`[ProjectWorkspaceDialog] Using ${segments.length} segments from database for clip ${clip.id}`)
+    } else {
+      // Fallback: create single segment from version timing
+      segments = [
+        {
+          start_time: version.start_time,
+          end_time: version.end_time,
+          duration: version.end_time - version.start_time,
+          transcript: version.description || 'No transcript available'
+        }
+      ]
+      console.log(`[ProjectWorkspaceDialog] Using fallback single segment for clip ${clip.id}`)
+    }
+
+    // Determine clip type based on segments
+    const clipType = segments.length > 1 ? 'spliced' : 'continuous'
+
+    // Transform to Timeline's Clip interface
+    return {
+      id: clip.id,
+      title: version.name || clip.name || 'Untitled Clip',
+      filename: clip.file_path || 'clip.mp4',
+      type: clipType,
+      segments: segments,
+      total_duration: version.end_time - version.start_time,
+      combined_transcript: version.description || 'No transcript available',
+      virality_score: Math.round((version.confidence_score || 0) * 100),
+      reason: version.detection_reason || 'AI detected clip-worthy moment',
+      socialMediaPost: `${version.name || 'Clip'} - ${version.description || 'Interesting moment'}`
+    }
+  }).filter(Boolean) // Remove any null entries
+}
+
+// Load clips for timeline
+async function loadTimelineClips(projectId: string) {
+  if (!projectId) {
+    timelineClips.value = []
+    return
+  }
+
+  try {
+    console.log('[ProjectWorkspaceDialog] Loading clips for timeline:', projectId)
+    const clipsWithVersion = await getClipsWithVersionsByProjectId(projectId)
+    console.log('[ProjectWorkspaceDialog] Loaded clips for timeline:', clipsWithVersion.length)
+
+    timelineClips.value = transformClipsForTimeline(clipsWithVersion)
+    console.log('[ProjectWorkspaceDialog] Transformed timeline clips:', timelineClips.value.length)
+  } catch (error) {
+    console.error('[ProjectWorkspaceDialog] Failed to load timeline clips:', error)
+    timelineClips.value = []
+  }
+}
+
 function onVideoElementReady(element: HTMLVideoElement) {
   console.log('[ProjectWorkspaceDialog] Video element ready:', !!element)
   videoElement.value = element
@@ -538,6 +617,10 @@ watch(() => props.modelValue, async (newValue) => {
   if (newValue) {
     await loadVideos()
     await loadVideoForProject()
+    // Load timeline clips when dialog opens
+    if (props.project) {
+      await loadTimelineClips(props.project.id)
+    }
     // Connect progress socket when dialog opens
     if (props.project) {
       setProgressProjectId(props.project.id.toString())
@@ -548,6 +631,8 @@ watch(() => props.modelValue, async (newValue) => {
     // Disconnect progress socket when dialog closes
     setProgressProjectId(null)
     showProgress.value = false
+    // Clear timeline clips
+    timelineClips.value = []
   }
 })
 
@@ -561,13 +646,16 @@ watch(() => props.project?.id, (newProjectId) => {
 })
 
 // Watch for generation completion to trigger clips refresh
-watch([clipGenerationInProgress, clipProgress], ([isInProgress, progress]) => {
+watch([clipGenerationInProgress, clipProgress], async ([isInProgress, progress]) => {
   if (!isInProgress && progress === 100 && props.project) {
     console.log('[ProjectWorkspaceDialog] Clip generation completed, triggering clips refresh')
     // Trigger clips refresh with a longer delay to ensure all database operations are complete
-    setTimeout(() => {
+    setTimeout(async () => {
       const refreshEvent = new CustomEvent('refresh-clips', { detail: { projectId: props.project!.id } })
       document.dispatchEvent(refreshEvent)
+
+      // Also refresh timeline clips
+      await loadTimelineClips(props.project!.id)
     }, 1500)
   }
 })

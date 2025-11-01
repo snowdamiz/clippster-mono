@@ -1320,6 +1320,12 @@ pub fn run() {
                             sql: include_str!("../migrations/013_add_project_thumbnail.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 14,
+                            description: "add_clip_segments",
+                            sql: include_str!("../migrations/014_add_clip_segments.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                           ],
                 )
                 .build(),

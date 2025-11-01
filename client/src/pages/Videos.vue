@@ -94,7 +94,7 @@
                 </svg>
                 <h3 class="font-semibold text-base mb-2 line-clamp-2 px-2">{{ download.title }}</h3>
                 <div class="text-sm mb-2">{{ Math.round(download.progress?.progress || 0) }}%</div>
-                <div class="w-32 bg-white/20 justify-center rounded-full h-2 mb-2">
+                <div class="bg-white/20 align-center w-full justify-center rounded-full h-2 mb-2">
                   <div
                     class="bg-white h-2 rounded-full transition-all duration-300"
                     :style="{ width: `${download.progress?.progress || 0}%` }"

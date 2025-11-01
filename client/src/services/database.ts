@@ -224,6 +224,17 @@ export interface ClipVersion {
   created_at: number
 }
 
+export interface ClipSegment {
+  id: string
+  clip_version_id: string
+  segment_index: number
+  start_time: number
+  end_time: number
+  duration: number
+  transcript: string | null
+  created_at: number
+}
+
 export interface ClipWithVersion extends Clip {
   current_version_id: string | null
   detection_session_id: string | null
@@ -241,6 +252,7 @@ export interface ClipWithVersion extends Clip {
   current_version_change_type?: string
   current_version_created_at?: number
   current_version?: ClipVersion
+  current_version_segments?: ClipSegment[]
 }
 
 // Helper to generate timestamps
@@ -1129,6 +1141,14 @@ export async function getClipVersion(id: string): Promise<ClipVersion | null> {
   return result[0] || null
 }
 
+export async function getClipSegmentsByVersionId(versionId: string): Promise<ClipSegment[]> {
+  const db = await getDatabase()
+  return await db.select<ClipSegment[]>(
+    'SELECT * FROM clip_segments WHERE clip_version_id = ? ORDER BY segment_index ASC',
+    [versionId]
+  )
+}
+
 export async function getClipVersionsByClipId(clipId: string): Promise<ClipVersion[]> {
   const db = await getDatabase()
   return await db.select<ClipVersion[]>(
@@ -1169,6 +1189,12 @@ export async function createVersionedClip(
     relevanceScore?: number
     detectionReason?: string
     tags?: string[]
+    segments?: Array<{
+      start_time: number
+      end_time: number
+      duration: number
+      transcript?: string
+    }>
   },
   filePath?: string
 ): Promise<string> {
@@ -1213,6 +1239,40 @@ export async function createVersionedClip(
     'detected',
     'Initial clip detection'
   )
+
+  // Create segments if provided
+  if (clipData.segments && Array.isArray(clipData.segments) && clipData.segments.length > 0) {
+    console.log('[Database] Creating segments for clip version:', versionId, 'segments count:', clipData.segments.length)
+
+    for (let i = 0; i < clipData.segments.length; i++) {
+      const segment = clipData.segments[i]
+      const segmentId = generateId()
+
+      await db.execute(
+        `INSERT INTO clip_segments (
+          id, clip_version_id, segment_index, start_time, end_time, duration, transcript, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          segmentId,
+          versionId,
+          i,
+          segment.start_time,
+          segment.end_time,
+          segment.duration || (segment.end_time - segment.start_time),
+          segment.transcript || null,
+          now
+        ]
+      )
+
+      console.log(`[Database] Created segment ${i + 1}:`, {
+        id: segmentId,
+        versionId: versionId,
+        startTime: segment.start_time,
+        endTime: segment.end_time,
+        duration: segment.duration || (segment.end_time - segment.start_time)
+      })
+    }
+  }
 
   // Update the clip with the current version and session ID
   await db.execute(
@@ -1287,6 +1347,20 @@ export async function getClipsWithVersionsByProjectId(projectId: string): Promis
      ORDER BY s.created_at DESC, c.created_at DESC`,
     [projectId, projectId]
   )
+
+  // Load segments for each clip's current version
+  for (const clip of clips) {
+    if (clip.current_version_id) {
+      const segments = await db.select<ClipSegment[]>(
+        `SELECT * FROM clip_segments
+         WHERE clip_version_id = ?
+         ORDER BY segment_index ASC`,
+        [clip.current_version_id]
+      )
+      clip.current_version_segments = segments
+      console.log(`[Database] Loaded ${segments.length} segments for clip ${clip.id} (version ${clip.current_version_id})`)
+    }
+  }
 
   console.log('[Database] Found clips:', clips.length)
   if (clips.length > 0) {
@@ -1514,8 +1588,9 @@ export async function persistClipDetectionResults(
       description: clipData.description || clipData.summary || clipData.socialMediaPost,
       confidenceScore: clipData.confidenceScore || clipData.confidence,
       relevanceScore: clipData.relevanceScore || clipData.relevance,
-      detectionReason: clipData.reason || clipData.detectionReason,
-      tags: clipData.tags || clipData.keywords || []
+      detectionReason: clipData.reason || clipData.detectionReason || 'AI detected clip-worthy moment',
+      tags: clipData.tags || clipData.keywords || [],
+      segments: clipData.segments || []
     }
 
     console.log(`[Database] Creating clip ${i + 1} with info:`, clipInfo)

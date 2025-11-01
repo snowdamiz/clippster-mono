@@ -1,11 +1,18 @@
 <template>
-  <div class="h-60 bg-[#0a0a0a]/30 border-t border-border">
-    <div class="pt-4 px-4 pb-1.5 h-full flex flex-col">
+  <div class="bg-[#0a0a0a]/30 border-t border-border transition-all duration-300 ease-in-out" :style="{ height: calculatedHeight + 'px' }">
+    <div class="pt-3 px-4 pb-1.5 h-full flex flex-col">
       <!-- Timeline Header -->
-      <!-- <div class="flex items-center justify-between mb-3 pr-1">
-        <h3 class="text-sm font-medium text-foreground">Timeline</h3>
-        <span class="text-xs text-muted-foreground">{{ placeholderClips.length + 1 }} tracks</span>
-      </div> -->
+      <div class="flex items-center justify-between mb-3 pr-1">
+        <div class="flex items-center gap-2">
+          <h3 class="text-sm font-medium text-foreground">Timeline</h3>
+          <div v-if="props.clips.length > 6" class="text-xs text-muted-foreground/70" title="Scroll to see more clips">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+            </svg>
+          </div>
+        </div>
+        <span class="text-xs text-muted-foreground">{{ props.clips.length + 1 }} tracks</span>
+      </div>
 
       <!-- Scrollable Timeline Tracks Container -->
       <div class="flex-1 pr-1 bg-muted/20 rounded-lg relative overflow-y-auto overflow-x-hidden">
@@ -97,7 +104,7 @@
 
         <!-- Clip Tracks -->
         <div
-          v-for="(clip, index) in placeholderClips"
+          v-for="(clip, index) in props.clips"
           :key="clip.id"
           class="flex items-center min-h-12 px-2 border-b border-border/20"
         >
@@ -131,13 +138,14 @@
             </div>
           </div>
         </div>
-      </div>
+
+        </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 
 interface Timestamp {
   time: number
@@ -172,9 +180,33 @@ interface Props {
   timelineHoverTime: number | null
   timelineHoverPosition: number
   timestamps: Timestamp[]
+  clips?: Clip[]
 }
 
-defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  clips: () => []
+})
+
+// Calculate dynamic height based on content
+const calculatedHeight = computed(() => {
+  // Base height: header (44px) + padding (top + bottom) + video track height + container gaps
+  const baseHeight = 44 + 14 + 56 + 16 // 44px header, 14px padding, 56px video track, 16px container gaps
+
+  // Add height for each clip track (48px per clip + 8px gap except last)
+  const clipsHeight = props.clips.reduce((total, clip, index) => {
+    return total + 48 + (index < props.clips.length - 1 ? 8 : 0)
+  }, 0)
+
+  // Minimum height to keep timeline usable even with no clips
+  const minHeight = 140
+
+  // Maximum height before we enable scrolling (to prevent timeline from taking too much space)
+  const maxHeight = 400
+
+  const totalHeight = baseHeight + clipsHeight
+
+  return Math.max(Math.min(totalHeight, maxHeight), minHeight)
+})
 
 interface Emits {
   (e: 'seekTimeline', event: MouseEvent): void
@@ -184,116 +216,6 @@ interface Emits {
 
 const emit = defineEmits<Emits>()
 
-// Placeholder clips data - this would normally come from props or API
-const placeholderClips = ref<Clip[]>([
-  {
-    id: "clip_1",
-    title: "Epic Rage Quit",
-    filename: "epic_rage_quit_losing_10_eth.mp4",
-    type: "continuous",
-    segments: [
-      {
-        start_time: 1250.5,
-        end_time: 1285.2,
-        duration: 34.7,
-        transcript: "I can't believe this happened! All that money gone in seconds..."
-      }
-    ],
-    total_duration: 34.7,
-    combined_transcript: "I can't believe this happened! All that money gone in seconds...",
-    virality_score: 85,
-    reason: "High emotional content with relatable frustration",
-    socialMediaPost: "When you lose 10 ETH in one trade 😭 #crypto #ragequit #solana"
-  },
-  {
-    id: "clip_2",
-    title: "Perfect Market Call",
-    filename: "perfect_market_call_100x_prediction.mp4",
-    type: "spliced",
-    segments: [
-      {
-        start_time: 14500.0,
-        end_time: 14520.5,
-        duration: 20.5,
-        transcript: "Mark my words, this token is going to 100x by tomorrow"
-      },
-      {
-        start_time: 15230.0,
-        end_time: 15245.0,
-        duration: 15.0,
-        transcript: "See? I told you it would happen! Diamond hands! 💎"
-      }
-    ],
-    total_duration: 35.5,
-    combined_transcript: "Mark my words, this token is going to 100x by tomorrow... See? I told you it would happen! Diamond hands! 💎",
-    virality_score: 92,
-    reason: "Successful prediction with proof, high engagement potential",
-    socialMediaPost: "Called it 100x and it happened! 🚀🚀🚀 #trading #crypto #prediction"
-  },
-  {
-    id: "clip_3",
-    title: "Whale Movement Alert",
-    filename: "whale_moves_500k_sol.mp4",
-    type: "continuous",
-    segments: [
-      {
-        start_time: 8900.0,
-        end_time: 8945.0,
-        duration: 45.0,
-        transcript: "Wait, did you guys see that? Someone just moved 500,000 SOL! This is huge!"
-      }
-    ],
-    total_duration: 45.0,
-    combined_transcript: "Wait, did you guys see that? Someone just moved 500,000 SOL! This is huge!",
-    virality_score: 78,
-    reason: "Market moving event creates FOMO and discussion",
-    socialMediaPost: "WHALE ALERT! 500,000 SOL just moved! 🐋 What do you think they're planning? #solana #crypto"
-  },
-  {
-    id: "clip_4",
-    title: "Beginner's Mistake",
-    filename: "beginner_mistake_gas_fees.mp4",
-    type: "spliced",
-    segments: [
-      {
-        start_time: 3200.0,
-        end_time: 3215.0,
-        duration: 15.0,
-        transcript: "Oh no... I think I just set the gas fee too high"
-      },
-      {
-        start_time: 3245.0,
-        end_time: 3260.0,
-        duration: 15.0,
-        transcript: "I just paid $200 in gas fees for a $5 transaction. I'm done."
-      }
-    ],
-    total_duration: 30.0,
-    combined_transcript: "Oh no... I think I just set the gas fee too high... I just paid $200 in gas fees for a $5 transaction. I'm done.",
-    virality_score: 88,
-    reason: "Relatable beginner mistake, high humor value",
-    socialMediaPost: "Paying $200 in gas for a $5 transaction 💀 #crypto #newbie #gasfees"
-  },
-  {
-    id: "clip_5",
-    title: "Diamond Hands Speech",
-    filename: "diamond_hands_speech_hodl.mp4",
-    type: "continuous",
-    segments: [
-      {
-        start_time: 21000.0,
-        end_time: 21055.0,
-        duration: 55.0,
-        transcript: "They can shake us out, but they can't break our spirit! Diamond hands to the moon! We're not selling! HODL!"
-      }
-    ],
-    total_duration: 55.0,
-    combined_transcript: "They can shake us out, but they can't break our spirit! Diamond hands to the moon! We're not selling! HODL!",
-    virality_score: 81,
-    reason: "Motivational content resonates with crypto community",
-    socialMediaPost: "Diamond hands! 💎🙌 We're not selling! To the moon! 🚀 #hodl #crypto #diamondhands"
-  }
-])
 
 function formatDuration(seconds: number): string {
   if (isNaN(seconds) || !isFinite(seconds)) return '0:00'
