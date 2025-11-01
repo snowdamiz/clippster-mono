@@ -1291,11 +1291,8 @@ export async function persistClipDetectionResults(
     }
   )
 
-  // TEMPORARY: Delete existing clips for this project to test the timing fix
-  // In production, we might want to keep all clips, but for testing we need clean data
-  console.log('[Database] Deleting existing clips for project to test timing fix...')
-  await db.execute('DELETE FROM clips WHERE project_id = ?', [projectId])
-  console.log('[Database] Existing clips deleted, proceeding with new clip creation...')
+  // Keep all existing clips - each detection run creates new clips without removing previous ones
+  // This allows users to see all clips generated across all detection runs
 
   // Persist detected clips
   const clipsArray = detectionResults.clips as any[]

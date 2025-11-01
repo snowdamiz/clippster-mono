@@ -1,8 +1,20 @@
 <template>
   <div :class="transcriptCollapsed ? 'flex-1' : clipsCollapsed ? 'h-auto' : 'flex-1'" class="p-4 flex flex-col" data-clips-panel>
-    <div class="flex items-center justify-between">
+    <div class="flex items-center justify-between mb-3">
       <h3 class="text-sm font-medium text-foreground">Clips</h3>
       <div class="flex items-center gap-1">
+        <!-- Re-run button (only show when not generating and clips exist) -->
+        <button
+          v-if="!isGenerating && clips.length > 0"
+          @click="handleDetectClips"
+          :disabled="!selectedPrompt"
+          class="p-1 hover:bg-purple-500/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Detect more clips"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </button>
         <button
           @click="toggleClips"
           class="p-1 hover:bg-muted rounded transition-colors"
@@ -76,14 +88,6 @@
   
           <!-- Clips List State -->
           <div v-else-if="clips.length > 0 && !isGenerating" class="w-full max-h-[400px] overflow-y-auto">
-            <!-- Clips Header -->
-            <div class="flex items-center justify-between mb-3">
-              <div class="flex items-center gap-2"> 
-                <span v-if="detectionSessions.length > 1" class="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full">
-                  {{ detectionSessions.length }} runs
-                </span>
-              </div>
-            </div>
 
             <!-- Clips Grid -->
             <div class="space-y-2">
