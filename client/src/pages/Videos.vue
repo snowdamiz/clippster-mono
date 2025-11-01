@@ -87,20 +87,30 @@
 
             <!-- Download progress overlay -->
             <div class="absolute inset-0 bg-black/60 z-10 flex items-center justify-center">
-              <div class="text-center text-white p-4">
-                <svg class="animate-spin h-8 w-8 mx-auto mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <div class="text-center text-white p-3">
+                <svg class="animate-spin h-6 w-6 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                   <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                <h3 class="font-semibold text-lg mb-2">{{ download.title }}</h3>
-                <div class="text-sm mb-2">{{ Math.round((download.progress?.progress || 0) * 100) }}%</div>
-                <div class="w-48 bg-white/20 rounded-full h-2 mb-2">
+                <h3 class="font-semibold text-base mb-2 line-clamp-2 px-2">{{ download.title }}</h3>
+                <div class="text-sm mb-2">{{ Math.round(download.progress?.progress || 0) }}%</div>
+                <div class="w-32 bg-white/20 rounded-full h-2 mb-2">
                   <div
                     class="bg-white h-2 rounded-full transition-all duration-300"
-                    :style="{ width: `${(download.progress?.progress || 0) * 100}%` }"
+                    :style="{ width: `${download.progress?.progress || 0}%` }"
                   ></div>
                 </div>
-                <div class="text-xs opacity-80">{{ formatFileSize(0) }} / {{ formatFileSize(download.result?.file_size || 0) }}</div>
+                <div class="text-xs opacity-80">
+                  <span v-if="download.progress?.current_time && download.progress?.total_time">
+                    {{ formatDuration(download.progress.current_time) }} / {{ formatDuration(download.progress.total_time) }}
+                  </span>
+                  <span v-else-if="download.result?.file_size">
+                    {{ formatFileSize(download.result.file_size) }}
+                  </span>
+                  <span v-else>
+                    Downloading...
+                  </span>
+                </div>
               </div>
             </div>
           </div>
