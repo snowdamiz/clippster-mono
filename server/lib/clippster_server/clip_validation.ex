@@ -97,20 +97,40 @@ defmodule ClippsterServer.ClipValidation do
         corrected_clips = clips
       |> Enum.with_index()
       |> Enum.map(fn {clip, clip_index} ->
-        validate_and_correct_clip(clip, words, clip_index, verbose)
+        try do
+          validate_and_correct_clip(clip, words, clip_index, verbose)
+        rescue
+          error ->
+            Logger.error("[ClipValidation] Error validating clip #{clip_index}: #{inspect(error)}")
+            # Return original clip with error metadata
+            clip
+            |> Map.put("validation_metadata", %{
+              "validated_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
+              "validation_error" => inspect(error),
+              "validation_type" => "error"
+            })
+            |> Map.put("issues", ["Validation error: #{inspect(error)}"])
+            |> Map.put("corrections", [])
+        end
       end)
 
       # Calculate overall quality metrics
       {total_issues, total_corrections, quality_scores} =
         corrected_clips
         |> Enum.reduce({[], [], []}, fn clip_result, {issues_acc, corrections_acc, scores_acc} ->
-          {issues, corrections, quality_score} = {
-            clip_result.issues || [],
-            clip_result.corrections || [],
-            clip_result.qualityScore || 0.0
-          }
+          try do
+            {issues, corrections, quality_score} = {
+              Map.get(clip_result, "issues", []),
+              Map.get(clip_result, "corrections", []),
+              Map.get(clip_result, "qualityScore", 0.0)
+            }
 
-          {issues_acc ++ issues, corrections_acc ++ corrections, scores_acc ++ [quality_score]}
+            {issues_acc ++ issues, corrections_acc ++ corrections, scores_acc ++ [quality_score]}
+          rescue
+            error ->
+              Logger.error("[ClipValidation] Error processing clip results: #{inspect(error)}")
+              {issues_acc ++ ["Processing error"], corrections_acc ++ [], scores_acc ++ [0.0]}
+          end
         end)
 
       avg_quality_score = if length(quality_scores) > 0 do
@@ -188,8 +208,15 @@ defmodule ClippsterServer.ClipValidation do
       Logger.debug("[ClipValidation] Segment #{clip_index}.#{segment_index}: \"#{String.slice(transcript_text, 0, 50)}...\"")
     end
 
-    # Try to find exact match in transcript
-    case find_transcript_match(transcript_text, words, segment["start_time"], verbose) do
+    # Try to find exact match in transcript with additional error handling
+    match_result = find_transcript_match(transcript_text, words, segment["start_time"], verbose)
+
+    if verbose do
+      Logger.debug("[ClipValidation] Match result: #{inspect(match_result)}")
+    end
+
+    try do
+      case match_result do
       nil ->
         if verbose do
           Logger.warning("[ClipValidation] No match found for segment #{clip_index}.#{segment_index}")
@@ -201,53 +228,116 @@ defmodule ClippsterServer.ClipValidation do
           []
         }
 
-      match when match.confidence < @fuzzy_match_threshold ->
-        if verbose do
-          Logger.warning("[ClipValidation] Low confidence match (#{Float.round(match.confidence * 100, 1)}%) for segment #{clip_index}.#{segment_index}")
-        end
-        # Return original segment with issues
-        {
-          segment,
-          ["Low confidence match (#{Float.round(match.confidence * 100, 1)}%)"],
-          []
-        }
-
       match ->
-        if verbose do
-          Logger.info("[ClipValidation] Match found (#{Float.round(match.confidence * 100, 1)}% confidence)")
-          Logger.debug("[ClipValidation] Original: #{segment["start_time"]} - #{segment["end_time"]}")
-          Logger.debug("[ClipValidation] Corrected: #{match.startTime} - #{match.endTime}")
+        # Handle the match case with defensive nil checking
+        confidence = if match != nil, do: Map.get(match, :confidence, 0.0), else: 0.0
+
+        if match != nil and confidence < @fuzzy_match_threshold do
+          if verbose do
+            Logger.warning("[ClipValidation] Low confidence match (#{Float.round(confidence * 100, 1)}%) for segment #{clip_index}.#{segment_index}")
+          end
+          # Return original segment with issues
+          {
+            segment,
+            ["Low confidence match (#{Float.round(confidence * 100, 1)}%)"],
+            []
+          }
+        else
+          if match != nil and verbose do
+            Logger.info("[ClipValidation] Match found (#{Float.round(confidence * 100, 1)}% confidence)")
+            Logger.debug("[ClipValidation] Original: #{segment["start_time"]} - #{segment["end_time"]}")
+            Logger.debug("[ClipValidation] Corrected: #{Map.get(match, :startTime, "?")} - #{Map.get(match, :endTime, "?")}")
+          end
+
+          # Apply corrections with defensive handling of match fields
+          corrected_segment = if match != nil do
+            try do
+              # Extract values step by step to identify exactly where the error occurs
+              start_time = Map.get(match, :startTime, segment["start_time"])
+              end_time = Map.get(match, :endTime, segment["end_time"])
+              duration = end_time - start_time
+              word_indices = Map.get(match, :wordIndices, [])
+
+              Logger.debug("[ClipValidation] Building corrected_segment with: start_time=#{start_time}, end_time=#{end_time}, word_indices=#{inspect(word_indices)}")
+
+              # Use Map.merge instead of map update syntax to avoid potential key type issues
+              corrected_segment = Map.merge(segment, %{
+                "start_time" => start_time,
+                "end_time" => end_time,
+                "duration" => duration,
+                "wordIndices" => word_indices
+              })
+
+              corrected_segment
+            rescue
+              error ->
+                Logger.error("[ClipValidation] Error creating corrected_segment: #{inspect(error)}")
+                Logger.error("[ClipValidation] match: #{inspect(match)}")
+                Logger.error("[ClipValidation] segment: #{inspect(segment)}")
+                Logger.error("[ClipValidation] segment keys: #{inspect(Map.keys(segment))}")
+
+                # Try to identify which field is causing the issue
+                if match != nil do
+                  Logger.error("[ClipValidation] match keys: #{inspect(Map.keys(match))}")
+                  Logger.error("[ClipValidation] match.wordIndices: #{inspect(Map.get(match, :wordIndices, "NOT_FOUND"))}")
+                end
+
+                segment
+            end
+          else
+            segment
+          end
+
+          # Add validation confidence as metadata with defensive handling
+          corrected_segment =
+            try do
+              Map.put(corrected_segment, "validation_confidence", confidence)
+            rescue
+              error ->
+                Logger.error("[ClipValidation] Error adding validation_confidence: #{inspect(error)}")
+                Logger.error("[ClipValidation] confidence: #{inspect(confidence)}")
+                Logger.error("[ClipValidation] corrected_segment before error: #{inspect(corrected_segment)}")
+                corrected_segment  # Return original segment if error occurs
+            end
+
+          issues = []
+          _corrections = []
+
+          # Detect if significant correction was made (with defensive handling)
+          try do
+            match_start_time = if match != nil, do: Map.get(match, :startTime, segment["start_time"]), else: segment["start_time"]
+            match_end_time = if match != nil, do: Map.get(match, :endTime, segment["end_time"]), else: segment["end_time"]
+
+            time_diff_start = abs(segment["start_time"] - match_start_time)
+            time_diff_end = abs(segment["end_time"] - match_end_time)
+
+            corrections = cond do
+              time_diff_start > 1.0 or time_diff_end > 1.0 ->
+                ["Significant timestamp correction applied (#{Float.round(time_diff_start, 2)}s/#{Float.round(time_diff_end, 2)}s)"]
+
+              time_diff_start > 0.3 or time_diff_end > 0.3 ->
+                ["Minor timestamp correction applied"]
+
+              true ->
+                ["Timestamp validation passed"]
+            end
+
+            {corrected_segment, issues, corrections}
+          rescue
+            error ->
+              Logger.error("[ClipValidation] Error in correction detection: #{inspect(error)}")
+              Logger.error("[ClipValidation] match: #{inspect(match)}")
+              Logger.error("[ClipValidation] segment: #{inspect(segment)}")
+              {segment, ["Correction detection error: #{inspect(error)}"], []}
+          end
         end
-
-        # Apply corrections
-        corrected_segment = %{
-          segment |
-          "start_time" => match.startTime,
-          "end_time" => match.endTime,
-          "duration" => match.endTime - match.startTime,
-          "wordIndices" => match.wordIndices,
-          "validation_confidence" => match.confidence
-        }
-
-        issues = []
-        _corrections = []
-
-        # Detect if significant correction was made
-        time_diff_start = abs(segment["start_time"] - match.startTime)
-        time_diff_end = abs(segment["end_time"] - match.endTime)
-
-        corrections = cond do
-          time_diff_start > 1.0 or time_diff_end > 1.0 ->
-            ["Significant timestamp correction applied (#{Float.round(time_diff_start, 2)}s/#{Float.round(time_diff_end, 2)}s)"]
-
-          time_diff_start > 0.3 or time_diff_end > 0.3 ->
-            ["Minor timestamp correction applied"]
-
-          true ->
-            ["Timestamp validation passed"]
-        end
-
-        {corrected_segment, issues, corrections}
+      end
+    rescue
+      error ->
+        Logger.error("[ClipValidation] Unexpected error in validate_and_correct_segment: #{inspect(error)}")
+        Logger.error("[ClipValidation] segment: #{inspect(segment)}")
+        Logger.error("[ClipValidation] words count: #{length(words)}")
+        {segment, ["Unexpected validation error: #{inspect(error)}"], []}
     end
   end
 
