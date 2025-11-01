@@ -1,5 +1,5 @@
 <template>
-  <div class="p-4 flex flex-col flex-1 h-full" data-clips-panel>
+  <div class="px-4 pt-4 flex flex-col flex-1 h-full" data-clips-panel>
     <div class="flex items-center justify-between mb-3">
       <h3 class="text-sm font-medium text-foreground">Clips</h3>
       <div class="flex items-center gap-1">
@@ -81,9 +81,12 @@
         <!-- Clips Grid -->
         <div class="space-y-3">
           <div
-            v-for="clip in clips"
+            v-for="(clip, index) in clips"
             :key="clip.id"
-            class="p-3 bg-muted/15 border border-border rounded-lg hover:border-border/80 transition-colors"
+            :class="[
+              'p-3 bg-muted/15 border border-border rounded-lg hover:border-border/80 transition-colors',
+              index === clips.length - 1 ? 'mb-4' : ''
+            ]"
           >
             <div class="flex items-start justify-between">
               <div class="flex-1 min-w-0">
