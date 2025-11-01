@@ -148,26 +148,40 @@
     <div
       v-if="showDeleteDialog"
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-      @click.self="showDeleteDialog = false"
+      @click.self="handleDeleteDialogClose"
     >
       <div class="bg-card rounded-2xl p-8 max-w-md w-full mx-4 border border-border">
-        <h2 class="text-2xl font-bold mb-4">Delete Project</h2>
-        
+        <h2 class="text-2xl font-bold mb-4">
+          {{ (projectHasVideos || projectHasClips) ? 'Delete Project with Content' : 'Delete Project' }}
+        </h2>
+
         <div class="space-y-4">
           <p class="text-muted-foreground">
-            Are you sure you want to delete "<span class="font-semibold text-foreground">{{ projectToDelete?.name }}</span>"? This action cannot be undone.
+            <span v-if="projectHasVideos && projectHasClips">
+              This project contains both videos and detected clips. Deleting this project will remove the project structure, but all videos and clips will remain in your library. Are you sure you want to delete
+            </span>
+            <span v-else-if="projectHasVideos">
+              This project contains videos. Deleting this project will remove the project structure, but all videos will remain in your library. Are you sure you want to delete
+            </span>
+            <span v-else-if="projectHasClips">
+              This project contains detected clips. Deleting this project will remove the project structure, but all clips will remain in your library. Are you sure you want to delete
+            </span>
+            <span v-else>
+              Are you sure you want to delete
+            </span>
+            "<span class="font-semibold text-foreground">{{ projectToDelete?.name }}</span>"? This action cannot be undone.
           </p>
 
           <button
             class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg font-semibold hover:from-red-700 hover:to-red-800 transition-all"
             @click="deleteProjectConfirmed"
           >
-            Delete
+            Delete Project
           </button>
 
           <button
             class="w-full py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 transition-all"
-            @click="showDeleteDialog = false"
+            @click="handleDeleteDialogClose"
           >
             Cancel
           </button>
@@ -178,9 +192,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { getAllProjects, getClipsByProjectId, deleteProject, createProject, updateProject, getRawVideosByProjectId, getAllRawVideos, updateRawVideo, type Project, type RawVideo } from '@/services/database'
+import { getAllProjects, getClipsByProjectId, deleteProject, createProject, updateProject, getRawVideosByProjectId, getAllRawVideos, updateRawVideo, hasRawVideosForProject, hasClipsForProject, type Project, type RawVideo } from '@/services/database'
 import { useFormatters } from '@/composables/useFormatters'
 import { useToast } from '@/composables/useToast'
 import PageLayout from '@/components/PageLayout.vue'
@@ -196,6 +210,8 @@ const showDialog = ref(false)
 const selectedProject = ref<Project | null>(null)
 const showDeleteDialog = ref(false)
 const projectToDelete = ref<Project | null>(null)
+const projectHasVideos = ref(false)
+const projectHasClips = ref(false)
 const showWorkspaceDialog = ref(false)
 const workspaceProject = ref<Project | null>(null)
 const projectVideos = ref<Record<string, RawVideo[]>>({})
@@ -224,34 +240,19 @@ async function loadProjects() {
       console.log(`[Projects] Project ${project.name} (${project.id}):`)
       console.log(`  - Videos: ${videos.length}`)
 
-      // If no videos associated, try to find unassociated videos
-      if (videos.length === 0 && allVideos.length > 0) {
-        const unassociatedVideos = allVideos.filter(v => !v.project_id)
-        console.log(`  - Unassociated videos available: ${unassociatedVideos.length}`)
-
-        if (unassociatedVideos.length > 0) {
-          // Try to associate the first unassociated video with this project
-          console.log(`  - Attempting to associate video: ${unassociatedVideos[0].original_filename}`)
-          try {
-            await updateRawVideo(unassociatedVideos[0].id, { project_id: project.id })
-            console.log(`  - Successfully associated video with project`)
-
-            // Reload videos for this project
-            const updatedVideos = await getRawVideosByProjectId(project.id)
-            projectVideos.value[project.id] = updatedVideos
-
-            if (updatedVideos.length > 0) {
-              console.log(`  - Now has ${updatedVideos.length} associated video(s)`)
-            }
-          } catch (error) {
-            console.error(`  - Failed to associate video:`, error)
-          }
-        }
-      }
+      // Note: Removed automatic video association logic to prevent
+      // incorrect thumbnail associations after video deletion
 
       // Load thumbnail for the first video (most recent) to use as background
       const currentVideos = projectVideos.value[project.id]
-      if (currentVideos.length > 0 && currentVideos[0].thumbnail_path && !thumbnailCache.value.has(project.id)) {
+
+      // Clear thumbnail cache if project has no videos
+      if (currentVideos.length === 0) {
+        if (thumbnailCache.value.has(project.id)) {
+          thumbnailCache.value.delete(project.id)
+          console.log(`  - Cleared thumbnail cache for project ${project.id} (no videos)`)
+        }
+      } else if (currentVideos.length > 0 && currentVideos[0].thumbnail_path && !thumbnailCache.value.has(project.id)) {
         console.log(`  - First video thumbnail: ${currentVideos[0].thumbnail_path}`)
         try {
           const dataUrl = await invoke<string>('read_file_as_data_url', {
@@ -358,16 +359,35 @@ async function handleProjectSubmit(data: ProjectFormData) {
   }
 }
 
-function confirmDelete(project: Project) {
+async function confirmDelete(project: Project) {
   projectToDelete.value = project
-  showDeleteDialog.value = true
+
+  // Check if project has videos and clips
+  try {
+    projectHasVideos.value = await hasRawVideosForProject(project.id)
+    projectHasClips.value = await hasClipsForProject(project.id)
+    showDeleteDialog.value = true
+  } catch (err) {
+    console.error('Failed to check project contents:', err)
+    // If we can't check, proceed with normal deletion
+    projectHasVideos.value = false
+    projectHasClips.value = false
+    showDeleteDialog.value = true
+  }
+}
+
+function handleDeleteDialogClose() {
+  showDeleteDialog.value = false
+  projectHasVideos.value = false
+  projectHasClips.value = false
+  projectToDelete.value = null
 }
 
 async function deleteProjectConfirmed() {
   if (!projectToDelete.value) return
-  
+
   const deletedProjectName = projectToDelete.value.name
-  
+
   try {
     await deleteProject(projectToDelete.value.id)
     success('Project deleted', `"${deletedProjectName}" has been deleted successfully`)
@@ -377,11 +397,24 @@ async function deleteProjectConfirmed() {
     error('Failed to delete project', 'An error occurred while deleting the project. Please try again.')
   } finally {
     showDeleteDialog.value = false
+    projectHasVideos.value = false
+    projectHasClips.value = false
     projectToDelete.value = null
   }
 }
 
+// Define the handler function so we can reference it for cleanup
+const handleVideoDeleted = () => {
+  console.log('[Projects] Video deleted event received, reloading projects')
+  loadProjects()
+}
+
 onMounted(() => {
   loadProjects()
+  window.addEventListener('video-deleted', handleVideoDeleted)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('video-deleted', handleVideoDeleted)
 })
 </script>

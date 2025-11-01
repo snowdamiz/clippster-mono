@@ -245,10 +245,12 @@
     <!-- Delete Confirmation Modal -->
   <DeleteConfirmationModal
     :show="showDeleteDialog"
-    title="Delete Video"
+    :title="videoHasClips ? 'Delete Video with Referenced Clips' : 'Delete Video'"
+    :message="videoHasClips ? 'This video has detected clips that reference it. The video file will be deleted, but all detected clips will remain in your projects. Are you sure you want to delete' : 'Are you sure you want to delete'"
     :item-name="videoToDelete?.original_filename || videoToDelete?.file_path.split(/[\\\/]/).pop()"
+    suffix="?"
     confirm-text="Delete"
-    @close="showDeleteDialog = false"
+    @close="handleDeleteDialogClose"
     @confirm="deleteVideoConfirmed"
   />
 
@@ -268,7 +270,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { getAllRawVideos, getDatabase, type RawVideo } from '@/services/database'
+import { getAllRawVideos, getDatabase, hasClipsReferencingRawVideo, type RawVideo } from '@/services/database'
 import { useToast } from '@/composables/useToast'
 import { useDownloads } from '@/composables/useDownloads'
 import { useVideoOperations } from '@/composables/useVideoOperations'
@@ -285,6 +287,7 @@ const videos = ref<RawVideo[]>([])
 const loading = ref(true)
 const showDeleteDialog = ref(false)
 const videoToDelete = ref<RawVideo | null>(null)
+const videoHasClips = ref(false) // True if clips reference this video
 const showVideoPlayer = ref(false)
 const videoToPlay = ref<RawVideo | null>(null)
 const thumbnailCache = ref<Map<string, string>>(new Map())
@@ -513,9 +516,25 @@ async function playVideo(video: RawVideo) {
   }
 }
 
-function confirmDelete(video: RawVideo) {
+async function confirmDelete(video: RawVideo) {
   videoToDelete.value = video
-  showDeleteDialog.value = true
+
+  // Check if video has clips
+  try {
+    videoHasClips.value = await hasClipsReferencingRawVideo(video.id)
+    showDeleteDialog.value = true
+  } catch (err) {
+    console.error('Failed to check if video has clips:', err)
+    // If we can't check, proceed with normal deletion
+    videoHasClips.value = false
+    showDeleteDialog.value = true
+  }
+}
+
+function handleDeleteDialogClose() {
+  showDeleteDialog.value = false
+  videoHasClips.value = false
+  videoToDelete.value = null
 }
 
 async function deleteVideoConfirmed() {
@@ -529,10 +548,17 @@ async function deleteVideoConfirmed() {
       thumbnailCache.value.delete(videoToDelete.value.id)
     }
 
+    // Notify other components that video data has changed
+    // This will trigger project thumbnail updates if needed
+    window.dispatchEvent(new CustomEvent('video-deleted', {
+      detail: { videoId: videoToDelete.value.id }
+    }))
+
     await loadVideos()
   }
 
   showDeleteDialog.value = false
+  videoHasClips.value = false
   videoToDelete.value = null
 }
 

@@ -422,6 +422,24 @@ export async function deleteProject(id: string): Promise<void> {
   await db.execute('DELETE FROM projects WHERE id = ?', [id])
 }
 
+export async function hasRawVideosForProject(projectId: string): Promise<boolean> {
+  const db = await getDatabase()
+  const result = await db.select<{ count: number }[]>(
+    'SELECT COUNT(*) as count FROM raw_videos WHERE project_id = ?',
+    [projectId]
+  )
+  return (result[0]?.count || 0) > 0
+}
+
+export async function hasClipsForProject(projectId: string): Promise<boolean> {
+  const db = await getDatabase()
+  const result = await db.select<{ count: number }[]>(
+    'SELECT COUNT(*) as count FROM clips WHERE project_id = ?',
+    [projectId]
+  )
+  return (result[0]?.count || 0) > 0
+}
+
 // Prompt queries
 export async function createPrompt(name: string, content: string): Promise<string> {
   const db = await getDatabase()
@@ -880,6 +898,21 @@ export async function updateRawVideo(id: string, updates: Partial<{ project_id: 
 export async function deleteRawVideo(id: string): Promise<void> {
   const db = await getDatabase()
   await db.execute('DELETE FROM raw_videos WHERE id = ?', [id])
+}
+
+export async function hasClipsReferencingRawVideo(rawVideoId: string): Promise<boolean> {
+  // Check if any clips reference this raw video through their project relationship
+  // Note: Deleting a raw video does NOT delete the clips - it just sets their raw_video_id to NULL
+  const db = await getDatabase()
+  const result = await db.select<{ count: number }[]>(
+    `SELECT COUNT(*) as count
+     FROM clips c
+     JOIN projects p ON c.project_id = p.id
+     JOIN raw_videos rv ON p.id = rv.project_id
+     WHERE rv.id = ?`,
+    [rawVideoId]
+  )
+  return (result[0]?.count || 0) > 0
 }
 
 // Clip Detection Session queries
