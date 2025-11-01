@@ -8,7 +8,7 @@
       <div class="bg-card rounded-t-2xl rounded-b-2xl w-full h-full border border-border shadow-2xl"
            style="margin: 30px; max-height: calc(100vh - 60px); max-width: calc(100vw - 60px);">
         <!-- Header -->
-        <div class="flex items-center justify-between px-4 py-2 border-b border-border bg-[#0a0a0a]/50 backdrop-blur-sm rounded-t-xl">
+        <div class="flex items-center justify-between px-4 py-2 border-b border-border bg-muted/12 rounded-t-xl">
           <div class="flex-1 min-w-0">
             <h2 class="text-sm font-medium text-foreground/90 truncate">{{ project?.name || 'New Project' }}</h2>
           </div>
