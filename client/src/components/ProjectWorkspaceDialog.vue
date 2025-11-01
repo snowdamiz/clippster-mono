@@ -5,10 +5,10 @@
       class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
       @click.self="close"
     >
-      <div class="bg-card rounded-t-2xl rounded-b-2xl w-full h-full border border-border shadow-2xl"
+      <div class="bg-card rounded-t-lg rounded-b-lg w-full h-full border border-border shadow-2xl"
            style="margin: 30px; max-height: calc(100vh - 60px); max-width: calc(100vw - 60px);">
         <!-- Header -->
-        <div class="flex items-center justify-between px-4 py-2 border-b border-border bg-muted/12 rounded-t-xl">
+        <div class="flex items-center justify-between pl-3 pr-1.5 py-1.5 border-b border-border bg-muted/12 rounded-t-xl">
           <div class="flex-1 min-w-0">
             <h2 class="text-sm font-medium text-foreground/90 truncate">{{ project?.name || 'New Project' }}</h2>
           </div>

@@ -21,7 +21,7 @@
 
       <div v-else class="space-y-3">
         <div
-          v-for="(version, index) in versions"
+          v-for="version in versions"
           :key="version.id"
           class="border border-border rounded-lg p-3 transition-colors"
           :class="{
@@ -123,7 +123,7 @@
             <h5 class="text-xs font-medium text-foreground/70 mb-2">Current Version</h5>
             <div class="text-xs space-y-1">
               <div><strong>Name:</strong> {{ currentVersion?.name }}</div>
-              <div><strong>Duration:</strong> {{ formatDuration(currentVersion?.end_time - currentVersion?.start_time || 0) }}</div>
+              <div><strong>Duration:</strong> {{ formatDuration((currentVersion?.end_time || 0) - (currentVersion?.start_time || 0)) }}</div>
               <div><strong>Timing:</strong> {{ Math.floor(currentVersion?.start_time || 0) }}s - {{ Math.floor(currentVersion?.end_time || 0) }}s</div>
             </div>
           </div>

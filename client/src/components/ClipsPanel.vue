@@ -4,15 +4,6 @@
       <h3 class="text-sm font-medium text-foreground">Clips</h3>
       <div class="flex items-center gap-1">
         <button
-          @click="refreshClips"
-          class="p-1 hover:bg-muted rounded transition-colors"
-          title="Refresh clips"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-        </button>
-        <button
           @click="toggleClips"
           class="p-1 hover:bg-muted rounded transition-colors"
           :title="clipsCollapsed ? 'Expand clips' : 'Collapse clips'"
@@ -25,7 +16,7 @@
     </div>
     <div :class="[clipsCollapsed ? 'h-0' : 'flex-1', showPromptDropdown ? 'overflow-visible' : 'overflow-hidden']">
       <div v-if="!clipsCollapsed" class="h-full flex flex-col">
-        <div ref="clipsContent" class="flex-1 flex items-start justify-center min-h-[120px]">
+        <div ref="clipsContent" class="flex-1 flex items-start justify-center">
           <!-- Progress State -->
           <div v-if="isGenerating" class="text-center text-foreground w-full max-w-xs mx-4">
             <!-- Stage Icon -->
@@ -85,49 +76,12 @@
   
           <!-- Clips List State -->
           <div v-else-if="clips.length > 0 && !isGenerating" class="w-full max-h-[400px] overflow-y-auto">
-            <!-- History Header -->
-            <div class="flex items-center justify-between mb-3 pb-2 border-b border-border/30">
-              <div class="flex items-center gap-2">
-                <h4 class="text-xs font-medium text-foreground/80">Detected Clips</h4>
-                <span class="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full">{{ clips.length }} clips</span>
+            <!-- Clips Header -->
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2"> 
                 <span v-if="detectionSessions.length > 1" class="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full">
-                  {{ detectionSessions.length }} versions
+                  {{ detectionSessions.length }} runs
                 </span>
-              </div>
-              <button
-                v-if="detectionSessions.length > 1"
-                @click="toggleHistory"
-                class="p-1 hover:bg-muted/50 rounded transition-colors"
-                :title="showHistory ? 'Hide history' : 'Show detection history'"
-              >
-                <HistoryIcon :class="{ 'text-blue-400': showHistory }" class="h-3 w-3 text-foreground/60" />
-              </button>
-            </div>
-
-            <!-- Detection History Dropdown -->
-            <div v-if="showHistory && detectionSessions.length > 1" class="mb-3 p-2 bg-muted/20 rounded-lg border border-border/30">
-              <div class="text-xs font-medium text-foreground/70 mb-2 flex items-center gap-1">
-                <ClockIcon class="h-3 w-3" />
-                Detection History
-              </div>
-              <div class="space-y-1 max-h-32 overflow-y-auto">
-                <button
-                  v-for="session in detectionSessions"
-                  :key="session.id"
-                  @click="selectSession(session.id)"
-                  class="w-full text-left p-2 rounded hover:bg-muted/50 transition-colors text-xs"
-                  :class="{ 'bg-muted/50 border border-blue-500/30': session.id === (selectedSessionId || detectionSessions[0]?.id) }"
-                >
-                  <div class="flex items-center justify-between">
-                    <span class="font-medium text-foreground/80 truncate">{{ formatTimestamp(session.created_at) }}</span>
-                    <span :class="getQualityColor(session.quality_score || undefined)" class="text-xs">
-                      {{ getQualityLabel(session.quality_score || undefined) }}
-                    </span>
-                  </div>
-                  <div class="text-foreground/60 text-xs mt-1">
-                    {{ session.total_clips_detected }} clips • {{ session.prompt.substring(0, 40) }}...
-                  </div>
-                </button>
               </div>
             </div>
 
@@ -140,36 +94,39 @@
               >
                 <div class="flex items-start justify-between">
                   <div class="flex-1 min-w-0">
-                    <h5 class="text-xs font-medium text-foreground/90 truncate mb-1">
-                      {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
-                    </h5>
+                    <div class="flex items-center gap-2 mb-1">
+                      <h5 class="text-xs font-medium text-foreground/90 truncate">
+                        {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
+                      </h5>
+                      <!-- Run Number Badge -->
+                      <span
+                        v-if="clip.run_number"
+                        class="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full font-medium"
+                        title="Detection run"
+                      >
+                        Run {{ clip.run_number }}
+                      </span>
+                    </div>
 
-                    <!-- Version Info -->
+                    <!-- Clip Info -->
                     <div class="flex items-center gap-2 mb-2 text-xs text-foreground/60">
-                      <span>{{ formatDuration(clip.current_version?.end_time - clip.current_version?.start_time || 0) }}</span>
+                      <span>{{ formatDuration((clip.current_version?.end_time || 0) - (clip.current_version?.start_time || 0)) }}</span>
                       <span>•</span>
                       <span>{{ Math.floor(clip.current_version?.start_time || 0) }}s - {{ Math.floor(clip.current_version?.end_time || 0) }}s</span>
                       <span v-if="clip.current_version?.confidence_score" class="flex items-center gap-1">
                         <TrendingUpIcon class="h-2 w-2" />
                         {{ Math.round((clip.current_version.confidence_score || 0) * 100) }}%
                       </span>
+                      <span v-if="clip.session_created_at" class="flex items-center gap-1">
+                        <ClockIcon class="h-2 w-2" />
+                        {{ formatTimestamp(clip.session_created_at) }}
+                      </span>
                     </div>
 
                     <!-- Description -->
-                    <p v-if="clip.current_version?.description" class="text-xs text-foreground/70 line-clamp-2 mb-2">
+                    <p v-if="clip.current_version?.description" class="text-xs text-foreground/70 line-clamp-2">
                       {{ clip.current_version.description }}
                     </p>
-
-                    <!-- Tags -->
-                    <div v-if="clip.current_version?.tags" class="flex flex-wrap gap-1 mb-2">
-                      <span
-                        v-for="tag in getTags(clip.current_version.tags)"
-                        :key="tag"
-                        class="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded"
-                      >
-                        {{ tag }}
-                      </span>
-                    </div>
                   </div>
 
                   <!-- Clip Actions -->
@@ -179,14 +136,6 @@
                       title="Play clip"
                     >
                       <PlayIcon class="h-3 w-3 text-foreground/60" />
-                    </button>
-                    <button
-                      v-if="clip.detection_session_id"
-                      @click="openVersionManager(clip.id)"
-                      class="p-1 hover:bg-blue-500/20 rounded transition-colors text-blue-400"
-                      title="View version history"
-                    >
-                      <HistoryIcon class="h-3 w-3" />
                     </button>
                   </div>
                 </div>
@@ -249,29 +198,19 @@
       </div>
     </div>
 
-    <!-- Version Manager (outside conditional blocks) -->
-    <ClipVersionManager
-      :clip-id="selectedClipId"
-      :show-versions="showVersionManager"
-      @update:showVersions="showVersionManager = $event"
-      @versionRestored="onVersionRestored"
-    />
-  </div>
+    </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed, watch, onUnmounted } from 'vue'
 import { getAllPrompts, getClipsWithVersionsByProjectId, getClipDetectionSessionsByProjectId, type Prompt, type ClipWithVersion, type ClipDetectionSession } from '@/services/database'
-import ClipVersionManager from './ClipVersionManager.vue'
 import {
   PlayIcon,
-  Loader2Icon,
   BrainIcon,
   CheckCircleIcon,
   XCircleIcon,
   ActivityIcon,
   MicIcon,
-  HistoryIcon,
   ClockIcon,
   TrendingUpIcon
 } from 'lucide-vue-next'
@@ -308,16 +247,10 @@ const selectedPromptId = ref<string>('')
 const selectedPrompt = ref<string>('')
 const showPromptDropdown = ref(false)
 
-// Versioned clips state
+// Clips state
 const clips = ref<ClipWithVersion[]>([])
 const detectionSessions = ref<ClipDetectionSession[]>([])
-const showHistory = ref(false)
-const selectedSessionId = ref<string>('')
 const loadingClips = ref(false)
-
-// Version manager state
-const selectedClipId = ref<string>('')
-const showVersionManager = ref(false)
 
 onMounted(async () => {
   try {
@@ -373,11 +306,22 @@ async function loadClipsAndHistory(projectId: string) {
     clips.value = await getClipsWithVersionsByProjectId(projectId)
     console.log('[ClipsPanel] Loaded clips:', clips.value.length)
     if (clips.value.length > 0) {
+      const firstClip = clips.value[0]
       console.log('[ClipsPanel] Sample clip data:', {
-        id: clips.value[0].id,
-        name: clips.value[0].current_version?.name || clips.value[0].name,
-        hasCurrentVersion: !!clips.value[0].current_version,
-        sessionId: clips.value[0].detection_session_id
+        id: firstClip.id,
+        name: firstClip.current_version?.name || firstClip.name,
+        hasCurrentVersion: !!firstClip.current_version,
+        sessionId: firstClip.detection_session_id,
+        runNumber: firstClip.run_number,
+        // Timing data from different sources
+        base_start_time: firstClip.start_time,
+        base_end_time: firstClip.end_time,
+        version_start_time: firstClip.current_version?.start_time,
+        version_end_time: firstClip.current_version?.end_time,
+        // Final calculated values used in UI
+        final_start_time: firstClip.current_version?.start_time || firstClip.start_time || 0,
+        final_end_time: firstClip.current_version?.end_time || firstClip.end_time || 0,
+        final_duration: (firstClip.current_version?.end_time || firstClip.end_time || 0) - (firstClip.current_version?.start_time || firstClip.start_time || 0)
       })
     }
 
@@ -408,52 +352,12 @@ function formatTimestamp(timestamp: number): string {
   })
 }
 
-function getQualityColor(score?: number): string {
-  if (!score) return 'text-gray-400'
-  if (score >= 0.8) return 'text-green-400'
-  if (score >= 0.6) return 'text-yellow-400'
-  if (score >= 0.4) return 'text-orange-400'
-  return 'text-red-400'
-}
-
-function getQualityLabel(score?: number): string {
-  if (!score) return 'Unknown'
-  if (score >= 0.8) return 'Excellent'
-  if (score >= 0.6) return 'Good'
-  if (score >= 0.4) return 'Fair'
-  return 'Poor'
-}
-
-function toggleHistory() {
-  showHistory.value = !showHistory.value
-}
-
-function selectSession(sessionId: string) {
-  selectedSessionId.value = sessionId
-  showHistory.value = false
-  // In a full implementation, this would load clips from that specific session
-  console.log('[ClipsPanel] Selected session:', sessionId)
-}
-
 function getTags(tagsString?: string): string[] {
   if (!tagsString) return []
   try {
     return JSON.parse(tagsString)
   } catch {
     return []
-  }
-}
-
-function openVersionManager(clipId: string) {
-  selectedClipId.value = clipId
-  showVersionManager.value = true
-}
-
-async function onVersionRestored(clipId: string) {
-  console.log('[ClipsPanel] Version restored for clip:', clipId)
-  // Reload clips to show the updated version
-  if (props.projectId) {
-    await loadClipsAndHistory(props.projectId)
   }
 }
 

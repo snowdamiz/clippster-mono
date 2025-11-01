@@ -225,6 +225,19 @@ export interface ClipVersion {
 export interface ClipWithVersion extends Clip {
   current_version_id: string | null
   detection_session_id: string | null
+  session_created_at?: number
+  run_number?: number
+  // Additional fields from JOIN
+  current_version_name?: string
+  current_version_description?: string
+  current_version_start_time?: number
+  current_version_end_time?: number
+  current_version_confidence_score?: number
+  current_version_relevance_score?: number
+  current_version_detection_reason?: string
+  current_version_tags?: string
+  current_version_change_type?: string
+  current_version_created_at?: number
   current_version?: ClipVersion
 }
 
@@ -1045,6 +1058,15 @@ export async function createVersionedClip(
   const clipId = generateId()
   const now = timestamp()
 
+  console.log('[Database] Creating versioned clip with data:', {
+    id: clipId,
+    name: clipData.name,
+    startTime: clipData.startTime,
+    endTime: clipData.endTime,
+    duration: clipData.endTime - clipData.startTime,
+    sessionId: sessionId
+  })
+
   // Create the clip record first
   await db.execute(
     `INSERT INTO clips (
@@ -1080,12 +1102,46 @@ export async function createVersionedClip(
     [versionId, sessionId, clipId]
   )
 
+  console.log('[Database] Clip created successfully:', {
+    clipId: clipId,
+    versionId: versionId,
+    startTime: clipData.startTime,
+    endTime: clipData.endTime
+  })
+
   return clipId
 }
 
 export async function getClipsWithVersionsByProjectId(projectId: string): Promise<ClipWithVersion[]> {
   const db = await getDatabase()
-  console.log('[Database] Querying clips with versions for project:', projectId)
+  console.log('[Database] Querying clips with run information for project:', projectId)
+
+  // First, let's debug the clip_versions table directly
+  const versionData = await db.select<any[]>(
+    `SELECT
+       cv.id, cv.clip_id, cv.start_time, cv.end_time, cv.name,
+       c.name as clip_name, c.start_time as clip_start_time, c.end_time as clip_end_time
+     FROM clip_versions cv
+     JOIN clips c ON cv.clip_id = c.id
+     WHERE c.project_id = ?
+     ORDER BY cv.created_at DESC
+     LIMIT 3`,
+    [projectId]
+  )
+
+  console.log('[Database] Direct version table query results:', versionData)
+    if (versionData.length > 0) {
+      console.log('[Database] First version record details:', {
+        id: versionData[0].id,
+        clip_id: versionData[0].clip_id,
+        version_name: versionData[0].name,
+        version_start_time: versionData[0].start_time,
+        version_end_time: versionData[0].end_time,
+        clip_name: versionData[0].clip_name,
+        clip_start_time: versionData[0].clip_start_time,
+        clip_end_time: versionData[0].clip_end_time
+      })
+    }
 
   const clips = await db.select<ClipWithVersion[]>(
     `SELECT
@@ -1101,46 +1157,73 @@ export async function getClipsWithVersionsByProjectId(projectId: string): Promis
       cv.tags as current_version_tags,
       cv.change_type as current_version_change_type,
       cv.created_at as current_version_created_at,
-      s.id as detection_session_id
+      s.id as detection_session_id,
+      s.created_at as session_created_at,
+      -- Calculate run number based on session creation order
+      (SELECT COUNT(*) + 1 FROM clip_detection_sessions s2
+       WHERE s2.project_id = ? AND s2.created_at < s.created_at) as run_number
      FROM clips c
      LEFT JOIN clip_versions cv ON c.current_version_id = cv.id
      LEFT JOIN clip_detection_sessions s ON c.detection_session_id = s.id
      WHERE c.project_id = ?
-     ORDER BY c.created_at DESC`,
-    [projectId]
+     ORDER BY s.created_at DESC, c.created_at DESC`,
+    [projectId, projectId]
   )
 
   console.log('[Database] Found clips:', clips.length)
   if (clips.length > 0) {
-    console.log('[Database] Sample clip data:', {
-      id: clips[0].id,
-      name: clips[0].current_version_name || clips[0].name,
-      hasCurrentVersion: !!clips[0].current_version_id,
-      sessionId: clips[0].detection_session_id
+    const firstClip = clips[0]
+    console.log('[Database] Raw clip data from DB:', {
+      id: firstClip.id,
+      name: firstClip.name,
+      start_time: firstClip.start_time,
+      end_time: firstClip.end_time,
+      current_version_name: firstClip.current_version_name,
+      current_version_start_time: firstClip.current_version_start_time,
+      current_version_end_time: firstClip.current_version_end_time,
+      run_number: firstClip.run_number,
+      sessionId: firstClip.detection_session_id
     })
   }
 
-  return clips.map(clip => ({
-    ...clip,
-    current_version: clip.current_version_id ? {
-      id: clip.current_version_id,
-      clip_id: clip.id,
-      session_id: clip.detection_session_id || '',
-      version_number: 1, // This would need a proper query to get the actual version number
-      parent_version_id: null,
-      name: clip.current_version_name || clip.name || '',
-      description: clip.current_version_description,
-      start_time: clip.current_version_start_time || clip.start_time || 0,
-      end_time: clip.current_version_end_time || clip.end_time || 0,
-      confidence_score: clip.current_version_confidence_score,
-      relevance_score: clip.current_version_relevance_score,
-      detection_reason: clip.current_version_detection_reason,
-      tags: clip.current_version_tags,
-      change_type: clip.current_version_change_type as 'detected' | 'modified' | 'deleted',
-      change_description: null,
-      created_at: clip.current_version_created_at
-    } : undefined
-  }))
+  return clips.map(clip => {
+    const mapped = {
+      ...clip,
+      current_version: clip.current_version_id ? {
+        id: clip.current_version_id,
+        clip_id: clip.id,
+        session_id: clip.detection_session_id || '',
+        version_number: 1,
+        parent_version_id: null,
+        name: clip.current_version_name || clip.name || '',
+        description: clip.current_version_description || null,
+        start_time: clip.current_version_start_time || clip.start_time || 0,
+        end_time: clip.current_version_end_time || clip.end_time || 0,
+        confidence_score: clip.current_version_confidence_score,
+        relevance_score: clip.current_version_relevance_score,
+        detection_reason: clip.current_version_detection_reason,
+        tags: clip.current_version_tags,
+        change_type: clip.current_version_change_type as 'detected' | 'modified' | 'deleted',
+        change_description: null,
+        created_at: clip.current_version_created_at
+      } : undefined
+    }
+
+    if (clip.id === clips[0]?.id) {
+      console.log('[Database] Mapped clip data:', {
+        id: mapped.id,
+        name: mapped.name,
+        base_start_time: mapped.start_time,
+        base_end_time: mapped.end_time,
+        version_start_time: mapped.current_version?.start_time,
+        version_end_time: mapped.current_version?.end_time,
+        final_start_time: mapped.current_version?.start_time || mapped.start_time,
+        final_end_time: mapped.current_version?.end_time || mapped.end_time
+      })
+    }
+
+    return mapped
+  }) as ClipWithVersion[]
 }
 
 export async function persistClipDetectionResults(
@@ -1168,23 +1251,23 @@ export async function persistClipDetectionResults(
   console.log('[Database] Number of clips to persist:', detectionResults.clips?.length || 0)
 
   // Check for nested structure in clips property
-  if (detectionResults.clips && typeof detectionResults.clips === 'object' && detectionResults.clips.clips) {
+  if (detectionResults.clips && typeof detectionResults.clips === 'object' && (detectionResults.clips as any).clips) {
     console.log('[Database] FOUND NESTED CLIPS STRUCTURE - Using detectionResults.clips.clips')
-    detectionResults.clips = detectionResults.clips.clips
+    ;(detectionResults as any).clips = (detectionResults.clips as any).clips
   }
 
   // Double-check if clips might be in a different property
-  if (!detectionResults.clips || detectionResults.clips.length === 0) {
+  if (!detectionResults.clips || (detectionResults.clips as any[]).length === 0) {
     console.log('[Database] No clips found in expected location, searching all properties...')
     for (const key of Object.keys(detectionResults)) {
-      const value = detectionResults[key]
+      const value = detectionResults[key as keyof typeof detectionResults]
       if (Array.isArray(value) && value.length > 0) {
         console.log(`[Database] Found array in property '${key}':`, value.length, 'items')
         console.log(`[Database] First item in '${key}':`, value[0])
         // Check if this looks like clips data
-        if (value[0]?.id || value[0]?.title || value[0]?.segments) {
+        if ((value[0] as any)?.id || (value[0] as any)?.title || (value[0] as any)?.segments) {
           console.log(`[Database] PROPERTY '${key}' LOOKS LIKE CLIPS - USING THIS INSTEAD`)
-          detectionResults.clips = value
+          ;(detectionResults as any).clips = value
           break
         }
       }
@@ -1208,22 +1291,51 @@ export async function persistClipDetectionResults(
     }
   )
 
-  // Delete existing clips for this project (cascade will handle versions)
+  // TEMPORARY: Delete existing clips for this project to test the timing fix
+  // In production, we might want to keep all clips, but for testing we need clean data
+  console.log('[Database] Deleting existing clips for project to test timing fix...')
   await db.execute('DELETE FROM clips WHERE project_id = ?', [projectId])
+  console.log('[Database] Existing clips deleted, proceeding with new clip creation...')
 
   // Persist detected clips
+  const clipsArray = detectionResults.clips as any[]
   console.log('[Database] Starting to persist individual clips...')
-  console.log('[Database] Final clips array length:', detectionResults.clips?.length)
-  for (let i = 0; i < detectionResults.clips.length; i++) {
-    const clipData = detectionResults.clips[i]
+  console.log('[Database] Final clips array length:', clipsArray?.length)
+  for (let i = 0; i < clipsArray.length; i++) {
+    const clipData = clipsArray[i]
     console.log(`[Database] Processing clip ${i + 1}:`, clipData)
+
+    // Extract timing data from segments
+    let startTime = 0
+    let endTime = 0
+
+    if (clipData.segments && Array.isArray(clipData.segments) && clipData.segments.length > 0) {
+      // Calculate total duration from all segments
+      const firstSegment = clipData.segments[0]
+      const lastSegment = clipData.segments[clipData.segments.length - 1]
+      startTime = firstSegment.start_time || 0
+      endTime = lastSegment.end_time || 0
+
+      console.log(`[Database] Extracted timing from segments: ${startTime}s - ${endTime}s (duration: ${endTime - startTime}s)`)
+    } else if (clipData.total_duration) {
+      // Fallback to total_duration if available
+      endTime = clipData.total_duration
+      console.log(`[Database] Using total_duration: ${endTime}s`)
+    } else {
+      console.log(`[Database] No timing data found for clip ${i + 1}:`, {
+        hasSegments: !!clipData.segments,
+        segmentsLength: clipData.segments?.length,
+        hasTotalDuration: !!clipData.total_duration,
+        clipDataKeys: Object.keys(clipData)
+      })
+    }
 
     // Extract clip information from the detected data
     const clipInfo = {
       name: clipData.name || clipData.title || `Clip ${i + 1}`,
-      startTime: clipData.startTime || clipData.start_time || 0,
-      endTime: clipData.endTime || clipData.end_time || 0,
-      description: clipData.description || clipData.summary,
+      startTime: startTime,
+      endTime: endTime,
+      description: clipData.description || clipData.summary || clipData.socialMediaPost,
       confidenceScore: clipData.confidenceScore || clipData.confidence,
       relevanceScore: clipData.relevanceScore || clipData.relevance,
       detectionReason: clipData.reason || clipData.detectionReason,
@@ -1239,7 +1351,7 @@ export async function persistClipDetectionResults(
     }
   }
 
-  console.log(`[Database] Persisted ${detectionResults.clips.length} clips for session ${sessionId}`)
+  console.log(`[Database] Persisted ${clipsArray.length} clips for session ${sessionId}`)
 
   // Verify the clips were actually saved
   try {
