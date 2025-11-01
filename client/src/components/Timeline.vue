@@ -1,11 +1,11 @@
 <template>
-  <div class="h-80 bg-[#0a0a0a]/30 border-t border-border">
-    <div class="p-4 h-full flex flex-col">
+  <div class="h-60 bg-[#0a0a0a]/30 border-t border-border">
+    <div class="pt-4 px-4 pb-1.5 h-full flex flex-col">
       <!-- Timeline Header -->
-      <div class="flex items-center justify-between mb-3 pr-1">
+      <!-- <div class="flex items-center justify-between mb-3 pr-1">
         <h3 class="text-sm font-medium text-foreground">Timeline</h3>
         <span class="text-xs text-muted-foreground">{{ placeholderClips.length + 1 }} tracks</span>
-      </div>
+      </div> -->
 
       <!-- Scrollable Timeline Tracks Container -->
       <div class="flex-1 pr-1 bg-muted/20 rounded-lg relative overflow-y-auto overflow-x-hidden">

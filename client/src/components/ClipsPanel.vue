@@ -105,7 +105,7 @@
                 <div class="flex items-center gap-2 mb-2 text-xs text-foreground/60">
                   <span>{{ formatDuration((clip.current_version?.end_time || 0) - (clip.current_version?.start_time || 0)) }}</span>
                   <span>•</span>
-                  <span>{{ Math.floor(clip.current_version?.start_time || 0) }}s - {{ Math.floor(clip.current_version?.end_time || 0) }}s</span>
+                  <span>{{ formatTime(clip.current_version?.start_time || 0) }} - {{ formatTime(clip.current_version?.end_time || 0) }}</span>
                   <span v-if="clip.current_version?.confidence_score" class="flex items-center gap-1">
                     <TrendingUpIcon class="h-2 w-2" />
                     {{ Math.round((clip.current_version.confidence_score || 0) * 100) }}%
@@ -327,6 +327,13 @@ async function loadClipsAndHistory(projectId: string) {
 }
 
 function formatDuration(seconds: number): string {
+  if (!seconds) return '0:00'
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.floor(seconds % 60)
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+function formatTime(seconds: number): string {
   if (!seconds) return '0:00'
   const mins = Math.floor(seconds / 60)
   const secs = Math.floor(seconds % 60)
