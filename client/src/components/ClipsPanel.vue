@@ -413,14 +413,14 @@ const stageIconClass = computed(() => {
     case 'error':
       return 'text-red-500'
     default:
-      return 'text-gray-500'
+      return 'text-blue-500'
   }
 })
 
 const stageTitle = computed(() => {
   switch (props.generationStage) {
     case 'starting':
-      return 'Initializing'
+      return 'Separating Audio'
     case 'transcribing':
       return 'Transcribing Audio'
     case 'analyzing':
@@ -432,14 +432,14 @@ const stageTitle = computed(() => {
     case 'error':
       return 'Error'
     default:
-      return 'Processing'
+      return 'Separating Audio'
   }
 })
 
 const stageDescription = computed(() => {
   switch (props.generationStage) {
     case 'starting':
-      return 'Preparing to process your video...'
+      return 'Separating audio from vidoe...'
     case 'transcribing':
       return 'Converting audio to text using AI...'
     case 'analyzing':
@@ -451,7 +451,7 @@ const stageDescription = computed(() => {
     case 'error':
       return 'An error occurred during processing.'
     default:
-      return 'Processing your request...'
+      return 'Separating audio from vidoe...'
   }
 })
 
