@@ -18,9 +18,9 @@
       </div>
     </div>
     <div class="flex-1 overflow-y-auto">
-      <div class="flex-1 flex items-center justify-center min-h-full">
-        <!-- Progress State -->
-        <div v-if="isGenerating" class="text-center text-foreground w-full max-w-xs mx-4">
+      <!-- Progress State -->
+      <div v-if="isGenerating" class="h-full flex items-center justify-center">
+        <div class="text-center text-foreground w-full max-w-xs mx-4">
           <!-- Stage Icon -->
           <div class="mb-4 flex justify-center">
             <div class="relative">
@@ -74,71 +74,71 @@
             </div>
           </div>
         </div>
+      </div>
 
-
-        <!-- Clips List State -->
-        <div v-else-if="clips.length > 0 && !isGenerating" class="w-full ">
-
-          <!-- Clips Grid -->
-          <div class="space-y-3">
-            <div
-              v-for="clip in clips"
-              :key="clip.id"
-              class="p-3 bg-muted/15 border border-border rounded-lg hover:border-border/80 transition-colors"
-            >
-              <div class="flex items-start justify-between">
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-2 mb-1">
-                    <h5 class="text-xs font-medium text-foreground/90 truncate">
-                      {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
-                    </h5>
-                    <!-- Run Number Badge -->
-                    <span
-                      v-if="clip.run_number"
-                      class="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full font-medium"
-                      title="Detection run"
-                    >
-                      Run {{ clip.run_number }}
-                    </span>
-                  </div>
-
-                  <!-- Clip Info -->
-                  <div class="flex items-center gap-2 mb-2 text-xs text-foreground/60">
-                    <span>{{ formatDuration((clip.current_version?.end_time || 0) - (clip.current_version?.start_time || 0)) }}</span>
-                    <span>•</span>
-                    <span>{{ Math.floor(clip.current_version?.start_time || 0) }}s - {{ Math.floor(clip.current_version?.end_time || 0) }}s</span>
-                    <span v-if="clip.current_version?.confidence_score" class="flex items-center gap-1">
-                      <TrendingUpIcon class="h-2 w-2" />
-                      {{ Math.round((clip.current_version.confidence_score || 0) * 100) }}%
-                    </span>
-                    <span v-if="clip.session_created_at" class="flex items-center gap-1">
-                      <ClockIcon class="h-2 w-2" />
-                      {{ formatTimestamp(clip.session_created_at) }}
-                    </span>
-                  </div>
-
-                  <!-- Description -->
-                  <p v-if="clip.current_version?.description" class="text-xs text-foreground/70 line-clamp-2">
-                    {{ clip.current_version.description }}
-                  </p>
-                </div>
-
-                <!-- Clip Actions -->
-                <div class="flex items-center gap-1 ml-2">
-                  <button
-                    class="p-1 hover:bg-muted/50 rounded transition-colors"
-                    title="Play clip"
+      <!-- Clips List State -->
+      <div v-else-if="clips.length > 0 && !isGenerating" class="w-full">
+        <!-- Clips Grid -->
+        <div class="space-y-3">
+          <div
+            v-for="clip in clips"
+            :key="clip.id"
+            class="p-3 bg-muted/15 border border-border rounded-lg hover:border-border/80 transition-colors"
+          >
+            <div class="flex items-start justify-between">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-1">
+                  <h5 class="text-xs font-medium text-foreground/90 truncate">
+                    {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
+                  </h5>
+                  <!-- Run Number Badge -->
+                  <span
+                    v-if="clip.run_number"
+                    class="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full font-medium"
+                    title="Detection run"
                   >
-                    <PlayIcon class="h-3 w-3 text-foreground/60" />
-                  </button>
+                    Run {{ clip.run_number }}
+                  </span>
                 </div>
+
+                <!-- Clip Info -->
+                <div class="flex items-center gap-2 mb-2 text-xs text-foreground/60">
+                  <span>{{ formatDuration((clip.current_version?.end_time || 0) - (clip.current_version?.start_time || 0)) }}</span>
+                  <span>•</span>
+                  <span>{{ Math.floor(clip.current_version?.start_time || 0) }}s - {{ Math.floor(clip.current_version?.end_time || 0) }}s</span>
+                  <span v-if="clip.current_version?.confidence_score" class="flex items-center gap-1">
+                    <TrendingUpIcon class="h-2 w-2" />
+                    {{ Math.round((clip.current_version.confidence_score || 0) * 100) }}%
+                  </span>
+                  <span v-if="clip.session_created_at" class="flex items-center gap-1">
+                    <ClockIcon class="h-2 w-2" />
+                    {{ formatTimestamp(clip.session_created_at) }}
+                  </span>
+                </div>
+
+                <!-- Description -->
+                <p v-if="clip.current_version?.description" class="text-xs text-foreground/70 line-clamp-2">
+                  {{ clip.current_version.description }}
+                </p>
+              </div>
+
+              <!-- Clip Actions -->
+              <div class="flex items-center gap-1 ml-2">
+                <button
+                  class="p-1 hover:bg-muted/50 rounded transition-colors"
+                  title="Play clip"
+                >
+                  <PlayIcon class="h-3 w-3 text-foreground/60" />
+                </button>
               </div>
             </div>
           </div>
         </div>
+      </div>
 
-        <!-- Default State -->
-        <div v-else class="text-center text-muted-foreground">
+      <!-- Default State -->
+      <div v-else class="h-full flex items-center justify-center">
+        <div class="text-center text-muted-foreground">
           <div class="mb-4 flex flex-col items-center">
             <label class="block text-xs font-medium text-foreground/70 mb-2 text-center">
               Detection Prompt
