@@ -4,6 +4,7 @@ defmodule ClippsterServerWeb.ClipsController do
   alias ClippsterServer.AI.OpenRouterAPI
   alias ClippsterServer.AI.SystemPrompt
   alias ClippsterServer.ClipValidation
+  alias ClippsterServerWeb.ProgressChannel
 
   def detect(conn, %{"audio" => audio_upload, "project_id" => project_id, "prompt" => user_prompt}) do
     IO.puts("[ClipsController] Starting clip detection for project #{project_id}")
@@ -12,10 +13,15 @@ defmodule ClippsterServerWeb.ClipsController do
     IO.puts("[ClipsController] User prompt: #{String.slice(user_prompt, 0, 100)}...")
 
     try do
+      # Broadcast initial progress
+      ProgressChannel.broadcast_progress(project_id, "starting", 0, "Initializing clip detection...")
+
       # Step 1: Forward audio to Whisper API
       IO.puts("[ClipsController] Sending audio to Whisper API...")
+      ProgressChannel.broadcast_progress(project_id, "transcribing", 10, "Transcribing audio with Whisper...")
       whisper_result = WhisperAPI.transcribe(audio_upload)
       IO.puts("[ClipsController] WhisperAPI call completed")
+      ProgressChannel.broadcast_progress(project_id, "transcribing", 40, "Audio transcription completed")
 
       case whisper_result do
         {:ok, whisper_response} ->
@@ -63,10 +69,12 @@ defmodule ClippsterServerWeb.ClipsController do
 
           # Step 3: Send to OpenRouter API with system prompt
           IO.puts("[ClipsController] Sending transcript to OpenRouter API...")
+          ProgressChannel.broadcast_progress(project_id, "analyzing", 50, "Analyzing transcript for clip-worthy moments...")
           system_prompt = SystemPrompt.get()
 
           ai_result = OpenRouterAPI.generate_clips(processed_transcript, system_prompt, user_prompt)
           IO.puts("[ClipsController] OpenRouter API call completed")
+          ProgressChannel.broadcast_progress(project_id, "analyzing", 80, "AI analysis completed")
 
           case ai_result do
             {:ok, ai_response} ->
@@ -81,6 +89,7 @@ defmodule ClippsterServerWeb.ClipsController do
                   # Step 5: Enhanced validation and correction using original Whisper response with word-level data
                   IO.puts("[ClipsController] Starting enhanced clip validation...")
                   IO.puts("[ClipsController] Using original Whisper response for validation...")
+                  ProgressChannel.broadcast_progress(project_id, "validating", 85, "Validating and correcting clip timestamps...")
                   case ClipValidation.validate_and_correct_clips(ai_response["clips"], whisper_response, false) do
                     {:ok, validation_result} ->
                       IO.puts("[ClipsController] Enhanced validation completed")
@@ -97,6 +106,7 @@ defmodule ClippsterServerWeb.ClipsController do
                       })
 
                       # Step 6: Return enhanced response with validation data
+                      ProgressChannel.broadcast_progress(project_id, "completed", 100, "Clip detection completed successfully!")
                       json(conn, %{
                         success: true,
                         clips: enhanced_response,
@@ -161,6 +171,7 @@ defmodule ClippsterServerWeb.ClipsController do
       error ->
         IO.puts("[ClipsController] Error in detect: #{inspect(error)}")
         IO.puts("[ClipsController] Error type: #{inspect(Exception.format(:error, error, []))}")
+        ProgressChannel.broadcast_progress(project_id, "error", 0, "Clip detection failed: #{Exception.message(error)}")
         conn
         |> put_status(500)
         |> json(%{

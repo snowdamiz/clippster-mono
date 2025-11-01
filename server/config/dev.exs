@@ -25,6 +25,17 @@ config :clippster_server, ClippsterServerWeb.Endpoint,
   debug_errors: true,
   secret_key_base: "IKd0f22aVNPECo8OdR849G1WHF8gzBsOIEjXOF6nB+2oYGvp+5Iq8FkzweTZqXn/",
   watchers: [],
+  # WebSocket configuration
+  websocket: [
+    timeout: 60_000,
+    # For development, we can be more permissive
+    transports: [
+      websocket: [
+        connect_info: [:peer_data, :uri, :user_agent],
+        timeout: 60_000
+      ]
+    ]
+  ],
   # Configure Bandit to allow larger request bodies
   adapter: Bandit.PhoenixAdapter,
   transport_options: [

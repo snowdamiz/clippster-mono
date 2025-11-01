@@ -1,7 +1,7 @@
 <template>
   <div :class="transcriptCollapsed ? 'flex-1' : clipsCollapsed ? 'h-auto' : 'flex-1'" class="p-4 flex flex-col">
     <div class="flex items-center justify-between">
-      <h3 class="text-sm font-medium text-foreground">Generated Clips</h3>
+      <h3 class="text-sm font-medium text-foreground">Clips</h3>
       <button
         @click="toggleClips"
         class="p-1 hover:bg-muted rounded transition-colors"
@@ -15,7 +15,68 @@
     <div :class="[clipsCollapsed ? 'h-0' : 'flex-1', showPromptDropdown ? 'overflow-visible' : 'overflow-hidden']">
       <div v-if="!clipsCollapsed" class="h-full flex flex-col">
         <div ref="clipsContent" class="flex-1 flex items-center justify-center min-h-[120px]">
-          <div class="text-center text-muted-foreground">
+          <!-- Progress State -->
+          <div v-if="isGenerating" class="text-center text-foreground w-full max-w-xs mx-4">
+            <!-- Stage Icon -->
+            <div class="mb-4 flex justify-center">
+              <div class="relative">
+                <component :is="stageIcon" :class="stageIconClass" class="h-8 w-8" />
+                <!-- Spinning overlay for loading states -->
+                <!-- <div v-if="generationStage !== 'completed' && generationStage !== 'error'" class="absolute inset-0 flex items-center justify-center">
+                  <div class="h-12 w-12 rounded-full border-2 border-current/20 border-t-current animate-spin" />
+                </div> -->
+              </div>
+            </div>
+
+            <!-- Stage Title -->
+            <h4 class="font-medium text-foreground mb-1">{{ stageTitle }}</h4>
+            <p class="text-sm text-foreground/70 mb-4">{{ stageDescription }}</p>
+
+            <!-- Progress Bar -->
+            <div class="mb-4">
+              <div class="flex justify-between items-center mb-2">
+                <span class="text-xs text-foreground/50">Progress</span>
+                <span class="text-xs font-medium text-foreground/70">{{ generationProgress }}%</span>
+              </div>
+              <div class="relative">
+                <div class="w-full bg-muted rounded-full h-2 overflow-hidden">
+                  <div
+                    class="h-full rounded-full transition-all duration-500 ease-out"
+                    :class="progressBarClass"
+                    :style="{ width: `${generationProgress}%` }"
+                  />
+                </div>
+                <!-- Animated shine effect -->
+                <div
+                  v-if="generationProgress > 0 && generationProgress < 100"
+                  class="absolute inset-0 h-full overflow-hidden rounded-full"
+                >
+                  <div class="h-full w-20 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12 animate-shine" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Status Message -->
+            <div v-if="generationMessage" class="text-sm text-foreground/60 bg-muted/30 rounded-lg p-3 mb-4">
+              {{ generationMessage }}
+            </div>
+
+            <!-- Error State -->
+            <div v-if="generationError" class="bg-destructive/10 border border-destructive/20 rounded-lg p-3 mb-4">
+              <div class="flex items-start gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div class="text-left">
+                  <h4 class="font-medium text-destructive text-sm">Error</h4>
+                  <p class="text-xs text-destructive/80 mt-1">{{ generationError }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Default State -->
+          <div v-else class="text-center text-muted-foreground">
             <div class="mb-4 flex flex-col items-center">
               <label class="block text-xs font-medium text-foreground/70 mb-2 text-center">
                 Detection Prompt
@@ -71,15 +132,34 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { getAllPrompts, type Prompt } from '@/services/database'
+import {
+  PlayIcon,
+  Loader2Icon,
+  BrainIcon,
+  CheckCircleIcon,
+  XCircleIcon,
+  ActivityIcon
+} from 'lucide-vue-next'
 
 interface Props {
   transcriptCollapsed: boolean
   clipsCollapsed: boolean
+  isGenerating?: boolean
+  generationProgress?: number
+  generationStage?: string
+  generationMessage?: string
+  generationError?: string
 }
 
-defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  isGenerating: false,
+  generationProgress: 0,
+  generationStage: '',
+  generationMessage: '',
+  generationError: ''
+})
 
 interface Emits {
   (e: 'toggleClips'): void
@@ -139,6 +219,100 @@ function onPromptChange(promptId: string, promptContent: string) {
 function togglePromptDropdown() {
   showPromptDropdown.value = !showPromptDropdown.value
 }
+
+// Computed properties for progress display
+const stageIcon = computed(() => {
+  switch (props.generationStage) {
+    case 'starting':
+      return PlayIcon
+    case 'transcribing':
+      return Loader2Icon
+    case 'analyzing':
+      return BrainIcon
+    case 'validating':
+      return ActivityIcon
+    case 'completed':
+      return CheckCircleIcon
+    case 'error':
+      return XCircleIcon
+    default:
+      return Loader2Icon
+  }
+})
+
+const stageIconClass = computed(() => {
+  switch (props.generationStage) {
+    case 'starting':
+      return 'text-blue-500'
+    case 'transcribing':
+      return 'text-yellow-500'
+    case 'analyzing':
+      return 'text-purple-500'
+    case 'validating':
+      return 'text-orange-500'
+    case 'completed':
+      return 'text-green-500'
+    case 'error':
+      return 'text-red-500'
+    default:
+      return 'text-gray-500'
+  }
+})
+
+const stageTitle = computed(() => {
+  switch (props.generationStage) {
+    case 'starting':
+      return 'Initializing'
+    case 'transcribing':
+      return 'Transcribing Audio'
+    case 'analyzing':
+      return 'Detecting Clips'
+    case 'validating':
+      return 'Validating Results'
+    case 'completed':
+      return 'Completed'
+    case 'error':
+      return 'Error'
+    default:
+      return 'Processing'
+  }
+})
+
+const stageDescription = computed(() => {
+  switch (props.generationStage) {
+    case 'starting':
+      return 'Preparing to process your video...'
+    case 'transcribing':
+      return 'Converting audio to text using AI...'
+    case 'analyzing':
+      return 'Analyzing transcript for clip-worthy moments...'
+    case 'validating':
+      return 'Validating timestamps and refining clips...'
+    case 'completed':
+      return 'Clips have been successfully generated!'
+    case 'error':
+      return 'An error occurred during processing.'
+    default:
+      return 'Processing your request...'
+  }
+})
+
+const progressBarClass = computed(() => {
+  switch (props.generationStage) {
+    case 'transcribing':
+      return 'bg-yellow-500'
+    case 'analyzing':
+      return 'bg-purple-500'
+    case 'validating':
+      return 'bg-orange-500'
+    case 'completed':
+      return 'bg-green-500'
+    case 'error':
+      return 'bg-red-500'
+    default:
+      return 'bg-blue-500'
+  }
+})
 </script>
 
 <style scoped>
@@ -167,5 +341,18 @@ function togglePromptDropdown() {
   transition-property: all;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 200ms;
+}
+
+@keyframes shine {
+  0% {
+    transform: translateX(-100%) skewX(-12deg);
+  }
+  100% {
+    transform: translateX(200%) skewX(-12deg);
+  }
+}
+
+.animate-shine {
+  animation: shine 2s infinite;
 }
 </style>

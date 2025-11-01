@@ -75,6 +75,11 @@
               <ClipsPanel
                 :transcript-collapsed="transcriptCollapsed"
                 :clips-collapsed="clipsCollapsed"
+                :is-generating="clipGenerationInProgress"
+                :generation-progress="clipProgress"
+                :generation-stage="clipStage"
+                :generation-message="clipMessage"
+                :generation-error="clipError"
                 @toggleClips="toggleClips"
                 @detectClips="onDetectClips"
               />
@@ -97,6 +102,18 @@
       </div>
     </div>
   </Teleport>
+
+  <!-- Progress Modal (for error states or detailed view) -->
+  <ClipGenerationProgress
+    :visible="showProgress"
+    :progress="clipProgress"
+    :stage="clipStage"
+    :message="clipMessage"
+    :error="clipError"
+    :is-connected="progressConnected"
+    :can-close="!clipGenerationInProgress"
+    @close="closeProgress"
+  />
 </template>
 
 <style scoped>
@@ -127,7 +144,9 @@ import VideoControls from './VideoControls.vue'
 import TranscriptPanel from './TranscriptPanel.vue'
 import ClipsPanel from './ClipsPanel.vue'
 import Timeline from './Timeline.vue'
+import ClipGenerationProgress from './ClipGenerationProgress.vue'
 import { useVideoPlayer } from '@/composables/useVideoPlayer'
+import { useProgressSocket } from '@/composables/useProgressSocket'
 
 console.log('[ProjectWorkspaceDialog] Script setup running')
 
@@ -151,8 +170,23 @@ const clipsCollapsed = ref(false)
 // Transcript data
 const transcriptData = ref(null) // Will hold actual transcript data when available
 
+// Progress state
+const showProgress = ref(false)
+const clipGenerationInProgress = ref(false)
+
 // Use video player composable
 const projectRef = computed(() => props.project)
+
+// Initialize progress socket
+const {
+  isConnected: progressConnected,
+  progress: clipProgress,
+  stage: clipStage,
+  message: clipMessage,
+  error: clipError,
+  setProjectId: setProgressProjectId,
+  reset: resetProgress
+} = useProgressSocket(props.project?.id || null)
 const {
   videoElement,
   videoSrc,
@@ -195,6 +229,16 @@ function close() {
   emit('update:modelValue', false)
 }
 
+function closeProgress() {
+  showProgress.value = false
+  resetProgress()
+  if (!clipGenerationInProgress.value) {
+    setProgressProjectId(null)
+  }
+}
+
+
+
 function toggleTranscript() {
   transcriptCollapsed.value = !transcriptCollapsed.value
 
@@ -223,6 +267,12 @@ async function onDetectClips(prompt: string) {
     console.log('[ProjectWorkspaceDialog] Starting clip detection process...')
     console.log('[ProjectWorkspaceDialog] Using prompt:', prompt.substring(0, 100) + '...')
 
+    // Initialize progress tracking
+    clipGenerationInProgress.value = true
+    showProgress.value = false // Show progress in the clips panel, not modal
+    resetProgress()
+    setProgressProjectId(props.project.id.toString())
+
     // Get the video path from the project's associated raw video
     const { getAllRawVideos } = await import('@/services/database')
     const rawVideos = await getAllRawVideos()
@@ -230,7 +280,7 @@ async function onDetectClips(prompt: string) {
 
     if (!projectVideo) {
       console.error('[ProjectWorkspaceDialog] No video found for project')
-      return
+      throw new Error('No video found for project')
     }
 
     console.log('[ProjectWorkspaceDialog] Found video for project:', projectVideo.file_path)
@@ -263,7 +313,12 @@ async function onDetectClips(prompt: string) {
 
   } catch (error) {
     console.error('[ProjectWorkspaceDialog] Clip detection failed:', error)
-    // You might want to show an error message to the user here
+    // Keep progress dialog open to show the error
+  } finally {
+    // Don't immediately hide progress - let the user see the completion/error state
+    setTimeout(() => {
+      clipGenerationInProgress.value = false
+    }, 1000)
   }
 }
 
@@ -348,7 +403,7 @@ function showClipDetectionResult(result: any) {
         <div class="border-t border-border/30 pt-3">
           <div class="text-foreground/70 text-sm mb-2">Key Issues:</div>
           <ul class="space-y-1">
-            ${issues.slice(0, 3).map(issue => `<li class="text-yellow-300 text-xs flex items-center gap-1"><svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>${issue}</li>`).join('')}
+            ${issues.slice(0, 3).map((issue: string) => `<li class="text-yellow-300 text-xs flex items-center gap-1"><svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>${issue}</li>`).join('')}
             ${issues.length > 3 ? `<li class="text-foreground/50 text-xs">... and ${issues.length - 3} more issues</li>` : ''}
           </ul>
         </div>
@@ -357,7 +412,7 @@ function showClipDetectionResult(result: any) {
         <div class="border-t border-border/30 pt-3">
           <div class="text-foreground/70 text-sm mb-2">Applied Corrections:</div>
           <ul class="space-y-1">
-            ${corrections.slice(0, 3).map(correction => `<li class="text-blue-300 text-xs flex items-center gap-1"><svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>${correction}</li>`).join('')}
+            ${corrections.slice(0, 3).map((correction: string) => `<li class="text-blue-300 text-xs flex items-center gap-1"><svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>${correction}</li>`).join('')}
             ${corrections.length > 3 ? `<li class="text-foreground/50 text-xs">... and ${corrections.length - 3} more corrections</li>` : ''}
           </ul>
         </div>
@@ -414,9 +469,25 @@ watch(() => props.modelValue, async (newValue) => {
   if (newValue) {
     await loadVideos()
     await loadVideoForProject()
+    // Connect progress socket when dialog opens
+    if (props.project) {
+      setProgressProjectId(props.project.id.toString())
+    }
   } else {
     // Reset video state when dialog closes
     resetVideoState()
+    // Disconnect progress socket when dialog closes
+    setProgressProjectId(null)
+    showProgress.value = false
+  }
+})
+
+// Watch for project changes
+watch(() => props.project?.id, (newProjectId) => {
+  if (newProjectId) {
+    setProgressProjectId(newProjectId.toString())
+  } else {
+    setProgressProjectId(null)
   }
 })
 
