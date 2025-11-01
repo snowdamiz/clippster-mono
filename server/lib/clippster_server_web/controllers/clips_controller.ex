@@ -3,6 +3,7 @@ defmodule ClippsterServerWeb.ClipsController do
   alias ClippsterServer.AI.WhisperAPI
   alias ClippsterServer.AI.OpenRouterAPI
   alias ClippsterServer.AI.SystemPrompt
+  alias ClippsterServer.ClipValidation
 
   def detect(conn, %{"audio" => audio_upload, "project_id" => project_id, "prompt" => user_prompt}) do
     IO.puts("[ClipsController] Starting clip detection for project #{project_id}")
@@ -21,7 +22,37 @@ defmodule ClippsterServerWeb.ClipsController do
           IO.puts("[ClipsController] Whisper response received")
           IO.puts("[ClipsController] Whisper response keys: #{inspect(Map.keys(whisper_response))}")
 
-          # Step 2: Process verbose_json response (remove words array)
+          # Debug: Check if word-level data is available
+          words_available = try do
+            words = extract_words_from_response(whisper_response)
+            case words do
+              nil ->
+                IO.puts("[ClipsController] extract_words_from_response returned nil")
+                false
+              [] ->
+                IO.puts("[ClipsController] No words found in response")
+                false
+              words when is_list(words) ->
+                IO.puts("[ClipsController] Word-level data available: #{length(words)} words")
+                if length(words) > 0 do
+                  first_word = hd(words)
+                  IO.puts("[ClipsController] First word sample: #{inspect(first_word)}")
+                end
+                true
+              _ ->
+                IO.puts("[ClipsController] extract_words_from_response returned unexpected type: #{inspect(words)}")
+                false
+            end
+          rescue
+            error ->
+              IO.puts("[ClipsController] Error during word extraction: #{inspect(error)}")
+              IO.puts("[ClipsController] Error type: #{inspect(Exception.format(:error, error, []))}")
+              false
+          end
+
+          IO.puts("[ClipsController] Word-level timestamps available: #{words_available}")
+
+          # Step 2: Process verbose_json response (remove words array for AI)
           IO.puts("[ClipsController] Processing Whisper response...")
           processed_transcript = process_whisper_response(whisper_response)
 
@@ -47,12 +78,51 @@ defmodule ClippsterServerWeb.ClipsController do
                 :ok ->
                   IO.puts("[ClipsController] AI response validation successful")
 
-                  # Step 5: Return both AI response and original Whisper response
-                  json(conn, %{
-                    success: true,
-                    clips: ai_response,
-                    transcript: whisper_response
-                  })
+                  # Step 5: Enhanced validation and correction using original Whisper response with word-level data
+                  IO.puts("[ClipsController] Starting enhanced clip validation...")
+                  IO.puts("[ClipsController] Using original Whisper response for validation...")
+                  case ClipValidation.validate_and_correct_clips(ai_response["clips"], whisper_response, false) do
+                    {:ok, validation_result} ->
+                      IO.puts("[ClipsController] Enhanced validation completed")
+                      IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
+
+                      # Replace clips with validated and corrected versions
+                      enhanced_response = ai_response
+                      |> Map.put("clips", validation_result.validatedClips)
+                      |> Map.put("validation_metadata", %{
+                        "qualityScore" => validation_result.qualityScore,
+                        "issuesCount" => length(validation_result.issues),
+                        "correctionsCount" => length(validation_result.corrections),
+                        "validatedAt" => DateTime.utc_now() |> DateTime.to_iso8601()
+                      })
+
+                      # Step 6: Return enhanced response with validation data
+                      json(conn, %{
+                        success: true,
+                        clips: enhanced_response,
+                        transcript: whisper_response,
+                        validation: %{
+                          qualityScore: validation_result.qualityScore,
+                          issues: validation_result.issues,
+                          corrections: validation_result.corrections,
+                          clipsProcessed: length(validation_result.validatedClips)
+                        }
+                      })
+
+                    _ ->
+                      IO.puts("[ClipsController] Enhanced validation failed, using original clips")
+                      # Fall back to original clips if enhanced validation fails
+                      json(conn, %{
+                        success: true,
+                        clips: ai_response,
+                        transcript: whisper_response,
+                        validation: %{
+                          qualityScore: 0.0,
+                          issues: ["Enhanced validation failed"],
+                          corrections: []
+                        }
+                      })
+                  end
 
                 {:error, reason} ->
                   IO.puts("[ClipsController] AI response validation failed: #{reason}")
@@ -101,8 +171,11 @@ defmodule ClippsterServerWeb.ClipsController do
     end
   end
 
-  # Process Whisper response by removing words array from segments
+  # Process Whisper response by keeping words array for validation but removing segments-level words for AI processing
   defp process_whisper_response(whisper_response) do
+    # Extract word-level data for validation before processing
+    words = extract_words_from_response(whisper_response)
+
     segments =
       whisper_response
       |> Map.get("segments", [])
@@ -111,8 +184,100 @@ defmodule ClippsterServerWeb.ClipsController do
         |> Map.delete("words")
       end)
 
-    whisper_response
+    processed_response = whisper_response
     |> Map.put("segments", segments)
+    |> Map.put("words", words)  # Preserve words at top level for validation
+
+    processed_response
+  end
+
+  # Extract word-level timestamps from Whisper response
+  defp extract_words_from_response(whisper_response) do
+    IO.puts("[ClipsController] extract_words_from_response called with keys: #{inspect(Map.keys(whisper_response))}")
+
+    words = case whisper_response do
+      %{"words" => words} when is_list(words) ->
+        IO.puts("[ClipsController] Found top-level words: #{length(words)}")
+        words
+      %{"verbose_json" => %{"words" => words}} when is_list(words) ->
+        IO.puts("[ClipsController] Found verbose_json words: #{length(words)}")
+        words
+      %{"segments" => segments} when is_list(segments) and length(segments) > 0 ->
+        IO.puts("[ClipsController] Checking #{length(segments)} segments for word data")
+
+        # Check first segment structure safely
+        first_segment = hd(segments)
+        IO.puts("[ClipsController] First segment keys: #{inspect(Map.keys(first_segment))}")
+
+        # Check what type the 'words' field actually is
+        case Map.get(first_segment, "words") do
+          words when is_list(words) ->
+            IO.puts("[ClipsController] First segment words is a list with #{length(words)} items")
+          words when is_map(words) ->
+            IO.puts("[ClipsController] First segment words is a map: #{inspect(words)}")
+          words when is_nil(words) ->
+            IO.puts("[ClipsController] First segment words is nil")
+          words ->
+            IO.puts("[ClipsController] First segment words is unexpected type: #{inspect(words)}")
+        end
+
+        # Extract words from segments if available, with defensive programming
+        extracted_words = segments
+        |> Enum.reduce([], fn segment, acc ->
+          case segment do
+            %{"words" => words} when is_list(words) ->
+              IO.puts("[ClipsController] Found segment with #{length(words)} words")
+
+              # Debug: Show first few word entries
+              sample_words = Enum.take(words, 3)
+              IO.puts("[ClipsController] Sample words: #{inspect(sample_words)}")
+
+              # Filter out nil values and ensure word has required structure
+              valid_words = Enum.filter(words, fn word ->
+                cond do
+                  word == nil ->
+                    false
+                  not is_map(word) ->
+                    IO.puts("[ClipsController] Word is not a map: #{inspect(word)}")
+                    false
+                  not Map.has_key?(word, "start") ->
+                    IO.puts("[ClipsController] Word missing 'start': #{inspect(word)}")
+                    false
+                  not Map.has_key?(word, "end") ->
+                    IO.puts("[ClipsController] Word missing 'end': #{inspect(word)}")
+                    false
+                  not Map.has_key?(word, "word") ->
+                    IO.puts("[ClipsController] Word missing 'word': #{inspect(word)}")
+                    false
+                  true ->
+                    true
+                end
+              end)
+
+              IO.puts("[ClipsController] Valid words in this segment: #{length(valid_words)}")
+              acc ++ valid_words
+            %{"words" => words} ->
+              IO.puts("[ClipsController] Found segment with words that is not a list: #{inspect(words)}")
+              acc
+            _ ->
+              IO.puts("[ClipsController] Segment has no words or wrong structure")
+              acc
+          end
+        end)
+
+        IO.puts("[ClipsController] Extracted #{length(extracted_words)} words from segments")
+        extracted_words
+
+      %{"segments" => segments} when is_list(segments) ->
+        IO.puts("[ClipsController] Found empty segments list")
+        []
+      _ ->
+        IO.puts("[ClipsController] No word data found in response")
+        []
+    end
+
+    IO.puts("[ClipsController] extract_words_from_response returning #{length(words)} words")
+    words
   end
 
   # Validate AI response structure matches system prompt specifications

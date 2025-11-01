@@ -123,6 +123,10 @@ defmodule ClippsterServer.AI.WhisperAPI do
       "--#{boundary}\r\n",
       "Content-Disposition: form-data; name=\"timestamp_granularities[]\"\r\n\r\n",
       "word,segment\r\n",
+      # Speaker labels part - exactly like prototype form.append('speaker_labels', 'true')
+      "--#{boundary}\r\n",
+      "Content-Disposition: form-data; name=\"speaker_labels\"\r\n\r\n",
+      "true\r\n",
       # End boundary
       "--#{boundary}--\r\n"
     ]

@@ -300,14 +300,76 @@ async function generateAudioFromVideo(videoPath: string): Promise<File> {
 }
 
 function showClipDetectionResult(result: any) {
-  // Create a test dialog to show the returned data
+  // Create a test dialog to show the returned data with validation information
   console.log('[ProjectWorkspaceDialog] Clip detection result:', result)
 
-  // Create a simple modal dialog to display the data
+  const validation = result.validation || {}
+  const qualityScore = validation.qualityScore || 0
+  const issues = validation.issues || []
+  const corrections = validation.corrections || []
+  const clipsProcessed = validation.clipsProcessed || 0
+
+  // Determine quality score color
+  let qualityColor = 'text-red-400'
+  let qualityLabel = 'Poor'
+  if (qualityScore >= 0.8) {
+    qualityColor = 'text-green-400'
+    qualityLabel = 'Excellent'
+  } else if (qualityScore >= 0.6) {
+    qualityColor = 'text-yellow-400'
+    qualityLabel = 'Good'
+  } else if (qualityScore >= 0.4) {
+    qualityColor = 'text-orange-400'
+    qualityLabel = 'Fair'
+  }
+
+  // Create validation summary HTML
+  const validationSummary = `
+    <div class="bg-[#0a0a0a] rounded-lg p-4 space-y-3">
+      <div class="flex items-center justify-between">
+        <span class="text-foreground/70 text-sm">Overall Quality Score:</span>
+        <span class="${qualityColor} font-semibold">${qualityLabel} (${Math.round(qualityScore * 100)}%)</span>
+      </div>
+      <div class="grid grid-cols-3 gap-4 text-sm">
+        <div class="text-center">
+          <div class="text-2xl font-bold text-white">${clipsProcessed}</div>
+          <div class="text-foreground/50 text-xs">Clips Validated</div>
+        </div>
+        <div class="text-center">
+          <div class="text-2xl font-bold text-yellow-400">${issues.length}</div>
+          <div class="text-foreground/50 text-xs">Issues Found</div>
+        </div>
+        <div class="text-center">
+          <div class="text-2xl font-bold text-blue-400">${corrections.length}</div>
+          <div class="text-foreground/50 text-xs">Corrections Applied</div>
+        </div>
+      </div>
+      ${issues.length > 0 ? `
+        <div class="border-t border-border/30 pt-3">
+          <div class="text-foreground/70 text-sm mb-2">Key Issues:</div>
+          <ul class="space-y-1">
+            ${issues.slice(0, 3).map(issue => `<li class="text-yellow-300 text-xs flex items-center gap-1"><svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>${issue}</li>`).join('')}
+            ${issues.length > 3 ? `<li class="text-foreground/50 text-xs">... and ${issues.length - 3} more issues</li>` : ''}
+          </ul>
+        </div>
+      ` : ''}
+      ${corrections.length > 0 ? `
+        <div class="border-t border-border/30 pt-3">
+          <div class="text-foreground/70 text-sm mb-2">Applied Corrections:</div>
+          <ul class="space-y-1">
+            ${corrections.slice(0, 3).map(correction => `<li class="text-blue-300 text-xs flex items-center gap-1"><svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>${correction}</li>`).join('')}
+            ${corrections.length > 3 ? `<li class="text-foreground/50 text-xs">... and ${corrections.length - 3} more corrections</li>` : ''}
+          </ul>
+        </div>
+      ` : ''}
+    </div>
+  `
+
+  // Create modal dialog
   const modal = document.createElement('div')
   modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50'
   modal.innerHTML = `
-    <div class="bg-card rounded-2xl p-6 max-w-4xl max-h-[80vh] overflow-auto border border-border shadow-2xl">
+    <div class="bg-card rounded-2xl p-6 max-w-5xl max-h-[85vh] overflow-auto border border-border shadow-2xl">
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-lg font-semibold text-foreground">Clip Detection Results</h3>
         <button onclick="this.closest('.fixed').remove()" class="p-2 hover:bg-[#ffffff]/10 rounded-md">
@@ -316,13 +378,19 @@ function showClipDetectionResult(result: any) {
           </svg>
         </button>
       </div>
-      <div class="space-y-4">
+
+      ${validation ? validationSummary : ''}
+
+      <div class="mt-6 space-y-4">
         <div>
-          <h4 class="font-medium text-foreground/80 mb-2">AI Generated Clips:</h4>
+          <h4 class="font-medium text-foreground/80 mb-2 flex items-center gap-2">
+            Validated Clips
+            <span class="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded-full">${clipsProcessed} clips</span>
+          </h4>
           <pre class="bg-[#0a0a0a] p-4 rounded-lg text-xs overflow-auto max-h-60 text-white/90">${JSON.stringify(result.clips, null, 2)}</pre>
         </div>
         <div>
-          <h4 class="font-medium text-foreground/80 mb-2">Whisper Transcript:</h4>
+          <h4 class="font-medium text-foreground/80 mb-2">Original Transcript:</h4>
           <pre class="bg-[#0a0a0a] p-4 rounded-lg text-xs overflow-auto max-h-60 text-white/90">${JSON.stringify(result.transcript, null, 2)}</pre>
         </div>
       </div>
