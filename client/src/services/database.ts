@@ -120,7 +120,7 @@ export interface Prompt {
 
 export interface Transcript {
   id: string
-  project_id: string
+  raw_video_id: string
   raw_json: string
   text: string
   language: string | null
@@ -536,7 +536,7 @@ export async function seedDefaultPrompt(): Promise<void> {
 
 // Transcript queries
 export async function createTranscript(
-  projectId: string,
+  rawVideoId: string,
   rawJson: string,
   text: string,
   language?: string,
@@ -545,19 +545,30 @@ export async function createTranscript(
   const db = await getDatabase()
   const id = generateId()
   const now = timestamp()
-  
+
   await db.execute(
-    'INSERT INTO transcripts (id, project_id, raw_json, text, language, duration, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, projectId, rawJson, text, language || null, duration || null, now, now]
+    'INSERT INTO transcripts (id, raw_video_id, raw_json, text, language, duration, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, rawVideoId, rawJson, text, language || null, duration || null, now, now]
   )
-  
+
   return id
+}
+
+export async function getTranscriptByRawVideoId(rawVideoId: string): Promise<Transcript | null> {
+  const db = await getDatabase()
+  const result = await db.select<Transcript[]>(
+    'SELECT * FROM transcripts WHERE raw_video_id = ?',
+    [rawVideoId]
+  )
+  return result[0] || null
 }
 
 export async function getTranscriptByProjectId(projectId: string): Promise<Transcript | null> {
   const db = await getDatabase()
   const result = await db.select<Transcript[]>(
-    'SELECT * FROM transcripts WHERE project_id = ?',
+    `SELECT t.* FROM transcripts t
+     JOIN raw_videos rv ON t.raw_video_id = rv.id
+     WHERE rv.project_id = ?`,
     [projectId]
   )
   return result[0] || null
@@ -590,6 +601,12 @@ export async function getTranscriptSegments(transcriptId: string): Promise<Trans
     'SELECT * FROM transcript_segments WHERE transcript_id = ? ORDER BY segment_index',
     [transcriptId]
   )
+}
+
+export async function getTranscriptWithSegmentsByProjectId(projectId: string): Promise<{ transcript: Transcript | null, segments: TranscriptSegment[] }> {
+  const transcript = await getTranscriptByProjectId(projectId)
+  const segments = transcript ? await getTranscriptSegments(transcript.id) : []
+  return { transcript, segments }
 }
 
 // Search queries
@@ -1276,6 +1293,68 @@ export async function persistClipDetectionResults(
 
   // Ensure clip versioning tables exist before proceeding
   await ensureClipVersioningTables()
+
+  // Store transcript if provided
+  let transcriptId: string | null = null
+  if (detectionResults.transcript) {
+    console.log('[Database] Storing transcript for project:', projectId)
+    console.log('[Database] Transcript keys:', Object.keys(detectionResults.transcript))
+
+    try {
+      // Get the raw video associated with this project
+      const rawVideos = await getRawVideosByProjectId(projectId)
+      if (rawVideos.length === 0) {
+        console.warn('[Database] No raw video found for project, cannot store transcript')
+      } else {
+        const rawVideo = rawVideos[0] // Use the first raw video found
+        console.log('[Database] Found raw video for transcript storage:', rawVideo.id)
+
+        // Extract transcript data from Whisper response
+        const transcriptText = detectionResults.transcript.text ||
+                             (detectionResults.transcript.segments?.map((seg: any) => seg.text).join(' ') || '') ||
+                             JSON.stringify(detectionResults.transcript)
+
+        const language = detectionResults.transcript.language
+        const duration = detectionResults.transcript.duration ||
+                        (detectionResults.transcript.segments?.reduce((acc: number, seg: any) =>
+                          Math.max(acc, seg.end_time || 0), 0) || null)
+
+        transcriptId = await createTranscript(
+          rawVideo.id, // Use raw_video_id instead of project_id
+          JSON.stringify(detectionResults.transcript), // Store full raw response
+          transcriptText,
+          language,
+          duration
+        )
+
+        console.log('[Database] Transcript stored successfully with ID:', transcriptId)
+        console.log('[Database] Transcript length:', transcriptText.length, 'characters')
+
+        // Store transcript segments if available
+        if (detectionResults.transcript.segments && Array.isArray(detectionResults.transcript.segments)) {
+          console.log('[Database] Storing transcript segments:', detectionResults.transcript.segments.length)
+
+          for (let i = 0; i < detectionResults.transcript.segments.length; i++) {
+            const segment = detectionResults.transcript.segments[i]
+            await createTranscriptSegment(
+              transcriptId,
+              segment.start_time || 0,
+              segment.end_time || 0,
+              segment.text || '',
+              i
+            )
+          }
+
+          console.log('[Database] Transcript segments stored successfully')
+        }
+      }
+    } catch (error) {
+      console.error('[Database] Failed to store transcript:', error)
+      // Continue with clip storage even if transcript storage fails
+    }
+  } else {
+    console.log('[Database] No transcript data provided in detection results')
+  }
 
   // Create detection session
   const sessionId = await createClipDetectionSession(
