@@ -62,7 +62,7 @@
             </div>
 
             <!-- Right Side: Clips Section -->
-            <div class="w-2/5 min-w-0 flex flex-col">
+            <div class="w-2/5 min-w-0 flex flex-col flex-1">
               <!-- Clips Section -->
               <ClipsPanel
                 :is-generating="clipGenerationInProgress"

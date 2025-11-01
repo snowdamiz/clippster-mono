@@ -18,179 +18,179 @@
       </div>
     </div>
     <div class="flex-1 overflow-y-auto">
-        <div class="flex-1 flex items-start justify-center">
-          <!-- Progress State -->
-          <div v-if="isGenerating" class="text-center text-foreground w-full max-w-xs mx-4">
-            <!-- Stage Icon -->
-            <div class="mb-4 flex justify-center">
-              <div class="relative">
-                <component :is="stageIcon" :class="stageIconClass" class="h-8 w-8" />
-              </div>
-            </div>
-
-            <!-- Stage Title -->
-            <h4 class="font-medium text-foreground mb-1">{{ stageTitle }}</h4>
-            <p class="text-sm text-foreground/70 mb-4">{{ stageDescription }}</p>
-
-            <!-- Progress Bar -->
-            <div class="mb-4">
-              <div class="flex justify-between items-center mb-2">
-                <span class="text-xs text-foreground/50">Progress</span>
-                <span class="text-xs font-medium text-foreground/70">{{ generationProgress }}%</span>
-              </div>
-              <div class="relative">
-                <div class="w-full bg-muted rounded-full h-2 overflow-hidden">
-                  <div
-                    class="h-full rounded-full transition-all duration-500 ease-out"
-                    :class="progressBarClass"
-                    :style="{ width: `${generationProgress}%` }"
-                  />
-                </div>
-                <!-- Animated shine effect -->
-                <div
-                  v-if="generationProgress > 0 && generationProgress < 100"
-                  class="absolute inset-0 h-full overflow-hidden rounded-full"
-                >
-                  <div class="h-full w-20 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12 animate-shine" />
-                </div>
-              </div>
-            </div>
-
-            <!-- Status Message -->
-            <div v-if="generationMessage" class="text-sm text-foreground/60 bg-muted/30 rounded-lg p-3 mb-4">
-              {{ generationMessage }}
-            </div>
-
-            <!-- Error State -->
-            <div v-if="generationError" class="bg-destructive/10 border border-destructive/20 rounded-lg p-3 mb-4">
-              <div class="flex items-start gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <div class="text-left">
-                  <h4 class="font-medium text-destructive text-sm">Error</h4>
-                  <p class="text-xs text-destructive/80 mt-1">{{ generationError }}</p>
-                </div>
-              </div>
+      <div class="flex-1 flex items-center justify-center min-h-full">
+        <!-- Progress State -->
+        <div v-if="isGenerating" class="text-center text-foreground w-full max-w-xs mx-4">
+          <!-- Stage Icon -->
+          <div class="mb-4 flex justify-center">
+            <div class="relative">
+              <component :is="stageIcon" :class="stageIconClass" class="h-8 w-8" />
             </div>
           </div>
 
-  
-          <!-- Clips List State -->
-          <div v-else-if="clips.length > 0 && !isGenerating" class="w-full">
+          <!-- Stage Title -->
+          <h4 class="font-medium text-foreground mb-1">{{ stageTitle }}</h4>
+          <p class="text-sm text-foreground/70 mb-4">{{ stageDescription }}</p>
 
-            <!-- Clips Grid -->
-            <div class="space-y-3">
+          <!-- Progress Bar -->
+          <div class="mb-4">
+            <div class="flex justify-between items-center mb-2">
+              <span class="text-xs text-foreground/50">Progress</span>
+              <span class="text-xs font-medium text-foreground/70">{{ generationProgress }}%</span>
+            </div>
+            <div class="relative">
+              <div class="w-full bg-muted rounded-full h-2 overflow-hidden">
+                <div
+                  class="h-full rounded-full transition-all duration-500 ease-out"
+                  :class="progressBarClass"
+                  :style="{ width: `${generationProgress}%` }"
+                />
+              </div>
+              <!-- Animated shine effect -->
               <div
-                v-for="clip in clips"
-                :key="clip.id"
-                class="p-3 bg-muted/15 border border-border rounded-lg hover:border-border/80 transition-colors"
+                v-if="generationProgress > 0 && generationProgress < 100"
+                class="absolute inset-0 h-full overflow-hidden rounded-full"
               >
-                <div class="flex items-start justify-between">
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-2 mb-1">
-                      <h5 class="text-xs font-medium text-foreground/90 truncate">
-                        {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
-                      </h5>
-                      <!-- Run Number Badge -->
-                      <span
-                        v-if="clip.run_number"
-                        class="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full font-medium"
-                        title="Detection run"
-                      >
-                        Run {{ clip.run_number }}
-                      </span>
-                    </div>
-
-                    <!-- Clip Info -->
-                    <div class="flex items-center gap-2 mb-2 text-xs text-foreground/60">
-                      <span>{{ formatDuration((clip.current_version?.end_time || 0) - (clip.current_version?.start_time || 0)) }}</span>
-                      <span>•</span>
-                      <span>{{ Math.floor(clip.current_version?.start_time || 0) }}s - {{ Math.floor(clip.current_version?.end_time || 0) }}s</span>
-                      <span v-if="clip.current_version?.confidence_score" class="flex items-center gap-1">
-                        <TrendingUpIcon class="h-2 w-2" />
-                        {{ Math.round((clip.current_version.confidence_score || 0) * 100) }}%
-                      </span>
-                      <span v-if="clip.session_created_at" class="flex items-center gap-1">
-                        <ClockIcon class="h-2 w-2" />
-                        {{ formatTimestamp(clip.session_created_at) }}
-                      </span>
-                    </div>
-
-                    <!-- Description -->
-                    <p v-if="clip.current_version?.description" class="text-xs text-foreground/70 line-clamp-2">
-                      {{ clip.current_version.description }}
-                    </p>
-                  </div>
-
-                  <!-- Clip Actions -->
-                  <div class="flex items-center gap-1 ml-2">
-                    <button
-                      class="p-1 hover:bg-muted/50 rounded transition-colors"
-                      title="Play clip"
-                    >
-                      <PlayIcon class="h-3 w-3 text-foreground/60" />
-                    </button>
-                  </div>
-                </div>
+                <div class="h-full w-20 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12 animate-shine" />
               </div>
             </div>
           </div>
 
-          <!-- Default State -->
-          <div v-else class="text-center text-muted-foreground">
-            <div class="mb-4 flex flex-col items-center">
-              <label class="block text-xs font-medium text-foreground/70 mb-2 text-center">
-                Detection Prompt
-              </label>
-              <div class="relative">
-                <button
-                  @click="togglePromptDropdown"
-                  class="flex px-3 py-2 text-xs bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent text-left items-center justify-between min-w-[150px]"
-                >
-                  <span class="truncate flex-1 mr-2">
-                    {{ selectedPrompt ? prompts.find(p => p.id === selectedPromptId)?.name || 'Select a prompt...' : 'Select a prompt...' }}
-                  </span>
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
+          <!-- Status Message -->
+          <div v-if="generationMessage" class="text-sm text-foreground/60 bg-muted/30 rounded-lg p-3 mb-4">
+            {{ generationMessage }}
+          </div>
 
-                <!-- Dropdown Menu -->
-                <div
-                  v-if="showPromptDropdown"
-                  class="absolute top-full left-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-[60] max-h-48 overflow-y-auto"
-                  @click.stop
-                >
-                  <div class="p-1 min-w-[150px]">
-                    <button
-                      v-for="prompt in prompts"
-                      :key="prompt.id"
-                      @click="onPromptChange(prompt.id, prompt.content)"
-                      class="block w-full text-left px-3 py-2 rounded-md hover:bg-muted/80 transition-colors text-xs whitespace-nowrap"
-                      :title="`Use prompt: ${prompt.name}`"
-                    >
-                      {{ prompt.name }}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <button
-              @click="handleDetectClips"
-              :disabled="!selectedPrompt"
-              class="px-4 py-2 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 disabled:from-gray-500/50 disabled:to-gray-600/50 disabled:cursor-not-allowed text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all mx-auto text-xs"
-              title="Detect Clips"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          <!-- Error State -->
+          <div v-if="generationError" class="bg-destructive/10 border border-destructive/20 rounded-lg p-3 mb-4">
+            <div class="flex items-start gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              Detect Clips
-            </button>
+              <div class="text-left">
+                <h4 class="font-medium text-destructive text-sm">Error</h4>
+                <p class="text-xs text-destructive/80 mt-1">{{ generationError }}</p>
+              </div>
+            </div>
           </div>
+        </div>
+
+
+        <!-- Clips List State -->
+        <div v-else-if="clips.length > 0 && !isGenerating" class="w-full">
+
+          <!-- Clips Grid -->
+          <div class="space-y-3">
+            <div
+              v-for="clip in clips"
+              :key="clip.id"
+              class="p-3 bg-muted/15 border border-border rounded-lg hover:border-border/80 transition-colors"
+            >
+              <div class="flex items-start justify-between">
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 mb-1">
+                    <h5 class="text-xs font-medium text-foreground/90 truncate">
+                      {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
+                    </h5>
+                    <!-- Run Number Badge -->
+                    <span
+                      v-if="clip.run_number"
+                      class="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full font-medium"
+                      title="Detection run"
+                    >
+                      Run {{ clip.run_number }}
+                    </span>
+                  </div>
+
+                  <!-- Clip Info -->
+                  <div class="flex items-center gap-2 mb-2 text-xs text-foreground/60">
+                    <span>{{ formatDuration((clip.current_version?.end_time || 0) - (clip.current_version?.start_time || 0)) }}</span>
+                    <span>•</span>
+                    <span>{{ Math.floor(clip.current_version?.start_time || 0) }}s - {{ Math.floor(clip.current_version?.end_time || 0) }}s</span>
+                    <span v-if="clip.current_version?.confidence_score" class="flex items-center gap-1">
+                      <TrendingUpIcon class="h-2 w-2" />
+                      {{ Math.round((clip.current_version.confidence_score || 0) * 100) }}%
+                    </span>
+                    <span v-if="clip.session_created_at" class="flex items-center gap-1">
+                      <ClockIcon class="h-2 w-2" />
+                      {{ formatTimestamp(clip.session_created_at) }}
+                    </span>
+                  </div>
+
+                  <!-- Description -->
+                  <p v-if="clip.current_version?.description" class="text-xs text-foreground/70 line-clamp-2">
+                    {{ clip.current_version.description }}
+                  </p>
+                </div>
+
+                <!-- Clip Actions -->
+                <div class="flex items-center gap-1 ml-2">
+                  <button
+                    class="p-1 hover:bg-muted/50 rounded transition-colors"
+                    title="Play clip"
+                  >
+                    <PlayIcon class="h-3 w-3 text-foreground/60" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Default State -->
+        <div v-else class="text-center text-muted-foreground">
+          <div class="mb-4 flex flex-col items-center">
+            <label class="block text-xs font-medium text-foreground/70 mb-2 text-center">
+              Detection Prompt
+            </label>
+            <div class="relative">
+              <button
+                @click="togglePromptDropdown"
+                class="flex px-3 py-2 text-xs bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent text-left items-center justify-between min-w-[150px]"
+              >
+                <span class="truncate flex-1 mr-2">
+                  {{ selectedPrompt ? prompts.find(p => p.id === selectedPromptId)?.name || 'Select a prompt...' : 'Select a prompt...' }}
+                </span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              <!-- Dropdown Menu -->
+              <div
+                v-if="showPromptDropdown"
+                class="absolute top-full left-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-[60] max-h-48 overflow-y-auto"
+                @click.stop
+              >
+                <div class="p-1 min-w-[150px]">
+                  <button
+                    v-for="prompt in prompts"
+                    :key="prompt.id"
+                    @click="onPromptChange(prompt.id, prompt.content)"
+                    class="block w-full text-left px-3 py-2 rounded-md hover:bg-muted/80 transition-colors text-xs whitespace-nowrap"
+                    :title="`Use prompt: ${prompt.name}`"
+                  >
+                    {{ prompt.name }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <button
+            @click="handleDetectClips"
+            :disabled="!selectedPrompt"
+            class="px-4 py-2 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 disabled:from-gray-500/50 disabled:to-gray-600/50 disabled:cursor-not-allowed text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all mx-auto text-xs"
+            title="Detect Clips"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Detect Clips
+          </button>
         </div>
       </div>
     </div>
+  </div>
 </template>
 
 <script setup lang="ts">
