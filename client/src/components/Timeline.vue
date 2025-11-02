@@ -2,7 +2,7 @@
   <div class="bg-[#0a0a0a]/30 border-t border-border transition-all duration-300 ease-in-out"
        :style="{
          height: calculatedHeight + 'px',
-         maxHeight: calculatedHeight + 'px'
+         paddingBottom: props.clips.length > 0 ? '34px' : '0'
        }">
     <div class="pt-3 px-4 h-full flex flex-col">
       <!-- Timeline Header -->
@@ -21,30 +21,38 @@
 
       <!-- Timeline Tracks Container -->
       <div class="flex-1 pr-1 bg-muted/20 rounded-lg relative overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800"
-           :style="{ maxHeight: calculatedHeight - 80 + 'px' }">
+           :style="{ maxHeight: calculatedHeight - 56 + 'px' }">
         <!-- Shared Timestamp Ruler -->
-        <!-- <div class="h-6 border-b border-border/30 flex items-center bg-[#0a0a0a]/20 px-2"> -->
+        <div class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 px-2 sticky top-0 z-10 backdrop-blur-sm timeline-ruler sticky-ruler">
           <!-- Track label spacer -->
-          <!-- <div class="w-16 pr-2"></div> -->
+          <div class="w-16 pr-2 flex items-center justify-center">
+            <span class="text-xs text-muted-foreground/50 font-medium">Time</span>
+          </div>
           <!-- Timestamp ruler -->
-          <!-- <div class="flex-1 relative"> -->
+          <div class="flex-1 relative h-full flex items-center">
             <!-- Timestamp markers -->
-            <!-- <div
-              v-for="timestamp in timestamps"
+            <div
+              v-for="timestamp in generatedTimestamps"
               :key="timestamp.time"
-              class="absolute flex flex-col items-center -mt-2.5"
+              class="absolute flex flex-col items-center"
               :style="{
                 left: `${timestamp.position}%`,
                 transform: 'translateX(-50%)'
               }"
-            > -->
-              <!-- Time label -->
-              <!-- <span class="text-xs text-foreground/30 whitespace-nowrap font-normal">{{ timestamp.label }}</span> -->
+            >
               <!-- Tick mark -->
-              <!-- <div class="w-px h-2 bg-foreground/40 mt-1"></div> -->
-            <!-- </div> -->
-          <!-- </div> -->
-        <!-- </div> -->
+              <div
+                class="w-px bg-foreground/20 timeline-tick"
+                :class="timestamp.isMajor ? 'h-4' : 'h-2'"
+              ></div>
+              <!-- Time label -->
+              <span
+                v-if="timestamp.isMajor"
+                class="text-xs text-foreground/40 whitespace-nowrap font-normal mt-1 timeline-label pb-2"
+              >{{ timestamp.label }}</span>
+            </div>
+          </div>
+        </div>
         <!-- Main Video Track -->
         <div class="flex items-center h-14 px-2 border-b border-border/20">
           <!-- Track Label -->
@@ -157,6 +165,7 @@ interface Timestamp {
   time: number
   position: number
   label: string
+  isMajor: boolean
 }
 
 interface ClipSegment {
@@ -185,7 +194,6 @@ interface Props {
   duration: number
   timelineHoverTime: number | null
   timelineHoverPosition: number
-  timestamps: Timestamp[]
   clips?: Clip[]
 }
 
@@ -195,21 +203,22 @@ const props = withDefaults(defineProps<Props>(), {
 
 // Calculate timeline height dynamically based on tracks
 const calculatedHeight = computed(() => {
-  const headerHeight = 60 // Header section height
+  const headerHeight = 56 // Header section height (pt-3 + content + mb-3 + spacing)
+  const rulerHeight = 32 // Timeline ruler height
   const mainTrackHeight = 56 // Main video track height
   const clipTrackHeight = 48 // Height per clip track
-  const padding = 24 // Top and bottom padding
   const minTracks = 1 // At least main video track
 
   const numberOfClips = props.clips.length
   const totalTracks = Math.max(minTracks, numberOfClips + 1) // +1 for main video track
 
-  // Calculate total height: header + main track + clip tracks + padding
-  const totalHeight = headerHeight + mainTrackHeight + (numberOfClips * clipTrackHeight) + padding
+  // Calculate total content height: header + ruler + main track + clip tracks
+  const tracksHeight = rulerHeight + mainTrackHeight + (numberOfClips * clipTrackHeight)
+  const totalHeight = headerHeight + tracksHeight
 
   // Apply reasonable bounds
-  const minHeight = 140 // Minimum height when no clips
-  const maxHeight = numberOfClips > 10 ? 450 : 375 // Higher max when many clips (reduced by 25%)
+  const minHeight = 160 // Minimum height when no clips (56 + 32 + 56)
+  const maxHeight = numberOfClips > 10 ? 600 : 450 // Higher max for many clips, but allow more space
 
   return Math.max(minHeight, Math.min(maxHeight, totalHeight))
 })
@@ -221,6 +230,75 @@ interface Emits {
 }
 
 const emit = defineEmits<Emits>()
+
+// Intelligent timestamp generation based on video duration
+const generatedTimestamps = computed(() => {
+  if (!props.duration || props.duration <= 0) return []
+
+  const timestamps: Timestamp[] = []
+  const duration = props.duration
+
+  // Determine optimal interval based on video duration
+  function getOptimalInterval(duration: number): { major: number, minor: number } {
+    const seconds = duration
+
+    // For very short videos (< 30 seconds)
+    if (seconds < 30) {
+      return { major: 5, minor: 1 }
+    }
+    // For short videos (30s - 2 minutes)
+    else if (seconds < 120) {
+      return { major: 10, minor: 5 }
+    }
+    // For medium videos (2 - 10 minutes)
+    else if (seconds < 600) {
+      return { major: 30, minor: 10 }
+    }
+    // For longer videos (10 - 30 minutes)
+    else if (seconds < 1800) {
+      return { major: 60, minor: 20 }
+    }
+    // For very long videos (30 minutes - 2 hours)
+    else if (seconds < 7200) {
+      return { major: 300, minor: 60 } // 5min major, 1min minor
+    }
+    // For extremely long videos (2+ hours)
+    else {
+      return { major: 900, minor: 180 } // 15min major, 3min minor
+    }
+  }
+
+  const { major, minor } = getOptimalInterval(duration)
+
+  // Generate major timestamps
+  for (let time = 0; time <= duration; time += major) {
+    const clampedTime = Math.min(time, duration) // Ensure we don't exceed duration
+    timestamps.push({
+      time: clampedTime,
+      position: (clampedTime / duration) * 100,
+      label: formatDuration(clampedTime),
+      isMajor: true
+    })
+  }
+
+  // Generate minor timestamps (in between major ones)
+  for (let time = minor; time < duration; time += minor) {
+    // Skip if this coincides with a major timestamp
+    if (time % major !== 0) {
+      timestamps.push({
+        time: time,
+        position: (time / duration) * 100,
+        label: formatDuration(time),
+        isMajor: false
+      })
+    }
+  }
+
+  // Sort by time to ensure proper order
+  timestamps.sort((a, b) => a.time - b.time)
+
+  return timestamps
+})
 
 
 function formatDuration(seconds: number): string {
@@ -432,5 +510,36 @@ function onTimelineMouseLeave() {
 .clip-segment:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
+}
+
+/* Timeline ruler styling */
+.timeline-ruler {
+  background: rgba(10, 10, 10, 0.6);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.timeline-tick {
+  transition: all 0.2s ease;
+}
+
+.timeline-tick:hover {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.timeline-label {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  transition: all 0.2s ease;
+}
+
+.timeline-label:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* Sticky ruler positioning */
+.sticky-ruler {
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 </style>

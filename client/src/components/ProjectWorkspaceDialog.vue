@@ -26,7 +26,7 @@
         <!-- Main Content Area -->
         <div class="flex flex-col" style="height: calc(100% - 22px); min-height: 0;">
           <!-- Top Row: Video Player, Transcript, and Clips -->
-          <div class="flex min-h-0 border-b border-border" style="flex: 1; overflow: hidden;">
+          <div class="flex min-h-0 border-b border-border" style="flex: 1; overflow: hidden; max-height: calc(100% - 185px);">
             <!-- Video Player Section -->
             <div class="w-3/5 min-w-0 p-8 border-r border-border flex flex-col">
               <!-- Video Player Container -->
@@ -85,7 +85,6 @@
             :duration="duration"
             :timeline-hover-time="timelineHoverTime"
             :timeline-hover-position="timelineHoverPosition"
-            :timestamps="timelineTimestamps"
             :clips="timelineClips"
             @seekTimeline="seekTimeline"
             @timelineTrackHover="onTimelineTrackHover"
