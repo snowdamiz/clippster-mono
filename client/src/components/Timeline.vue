@@ -34,16 +34,18 @@
       <!-- Timeline Tracks Container -->
       <div class="flex-1 pr-1 bg-muted/20 rounded-lg relative overflow-y-auto overflow-x-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800"
            ref="timelineScrollContainer"
-           :style="{ maxHeight: calculatedHeight - 56 + 'px' }">
+           :style="{ maxHeight: calculatedHeight - 56 + 'px' }"
+           @mousemove="onTimelineMouseMove"
+           @mouseleave="onTimelineMouseLeaveGlobal">
         <!-- Timeline Content Wrapper - handles zoom width -->
         <div class="timeline-content-wrapper" :style="{ width: `${100 * zoomLevel}%` }">
           <!-- Shared Timestamp Ruler -->
           <div class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 px-2 sticky top-0 z-10 backdrop-blur-sm timeline-ruler sticky-ruler"
                @wheel="onRulerWheel"
                @mousedown="onPanStart"
-               @mousemove="onPanMove"
+               @mousemove="onRulerMouseMove"
                @mouseup="onPanEnd"
-               @mouseleave="onPanEnd"
+               @mouseleave="onRulerMouseLeave"
                title="Scroll to zoom, click and drag to pan timeline">
             <!-- Track label spacer -->
             <div class="w-16 pr-2 flex items-center justify-center">
@@ -192,6 +194,21 @@
         </div>
         <!-- End Timeline Content Wrapper -->
         </div>
+
+        <!-- Timeline Hover Line - positioned relative to viewport but constrained to timeline bounds -->
+        <div
+          v-if="showTimelineHoverLine && !isPanning"
+          class="fixed bg-white/40 z-30 pointer-events-none transition-opacity duration-150"
+          :style="{
+            left: `${timelineHoverLinePosition}px`,
+            top: `${timelineBounds.top}px`,
+            height: `${timelineBounds.bottom - timelineBounds.top}px`,
+            width: '1px'
+          }"
+        >
+          <div class="absolute top-0 -left-1 w-2 h-2 bg-white/60 rounded-full"></div>
+          <div class="absolute bottom-0 -left-1 w-2 h-2 bg-white/60 rounded-full"></div>
+        </div>
     </div>
   </div>
 </template>
@@ -291,6 +308,11 @@ const zoomStep = 0.1
 const isPanning = ref(false)
 const panStartX = ref(0)
 const panScrollLeft = ref(0)
+
+// Timeline hover line state
+const showTimelineHoverLine = ref(false)
+const timelineHoverLinePosition = ref(0) // X position in pixels relative to timeline container
+const timelineBounds = ref({ top: 0, bottom: 0 }) // Timeline container bounds
 
 function setTimelineClipRef(el: HTMLElement | null, clipId: string) {
   if (el) {
@@ -499,9 +521,66 @@ function onPanEnd() {
   }
 }
 
+// Timeline hover line handlers
+function onTimelineMouseMove(event: MouseEvent) {
+  if (isPanning.value) return
+
+  const container = timelineScrollContainer.value
+  if (!container) return
+
+  const rect = container.getBoundingClientRect()
+  const relativeX = event.clientX - rect.left
+
+  // Update timeline bounds for constraining the hover line
+  timelineBounds.value = {
+    top: rect.top,
+    bottom: rect.bottom
+  }
+
+  // Only show hover line if we're in the timeline content area (after track labels)
+  const trackLabelWidth = 64 // 4rem = 64px (w-16)
+  if (relativeX >= trackLabelWidth) {
+    showTimelineHoverLine.value = true
+    // Position the line exactly where the cursor is (absolute viewport position)
+    timelineHoverLinePosition.value = event.clientX
+  } else {
+    showTimelineHoverLine.value = false
+  }
+}
+
+function onTimelineMouseLeaveGlobal() {
+  showTimelineHoverLine.value = false
+}
+
+function onRulerMouseMove(event: MouseEvent) {
+  if (isPanning.value) return
+
+  // Also update hover line when over ruler
+  onTimelineMouseMove(event)
+}
+
+function onRulerMouseLeave() {
+  onPanEnd()
+  showTimelineHoverLine.value = false
+}
+
 // Global mouse event handlers for better panning experience
 function handleGlobalMouseMove(event: MouseEvent) {
-  onPanMove(event)
+  if (isPanning.value) {
+    onPanMove(event)
+  } else {
+    // Check if we're still over the timeline area
+    const container = timelineScrollContainer.value
+    if (container) {
+      const rect = container.getBoundingClientRect()
+      if (event.clientX >= rect.left && event.clientX <= rect.right &&
+          event.clientY >= rect.top && event.clientY <= rect.bottom) {
+        onTimelineMouseMove(event)
+      } else {
+        showTimelineHoverLine.value = false
+      }
+    }
+  }
 }
 
 function handleGlobalMouseUp() {
@@ -774,5 +853,36 @@ function generateClipGradient(runColor: string | undefined) {
 /* Timeline content wrapper for zoom */
 .timeline-content-wrapper {
   min-width: 100%;
+}
+
+/* Timeline hover line */
+.timeline-hover-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.4);
+  z-index: 30;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.timeline-hover-line::before,
+.timeline-hover-line::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  left: -3.5px;
+}
+
+.timeline-hover-line::before {
+  top: 0;
+}
+
+.timeline-hover-line::after {
+  bottom: 0;
 }
 </style>
