@@ -100,6 +100,7 @@
             @timelineClipHover="onTimelineClipHover"
             @timelineClipLeave="onTimelineClipLeave"
             @scrollToClipsPanel="onScrollToClipsPanel"
+            @zoomChanged="handleTimelineZoomChanged"
           />
         </div>
       </div>
@@ -215,6 +216,7 @@ const {
   togglePlayPause,
   seekTimeline,
   onTimelineTrackHover,
+  onTimelineZoomChanged,
   updateVolume,
   toggleMute,
   onTimeUpdate,
@@ -595,6 +597,11 @@ function showClipDetectionResult(result: any, sessionId?: string) {
 
 function onTimelineMouseLeave() {
   timelineHoverTime.value = null
+}
+
+function handleTimelineZoomChanged(zoomLevel: number) {
+  console.log('[ProjectWorkspaceDialog] Timeline zoom changed:', zoomLevel)
+  onTimelineZoomChanged(zoomLevel)
 }
 
 // Clip hover event handlers

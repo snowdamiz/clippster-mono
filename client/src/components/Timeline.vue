@@ -14,44 +14,61 @@
             </svg>
             <span class="text-xs">scroll</span>
           </div>
+          <div v-if="zoomLevel !== 1.0" class="text-xs text-muted-foreground/70 flex items-center gap-1" :title="`Zoom: ${Math.round(zoomLevel * 100)}%`">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+            </svg>
+            <span class="text-xs">{{ Math.round(zoomLevel * 100) }}%</span>
+          </div>
         </div>
-        <span class="text-xs text-muted-foreground">{{ props.clips.length + 1 }} tracks</span>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-muted-foreground">{{ props.clips.length + 1 }} tracks</span>
+          <div class="text-xs text-muted-foreground/70" title="Hover over timeline ruler and scroll to zoom">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+          </div>
+        </div>
       </div>
 
       <!-- Timeline Tracks Container -->
-      <div class="flex-1 pr-1 bg-muted/20 rounded-lg relative overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800"
+      <div class="flex-1 pr-1 bg-muted/20 rounded-lg relative overflow-y-auto overflow-x-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800"
            ref="timelineScrollContainer"
            :style="{ maxHeight: calculatedHeight - 56 + 'px' }">
-        <!-- Shared Timestamp Ruler -->
-        <div class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 px-2 sticky top-0 z-10 backdrop-blur-sm timeline-ruler sticky-ruler">
-          <!-- Track label spacer -->
-          <div class="w-16 pr-2 flex items-center justify-center">
-            <span class="text-xs text-muted-foreground/50 font-medium">Time</span>
-          </div>
-          <!-- Timestamp ruler -->
-          <div class="flex-1 relative h-full flex items-center">
-            <!-- Timestamp markers -->
-            <div
-              v-for="timestamp in generatedTimestamps"
-              :key="timestamp.time"
-              class="absolute flex flex-col items-center"
-              :style="{
-                left: `${timestamp.position}%`,
-                transform: 'translateX(-50%)'
-              }"
-            >
-              <!-- Tick mark -->
-              <div
-                class="w-px bg-foreground/20 timeline-tick"
-                :class="timestamp.isMajor ? 'h-4' : 'h-2'"
-              ></div>
-              <!-- Time label -->
-              <span
-                v-if="timestamp.isMajor"
-                class="text-xs text-foreground/40 whitespace-nowrap font-normal mt-1 timeline-label pb-2"
-              >{{ timestamp.label }}</span>
+        <!-- Timeline Content Wrapper - handles zoom width -->
+        <div class="timeline-content-wrapper" :style="{ width: `${100 * zoomLevel}%` }">
+          <!-- Shared Timestamp Ruler -->
+          <div class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 px-2 sticky top-0 z-10 backdrop-blur-sm timeline-ruler sticky-ruler"
+               @wheel="onRulerWheel"
+               title="Scroll to zoom in/out timeline">
+            <!-- Track label spacer -->
+            <div class="w-16 pr-2 flex items-center justify-center">
+              <span class="text-xs text-muted-foreground/50 font-medium">Time</span>
             </div>
-          </div>
+            <!-- Timestamp ruler -->
+            <div class="flex-1 relative h-full flex items-center">
+              <!-- Timestamp markers -->
+              <div
+                v-for="timestamp in generatedTimestamps"
+                :key="timestamp.time"
+                class="absolute flex flex-col items-center"
+                :style="{
+                  left: `${timestamp.position}%`,
+                  transform: 'translateX(-50%)'
+                }"
+              >
+                <!-- Tick mark -->
+                <div
+                  class="w-px bg-foreground/20 timeline-tick"
+                  :class="timestamp.isMajor ? 'h-4' : 'h-2'"
+                ></div>
+                <!-- Time label -->
+                <span
+                  v-if="timestamp.isMajor"
+                  class="text-xs text-foreground/40 whitespace-nowrap font-normal mt-1 timeline-label pb-2"
+                >{{ timestamp.label }}</span>
+              </div>
+            </div>
         </div>
         <!-- Main Video Track -->
         <div class="flex items-center h-14 px-2 border-b border-border/20">
@@ -169,6 +186,8 @@
         </div>
 
         </div>
+        <!-- End Timeline Content Wrapper -->
+        </div>
     </div>
   </div>
 </template>
@@ -249,6 +268,7 @@ interface Emits {
   (e: 'timelineClipHover', clipId: string): void
   (e: 'timelineClipLeave'): void
   (e: 'scrollToClipsPanel', clipId: string): void
+  (e: 'zoomChanged', zoomLevel: number): void
 }
 
 const emit = defineEmits<Emits>()
@@ -256,6 +276,12 @@ const emit = defineEmits<Emits>()
 // Refs for scroll containers
 const timelineScrollContainer = ref<HTMLElement | null>(null)
 const timelineClipElements = ref<Map<string, HTMLElement>>(new Map())
+
+// Zoom state
+const zoomLevel = ref(1.0) // 1.0 = normal zoom, >1.0 = zoomed in, <1.0 = zoomed out
+const minZoom = 0.25
+const maxZoom = 4.0
+const zoomStep = 0.1
 
 function setTimelineClipRef(el: HTMLElement | null, clipId: string) {
   if (el) {
@@ -292,47 +318,49 @@ function scrollTimelineClipIntoView(clipId: string) {
 
 // Expose function to parent
 defineExpose({
-  scrollTimelineClipIntoView
+  scrollTimelineClipIntoView,
+  zoomLevel
 })
 
-// Intelligent timestamp generation based on video duration
+// Intelligent timestamp generation based on video duration and zoom level
 const generatedTimestamps = computed(() => {
   if (!props.duration || props.duration <= 0) return []
 
   const timestamps: Timestamp[] = []
   const duration = props.duration
+  const effectiveDuration = duration / zoomLevel.value // Adjust duration based on zoom
 
-  // Determine optimal interval based on video duration
-  function getOptimalInterval(duration: number): { major: number, minor: number } {
-    const seconds = duration
+  // Determine optimal interval based on video duration and zoom level
+  function getOptimalInterval(duration: number, zoom: number): { major: number, minor: number } {
+    const seconds = duration / zoom // Apply zoom to make intervals smaller when zoomed in
 
-    // For very short videos (< 30 seconds)
+    // For very short videos (< 30 seconds at current zoom)
     if (seconds < 30) {
       return { major: 5, minor: 1 }
     }
-    // For short videos (30s - 2 minutes)
+    // For short videos (30s - 2 minutes at current zoom)
     else if (seconds < 120) {
       return { major: 10, minor: 5 }
     }
-    // For medium videos (2 - 10 minutes)
+    // For medium videos (2 - 10 minutes at current zoom)
     else if (seconds < 600) {
       return { major: 30, minor: 10 }
     }
-    // For longer videos (10 - 30 minutes)
+    // For longer videos (10 - 30 minutes at current zoom)
     else if (seconds < 1800) {
       return { major: 60, minor: 20 }
     }
-    // For very long videos (30 minutes - 2 hours)
+    // For very long videos (30 minutes - 2 hours at current zoom)
     else if (seconds < 7200) {
       return { major: 300, minor: 60 } // 5min major, 1min minor
     }
-    // For extremely long videos (2+ hours)
+    // For extremely long videos (2+ hours at current zoom)
     else {
       return { major: 900, minor: 180 } // 15min major, 3min minor
     }
   }
 
-  const { major, minor } = getOptimalInterval(duration)
+  const { major, minor } = getOptimalInterval(duration, zoomLevel.value)
 
   // Generate major timestamps
   for (let time = 0; time <= duration; time += major) {
@@ -406,6 +434,25 @@ function onTimelineClipMouseEnter(clipId: string) {
 function onTimelineClipMouseLeave() {
   emit('timelineClipLeave')
   console.log('[Timeline] Clip mouse leave')
+}
+
+// Zoom handler for timeline ruler
+function onRulerWheel(event: WheelEvent) {
+  event.preventDefault()
+
+  // Determine zoom direction
+  const delta = event.deltaY > 0 ? -zoomStep : zoomStep
+
+  // Calculate new zoom level
+  const newZoom = Math.max(minZoom, Math.min(maxZoom, zoomLevel.value + delta))
+
+  // Update zoom level
+  zoomLevel.value = newZoom
+
+  // Emit zoom change to parent
+  emit('zoomChanged', newZoom)
+
+  console.log('[Timeline] Zoom level:', newZoom.toFixed(2))
 }
 
 // Utility function to convert hex color to darker version for timeline clips
@@ -650,5 +697,10 @@ function generateClipGradient(runColor: string | undefined) {
   position: sticky;
   top: 0;
   z-index: 10;
+}
+
+/* Timeline content wrapper for zoom */
+.timeline-content-wrapper {
+  min-width: 100%;
 }
 </style>

@@ -16,6 +16,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   const buffered = ref(0)
   const timelineHoverTime = ref<number | null>(null)
   const timelineHoverPosition = ref(0)
+  const timelineZoomLevel = ref(1.0)
 
   // Video data
   const availableVideos = ref<RawVideo[]>([])
@@ -177,6 +178,11 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     const hoverTimeSeconds = hoverPercent * videoDuration
     timelineHoverPosition.value = hoverPercent * 100
     timelineHoverTime.value = hoverTimeSeconds
+  }
+
+  function onTimelineZoomChanged(zoomLevel: number) {
+    timelineZoomLevel.value = zoomLevel
+    console.log('[VideoPlayer] Timeline zoom level updated:', zoomLevel)
   }
 
   function updateVolume(newVolume?: number) {
@@ -416,6 +422,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     buffered,
     timelineHoverTime,
     timelineHoverPosition,
+    timelineZoomLevel,
     timelineTimestamps,
     currentVideo,
 
@@ -424,6 +431,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     togglePlayPause,
     seekTimeline,
     onTimelineTrackHover,
+    onTimelineZoomChanged,
     updateVolume,
     toggleMute,
     onTimeUpdate,
