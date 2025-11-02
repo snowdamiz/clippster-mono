@@ -77,12 +77,13 @@
       </div>
 
       <!-- Clips List State -->
-      <div v-else-if="clips.length > 0 && !isGenerating" class="w-full">
+      <div v-else-if="clips.length > 0 && !isGenerating" class="w-full flex-1 overflow-y-auto" ref="clipsScrollContainer">
         <!-- Clips Grid -->
-        <div class="space-y-3">
+        <div class="space-y-3 pb-4">
           <div
             v-for="(clip, index) in clips"
             :key="clip.id"
+            :ref="el => setClipRef(el, clip.id)"
             :class="[
               'p-3 bg-muted/15 border rounded-lg cursor-pointer',
               index === clips.length - 1 ? 'mb-4' : '',
@@ -246,6 +247,7 @@ interface Emits {
   (e: 'detectClips', prompt: string): void
   (e: 'clipHover', clipId: string): void
   (e: 'clipLeave'): void
+  (e: 'scrollToTimeline'): void
 }
 
 const emit = defineEmits<Emits>()
@@ -260,6 +262,9 @@ const clips = ref<ClipWithVersion[]>([])
 const detectionSessions = ref<ClipDetectionSession[]>([])
 const loadingClips = ref(false)
 const hoveredClipId = ref<string | null>(null)
+
+// Refs for scroll containers
+const clipsScrollContainer = ref<HTMLElement | null>(null)
 
 onMounted(async () => {
   try {
@@ -411,6 +416,7 @@ function togglePromptDropdown() {
 function onClipMouseEnter(clipId: string) {
   hoveredClipId.value = clipId
   emit('clipHover', clipId)
+  emit('scrollToTimeline')
   console.log('[ClipsPanel] Clip mouse enter:', clipId)
 }
 
@@ -419,6 +425,98 @@ function onClipMouseLeave() {
   emit('clipLeave')
   console.log('[ClipsPanel] Clip mouse leave')
 }
+
+// Ref management for clip elements
+const clipElements = ref<Map<string, HTMLElement>>(new Map())
+
+function setClipRef(el: HTMLElement | null, clipId: string) {
+  if (el) {
+    clipElements.value.set(clipId, el)
+  } else {
+    clipElements.value.delete(clipId)
+  }
+}
+
+// Function to scroll clip into view
+function scrollClipIntoView(clipId: string) {
+  console.log('[ClipsPanel] scrollClipIntoView called for:', clipId)
+  console.log('[ClipsPanel] Total clip elements in map:', clipElements.value.size)
+
+  const clipElement = clipElements.value.get(clipId)
+  const container = clipsScrollContainer.value
+
+  console.log('[ClipsPanel] clipElement found:', !!clipElement)
+  console.log('[ClipsPanel] container found:', !!container)
+
+  if (clipElement && container) {
+    console.log('[ClipsPanel] Both elements found, checking visibility...')
+
+    // Get the position of the clip relative to the container
+    const clipRect = clipElement.getBoundingClientRect()
+    const containerRect = container.getBoundingClientRect()
+
+    // Get container's scroll position
+    const scrollTop = container.scrollTop
+    const containerClientHeight = container.clientHeight
+    const containerScrollHeight = container.scrollHeight
+
+    console.log('[ClipsPanel] clipRect:', {
+      top: clipRect.top,
+      bottom: clipRect.bottom,
+      height: clipRect.height
+    })
+    console.log('[ClipsPanel] containerRect:', {
+      top: containerRect.top,
+      bottom: containerRect.bottom,
+      height: containerRect.height
+    })
+    console.log('[ClipsPanel] container scrollTop:', scrollTop,
+                'containerClientHeight:', containerClientHeight,
+                'containerScrollHeight:', containerScrollHeight)
+
+    // Calculate clip position relative to container's scroll position
+    const clipRelativeTop = clipRect.top - containerRect.top + scrollTop
+    const clipRelativeBottom = clipRelativeTop + clipRect.height
+
+    console.log('[ClipsPanel] clipRelativeTop:', clipRelativeTop, 'clipRelativeBottom:', clipRelativeBottom)
+
+    // The visible area is from scrollTop to scrollTop + containerClientHeight
+    const visibleBottom = scrollTop + containerClientHeight
+    console.log('[ClipsPanel] visible area:', scrollTop, 'to', visibleBottom)
+
+    // Check if the clip is outside the visible area of the container
+    const isAboveVisible = clipRelativeTop < scrollTop
+    const isBelowVisible = clipRelativeBottom > visibleBottom
+
+    console.log('[ClipsPanel] isAboveVisible:', isAboveVisible, 'isBelowVisible:', isBelowVisible)
+
+    // Always force scroll to the bottom-most clip for testing
+    console.log('[ClipsPanel] Forcing scroll to clip for testing...')
+    clipElement.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest',
+      inline: 'nearest'
+    })
+    return
+
+    if (isAboveVisible || isBelowVisible) {
+      console.log('[ClipsPanel] Scrolling clip into view...')
+      // Scroll the clip into view with smooth behavior
+      clipElement.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'nearest'
+      })
+    } else {
+      console.log('[ClipsPanel] Clip is already visible, no scrolling needed')
+    }
+  } else {
+    console.log('[ClipsPanel] Cannot scroll - missing elements')
+    console.log('[ClipsPanel] Available clip IDs:', Array.from(clipElements.value.keys()))
+  }
+}
+
+// Expose function to parent (will be merged with existing defineExpose)
 
 // Utility function to convert hex color to darker version for dark theme
 function hexToDarkerHex(hex: string, opacity: number = 0.15): string {
@@ -535,7 +633,8 @@ const progressBarClass = computed(() => {
 
 // Expose methods for external access
 defineExpose({
-  refreshClips
+  refreshClips,
+  scrollClipIntoView
 })
 
 // Event listener for fallback refresh mechanism

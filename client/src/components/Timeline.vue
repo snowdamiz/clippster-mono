@@ -20,6 +20,7 @@
 
       <!-- Timeline Tracks Container -->
       <div class="flex-1 pr-1 bg-muted/20 rounded-lg relative overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800"
+           ref="timelineScrollContainer"
            :style="{ maxHeight: calculatedHeight - 56 + 'px' }">
         <!-- Shared Timestamp Ruler -->
         <div class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 px-2 sticky top-0 z-10 backdrop-blur-sm timeline-ruler sticky-ruler">
@@ -139,6 +140,7 @@
               <div
                 v-for="(segment, segIndex) in clip.segments"
                 :key="`${clip.id}_${segIndex}`"
+                :ref="el => setTimelineClipRef(el, clip.id)"
                 class="clip-segment absolute h-6 border rounded-md flex items-center justify-center cursor-pointer"
                 :class="[
                   'transition-all duration-150',
@@ -246,9 +248,52 @@ interface Emits {
   (e: 'timelineMouseLeave'): void
   (e: 'timelineClipHover', clipId: string): void
   (e: 'timelineClipLeave'): void
+  (e: 'scrollToClipsPanel', clipId: string): void
 }
 
 const emit = defineEmits<Emits>()
+
+// Refs for scroll containers
+const timelineScrollContainer = ref<HTMLElement | null>(null)
+const timelineClipElements = ref<Map<string, HTMLElement>>(new Map())
+
+function setTimelineClipRef(el: HTMLElement | null, clipId: string) {
+  if (el) {
+    timelineClipElements.value.set(clipId, el)
+  } else {
+    timelineClipElements.value.delete(clipId)
+  }
+}
+
+// Function to scroll timeline clip into view
+function scrollTimelineClipIntoView(clipId: string) {
+  const clipElement = timelineClipElements.value.get(clipId)
+  const container = timelineScrollContainer.value
+
+  if (clipElement && container) {
+    // Get the position of the clip relative to the container
+    const clipRect = clipElement.getBoundingClientRect()
+    const containerRect = container.getBoundingClientRect()
+
+    // Check if the clip is partially or fully outside the visible area
+    const isAboveVisible = clipRect.top < containerRect.top
+    const isBelowVisible = clipRect.bottom > containerRect.bottom
+
+    if (isAboveVisible || isBelowVisible) {
+      // Scroll the clip into view with smooth behavior
+      clipElement.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'nearest'
+      })
+    }
+  }
+}
+
+// Expose function to parent
+defineExpose({
+  scrollTimelineClipIntoView
+})
 
 // Intelligent timestamp generation based on video duration
 const generatedTimestamps = computed(() => {
@@ -354,6 +399,7 @@ function onTimelineMouseLeave() {
 // Timeline clip hover event handlers
 function onTimelineClipMouseEnter(clipId: string) {
   emit('timelineClipHover', clipId)
+  emit('scrollToClipsPanel', clipId)
   console.log('[Timeline] Clip mouse enter:', clipId)
 }
 

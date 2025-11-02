@@ -65,6 +65,7 @@
             <div class="w-2/5 min-w-0 flex flex-col flex-1">
               <!-- Clips Section -->
               <ClipsPanel
+                ref="clipsPanelRef"
                 :transcript-collapsed="transcriptCollapsed"
                 :clips-collapsed="clipsCollapsed"
                 :is-generating="clipGenerationInProgress"
@@ -77,12 +78,14 @@
                 @detectClips="onDetectClips"
                 @clipHover="onClipHover"
                 @clipLeave="onClipLeave"
+                @scrollToTimeline="onScrollToTimeline"
               />
             </div>
           </div>
 
           <!-- Bottom Row: Timeline -->
           <Timeline
+            ref="timelineRef"
             :video-src="videoSrc"
             :current-time="currentTime"
             :duration="duration"
@@ -96,6 +99,7 @@
             @timelineMouseLeave="onTimelineMouseLeave"
             @timelineClipHover="onTimelineClipHover"
             @timelineClipLeave="onTimelineClipLeave"
+            @scrollToClipsPanel="onScrollToClipsPanel"
           />
         </div>
       </div>
@@ -177,6 +181,10 @@ const timelineClips = ref<any[]>([])
 // Hover state for bidirectional highlighting
 const hoveredClipId = ref<string | null>(null)
 const hoveredTimelineClipId = ref<string | null>(null)
+
+// Component refs for scrolling
+const clipsPanelRef = ref<InstanceType<typeof ClipsPanel> | null>(null)
+const timelineRef = ref<InstanceType<typeof Timeline> | null>(null)
 
 // Use video player composable
 const projectRef = computed(() => props.project)
@@ -593,6 +601,11 @@ function onTimelineMouseLeave() {
 function onClipHover(clipId: string) {
   hoveredClipId.value = clipId
   console.log('[ProjectWorkspaceDialog] Clip hovered:', clipId)
+
+  // Scroll to the corresponding timeline clip
+  if (timelineRef.value) {
+    timelineRef.value.scrollTimelineClipIntoView(clipId)
+  }
 }
 
 function onClipLeave() {
@@ -609,6 +622,34 @@ function onTimelineClipHover(clipId: string) {
 function onTimelineClipLeave() {
   hoveredTimelineClipId.value = null
   console.log('[ProjectWorkspaceDialog] Timeline clip hover left')
+}
+
+// Scroll event handlers
+function onScrollToTimeline() {
+  console.log('[ProjectWorkspaceDialog] Request to scroll to timeline')
+  // Scroll timeline into view if it's not visible
+  if (timelineRef.value) {
+    const timelineElement = (timelineRef.value as any).$el as HTMLElement
+    if (timelineElement) {
+      timelineElement.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest'
+      })
+    }
+  }
+}
+
+function onScrollToClipsPanel(clipId: string) {
+  console.log('[ProjectWorkspaceDialog] Request to scroll to clips panel for clip:', clipId)
+  console.log('[ProjectWorkspaceDialog] clipsPanelRef available:', !!clipsPanelRef.value)
+
+  // Scroll to the specific clip
+  if (clipId && clipsPanelRef.value) {
+    console.log('[ProjectWorkspaceDialog] Calling scrollClipIntoView for:', clipId)
+    clipsPanelRef.value.scrollClipIntoView(clipId)
+  } else {
+    console.log('[ProjectWorkspaceDialog] Cannot scroll - missing clipId or ref')
+  }
 }
 
 // Transform ClipWithVersion to Timeline's Clip format
