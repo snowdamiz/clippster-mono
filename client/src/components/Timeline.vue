@@ -40,7 +40,11 @@
           <!-- Shared Timestamp Ruler -->
           <div class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 px-2 sticky top-0 z-10 backdrop-blur-sm timeline-ruler sticky-ruler"
                @wheel="onRulerWheel"
-               title="Scroll to zoom in/out timeline">
+               @mousedown="onPanStart"
+               @mousemove="onPanMove"
+               @mouseup="onPanEnd"
+               @mouseleave="onPanEnd"
+               title="Scroll to zoom, click and drag to pan timeline">
             <!-- Track label spacer -->
             <div class="w-16 pr-2 flex items-center justify-center">
               <span class="text-xs text-muted-foreground/50 font-medium">Time</span>
@@ -193,7 +197,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 interface Timestamp {
   time: number
@@ -278,10 +282,15 @@ const timelineScrollContainer = ref<HTMLElement | null>(null)
 const timelineClipElements = ref<Map<string, HTMLElement>>(new Map())
 
 // Zoom state
-const zoomLevel = ref(1.0) // 1.0 = normal zoom, >1.0 = zoomed in, <1.0 = zoomed out
-const minZoom = 0.25
+const zoomLevel = ref(1.0) // 1.0 = normal zoom, >1.0 = zoomed in
+const minZoom = 1.0
 const maxZoom = 4.0
 const zoomStep = 0.1
+
+// Panning state
+const isPanning = ref(false)
+const panStartX = ref(0)
+const panScrollLeft = ref(0)
 
 function setTimelineClipRef(el: HTMLElement | null, clipId: string) {
   if (el) {
@@ -454,6 +463,63 @@ function onRulerWheel(event: WheelEvent) {
 
   console.log('[Timeline] Zoom level:', newZoom.toFixed(2))
 }
+
+// Panning handlers for timeline ruler
+function onPanStart(event: MouseEvent) {
+  // Only pan with left mouse button
+  if (event.button !== 0) return
+
+  isPanning.value = true
+  panStartX.value = event.clientX
+  panScrollLeft.value = timelineScrollContainer.value?.scrollLeft || 0
+
+  // Change cursor to indicate panning
+  document.body.style.cursor = 'grabbing'
+  event.preventDefault()
+}
+
+function onPanMove(event: MouseEvent) {
+  if (!isPanning.value) return
+
+  event.preventDefault()
+
+  const deltaX = event.clientX - panStartX.value
+  const newScrollLeft = panScrollLeft.value - deltaX
+
+  if (timelineScrollContainer.value) {
+    timelineScrollContainer.value.scrollLeft = newScrollLeft
+  }
+}
+
+function onPanEnd() {
+  if (isPanning.value) {
+    isPanning.value = false
+    // Reset cursor
+    document.body.style.cursor = ''
+  }
+}
+
+// Global mouse event handlers for better panning experience
+function handleGlobalMouseMove(event: MouseEvent) {
+  onPanMove(event)
+}
+
+function handleGlobalMouseUp() {
+  onPanEnd()
+}
+
+// Setup and cleanup global event listeners
+onMounted(() => {
+  document.addEventListener('mousemove', handleGlobalMouseMove)
+  document.addEventListener('mouseup', handleGlobalMouseUp)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('mousemove', handleGlobalMouseMove)
+  document.removeEventListener('mouseup', handleGlobalMouseUp)
+  // Reset cursor in case component is unmounted while panning
+  document.body.style.cursor = ''
+})
 
 // Utility function to convert hex color to darker version for timeline clips
 function hexToDarkerHex(hex: string, opacity: number = 0.4): string {
@@ -673,6 +739,12 @@ function generateClipGradient(runColor: string | undefined) {
   background: rgba(10, 10, 10, 0.6);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: grab;
+  user-select: none;
+}
+
+.timeline-ruler:active {
+  cursor: grabbing;
 }
 
 .timeline-tick {
