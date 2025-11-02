@@ -77,7 +77,6 @@
                 :hovered-timeline-clip-id="hoveredTimelineClipId"
                 @detectClips="onDetectClips"
                 @clipHover="onClipHover"
-                @clipLeave="onClipLeave"
                 @scrollToTimeline="onScrollToTimeline"
               />
             </div>
@@ -98,7 +97,6 @@
             @timelineTrackHover="onTimelineTrackHover"
             @timelineMouseLeave="onTimelineMouseLeave"
             @timelineClipHover="onTimelineClipHover"
-            @timelineClipLeave="onTimelineClipLeave"
             @scrollToClipsPanel="onScrollToClipsPanel"
             @zoomChanged="handleTimelineZoomChanged"
           />
@@ -538,25 +536,34 @@ function handleTimelineZoomChanged(zoomLevel: number) {
 
 // Clip hover event handlers
 function onClipHover(clipId: string) {
-  hoveredClipId.value = clipId
+  // Toggle the hovered state - if clicking the same clip, unhighlight it
+  hoveredClipId.value = hoveredClipId.value === clipId ? null : clipId
 
-  // Scroll to the corresponding timeline clip
+  // Check if this is the first clip - if so, scroll timeline to top
+  const isFirstClip = timelineClips.value.length > 0 && timelineClips.value[0].id === clipId
+
   if (timelineRef.value) {
-    timelineRef.value.scrollTimelineClipIntoView(clipId)
+    if (isFirstClip) {
+      // Scroll timeline to the very top with smooth animation
+      const timelineContainer = timelineRef.value.$el?.querySelector('.overflow-y-auto')
+      if (timelineContainer) {
+        timelineContainer.scrollTo({
+          top: 0,
+          behavior: 'smooth'
+        })
+      }
+    } else {
+      // Scroll to the corresponding timeline clip
+      timelineRef.value.scrollTimelineClipIntoView(clipId)
+    }
   }
 }
 
-function onClipLeave() {
-  hoveredClipId.value = null
-}
 
-// Timeline clip hover event handlers
+// Timeline clip hover/click event handler
 function onTimelineClipHover(clipId: string) {
-  hoveredTimelineClipId.value = clipId
-}
-
-function onTimelineClipLeave() {
-  hoveredTimelineClipId.value = null
+  // Toggle the hovered state - if clicking the same clip, unhighlight it
+  hoveredTimelineClipId.value = hoveredTimelineClipId.value === clipId ? null : clipId
 }
 
 // Scroll event handlers

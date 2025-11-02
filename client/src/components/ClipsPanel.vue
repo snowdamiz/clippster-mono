@@ -93,8 +93,7 @@
               borderColor: (hoveredTimelineClipId === clip.id || hoveredClipId === clip.id) ? (clip.session_run_color || '#8B5CF6') : undefined,
               borderWidth: (hoveredTimelineClipId === clip.id || hoveredClipId === clip.id) ? '1px' : undefined
             }"
-            @mouseenter="onClipMouseEnter(clip.id)"
-            @mouseleave="onClipMouseLeave"
+            @click="onClipClick(clip.id)"
           >
             <div class="flex items-start justify-between">
               <div class="flex-1 min-w-0">
@@ -385,16 +384,12 @@ function togglePromptDropdown() {
   showPromptDropdown.value = !showPromptDropdown.value
 }
 
-// Clip hover event handlers
-function onClipMouseEnter(clipId: string) {
-  hoveredClipId.value = clipId
+// Clip click event handler
+function onClipClick(clipId: string) {
+  // Toggle the hovered state - if clicking the same clip, unhighlight it
+  hoveredClipId.value = hoveredClipId.value === clipId ? null : clipId
   emit('clipHover', clipId)
   emit('scrollToTimeline')
-}
-
-function onClipMouseLeave() {
-  hoveredClipId.value = null
-  emit('clipLeave')
 }
 
 // Ref management for clip elements

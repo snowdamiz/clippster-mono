@@ -147,9 +147,8 @@
         <div
           v-for="(clip, index) in props.clips"
           :key="clip.id"
-          class="flex items-center min-h-12 px-2 border-b border-border/20"
-          @mouseenter="onTimelineClipMouseEnter(clip.id)"
-          @mouseleave="onTimelineClipMouseLeave"
+          class="flex items-center min-h-12 px-2 border-b border-border/20 cursor-pointer"
+          @click="onTimelineClipClick(clip.id)"
         >
           <!-- Track Label -->
           <div class="w-16 h-8 pr-2 flex items-center justify-center">
@@ -227,7 +226,10 @@
             height: `${timelineBounds.bottom - timelineBounds.top}px`
           }"
         >
-          <div class="absolute inset-0 flex items-center justify-center">
+          <div
+            v-if="Math.abs(dragEndX - dragStartX) > 80"
+            class="absolute inset-0 flex items-center justify-center"
+          >
             <div class="bg-blue-500/80 text-white text-xs px-2 py-1 rounded font-medium">
               {{ formatDuration(Math.min(dragStartPercent, dragEndPercent) * duration) }} - {{ formatDuration(Math.max(dragStartPercent, dragEndPercent) * duration) }}
             </div>
@@ -309,7 +311,6 @@ interface Emits {
   (e: 'timelineTrackHover', event: MouseEvent): void
   (e: 'timelineMouseLeave'): void
   (e: 'timelineClipHover', clipId: string): void
-  (e: 'timelineClipLeave'): void
   (e: 'scrollToClipsPanel', clipId: string): void
   (e: 'zoomChanged', zoomLevel: number): void
 }
@@ -497,14 +498,10 @@ function onClipTrackClick(event: MouseEvent) {
   }
 }
 
-// Timeline clip hover event handlers
-function onTimelineClipMouseEnter(clipId: string) {
+// Timeline clip click event handler
+function onTimelineClipClick(clipId: string) {
   emit('timelineClipHover', clipId)
   emit('scrollToClipsPanel', clipId)
-}
-
-function onTimelineClipMouseLeave() {
-  emit('timelineClipLeave')
 }
 
 // Zoom handler for timeline ruler
