@@ -73,7 +73,10 @@
                 :generation-message="clipMessage"
                 :generation-error="clipError"
                 :project-id="project?.id"
+                :hovered-timeline-clip-id="hoveredTimelineClipId"
                 @detectClips="onDetectClips"
+                @clipHover="onClipHover"
+                @clipLeave="onClipLeave"
               />
             </div>
           </div>
@@ -86,9 +89,13 @@
             :timeline-hover-time="timelineHoverTime"
             :timeline-hover-position="timelineHoverPosition"
             :clips="timelineClips"
+            :hovered-clip-id="hoveredClipId"
+            :hovered-timeline-clip-id="hoveredTimelineClipId"
             @seekTimeline="seekTimeline"
             @timelineTrackHover="onTimelineTrackHover"
             @timelineMouseLeave="onTimelineMouseLeave"
+            @timelineClipHover="onTimelineClipHover"
+            @timelineClipLeave="onTimelineClipLeave"
           />
         </div>
       </div>
@@ -166,6 +173,10 @@ const clipsCollapsed = ref(false)
 
 // Timeline clips state
 const timelineClips = ref<any[]>([])
+
+// Hover state for bidirectional highlighting
+const hoveredClipId = ref<string | null>(null)
+const hoveredTimelineClipId = ref<string | null>(null)
 
 // Use video player composable
 const projectRef = computed(() => props.project)
@@ -576,6 +587,28 @@ function showClipDetectionResult(result: any, sessionId?: string) {
 
 function onTimelineMouseLeave() {
   timelineHoverTime.value = null
+}
+
+// Clip hover event handlers
+function onClipHover(clipId: string) {
+  hoveredClipId.value = clipId
+  console.log('[ProjectWorkspaceDialog] Clip hovered:', clipId)
+}
+
+function onClipLeave() {
+  hoveredClipId.value = null
+  console.log('[ProjectWorkspaceDialog] Clip hover left')
+}
+
+// Timeline clip hover event handlers
+function onTimelineClipHover(clipId: string) {
+  hoveredTimelineClipId.value = clipId
+  console.log('[ProjectWorkspaceDialog] Timeline clip hovered:', clipId)
+}
+
+function onTimelineClipLeave() {
+  hoveredTimelineClipId.value = null
+  console.log('[ProjectWorkspaceDialog] Timeline clip hover left')
 }
 
 // Transform ClipWithVersion to Timeline's Clip format

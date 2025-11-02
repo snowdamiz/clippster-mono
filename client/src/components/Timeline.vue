@@ -142,16 +142,23 @@
                 class="clip-segment absolute h-6 border rounded-md flex items-center justify-center cursor-pointer"
                 :class="[
                   'transition-all duration-150',
-                  clip.run_number ? `run-${clip.run_number}` : ''
+                  clip.run_number ? `run-${clip.run_number}` : '',
+                  hoveredClipId === clip.id || props.hoveredTimelineClipId === clip.id ? 'shadow-lg scale-105 z-20' : ''
                 ]"
                 :style="{
                   left: `${duration ? (segment.start_time / duration) * 100 : 0}%`,
                   width: `${duration ? ((segment.end_time - segment.start_time) / duration) * 100 : 0}%`,
-                  ...generateClipGradient(clip.run_color)
+                  ...generateClipGradient(clip.run_color),
+                  ...(hoveredClipId === clip.id || props.hoveredTimelineClipId === clip.id ? {
+                    borderColor: clip.run_color || '#10B981',
+                    borderWidth: '2px',
+                    borderStyle: 'solid'
+                  } : {})
                 }"
+                :data-run-color="clip.run_color"
                 :title="`${clip.title} - ${formatDuration(segment.start_time)} to ${formatDuration(segment.end_time)}${clip.run_number ? ` (Run ${clip.run_number})` : ''}`"
-                @mouseenter="$event.target.style.background = generateClipGradient(clip.run_color).hoverBackground"
-                @mouseleave="$event.target.style.background = generateClipGradient(clip.run_color).background"
+                @mouseenter="onTimelineClipMouseEnter(clip.id)"
+                @mouseleave="onTimelineClipMouseLeave"
               >
                 <span class="text-xs text-white/90 font-medium truncate px-1 drop-shadow-sm">{{ clip.title }}</span>
               </div>
@@ -203,6 +210,8 @@ interface Props {
   timelineHoverTime: number | null
   timelineHoverPosition: number
   clips?: Clip[]
+  hoveredClipId?: string | null
+  hoveredTimelineClipId?: string | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -235,6 +244,8 @@ interface Emits {
   (e: 'seekTimeline', event: MouseEvent): void
   (e: 'timelineTrackHover', event: MouseEvent): void
   (e: 'timelineMouseLeave'): void
+  (e: 'timelineClipHover', clipId: string): void
+  (e: 'timelineClipLeave'): void
 }
 
 const emit = defineEmits<Emits>()
@@ -338,6 +349,17 @@ function onTimelineTrackHover(event: MouseEvent) {
 
 function onTimelineMouseLeave() {
   emit('timelineMouseLeave')
+}
+
+// Timeline clip hover event handlers
+function onTimelineClipMouseEnter(clipId: string) {
+  emit('timelineClipHover', clipId)
+  console.log('[Timeline] Clip mouse enter:', clipId)
+}
+
+function onTimelineClipMouseLeave() {
+  emit('timelineClipLeave')
+  console.log('[Timeline] Clip mouse leave')
 }
 
 // Utility function to convert hex color to darker version for timeline clips
@@ -551,10 +573,7 @@ function generateClipGradient(runColor: string | undefined) {
   transition: all 0.15s ease;
 }
 
-.clip-segment:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
-}
+/* Individual hover effect removed - clips only highlight through bidirectional system */
 
 /* Timeline ruler styling */
 .timeline-ruler {

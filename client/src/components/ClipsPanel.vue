@@ -84,9 +84,16 @@
             v-for="(clip, index) in clips"
             :key="clip.id"
             :class="[
-              'p-3 bg-muted/15 border border-border rounded-lg hover:border-border/80 transition-colors',
-              index === clips.length - 1 ? 'mb-4' : ''
+              'p-3 bg-muted/15 border rounded-lg cursor-pointer',
+              index === clips.length - 1 ? 'mb-4' : '',
+              hoveredTimelineClipId === clip.id ? '' : 'transition-all duration-200'
             ]"
+            :style="{
+              borderColor: (hoveredTimelineClipId === clip.id || hoveredClipId === clip.id) ? (clip.session_run_color || '#8B5CF6') : undefined,
+              borderWidth: (hoveredTimelineClipId === clip.id || hoveredClipId === clip.id) ? '1px' : undefined
+            }"
+            @mouseenter="onClipMouseEnter(clip.id)"
+            @mouseleave="onClipMouseLeave"
           >
             <div class="flex items-start justify-between">
               <div class="flex-1 min-w-0">
@@ -224,6 +231,7 @@ interface Props {
   generationMessage?: string
   generationError?: string
   projectId?: string
+  hoveredTimelineClipId?: string | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -236,6 +244,8 @@ const props = withDefaults(defineProps<Props>(), {
 
 interface Emits {
   (e: 'detectClips', prompt: string): void
+  (e: 'clipHover', clipId: string): void
+  (e: 'clipLeave'): void
 }
 
 const emit = defineEmits<Emits>()
@@ -249,6 +259,7 @@ const showPromptDropdown = ref(false)
 const clips = ref<ClipWithVersion[]>([])
 const detectionSessions = ref<ClipDetectionSession[]>([])
 const loadingClips = ref(false)
+const hoveredClipId = ref<string | null>(null)
 
 onMounted(async () => {
   try {
@@ -394,6 +405,19 @@ function onPromptChange(promptId: string, promptContent: string) {
 
 function togglePromptDropdown() {
   showPromptDropdown.value = !showPromptDropdown.value
+}
+
+// Clip hover event handlers
+function onClipMouseEnter(clipId: string) {
+  hoveredClipId.value = clipId
+  emit('clipHover', clipId)
+  console.log('[ClipsPanel] Clip mouse enter:', clipId)
+}
+
+function onClipMouseLeave() {
+  hoveredClipId.value = null
+  emit('clipLeave')
+  console.log('[ClipsPanel] Clip mouse leave')
 }
 
 // Utility function to convert hex color to darker version for dark theme
