@@ -628,7 +628,9 @@ function transformClipsForTimeline(clipsWithVersion: ClipWithVersion[]): any[] {
       combined_transcript: version.description || 'No transcript available',
       virality_score: Math.round((version.confidence_score || 0) * 100),
       reason: version.detection_reason || 'AI detected clip-worthy moment',
-      socialMediaPost: `${version.name || 'Clip'} - ${version.description || 'Interesting moment'}`
+      socialMediaPost: `${version.name || 'Clip'} - ${version.description || 'Interesting moment'}`,
+      run_number: clip.run_number,
+      run_color: clip.session_run_color
     }
   }).filter(Boolean) // Remove any null entries
 }

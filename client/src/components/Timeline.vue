@@ -139,14 +139,21 @@
               <div
                 v-for="(segment, segIndex) in clip.segments"
                 :key="`${clip.id}_${segIndex}`"
-                class="clip-segment absolute h-6 bg-gradient-to-r from-green-500/40 to-emerald-500/40 border border-green-400/50 rounded-md flex items-center justify-center cursor-pointer hover:from-green-500/60 hover:to-emerald-500/60"
+                class="clip-segment absolute h-6 border rounded-md flex items-center justify-center cursor-pointer"
+                :class="[
+                  'transition-all duration-150',
+                  clip.run_number ? `run-${clip.run_number}` : ''
+                ]"
                 :style="{
                   left: `${duration ? (segment.start_time / duration) * 100 : 0}%`,
-                  width: `${duration ? ((segment.end_time - segment.start_time) / duration) * 100 : 0}%`
+                  width: `${duration ? ((segment.end_time - segment.start_time) / duration) * 100 : 0}%`,
+                  ...generateClipGradient(clip.run_color)
                 }"
-                :title="`${clip.title} - ${formatDuration(segment.start_time)} to ${formatDuration(segment.end_time)}`"
+                :title="`${clip.title} - ${formatDuration(segment.start_time)} to ${formatDuration(segment.end_time)}${clip.run_number ? ` (Run ${clip.run_number})` : ''}`"
+                @mouseenter="$event.target.style.background = generateClipGradient(clip.run_color).hoverBackground"
+                @mouseleave="$event.target.style.background = generateClipGradient(clip.run_color).background"
               >
-                <span class="text-xs text-white/90 font-medium truncate px-1">{{ clip.title }}</span>
+                <span class="text-xs text-white/90 font-medium truncate px-1 drop-shadow-sm">{{ clip.title }}</span>
               </div>
             </div>
           </div>
@@ -185,6 +192,8 @@ interface Clip {
   virality_score: number
   reason: string
   socialMediaPost: string
+  run_number?: number
+  run_color?: string
 }
 
 interface Props {
@@ -329,6 +338,42 @@ function onTimelineTrackHover(event: MouseEvent) {
 
 function onTimelineMouseLeave() {
   emit('timelineMouseLeave')
+}
+
+// Utility function to convert hex color to darker version for timeline clips
+function hexToDarkerHex(hex: string, opacity: number = 0.4): string {
+  // Remove the # if present
+  const cleanHex = hex.replace('#', '')
+
+  // Parse the hex values
+  const r = parseInt(cleanHex.substr(0, 2), 16)
+  const g = parseInt(cleanHex.substr(2, 2), 16)
+  const b = parseInt(cleanHex.substr(4, 2), 16)
+
+  // Create darker version by reducing brightness (multiply by opacity factor)
+  const darkerR = Math.round(r * opacity)
+  const darkerG = Math.round(g * opacity)
+  const darkerB = Math.round(b * opacity)
+
+  // Convert back to hex
+  return `#${darkerR.toString(16).padStart(2, '0')}${darkerG.toString(16).padStart(2, '0')}${darkerB.toString(16).padStart(2, '0')}`
+}
+
+// Generate gradient colors based on run color
+function generateClipGradient(runColor: string | undefined) {
+  const color = runColor || '#10B981' // Default green if no run color
+  const bgColor = hexToDarkerHex(color, 0.4)
+  const hoverBgColor = hexToDarkerHex(color, 0.6)
+  const borderColor = hexToDarkerHex(color, 0.7)
+
+  return {
+    background: `linear-gradient(to right, ${bgColor}, ${hexToDarkerHex(color, 0.5)})`,
+    borderLeftColor: borderColor,
+    borderRightColor: borderColor,
+    borderTopColor: borderColor,
+    borderBottomColor: borderColor,
+    hoverBackground: `linear-gradient(to right, ${hoverBgColor}, ${hexToDarkerHex(color, 0.7)})`
+  }
 }
 </script>
 
