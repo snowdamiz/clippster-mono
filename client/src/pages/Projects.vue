@@ -62,7 +62,7 @@
             ]">{{ getRelativeTime(project.updated_at) }}</span>
           </div>
           <h3 :class="[
-            'text-lg font-semibold mb-2 group-hover:transition-colors',
+            'text-lg font-semibold mb-0.5 group-hover:transition-colors',
             getThumbnailUrl(project.id)
               ? 'text-white group-hover:text-white/80'
               : 'text-foreground group-hover:text-foreground/80'

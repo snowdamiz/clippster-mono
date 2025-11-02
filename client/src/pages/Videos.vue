@@ -137,6 +137,21 @@
               <div class="absolute inset-0 bg-gradient-to-br from-black/80 via-black/60 to-black/90"></div>
             </div>
 
+            <!-- Top left project badge -->
+            <div v-if="video.project_id" class="absolute top-4 left-4 z-10">
+              <span :class="[
+                'text-xs px-2 py-1 rounded-md flex items-center gap-1',
+                getThumbnailUrl(video)
+                  ? 'text-white/70 bg-white/10 backdrop-blur-sm'
+                  : 'text-muted-foreground bg-muted'
+              ]">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                In Project
+              </span>
+            </div>
+
             <!-- Top right video duration -->
             <div class="absolute top-4 right-4 z-10">
               <span :class="[
@@ -270,7 +285,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { getAllRawVideos, getDatabase, hasClipsReferencingRawVideo, type RawVideo } from '@/services/database'
+import { getAllRawVideos, getDatabase, hasClipsReferencingRawVideo, getProject, type RawVideo, type Project } from '@/services/database'
 import { useToast } from '@/composables/useToast'
 import { useDownloads } from '@/composables/useDownloads'
 import { useVideoOperations } from '@/composables/useVideoOperations'
@@ -291,6 +306,7 @@ const videoHasClips = ref(false) // True if clips reference this video
 const showVideoPlayer = ref(false)
 const videoToPlay = ref<RawVideo | null>(null)
 const thumbnailCache = ref<Map<string, string>>(new Map())
+const projectCache = ref<Map<string, Project>>(new Map())
 const { success, error } = useToast()
 
 // Video operations composable
@@ -471,9 +487,14 @@ async function loadVideos() {
 
     // Reset pagination to first page when loading new videos
     currentPage.value = 1
-    // Load thumbnails
+    // Load thumbnails and project info
     for (const video of videos.value) {
       await loadVideoThumbnail(video, thumbnailCache.value)
+
+      // Load project info if video has a project
+      if (video.project_id) {
+        await getProjectInfo(video.project_id)
+      }
     }
   } catch (error) {
     console.error('Failed to load videos:', error)
@@ -497,6 +518,24 @@ function handleDownloadComplete(download: any) {
 
 function getThumbnailUrl(video: RawVideo): string | null {
   return thumbnailCache.value.get(video.id) || null
+}
+
+async function getProjectInfo(projectId: string): Promise<Project | null> {
+  // Check cache first
+  if (projectCache.value.has(projectId)) {
+    return projectCache.value.get(projectId) || null
+  }
+
+  try {
+    const project = await getProject(projectId)
+    if (project) {
+      projectCache.value.set(projectId, project)
+    }
+    return project
+  } catch (error) {
+    console.error('Failed to get project info:', error)
+    return null
+  }
 }
 
 async function handleUpload() {
