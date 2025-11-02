@@ -90,12 +90,9 @@ const breadcrumbs = computed<Breadcrumb[]>(() => {
       title = 'Edit'
     } else if (isUUID) {
       // Replace UUID with the breadcrumb title from composable
-      console.log('UUID detected:', segment, 'breadcrumbTitle:', dynamicTitle)
       if (dynamicTitle) {
         title = dynamicTitle
-        console.log('Using breadcrumb title:', title)
       } else {
-        console.log('No breadcrumb title, skipping UUID')
         // Skip UUID segments that don't have a breadcrumb title yet
         shouldSkip = true
       }

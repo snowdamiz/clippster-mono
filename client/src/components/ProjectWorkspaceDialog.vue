@@ -665,15 +665,9 @@ watch(() => props.modelValue, async (newValue) => {
     if (props.project) {
       await loadTimelineClips(props.project.id)
     }
-    // Connect progress socket when dialog opens
-    if (props.project) {
-      setProgressProjectId(props.project.id.toString())
-    }
   } else {
     // Reset video state when dialog closes
     resetVideoState()
-    // Disconnect progress socket when dialog closes
-    setProgressProjectId(null)
     showProgress.value = false
     // Clear timeline clips
     timelineClips.value = []
@@ -685,6 +679,14 @@ watch(() => props.project?.id, (newProjectId) => {
   if (newProjectId) {
     setProgressProjectId(newProjectId.toString())
   } else {
+    setProgressProjectId(null)
+  }
+})
+
+// Watch for dialog close to disconnect socket
+watch(() => props.modelValue, (newValue) => {
+  if (!newValue) {
+    // Disconnect progress socket when dialog closes
     setProgressProjectId(null)
   }
 })

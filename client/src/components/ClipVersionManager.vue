@@ -175,11 +175,8 @@ async function loadVersions() {
 
   loading.value = true
   try {
-    console.log('[ClipVersionManager] Loading versions for clip:', props.clipId)
-
     // Load all versions
     versions.value = await getClipVersionsByClipId(props.clipId)
-    console.log('[ClipVersionManager] Loaded versions:', versions.value.length)
 
     // Load current version
     currentVersion.value = await getCurrentClipVersion(props.clipId)
@@ -253,7 +250,6 @@ async function restoreVersion(version: ClipVersion) {
   if (!props.clipId) return
 
   try {
-    console.log('[ClipVersionManager] Restoring version:', version.id)
     await restoreClipVersion(props.clipId, version.id)
 
     // Reload versions to get the new current version

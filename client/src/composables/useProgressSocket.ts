@@ -124,7 +124,14 @@ export function useProgressSocket(initialProjectId: string | null) {
 
   // Update projectId and reconnect
   const setProjectId = (newProjectId: string | null) => {
-    console.log('[ProgressSocket] setProjectId called with:', newProjectId)
+    console.log('[ProgressSocket] setProjectId called with:', newProjectId, 'current:', projectId.value)
+
+    // Only disconnect and reconnect if the project ID actually changed
+    if (projectId.value === newProjectId) {
+      console.log('[ProgressSocket] Project ID unchanged, skipping reconnect')
+      return
+    }
+
     projectId.value = newProjectId
     disconnect()
     reset()
