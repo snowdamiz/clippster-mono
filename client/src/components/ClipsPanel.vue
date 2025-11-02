@@ -97,24 +97,9 @@
           >
             <div class="flex items-start justify-between">
               <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 mb-1">
-                  <h5 class="text-xs font-medium text-foreground/90 truncate">
-                    {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
-                  </h5>
-                  <!-- Run Number Badge -->
-                  <span
-                    v-if="clip.run_number"
-                    class="text-xs px-2 py-0.5 rounded-full font-medium border"
-                    :style="{
-                      backgroundColor: hexToDarkerHex(clip.session_run_color || '#8B5CF6', 0.15),
-                      borderColor: clip.session_run_color || '#8B5CF6',
-                      color: clip.session_run_color || '#A78BFA'
-                    }"
-                    :title="`Detection run ${clip.run_number} (Color: ${clip.session_run_color || 'default'})`"
-                  >
-                    Run {{ clip.run_number }}
-                  </span>
-                </div>
+                <h5 class="text-xs font-medium text-foreground/90 truncate mb-1">
+                  {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
+                </h5>
 
                 <!-- Clip Info -->
                 <div class="flex items-center gap-2 mb-2 text-xs text-foreground/60">
@@ -139,6 +124,19 @@
 
               <!-- Clip Actions -->
               <div class="flex items-center gap-1 ml-2">
+                <!-- Run Number Badge -->
+                <span
+                  v-if="clip.run_number"
+                  class="text-[10px] px-1.5 py-0.5 rounded-full font-medium border"
+                  :style="{
+                    backgroundColor: hexToDarkerHex(clip.session_run_color || '#8B5CF6', 0.15),
+                    borderColor: clip.session_run_color || '#8B5CF6',
+                    color: clip.session_run_color || '#A78BFA'
+                  }"
+                  :title="`Detection run ${clip.run_number} (Color: ${clip.session_run_color || 'default'})`"
+                >
+                  R{{ clip.run_number }}
+                </span>
                 <button
                   class="p-1 hover:bg-muted/50 rounded transition-colors"
                   title="Play clip"
