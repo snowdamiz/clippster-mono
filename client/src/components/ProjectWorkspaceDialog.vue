@@ -138,10 +138,12 @@ import Timeline from './Timeline.vue'
 import ClipGenerationProgress from './ClipGenerationProgress.vue'
 import { useVideoPlayer } from '@/composables/useVideoPlayer'
 import { useProgressSocket } from '@/composables/useProgressSocket'
+import { useToast } from '@/composables/useToast'
 
 console.log('[ProjectWorkspaceDialog] Script setup running')
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+const { error: showError } = useToast()
 
 const props = defineProps<{
   modelValue: boolean
@@ -278,10 +280,30 @@ async function onDetectClips(prompt: string) {
     })
 
     if (!response.ok) {
-      throw new Error(`Server error: ${response.status}`)
+      let errorMessage = `Server error: ${response.status}`
+
+      // Try to get more detailed error from response
+      try {
+        const errorData = await response.json()
+        if (errorData.error) {
+          errorMessage = errorData.error
+          if (errorData.details) {
+            errorMessage += `: ${errorData.details}`
+          }
+        }
+      } catch (e) {
+        // If we can't parse JSON, use the status-based message
+      }
+
+      throw new Error(errorMessage)
     }
 
     const result = await response.json()
+
+    // Check if the response indicates an error even with 200 status
+    if (!result.success && result.error) {
+      throw new Error(result.error)
+    }
     const processingTimeMs = Date.now() - processingStartTime
 
     console.log('[ProjectWorkspaceDialog] Detection results received:', {
@@ -362,6 +384,31 @@ async function onDetectClips(prompt: string) {
 
   } catch (error) {
     console.error('[ProjectWorkspaceDialog] Clip detection failed:', error)
+
+    // Show error toast to user
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+    const isNetworkError = errorMessage.includes('TLS') || errorMessage.includes('network') || errorMessage.includes('fetch')
+
+    if (isNetworkError) {
+      showError(
+        'Network Error',
+        'AI service temporarily unavailable. No credits were charged. Please try again in a few moments.',
+        8000
+      )
+    } else if (errorMessage.includes('Server error: 500')) {
+      showError(
+        'Service Error',
+        'AI processing failed. No credits were charged. Please try again.',
+        8000
+      )
+    } else {
+      showError(
+        'Clip Detection Failed',
+        `${errorMessage}. No credits were charged.`,
+        8000
+      )
+    }
+
     // Keep progress dialog open to show the error
   } finally {
     // Don't immediately hide progress - let the user see the completion/error state
@@ -641,6 +688,18 @@ watch(() => props.project?.id, (newProjectId) => {
     setProgressProjectId(newProjectId.toString())
   } else {
     setProgressProjectId(null)
+  }
+})
+
+// Watch for progress socket errors and show toasts
+watch(clipError, (newError) => {
+  if (newError && clipGenerationInProgress.value) {
+    console.log('[ProjectWorkspaceDialog] Progress socket error:', newError)
+    showError(
+      'Processing Error',
+      newError.includes('No credits were charged') ? newError : `${newError}. No credits were charged.`,
+      8000
+    )
   }
 })
 

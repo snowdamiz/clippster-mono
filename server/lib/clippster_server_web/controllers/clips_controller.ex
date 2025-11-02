@@ -147,23 +147,29 @@ defmodule ClippsterServerWeb.ClipsController do
 
             {:error, reason} ->
               IO.puts("[ClipsController] OpenRouter API failed: #{inspect(reason)}")
+              # Broadcast error to frontend
+              ProgressChannel.broadcast_progress(project_id, "error", 0, "AI analysis failed. No credits were charged.")
               conn
               |> put_status(500)
               |> json(%{
                 success: false,
                 error: "AI clip generation failed",
-                details: reason
+                details: reason,
+                noCreditsCharged: true
               })
           end
 
         {:error, reason} ->
           IO.puts("[ClipsController] Whisper API failed: #{inspect(reason)}")
+          # Broadcast error to frontend
+          ProgressChannel.broadcast_progress(project_id, "error", 0, "Audio transcription failed. No credits were charged.")
           conn
           |> put_status(500)
           |> json(%{
             success: false,
             error: "Whisper transcription failed",
-            details: reason
+            details: reason,
+            noCreditsCharged: true
           })
       end
 
@@ -171,13 +177,15 @@ defmodule ClippsterServerWeb.ClipsController do
       error ->
         IO.puts("[ClipsController] Error in detect: #{inspect(error)}")
         IO.puts("[ClipsController] Error type: #{inspect(Exception.format(:error, error, []))}")
-        ProgressChannel.broadcast_progress(project_id, "error", 0, "Clip detection failed: #{Exception.message(error)}")
+        # Broadcast error to frontend
+        ProgressChannel.broadcast_progress(project_id, "error", 0, "Clip detection failed. No credits were charged.")
         conn
         |> put_status(500)
         |> json(%{
           success: false,
           error: "Clip detection failed",
-          details: Exception.message(error)
+          details: Exception.message(error),
+          noCreditsCharged: true
         })
     end
   end
