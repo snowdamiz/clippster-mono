@@ -1,10 +1,9 @@
 <template>
   <div class="bg-[#0a0a0a]/30 border-t border-border transition-all duration-300 ease-in-out"
        :style="{
-         height: calculatedHeight + 'px',
-         paddingBottom: props.clips.length > 0 ? '34px' : '0'
+         height: calculatedHeight + 'px'
        }">
-    <div class="pt-3 px-4 h-full flex flex-col">
+    <div class="pt-3 px-4 h-full flex flex-col" :style="{ paddingBottom: props.clips.length > 0 ? '34px' : '8px' }">
       <!-- Timeline Header -->
       <div class="flex items-center justify-between mb-3 pr-1 flex-shrink-0">
         <div class="flex items-center gap-2">
@@ -218,7 +217,7 @@ const calculatedHeight = computed(() => {
 
   // Apply reasonable bounds
   const minHeight = 160 // Minimum height when no clips (56 + 32 + 56)
-  const maxHeight = numberOfClips > 10 ? 600 : 450 // Higher max for many clips, but allow more space
+  const maxHeight = 300 // Reasonable max height to prevent timeline from taking over dialog
 
   return Math.max(minHeight, Math.min(maxHeight, totalHeight))
 })
