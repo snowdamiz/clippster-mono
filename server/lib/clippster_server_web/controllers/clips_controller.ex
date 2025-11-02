@@ -58,9 +58,9 @@ defmodule ClippsterServerWeb.ClipsController do
 
           IO.puts("[ClipsController] Word-level timestamps available: #{words_available}")
 
-          # Step 2: Process verbose_json response (remove words array for AI)
-          IO.puts("[ClipsController] Processing Whisper response...")
-          processed_transcript = process_whisper_response(whisper_response)
+          # Step 2: Process verbose_json response with enhanced word timing for AI
+          IO.puts("[ClipsController] Processing Whisper response with enhanced timing...")
+          processed_transcript = process_whisper_response_enhanced(whisper_response)
 
           IO.puts("[ClipsController] Processed transcript keys: #{inspect(Map.keys(processed_transcript))}")
           if processed_transcript["segments"] do
@@ -182,23 +182,23 @@ defmodule ClippsterServerWeb.ClipsController do
     end
   end
 
-  # Process Whisper response by keeping words array for validation but removing segments-level words for AI processing
-  defp process_whisper_response(whisper_response) do
-    # Extract word-level data for validation before processing
-    words = extract_words_from_response(whisper_response)
+  # Process Whisper response with enhanced word timing analysis for AI
+  defp process_whisper_response_enhanced(whisper_response) do
+    IO.puts("[ClipsController] Processing response with enhanced timing analysis...")
 
-    segments =
-      whisper_response
-      |> Map.get("segments", [])
-      |> Enum.map(fn segment ->
-        segment
-        |> Map.delete("words")
-      end)
+    # Extract word-level data for validation
+    words = extract_words_from_response(whisper_response)
+    IO.puts("[ClipsController] Extracted #{length(words)} words for validation")
+
+    # Enhance segments with word-level timing analysis
+    enhanced_segments = enhance_segments_with_word_timing(whisper_response["segments"] || [])
+    IO.puts("[ClipsController] Enhanced #{length(enhanced_segments)} segments with timing analysis")
 
     processed_response = whisper_response
-    |> Map.put("segments", segments)
+    |> Map.put("segments", enhanced_segments)
     |> Map.put("words", words)  # Preserve words at top level for validation
 
+    IO.puts("[ClipsController] Enhanced processing complete")
     processed_response
   end
 
@@ -392,5 +392,206 @@ defmodule ClippsterServerWeb.ClipsController do
     :ok
   catch
     {:error, reason} -> {:error, reason}
+  end
+
+  # Enhance segments with word-level timing analysis for AI processing
+  defp enhance_segments_with_word_timing(segments) do
+    IO.puts("[ClipsController] Enhancing #{length(segments)} segments with word timing analysis")
+
+    segments
+    |> Enum.with_index()
+    |> Enum.map(fn {segment, index} ->
+      try do
+        enhance_single_segment(segment, index)
+      rescue
+        error ->
+          IO.puts("[ClipsController] Error enhancing segment #{index}: #{inspect(error)}")
+          # Return original segment if enhancement fails
+          segment
+      end
+    end)
+  end
+
+  # Enhance a single segment with timing analysis
+  defp enhance_single_segment(segment, index) do
+    words = Map.get(segment, "words", [])
+
+    if length(words) > 0 do
+      # Calculate word gaps and timing analysis
+      words_with_gaps = calculate_word_gaps(words)
+
+      # Identify internal dead space candidates
+      internal_gaps = identify_internal_gaps(words_with_gaps)
+
+      # Calculate content density score
+      density_score = calculate_content_density(words_with_gaps, segment)
+
+      # Calculate speaking rate
+      speaking_rate = calculate_speaking_rate(words_with_gaps, segment)
+
+      # Identify filler words
+      filler_words = identify_filler_words(words_with_gaps)
+
+      enhanced_segment = segment
+      |> Map.put("words", words_with_gaps)
+      |> Map.put("internal_gaps", internal_gaps)
+      |> Map.put("content_density_score", density_score)
+      |> Map.put("speaking_rate", speaking_rate)
+      |> Map.put("filler_word_count", length(filler_words))
+      |> Map.put("total_word_count", length(words_with_gaps))
+      |> Map.put("has_internal_dead_space", length(internal_gaps) > 0)
+
+      IO.puts("[ClipsController] Segment #{index}: density=#{Float.round(density_score, 2)}, rate=#{Float.round(speaking_rate, 1)}wpm, gaps=#{length(internal_gaps)}")
+
+      enhanced_segment
+    else
+      IO.puts("[ClipsController] Segment #{index}: No words available for enhancement")
+      segment
+    end
+  end
+
+  # Calculate gaps between consecutive words
+  defp calculate_word_gaps(words) do
+    words
+    |> Enum.with_index()
+    |> Enum.map(fn {word, index} ->
+      gap_after = if index < length(words) - 1 do
+        next_word = Enum.at(words, index + 1)
+        next_word["start"] - word["end"]
+      else
+        0.0
+      end
+
+      word
+      |> Map.put("gap_after", Float.round(gap_after, 3))
+      |> Map.put("word_duration", Float.round(word["end"] - word["start"], 3))
+    end)
+  end
+
+  # Identify internal gaps that are candidates for splicing
+  defp identify_internal_gaps(words_with_gaps) do
+    # Define thresholds for different types of gaps
+    extended_pause_threshold = 1.5  # >1.5s is significant dead space
+    natural_break_threshold = 0.8   # 0.8-1.5s are natural break points
+
+    words_with_gaps
+    |> Enum.map(fn word ->
+      gap = Map.get(word, "gap_after", 0.0)
+      word_text = Map.get(word, "word", "")
+
+      cond do
+        gap > extended_pause_threshold ->
+          severity = cond do
+            gap > 3.0 -> "severe"
+            true -> "moderate"
+          end
+
+          %{
+            "type" => "extended_pause",
+            "duration" => gap,
+            "position" => word["end"],
+            "before_word" => word_text,
+            "splice_candidate" => true,
+            "severity" => severity
+          }
+
+        gap >= natural_break_threshold ->
+          %{
+            "type" => "natural_break",
+            "duration" => gap,
+            "position" => word["end"],
+            "before_word" => word_text,
+            "splice_candidate" => false,
+            "severity" => "mild"
+          }
+
+        true ->
+          nil
+      end
+    end)
+    |> Enum.filter(&(&1 != nil))
+  end
+
+  # Calculate content density score based on speaking rate and information value
+  defp calculate_content_density(words_with_gaps, segment) do
+    segment_duration = Map.get(segment, "end", 0.0) - Map.get(segment, "start", 0.0)
+    word_count = length(words_with_gaps)
+
+    if segment_duration > 0 and word_count > 0 do
+      # Base density: words per minute
+      words_per_minute = (word_count / segment_duration) * 60.0
+
+      # Penalty for extended pauses
+      total_pause_time = words_with_gaps
+      |> Enum.map(&Map.get(&1, "gap_after", 0.0))
+      |> Enum.filter(&(&1 > 0.5))  # Only count pauses > 0.5s
+      |> Enum.sum()
+
+      pause_ratio = total_pause_time / segment_duration
+
+      # Information value indicators (questions, exclamations, key terms)
+      information_indicators = count_information_indicators(words_with_gaps)
+      information_ratio = information_indicators / word_count
+
+      # Calculate final density score (0.0 to 1.0)
+      density_score = cond do
+        words_per_minute > 180 and pause_ratio < 0.2 -> 1.0  # Very dense
+        words_per_minute > 150 and pause_ratio < 0.3 -> 0.9  # Dense
+        words_per_minute > 120 and pause_ratio < 0.4 -> 0.8  # Above average
+        words_per_minute > 100 and pause_ratio < 0.5 -> 0.7  # Average
+        words_per_minute > 80  and pause_ratio < 0.6 -> 0.6  # Below average
+        true -> 0.5  # Low density
+      end
+
+      # Boost score for high information value
+      final_score = min(1.0, density_score + (information_ratio * 0.2))
+
+      Float.round(final_score, 3)
+    else
+      0.0
+    end
+  end
+
+  # Calculate speaking rate in words per minute
+  defp calculate_speaking_rate(words_with_gaps, segment) do
+    segment_duration = Map.get(segment, "end", 0.0) - Map.get(segment, "start", 0.0)
+    word_count = length(words_with_gaps)
+
+    if segment_duration > 0 do
+      Float.round((word_count / segment_duration) * 60.0, 1)
+    else
+      0.0
+    end
+  end
+
+  # Count information value indicators in words
+  defp count_information_indicators(words) do
+    information_words = [
+      "what", "why", "how", "when", "where", "who",  # Questions
+      "amazing", "incredible", "unbelievable", "perfect", "excellent",  # Strong adjectives
+      "absolutely", "definitely", "literally", "actually", "basically",  # Intensifiers
+      "important", "critical", "essential", "significant", "major"  # Importance markers
+    ]
+
+    words
+    |> Enum.map(&String.downcase(Map.get(&1, "word", "")))
+    |> Enum.count(fn word ->
+      String.contains?(word, "?") or  # Question marks in transcripts
+      Enum.any?(information_words, &String.contains?(word, &1))
+    end)
+  end
+
+  # Identify filler words and hesitation markers
+  defp identify_filler_words(words_with_gaps) do
+    filler_patterns = [
+      "um", "uh", "er", "ah", "like", "you know", "i mean",
+      "sort of", "kind of", "actually", "basically", "literally"
+    ]
+
+    words_with_gaps
+    |> Enum.map(&String.downcase(Map.get(&1, "word", "")))
+    |> Enum.filter(fn word ->
+      Enum.any?(filler_patterns, &String.contains?(word, &1))
+    end)
   end
 end

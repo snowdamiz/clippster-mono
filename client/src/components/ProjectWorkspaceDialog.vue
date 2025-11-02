@@ -24,9 +24,9 @@
         </div>
 
         <!-- Main Content Area -->
-        <div class="flex flex-col h-full" style="height: calc(100% - 52px);">
+        <div class="flex flex-col" style="height: calc(100% - 22px); min-height: 0;">
           <!-- Top Row: Video Player, Transcript, and Clips -->
-          <div class="flex flex-1 min-h-0 border-b border-border">
+          <div class="flex min-h-0 border-b border-border" style="flex: 1; overflow: hidden;">
             <!-- Video Player Section -->
             <div class="w-3/5 min-w-0 p-8 border-r border-border flex flex-col">
               <!-- Video Player Container -->

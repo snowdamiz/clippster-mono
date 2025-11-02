@@ -1,10 +1,10 @@
 <template>
   <div class="bg-[#0a0a0a]/30 border-t border-border transition-all duration-300 ease-in-out"
        :style="{
-         height: timelineMaxHeight + 'px',
-         maxHeight: timelineMaxHeight + 'px'
+         height: calculatedHeight + 'px',
+         maxHeight: calculatedHeight + 'px'
        }">
-    <div class="pt-3 px-4 pb-1.5 h-full flex flex-col">
+    <div class="pt-3 px-4 h-full flex flex-col">
       <!-- Timeline Header -->
       <div class="flex items-center justify-between mb-3 pr-1 flex-shrink-0">
         <div class="flex items-center gap-2">
@@ -19,8 +19,9 @@
         <span class="text-xs text-muted-foreground">{{ props.clips.length + 1 }} tracks</span>
       </div>
 
-      <!-- Scrollable Timeline Tracks Container -->
-      <div class="flex-1 pr-1 bg-muted/20 rounded-lg relative overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+      <!-- Timeline Tracks Container -->
+      <div class="flex-1 pr-1 bg-muted/20 rounded-lg relative overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800"
+           :style="{ maxHeight: calculatedHeight - 80 + 'px' }">
         <!-- Shared Timestamp Ruler -->
         <!-- <div class="h-6 border-b border-border/30 flex items-center bg-[#0a0a0a]/20 px-2"> -->
           <!-- Track label spacer -->
@@ -192,9 +193,26 @@ const props = withDefaults(defineProps<Props>(), {
   clips: () => []
 })
 
-// Set fixed maximum height for timeline
-const timelineMaxHeight = 350 // Fixed maximum height in pixels
-const timelineMinHeight = 140 // Minimum height to keep timeline usable
+// Calculate timeline height dynamically based on tracks
+const calculatedHeight = computed(() => {
+  const headerHeight = 60 // Header section height
+  const mainTrackHeight = 56 // Main video track height
+  const clipTrackHeight = 48 // Height per clip track
+  const padding = 24 // Top and bottom padding
+  const minTracks = 1 // At least main video track
+
+  const numberOfClips = props.clips.length
+  const totalTracks = Math.max(minTracks, numberOfClips + 1) // +1 for main video track
+
+  // Calculate total height: header + main track + clip tracks + padding
+  const totalHeight = headerHeight + mainTrackHeight + (numberOfClips * clipTrackHeight) + padding
+
+  // Apply reasonable bounds
+  const minHeight = 140 // Minimum height when no clips
+  const maxHeight = numberOfClips > 10 ? 450 : 375 // Higher max when many clips (reduced by 25%)
+
+  return Math.max(minHeight, Math.min(maxHeight, totalHeight))
+})
 
 interface Emits {
   (e: 'seekTimeline', event: MouseEvent): void

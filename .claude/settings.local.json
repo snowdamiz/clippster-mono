@@ -4,7 +4,8 @@
       "Read(//c/Users/brand/OneDrive/Documents/dev/clippster-prototype/**)",
       "WebSearch",
       "WebFetch(domain:tauri.app)",
-      "WebFetch(domain:docs.rs)"
+      "WebFetch(domain:docs.rs)",
+      "WebFetch(domain:research.google)"
     ],
     "deny": [],
     "ask": []

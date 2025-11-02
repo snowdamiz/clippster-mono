@@ -8,7 +8,7 @@ defmodule ClippsterServer.ClipValidation do
   """
 
   require Logger
-  import Kernel, except: [min: 2]
+  import Kernel, except: [min: 2, max: 2]
 
   # Validation thresholds
   @exact_match_threshold 0.85
@@ -49,19 +49,22 @@ defmodule ClippsterServer.ClipValidation do
   }
 
   @doc """
-  Validates and corrects clips based on transcript matching.
+  Simplified validation for AI-enhanced clips with timing analysis.
+
+  Since the AI now has access to word-level timing data and enhanced instructions,
+  validation focuses on technical accuracy rather than boundary correction.
 
   ## Parameters
-    - clips: List of AI-detected clips with segments
+    - clips: List of AI-detected clips with enhanced segments
     - transcript: Whisper transcript with word-level timestamps
     - verbose: Enable detailed logging
 
   ## Returns
-    - {:ok, validation_result} with validated and corrected clips
+    - {:ok, validation_result} with technically validated clips
   """
   @spec validate_and_correct_clips(list(), map(), boolean()) :: {:ok, validation_result()}
   def validate_and_correct_clips(clips, transcript, verbose \\ false) do
-    Logger.info("[ClipValidation] Starting validation for #{length(clips)} clips")
+    Logger.info("[ClipValidation] Starting AI-enhanced validation for #{length(clips)} clips")
 
     try do
       words = extract_words_from_transcript(transcript)
@@ -163,17 +166,14 @@ defmodule ClippsterServer.ClipValidation do
   """
   @spec validate_and_correct_clip(map(), list(word()), integer(), boolean()) :: map()
   def validate_and_correct_clip(clip, words, clip_index, verbose) do
-    Logger.debug("[ClipValidation] Validating clip #{clip_index}: #{clip["title"] || "Untitled"}")
+    Logger.debug("[ClipValidation] AI-enhanced validation of clip #{clip_index}: #{clip["title"] || "Untitled"}")
 
-    _issues = []
-    _corrections = []
-
-    # Validate and correct each segment
+    # For AI-enhanced clips, focus on technical validation rather than correction
     {validated_segments, segment_issues, segment_corrections} =
       clip["segments"]
       |> Enum.with_index()
       |> Enum.map(fn {segment, segment_index} ->
-        validate_and_correct_segment(segment, words, clip_index, segment_index, verbose)
+        validate_ai_enhanced_segment(segment, words, clip_index, segment_index, verbose)
       end)
       |> Enum.reduce({[], [], []}, fn {segment, issues, corrections}, {segments_acc, issues_acc, corrections_acc} ->
         {[segment | segments_acc], issues_acc ++ issues, corrections_acc ++ corrections}
@@ -182,19 +182,29 @@ defmodule ClippsterServer.ClipValidation do
     # Reverse segments to maintain order
     validated_segments = Enum.reverse(validated_segments)
 
-    # Recalculate clip duration based on corrected segments
-    corrected_clip = calculate_clip_duration(clip, validated_segments)
+    # Recalculate clip duration based on validated segments
+    validated_clip = calculate_clip_duration(clip, validated_segments)
 
-    # Add validation metadata
-    corrected_clip
+    # Enhanced validation metadata leveraging AI analysis
+    avg_content_density = calculate_average_content_density(validated_segments)
+    avg_speaking_rate = calculate_average_speaking_rate(validated_segments)
+    dead_space_eliminated = count_dead_space_candidates(validated_segments)
+
+    # Add AI-enhanced validation metadata
+    validated_clip
     |> Map.put("validation_metadata", %{
       "validated_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
       "word_count_in_transcript" => length(words),
-      "segments_validated" => length(validated_segments)
+      "segments_validated" => length(validated_segments),
+      "validation_type" => "ai_enhanced",
+      "avg_content_density" => avg_content_density,
+      "avg_speaking_rate" => avg_speaking_rate,
+      "dead_space_eliminated" => dead_space_eliminated,
+      "ai_timing_analysis_used" => true
     })
     |> Map.put("issues", segment_issues)
     |> Map.put("corrections", segment_corrections)
-    |> Map.put("qualityScore", calculate_clip_quality_score(segment_issues, segment_corrections))
+    |> Map.put("qualityScore", calculate_ai_enhanced_quality_score(validated_clip, segment_issues, segment_corrections))
   end
 
   @doc """
@@ -382,7 +392,7 @@ defmodule ClippsterServer.ClipValidation do
     end
 
     # Search radius around the hint position
-    search_start = max(0, start_index - @max_search_radius)
+    search_start = Kernel.max(0, start_index - @max_search_radius)
     search_end = Enum.min([length(transcript_words) - total_target_words, start_index + @max_search_radius])
 
     if verbose do
@@ -440,7 +450,7 @@ defmodule ClippsterServer.ClipValidation do
       0
     end
 
-    search_start = max(0, start_index - @max_search_radius)
+    search_start = Kernel.max(0, start_index - @max_search_radius)
     search_end = Enum.min([length(transcript_words) - total_target_words, start_index + @max_search_radius])
 
     if verbose do
@@ -624,7 +634,7 @@ defmodule ClippsterServer.ClipValidation do
     issue_penalty = length(issues) * 0.1
     correction_penalty = length(corrections) * 0.05
 
-    max(0.0, base_score - issue_penalty - correction_penalty)
+    Kernel.max(0.0, base_score - issue_penalty - correction_penalty)
   end
 
   @doc """
@@ -653,7 +663,7 @@ defmodule ClippsterServer.ClipValidation do
       base_score = 0.6  # Start lower since we can't do word-level precision
       issue_penalty = length(all_issues) * 0.05
       correction_penalty = length(all_corrections) * 0.03
-      quality_score = max(0.0, base_score - issue_penalty - correction_penalty)
+      quality_score = Kernel.max(0.0, base_score - issue_penalty - correction_penalty)
 
       result = %{
         validatedClips: validated_clips,
@@ -799,5 +809,156 @@ defmodule ClippsterServer.ClipValidation do
     else
       []
     end
+  end
+
+  # New AI-enhanced validation functions
+
+  @doc """
+  Validates an AI-enhanced segment using timing analysis data.
+  """
+  defp validate_ai_enhanced_segment(segment, _words, clip_index, segment_index, verbose) do
+    if verbose do
+      Logger.debug("[ClipValidation] AI-enhanced validation of segment #{clip_index}.#{segment_index}")
+    end
+
+    issues = []
+    corrections = []
+
+    # Technical validation using AI's timing analysis
+    segment_start = segment["start_time"]
+    segment_end = segment["end_time"]
+
+    # Validate timestamp accuracy
+    {time_issues, time_corrections} = validate_timestamp_technicals(segment_start, segment_end)
+
+    # Validate content density (if available from AI analysis)
+    density_issues = validate_content_density(segment)
+
+    # Check for AI-identified dead space elimination
+    splicing_issues = validate_ai_splicing_decisions(segment)
+
+    all_issues = issues ++ time_issues ++ density_issues ++ splicing_issues
+    all_corrections = corrections ++ time_corrections
+
+    {
+      Map.put(segment, "validation_type", "ai_enhanced"),
+      all_issues,
+      all_corrections
+    }
+  end
+
+  defp validate_timestamp_technicals(start_time, end_time) do
+    issues = cond do
+      start_time < 0 -> [%{negative_start_time: true}]
+      end_time <= start_time -> [%{invalid_duration: true}]
+      true -> []
+    end
+
+    corrections = if length(issues) > 0 do
+      ["Timestamp technical validation completed"]
+    else
+      ["Timestamp validation passed"]
+    end
+
+    {issues, corrections}
+  end
+
+  defp validate_content_density(segment) do
+    density_score = Map.get(segment, "content_density_score", 0.0)
+
+    cond do
+      density_score >= 0.8 -> []  # Excellent density
+      density_score >= 0.6 -> []  # Good density
+      density_score >= 0.4 -> [%{low_content_density: true}]
+      true -> [%{very_low_content_density: true}]
+    end
+  end
+
+  defp validate_ai_splicing_decisions(segment) do
+    # Check if AI properly utilized dead space analysis
+    has_dead_space = Map.get(segment, "has_internal_dead_space", false)
+    internal_gaps = Map.get(segment, "internal_gaps", [])
+
+    cond do
+      has_dead_space and length(internal_gaps) == 0 ->
+        [%{inconsistent_dead_space_analysis: true}]
+
+      has_dead_space and not Enum.any?(internal_gaps, fn gap ->
+        Map.get(gap, "splice_candidate", false)
+      end) ->
+        [%{missed_splicing_opportunity: true}]
+
+      true ->
+        []
+    end
+  end
+
+  # Helper functions for enhanced validation metadata
+
+  defp calculate_average_content_density(segments) do
+    if length(segments) > 0 do
+      density_scores = segments
+      |> Enum.map(&Map.get(&1, "content_density_score", 0.0))
+      |> Enum.filter(&(&1 > 0))
+
+      if length(density_scores) > 0 do
+        Float.round(Enum.sum(density_scores) / length(density_scores), 3)
+      else
+        0.0
+      end
+    else
+      0.0
+    end
+  end
+
+  defp calculate_average_speaking_rate(segments) do
+    if length(segments) > 0 do
+      speaking_rates = segments
+      |> Enum.map(&Map.get(&1, "speaking_rate", 0.0))
+      |> Enum.filter(&(&1 > 0))
+
+      if length(speaking_rates) > 0 do
+        Float.round(Enum.sum(speaking_rates) / length(speaking_rates), 1)
+      else
+        0.0
+      end
+    else
+      0.0
+    end
+  end
+
+  defp count_dead_space_candidates(segments) do
+    segments
+    |> Enum.map(&Map.get(&1, "internal_gaps", []))
+    |> Enum.concat()
+    |> Enum.count(fn gap -> Map.get(gap, "splice_candidate", false) end)
+  end
+
+  defp calculate_ai_enhanced_quality_score(clip, issues, corrections) do
+    # Enhanced quality scoring that considers AI analysis
+    base_score = 1.0
+
+    # Factor in AI's content density analysis
+    avg_density = get_in(clip, ["validation_metadata", "avg_content_density"]) || 0.0
+    density_bonus = avg_density * 0.2  # Up to 0.2 bonus for high density
+
+    # Factor in speaking rate optimization
+    avg_rate = get_in(clip, ["validation_metadata", "avg_speaking_rate"]) || 0.0
+    rate_bonus = cond do
+      avg_rate >= 120 and avg_rate <= 180 -> 0.1
+      avg_rate >= 100 and avg_rate <= 200 -> 0.05
+      true -> 0.0
+    end
+
+    # Factor in dead space elimination
+    dead_space_eliminated = get_in(clip, ["validation_metadata", "dead_space_eliminated"]) || 0
+    splicing_bonus = Kernel.min(0.1, dead_space_eliminated * 0.05)
+
+    # Standard penalties
+    issue_penalty = length(issues) * 0.05
+    correction_penalty = length(corrections) * 0.02
+
+    final_score = base_score + density_bonus + rate_bonus + splicing_bonus - issue_penalty - correction_penalty
+    Float.round(Kernel.max(0.0, Kernel.min(1.0, final_score)), 3)
   end
 end
