@@ -79,7 +79,7 @@
       <!-- Clips List State -->
       <div v-else-if="clips.length > 0 && !isGenerating" class="w-full flex-1 overflow-y-auto" ref="clipsScrollContainer">
         <!-- Clips Grid -->
-        <div class="space-y-3 pb-4">
+        <div class="space-y-3">
           <div
             v-for="(clip, index) in clips"
             :key="clip.id"
@@ -98,11 +98,11 @@
             <div class="flex items-start justify-between">
               <div class="flex-1 min-w-0">
                 <h5 class="text-xs font-medium text-foreground/90 truncate mb-1">
-                  {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
+                  #{{index + 1}}: {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
                 </h5>
 
                 <!-- Clip Info -->
-                <div class="flex items-center gap-2 mb-2 text-xs text-foreground/60">
+                <div class="flex items-center gap-2 text-xs text-foreground/60">
                   <span>{{ formatDuration((clip.current_version?.end_time || 0) - (clip.current_version?.start_time || 0)) }}</span>
                   <span>•</span>
                   <span>{{ formatTime(clip.current_version?.start_time || 0) }} - {{ formatTime(clip.current_version?.end_time || 0) }}</span>
@@ -115,11 +115,6 @@
                     {{ formatTimestamp(clip.session_created_at) }}
                   </span>
                 </div>
-
-                <!-- Description -->
-                <p v-if="clip.current_version?.description" class="text-xs text-foreground/70 line-clamp-2">
-                  {{ clip.current_version.description }}
-                </p>
               </div>
 
               <!-- Clip Actions -->
@@ -428,6 +423,15 @@ function scrollClipIntoView(clipId: string) {
 }
 
 // Expose function to parent (will be merged with existing defineExpose)
+
+// Utility function to extract clean description without social media post
+function getCleanDescription(description: string): string {
+  if (!description) return ''
+
+  // Split by line break and take only the first part (before social media post)
+  const parts = description.split('\n')
+  return parts[0].trim()
+}
 
 // Utility function to convert hex color to darker version for dark theme
 function hexToDarkerHex(hex: string, opacity: number = 0.15): string {
