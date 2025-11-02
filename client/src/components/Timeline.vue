@@ -170,9 +170,9 @@
                 :ref="el => setTimelineClipRef(el, clip.id)"
                 class="clip-segment absolute h-6 border rounded-md flex items-center justify-center cursor-pointer"
                 :class="[
-                  'transition-all duration-150',
+                  'transition-all duration-75',
                   clip.run_number ? `run-${clip.run_number}` : '',
-                  hoveredClipId === clip.id || props.hoveredTimelineClipId === clip.id ? 'shadow-lg scale-105 z-20' : ''
+                  hoveredClipId === clip.id || props.hoveredTimelineClipId === clip.id ? 'shadow-lg z-20' : ''
                 ]"
                 :style="{
                   left: `${duration ? (segment.start_time / duration) * 100 : 0}%`,
