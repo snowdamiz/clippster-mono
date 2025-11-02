@@ -73,6 +73,21 @@ const router = createRouter({
           path: 'pumpfun',
           name: 'pumpfun',
           component: () => import('@/pages/PumpFun.vue')
+        },
+        {
+          path: 'kick',
+          name: 'kick',
+          component: () => import('@/pages/Kick.vue')
+        },
+        {
+          path: 'twitch',
+          name: 'twitch',
+          component: () => import('@/pages/Twitch.vue')
+        },
+        {
+          path: 'youtube',
+          name: 'youtube',
+          component: () => import('@/pages/YouTube.vue')
         }
       ]
     }

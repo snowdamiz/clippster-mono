@@ -21,21 +21,39 @@
               class="nav-link"
               :class="{ 'nav-link-active': isActive(item.path) }"
             >
-              <svg 
-                v-if="item.name === 'PumpFun'"
-                xmlns="http://www.w3.org/2000/svg" 
-                class="h-5 w-5" 
-                :fill="isActive(item.path) ? 'white' : 'currentColor'" 
+              <div
+                v-if="item.useImage"
+                class="h-5 w-5 transition-all"
+                :class="{
+                  'brightness-0 invert': isActive(item.path)
+                }"
+                :style="{
+                  backgroundColor: 'currentColor',
+                  maskImage: `url(${item.icon})`,
+                  WebkitMaskImage: `url(${item.icon})`,
+                  maskSize: 'contain',
+                  WebkitMaskSize: 'contain',
+                  maskRepeat: 'no-repeat',
+                  WebkitMaskRepeat: 'no-repeat',
+                  maskPosition: 'center',
+                  WebkitMaskPosition: 'center'
+                }"
+              />
+              <svg
+                v-else-if="item.name === 'PumpFun'"
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5"
+                :fill="isActive(item.path) ? 'white' : 'currentColor'"
                 viewBox="0 0 24 24"
               >
                 <path :d="item.icon" />
               </svg>
-              <svg 
+              <svg
                 v-else
-                xmlns="http://www.w3.org/2000/svg" 
-                class="h-5 w-5" 
-                fill="none" 
-                viewBox="0 0 24 24" 
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
                 stroke="currentColor"
               >
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon" />
