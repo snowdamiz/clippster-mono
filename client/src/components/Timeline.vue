@@ -36,9 +36,13 @@
            ref="timelineScrollContainer"
            :style="{ maxHeight: calculatedHeight - 56 + 'px' }"
            @mousemove="onTimelineMouseMove"
-           @mouseleave="onTimelineMouseLeaveGlobal">
+           @mouseleave="onTimelineMouseLeaveGlobal"
+           @mousedown="onDragStart"
+           @contextmenu.prevent>
         <!-- Timeline Content Wrapper - handles zoom width -->
-        <div class="timeline-content-wrapper" :style="{ width: `${100 * zoomLevel}%` }">
+        <div class="timeline-content-wrapper"
+             :class="{ 'dragging': isDragging }"
+             :style="{ width: `${100 * zoomLevel}%` }">
           <!-- Shared Timestamp Ruler -->
           <div class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 px-2 sticky top-0 z-10 backdrop-blur-sm timeline-ruler sticky-ruler"
                @wheel="onRulerWheel"
@@ -90,7 +94,7 @@
           <div class="flex-1 h-10 relative flex items-center">
             <div
               class="flex-1 h-8 bg-[#0a0a0a]/50 rounded-md relative cursor-pointer group"
-              @click="onSeekTimeline"
+              @click="onVideoTrackClick"
               @mousemove="onTimelineTrackHover"
               @mouseleave="onTimelineMouseLeave"
             >
@@ -197,7 +201,7 @@
 
         <!-- Timeline Hover Line - positioned relative to viewport but constrained to timeline bounds -->
         <div
-          v-if="showTimelineHoverLine && !isPanning"
+          v-if="showTimelineHoverLine && !isPanning && !isDragging"
           class="fixed bg-white/40 z-30 pointer-events-none transition-opacity duration-150"
           :style="{
             left: `${timelineHoverLinePosition}px`,
@@ -209,12 +213,30 @@
           <div class="absolute top-0 -left-1 w-2 h-2 bg-white/60 rounded-full"></div>
           <div class="absolute bottom-0 -left-1 w-2 h-2 bg-white/60 rounded-full"></div>
         </div>
+
+        <!-- Drag Selection Area -->
+        <div
+          v-if="isDragging"
+          class="fixed drag-selection z-25 pointer-events-none"
+          :style="{
+            left: `${Math.min(dragStartX, dragEndX)}px`,
+            top: `${timelineBounds.top}px`,
+            width: `${Math.abs(dragEndX - dragStartX)}px`,
+            height: `${timelineBounds.bottom - timelineBounds.top}px`
+          }"
+        >
+          <div class="absolute inset-0 flex items-center justify-center">
+            <div class="bg-blue-500/80 text-white text-xs px-2 py-1 rounded font-medium">
+              {{ formatDuration(Math.min(dragStartPercent, dragEndPercent) * duration) }} - {{ formatDuration(Math.max(dragStartPercent, dragEndPercent) * duration) }}
+            </div>
+          </div>
+        </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 
 interface Timestamp {
   time: number
@@ -308,6 +330,13 @@ const zoomStep = 0.1
 const isPanning = ref(false)
 const panStartX = ref(0)
 const panScrollLeft = ref(0)
+
+// Drag selection state for zoom
+const isDragging = ref(false)
+const dragStartX = ref(0)
+const dragEndX = ref(0)
+const dragStartPercent = ref(0)
+const dragEndPercent = ref(0)
 
 // Timeline hover line state
 const showTimelineHoverLine = ref(false)
@@ -447,6 +476,13 @@ function onSeekTimeline(event: MouseEvent) {
   emit('seekTimeline', event)
 }
 
+function onVideoTrackClick(event: MouseEvent) {
+  // Only seek if we're not in the middle of a drag selection
+  if (!isDragging.value) {
+    onSeekTimeline(event)
+  }
+}
+
 function onTimelineTrackHover(event: MouseEvent) {
   emit('timelineTrackHover', event)
 }
@@ -521,9 +557,139 @@ function onPanEnd() {
   }
 }
 
+// Drag selection handlers
+function onDragStart(event: MouseEvent) {
+  // Only start drag with left mouse button and not on clips
+  if (event.button !== 0 || event.target instanceof HTMLElement && event.target.closest('.clip-segment')) return
+
+  const container = timelineScrollContainer.value
+  if (!container) return
+
+  const rect = container.getBoundingClientRect()
+  const relativeX = event.clientX - rect.left
+
+  // Only allow drag selection in timeline content area (after track labels)
+  const trackLabelWidth = 64 // 4rem = 64px (w-16)
+  if (relativeX < trackLabelWidth) return
+
+  // Initialize drag selection
+  isDragging.value = true
+  dragStartX.value = event.clientX
+  dragEndX.value = event.clientX
+
+  // Calculate percentages relative to the zoomed timeline content
+  const timelineContent = container.querySelector('.timeline-content-wrapper')
+  if (timelineContent) {
+    const contentRect = timelineContent.getBoundingClientRect()
+    const contentRelativeX = event.clientX - contentRect.left
+    dragStartPercent.value = Math.max(0, Math.min(1, contentRelativeX / contentRect.width))
+    dragEndPercent.value = dragStartPercent.value
+  }
+
+  // Update timeline bounds for selection area
+  timelineBounds.value = {
+    top: rect.top,
+    bottom: rect.bottom
+  }
+
+  // Hide hover line during drag
+  showTimelineHoverLine.value = false
+
+  event.preventDefault()
+}
+
+function onDragMove(event: MouseEvent) {
+  if (!isDragging.value) return
+
+  dragEndX.value = event.clientX
+
+  const container = timelineScrollContainer.value
+  if (!container) return
+
+  // Update end percentage based on current mouse position
+  const timelineContent = container.querySelector('.timeline-content-wrapper')
+  if (timelineContent) {
+    const contentRect = timelineContent.getBoundingClientRect()
+    const contentRelativeX = event.clientX - contentRect.left
+    dragEndPercent.value = Math.max(0, Math.min(1, contentRelativeX / contentRect.width))
+  }
+
+  event.preventDefault()
+}
+
+function onDragEnd() {
+  if (!isDragging.value) return
+
+  // Calculate the selected time range
+  const startPercent = Math.min(dragStartPercent.value, dragEndPercent.value)
+  const endPercent = Math.max(dragStartPercent.value, dragEndPercent.value)
+  const selectionDuration = endPercent - startPercent
+
+  // Only zoom if the selection is meaningful (at least 5% of timeline)
+  if (selectionDuration >= 0.05) {
+    // Calculate new zoom level to fit the selection
+    const targetZoom = Math.min(maxZoom, Math.max(minZoom, 1.0 / selectionDuration))
+
+    // Update zoom level first
+    zoomLevel.value = targetZoom
+
+    // Wait for the zoom to be applied and DOM to update, then set scroll position
+    nextTick(() => {
+      if (timelineScrollContainer.value) {
+        const container = timelineScrollContainer.value
+        const contentWidth = container.scrollWidth // This will be updated after zoom
+        const containerWidth = container.clientWidth
+        const maxScrollLeft = contentWidth - containerWidth
+
+        // Calculate the position of the selection in the zoomed content
+        // The selection start position in the zoomed content
+        const selectionStartPositionInContent = startPercent * contentWidth
+        const selectionWidthInContent = selectionDuration * contentWidth
+
+        // Calculate the target scroll position to show the selection
+        // We want to center the selection, or show it starting from the left if it's very wide
+        let targetScrollLeft: number
+        if (selectionWidthInContent >= containerWidth) {
+          // Selection is wider than container, show it starting from left
+          targetScrollLeft = Math.max(0, Math.min(maxScrollLeft, selectionStartPositionInContent - 20)) // 20px padding
+        } else {
+          // Center the selection in the viewport
+          const centerOfSelection = selectionStartPositionInContent + (selectionWidthInContent / 2)
+          targetScrollLeft = Math.max(0, Math.min(maxScrollLeft, centerOfSelection - (containerWidth / 2)))
+        }
+
+        container.scrollLeft = targetScrollLeft
+
+        console.log('[Timeline] Drag-to-zoom scroll positioning:', {
+          startPercent: (startPercent * 100).toFixed(1) + '%',
+          endPercent: (endPercent * 100).toFixed(1) + '%',
+          selectionDuration: (selectionDuration * 100).toFixed(1) + '%',
+          targetZoom: targetZoom.toFixed(2),
+          contentWidth,
+          containerWidth,
+          maxScrollLeft,
+          targetScrollLeft,
+          startTime: formatDuration(startPercent * props.duration),
+          endTime: formatDuration(endPercent * props.duration)
+        })
+      }
+    })
+
+    // Emit zoom change to parent
+    emit('zoomChanged', targetZoom)
+  }
+
+  // Reset drag state
+  isDragging.value = false
+  dragStartX.value = 0
+  dragEndX.value = 0
+  dragStartPercent.value = 0
+  dragEndPercent.value = 0
+}
+
 // Timeline hover line handlers
 function onTimelineMouseMove(event: MouseEvent) {
-  if (isPanning.value) return
+  if (isPanning.value || isDragging.value) return
 
   const container = timelineScrollContainer.value
   if (!container) return
@@ -550,6 +716,10 @@ function onTimelineMouseMove(event: MouseEvent) {
 
 function onTimelineMouseLeaveGlobal() {
   showTimelineHoverLine.value = false
+  // Cancel drag if mouse leaves timeline
+  if (isDragging.value) {
+    onDragEnd()
+  }
 }
 
 function onRulerMouseMove(event: MouseEvent) {
@@ -564,10 +734,12 @@ function onRulerMouseLeave() {
   showTimelineHoverLine.value = false
 }
 
-// Global mouse event handlers for better panning experience
+// Global mouse event handlers for better panning and drag selection experience
 function handleGlobalMouseMove(event: MouseEvent) {
   if (isPanning.value) {
     onPanMove(event)
+  } else if (isDragging.value) {
+    onDragMove(event)
   } else {
     // Check if we're still over the timeline area
     const container = timelineScrollContainer.value
@@ -584,7 +756,11 @@ function handleGlobalMouseMove(event: MouseEvent) {
 }
 
 function handleGlobalMouseUp() {
-  onPanEnd()
+  if (isDragging.value) {
+    onDragEnd()
+  } else {
+    onPanEnd()
+  }
 }
 
 // Setup and cleanup global event listeners
@@ -884,5 +1060,47 @@ function generateClipGradient(runColor: string | undefined) {
 
 .timeline-hover-line::after {
   bottom: 0;
+}
+
+/* Drag selection styles */
+.drag-selection {
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  pointer-events: none;
+  transition: none;
+}
+
+.drag-selection::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    rgba(59, 130, 246, 0.1) 0%,
+    rgba(59, 130, 246, 0.2) 50%,
+    rgba(59, 130, 246, 0.1) 100%);
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* Timeline cursor changes */
+.timeline-content-wrapper {
+  user-select: none;
+}
+
+.timeline-content-wrapper.dragging {
+  cursor: crosshair;
+}
+
+/* Prevent text selection during drag */
+.timeline-content-wrapper.dragging,
+.timeline-content-wrapper.dragging * {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
 }
 </style>
