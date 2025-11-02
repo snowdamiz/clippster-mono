@@ -806,6 +806,12 @@ async fn cancel_all_downloads() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
+async fn check_file_exists(path: String) -> Result<bool, String> {
+    use std::path::Path;
+    Ok(Path::new(&path).exists())
+}
+
+#[tauri::command]
 async fn extract_audio_from_video(
     app: tauri::AppHandle,
     video_path: String,
@@ -1326,6 +1332,12 @@ pub fn run() {
                             sql: include_str!("../migrations/014_add_clip_segments.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 15,
+                            description: "add_clip_status",
+                            sql: include_str!("../migrations/015_add_clip_status.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                           ],
                 )
                 .build(),
@@ -1391,6 +1403,7 @@ pub fn run() {
             download_pumpfun_vod,
             get_active_downloads_count,
             cancel_all_downloads,
+            check_file_exists,
             extract_audio_from_video,
             storage::get_storage_paths,
             storage::copy_video_to_storage,

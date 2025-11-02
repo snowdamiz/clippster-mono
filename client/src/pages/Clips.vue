@@ -77,7 +77,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { getAllClips, deleteClip, type Clip } from '@/services/database'
+import { getGeneratedClips, deleteClip, type Clip } from '@/services/database'
 import { useFormatters } from '@/composables/useFormatters'
 import PageLayout from '@/components/PageLayout.vue'
 import LoadingState from '@/components/LoadingState.vue'
@@ -90,7 +90,8 @@ const { getRelativeTime, formatDuration } = useFormatters()
 async function loadClips() {
   loading.value = true
   try {
-    clips.value = await getAllClips()
+    clips.value = await getGeneratedClips()
+    console.log(`[Clips] Loaded ${clips.value.length} generated clips`)
   } catch (error) {
     console.error('Failed to load clips:', error)
   } finally {

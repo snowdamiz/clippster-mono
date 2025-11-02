@@ -162,6 +162,7 @@ export interface Clip {
   order_index: number | null
   intro_id: string | null
   outro_id: string | null
+  status: 'detected' | 'generated' | 'processing' | null
   created_at: number
   updated_at: number
 }
@@ -714,6 +715,14 @@ export async function getAllClips(): Promise<Clip[]> {
   const db = await getDatabase()
   return await db.select<Clip[]>(
     'SELECT * FROM clips ORDER BY created_at DESC'
+  )
+}
+
+export async function getGeneratedClips(): Promise<Clip[]> {
+  const db = await getDatabase()
+  return await db.select<Clip[]>(
+    'SELECT * FROM clips WHERE status = ? ORDER BY created_at DESC',
+    ['generated']
   )
 }
 
