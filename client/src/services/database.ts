@@ -203,6 +203,7 @@ export interface ClipDetectionSession {
   total_clips_detected: number
   processing_time_ms: number | null
   validation_data: string | null
+  run_color: string
   created_at: number
 }
 
@@ -240,6 +241,7 @@ export interface ClipWithVersion extends Clip {
   current_version_id: string | null
   detection_session_id: string | null
   session_created_at?: number
+  session_run_color?: string
   run_number?: number
   // Additional fields from JOIN
   current_version_name?: string
@@ -291,10 +293,22 @@ export async function ensureClipVersioningTables(): Promise<void> {
           total_clips_detected INTEGER DEFAULT 0,
           processing_time_ms INTEGER,
           validation_data TEXT,
+          run_color TEXT NOT NULL DEFAULT '#8B5CF6',
           created_at INTEGER NOT NULL,
           FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
         )
       `)
+    } else {
+      // Add run_color column if it doesn't exist (for existing tables)
+      console.log('[Frontend] Checking for run_color column in clip_detection_sessions...')
+      const pragmaResult = await db.select<{ name: string }[]>("PRAGMA table_info(clip_detection_sessions)")
+      const hasRunColorColumn = pragmaResult.some(column => column.name === 'run_color')
+
+      if (!hasRunColorColumn) {
+        console.log('[Frontend] Adding run_color column to clip_detection_sessions table...')
+        await db.execute("ALTER TABLE clip_detection_sessions ADD COLUMN run_color TEXT NOT NULL DEFAULT '#8B5CF6'")
+        console.log('[Frontend] Added run_color column successfully')
+      }
     }
 
     const versionResult = await db.select<{ name: string }[]>(
@@ -1004,6 +1018,27 @@ export async function hasClipsReferencingRawVideo(rawVideoId: string): Promise<b
   return (result[0]?.count || 0) > 0
 }
 
+// Generate a random color for clip detection runs
+function generateRunColor(): string {
+  const colors = [
+    '#8B5CF6', // Purple (default)
+    '#3B82F6', // Blue
+    '#10B981', // Green
+    '#F59E0B', // Amber
+    '#EF4444', // Red
+    '#06B6D4', // Cyan
+    '#F97316', // Orange
+    '#84CC16', // Lime
+    '#EC4899', // Pink
+    '#6366F1', // Indigo
+    '#14B8A6', // Teal
+    '#A855F7', // Violet
+  ]
+
+  // Pick a random color from the predefined list
+  return colors[Math.floor(Math.random() * colors.length)]
+}
+
 // Clip Detection Session queries
 export async function createClipDetectionSession(
   projectId: string,
@@ -1015,6 +1050,7 @@ export async function createClipDetectionSession(
     totalClipsDetected?: number
     processingTimeMs?: number
     validationData?: any
+    runColor?: string
   }
 ): Promise<string> {
   const db = await getDatabase()
@@ -1025,8 +1061,8 @@ export async function createClipDetectionSession(
     `INSERT INTO clip_detection_sessions (
       id, project_id, prompt, detection_model, server_response_id,
       quality_score, total_clips_detected, processing_time_ms,
-      validation_data, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      validation_data, run_color, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       projectId,
@@ -1037,6 +1073,7 @@ export async function createClipDetectionSession(
       options?.totalClipsDetected || 0,
       options?.processingTimeMs || null,
       options?.validationData ? JSON.stringify(options.validationData) : null,
+      options?.runColor || generateRunColor(),
       now
     ]
   )
@@ -1346,6 +1383,7 @@ export async function getClipsWithVersionsByProjectId(projectId: string): Promis
       cv.created_at as current_version_created_at,
       s.id as detection_session_id,
       s.created_at as session_created_at,
+      s.run_color as session_run_color,
       -- Calculate run number based on session creation order
       (SELECT COUNT(*) + 1 FROM clip_detection_sessions s2
        WHERE s2.project_id = ? AND s2.created_at < s.created_at) as run_number

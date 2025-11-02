@@ -1338,6 +1338,12 @@ pub fn run() {
                             sql: include_str!("../migrations/015_add_clip_status.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 16,
+                            description: "add_run_color_to_clip_detection_sessions",
+                            sql: include_str!("../migrations/016_add_run_color_to_clip_detection_sessions.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                           ],
                 )
                 .build(),

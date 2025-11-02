@@ -97,8 +97,13 @@
                   <!-- Run Number Badge -->
                   <span
                     v-if="clip.run_number"
-                    class="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full font-medium"
-                    title="Detection run"
+                    class="text-xs px-2 py-0.5 rounded-full font-medium border"
+                    :style="{
+                      backgroundColor: hexToDarkerHex(clip.session_run_color || '#8B5CF6', 0.15),
+                      borderColor: clip.session_run_color || '#8B5CF6',
+                      color: clip.session_run_color || '#A78BFA'
+                    }"
+                    :title="`Detection run ${clip.run_number} (Color: ${clip.session_run_color || 'default'})`"
                   >
                     Run {{ clip.run_number }}
                   </span>
@@ -306,6 +311,7 @@ async function loadClipsAndHistory(projectId: string) {
         hasCurrentVersion: !!firstClip.current_version,
         sessionId: firstClip.detection_session_id,
         runNumber: firstClip.run_number,
+        runColor: firstClip.session_run_color,
         // Timing data from different sources
         base_start_time: firstClip.start_time,
         base_end_time: firstClip.end_time,
@@ -316,6 +322,15 @@ async function loadClipsAndHistory(projectId: string) {
         final_end_time: firstClip.current_version?.end_time || firstClip.end_time || 0,
         final_duration: (firstClip.current_version?.end_time || firstClip.end_time || 0) - (firstClip.current_version?.start_time || firstClip.start_time || 0)
       })
+
+      // Log all unique run colors for debugging
+      const uniqueRuns = new Map<number, string>()
+      clips.value.forEach(clip => {
+        if (clip.run_number && clip.session_run_color) {
+          uniqueRuns.set(clip.run_number, clip.session_run_color)
+        }
+      })
+      console.log('[ClipsPanel] Run colors found:', Object.fromEntries(uniqueRuns))
     }
 
     // Load detection sessions for history
@@ -379,6 +394,25 @@ function onPromptChange(promptId: string, promptContent: string) {
 
 function togglePromptDropdown() {
   showPromptDropdown.value = !showPromptDropdown.value
+}
+
+// Utility function to convert hex color to darker version for dark theme
+function hexToDarkerHex(hex: string, opacity: number = 0.15): string {
+  // Remove the # if present
+  const cleanHex = hex.replace('#', '')
+
+  // Parse the hex values
+  const r = parseInt(cleanHex.substr(0, 2), 16)
+  const g = parseInt(cleanHex.substr(2, 2), 16)
+  const b = parseInt(cleanHex.substr(4, 2), 16)
+
+  // Create darker version by reducing brightness (multiply by opacity factor)
+  const darkerR = Math.round(r * opacity)
+  const darkerG = Math.round(g * opacity)
+  const darkerB = Math.round(b * opacity)
+
+  // Convert back to hex
+  return `#${darkerR.toString(16).padStart(2, '0')}${darkerG.toString(16).padStart(2, '0')}${darkerB.toString(16).padStart(2, '0')}`
 }
 
 // Computed properties for progress display
