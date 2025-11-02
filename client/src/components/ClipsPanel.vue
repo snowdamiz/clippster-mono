@@ -300,7 +300,6 @@ watch(() => props.projectId, async (projectId) => {
 // Watch for generation state changes to refresh clips when generation completes
 watch([() => props.isGenerating, () => props.generationProgress], async ([isGenerating, progress]) => {
   if (!isGenerating && progress === 100 && props.projectId) {
-    console.log('[ClipsPanel] Generation completed, refreshing clips...')
     // Add a small delay to ensure database writes are committed
     setTimeout(async () => {
       await loadClipsAndHistory(props.projectId!)
@@ -314,31 +313,9 @@ async function loadClipsAndHistory(projectId: string) {
 
   loadingClips.value = true
   try {
-    console.log('[ClipsPanel] Loading clips for project:', projectId)
-
     // Load current clips with versions
     clips.value = await getClipsWithVersionsByProjectId(projectId)
-    console.log('[ClipsPanel] Loaded clips:', clips.value.length)
     if (clips.value.length > 0) {
-      const firstClip = clips.value[0]
-      console.log('[ClipsPanel] Sample clip data:', {
-        id: firstClip.id,
-        name: firstClip.current_version?.name || firstClip.name,
-        hasCurrentVersion: !!firstClip.current_version,
-        sessionId: firstClip.detection_session_id,
-        runNumber: firstClip.run_number,
-        runColor: firstClip.session_run_color,
-        // Timing data from different sources
-        base_start_time: firstClip.start_time,
-        base_end_time: firstClip.end_time,
-        version_start_time: firstClip.current_version?.start_time,
-        version_end_time: firstClip.current_version?.end_time,
-        // Final calculated values used in UI
-        final_start_time: firstClip.current_version?.start_time || firstClip.start_time || 0,
-        final_end_time: firstClip.current_version?.end_time || firstClip.end_time || 0,
-        final_duration: (firstClip.current_version?.end_time || firstClip.end_time || 0) - (firstClip.current_version?.start_time || firstClip.start_time || 0)
-      })
-
       // Log all unique run colors for debugging
       const uniqueRuns = new Map<number, string>()
       clips.value.forEach(clip => {
@@ -346,13 +323,10 @@ async function loadClipsAndHistory(projectId: string) {
           uniqueRuns.set(clip.run_number, clip.session_run_color)
         }
       })
-      console.log('[ClipsPanel] Run colors found:', Object.fromEntries(uniqueRuns))
     }
 
     // Load detection sessions for history
     detectionSessions.value = await getClipDetectionSessionsByProjectId(projectId)
-    console.log('[ClipsPanel] Loaded detection sessions:', detectionSessions.value.length)
-
   } catch (error) {
     console.error('[ClipsPanel] Failed to load clips:', error)
   } finally {
@@ -384,7 +358,6 @@ function formatTimestamp(timestamp: number): string {
 }
 
 async function refreshClips() {
-  console.log('[ClipsPanel] Manual refresh triggered')
   if (props.projectId) {
     await loadClipsAndHistory(props.projectId)
   }
@@ -417,13 +390,11 @@ function onClipMouseEnter(clipId: string) {
   hoveredClipId.value = clipId
   emit('clipHover', clipId)
   emit('scrollToTimeline')
-  console.log('[ClipsPanel] Clip mouse enter:', clipId)
 }
 
 function onClipMouseLeave() {
   hoveredClipId.value = null
   emit('clipLeave')
-  console.log('[ClipsPanel] Clip mouse leave')
 }
 
 // Ref management for clip elements
@@ -439,80 +410,19 @@ function setClipRef(el: HTMLElement | null, clipId: string) {
 
 // Function to scroll clip into view
 function scrollClipIntoView(clipId: string) {
-  console.log('[ClipsPanel] scrollClipIntoView called for:', clipId)
-  console.log('[ClipsPanel] Total clip elements in map:', clipElements.value.size)
-
   const clipElement = clipElements.value.get(clipId)
   const container = clipsScrollContainer.value
 
-  console.log('[ClipsPanel] clipElement found:', !!clipElement)
-  console.log('[ClipsPanel] container found:', !!container)
-
   if (clipElement && container) {
-    console.log('[ClipsPanel] Both elements found, checking visibility...')
-
-    // Get the position of the clip relative to the container
-    const clipRect = clipElement.getBoundingClientRect()
-    const containerRect = container.getBoundingClientRect()
-
-    // Get container's scroll position
-    const scrollTop = container.scrollTop
-    const containerClientHeight = container.clientHeight
-    const containerScrollHeight = container.scrollHeight
-
-    console.log('[ClipsPanel] clipRect:', {
-      top: clipRect.top,
-      bottom: clipRect.bottom,
-      height: clipRect.height
-    })
-    console.log('[ClipsPanel] containerRect:', {
-      top: containerRect.top,
-      bottom: containerRect.bottom,
-      height: containerRect.height
-    })
-    console.log('[ClipsPanel] container scrollTop:', scrollTop,
-                'containerClientHeight:', containerClientHeight,
-                'containerScrollHeight:', containerScrollHeight)
-
-    // Calculate clip position relative to container's scroll position
-    const clipRelativeTop = clipRect.top - containerRect.top + scrollTop
-    const clipRelativeBottom = clipRelativeTop + clipRect.height
-
-    console.log('[ClipsPanel] clipRelativeTop:', clipRelativeTop, 'clipRelativeBottom:', clipRelativeBottom)
-
-    // The visible area is from scrollTop to scrollTop + containerClientHeight
-    const visibleBottom = scrollTop + containerClientHeight
-    console.log('[ClipsPanel] visible area:', scrollTop, 'to', visibleBottom)
-
-    // Check if the clip is outside the visible area of the container
-    const isAboveVisible = clipRelativeTop < scrollTop
-    const isBelowVisible = clipRelativeBottom > visibleBottom
-
-    console.log('[ClipsPanel] isAboveVisible:', isAboveVisible, 'isBelowVisible:', isBelowVisible)
-
     // Always force scroll to the bottom-most clip for testing
-    console.log('[ClipsPanel] Forcing scroll to clip for testing...')
     clipElement.scrollIntoView({
       behavior: 'smooth',
       block: 'nearest',
       inline: 'nearest'
     })
     return
-
-    if (isAboveVisible || isBelowVisible) {
-      console.log('[ClipsPanel] Scrolling clip into view...')
-      // Scroll the clip into view with smooth behavior
-      clipElement.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-        inline: 'nearest'
-      })
-    } else {
-      console.log('[ClipsPanel] Clip is already visible, no scrolling needed')
-    }
   } else {
     console.log('[ClipsPanel] Cannot scroll - missing elements')
-    console.log('[ClipsPanel] Available clip IDs:', Array.from(clipElements.value.keys()))
   }
 }
 
@@ -639,7 +549,6 @@ defineExpose({
 
 // Event listener for fallback refresh mechanism
 function handleRefreshEvent(event: CustomEvent) {
-  console.log('[ClipsPanel] Received refresh event for project:', event.detail?.projectId)
   if (event.detail?.projectId === props.projectId) {
     refreshClips()
   }

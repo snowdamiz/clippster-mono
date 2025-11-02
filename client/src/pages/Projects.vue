@@ -224,10 +224,6 @@ async function loadProjects() {
   try {
     projects.value = await getAllProjects()
 
-    // Get all available videos to help with recovery
-    const allVideos = await getAllRawVideos()
-    console.log(`[Projects] Total videos in database: ${allVideos.length}`)
-
     // Load clip counts and video thumbnails for each project
     for (const project of projects.value) {
       const clips = await getClipsByProjectId(project.id)
@@ -236,9 +232,6 @@ async function loadProjects() {
       // Load videos for this project
       const videos = await getRawVideosByProjectId(project.id)
       projectVideos.value[project.id] = videos
-
-      console.log(`[Projects] Project ${project.name} (${project.id}):`)
-      console.log(`  - Videos: ${videos.length}`)
 
       // Load project thumbnail or use first video's thumbnail
       if (!thumbnailCache.value.has(project.id)) {
@@ -249,7 +242,6 @@ async function loadProjects() {
               filePath: project.thumbnail_path
             })
             thumbnailCache.value.set(project.id, dataUrl)
-            console.log(`  - Project thumbnail loaded: ${project.thumbnail_path}`)
           } catch (error) {
             console.warn('Failed to load project thumbnail:', project.id, error)
           }
@@ -260,7 +252,6 @@ async function loadProjects() {
               filePath: videos[0].thumbnail_path
             })
             thumbnailCache.value.set(project.id, dataUrl)
-            console.log(`  - Video thumbnail loaded: ${videos[0].thumbnail_path}`)
 
             // Save this thumbnail to the project for future use
             await updateProject(project.id, undefined, undefined, videos[0].thumbnail_path)

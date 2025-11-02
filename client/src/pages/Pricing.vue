@@ -429,7 +429,6 @@ async function initiatePayment() {
 
     // Set up listener for payment completion
     const unlisten = await listen('wallet-payment-complete', async (event: any) => {
-      console.log('Payment complete:', event.payload)
       const paymentResult = event.payload
 
       // Verify payment with backend

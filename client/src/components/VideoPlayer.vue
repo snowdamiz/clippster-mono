@@ -110,7 +110,6 @@ defineExpose({
 // Watch for video element changes and notify parent
 watch(videoElementRef, (newElement) => {
   if (newElement) {
-    console.log('[VideoPlayer] Video element ref updated:', !!newElement)
     emit('videoElementReady', newElement)
   }
 })

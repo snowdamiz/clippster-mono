@@ -431,7 +431,6 @@ const paginatedVideos = computed(() => {
   const startIndex = (currentPage.value - 1) * videosPerPage
   const endIndex = startIndex + videosPerPage
   const paginated = videos.value.slice(startIndex, endIndex)
-  console.log(`[Videos] Page ${currentPage.value}: Showing ${paginated.length} of ${videos.value.length} videos`)
   return paginated
 })
 
@@ -466,24 +465,6 @@ async function loadVideos() {
   loading.value = true
   try {
     videos.value = await getAllRawVideos()
-    console.log(`[Videos] Loaded ${videos.value.length} videos`)
-
-    // Debug: Check database directly
-    const db = await getDatabase()
-    try {
-      const allTables = await db.select<any[]>("SELECT name FROM sqlite_master WHERE type='table'")
-      console.log(`[Videos] Database tables:`, allTables.map(t => t.name))
-
-      const rawVideosCount = await db.select<any[]>("SELECT COUNT(*) as count FROM raw_videos")
-      console.log(`[Videos] Raw videos count:`, rawVideosCount[0].count)
-
-      if (rawVideosCount[0].count > 0) {
-        const sampleVideos = await db.select<any[]>("SELECT id, file_path, project_id, original_filename FROM raw_videos LIMIT 5")
-        console.log(`[Videos] Sample videos:`, sampleVideos)
-      }
-    } catch (dbError) {
-      console.error('[Videos] Database debug error:', dbError)
-    }
 
     // Reset pagination to first page when loading new videos
     currentPage.value = 1
@@ -505,8 +486,6 @@ async function loadVideos() {
 
 // Handle download completion - immediately refresh the videos list
 function handleDownloadComplete(download: any) {
-  console.log('[Videos] Download completed:', download.title)
-
   // Immediately refresh the videos list to show the newly completed download
   loadVideos()
 
@@ -620,19 +599,8 @@ onMounted(async () => {
   // Register for download completion events for immediate updates
   unregisterDownloadCallback = onDownloadComplete(handleDownloadComplete)
 
-  // Check for any completed downloads that might have been missed
-  // This handles cases where the user navigates to the page after downloads completed
-  const allDownloads = getAllDownloads()
-  const completedDownloads = allDownloads.filter(d =>
-    d.result?.success && d.rawVideoId
-  )
-
   // Load videos (will show existing videos + any recently completed downloads)
   await loadVideos()
-
-  // If there were completed downloads that might not be in the videos list yet,
-  // we'll handle it through the normal loadVideos() process
-  console.log(`[Videos] Found ${completedDownloads.length} completed downloads on mount`)
 
   // Set up periodic cleanup (no longer need to check for completed downloads)
   cleanupInterval = setInterval(() => {

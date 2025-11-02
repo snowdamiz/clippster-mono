@@ -182,7 +182,6 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
 
   function onTimelineZoomChanged(zoomLevel: number) {
     timelineZoomLevel.value = zoomLevel
-    console.log('[VideoPlayer] Timeline zoom level updated:', zoomLevel)
   }
 
   function updateVolume(newVolume?: number) {
@@ -230,15 +229,12 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   }
 
   function onLoadedMetadata() {
-    console.log('[VideoPlayer] Video loadedmetadata event')
     if (!videoElement.value) {
-      console.log('[VideoPlayer] Video element not found in loadedmetadata')
       return
     }
 
     videoLoading.value = false
     duration.value = videoElement.value.duration
-    console.log('[VideoPlayer] Video duration:', duration.value)
 
     videoElement.value.volume = volume.value
     videoElement.value.muted = isMuted.value
@@ -250,17 +246,14 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   }
 
   function onLoadStart() {
-    console.log('[VideoPlayer] Video loadstart event')
     videoError.value = null
   }
 
   function onCanPlay() {
-    console.log('[VideoPlayer] Video canplay event')
     videoLoading.value = false
   }
 
   function onVideoError(event: Event) {
-    console.log('[VideoPlayer] Video error event:', event)
     videoLoading.value = false
     videoError.value = 'Failed to load video. The file may be corrupted or in an unsupported format.'
     console.error('Video error:', event)
@@ -276,10 +269,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   }
 
   async function loadVideoForProject() {
-    console.log('[VideoPlayer] Loading video for project:', project.value?.name)
-
     if (!project.value) {
-      console.log('[VideoPlayer] No project, clearing video')
       videoSrc.value = null
       currentVideo.value = null
       videoError.value = null
@@ -296,7 +286,6 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
       let videoPath: string | null = null
 
       const projectData = project.value
-      console.log('[VideoPlayer] Available videos:', availableVideos.value.length)
 
       // Look for video using project_id relationship
       if (projectData?.id) {
@@ -304,27 +293,19 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
         if (projectVideo) {
           videoPath = projectVideo.file_path
           currentVideo.value = projectVideo
-          console.log('[VideoPlayer] Found video via project_id:', videoPath)
         }
       }
 
       if (!videoPath) {
-        console.log('[VideoPlayer] No video found for project')
         videoSrc.value = null
         videoLoading.value = false
         return
       }
 
-      console.log('[VideoPlayer] Loading video from path:', videoPath)
-
       const port = await invoke<number>('get_video_server_port')
       const encodedPath = btoa(videoPath)
       videoSrc.value = `http://localhost:${port}/video/${encodedPath}`
-
-      console.log('[VideoPlayer] Video URL created:', videoSrc.value)
       videoLoading.value = false
-      console.log('[VideoPlayer] Loading state set to false')
-
     } catch (error) {
       console.error('[VideoPlayer] Failed to load video for project:', error)
       videoError.value = 'Failed to connect to video server. Please try again.'
@@ -352,34 +333,25 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   // Watchers
   watch(videoElement, (newElement) => {
     if (newElement && videoSrc.value && videoLoading.value) {
-      console.log('[VideoPlayer] Video element became available, loading video')
       newElement.load()
     }
   })
 
   watch(videoSrc, async (newSrc) => {
-    console.log('[VideoPlayer] Video source changed:', !!newSrc)
     if (newSrc) {
-      console.log('[VideoPlayer] New video source, waiting for element...')
       await nextTick()
       await nextTick()
 
-      console.log('[VideoPlayer] Video element after nextTick:', !!videoElement.value)
       if (videoElement.value) {
-        console.log('[VideoPlayer] Loading video with new source')
         videoElement.value.load()
       } else {
-        console.log('[VideoPlayer] Video element still not found, setting up a retry')
         let retries = 0
         const checkInterval = setInterval(() => {
           retries++
-          console.log(`[VideoPlayer] Retry ${retries}: Element found:`, !!videoElement.value)
           if (videoElement.value) {
-            console.log('[VideoPlayer] Video element found via retry, loading video')
             videoElement.value.load()
             clearInterval(checkInterval)
           } else if (retries >= 10) {
-            console.log('[VideoPlayer] Max retries reached, giving up')
             clearInterval(checkInterval)
             videoError.value = 'Failed to initialize video player. Please refresh and try again.'
             videoLoading.value = false
@@ -394,14 +366,9 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   }, { immediate: true })
 
   onMounted(() => {
-    console.log('[VideoPlayer] Component mounted')
-    console.log('[VideoPlayer] Video element ref on mount:', videoElement.value)
-
     if (videoSrc.value && !videoElement.value) {
       setTimeout(() => {
-        console.log('[VideoPlayer] Video element ref after timeout:', videoElement.value)
         if (videoElement.value) {
-          console.log('[VideoPlayer] Loading video after timeout')
           videoElement.value.load()
         }
       }, 100)

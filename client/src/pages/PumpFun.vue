@@ -507,32 +507,21 @@ async function downloadClipConfirmed() {
   downloadStarting.value = true
 
   try {
-    console.log('[PumpFun] Starting download for clip:', clip)
-
     // Get the best available video URL
     const videoUrl = clip.mp4Url || clip.playlistUrl
-
-    console.log('[PumpFun] Video URL:', videoUrl)
-    console.log('[PumpFun] Mint ID:', pumpFunStore.currentMintId)
-
     if (!videoUrl) {
       throw new Error('No video URL available for this VOD')
     }
 
     // Start the download
-    console.log('[PumpFun] Calling startDownload...')
-    const downloadId = await startDownload(
+    await startDownload(
       clip.title,
       videoUrl,
       pumpFunStore.currentMintId
     )
 
-    console.log('[PumpFun] Download started with ID:', downloadId)
-
     // Show success toast
     success('Download Started', `Downloading "${clip.title}"`)
-
-    console.log('[PumpFun] Dialog closed, navigating to Videos page')
 
     // Close dialog immediately
     showDownloadDialog.value = false

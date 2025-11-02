@@ -74,8 +74,6 @@ export const useAuthStore = defineStore('auth', {
           }, 300000)
         })
 
-        console.log('Received auth result:', result)
-
         // Verify signature with backend
         const verifyResponse = await fetch(`${API_BASE}/api/auth/verify`, {
           method: 'POST',

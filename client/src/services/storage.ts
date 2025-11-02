@@ -24,7 +24,6 @@ export async function getStoragePaths(): Promise<StoragePaths> {
   try {
     const paths = await invoke<StoragePaths>('get_storage_paths')
     cachedPaths = paths
-    console.log('[Storage] Initialized paths:', paths)
     return paths
   } catch (error) {
     console.error('[Storage] Failed to get storage paths:', error)

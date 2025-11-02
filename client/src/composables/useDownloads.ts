@@ -44,19 +44,14 @@ export function useDownloads() {
 
   async function initialize() {
     if (isInitialized.value) {
-      console.log('[Downloads] Already initialized')
       return
     }
 
-    console.log('[Downloads] Initializing downloads system...')
-
     // Listen for download progress updates
     await listen<DownloadProgress>('download-progress', (event) => {
-      console.log('[Downloads] Progress event received:', event.payload)
       const download = activeDownloads.get(event.payload.download_id)
       if (download) {
         download.progress = event.payload
-        console.log('[Downloads] Progress updated for download:', download.id, event.payload.progress)
       } else {
         console.warn('[Downloads] Received progress for unknown download:', event.payload.download_id)
       }
@@ -64,16 +59,13 @@ export function useDownloads() {
 
     // Listen for download completion
     await listen<DownloadResult>('download-complete', async (event) => {
-      console.log('[Downloads] Completion event received:', event.payload)
       const download = activeDownloads.get(event.payload.download_id)
       if (download) {
         download.result = event.payload
-        console.log('[Downloads] Download completed:', download.id, 'Success:', event.payload.success)
 
         // If download was successful, create database record
         if (event.payload.success && event.payload.file_path) {
           try {
-            console.log('[Downloads] Creating database record for completed download')
             const rawVideoId = await createRawVideo(event.payload.file_path, {
               originalFilename: download.title,
               thumbnailPath: event.payload.thumbnail_path,
@@ -86,7 +78,6 @@ export function useDownloads() {
             })
 
             download.rawVideoId = rawVideoId
-            console.log('[Downloads] Database record created with ID:', rawVideoId)
 
             // Notify all listeners about completion
             completionCallbacks.forEach(callback => {
@@ -106,7 +97,6 @@ export function useDownloads() {
     })
 
     isInitialized.value = true
-    console.log('[Downloads] Downloads system initialized successfully')
   }
 
   async function startDownload(
@@ -114,13 +104,9 @@ export function useDownloads() {
     videoUrl: string,
     mintId: string
   ): Promise<string> {
-    console.log('[Downloads] startDownload called:', { title, videoUrl, mintId })
-
     await initialize()
-    console.log('[Downloads] Downloads system initialized')
 
     const downloadId = generateId()
-    console.log('[Downloads] Generated download ID:', downloadId)
 
     const download: ActiveDownload = {
       id: downloadId,
@@ -134,10 +120,8 @@ export function useDownloads() {
     }
 
     activeDownloads.set(downloadId, download)
-    console.log('[Downloads] Download added to activeDownloads:', downloadId)
 
     try {
-      console.log('[Downloads] Invoking download_pumpfun_vod command...')
       // Start the download without waiting for it to complete
       invoke('download_pumpfun_vod', {
         downloadId,
@@ -150,7 +134,6 @@ export function useDownloads() {
         activeDownloads.delete(downloadId)
         // We can't throw here since the async operation has already returned
       })
-      console.log('[Downloads] download_pumpfun_vod command initiated successfully')
     } catch (error) {
       console.error('[Downloads] Error invoking download command:', error)
       // Remove from active downloads if failed to start

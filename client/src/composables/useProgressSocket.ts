@@ -19,31 +19,25 @@ export function useProgressSocket(initialProjectId: string | null) {
 
   const connect = () => {
     if (!projectId.value) {
-      console.log('[ProgressSocket] No projectId provided, skipping connection')
       return
     }
 
     if (socket) {
-      console.log('[ProgressSocket] Socket already exists, disconnecting first')
       disconnect()
     }
 
     try {
-      console.log('[ProgressSocket] Attempting to connect to WebSocket for project:', projectId.value)
-
       // Import Phoenix Socket dynamically to avoid SSR issues
       import('phoenix').then(({ Socket }) => {
         const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000'
         const wsUrl = API_BASE.replace('http://', 'ws://').replace('https://', 'wss://')
         const socketUrl = `${wsUrl}/socket`
 
-        console.log('[ProgressSocket] Connecting to:', socketUrl)
 
         socket = new Socket(socketUrl, {
           params: { },
           heartbeatIntervalMs: 30000,
           reconnectAfterMs: (tries: number) => {
-            console.log(`[ProgressSocket] Reconnect attempt ${tries}`)
             return [1000, 2000, 5000, 10000][tries - 1] || 10000
           }
         })
@@ -53,7 +47,6 @@ export function useProgressSocket(initialProjectId: string | null) {
         channel = socket.channel(`progress:${projectId.value}`)
 
         channel.on('progress_update', (update: ProgressUpdate) => {
-          console.log('[ProgressSocket] 🎉 Received progress update:', update)
           progress.value = update.progress
           stage.value = update.stage
           message.value = update.message || ''
@@ -61,7 +54,6 @@ export function useProgressSocket(initialProjectId: string | null) {
         })
 
         channel.onClose(() => {
-          console.log('[ProgressSocket] Channel closed')
           isConnected.value = false
         })
 
@@ -70,7 +62,6 @@ export function useProgressSocket(initialProjectId: string | null) {
           error.value = 'Connection error: ' + JSON.stringify(err)
         })
 
-        console.log('[ProgressSocket] Joining channel...')
         channel.join()
           .receive('ok', (resp: any) => {
             console.log('[ProgressSocket] ✅ Successfully joined progress channel for project:', projectId.value, resp)

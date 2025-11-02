@@ -152,8 +152,6 @@ import { useVideoPlayer } from '@/composables/useVideoPlayer'
 import { useProgressSocket } from '@/composables/useProgressSocket'
 import { useToast } from '@/composables/useToast'
 
-console.log('[ProjectWorkspaceDialog] Script setup running')
-
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 const { error: showError } = useToast()
 
@@ -165,8 +163,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
 }>()
-
-console.log('[ProjectWorkspaceDialog] Props defined:', props.modelValue, props.project?.name)
 
 // Progress state
 const showProgress = ref(false)
@@ -230,15 +226,6 @@ const {
   resetVideoState
 } = useVideoPlayer(projectRef)
 
-// Debug: Log state changes
-watch([videoLoading, videoSrc, videoElement], () => {
-  console.log('[ProjectWorkspaceDialog] State update:', {
-    loading: videoLoading.value,
-    src: videoSrc.value?.substring(0, 50) + '...',
-    element: !!videoElement.value
-  })
-}, { immediate: true })
-
 function close() {
   emit('update:modelValue', false)
 }
@@ -261,9 +248,6 @@ async function onDetectClips(prompt: string) {
   }
 
   try {
-    console.log('[ProjectWorkspaceDialog] Starting clip detection process...')
-    console.log('[ProjectWorkspaceDialog] Using prompt:', prompt.substring(0, 100) + '...')
-
     // Initialize progress tracking
     clipGenerationInProgress.value = true
     showProgress.value = false // Show progress in the clips panel, not modal
@@ -279,8 +263,6 @@ async function onDetectClips(prompt: string) {
       console.error('[ProjectWorkspaceDialog] No video found for project')
       throw new Error('No video found for project')
     }
-
-    console.log('[ProjectWorkspaceDialog] Found video for project:', projectVideo.file_path)
 
     // Step 1: Generate MP3 audio file from video using FFmpeg - EXACTLY like prototype
     const audioFile = await generateAudioFromVideo(projectVideo.file_path)
@@ -327,46 +309,10 @@ async function onDetectClips(prompt: string) {
     }
     const processingTimeMs = Date.now() - processingStartTime
 
-    console.log('[ProjectWorkspaceDialog] Detection results received:', {
-      clipsCount: result.clips?.length || 0,
-      qualityScore: result.validation?.qualityScore,
-      processingTime: processingTimeMs,
-      hasClips: !!result.clips,
-      clipsType: typeof result.clips,
-      firstClip: result.clips?.[0] || 'No clips',
-      fullResult: result
-    })
-
-    // Debug: Log the actual clips and transcript data
-    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - Full result structure:', Object.keys(result))
-    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - Actual clips data:', result.clips)
-    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - result.clips type:', typeof result.clips)
-    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - result.clips length:', result.clips?.length)
-
     // Check for nested structure
     if (result.clips && typeof result.clips === 'object' && result.clips.clips) {
-      console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - FOUND NESTED STRUCTURE - Using result.clips.clips')
       result.clips = result.clips.clips
-      console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - Fixed clips array length:', result.clips?.length)
     }
-    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - result.clips isArray:', Array.isArray(result.clips))
-    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - Root level clips check:', result.clips || 'No clips at root')
-
-    // Check if clips are nested in a different property
-    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - All root properties:', Object.keys(result))
-    for (const key of Object.keys(result)) {
-      const value = result[key]
-      if (Array.isArray(value) && value.length > 0) {
-        console.log(`[ProjectWorkspaceDialog] CLIPS DEBUG - Found array in property '${key}':`, value.length, 'items')
-        if (value[0]?.id || value[0]?.title) {
-          console.log(`[ProjectWorkspaceDialog] CLIPS DEBUG - '${key}' looks like clips array:`, value[0])
-        }
-      }
-    }
-
-    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - Transcript length:', result.transcript?.text?.length || 0)
-    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - First 500 chars of transcript:', result.transcript?.text?.substring(0, 500) || 'No transcript')
-    console.log('[ProjectWorkspaceDialog] CLIPS DEBUG - Validation data:', result.validation)
 
     // Step 3: Persist detected clips to database with versioning
     const sessionId = await persistClipDetectionResults(
@@ -380,11 +326,8 @@ async function onDetectClips(prompt: string) {
       }
     )
 
-    console.log('[ProjectWorkspaceDialog] Clips persisted to database with session ID:', sessionId)
-
     // Step 5: Trigger UI refresh to show the new clips
     if (props.project) {
-      console.log('[ProjectWorkspaceDialog] Triggering clips refresh for project:', props.project.id)
       // Force the ClipsPanel to reload clips by directly calling the refresh function
       setTimeout(() => {
         const clipsPanel = document.querySelector('[data-clips-panel]') as any
@@ -395,7 +338,6 @@ async function onDetectClips(prompt: string) {
           // Fallback: emit a custom event to trigger refresh
           const refreshEvent = new CustomEvent('refresh-clips', { detail: { projectId: props.project!.id } })
           document.dispatchEvent(refreshEvent)
-          console.log('[ProjectWorkspaceDialog] Sent refresh-clips event as fallback')
         }
       }, 1000)
     }
@@ -441,17 +383,12 @@ async function onDetectClips(prompt: string) {
 
 async function generateAudioFromVideo(videoPath: string): Promise<File> {
   // This uses the bundled FFmpeg to extract audio as MP3 - EXACTLY like prototype
-  console.log('[ProjectWorkspaceDialog] Generating MP3 audio from video:', videoPath)
-
   try {
     // Call Tauri command to extract audio using FFmpeg - now returns (filename, base64_data)
     const [filename, base64Data] = await invoke<[string, string]>('extract_audio_from_video', {
       videoPath: videoPath,
       outputPath: 'temp_audio_audio_only.mp3'
     })
-
-    console.log('[ProjectWorkspaceDialog] Audio file extracted:', filename)
-    console.log('[ProjectWorkspaceDialog] Base64 data length:', base64Data.length)
 
     // Convert base64 back to binary
     const binaryString = atob(base64Data)
@@ -473,9 +410,6 @@ async function generateAudioFromVideo(videoPath: string): Promise<File> {
 
 function showClipDetectionResult(result: any, sessionId?: string) {
   // Create a test dialog to show the returned data with validation information
-  console.log('[ProjectWorkspaceDialog] Clip detection result:', result)
-  console.log('[ProjectWorkspaceDialog] Detection session ID:', sessionId)
-
   const validation = result.validation || {}
   const qualityScore = validation.qualityScore || 0
   const issues = validation.issues || []
@@ -600,14 +534,12 @@ function onTimelineMouseLeave() {
 }
 
 function handleTimelineZoomChanged(zoomLevel: number) {
-  console.log('[ProjectWorkspaceDialog] Timeline zoom changed:', zoomLevel)
   onTimelineZoomChanged(zoomLevel)
 }
 
 // Clip hover event handlers
 function onClipHover(clipId: string) {
   hoveredClipId.value = clipId
-  console.log('[ProjectWorkspaceDialog] Clip hovered:', clipId)
 
   // Scroll to the corresponding timeline clip
   if (timelineRef.value) {
@@ -617,23 +549,19 @@ function onClipHover(clipId: string) {
 
 function onClipLeave() {
   hoveredClipId.value = null
-  console.log('[ProjectWorkspaceDialog] Clip hover left')
 }
 
 // Timeline clip hover event handlers
 function onTimelineClipHover(clipId: string) {
   hoveredTimelineClipId.value = clipId
-  console.log('[ProjectWorkspaceDialog] Timeline clip hovered:', clipId)
 }
 
 function onTimelineClipLeave() {
   hoveredTimelineClipId.value = null
-  console.log('[ProjectWorkspaceDialog] Timeline clip hover left')
 }
 
 // Scroll event handlers
 function onScrollToTimeline() {
-  console.log('[ProjectWorkspaceDialog] Request to scroll to timeline')
   // Scroll timeline into view if it's not visible
   if (timelineRef.value) {
     const timelineElement = (timelineRef.value as any).$el as HTMLElement
@@ -647,12 +575,8 @@ function onScrollToTimeline() {
 }
 
 function onScrollToClipsPanel(clipId: string) {
-  console.log('[ProjectWorkspaceDialog] Request to scroll to clips panel for clip:', clipId)
-  console.log('[ProjectWorkspaceDialog] clipsPanelRef available:', !!clipsPanelRef.value)
-
   // Scroll to the specific clip
   if (clipId && clipsPanelRef.value) {
-    console.log('[ProjectWorkspaceDialog] Calling scrollClipIntoView for:', clipId)
     clipsPanelRef.value.scrollClipIntoView(clipId)
   } else {
     console.log('[ProjectWorkspaceDialog] Cannot scroll - missing clipId or ref')
@@ -669,8 +593,6 @@ function transformClipsForTimeline(clipsWithVersion: ClipWithVersion[]): any[] {
       return null
     }
 
-    console.log(`[ProjectWorkspaceDialog] Transforming clip ${clip.id} with ${clip.current_version_segments?.length || 0} segments`)
-
     // Use segments from database if available, otherwise create single segment from version timing
     let segments: any[] = []
     if (clip.current_version_segments && Array.isArray(clip.current_version_segments) && clip.current_version_segments.length > 0) {
@@ -681,7 +603,6 @@ function transformClipsForTimeline(clipsWithVersion: ClipWithVersion[]): any[] {
         duration: segment.duration || (segment.end_time - segment.start_time),
         transcript: segment.transcript || version.description || 'No transcript available'
       }))
-      console.log(`[ProjectWorkspaceDialog] Using ${segments.length} segments from database for clip ${clip.id}`)
     } else {
       // Fallback: create single segment from version timing
       segments = [
@@ -692,7 +613,6 @@ function transformClipsForTimeline(clipsWithVersion: ClipWithVersion[]): any[] {
           transcript: version.description || 'No transcript available'
         }
       ]
-      console.log(`[ProjectWorkspaceDialog] Using fallback single segment for clip ${clip.id}`)
     }
 
     // Determine clip type based on segments
@@ -724,20 +644,15 @@ async function loadTimelineClips(projectId: string) {
   }
 
   try {
-    console.log('[ProjectWorkspaceDialog] Loading clips for timeline:', projectId)
     const clipsWithVersion = await getClipsWithVersionsByProjectId(projectId)
-    console.log('[ProjectWorkspaceDialog] Loaded clips for timeline:', clipsWithVersion.length)
 
     timelineClips.value = transformClipsForTimeline(clipsWithVersion)
-    console.log('[ProjectWorkspaceDialog] Transformed timeline clips:', timelineClips.value.length)
   } catch (error) {
-    console.error('[ProjectWorkspaceDialog] Failed to load timeline clips:', error)
     timelineClips.value = []
   }
 }
 
 function onVideoElementReady(element: HTMLVideoElement) {
-  console.log('[ProjectWorkspaceDialog] Video element ready:', !!element)
   videoElement.value = element
 }
 
@@ -777,7 +692,6 @@ watch(() => props.project?.id, (newProjectId) => {
 // Watch for progress socket errors and show toasts
 watch(clipError, (newError) => {
   if (newError && clipGenerationInProgress.value) {
-    console.log('[ProjectWorkspaceDialog] Progress socket error:', newError)
     showError(
       'Processing Error',
       newError.includes('No credits were charged') ? newError : `${newError}. No credits were charged.`,
@@ -789,7 +703,6 @@ watch(clipError, (newError) => {
 // Watch for generation completion to trigger clips refresh
 watch([clipGenerationInProgress, clipProgress], async ([isInProgress, progress]) => {
   if (!isInProgress && progress === 100 && props.project) {
-    console.log('[ProjectWorkspaceDialog] Clip generation completed, triggering clips refresh')
     // Trigger clips refresh with a longer delay to ensure all database operations are complete
     setTimeout(async () => {
       const refreshEvent = new CustomEvent('refresh-clips', { detail: { projectId: props.project!.id } })

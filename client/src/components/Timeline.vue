@@ -495,12 +495,10 @@ function onTimelineMouseLeave() {
 function onTimelineClipMouseEnter(clipId: string) {
   emit('timelineClipHover', clipId)
   emit('scrollToClipsPanel', clipId)
-  console.log('[Timeline] Clip mouse enter:', clipId)
 }
 
 function onTimelineClipMouseLeave() {
   emit('timelineClipLeave')
-  console.log('[Timeline] Clip mouse leave')
 }
 
 // Zoom handler for timeline ruler
@@ -518,8 +516,6 @@ function onRulerWheel(event: WheelEvent) {
 
   // Emit zoom change to parent
   emit('zoomChanged', newZoom)
-
-  console.log('[Timeline] Zoom level:', newZoom.toFixed(2))
 }
 
 // Panning handlers for timeline ruler
@@ -659,19 +655,6 @@ function onDragEnd() {
         }
 
         container.scrollLeft = targetScrollLeft
-
-        console.log('[Timeline] Drag-to-zoom scroll positioning:', {
-          startPercent: (startPercent * 100).toFixed(1) + '%',
-          endPercent: (endPercent * 100).toFixed(1) + '%',
-          selectionDuration: (selectionDuration * 100).toFixed(1) + '%',
-          targetZoom: targetZoom.toFixed(2),
-          contentWidth,
-          containerWidth,
-          maxScrollLeft,
-          targetScrollLeft,
-          startTime: formatDuration(startPercent * props.duration),
-          endTime: formatDuration(endPercent * props.duration)
-        })
       }
     })
 

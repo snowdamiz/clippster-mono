@@ -91,7 +91,6 @@ async function loadClips() {
   loading.value = true
   try {
     clips.value = await getGeneratedClips()
-    console.log(`[Clips] Loaded ${clips.value.length} generated clips`)
   } catch (error) {
     console.error('Failed to load clips:', error)
   } finally {

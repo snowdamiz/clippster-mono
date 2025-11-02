@@ -15,7 +15,6 @@ onMounted(async () => {
   // Initialize database connection
   try {
     await initDatabase()
-    console.log('[App] Database initialized successfully')
 
     // Seed default prompt if it doesn't exist
     await seedDefaultPrompt()
@@ -26,7 +25,6 @@ onMounted(async () => {
   // Initialize window close handler
   try {
     await initializeWindowCloseHandler()
-    console.log('[App] Window close handler initialized successfully')
   } catch (error) {
     console.error('[App] Failed to initialize window close handler:', error)
   }

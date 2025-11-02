@@ -246,8 +246,6 @@ function seekTo(event: MouseEvent) {
   const seekTime = clickPercent * videoDuration
   videoElement.value.currentTime = seekTime
   currentTime.value = seekTime
-
-  console.log(`Seeking to ${seekTime}s (${Math.round(clickPercent * 100)}%)`)
 }
 
 function onTimelineHover(event: MouseEvent) {

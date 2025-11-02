@@ -74,7 +74,6 @@ const router = useRouter()
 const connectWallet = async () => {
   const result = await authStore.authenticateWithWallet()
   if (result.success) {
-    console.log('Authentication successful!')
     // Redirect to dashboard after successful authentication
     router.push('/dashboard')
   }

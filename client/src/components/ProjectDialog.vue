@@ -463,7 +463,6 @@ function getThumbnailUrl(video: RawVideo): string | null {
 async function loadAvailableVideos() {
   try {
     availableVideos.value = await getAllRawVideos()
-    console.log(`[ProjectDialog] Loaded ${availableVideos.value.length} videos for selection`)
     // Load thumbnails
     for (const video of availableVideos.value) {
       if (video.thumbnail_path && !thumbnailCache.value.has(video.id)) {
