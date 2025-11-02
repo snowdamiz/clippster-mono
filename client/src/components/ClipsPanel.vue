@@ -400,8 +400,8 @@ function onClipMouseLeave() {
 // Ref management for clip elements
 const clipElements = ref<Map<string, HTMLElement>>(new Map())
 
-function setClipRef(el: HTMLElement | null, clipId: string) {
-  if (el) {
+function setClipRef(el: any, clipId: string) {
+  if (el && el instanceof HTMLElement) {
     clipElements.value.set(clipId, el)
   } else {
     clipElements.value.delete(clipId)

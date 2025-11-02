@@ -208,7 +208,6 @@ const {
   isMuted,
   timelineHoverTime,
   timelineHoverPosition,
-  timelineTimestamps,
   togglePlayPause,
   seekTimeline,
   onTimelineTrackHover,

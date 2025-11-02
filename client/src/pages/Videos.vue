@@ -285,7 +285,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { getAllRawVideos, getDatabase, hasClipsReferencingRawVideo, getProject, type RawVideo, type Project } from '@/services/database'
+import { getAllRawVideos, hasClipsReferencingRawVideo, getProject, type RawVideo, type Project } from '@/services/database'
 import { useToast } from '@/composables/useToast'
 import { useDownloads } from '@/composables/useDownloads'
 import { useVideoOperations } from '@/composables/useVideoOperations'
@@ -321,7 +321,6 @@ const {
   initialize: initializeDownloads,
   getActiveDownloads,
   cleanupOldDownloads,
-  getAllDownloads,
   onDownloadComplete
 } = useDownloads()
 

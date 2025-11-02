@@ -148,6 +148,8 @@
           v-for="(clip, index) in props.clips"
           :key="clip.id"
           class="flex items-center min-h-12 px-2 border-b border-border/20"
+          @mouseenter="onTimelineClipMouseEnter(clip.id)"
+          @mouseleave="onTimelineClipMouseLeave"
         >
           <!-- Track Label -->
           <div class="w-16 h-8 pr-2 flex items-center justify-center">
@@ -158,17 +160,19 @@
 
           <!-- Clip Track Content -->
           <div class="flex-1 h-8 relative">
+            <div
+              class="absolute inset-0 bg-[#1a1a1a]/30 rounded-md border border-border/20 cursor-pointer"
+              @click="onClipTrackClick"
+            ></div>
             <!-- Clip segments on timeline -->
-            <div class="absolute inset-0 flex items-center">
-              <!-- Background track -->
-              <div class="absolute inset-0 bg-[#1a1a1a]/30 rounded-md border border-border/20"></div>
+            <div class="absolute inset-0 flex items-center pointer-events-none">
 
               <!-- Render each segment as a clip on the timeline -->
               <div
                 v-for="(segment, segIndex) in clip.segments"
                 :key="`${clip.id}_${segIndex}`"
                 :ref="el => setTimelineClipRef(el, clip.id)"
-                class="clip-segment absolute h-6 border rounded-md flex items-center justify-center cursor-pointer"
+                class="clip-segment absolute h-6 border rounded-md flex items-center justify-center pointer-events-none"
                 :class="[
                   'transition-all duration-75',
                   clip.run_number ? `run-${clip.run_number}` : '',
@@ -186,8 +190,6 @@
                 }"
                 :data-run-color="clip.run_color"
                 :title="`${clip.title} - ${formatDuration(segment.start_time)} to ${formatDuration(segment.end_time)}${clip.run_number ? ` (Run ${clip.run_number})` : ''}`"
-                @mouseenter="onTimelineClipMouseEnter(clip.id)"
-                @mouseleave="onTimelineClipMouseLeave"
               >
                 <span class="text-xs text-white/90 font-medium truncate px-1 drop-shadow-sm">{{ clip.title }}</span>
               </div>
@@ -288,10 +290,8 @@ const calculatedHeight = computed(() => {
   const rulerHeight = 32 // Timeline ruler height
   const mainTrackHeight = 56 // Main video track height
   const clipTrackHeight = 48 // Height per clip track
-  const minTracks = 1 // At least main video track
 
   const numberOfClips = props.clips.length
-  const totalTracks = Math.max(minTracks, numberOfClips + 1) // +1 for main video track
 
   // Calculate total content height: header + ruler + main track + clip tracks
   const tracksHeight = rulerHeight + mainTrackHeight + (numberOfClips * clipTrackHeight)
@@ -343,8 +343,8 @@ const showTimelineHoverLine = ref(false)
 const timelineHoverLinePosition = ref(0) // X position in pixels relative to timeline container
 const timelineBounds = ref({ top: 0, bottom: 0 }) // Timeline container bounds
 
-function setTimelineClipRef(el: HTMLElement | null, clipId: string) {
-  if (el) {
+function setTimelineClipRef(el: any, clipId: string) {
+  if (el && el instanceof HTMLElement) {
     timelineClipElements.value.set(clipId, el)
   } else {
     timelineClipElements.value.delete(clipId)
@@ -388,7 +388,6 @@ const generatedTimestamps = computed(() => {
 
   const timestamps: Timestamp[] = []
   const duration = props.duration
-  const effectiveDuration = duration / zoomLevel.value // Adjust duration based on zoom
 
   // Determine optimal interval based on video duration and zoom level
   function getOptimalInterval(duration: number, zoom: number): { major: number, minor: number } {
@@ -489,6 +488,13 @@ function onTimelineTrackHover(event: MouseEvent) {
 
 function onTimelineMouseLeave() {
   emit('timelineMouseLeave')
+}
+
+function onClipTrackClick(event: MouseEvent) {
+  // Only seek if we're not in the middle of a drag selection
+  if (!isDragging.value) {
+    onSeekTimeline(event)
+  }
 }
 
 // Timeline clip hover event handlers
