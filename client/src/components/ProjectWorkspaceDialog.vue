@@ -536,8 +536,12 @@ function handleTimelineZoomChanged(zoomLevel: number) {
 
 // Clip hover event handlers
 function onClipHover(clipId: string) {
-  // Toggle the hovered state - if clicking the same clip, unhighlight it
-  hoveredClipId.value = hoveredClipId.value === clipId ? null : clipId
+  // Clear both states first to ensure no duplicates
+  hoveredClipId.value = null
+  hoveredTimelineClipId.value = null
+
+  // Then set the new state
+  hoveredClipId.value = clipId
 
   // Check if this is the first clip - if so, scroll timeline to top
   const isFirstClip = timelineClips.value.length > 0 && timelineClips.value[0].id === clipId
@@ -562,8 +566,12 @@ function onClipHover(clipId: string) {
 
 // Timeline clip hover/click event handler
 function onTimelineClipHover(clipId: string) {
-  // Toggle the hovered state - if clicking the same clip, unhighlight it
-  hoveredTimelineClipId.value = hoveredTimelineClipId.value === clipId ? null : clipId
+  // Clear both states first to ensure no duplicates
+  hoveredClipId.value = null
+  hoveredTimelineClipId.value = null
+
+  // Then set the new state
+  hoveredTimelineClipId.value = clipId
 }
 
 // Scroll event handlers

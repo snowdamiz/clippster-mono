@@ -304,6 +304,14 @@ watch([() => props.isGenerating, () => props.generationProgress], async ([isGene
   }
 })
 
+// Watch for timeline hover changes to clear internal hover state
+watch(() => props.hoveredTimelineClipId, (newTimelineHoverId) => {
+  if (newTimelineHoverId) {
+    // Clear internal hover state when timeline hover is active
+    hoveredClipId.value = null
+  }
+})
+
 // Load clips and detection history
 async function loadClipsAndHistory(projectId: string) {
   if (!projectId) return
