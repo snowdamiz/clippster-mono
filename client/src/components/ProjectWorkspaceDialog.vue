@@ -612,7 +612,7 @@ function handleTimelineZoomChanged(zoomLevel: number) {
 }
 
 // Handle segment updates from Timeline
-function onSegmentUpdated(clipId: string, segmentIndex: number, newStartTime: number, newEndTime: number) {
+function onSegmentUpdated(_clipId: string, _segmentIndex: number, _newStartTime: number, _newEndTime: number) {
   // Refresh the ClipsPanel data to get the updated segment positions
   if (props.project) {
     // Use both methods to ensure refresh happens reliably

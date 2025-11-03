@@ -804,7 +804,7 @@ const cutHoverInfo = ref<{
 // Continuous seeking state
 const isSeeking = ref(false)
 const seekDirection = ref<'forward' | 'reverse' | null>(null)
-const seekInterval = ref<number | null>(null)
+const seekInterval = ref<NodeJS.Timeout | null>(null)
 
 // Movement constraints
 const movementConstraints = ref<{
@@ -1233,7 +1233,8 @@ function scrollTimelineClipIntoView(clipId: string) {
 // Expose function to parent
 defineExpose({
   scrollTimelineClipIntoView,
-  zoomLevel
+  zoomLevel,
+  loadTranscriptData
 })
 
 // Intelligent timestamp generation based on video duration and zoom level
@@ -2467,14 +2468,6 @@ function seekVideo(seconds: number) {
   const newTime = Math.max(0, Math.min(props.duration, props.currentTime + seconds))
 
   // Emit a seek event to parent component
-  const syntheticEvent = {
-    clientX: 0,
-    clientY: 0,
-    preventDefault: () => {},
-    stopPropagation: () => {},
-    currentTarget: null,
-    target: null
-  } as MouseEvent
 
   // Calculate the position as a percentage of the timeline
   const container = timelineScrollContainer.value
@@ -2485,10 +2478,20 @@ function seekVideo(seconds: number) {
       const targetX = videoTrackRect.left + (videoTrackRect.width * (newTime / props.duration))
 
       // Create a proper synthetic event
-      syntheticEvent.clientX = targetX
-      syntheticEvent.clientY = videoTrackRect.top + videoTrackRect.height / 2
-      syntheticEvent.currentTarget = videoTrack
-      syntheticEvent.target = videoTrack
+      const syntheticEvent = new MouseEvent('click', {
+        clientX: targetX,
+        clientY: videoTrackRect.top + videoTrackRect.height / 2,
+        bubbles: true,
+        cancelable: true
+      })
+      Object.defineProperty(syntheticEvent, 'currentTarget', {
+        value: videoTrack,
+        writable: false
+      })
+      Object.defineProperty(syntheticEvent, 'target', {
+        value: videoTrack,
+        writable: false
+      })
 
       // Trigger the seek
       onVideoTrackClick(syntheticEvent)
@@ -2585,7 +2588,7 @@ function onSegmentHoverForCut(event: MouseEvent, clipId: string, segmentIndex: n
 }
 
 // Handle segment click for cut operation
-async function onSegmentClickForCut(event: MouseEvent, clipId: string, segmentIndex: number, segment: ClipSegment) {
+async function onSegmentClickForCut(event: MouseEvent, clipId: string, segmentIndex: number, _segment: ClipSegment) {
   if (!isCutToolActive.value || !cutHoverInfo.value) return
 
   event.preventDefault()
