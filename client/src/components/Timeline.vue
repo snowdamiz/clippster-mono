@@ -16,7 +16,7 @@
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-xs text-muted-foreground">{{ props.clips.length + 1 }} tracks</span>
+          <span v-if="props.clips.length > 0" class="text-xs text-muted-foreground">{{ props.clips.length }} clips</span>
         </div>
       </div>
 
@@ -33,7 +33,7 @@
              :class="{ 'dragging': isDragging }"
              :style="{ width: `${100 * zoomLevel}%` }">
           <!-- Shared Timestamp Ruler -->
-          <div class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 px-2 sticky top-0 z-10 backdrop-blur-sm timeline-ruler sticky-ruler"
+          <div class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 px-2 sticky top-0 z-10 backdrop-blur-sm timeline-ruler sticky-ruler cursor-ew-resize"
                @wheel="onRulerWheel"
                @mousedown="onPanStart"
                @mousemove="onRulerMouseMove"
@@ -289,7 +289,7 @@ const calculatedHeight = computed(() => {
   const totalHeight = headerHeight + tracksHeight
 
   // Apply reasonable bounds
-  const minHeight = 160 // Minimum height when no clips (56 + 32 + 56)
+  const minHeight = 140 // Minimum height when no clips (56 + 32 + 56)
   const maxHeight = 360 // Reasonable max height to prevent timeline from taking over dialog
 
   return Math.max(minHeight, Math.min(maxHeight, totalHeight))

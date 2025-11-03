@@ -122,7 +122,7 @@
                 <!-- Run Number Badge -->
                 <span
                   v-if="clip.run_number"
-                  class="text-[10px] px-1.5 py-0.5 rounded-full font-medium border"
+                  class="text-[10px] px-1.5 py-0.5 mr-0.5 rounded-full font-medium border"
                   :style="{
                     backgroundColor: hexToDarkerHex(clip.session_run_color || '#8B5CF6', 0.15),
                     borderColor: clip.session_run_color || '#8B5CF6',
@@ -130,7 +130,7 @@
                   }"
                   :title="`Detection run ${clip.run_number} (Color: ${clip.session_run_color || 'default'})`"
                 >
-                  R{{ clip.run_number }}
+                  Run {{ clip.run_number }}
                 </span>
                 <button
                   class="p-1 hover:bg-red-500/20 rounded transition-colors text-red-400"
