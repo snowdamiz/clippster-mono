@@ -1124,7 +1124,8 @@ function scrollTimelineClipIntoView(clipId: string) {
 // Expose function to parent
 defineExpose({
   scrollTimelineClipIntoView,
-  zoomLevel
+  zoomLevel,
+  loadTranscriptData
 })
 
 // Intelligent timestamp generation based on video duration and zoom level

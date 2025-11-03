@@ -394,6 +394,12 @@ async function onDetectClips(prompt: string) {
           detail: { projectId: props.project!.id }
         })
         document.dispatchEvent(projectsRefreshEvent)
+
+        // IMPORTANT: Reload timeline transcript data for tooltips
+        // This fixes the issue where transcript tooltips don't show on first hover after clip detection
+        if (timelineRef.value && timelineRef.value.loadTranscriptData) {
+          timelineRef.value.loadTranscriptData(props.project!.id)
+        }
       }, 1000)
     }
 
@@ -964,6 +970,12 @@ watch([clipGenerationInProgress, clipProgress], async ([isInProgress, progress])
 
       // Also refresh timeline clips
       await loadTimelineClips(props.project!.id)
+
+      // IMPORTANT: Reload transcript data for timeline tooltips
+      // This fixes the issue where transcript tooltips don't show on first hover after clip detection
+      if (timelineRef.value && timelineRef.value.loadTranscriptData) {
+        await timelineRef.value.loadTranscriptData(props.project!.id)
+      }
     }, 1500)
   }
 })
