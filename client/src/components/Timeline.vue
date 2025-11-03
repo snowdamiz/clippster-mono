@@ -1522,12 +1522,16 @@ function onTimelineMouseMove(event: MouseEvent) {
     // Position the line exactly where the cursor is (absolute viewport position)
     timelineHoverLinePosition.value = event.clientX
 
-    // Calculate time for tooltip
+    // Calculate time for tooltip using more accurate positioning
     const timelineContent = container.querySelector('.timeline-content-wrapper')
     if (timelineContent) {
       const contentRect = timelineContent.getBoundingClientRect()
-      const contentRelativeX = event.clientX - contentRect.left
-      const timePercent = Math.max(0, Math.min(1, contentRelativeX / contentRect.width))
+
+      // Account for track label width (64px) - only the area after track labels represents the timeline
+      const trackLabelWidth = 64 // w-16 = 4rem = 64px
+      const contentRelativeX = Math.max(0, event.clientX - contentRect.left - trackLabelWidth)
+      const contentWidth = Math.max(1, contentRect.width - trackLabelWidth)
+      const timePercent = Math.max(0, Math.min(1, contentRelativeX / contentWidth))
       const hoverTime = timePercent * props.duration
 
       // Update custom tooltip
