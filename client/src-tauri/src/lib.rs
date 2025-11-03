@@ -849,7 +849,7 @@ async fn extract_audio_from_video(
         .args([
             "-i", &video_path,
             "-c:a", "libvorbis",  // OGG Vorbis codec (better compression)
-            "-q:a", "3",          // Quality level 3 (~128k MP3 equivalent)
+            "-q:a", "1",          // Quality level 1 (~64-96k MP3 equivalent, optimal for transcription)
             "-vn",               // No video
             "-y",                // Overwrite output file
             temp_audio_path.to_str().ok_or("Invalid temporary audio path")?,

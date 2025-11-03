@@ -1372,23 +1372,35 @@ export async function persistClipDetectionResults(
       } else {
         const rawVideo = rawVideos[0] // Use the first raw video found
 
-        // Extract transcript data from Whisper response
-        const transcriptText = detectionResults.transcript.text ||
-                             (detectionResults.transcript.segments?.map((seg: any) => seg.text).join(' ') || '') ||
-                             JSON.stringify(detectionResults.transcript)
+        // Check if transcript already exists for this raw video
+        const existingTranscript = await getTranscriptByRawVideoId(rawVideo.id)
 
-        const language = detectionResults.transcript.language
-        const duration = detectionResults.transcript.duration ||
-                        (detectionResults.transcript.segments?.reduce((acc: number, seg: any) =>
-                          Math.max(acc, seg.end_time || 0), 0) || null)
+        if (existingTranscript) {
+          console.log('[Database] Transcript already exists for raw video, using existing transcript')
+          transcriptId = existingTranscript.id
 
-        transcriptId = await createTranscript(
-          rawVideo.id, // Use raw_video_id instead of project_id
-          JSON.stringify(detectionResults.transcript), // Store full raw response
-          transcriptText,
-          language,
-          duration
-        )
+          // Optionally delete existing segments to refresh them
+          const db = await getDatabase()
+          await db.execute('DELETE FROM transcript_segments WHERE transcript_id = ?', [transcriptId])
+        } else {
+          // Extract transcript data from Whisper response
+          const transcriptText = detectionResults.transcript.text ||
+                               (detectionResults.transcript.segments?.map((seg: any) => seg.text).join(' ') || '') ||
+                               JSON.stringify(detectionResults.transcript)
+
+          const language = detectionResults.transcript.language
+          const duration = detectionResults.transcript.duration ||
+                          (detectionResults.transcript.segments?.reduce((acc: number, seg: any) =>
+                            Math.max(acc, seg.end_time || 0), 0) || null)
+
+          transcriptId = await createTranscript(
+            rawVideo.id, // Use raw_video_id instead of project_id
+            JSON.stringify(detectionResults.transcript), // Store full raw response
+            transcriptText,
+            language,
+            duration
+          )
+        }
 
         // Store transcript segments if available
         if (detectionResults.transcript.segments && Array.isArray(detectionResults.transcript.segments)) {
