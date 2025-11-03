@@ -8,12 +8,6 @@
       <div class="flex items-center justify-between mb-3 pr-1 flex-shrink-0">
         <div class="flex items-center gap-2">
           <h3 class="text-sm font-medium text-foreground">Timeline</h3>
-          <div v-if="props.clips.length > 5" class="text-xs text-muted-foreground/70 flex items-center gap-1" title="Scroll to see more clips">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-            </svg>
-            <span class="text-xs">scroll</span>
-          </div>
           <div v-if="zoomLevel !== 1.0" class="text-xs text-muted-foreground/70 flex items-center gap-1" :title="`Zoom: ${Math.round(zoomLevel * 100)}%`">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
@@ -23,11 +17,6 @@
         </div>
         <div class="flex items-center gap-2">
           <span class="text-xs text-muted-foreground">{{ props.clips.length + 1 }} tracks</span>
-          <div class="text-xs text-muted-foreground/70" title="Hover over timeline ruler and scroll to zoom">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-            </svg>
-          </div>
         </div>
       </div>
 
@@ -301,7 +290,7 @@ const calculatedHeight = computed(() => {
 
   // Apply reasonable bounds
   const minHeight = 160 // Minimum height when no clips (56 + 32 + 56)
-  const maxHeight = 300 // Reasonable max height to prevent timeline from taking over dialog
+  const maxHeight = 360 // Reasonable max height to prevent timeline from taking over dialog
 
   return Math.max(minHeight, Math.min(maxHeight, totalHeight))
 })

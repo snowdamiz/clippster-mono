@@ -26,7 +26,7 @@
         <!-- Main Content Area -->
         <div class="flex flex-col" style="height: calc(100% - 22px); min-height: 0;">
           <!-- Top Row: Video Player, Transcript, and Clips -->
-          <div class="flex min-h-0 border-b border-border" style="flex: 1; overflow: hidden; max-height: calc(100% - 185px);">
+          <div class="flex min-h-0 border-b border-border" style="flex: 1; overflow: hidden; max-height: calc(100% - 220px);">
             <!-- Video Player Section -->
             <div class="w-3/5 min-w-0 p-8 border-r border-border flex flex-col">
               <!-- Video Player Container -->
@@ -78,6 +78,7 @@
                 @detectClips="onDetectClips"
                 @clipHover="onClipHover"
                 @scrollToTimeline="onScrollToTimeline"
+                @deleteClip="onDeleteClip"
               />
             </div>
           </div>
@@ -116,6 +117,17 @@
     :can-close="!clipGenerationInProgress"
     @close="closeProgress"
   />
+
+  <!-- Delete Confirmation Modal -->
+  <DeleteConfirmationModal
+    :show="showDeleteDialog"
+    title="Delete Clip"
+    message="Are you sure you want to delete this clip?"
+    suffix="This action cannot be undone."
+    confirm-text="Delete"
+    @close="handleDeleteDialogClose"
+    @confirm="deleteClipConfirmed"
+  />
 </template>
 
 <style scoped>
@@ -139,13 +151,14 @@
 
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
-import { type Project, type ClipWithVersion, getClipsWithVersionsByProjectId } from '@/services/database'
+import { type Project, type ClipWithVersion, getClipsWithVersionsByProjectId, deleteClip } from '@/services/database'
 import { invoke } from '@tauri-apps/api/core'
 import VideoPlayer from './VideoPlayer.vue'
 import VideoControls from './VideoControls.vue'
 import ClipsPanel from './ClipsPanel.vue'
 import Timeline from './Timeline.vue'
 import ClipGenerationProgress from './ClipGenerationProgress.vue'
+import DeleteConfirmationModal from './DeleteConfirmationModal.vue'
 import { useVideoPlayer } from '@/composables/useVideoPlayer'
 import { useProgressSocket } from '@/composables/useProgressSocket'
 import { useToast } from '@/composables/useToast'
@@ -165,6 +178,10 @@ const emit = defineEmits<{
 // Progress state
 const showProgress = ref(false)
 const clipGenerationInProgress = ref(false)
+
+// Delete state
+const showDeleteDialog = ref(false)
+const clipToDelete = ref<string | null>(null)
 
 // Panel collapse state
 const transcriptCollapsed = ref(false)
@@ -594,6 +611,52 @@ function onScrollToClipsPanel(clipId: string) {
     clipsPanelRef.value.scrollClipIntoView(clipId)
   } else {
     console.log('[ProjectWorkspaceDialog] Cannot scroll - missing clipId or ref')
+  }
+}
+
+// Delete clip handlers
+function onDeleteClip(clipId: string) {
+  console.log('[ProjectWorkspaceDialog] onDeleteClip called with clipId:', clipId)
+  clipToDelete.value = clipId
+  showDeleteDialog.value = true
+  console.log('[ProjectWorkspaceDialog] showDeleteDialog set to:', showDeleteDialog.value)
+  console.log('[ProjectWorkspaceDialog] clipToDelete set to:', clipToDelete.value)
+}
+
+function handleDeleteDialogClose() {
+  showDeleteDialog.value = false
+  clipToDelete.value = null
+}
+
+async function deleteClipConfirmed() {
+  if (!clipToDelete.value) return
+
+  try {
+    await deleteClip(clipToDelete.value)
+
+    // Refresh clips and timeline
+    if (props.project) {
+      // Refresh clips panel
+      setTimeout(() => {
+        const refreshEvent = new CustomEvent('refresh-clips', { detail: { projectId: props.project!.id } })
+        document.dispatchEvent(refreshEvent)
+      }, 100)
+
+      // Refresh timeline clips
+      await loadTimelineClips(props.project.id)
+    }
+
+    // Show success message
+    const { success } = useToast()
+    success('Clip Deleted', 'The clip has been permanently deleted.')
+  } catch (error) {
+    console.error('[ProjectWorkspaceDialog] Failed to delete clip:', error)
+
+    // Show error message
+    const { error: showError } = useToast()
+    showError('Delete Failed', 'Failed to delete the clip. Please try again.')
+  } finally {
+    handleDeleteDialogClose()
   }
 }
 
