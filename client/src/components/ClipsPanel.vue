@@ -93,11 +93,11 @@
               props.isPlayingSegments && props.playingClipId === clip.id ? 'ring-2 ring-green-500/50 bg-green-500/10' : ''
             ]"
             :style="{
-              // Prioritize playing state over hover state
+              // Prioritize playing state over all other states
               borderColor: (props.isPlayingSegments && props.playingClipId === clip.id) ? '#10b981' :
-                         (hoveredTimelineClipId === clip.id || hoveredClipId === clip.id) ? (clip.session_run_color || '#8B5CF6') : undefined,
+                         (!props.isPlayingSegments && (hoveredTimelineClipId === clip.id || hoveredClipId === clip.id)) ? (clip.session_run_color || '#8B5CF6') : undefined,
               borderWidth: (props.isPlayingSegments && props.playingClipId === clip.id) ||
-                         (hoveredTimelineClipId === clip.id || hoveredClipId === clip.id) ? '1px' : undefined
+                         (!props.isPlayingSegments && (hoveredTimelineClipId === clip.id || hoveredClipId === clip.id)) ? '1px' : undefined
             }"
             @click="onClipClick(clip.id)"
           >
@@ -329,6 +329,14 @@ watch([() => props.isGenerating, () => props.generationProgress], async ([isGene
 watch(() => props.hoveredTimelineClipId, (newTimelineHoverId) => {
   if (newTimelineHoverId) {
     // Clear internal hover state when timeline hover is active
+    hoveredClipId.value = null
+  }
+})
+
+// Watch for playing clip changes to clear hover state when playback starts
+watch(() => props.playingClipId, (newPlayingId) => {
+  if (newPlayingId) {
+    // Clear all hover states when a clip starts playing
     hoveredClipId.value = null
   }
 })

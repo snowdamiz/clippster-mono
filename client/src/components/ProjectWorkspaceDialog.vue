@@ -96,7 +96,8 @@
             :timeline-hover-position="timelineHoverPosition"
             :clips="timelineClips"
             :hovered-clip-id="hoveredClipId"
-            :hovered-timeline-clip-id="hoveredTimelineClipId || currentlyPlayingClipId"
+            :hovered-timeline-clip-id="hoveredTimelineClipId"
+            :currently-playing-clip-id="currentlyPlayingClipId"
             @seekTimeline="seekTimeline"
             @timelineTrackHover="onTimelineTrackHover"
             @timelineMouseLeave="onTimelineMouseLeave"
@@ -614,8 +615,8 @@ function handleTimelineZoomChanged(zoomLevel: number) {
 
 // Clip hover event handlers
 function onClipHover(clipId: string) {
-  // If a clip is currently playing, stop playback when user selects a different clip
-  if (isPlayingSegments.value && currentlyPlayingClipId.value !== clipId) {
+  // If a clip is currently playing and user selects a different clip, stop playback
+  if (currentlyPlayingClipId.value && currentlyPlayingClipId.value !== clipId) {
     stopSegmentedPlayback()
     currentlyPlayingClipId.value = null
   }
@@ -650,8 +651,8 @@ function onClipHover(clipId: string) {
 
 // Timeline clip hover/click event handler
 function onTimelineClipHover(clipId: string) {
-  // If a clip is currently playing, stop playback when user selects a different clip
-  if (isPlayingSegments.value && currentlyPlayingClipId.value !== clipId) {
+  // If a clip is currently playing and user selects a different clip, stop playback
+  if (currentlyPlayingClipId.value && currentlyPlayingClipId.value !== clipId) {
     stopSegmentedPlayback()
     currentlyPlayingClipId.value = null
   }
@@ -822,9 +823,15 @@ function getCurrentPlayingClipId(): string | null {
 function onPlayClip(clip: any) {
   console.log('[ProjectWorkspaceDialog] Playing clip:', clip.id)
 
-  // Clear any previous selections when starting playback
+  // Clear all previous selection states when starting playback
   hoveredClipId.value = null
   hoveredTimelineClipId.value = null
+
+  // Force clear any lingering hover states
+  setTimeout(() => {
+    hoveredClipId.value = null
+    hoveredTimelineClipId.value = null
+  }, 10)
 
   // Track the currently playing clip
   currentlyPlayingClipId.value = clip.id

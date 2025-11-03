@@ -171,13 +171,18 @@
                 :class="[
                   'transition-all duration-75',
                   clip.run_number ? `run-${clip.run_number}` : '',
-                  hoveredClipId === clip.id || props.hoveredTimelineClipId === clip.id ? 'shadow-lg z-20' : ''
+                  props.currentlyPlayingClipId === clip.id ? 'shadow-lg z-20' :
+                  (hoveredClipId === clip.id || props.hoveredTimelineClipId === clip.id && !props.currentlyPlayingClipId) ? 'shadow-lg z-20' : ''
                 ]"
                 :style="{
                   left: `${duration ? (segment.start_time / duration) * 100 : 0}%`,
                   width: `${duration ? ((segment.end_time - segment.start_time) / duration) * 100 : 0}%`,
                   ...generateClipGradient(clip.run_color),
-                  ...(hoveredClipId === clip.id || props.hoveredTimelineClipId === clip.id ? {
+                  ...(props.currentlyPlayingClipId === clip.id ? {
+                    borderColor: '#10b981',
+                    borderWidth: '2px',
+                    borderStyle: 'solid'
+                  } : (hoveredClipId === clip.id || props.hoveredTimelineClipId === clip.id && !props.currentlyPlayingClipId) ? {
                     borderColor: '#ffffff',
                     borderWidth: '2px',
                     borderStyle: 'solid'
@@ -327,6 +332,7 @@ interface Props {
   clips?: Clip[]
   hoveredClipId?: string | null
   hoveredTimelineClipId?: string | null
+  currentlyPlayingClipId?: string | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
