@@ -133,7 +133,7 @@ defmodule ClippsterServer.AI.WhisperAPI do
 
     body = IO.iodata_to_binary(parts)
     IO.puts("[WhisperAPI] Multipart body length: #{byte_size(body)} bytes")
-    IO.puts("[WhisperAPI] First 200 chars: #{String.slice(body, 0, 200)}")
+    # Note: Removed binary data preview to avoid Unicode issues with OGG files
     body
   end
 end

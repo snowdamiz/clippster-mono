@@ -278,7 +278,7 @@ async function onDetectClips(prompt: string) {
       throw new Error('No video found for project')
     }
 
-    // Step 1: Generate MP3 audio file from video using FFmpeg - EXACTLY like prototype
+    // Step 1: Generate OGG audio file from video using FFmpeg - optimized for transcription
     const audioFile = await generateAudioFromVideo(projectVideo.file_path)
     const processingStartTime = Date.now()
 
@@ -396,12 +396,12 @@ async function onDetectClips(prompt: string) {
 }
 
 async function generateAudioFromVideo(videoPath: string): Promise<File> {
-  // This uses the bundled FFmpeg to extract audio as MP3 - EXACTLY like prototype
+  // This uses the bundled FFmpeg to extract audio as OGG Vorbis - optimized for transcription
   try {
     // Call Tauri command to extract audio using FFmpeg - now returns (filename, base64_data)
     const [filename, base64Data] = await invoke<[string, string]>('extract_audio_from_video', {
       videoPath: videoPath,
-      outputPath: 'temp_audio_audio_only.mp3'
+      outputPath: 'temp_audio_audio_only.ogg'
     })
 
     // Convert base64 back to binary
@@ -412,10 +412,10 @@ async function generateAudioFromVideo(videoPath: string): Promise<File> {
     }
 
     // Create Blob from binary data
-    const blob = new Blob([bytes], { type: 'audio/mp3' })
+    const blob = new Blob([bytes], { type: 'audio/ogg' })
 
     // Convert Blob to File object
-    return new File([blob], filename, { type: 'audio/mp3' })
+    return new File([blob], filename, { type: 'audio/ogg' })
   } catch (error) {
     console.error('[ProjectWorkspaceDialog] FFmpeg audio extraction failed:', error)
     throw new Error('Failed to extract audio from video')

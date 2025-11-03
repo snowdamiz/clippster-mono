@@ -830,8 +830,8 @@ async fn extract_audio_from_video(
             format!("Failed to get storage paths: {}", e)
         })?;
 
-    // Create a unique temporary audio file path - EXACTLY like prototype
-    let temp_audio_path = paths.videos.join(format!("temp_audio_{}_audio_only.mp3",
+    // Create a unique temporary audio file path - OGG format for better compression
+    let temp_audio_path = paths.videos.join(format!("temp_audio_{}_audio_only.ogg",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| format!("Failed to get timestamp: {}", e))?
@@ -840,7 +840,7 @@ async fn extract_audio_from_video(
 
     println!("[Rust] Temporary audio path: {}", temp_audio_path.display());
 
-    // Use FFmpeg to extract audio as MP3 - EXACTLY like prototype
+    // Use FFmpeg to extract audio as OGG Vorbis - optimized for transcription
     let shell = app.shell();
     println!("[Rust] Running FFmpeg to extract audio...");
 
@@ -848,10 +848,10 @@ async fn extract_audio_from_video(
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
             "-i", &video_path,
-            "-c:a", "mp3",        // Copy audio codec to MP3 (exact prototype parameter)
-            "-b:a", "128k",       // 128k bitrate (exact prototype parameter)
-            "-vn",               // No video (exact prototype parameter)
-            "-y",                // Overwrite output file (exact prototype parameter)
+            "-c:a", "libvorbis",  // OGG Vorbis codec (better compression)
+            "-q:a", "3",          // Quality level 3 (~128k MP3 equivalent)
+            "-vn",               // No video
+            "-y",                // Overwrite output file
             temp_audio_path.to_str().ok_or("Invalid temporary audio path")?,
         ])
         .output()
@@ -893,7 +893,7 @@ async fn extract_audio_from_video(
     // Get filename for return
     let filename = temp_audio_path.file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or("audio.mp3");
+        .unwrap_or("audio.ogg");
 
     // Clean up the temporary file
     if let Err(e) = std::fs::remove_file(&temp_audio_path) {
