@@ -1344,6 +1344,18 @@ pub fn run() {
                             sql: include_str!("../migrations/016_add_run_color_to_clip_detection_sessions.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 17,
+                            description: "add_waveform_data",
+                            sql: include_str!("../migrations/017_add_waveform_data.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 18,
+                            description: "drop_waveform_data",
+                            sql: include_str!("../migrations/018_drop_waveform_data.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                           ],
                 )
                 .build(),
