@@ -153,7 +153,7 @@
                 v-for="(segment, segIndex) in clip.segments"
                 :key="`${clip.id}_${segIndex}`"
                 :ref="el => setTimelineClipRef(el, clip.id)"
-                class="clip-segment absolute h-6 border rounded-md flex items-center justify-center pointer-events-none"
+                class="clip-segment absolute h-6 border rounded-md flex items-center justify-center pointer-events-auto group cursor-pointer"
                 :class="[
                   'transition-all duration-75',
                   clip.run_number ? `run-${clip.run_number}` : '',
@@ -171,8 +171,26 @@
                 }"
                 :data-run-color="clip.run_color"
                 :title="`${clip.title} - ${formatDuration(segment.start_time)} to ${formatDuration(segment.end_time)}${clip.run_number ? ` (Run ${clip.run_number})` : ''}`"
+                @mouseenter="hoveredSegmentKey = `${clip.id}_${segIndex}`"
+                @mouseleave="hoveredSegmentKey = null"
               >
                 <span class="text-xs text-white/90 font-medium truncate px-1 drop-shadow-sm">{{ clip.title }}</span>
+
+                <!-- Left resize handle -->
+                <div
+                  class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 hover:w-3.5 group-hover:opacity-100 group-hover:pointer-events-auto"
+                  :class="{ 'opacity-100 pointer-events-auto': hoveredSegmentKey === `${clip.id}_${segIndex}` }"
+                >
+                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                </div>
+
+                <!-- Right resize handle -->
+                <div
+                  class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 hover:w-3.5 group-hover:opacity-100 group-hover:pointer-events-auto"
+                  :class="{ 'opacity-100 pointer-events-auto': hoveredSegmentKey === `${clip.id}_${segIndex}` }"
+                >
+                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                </div>
               </div>
             </div>
           </div>
@@ -345,6 +363,9 @@ const timelineBounds = ref({ top: 0, bottom: 0 }) // Timeline container bounds
 
 // Global playhead state
 const globalPlayheadPosition = ref(0) // X position in pixels for the global playhead line
+
+// Segment hover state
+const hoveredSegmentKey = ref<string | null>(null) // Track which specific segment is hovered
 
 function setTimelineClipRef(el: any, clipId: string) {
   if (el && el instanceof HTMLElement) {
@@ -1052,6 +1073,17 @@ function generateClipGradient(runColor: string | undefined) {
 }
 
 /* Individual hover effect removed - clips only highlight through bidirectional system */
+
+/* Enhanced hover state for clip segments with handles */
+.clip-segment:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Ensure resize handles are visible on segment hover */
+.clip-segment:hover .resize-handle {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
 
 /* Timeline ruler styling */
 .timeline-ruler {
