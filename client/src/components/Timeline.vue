@@ -1972,28 +1972,38 @@ async function onSegmentMouseDown(event: MouseEvent, clipId: string, segmentInde
 function updateSegmentDragTooltip() {
   if (!isDraggingSegment.value || !draggedSegmentInfo.value || !timelineScrollContainer.value) return
 
-  const { currentStartTime, currentEndTime } = draggedSegmentInfo.value
+  const { currentStartTime } = draggedSegmentInfo.value
   const container = timelineScrollContainer.value
-  const containerRect = container.getBoundingClientRect()
-  const scrollLeft = container.scrollLeft
 
-  // Calculate the position of the segment center in the timeline
-  const segmentCenterTime = (currentStartTime + currentEndTime) / 2
-  const timePercent = props.duration ? segmentCenterTime / props.duration : 0
+  // Find the video track content element to use as positioning reference
+  const videoTrack = container.querySelector('.flex-1.h-8.bg-\\[\\#0a0a0a\\]\\/50.rounded-md.relative') as HTMLElement
+  if (!videoTrack) return
 
-  // Get the timeline content wrapper to account for zoom
-  const timelineContent = container.querySelector('.timeline-content-wrapper') as HTMLElement
-  if (!timelineContent) return
+  // Calculate the time percentage for the segment start time
+  const timePercent = props.duration ? currentStartTime / props.duration : 0
 
-  const contentWidth = timelineContent.offsetWidth
-  const segmentCenterX = contentWidth * timePercent
+  // Create a temporary div positioned at the time percentage within the video track
+  const tempDiv = document.createElement('div')
+  tempDiv.style.position = 'absolute'
+  tempDiv.style.left = `${timePercent * 100}%`
+  tempDiv.style.top = '0'
+  tempDiv.style.width = '1px'
+  tempDiv.style.height = '1px'
+  tempDiv.style.pointerEvents = 'none'
+  tempDiv.style.opacity = '0'
 
-  // Calculate the viewport position (account for scroll and container offset)
-  const viewportX = containerRect.left + segmentCenterX - scrollLeft
+  videoTrack.appendChild(tempDiv)
+
+  // Get the absolute position of this temp div
+  const tempRect = tempDiv.getBoundingClientRect()
+  const targetX = tempRect.left + tempRect.width / 2
+
+  // Clean up
+  videoTrack.removeChild(tempDiv)
 
   // Update tooltip position
-  draggedSegmentInfo.value.tooltipX = viewportX
-  draggedSegmentInfo.value.tooltipY = containerRect.top - 60
+  draggedSegmentInfo.value.tooltipX = targetX
+  draggedSegmentInfo.value.tooltipY = container.getBoundingClientRect().top - 60
 }
 
 // Handle mouse move for segment dragging
@@ -2137,26 +2147,37 @@ function updateResizeTooltip() {
 
   const { currentStartTime, currentEndTime, handleType } = resizeHandleInfo.value
   const container = timelineScrollContainer.value
-  const containerRect = container.getBoundingClientRect()
-  const scrollLeft = container.scrollLeft
+
+  // Find the video track content element to use as positioning reference
+  const videoTrack = container.querySelector('.flex-1.h-8.bg-\\[\\#0a0a0a\\]\\/50.rounded-md.relative') as HTMLElement
+  if (!videoTrack) return
 
   // Calculate the position of the handle being dragged
   const handleTime = handleType === 'left' ? currentStartTime : currentEndTime
   const timePercent = props.duration ? handleTime / props.duration : 0
 
-  // Get the timeline content wrapper to account for zoom
-  const timelineContent = container.querySelector('.timeline-content-wrapper') as HTMLElement
-  if (!timelineContent) return
+  // Create a temporary div positioned at the time percentage within the video track
+  const tempDiv = document.createElement('div')
+  tempDiv.style.position = 'absolute'
+  tempDiv.style.left = `${timePercent * 100}%`
+  tempDiv.style.top = '0'
+  tempDiv.style.width = '1px'
+  tempDiv.style.height = '1px'
+  tempDiv.style.pointerEvents = 'none'
+  tempDiv.style.opacity = '0'
 
-  const contentWidth = timelineContent.offsetWidth
-  const handleX = contentWidth * timePercent
+  videoTrack.appendChild(tempDiv)
 
-  // Calculate the viewport position (account for scroll and container offset)
-  const viewportX = containerRect.left + handleX - scrollLeft
+  // Get the absolute position of this temp div
+  const tempRect = tempDiv.getBoundingClientRect()
+  const targetX = tempRect.left + tempRect.width / 2
+
+  // Clean up
+  videoTrack.removeChild(tempDiv)
 
   // Update tooltip position
-  resizeHandleInfo.value.tooltipX = viewportX
-  resizeHandleInfo.value.tooltipY = containerRect.top - 60
+  resizeHandleInfo.value.tooltipX = targetX
+  resizeHandleInfo.value.tooltipY = container.getBoundingClientRect().top - 60
 }
 
 // Handle mouse move for segment resizing
