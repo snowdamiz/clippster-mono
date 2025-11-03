@@ -376,8 +376,6 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
       return
     }
 
-    console.log('[useVideoPlayer] Starting segmented playback for', segments.length, 'segments')
-
     try {
       // Sort segments by start time to ensure proper order
       currentSegments.value = segments.sort((a, b) => a.start_time - b.start_time)
@@ -449,7 +447,6 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
           // Jump to next segment
           const nextSegment = currentSegments.value[currentSegmentIndex.value]
           if (nextSegment && nextSegment.start_time >= 0) {
-            console.log('[useVideoPlayer] Jumping to segment', currentSegmentIndex.value + 1, 'at', nextSegment.start_time)
             videoElement.value.currentTime = nextSegment.start_time
           } else {
             console.warn('[useVideoPlayer] Invalid next segment, stopping playback:', nextSegment)
@@ -464,10 +461,6 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   }
 
   function stopSegmentedPlayback() {
-    if (isPlayingSegments.value) {
-      console.log('[useVideoPlayer] Stopping segmented playback')
-    }
-
     isPlayingSegments.value = false
     currentSegments.value = []
     currentSegmentIndex.value = 0

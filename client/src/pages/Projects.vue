@@ -401,7 +401,6 @@ async function deleteProjectConfirmed() {
 
 // Listen for clip refresh events from workspace dialog
 function handleClipRefreshEvent(_event: CustomEvent) {
-  console.log('[Projects] Received clip refresh event, reloading projects')
   loadProjects()
 }
 

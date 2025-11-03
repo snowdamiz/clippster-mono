@@ -51,7 +51,6 @@
       @error="$emit('videoError', $event)"
       @loadstart="$emit('loadStart')"
       @canplay="$emit('canPlay')"
-      @loadeddata="() => console.log('[VideoPlayer] Video loadeddata event')"
       data-testid="project-video"
     />
 

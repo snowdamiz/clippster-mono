@@ -488,12 +488,6 @@ async function handleSubmit() {
 
 function selectVideoFromLibrary(video: RawVideo) {
   if (!isVideoAvailable(video)) {
-    // Provide feedback about why the video can't be selected
-    if (video.project_id && projectCache.value.has(video.project_id)) {
-      const projectName = projectCache.value.get(video.project_id)
-      // Could add a toast notification here if you have one available
-      console.log(`This video is already assigned to project: ${projectName}`)
-    }
     return // Don't allow selection of videos that are already associated with other projects
   }
   selectedVideo.value = video

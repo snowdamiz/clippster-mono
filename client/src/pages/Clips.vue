@@ -242,7 +242,6 @@ async function loadRawVideosForProject(projectId: string): Promise<void> {
       return { ...video, thumbnail_path: thumbnailDataUrl }
     }))
 
-    console.log(`[Clips] Loaded ${processedRawVideos.length} raw videos with thumbnails for project ${projectId}`)
     rawVideoCache.value.set(projectId, processedRawVideos)
   } catch (error) {
     console.error('Failed to load raw videos for project:', error)
@@ -338,7 +337,6 @@ function getClipStatusText(status: string | null): string {
 async function openClipsFolder() {
   try {
     const basePath = await getStoragePath('base')
-    console.log(`[Clips] Opening base Clippster directory: ${basePath}`)
     await revealItemInDir(basePath)
   } catch (err) {
     console.error('Failed to open Clippster directory:', err)

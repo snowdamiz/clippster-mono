@@ -297,7 +297,6 @@ async function onDetectClips(prompt: string) {
     let usingCachedTranscript = false
 
     if (existingTranscript) {
-      console.log('[ProjectWorkspaceDialog] Found existing transcript, skipping audio extraction and transcription')
       usingCachedTranscript = true
     }
 
@@ -314,12 +313,10 @@ async function onDetectClips(prompt: string) {
         language: existingTranscript.language,
         duration: existingTranscript.duration
       }))
-      console.log('[ProjectWorkspaceDialog] Using cached transcript for clip detection')
     } else {
       // Generate OGG audio file from video using FFmpeg - optimized for transcription
       const audioFile = await generateAudioFromVideo(projectVideo.file_path)
       formData.append('audio', audioFile, audioFile.name)
-      console.log('[ProjectWorkspaceDialog] Generated fresh audio for transcription')
     }
 
     formData.append('project_id', props.project.id.toString())
@@ -360,14 +357,6 @@ async function onDetectClips(prompt: string) {
       throw new Error(result.error)
     }
     const processingTimeMs = Date.now() - processingStartTime
-
-    // Log whether cached transcript was used
-    if (result.processing_info && result.processing_info.used_cached_transcript) {
-      console.log('[ProjectWorkspaceDialog] ✅ Used cached transcript - saved time and API costs!')
-      console.log('[ProjectWorkspaceDialog] Processing completed in:', processingTimeMs, 'ms')
-    } else {
-      console.log('[ProjectWorkspaceDialog] 🔄 Fresh transcription completed in:', processingTimeMs, 'ms')
-    }
 
     // Check for nested structure
     if (result.clips && typeof result.clips === 'object' && result.clips.clips) {
@@ -618,8 +607,6 @@ function handleTimelineZoomChanged(zoomLevel: number) {
 
 // Handle segment updates from Timeline
 function onSegmentUpdated(clipId: string, segmentIndex: number, newStartTime: number, newEndTime: number) {
-  console.log('[ProjectWorkspaceDialog] Segment updated:', { clipId, segmentIndex, newStartTime, newEndTime })
-
   // Refresh the ClipsPanel data to get the updated segment positions
   if (props.project) {
     // Use both methods to ensure refresh happens reliably
@@ -641,8 +628,6 @@ function onSegmentUpdated(clipId: string, segmentIndex: number, newStartTime: nu
 
 // Handle general clips data refresh request from Timeline
 function onRefreshClipsData() {
-  console.log('[ProjectWorkspaceDialog] Refreshing clips data')
-
   if (props.project) {
     setTimeout(async () => {
       // Method 1: Direct refresh if ClipsPanel ref is available
@@ -737,11 +722,8 @@ function onScrollToClipsPanel(clipId: string) {
 
 // Delete clip handlers
 function onDeleteClip(clipId: string) {
-  console.log('[ProjectWorkspaceDialog] onDeleteClip called with clipId:', clipId)
   clipToDelete.value = clipId
   showDeleteDialog.value = true
-  console.log('[ProjectWorkspaceDialog] showDeleteDialog set to:', showDeleteDialog.value)
-  console.log('[ProjectWorkspaceDialog] clipToDelete set to:', clipToDelete.value)
 }
 
 function handleDeleteDialogClose() {
@@ -868,8 +850,6 @@ function getCurrentPlayingClipId(): string | null {
 
 // Function to handle clip playback
 function onPlayClip(clip: any) {
-  console.log('[ProjectWorkspaceDialog] Playing clip:', clip.id)
-
   // Clear all previous selection states when starting playback
   hoveredClipId.value = null
   hoveredTimelineClipId.value = null
@@ -915,7 +895,6 @@ function onPlayClip(clip: any) {
   }
 
   if (segments.length > 0) {
-    console.log('[ProjectWorkspaceDialog] Playing segments:', segments)
     playClipSegments(segments)
   } else {
     console.warn('[ProjectWorkspaceDialog] No segments found for clip:', clip.id)

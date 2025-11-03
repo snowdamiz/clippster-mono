@@ -566,16 +566,6 @@ const shouldShowScrollbar = computed(() => {
   // Only show scrollbar when content actually exceeds available height (small buffer for precision)
   const needsScrollbar = contentHeight > availableHeight
 
-  // console.log('[Timeline] Scrollbar calculation:', {
-  //   clips: numberOfClips,
-  //   contentHeight,
-  //   availableHeight,
-  //   calculatedHeight: calculatedHeight.value,
-  //   bottomPadding,
-  //   needsScrollbar,
-  //   difference: contentHeight - availableHeight
-  // })
-
   return needsScrollbar
 })
 
@@ -798,15 +788,9 @@ async function loadTranscriptData(projectId: string | null) {
 
       // Clear cache when new transcript data is loaded
       wordSearchCache.value.clear()
-
-      console.log('[Timeline] Loaded transcript data:', {
-        wordCount: words.length,
-        transcriptId: transcript.id
-      })
     } else {
       transcriptData.value = null
       wordSearchCache.value.clear()
-      console.log('[Timeline] No transcript data available for project:', projectId)
     }
   } catch (error) {
     console.error('[Timeline] Failed to load transcript data:', error)
@@ -1513,7 +1497,6 @@ function onTimelineMouseMove(event: MouseEvent) {
     top: rect.top,
     bottom: rect.bottom
   }
-  console.log('[Timeline] Bounds updated by hover:', timelineBounds.value)
 
   // Only show hover line if we're in the timeline content area (after track labels)
   const trackLabelWidth = 64 // 4rem = 64px (w-16)
@@ -1626,13 +1609,6 @@ function updateGlobalPlayheadPosition() {
 
   // Clean up
   videoTrack.removeChild(tempDiv)
-
-  console.log('[Timeline] Setting playhead position:', {
-    targetX,
-    videoTrackRect: videoTrack.getBoundingClientRect(),
-    timePercent,
-    bounds: timelineBounds.value
-  })
   globalPlayheadPosition.value = targetX
   isPlayheadInitialized.value = true
 }
@@ -1764,7 +1740,6 @@ onMounted(() => {
         top: rect.top,
         bottom: rect.bottom
       }
-      console.log('[Timeline] Initial bounds set:', timelineBounds.value, 'container rect:', rect)
 
       // Try positioning with increasing delays
       const tryPositioning = (delay: number) => {
@@ -1774,10 +1749,7 @@ onMounted(() => {
 
           // If still not initialized after this attempt, try again with longer delay
           if (!isPlayheadInitialized.value && !wasInitialized && delay < 1000) {
-            console.log(`[Timeline] Video track not ready, retrying in ${delay * 2}ms`)
             tryPositioning(delay * 2)
-          } else if (isPlayheadInitialized.value) {
-            console.log('[Timeline] Playhead successfully positioned')
           }
         }, delay)
       }
@@ -1790,20 +1762,15 @@ onMounted(() => {
 
           if (currentRect.height < expectedMinHeight && delay < 1000) {
             // Container is still expanding, wait longer
-            console.log(`[Timeline] Container still expanding (${currentRect.height}px), retrying in ${delay * 2}ms`)
             checkHeightAndPosition(delay * 2)
             return
           }
-
-          // Container height looks good, update bounds and try positioning
-          console.log(`[Timeline] Container height stable (${currentRect.height}px), updating bounds and positioning`)
 
           // Update bounds with the correct container rect
           timelineBounds.value = {
             top: currentRect.top,
             bottom: currentRect.bottom
           }
-          console.log('[Timeline] Bounds updated to correct values:', timelineBounds.value)
 
           tryPositioning(delay)
         }, delay)
@@ -1893,37 +1860,19 @@ async function calculateMovementConstraints(clipId: string, segmentIndex: number
     // Can't go past previous segment's end time
     if (adjacent.previous) {
       minStartTime = adjacent.previous.end_time
-      console.log('[Timeline] Previous segment constraint:', {
-        previousEnd: adjacent.previous.end_time.toFixed(2),
-        segmentIndex
-      })
     }
 
     // Can't go past next segment's start time
     if (adjacent.next) {
       maxEndTime = adjacent.next.start_time
-      console.log('[Timeline] Next segment constraint:', {
-        nextStart: adjacent.next.start_time.toFixed(2),
-        segmentIndex
-      })
     }
 
     // Get original duration from the dragged segment info
     const originalDuration = (draggedSegmentInfo.value?.originalEndTime || 0) - (draggedSegmentInfo.value?.originalStartTime || 0) || 0
-    console.log('[Timeline] Duration preservation constraint:', {
-      originalDuration: originalDuration.toFixed(2),
-      minStartTime: minStartTime.toFixed(2),
-      initialMaxEndTime: maxEndTime.toFixed(2),
-      maxPossibleWithMinStart: (minStartTime + originalDuration).toFixed(2)
-    })
 
     // IMPORTANT: Ensure we have enough space for the original duration
     // If the maxEndTime doesn't allow the original duration, we need to adjust it
     if (maxEndTime < minStartTime + originalDuration) {
-      console.log('[Timeline] Constraint too small, adjusting maxEndTime:', {
-        oldMaxEndTime: maxEndTime.toFixed(2),
-        newMaxEndTime: (minStartTime + originalDuration).toFixed(2)
-      })
       maxEndTime = minStartTime + originalDuration
     }
 

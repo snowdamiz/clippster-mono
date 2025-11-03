@@ -1270,14 +1270,9 @@ export async function realignClipSegment(
   const timeShift = newStartTime - originalStartTime
   const timeScale = (newEndTime - newStartTime) / (originalEndTime - originalStartTime)
 
-  // Log the realignment for debugging
-  const realignmentNote = `Realigned clip segment from ${originalStartTime.toFixed(2)}-${originalEndTime.toFixed(2)} to ${newStartTime.toFixed(2)}-${newEndTime.toFixed(2)} (shift: ${timeShift.toFixed(2)}s, scale: ${timeScale.toFixed(3)}x)`
-  console.log('[Database] Clip segment realignment:', realignmentNote)
-
   // Get the segment data
   const segment = segments[segmentIndex]
   if (!segment.transcript) {
-    console.log('[Database] No transcript data in segment, skipping word-level realignment')
     return
   }
 
@@ -1324,8 +1319,6 @@ export async function realignClipSegment(
       'UPDATE clip_segments SET transcript = ? WHERE clip_version_id = ? AND segment_index = ?',
       [realignedTranscript, versionId, segmentIndex]
     )
-
-    console.log('[Database] Updated segment transcript with realigned timestamps')
 
   } catch (error) {
     console.error('[Database] Failed to realign segment transcript:', error)
@@ -1571,14 +1564,12 @@ export async function persistClipDetectionResults(
         const existingTranscript = await getTranscriptByRawVideoId(rawVideo.id)
 
         if (existingTranscript) {
-          console.log('[Database] Transcript already exists for raw video, using existing transcript')
           transcriptId = existingTranscript.id
 
           // Check if this was a fresh transcription or cached
           const usedCachedTranscript = (detectionResults as any).processing_info?.used_cached_transcript
 
           if (!usedCachedTranscript) {
-            console.log('[Database] Fresh transcription received, updating existing transcript data')
             // Update the existing transcript with fresh data
             const transcriptText = detectionResults.transcript.text ||
                                  (detectionResults.transcript.segments?.map((seg: any) => seg.text).join(' ') || '') ||
@@ -1629,7 +1620,6 @@ export async function persistClipDetectionResults(
         // Store transcript segments if available (only for fresh transcriptions)
         const usedCachedTranscript = (detectionResults as any).processing_info?.used_cached_transcript
         if (!usedCachedTranscript && detectionResults.transcript.segments && Array.isArray(detectionResults.transcript.segments)) {
-          console.log('[Database] Storing fresh transcript segments')
           for (let i = 0; i < detectionResults.transcript.segments.length; i++) {
             const segment = detectionResults.transcript.segments[i]
             await createTranscriptSegment(

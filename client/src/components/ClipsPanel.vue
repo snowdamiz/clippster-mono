@@ -410,12 +410,10 @@ function handleDetectClips() {
 }
 
 function onDeleteClip(clipId: string) {
-  console.log('[ClipsPanel] Delete button clicked for clip:', clipId)
   emit('deleteClip', clipId)
 }
 
 function onPlayClip(clip: ClipWithVersion) {
-  console.log('[ClipsPanel] Play button clicked for clip:', clip.id)
   emit('playClip', clip)
 }
 
