@@ -285,7 +285,7 @@
         <!-- Custom Timeline Tooltip -->
         <div
           v-if="showTimelineTooltip && !isPanning && !isDragging && !isDraggingSegment && !isResizingSegment"
-          class="fixed pointer-events-none z-50 transition-all duration-75"
+          class="fixed pointer-events-none z-50 transition-all duration-0"
           :style="{
             left: `${tooltipPosition.x}px`,
             top: `${tooltipPosition.y}px`,
@@ -305,7 +305,7 @@
                   v-for="(word, index) in tooltipTranscriptWords"
                   :key="index"
                   :class="[
-                    'transition-all duration-75',
+                    'transition-all duration-0',
                     index === centerWordIndex
                       ? 'word-highlight'
                       : 'word-normal'
@@ -321,7 +321,7 @@
               No transcript available
             </div>
 
-            <div class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-1.5 h-1.5 bg-black/90 border-r border-b border-white/20"></div>
+            <div class="absolute top-full left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-45 w-1.5 h-1.5 bg-black/90 border-r border-b border-white/20"></div>
           </div>
         </div>
 
@@ -413,6 +413,21 @@ function debounce<T extends (...args: any[]) => any>(func: T, wait: number): {
   }
 
   return debounced
+}
+
+// Simple throttle utility function to prevent excessive calls
+function throttle<T extends (...args: any[]) => any>(func: T, limit: number): {
+  (...args: Parameters<T>): void
+} {
+  let inThrottle: boolean = false
+
+  return function(this: any, ...args: Parameters<T>) {
+    if (!inThrottle) {
+      func.apply(this, args)
+      inThrottle = true
+      setTimeout(() => inThrottle = false, limit)
+    }
+  }
 }
 
 interface Timestamp {
@@ -727,17 +742,22 @@ async function loadTranscriptData(projectId: string | null) {
         words
       }
 
+      // Clear cache when new transcript data is loaded
+      wordSearchCache.value.clear()
+
       console.log('[Timeline] Loaded transcript data:', {
         wordCount: words.length,
         transcriptId: transcript.id
       })
     } else {
       transcriptData.value = null
+      wordSearchCache.value.clear()
       console.log('[Timeline] No transcript data available for project:', projectId)
     }
   } catch (error) {
     console.error('[Timeline] Failed to load transcript data:', error)
     transcriptData.value = null
+    wordSearchCache.value.clear()
   }
 }
 
@@ -800,7 +820,7 @@ function parseTranscriptToWords(rawJson: string): WordInfo[] {
   }
 }
 
-// Find words around a specific timestamp
+// Optimized word search using binary search for large arrays
 function findWordsAroundTime(timestamp: number, allWords: WordInfo[]): {
   words: WordInfo[]
   centerIndex: number
@@ -809,19 +829,77 @@ function findWordsAroundTime(timestamp: number, allWords: WordInfo[]): {
     return { words: [], centerIndex: 0 }
   }
 
-  // Find the word at the exact timestamp
-  let closestIndex = -1
+  // For small arrays, use linear search (faster for < 50 words)
+  if (allWords.length < 50) {
+    return linearWordSearch(timestamp, allWords)
+  }
+
+  // For larger arrays, use binary search to find approximate position
+  let left = 0
+  let right = allWords.length - 1
+  let closestIndex = 0
+
+  while (left <= right) {
+    const mid = Math.floor((left + right) / 2)
+    const word = allWords[mid]
+
+    if (timestamp >= word.start && timestamp <= word.end) {
+      closestIndex = mid
+      break
+    }
+
+    if (timestamp < word.start) {
+      right = mid - 1
+    } else {
+      left = mid + 1
+    }
+
+    // Track closest match
+    if (Math.abs(word.start - timestamp) < Math.abs(allWords[closestIndex].start - timestamp)) {
+      closestIndex = mid
+    }
+  }
+
+  // Fine-tune search around the binary search result
+  const searchStart = Math.max(0, closestIndex - 10)
+  const searchEnd = Math.min(allWords.length - 1, closestIndex + 10)
+  let finalIndex = closestIndex
+
+  for (let i = searchStart; i <= searchEnd; i++) {
+    const word = allWords[i]
+    if (timestamp >= word.start && timestamp <= word.end) {
+      finalIndex = i
+      break
+    }
+    if (Math.abs(word.start - timestamp) < Math.abs(allWords[finalIndex].start - timestamp)) {
+      finalIndex = i
+    }
+  }
+
+  // Get 5 words: 2 before, 1 current, 2 after
+  const startIndex = Math.max(0, finalIndex - 2)
+  const endIndex = Math.min(allWords.length - 1, finalIndex + 2)
+  const words = allWords.slice(startIndex, endIndex + 1)
+
+  return { words, centerIndex: finalIndex - startIndex }
+}
+
+// Fallback linear search for small arrays
+function linearWordSearch(timestamp: number, allWords: WordInfo[]): {
+  words: WordInfo[]
+  centerIndex: number
+} {
+  let closestIndex = 0
   let closestDistance = Infinity
 
   for (let i = 0; i < allWords.length; i++) {
     const word = allWords[i]
-    // Check if timestamp is within this word's time range
+
     if (timestamp >= word.start && timestamp <= word.end) {
       closestIndex = i
       break
     }
 
-    // Find the closest word if no exact match
     const distance = Math.abs(word.start - timestamp)
     if (distance < closestDistance) {
       closestDistance = distance
@@ -829,25 +907,47 @@ function findWordsAroundTime(timestamp: number, allWords: WordInfo[]): {
     }
   }
 
-  // Get 5 words: 2 before, 1 current, 2 after
   const startIndex = Math.max(0, closestIndex - 2)
   const endIndex = Math.min(allWords.length - 1, closestIndex + 2)
   const words = allWords.slice(startIndex, endIndex + 1)
 
-  // Calculate the center index relative to the returned array
-  const centerIndex = closestIndex - startIndex
-
-  return { words, centerIndex }
+  return { words, centerIndex: closestIndex - startIndex }
 }
 
-// Debounced function for updating tooltip words to improve performance
+// Cache for word search results to improve performance
+const wordSearchCache = ref<Map<number, { words: WordInfo[], centerIndex: number }>>(new Map())
+
+// Throttled function for immediate tooltip updates (position)
+const throttledUpdateTooltipPosition = throttle((timestamp: number) => {
+  tooltipTime.value = timestamp
+}, 16) // ~60fps
+
+// Optimized function for updating tooltip words
 const debouncedUpdateTooltipWords = debounce((timestamp: number) => {
   if (transcriptData.value && transcriptData.value.words.length > 0) {
+    // Check cache first
+    const cacheKey = Math.round(timestamp * 10) // Round to 100ms precision
+    if (wordSearchCache.value.has(cacheKey)) {
+      const cached = wordSearchCache.value.get(cacheKey)!
+      tooltipTranscriptWords.value = cached.words
+      centerWordIndex.value = cached.centerIndex
+      return
+    }
+
     const { words, centerIndex } = findWordsAroundTime(timestamp, transcriptData.value.words)
     tooltipTranscriptWords.value = words
     centerWordIndex.value = centerIndex
+
+    // Cache the result
+    wordSearchCache.value.set(cacheKey, { words, centerIndex })
+
+    // Limit cache size to prevent memory issues
+    if (wordSearchCache.value.size > 1000) {
+      const firstKey = wordSearchCache.value.keys().next().value
+      wordSearchCache.value.delete(firstKey)
+    }
   }
-}, 50) // 50ms debounce for smooth performance
+}, 30) // Slightly increased for better performance
 
 // Function to scroll timeline clip into view
 function scrollTimelineClipIntoView(clipId: string) {
@@ -1271,9 +1371,11 @@ function onTimelineMouseMove(event: MouseEvent) {
       showTimelineTooltip.value = true
       tooltipPosition.value = {
         x: event.clientX,
-        y: event.clientY - 40 // Position above cursor
+        y: event.clientY - 80 // Position further above cursor to avoid text
       }
-      tooltipTime.value = hoverTime
+
+      // Update timestamp immediately (throttled)
+      throttledUpdateTooltipPosition(hoverTime)
 
       // Update transcript words for enhanced tooltip
       if (transcriptData.value && transcriptData.value.words.length > 0) {
@@ -1569,6 +1671,9 @@ onUnmounted(() => {
 
   // Cancel any pending debounced updates
   debouncedUpdateTooltipWords.cancel()
+
+  // Clear cache
+  wordSearchCache.value.clear()
 })
 
 // Utility function to convert hex color to darker version for timeline clips
