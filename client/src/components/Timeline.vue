@@ -284,7 +284,7 @@
 
         <!-- Custom Timeline Tooltip -->
         <div
-          v-if="showTimelineTooltip && !isPanning && !isDragging && !isDraggingSegment"
+          v-if="showTimelineTooltip && !isPanning && !isDragging && !isDraggingSegment && !isResizingSegment"
           class="fixed pointer-events-none z-50 transition-all duration-75"
           :style="{
             left: `${tooltipPosition.x}px`,
@@ -292,8 +292,35 @@
             transform: 'translateX(-50%)'
           }"
         >
-          <div class="bg-black/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-md font-medium shadow-lg border border-white/20">
-            {{ formatDuration(tooltipTime) }}
+          <div class="timeline-tooltip bg-black/90 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-md font-medium shadow-lg border border-white/20 max-w-xs">
+            <!-- Timestamp -->
+            <div class="timestamp text-center mb-1 pb-1">
+              {{ formatDuration(tooltipTime) }}
+            </div>
+
+            <!-- Transcript Words -->
+            <div v-if="tooltipTranscriptWords.length > 0" class="text-center">
+              <div class="transcript-words space-x-1">
+                <span
+                  v-for="(word, index) in tooltipTranscriptWords"
+                  :key="index"
+                  :class="[
+                    'transition-all duration-75',
+                    index === centerWordIndex
+                      ? 'word-highlight'
+                      : 'word-normal'
+                  ]"
+                >
+                  {{ word.word }}
+                </span>
+              </div>
+            </div>
+
+            <!-- Fallback when no transcript -->
+            <div v-else class="text-center text-white/50 text-xs">
+              No transcript available
+            </div>
+
             <div class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-1.5 h-1.5 bg-black/90 border-r border-b border-white/20"></div>
           </div>
         </div>
@@ -345,7 +372,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { updateClipSegment, getAdjacentClipSegments, realignClipSegment } from '../services/database'
+import { updateClipSegment, getAdjacentClipSegments, realignClipSegment, getTranscriptWithSegmentsByProjectId } from '../services/database'
 
 // Simple debounce utility function with flush and cancel capabilities
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): {
@@ -402,6 +429,13 @@ interface ClipSegment {
   transcript: string
 }
 
+interface WordInfo {
+  word: string
+  start: number
+  end: number
+  confidence?: number
+}
+
 interface Clip {
   id: string
   title: string
@@ -427,6 +461,7 @@ interface Props {
   hoveredClipId?: string | null
   hoveredTimelineClipId?: string | null
   currentlyPlayingClipId?: string | null
+  projectId?: string | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -554,6 +589,15 @@ const showTimelineTooltip = ref(false)
 const tooltipPosition = ref({ x: 0, y: 0 })
 const tooltipTime = ref(0)
 
+// Transcript data for enhanced tooltips
+const transcriptData = ref<{
+  transcript: any
+  segments: any[]
+  words: WordInfo[]
+} | null>(null)
+const tooltipTranscriptWords = ref<WordInfo[]>([])
+const centerWordIndex = ref(0)
+
 // Global playhead state
 const globalPlayheadPosition = ref(0) // X position in pixels for the global playhead line
 const isPlayheadInitialized = ref(false) // Track if playhead has been properly initialized
@@ -662,6 +706,148 @@ function setTimelineClipRef(el: any, clipId: string) {
     timelineClipElements.value.delete(clipId)
   }
 }
+
+// Load transcript data for enhanced tooltips
+async function loadTranscriptData(projectId: string | null) {
+  if (!projectId) {
+    transcriptData.value = null
+    return
+  }
+
+  try {
+    const { transcript, segments } = await getTranscriptWithSegmentsByProjectId(projectId)
+
+    if (transcript && transcript.raw_json) {
+      // Parse the raw JSON to extract word-level timing
+      const words = parseTranscriptToWords(transcript.raw_json)
+
+      transcriptData.value = {
+        transcript,
+        segments,
+        words
+      }
+
+      console.log('[Timeline] Loaded transcript data:', {
+        wordCount: words.length,
+        transcriptId: transcript.id
+      })
+    } else {
+      transcriptData.value = null
+      console.log('[Timeline] No transcript data available for project:', projectId)
+    }
+  } catch (error) {
+    console.error('[Timeline] Failed to load transcript data:', error)
+    transcriptData.value = null
+  }
+}
+
+// Parse raw transcript JSON to extract word-level timing
+function parseTranscriptToWords(rawJson: string): WordInfo[] {
+  try {
+    const data = JSON.parse(rawJson)
+    const words: WordInfo[] = []
+
+    // Handle different transcript formats
+    if (data.words && Array.isArray(data.words)) {
+      // Whisper word-level format
+      data.words.forEach((word: any) => {
+        if (word.word && word.start !== undefined && word.end !== undefined) {
+          words.push({
+            word: word.word.trim(),
+            start: word.start,
+            end: word.end,
+            confidence: word.confidence
+          })
+        }
+      })
+    } else if (data.segments && Array.isArray(data.segments)) {
+      // Segments format with words inside
+      data.segments.forEach((segment: any) => {
+        if (segment.words && Array.isArray(segment.words)) {
+          segment.words.forEach((word: any) => {
+            if (word.word && word.start !== undefined && word.end !== undefined) {
+              words.push({
+                word: word.word.trim(),
+                start: word.start,
+                end: word.end,
+                confidence: word.confidence
+              })
+            }
+          })
+        }
+      })
+    } else if (Array.isArray(data)) {
+      // Direct array of words
+      data.forEach((word: any) => {
+        if (word.word && word.start !== undefined && word.end !== undefined) {
+          words.push({
+            word: word.word.trim(),
+            start: word.start,
+            end: word.end,
+            confidence: word.confidence
+          })
+        }
+      })
+    }
+
+    // Sort words by start time
+    words.sort((a, b) => a.start - b.start)
+
+    return words
+  } catch (error) {
+    console.error('[Timeline] Failed to parse transcript JSON:', error)
+    return []
+  }
+}
+
+// Find words around a specific timestamp
+function findWordsAroundTime(timestamp: number, allWords: WordInfo[]): {
+  words: WordInfo[]
+  centerIndex: number
+} {
+  if (!allWords.length) {
+    return { words: [], centerIndex: 0 }
+  }
+
+  // Find the word at the exact timestamp
+  let closestIndex = -1
+  let closestDistance = Infinity
+
+  for (let i = 0; i < allWords.length; i++) {
+    const word = allWords[i]
+    // Check if timestamp is within this word's time range
+    if (timestamp >= word.start && timestamp <= word.end) {
+      closestIndex = i
+      break
+    }
+
+    // Find the closest word if no exact match
+    const distance = Math.abs(word.start - timestamp)
+    if (distance < closestDistance) {
+      closestDistance = distance
+      closestIndex = i
+    }
+  }
+
+  // Get 5 words: 2 before, 1 current, 2 after
+  const startIndex = Math.max(0, closestIndex - 2)
+  const endIndex = Math.min(allWords.length - 1, closestIndex + 2)
+  const words = allWords.slice(startIndex, endIndex + 1)
+
+  // Calculate the center index relative to the returned array
+  const centerIndex = closestIndex - startIndex
+
+  return { words, centerIndex }
+}
+
+// Debounced function for updating tooltip words to improve performance
+const debouncedUpdateTooltipWords = debounce((timestamp: number) => {
+  if (transcriptData.value && transcriptData.value.words.length > 0) {
+    const { words, centerIndex } = findWordsAroundTime(timestamp, transcriptData.value.words)
+    tooltipTranscriptWords.value = words
+    centerWordIndex.value = centerIndex
+  }
+}, 50) // 50ms debounce for smooth performance
 
 // Function to scroll timeline clip into view
 function scrollTimelineClipIntoView(clipId: string) {
@@ -897,6 +1083,8 @@ function onPanStart(event: MouseEvent) {
 
   // Hide tooltip when panning starts
   showTimelineTooltip.value = false
+  tooltipTranscriptWords.value = []
+  centerWordIndex.value = 0
 
   // Change cursor to indicate panning
   document.body.style.cursor = 'grabbing'
@@ -946,6 +1134,9 @@ function onDragStart(event: MouseEvent) {
 
   // Hide tooltip when dragging starts
   showTimelineTooltip.value = false
+  tooltipTranscriptWords.value = []
+  centerWordIndex.value = 0
+  debouncedUpdateTooltipWords.cancel()
 
   // Calculate percentages relative to the zoomed timeline content
   const timelineContent = container.querySelector('.timeline-content-wrapper')
@@ -1083,16 +1274,28 @@ function onTimelineMouseMove(event: MouseEvent) {
         y: event.clientY - 40 // Position above cursor
       }
       tooltipTime.value = hoverTime
+
+      // Update transcript words for enhanced tooltip
+      if (transcriptData.value && transcriptData.value.words.length > 0) {
+        debouncedUpdateTooltipWords(hoverTime)
+      } else {
+        tooltipTranscriptWords.value = []
+        centerWordIndex.value = 0
+      }
     }
   } else {
     showTimelineHoverLine.value = false
     showTimelineTooltip.value = false
+    tooltipTranscriptWords.value = []
+    centerWordIndex.value = 0
   }
 }
 
 function onTimelineMouseLeaveGlobal() {
   showTimelineHoverLine.value = false
   showTimelineTooltip.value = false
+  tooltipTranscriptWords.value = []
+  centerWordIndex.value = 0
   // Cancel drag if mouse leaves timeline
   if (isDragging.value) {
     onDragEnd()
@@ -1197,6 +1400,15 @@ watch(
     }
   },
   { immediate: true, deep: true }
+)
+
+// Load transcript data when projectId changes
+watch(
+  () => props.projectId,
+  (newProjectId) => {
+    loadTranscriptData(newProjectId)
+  },
+  { immediate: true }
 )
 
 // Handle scroll events to update global playhead position
@@ -1354,6 +1566,9 @@ onUnmounted(() => {
 
   // Reset cursor in case component is unmounted while panning
   document.body.style.cursor = ''
+
+  // Cancel any pending debounced updates
+  debouncedUpdateTooltipWords.cancel()
 })
 
 // Utility function to convert hex color to darker version for timeline clips
@@ -1533,6 +1748,9 @@ async function onSegmentMouseDown(event: MouseEvent, clipId: string, segmentInde
 
   // Hide tooltip during drag
   showTimelineTooltip.value = false
+  tooltipTranscriptWords.value = []
+  centerWordIndex.value = 0
+  debouncedUpdateTooltipWords.cancel()
 
   // Initialize tooltip position
   updateSegmentDragTooltip()
@@ -1693,6 +1911,9 @@ async function onResizeMouseDown(event: MouseEvent, clipId: string, segmentIndex
 
   // Hide tooltip during resize
   showTimelineTooltip.value = false
+  tooltipTranscriptWords.value = []
+  centerWordIndex.value = 0
+  debouncedUpdateTooltipWords.cancel()
 
   // Initialize tooltip position
   updateResizeTooltip()
@@ -2271,6 +2492,38 @@ async function onResizeMouseUp() {
   transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
               box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1),
               border-color 0.15s ease;
+}
+
+/* Enhanced tooltip styling */
+.timeline-tooltip {
+  background: rgba(0, 0, 0, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.timeline-tooltip .timestamp {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+}
+
+.timeline-tooltip .transcript-words {
+  line-height: 1.4;
+  word-spacing: 2px;
+}
+
+.timeline-tooltip .word-highlight {
+  color: #fbbf24;
+  font-weight: 600;
+  transform: scale(1.05);
+  display: inline-block;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.timeline-tooltip .word-normal {
+  color: rgba(255, 255, 255, 0.7);
+  transition: all 0.2s ease;
 }
 
 /* Prevent text selection during drag */

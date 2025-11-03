@@ -98,6 +98,7 @@
             :hovered-clip-id="hoveredClipId"
             :hovered-timeline-clip-id="hoveredTimelineClipId"
             :currently-playing-clip-id="currentlyPlayingClipId"
+            :project-id="project?.id"
             @seekTimeline="seekTimeline"
             @timelineTrackHover="onTimelineTrackHover"
             @timelineMouseLeave="onTimelineMouseLeave"
