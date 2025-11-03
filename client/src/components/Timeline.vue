@@ -1387,56 +1387,34 @@ function onSegmentMouseMove(event: MouseEvent) {
   // Preserve original duration
   const originalDuration = draggedSegmentInfo.value.originalEndTime - draggedSegmentInfo.value.originalStartTime
 
-  // Removed debug logging for smoother performance
+  // Calculate the allowed movement range that preserves original duration
+  const maxAllowedStart = movementConstraints.value.maxEndTime - originalDuration
 
-  // Apply movement constraints
-  newStartTime = Math.max(movementConstraints.value.minStartTime, newStartTime)
-  newEndTime = Math.min(movementConstraints.value.maxEndTime, newEndTime)
-
-  // Ensure minimum duration (1 second) and preserve original duration when possible
-  const actualDuration = newEndTime - newStartTime
-
-  if (actualDuration < originalDuration) {
-    // Segment is being compressed, adjust to maintain original duration if possible
-    if (timeDelta > 0) {
-      // Moving right, extend end time to maintain duration
-      newEndTime = Math.min(newStartTime + originalDuration, movementConstraints.value.maxEndTime)
-    } else {
-      // Moving left, extend start time to maintain duration
-      newStartTime = Math.max(newEndTime - originalDuration, movementConstraints.value.minStartTime)
-    }
+  // Apply constraints that prevent shrinking
+  if (newStartTime < movementConstraints.value.minStartTime) {
+    // Moving left would violate constraint, stop at boundary
+    newStartTime = movementConstraints.value.minStartTime
+    newEndTime = newStartTime + originalDuration
+  } else if (newEndTime > movementConstraints.value.maxEndTime) {
+    // Moving right would violate constraint, stop at boundary
+    newEndTime = movementConstraints.value.maxEndTime
+    newStartTime = newEndTime - originalDuration
   }
 
-  // Ensure we don't exceed video bounds
+  // Also ensure we stay within video bounds while preserving duration
   if (newStartTime < 0) {
     newStartTime = 0
     newEndTime = Math.min(originalDuration, props.duration)
-  }
-  if (newEndTime > props.duration) {
+  } else if (newEndTime > props.duration) {
     newEndTime = props.duration
     newStartTime = Math.max(props.duration - originalDuration, 0)
   }
 
-  // Final duration check - preserve original duration if possible, only compress as last resort
-  const finalDuration = newEndTime - newStartTime
-  if (finalDuration < 1.0) {
-    // Only compress to 1 second if original duration is also very small
-    if (originalDuration < 1.0) {
-      const centerTime = (newStartTime + newEndTime) / 2
-      newStartTime = Math.max(0, centerTime - 0.5)
-      newEndTime = Math.min(props.duration, centerTime + 0.5)
-    } else {
-      // Try to preserve as much of the original duration as possible
-      const centerTime = (newStartTime + newEndTime) / 2
-      const maxPossibleDuration = Math.min(
-        props.duration - centerTime * 2, // Distance to both ends
-        centerTime * 2, // Distance from start
-        originalDuration
-      )
-      const adjustedDuration = Math.max(1.0, maxPossibleDuration)
-      newStartTime = Math.max(0, centerTime - adjustedDuration / 2)
-      newEndTime = Math.min(props.duration, centerTime + adjustedDuration / 2)
-    }
+  // Final check: if we still can't maintain original duration, don't move at all
+  if (newEndTime - newStartTime < originalDuration * 0.99) { // Allow tiny floating point errors
+    // Revert to original position - constraint hit, can't move further in this direction
+    newStartTime = draggedSegmentInfo.value.originalStartTime
+    newEndTime = draggedSegmentInfo.value.originalEndTime
   }
 
   // Update drag state
