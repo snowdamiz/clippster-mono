@@ -29,6 +29,7 @@
         <div class="relative flex-1 flex items-center justify-center bg-black aspect-video">
           <video
             ref="videoElement"
+            :key="videoKey"
             :src="videoSrc"
             class="w-full h-full object-contain"
             @timeupdate="onTimeUpdate"
@@ -335,11 +336,16 @@ async function initializeVideo() {
 
     const port = await invoke<number>('get_video_server_port')
     const encodedPath = btoa(props.video.file_path)
-    videoSrc.value = `http://localhost:${port}/video/${encodedPath}`
+    // Add a timestamp to prevent caching issues
+    const timestamp = Date.now()
+    videoSrc.value = `http://localhost:${port}/video/${encodedPath}?t=${timestamp}`
   } catch (err) {
     console.error('Failed to prepare video:', err)
   }
 }
+
+// Add a unique timestamp to force video recreation
+const videoKey = ref<string>('empty')
 
 function resetVideoState() {
   isPlaying.value = false
@@ -349,19 +355,28 @@ function resetVideoState() {
   hoverTime.value = null
   hoverPosition.value = 0
   videoSrc.value = null
+  // Generate a new key to force video element recreation
+  videoKey.value = `video-${Date.now()}`
 }
 
 // Watch for video changes
 watch(() => props.video, initializeVideo, { immediate: true })
 
-// Watch for dialog close to properly reset video state
-watch(() => props.showVideoPlayer, (newVal) => {
+// Watch for dialog open/close to properly handle video state
+watch(() => props.showVideoPlayer, (newVal, oldVal) => {
   if (!newVal) {
+    // Dialog is closing
     if (videoElement.value) {
       videoElement.value.pause()
       videoElement.value.currentTime = 0
+      // Clear the video source to ensure proper reload when reopened
+      videoElement.value.src = ''
+      videoElement.value.load()
     }
     resetVideoState()
+  } else if (newVal && !oldVal && props.video) {
+    // Dialog is opening, ensure video is initialized
+    initializeVideo()
   }
 })
 

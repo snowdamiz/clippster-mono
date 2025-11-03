@@ -229,7 +229,7 @@
   <VideoPlayerDialog
     :video="videoToPlay"
     :show-video-player="showVideoPlayer"
-    @close="showVideoPlayer = false"
+    @close="handleVideoPlayerClose"
   />
 
     <!-- Delete Confirmation Modal -->
@@ -501,11 +501,21 @@ async function handleUpload() {
 
 async function playVideo(video: RawVideo) {
   try {
-    videoToPlay.value = video
+    // Create a fresh copy of the video object to ensure reactivity
+    // This helps when reopening the same video
+    videoToPlay.value = { ...video }
     showVideoPlayer.value = true
   } catch (err) {
     console.error('Failed to prepare video:', err)
   }
+}
+
+function handleVideoPlayerClose() {
+  showVideoPlayer.value = false
+  // Clear the video reference to ensure proper reload when reopening
+  setTimeout(() => {
+    videoToPlay.value = null
+  }, 100)
 }
 
 async function confirmDelete(video: RawVideo) {
