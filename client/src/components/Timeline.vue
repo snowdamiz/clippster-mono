@@ -1784,11 +1784,29 @@ function handleGlobalMouseUp() {
   }
 }
 
+// Handle keyboard events
+function handleKeyDown(event: KeyboardEvent) {
+  // Activate cut tool when 'x' key is pressed
+  if (event.key === 'x' || event.key === 'X') {
+    event.preventDefault()
+    if (!isCutToolActive.value) {
+      toggleCutTool()
+    }
+  }
+
+  // Deactivate cut tool when Escape key is pressed
+  if (event.key === 'Escape' && isCutToolActive.value) {
+    event.preventDefault()
+    toggleCutTool()
+  }
+}
+
 
 // Setup and cleanup global event listeners
 onMounted(() => {
   document.addEventListener('mousemove', handleGlobalMouseMove)
   document.addEventListener('mouseup', handleGlobalMouseUp)
+  document.addEventListener('keydown', handleKeyDown)
 
   // Initialize timeline bounds for hover line
   const container = timelineScrollContainer.value
@@ -1871,6 +1889,7 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('mousemove', handleGlobalMouseMove)
   document.removeEventListener('mouseup', handleGlobalMouseUp)
+  document.removeEventListener('keydown', handleKeyDown)
 
   // Clean up event listeners and observers
   const container = timelineScrollContainer.value
