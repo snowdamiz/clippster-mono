@@ -35,7 +35,7 @@ export async function initDatabase() {
       const label = getCurrentWindow().label
       console.debug('[Frontend] Tauri window label:', label)
 
-      const instance = await Database.load('sqlite:clippster_clean.db')
+      const instance = await Database.load('sqlite:clippster_v21.db')
 
       db = instance
       return instance
@@ -397,6 +397,44 @@ export async function updateProject(id: string, name?: string, description?: str
 
 export async function deleteProject(id: string): Promise<void> {
   const db = await getDatabase()
+
+  // First, disassociate all associated content by setting project_id to NULL
+  // This preserves the content while removing the project association
+
+  try {
+    // Disassociate raw videos from this project (has project_id)
+    await db.execute(
+      'UPDATE raw_videos SET project_id = NULL WHERE project_id = ?',
+      [id]
+    )
+  } catch (error) {
+    console.warn('[Database] raw_videos project_id column update failed:', error)
+  }
+
+  try {
+    // Disassociate clips from this project (has project_id)
+    await db.execute(
+      'UPDATE clips SET project_id = NULL WHERE project_id = ?',
+      [id]
+    )
+  } catch (error) {
+    console.warn('[Database] clips project_id column update failed:', error)
+  }
+
+  try {
+    // Disassociate clip detection sessions from this project (has project_id)
+    await db.execute(
+      'UPDATE clip_detection_sessions SET project_id = NULL WHERE project_id = ?',
+      [id]
+    )
+  } catch (error) {
+    console.warn('[Database] clip_detection_sessions project_id column update failed:', error)
+  }
+
+  // Note: transcripts table was changed in migration 4 to use raw_video_id instead of project_id
+  // So we don't need to update transcripts here
+
+  // Now safely delete the project
   await db.execute('DELETE FROM projects WHERE id = ?', [id])
 }
 

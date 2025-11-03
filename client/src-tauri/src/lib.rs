@@ -1258,7 +1258,7 @@ pub fn run() {
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations(
-                    "sqlite:clippster_clean.db",
+                    "sqlite:clippster_v21.db",
                     vec![
                         tauri_plugin_sql::Migration {
                             version: 1,
@@ -1320,14 +1320,20 @@ pub fn run() {
                             sql: include_str!("../migrations/010_add_clip_versioning_fixed.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
-                                              tauri_plugin_sql::Migration {
+                        tauri_plugin_sql::Migration {
                             version: 11,
                             description: "add_project_thumbnail",
                             sql: include_str!("../migrations/013_add_project_thumbnail.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
-                            version: 14,
+                            version: 12,
+                            description: "add_original_project_field",
+                            sql: include_str!("../migrations/012_add_original_project_field.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 13,
                             description: "add_clip_segments",
                             sql: include_str!("../migrations/014_add_clip_segments.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
@@ -1354,6 +1360,12 @@ pub fn run() {
                             version: 18,
                             description: "drop_waveform_data",
                             sql: include_str!("../migrations/018_drop_waveform_data.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 20,
+                            description: "simple_cascade_fix",
+                            sql: include_str!("../migrations/020_simple_cascade_fix.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                           ],
