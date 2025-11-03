@@ -1060,85 +1060,35 @@ function updateGlobalPlayheadPosition() {
     top: rect.top,
     bottom: rect.bottom
   }
-  console.log('[Timeline] Timeline bounds updated:', timelineBounds.value)
 
-  // Get the timeline content wrapper to account for zoom and scroll
-  const timelineContent = container.querySelector('.timeline-content-wrapper') as HTMLElement
-  if (!timelineContent) return
+  // Calculate the time percentage
+  const timePercent = props.currentTime / props.duration
 
-  // Check if the timeline content has proper dimensions
-  const contentWidth = timelineContent.offsetWidth
-  if (contentWidth <= 0) {
-    // Timeline content is not properly sized yet, try again later
-    if (!isPlayheadInitialized.value) {
-      console.log('[Timeline] Content width is 0, retrying...', { contentWidth })
-      requestAnimationFrame(() => {
-        updateGlobalPlayheadPosition()
-      })
-    }
-    return
-  }
+  // Find the video track content element to get its current playhead position as reference
+  const videoTrack = container.querySelector('.flex-1.h-8.bg-\\[\\#0a0a0a\\]\\/50.rounded-md.relative') as HTMLElement
+  if (!videoTrack) return
 
-  // Calculate the time percentage, ensuring it's bounded between 0 and 1
-  const timePercent = Math.max(0, Math.min(1, props.currentTime / props.duration))
+  // Create a temporary div positioned at the time percentage within the video track
+  const tempDiv = document.createElement('div')
+  tempDiv.style.position = 'absolute'
+  tempDiv.style.left = `${timePercent * 100}%`
+  tempDiv.style.top = '0'
+  tempDiv.style.width = '1px'
+  tempDiv.style.height = '1px'
+  tempDiv.style.pointerEvents = 'none'
+  tempDiv.style.opacity = '0'
 
-  // Get the container rectangle and current scroll position
-  const containerRect = container.getBoundingClientRect()
-  const scrollLeft = container.scrollLeft
+  videoTrack.appendChild(tempDiv)
 
-  // Define track label width (same as used in other parts of the component)
-  const trackLabelWidth = 64 // 4rem = 64px (w-16)
+  // Get the absolute position of this temp div
+  const tempRect = tempDiv.getBoundingClientRect()
+  const targetX = tempRect.left + tempRect.width / 2
 
-  // Calculate the X position of the playhead relative to the viewport
-  // Account for track labels, zoom (contentWidth), and scroll position
-  const playheadX = containerRect.left + trackLabelWidth + (timePercent * contentWidth) - scrollLeft
+  // Clean up
+  videoTrack.removeChild(tempDiv)
 
-  // Validate the calculated position is reasonable
-  const minX = containerRect.left + trackLabelWidth
-  const maxX = containerRect.left + trackLabelWidth + contentWidth
-
-  if (playheadX < minX || playheadX > maxX) {
-    // Position is invalid, likely due to layout issues
-    if (!isPlayheadInitialized.value) {
-      console.log('[Timeline] Invalid playhead position, retrying...', {
-        playheadX,
-        minX,
-        maxX,
-        contentWidth,
-        timePercent,
-        currentTime: props.currentTime,
-        duration: props.duration
-      })
-      requestAnimationFrame(() => {
-        updateGlobalPlayheadPosition()
-      })
-    }
-    return
-  }
-
-  // Only update if this would result in a meaningful position change
-  // This prevents initial animation from incorrect positions
-  if (!isPlayheadInitialized.value || Math.abs(globalPlayheadPosition.value - playheadX) > 1) {
-    const previousPosition = globalPlayheadPosition.value
-    globalPlayheadPosition.value = playheadX
-    isPlayheadInitialized.value = true
-
-    if (previousPosition !== playheadX) {
-      console.log('[Timeline] Playhead position updated:', {
-        previousPosition,
-        newPosition: playheadX,
-        timePercent,
-        currentTime: props.currentTime,
-        duration: props.duration,
-        contentWidth,
-        containerRectLeft: containerRect.left,
-        trackLabelWidth,
-        scrollLeft,
-        initialized: isPlayheadInitialized.value,
-        timestamp: Date.now()
-      })
-    }
-  }
+  globalPlayheadPosition.value = targetX
+  isPlayheadInitialized.value = true
 }
 
 // Debounced version for smoother updates during component initialization
@@ -1147,22 +1097,8 @@ const debouncedUpdatePlayhead = debounce(updateGlobalPlayheadPosition, 50)
 // Watch for changes that affect global playhead position and slider
 watch(
   [() => props.currentTime, () => props.duration, () => props.videoSrc, zoomLevel],
-  ([newCurrentTime, newDuration, newVideoSrc, newZoomLevel], [oldCurrentTime, oldDuration, oldVideoSrc, oldZoomLevel]) => {
-    // Reset initialization flag when video source or duration changes
-    if (newVideoSrc !== oldVideoSrc || newDuration !== oldDuration) {
-      isPlayheadInitialized.value = false
-    }
-
-    // Use debounced version during initialization (first few updates)
-    // Use immediate version for normal time updates during video playback
-    const isInitializing = newVideoSrc !== oldVideoSrc || newDuration !== oldDuration
-
-    if (isInitializing) {
-      debouncedUpdatePlayhead()
-    } else {
-      updateGlobalPlayheadPosition()
-    }
-
+  () => {
+    updateGlobalPlayheadPosition()
     updateSliderProgress()
   },
   { immediate: true }
@@ -1265,21 +1201,7 @@ onMounted(() => {
 
     // Initialize playhead position after DOM is fully rendered
     nextTick(() => {
-      // Use a longer delay to ensure all layout calculations are complete
-      setTimeout(() => {
-        isPlayheadInitialized.value = false
-        console.log('[Timeline] Initial playhead positioning attempt')
-        updateGlobalPlayheadPosition()
-      }, 300) // Increased delay to 300ms
-
-      // Also try again after an even longer delay as a fallback
-      setTimeout(() => {
-        if (!isPlayheadInitialized.value) {
-          console.log('[Timeline] Fallback playhead positioning attempt')
-          isPlayheadInitialized.value = false
-          updateGlobalPlayheadPosition()
-        }
-      }, 1000) // Fallback after 1 second
+      updateGlobalPlayheadPosition()
     })
   }
 })
