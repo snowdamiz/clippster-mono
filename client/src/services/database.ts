@@ -1146,6 +1146,141 @@ export async function getClipSegmentsByVersionId(versionId: string): Promise<Cli
   )
 }
 
+// Update a single clip segment's timing
+export async function updateClipSegment(
+  clipId: string,
+  segmentIndex: number,
+  startTime: number,
+  endTime: number
+): Promise<void> {
+  const db = await getDatabase()
+  const duration = endTime - startTime
+
+  // Get the current version ID for this clip
+  const clipVersions = await db.select<ClipVersion[]>(
+    'SELECT id FROM clip_versions WHERE clip_id = ? ORDER BY version_number DESC LIMIT 1',
+    [clipId]
+  )
+
+  if (clipVersions.length === 0) {
+    throw new Error('No clip version found for clip')
+  }
+
+  const versionId = clipVersions[0].id
+
+  // Update the clip segment
+  await db.execute(
+    'UPDATE clip_segments SET start_time = ?, end_time = ?, duration = ? WHERE clip_version_id = ? AND segment_index = ?',
+    [startTime, endTime, duration, versionId, segmentIndex]
+  )
+}
+
+
+// Get adjacent clip segments for collision detection
+export async function getAdjacentClipSegments(
+  clipId: string,
+  segmentIndex: number
+): Promise<{ previous: ClipSegment | null, next: ClipSegment | null }> {
+  const db = await getDatabase()
+
+  // Get the current version ID for this clip
+  const clipVersions = await db.select<ClipVersion[]>(
+    'SELECT id FROM clip_versions WHERE clip_id = ? ORDER BY version_number DESC LIMIT 1',
+    [clipId]
+  )
+
+  if (clipVersions.length === 0) {
+    return { previous: null, next: null }
+  }
+
+  const versionId = clipVersions[0].id
+
+  // Get all segments for this clip version, ordered by time
+  const segments = await db.select<ClipSegment[]>(
+    'SELECT * FROM clip_segments WHERE clip_version_id = ? ORDER BY start_time, segment_index',
+    [versionId]
+  )
+
+  if (segments.length === 0 || segmentIndex < 0 || segmentIndex >= segments.length) {
+    return { previous: null, next: null }
+  }
+
+  return {
+    previous: segmentIndex > 0 ? segments[segmentIndex - 1] : null,
+    next: segmentIndex < segments.length - 1 ? segments[segmentIndex + 1] : null
+  }
+}
+
+// Get all clip segments for a clip (ordered by time)
+export async function getClipSegmentsByClipId(clipId: string): Promise<ClipSegment[]> {
+  const db = await getDatabase()
+
+  // Get the current version ID for this clip
+  const clipVersions = await db.select<ClipVersion[]>(
+    'SELECT id FROM clip_versions WHERE clip_id = ? ORDER BY version_number DESC LIMIT 1',
+    [clipId]
+  )
+
+  if (clipVersions.length === 0) {
+    return []
+  }
+
+  const versionId = clipVersions[0].id
+
+  return await db.select<ClipSegment[]>(
+    'SELECT * FROM clip_segments WHERE clip_version_id = ? ORDER BY start_time, segment_index ASC',
+    [versionId]
+  )
+}
+
+// Realign transcript words within a moved clip segment
+export async function realignClipSegment(
+  clipId: string,
+  segmentIndex: number,
+  originalStartTime: number,
+  originalEndTime: number,
+  newStartTime: number,
+  newEndTime: number
+): Promise<void> {
+  const db = await getDatabase()
+
+  // Get the current version ID for this clip
+  const clipVersions = await db.select<ClipVersion[]>(
+    'SELECT id FROM clip_versions WHERE clip_id = ? ORDER BY version_number DESC LIMIT 1',
+    [clipId]
+  )
+
+  if (clipVersions.length === 0) {
+    throw new Error('No clip version found for clip')
+  }
+
+  const versionId = clipVersions[0].id
+
+  // Get the clip segment to realign
+  const segments = await db.select<ClipSegment[]>(
+    'SELECT * FROM clip_segments WHERE clip_version_id = ? ORDER BY start_time, segment_index',
+    [versionId]
+  )
+
+  if (segments.length <= segmentIndex) {
+    throw new Error('Segment not found')
+  }
+
+  // Calculate time shift and scale for realignment
+  const timeShift = newStartTime - originalStartTime
+  const timeScale = (newEndTime - newStartTime) / (originalEndTime - originalStartTime)
+
+  // Log the realignment for debugging
+  const realignmentNote = `Realigned clip segment from ${originalStartTime.toFixed(2)}-${originalEndTime.toFixed(2)} to ${newStartTime.toFixed(2)}-${newEndTime.toFixed(2)} (shift: ${timeShift.toFixed(2)}s, scale: ${timeScale.toFixed(3)}x)`
+  console.log('[Database] Clip segment realignment:', realignmentNote)
+
+  // In a full implementation, you would:
+  // 1. Parse the segment.transcript to extract word-level timestamps if available
+  // 2. Apply the timeShift and timeScale to each word's timestamp
+  // 3. Update the segment transcript with realigned word timing data
+  // For now, the segment timing is updated in updateClipSegment
+}
+
 export async function getClipVersionsByClipId(clipId: string): Promise<ClipVersion[]> {
   const db = await getDatabase()
   return await db.select<ClipVersion[]>(

@@ -3,7 +3,10 @@
        :style="{
          height: calculatedHeight + 'px'
        }">
-    <div class="pt-3 px-4 h-full flex flex-col" :style="{ paddingBottom: props.clips.length > 0 ? '34px' : '8px' }">
+    <div class="pt-3 px-4 h-full flex flex-col" :style="{
+      paddingBottom: props.clips.length > 0 ? '64px' : '8px',
+      height: props.clips.length > 0 ? 'auto' : '146px'
+    }">
       <!-- Timeline Header -->
       <div class="flex items-center justify-between mb-3 pr-1 flex-shrink-0">
         <div class="flex items-center gap-3">
@@ -27,7 +30,7 @@
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <span v-if="props.clips.length > 0" class="text-xs text-muted-foreground">{{ props.clips.length }} clips</span>
+          <span v-if="displayClips.length > 0" class="text-xs text-muted-foreground">{{ displayClips.length }} clips</span>
         </div>
       </div>
 
@@ -141,7 +144,7 @@
 
         <!-- Clip Tracks -->
         <div
-          v-for="(clip, index) in props.clips"
+          v-for="(clip, index) in displayClips"
           :key="clip.id"
           class="flex items-center min-h-12 px-2 border-b border-border/20 cursor-pointer"
           @click="onTimelineClipClick(clip.id)"
@@ -167,16 +170,17 @@
                 v-for="(segment, segIndex) in clip.segments"
                 :key="`${clip.id}_${segIndex}`"
                 :ref="el => setTimelineClipRef(el, clip.id)"
-                class="clip-segment absolute h-6 border rounded-md flex items-center justify-center pointer-events-auto group cursor-pointer"
+                class="clip-segment absolute h-6 border rounded-md flex items-center justify-center pointer-events-auto group"
                 :class="[
                   'transition-all duration-75',
                   clip.run_number ? `run-${clip.run_number}` : '',
                   props.currentlyPlayingClipId === clip.id ? 'shadow-lg z-20' :
-                  (hoveredClipId === clip.id || props.hoveredTimelineClipId === clip.id && !props.currentlyPlayingClipId) ? 'shadow-lg z-20' : ''
+                  (hoveredClipId === clip.id || props.hoveredTimelineClipId === clip.id && !props.currentlyPlayingClipId) ? 'shadow-lg z-20' : '',
+                  isDraggingSegment && draggedSegmentInfo?.clipId === clip.id && draggedSegmentInfo?.segmentIndex === segIndex ? 'cursor-grabbing z-30 shadow-2xl border-2 border-blue-400' : 'cursor-grab hover:cursor-grab'
                 ]"
                 :style="{
-                  left: `${duration ? (segment.start_time / duration) * 100 : 0}%`,
-                  width: `${duration ? ((segment.end_time - segment.start_time) / duration) * 100 : 0}%`,
+                  left: `${duration ? (getSegmentDisplayTime(segment, 'start') / duration) * 100 : 0}%`,
+                  width: `${duration ? ((getSegmentDisplayTime(segment, 'end') - getSegmentDisplayTime(segment, 'start')) / duration) * 100 : 0}%`,
                   ...generateClipGradient(clip.run_color),
                   ...(props.currentlyPlayingClipId === clip.id ? {
                     borderColor: '#10b981',
@@ -189,9 +193,10 @@
                   } : {})
                 }"
                 :data-run-color="clip.run_color"
-                :title="`${clip.title} - ${formatDuration(segment.start_time)} to ${formatDuration(segment.end_time)}${clip.run_number ? ` (Run ${clip.run_number})` : ''}`"
+                :title="`${clip.title} - ${formatDuration(getSegmentDisplayTime(segment, 'start'))} to ${formatDuration(getSegmentDisplayTime(segment, 'end'))}${clip.run_number ? ` (Run ${clip.run_number})` : ''}`"
                 @mouseenter="hoveredSegmentKey = `${clip.id}_${segIndex}`"
                 @mouseleave="hoveredSegmentKey = null"
+                @mousedown="onSegmentMouseDown($event, clip.id, segIndex, segment)"
               >
                 <span class="text-xs text-white/90 font-medium truncate px-1 drop-shadow-sm">{{ clip.title }}</span>
 
@@ -274,7 +279,7 @@
 
         <!-- Custom Timeline Tooltip -->
         <div
-          v-if="showTimelineTooltip && !isPanning && !isDragging"
+          v-if="showTimelineTooltip && !isPanning && !isDragging && !isDraggingSegment"
           class="fixed pointer-events-none z-50 transition-all duration-75"
           :style="{
             left: `${tooltipPosition.x}px`,
@@ -287,12 +292,33 @@
             <div class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-1.5 h-1.5 bg-black/90 border-r border-b border-white/20"></div>
           </div>
         </div>
+
+        <!-- Segment Drag Tooltip -->
+        <div
+          v-if="isDraggingSegment && draggedSegmentInfo"
+          class="fixed pointer-events-none z-50 transition-all duration-75"
+          :style="{
+            left: `${draggedSegmentInfo.originalMouseX}px`,
+            top: `${timelineBounds.top - 60}px`,
+            transform: 'translateX(-50%)'
+          }"
+        >
+          <div class="bg-blue-600/90 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-md font-medium shadow-lg border border-white/20">
+            <div class="text-center">
+              <div class="font-semibold mb-1">Moving Segment</div>
+              <div>{{ formatDuration(draggedSegmentInfo.currentStartTime) }} - {{ formatDuration(draggedSegmentInfo.currentEndTime) }}</div>
+              <div class="text-xs opacity-75 mt-1">Duration: {{ formatDuration(draggedSegmentInfo.currentEndTime - draggedSegmentInfo.currentStartTime) }}</div>
+            </div>
+            <div class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-1.5 h-1.5 bg-blue-600/90 border-r border-b border-white/20"></div>
+          </div>
+        </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { updateClipSegment, getAdjacentClipSegments, realignClipSegment } from '../services/database'
 
 interface Timestamp {
   time: number
@@ -346,7 +372,7 @@ const calculatedHeight = computed(() => {
   const mainTrackHeight = 86 // Main video track height
   const clipTrackHeight = 48 // Height per clip track
 
-  const numberOfClips = props.clips.length
+  const numberOfClips = displayClips.value.length
 
   // Calculate total content height: header + ruler + main track + clip tracks
   const tracksHeight = rulerHeight + mainTrackHeight + (numberOfClips * clipTrackHeight)
@@ -367,22 +393,22 @@ const shouldShowScrollbar = computed(() => {
   const clipTrackHeight = 48 // Height per clip track (min-h-12)
   const bottomPadding = props.clips.length > 0 ? 34 : 8 // Dynamic bottom padding
 
-  const numberOfClips = props.clips.length
+  const numberOfClips = displayClips.value.length
   const contentHeight = rulerHeight + mainTrackHeight + (numberOfClips * clipTrackHeight) + bottomPadding
   const availableHeight = calculatedHeight.value - headerHeight
 
   // Only show scrollbar when content actually exceeds available height (small buffer for precision)
   const needsScrollbar = contentHeight > availableHeight
 
-  console.log('[Timeline] Scrollbar calculation:', {
-    clips: numberOfClips,
-    contentHeight,
-    availableHeight,
-    calculatedHeight: calculatedHeight.value,
-    bottomPadding,
-    needsScrollbar,
-    difference: contentHeight - availableHeight
-  })
+  // console.log('[Timeline] Scrollbar calculation:', {
+  //   clips: numberOfClips,
+  //   contentHeight,
+  //   availableHeight,
+  //   calculatedHeight: calculatedHeight.value,
+  //   bottomPadding,
+  //   needsScrollbar,
+  //   difference: contentHeight - availableHeight
+  // })
 
   return needsScrollbar
 })
@@ -394,6 +420,8 @@ interface Emits {
   (e: 'timelineClipHover', clipId: string): void
   (e: 'scrollToClipsPanel', clipId: string): void
   (e: 'zoomChanged', zoomLevel: number): void
+  (e: 'segmentUpdated', clipId: string, segmentIndex: number, newStartTime: number, newEndTime: number): void
+  (e: 'refreshClipsData'): void
 }
 
 const emit = defineEmits<Emits>()
@@ -436,6 +464,58 @@ const globalPlayheadPosition = ref(0) // X position in pixels for the global pla
 
 // Segment hover state
 const hoveredSegmentKey = ref<string | null>(null) // Track which specific segment is hovered
+
+// Segment dragging state
+const isDraggingSegment = ref(false)
+const draggedSegmentInfo = ref<{
+  clipId: string
+  segmentIndex: number
+  originalStartTime: number
+  originalEndTime: number
+  originalMouseX: number
+  dragStartTime: number
+  currentStartTime: number
+  currentEndTime: number
+} | null>(null)
+
+// Movement constraints
+const movementConstraints = ref<{
+  minStartTime: number
+  maxEndTime: number
+}>({
+  minStartTime: 0,
+  maxEndTime: Infinity
+})
+
+// Local reactive copy of clips for immediate visual updates
+const localClips = ref(props.clips ? [...props.clips] : [])
+
+// Computed clips that updates during dragging
+const displayClips = computed(() => {
+  if (!isDraggingSegment.value || !draggedSegmentInfo.value) {
+    return localClips.value
+  }
+
+  // Create a copy with the dragged segment's position updated
+  const updatedClips = [...localClips.value]
+  const { clipId, segmentIndex, currentStartTime, currentEndTime } = draggedSegmentInfo.value
+
+  const clipIndex = updatedClips.findIndex(clip => clip.id === clipId)
+  if (clipIndex !== -1 && updatedClips[clipIndex].segments[segmentIndex]) {
+    updatedClips[clipIndex] = {
+      ...updatedClips[clipIndex],
+      segments: [...updatedClips[clipIndex].segments]
+    }
+    updatedClips[clipIndex].segments[segmentIndex] = {
+      ...updatedClips[clipIndex].segments[segmentIndex],
+      start_time: currentStartTime,
+      end_time: currentEndTime,
+      duration: currentEndTime - currentStartTime
+    }
+  }
+
+  return updatedClips
+})
 
 function setTimelineClipRef(el: any, clipId: string) {
   if (el && el instanceof HTMLElement) {
@@ -941,6 +1021,17 @@ watch(
   { immediate: true }
 )
 
+// Sync localClips with props.clips
+watch(
+  () => props.clips,
+  (newClips) => {
+    if (newClips) {
+      localClips.value = [...newClips]
+    }
+  },
+  { immediate: true, deep: true }
+)
+
 // Handle scroll events to update global playhead position
 function handleScroll() {
   updateGlobalPlayheadPosition()
@@ -952,6 +1043,8 @@ function handleGlobalMouseMove(event: MouseEvent) {
     onPanMove(event)
   } else if (isDragging.value) {
     onDragMove(event)
+  } else if (isDraggingSegment.value) {
+    onSegmentMouseMove(event)
   } else {
     // Check if we're still over the timeline area
     const container = timelineScrollContainer.value
@@ -971,6 +1064,8 @@ function handleGlobalMouseMove(event: MouseEvent) {
 function handleGlobalMouseUp() {
   if (isDragging.value) {
     onDragEnd()
+  } else if (isDraggingSegment.value) {
+    onSegmentMouseUp()
   } else {
     onPanEnd()
   }
@@ -1067,6 +1162,247 @@ function generateClipGradient(runColor: string | undefined) {
     hoverBackground: `linear-gradient(to right, ${hoverBgColor}, ${hexToDarkerHex(color, 0.7)})`
   }
 }
+
+// Get display time for segment
+function getSegmentDisplayTime(segment: ClipSegment, type: 'start' | 'end'): number {
+  return type === 'start' ? segment.start_time : segment.end_time
+}
+
+// Calculate movement constraints for a segment
+async function calculateMovementConstraints(clipId: string, segmentIndex: number): Promise<void> {
+  try {
+    const adjacent = await getAdjacentClipSegments(clipId, segmentIndex)
+
+    let minStartTime = 0
+    let maxEndTime = props.duration || Infinity
+
+    // Can't go past previous segment's end time
+    if (adjacent.previous) {
+      minStartTime = adjacent.previous.end_time
+      console.log('[Timeline] Previous segment constraint:', {
+        previousEnd: adjacent.previous.end_time.toFixed(2),
+        segmentIndex
+      })
+    }
+
+    // Can't go past next segment's start time
+    if (adjacent.next) {
+      maxEndTime = adjacent.next.start_time
+      console.log('[Timeline] Next segment constraint:', {
+        nextStart: adjacent.next.start_time.toFixed(2),
+        segmentIndex
+      })
+    }
+
+    // Get original duration from the dragged segment info
+    const originalDuration = draggedSegmentInfo.value?.originalEndTime - draggedSegmentInfo.value?.originalStartTime || 0
+    console.log('[Timeline] Duration preservation constraint:', {
+      originalDuration: originalDuration.toFixed(2),
+      minStartTime: minStartTime.toFixed(2),
+      initialMaxEndTime: maxEndTime.toFixed(2),
+      maxPossibleWithMinStart: (minStartTime + originalDuration).toFixed(2)
+    })
+
+    // IMPORTANT: Ensure we have enough space for the original duration
+    // If the maxEndTime doesn't allow the original duration, we need to adjust it
+    if (maxEndTime < minStartTime + originalDuration) {
+      console.log('[Timeline] Constraint too small, adjusting maxEndTime:', {
+        oldMaxEndTime: maxEndTime.toFixed(2),
+        newMaxEndTime: (minStartTime + originalDuration).toFixed(2)
+      })
+      maxEndTime = minStartTime + originalDuration
+    }
+
+    movementConstraints.value = {
+      minStartTime,
+      maxEndTime
+    }
+
+    console.log('[Timeline] Final constraints:', {
+      minStartTime: minStartTime.toFixed(2),
+      maxEndTime: maxEndTime.toFixed(2),
+      availableSpace: (maxEndTime - minStartTime).toFixed(2)
+    })
+  } catch (error) {
+    console.error('Error calculating movement constraints:', error)
+    movementConstraints.value = {
+      minStartTime: 0,
+      maxEndTime: props.duration || Infinity
+    }
+  }
+}
+
+// Handle mouse down on segment
+async function onSegmentMouseDown(event: MouseEvent, clipId: string, segmentIndex: number, segment: ClipSegment) {
+  // Only start drag with left mouse button
+  if (event.button !== 0) return
+
+  // Prevent text selection during drag
+  event.preventDefault()
+  event.stopPropagation()
+
+  // Initialize drag state
+  isDraggingSegment.value = true
+  draggedSegmentInfo.value = {
+    clipId,
+    segmentIndex,
+    originalStartTime: segment.start_time,
+    originalEndTime: segment.end_time,
+    originalMouseX: event.clientX,
+    dragStartTime: Date.now(),
+    currentStartTime: segment.start_time,
+    currentEndTime: segment.end_time
+  }
+
+  // Calculate movement constraints
+  await calculateMovementConstraints(clipId, segmentIndex)
+
+  // Change cursor globally
+  document.body.style.cursor = 'grabbing'
+
+  // Hide tooltip during drag
+  showTimelineTooltip.value = false
+}
+
+// Handle mouse move for segment dragging
+function onSegmentMouseMove(event: MouseEvent) {
+  if (!isDraggingSegment.value || !draggedSegmentInfo.value || !props.duration) return
+
+  const deltaX = event.clientX - draggedSegmentInfo.value.originalMouseX
+  const timelineWidth = timelineScrollContainer.value?.clientWidth || 1
+  const timeDelta = (deltaX / timelineWidth) * props.duration / zoomLevel.value
+
+  let newStartTime = draggedSegmentInfo.value.originalStartTime + timeDelta
+  let newEndTime = draggedSegmentInfo.value.originalEndTime + timeDelta
+
+  // Preserve original duration
+  const originalDuration = draggedSegmentInfo.value.originalEndTime - draggedSegmentInfo.value.originalStartTime
+
+  console.log('[Timeline] Drag Debug:', {
+    deltaX,
+    timeDelta,
+    originalDuration,
+    originalRange: `${draggedSegmentInfo.value.originalStartTime.toFixed(2)}-${draggedSegmentInfo.value.originalEndTime.toFixed(2)}`,
+    initialNewRange: `${newStartTime.toFixed(2)}-${newEndTime.toFixed(2)}`,
+    constraints: movementConstraints.value,
+    duration: props.duration
+  })
+
+  // Apply movement constraints
+  newStartTime = Math.max(movementConstraints.value.minStartTime, newStartTime)
+  newEndTime = Math.min(movementConstraints.value.maxEndTime, newEndTime)
+
+  // Ensure minimum duration (1 second) and preserve original duration when possible
+  const actualDuration = newEndTime - newStartTime
+
+  if (actualDuration < originalDuration) {
+    // Segment is being compressed, adjust to maintain original duration if possible
+    if (timeDelta > 0) {
+      // Moving right, extend end time to maintain duration
+      newEndTime = Math.min(newStartTime + originalDuration, movementConstraints.value.maxEndTime)
+    } else {
+      // Moving left, extend start time to maintain duration
+      newStartTime = Math.max(newEndTime - originalDuration, movementConstraints.value.minStartTime)
+    }
+  }
+
+  // Ensure we don't exceed video bounds
+  if (newStartTime < 0) {
+    newStartTime = 0
+    newEndTime = Math.min(originalDuration, props.duration)
+  }
+  if (newEndTime > props.duration) {
+    newEndTime = props.duration
+    newStartTime = Math.max(props.duration - originalDuration, 0)
+  }
+
+  // Final duration check - preserve original duration if possible, only compress as last resort
+  const finalDuration = newEndTime - newStartTime
+  if (finalDuration < 1.0) {
+    // Only compress to 1 second if original duration is also very small
+    if (originalDuration < 1.0) {
+      const centerTime = (newStartTime + newEndTime) / 2
+      newStartTime = Math.max(0, centerTime - 0.5)
+      newEndTime = Math.min(props.duration, centerTime + 0.5)
+    } else {
+      // Try to preserve as much of the original duration as possible
+      const centerTime = (newStartTime + newEndTime) / 2
+      const maxPossibleDuration = Math.min(
+        props.duration - centerTime * 2, // Distance to both ends
+        centerTime * 2, // Distance from start
+        originalDuration
+      )
+      const adjustedDuration = Math.max(1.0, maxPossibleDuration)
+      newStartTime = Math.max(0, centerTime - adjustedDuration / 2)
+      newEndTime = Math.min(props.duration, centerTime + adjustedDuration / 2)
+    }
+  }
+
+  console.log('[Timeline] Final result:', {
+    finalRange: `${newStartTime.toFixed(2)}-${newEndTime.toFixed(2)}`,
+    finalDuration: (newEndTime - newStartTime).toFixed(2),
+    originalDuration: originalDuration.toFixed(2)
+  })
+
+  // Update drag state
+  draggedSegmentInfo.value.currentStartTime = newStartTime
+  draggedSegmentInfo.value.currentEndTime = newEndTime
+}
+
+// Handle mouse up to finish segment dragging
+async function onSegmentMouseUp() {
+  if (!isDraggingSegment.value || !draggedSegmentInfo.value) return
+
+  const { clipId, segmentIndex, currentStartTime, currentEndTime, originalStartTime, originalEndTime } = draggedSegmentInfo.value
+
+  // Reset drag state
+  isDraggingSegment.value = false
+  draggedSegmentInfo.value = null
+  document.body.style.cursor = ''
+
+  // Only update if position actually changed
+  if (Math.abs(currentStartTime - originalStartTime) > 0.1 || Math.abs(currentEndTime - originalEndTime) > 0.1) {
+    try {
+      // Update database
+      await updateClipSegment(clipId, segmentIndex, currentStartTime, currentEndTime)
+
+      // Realign transcript if needed
+      await realignClipSegment(clipId, segmentIndex, originalStartTime, originalEndTime, currentStartTime, currentEndTime)
+
+      // Update local clip data for immediate visual feedback
+      const clipIndex = localClips.value.findIndex(clip => clip.id === clipId)
+      if (clipIndex !== -1 && localClips.value[clipIndex].segments[segmentIndex]) {
+        // Create a new clips array to trigger reactivity
+        const updatedClips = [...localClips.value]
+        updatedClips[clipIndex] = {
+          ...updatedClips[clipIndex],
+          segments: [...updatedClips[clipIndex].segments]
+        }
+        updatedClips[clipIndex].segments[segmentIndex] = {
+          ...updatedClips[clipIndex].segments[segmentIndex],
+          start_time: currentStartTime,
+          end_time: currentEndTime,
+          duration: currentEndTime - currentStartTime
+        }
+
+        // Update localClips to trigger reactivity
+        localClips.value = updatedClips
+      }
+
+      // Emit update to parent
+      emit('segmentUpdated', clipId, segmentIndex, currentStartTime, currentEndTime)
+
+      console.log(`[Timeline] Segment ${segmentIndex} of clip ${clipId} updated:`, {
+        from: `${formatDuration(originalStartTime)} - ${formatDuration(originalEndTime)}`,
+        to: `${formatDuration(currentStartTime)} - ${formatDuration(currentEndTime)}`
+      })
+    } catch (error) {
+      console.error('[Timeline] Error updating segment:', error)
+      // Could show error notification here
+    }
+  }
+}
+
 </script>
 
 <style scoped>
@@ -1446,5 +1782,80 @@ function generateClipGradient(runColor: string | undefined) {
 
 .slider-zoom:active::-moz-range-thumb {
   transform: scale(1.1);
+}
+
+/* Segment dragging styles */
+.clip-segment.dragging {
+  z-index: 30 !important;
+  transform: scale(1.02);
+  box-shadow: 0 8px 25px rgba(59, 130, 246, 0.5);
+  border-color: rgb(59, 130, 246) !important;
+  border-width: 2px !important;
+}
+
+.clip-segment.dragging::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(45deg, rgba(59, 130, 246, 0.3), rgba(147, 51, 234, 0.3));
+  border-radius: 6px;
+  z-index: -1;
+  animation: pulse-drag 2s ease-in-out infinite;
+}
+
+@keyframes pulse-drag {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.02);
+  }
+}
+
+/* Collision warning styles */
+.clip-segment.collision-previous {
+  border-left: 3px solid #ef4444 !important;
+  box-shadow: -4px 0 12px rgba(239, 68, 68, 0.4);
+}
+
+.clip-segment.collision-next {
+  border-right: 3px solid #ef4444 !important;
+  box-shadow: 4px 0 12px rgba(239, 68, 68, 0.4);
+}
+
+/* Enhanced cursor states */
+.clip-segment:not(.dragging):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+.clip-segment.dragging {
+  cursor: grabbing !important;
+}
+
+/* Prevent text selection during drag */
+.timeline-content-wrapper.dragging-segment {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+/* Snap indicator */
+.snap-indicator {
+  position: absolute;
+  width: 2px;
+  height: 100%;
+  background: #3b82f6;
+  z-index: 25;
+  pointer-events: none;
+  animation: snap-pulse 1s ease-in-out infinite;
+}
+
+@keyframes snap-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
 }
 </style>
