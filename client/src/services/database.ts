@@ -1274,11 +1274,63 @@ export async function realignClipSegment(
   const realignmentNote = `Realigned clip segment from ${originalStartTime.toFixed(2)}-${originalEndTime.toFixed(2)} to ${newStartTime.toFixed(2)}-${newEndTime.toFixed(2)} (shift: ${timeShift.toFixed(2)}s, scale: ${timeScale.toFixed(3)}x)`
   console.log('[Database] Clip segment realignment:', realignmentNote)
 
-  // In a full implementation, you would:
-  // 1. Parse the segment.transcript to extract word-level timestamps if available
-  // 2. Apply the timeShift and timeScale to each word's timestamp
-  // 3. Update the segment transcript with realigned word timing data
-  // For now, the segment timing is updated in updateClipSegment
+  // Get the segment data
+  const segment = segments[segmentIndex]
+  if (!segment.transcript) {
+    console.log('[Database] No transcript data in segment, skipping word-level realignment')
+    return
+  }
+
+  try {
+    // Parse the transcript to extract word-level timing if available
+    let realignedTranscript = segment.transcript
+
+    // Check if transcript contains word-level timestamps (JSON format)
+    if (segment.transcript.trim().startsWith('{') || segment.transcript.trim().startsWith('[')) {
+      try {
+        const transcriptData = JSON.parse(segment.transcript)
+
+        // Handle different transcript formats
+        if (transcriptData.words && Array.isArray(transcriptData.words)) {
+          // Format: { words: [{word: "hello", start: 0.0, end: 0.5}, ...] }
+          transcriptData.words.forEach((word: any) => {
+            if (word.start !== undefined) word.start = word.start * timeScale + timeShift
+            if (word.end !== undefined) word.end = word.end * timeScale + timeShift
+          })
+          realignedTranscript = JSON.stringify(transcriptData)
+        } else if (transcriptData.segments && Array.isArray(transcriptData.segments)) {
+          // Format: { segments: [{start: 0.0, end: 2.0, text: "hello world"}] }
+          transcriptData.segments.forEach((seg: any) => {
+            if (seg.start !== undefined) seg.start = seg.start * timeScale + timeShift
+            if (seg.end !== undefined) seg.end = seg.end * timeScale + timeShift
+          })
+          realignedTranscript = JSON.stringify(transcriptData)
+        } else if (Array.isArray(transcriptData)) {
+          // Format: [{word: "hello", start: 0.0, end: 0.5}, ...]
+          transcriptData.forEach((word: any) => {
+            if (word.start !== undefined) word.start = word.start * timeScale + timeShift
+            if (word.end !== undefined) word.end = word.end * timeScale + timeShift
+          })
+          realignedTranscript = JSON.stringify(transcriptData)
+        }
+      } catch (parseError) {
+        console.log('[Database] Transcript is not valid JSON, treating as plain text')
+        // Keep as plain text, no word-level timing to adjust
+      }
+    }
+
+    // Update the segment with realigned transcript
+    await db.execute(
+      'UPDATE clip_segments SET transcript = ? WHERE clip_version_id = ? AND segment_index = ?',
+      [realignedTranscript, versionId, segmentIndex]
+    )
+
+    console.log('[Database] Updated segment transcript with realigned timestamps')
+
+  } catch (error) {
+    console.error('[Database] Failed to realign segment transcript:', error)
+    // Continue without transcript realignment - segment timing is still updated
+  }
 }
 
 export async function getClipVersionsByClipId(clipId: string): Promise<ClipVersion[]> {
