@@ -174,6 +174,8 @@
                 :class="[
                   isDraggingSegment && draggedSegmentInfo?.clipId === clip.id && draggedSegmentInfo?.segmentIndex === segIndex
                     ? 'cursor-grabbing z-30 shadow-2xl border-2 border-blue-400 dragging'
+                    : isResizingSegment && resizeHandleInfo?.clipId === clip.id && resizeHandleInfo?.segmentIndex === segIndex
+                    ? 'cursor-ew-resize z-30 shadow-2xl border-2 border-green-400 resizing'
                     : 'cursor-grab hover:cursor-grab transition-all duration-200 ease-out',
                   clip.run_number ? `run-${clip.run_number}` : '',
                   props.currentlyPlayingClipId === clip.id ? 'shadow-lg z-20' :
@@ -197,7 +199,7 @@
                 :title="`${clip.title} - ${formatDuration(getSegmentDisplayTime(segment, 'start'))} to ${formatDuration(getSegmentDisplayTime(segment, 'end'))}${clip.run_number ? ` (Run ${clip.run_number})` : ''}`"
                 @mouseenter="hoveredSegmentKey = `${clip.id}_${segIndex}`"
                 @mouseleave="hoveredSegmentKey = null"
-                @mousedown="onSegmentMouseDown($event, clip.id, segIndex, segment)"
+                @mousedown="!isResizingSegment && onSegmentMouseDown($event, clip.id, segIndex, segment)"
               >
                 <span class="text-xs text-white/90 font-medium truncate px-1 drop-shadow-sm">{{ clip.title }}</span>
 
@@ -205,6 +207,7 @@
                 <div
                   class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 hover:w-2 group-hover:opacity-100 group-hover:pointer-events-auto"
                   :class="{ 'opacity-100 pointer-events-auto': hoveredSegmentKey === `${clip.id}_${segIndex}` }"
+                  @mousedown="onResizeMouseDown($event, clip.id, segIndex, segment, 'left')"
                 >
                   <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
                 </div>
@@ -213,6 +216,7 @@
                 <div
                   class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 hover:w-2 group-hover:opacity-100 group-hover:pointer-events-auto"
                   :class="{ 'opacity-100 pointer-events-auto': hoveredSegmentKey === `${clip.id}_${segIndex}` }"
+                  @mousedown="onResizeMouseDown($event, clip.id, segIndex, segment, 'right')"
                 >
                   <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
                 </div>
@@ -311,6 +315,28 @@
               <div class="text-xs opacity-75 mt-1">Duration: {{ formatDuration(draggedSegmentInfo.currentEndTime - draggedSegmentInfo.currentStartTime) }}</div>
             </div>
             <div class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-1.5 h-1.5 bg-blue-600/90 border-r border-b border-white/20"></div>
+          </div>
+        </div>
+
+        <!-- Segment Resize Tooltip -->
+        <div
+          v-if="isResizingSegment && resizeHandleInfo"
+          class="fixed pointer-events-none z-50 transition-all duration-75"
+          :style="{
+            left: `${resizeHandleInfo.tooltipX || resizeHandleInfo.originalMouseX}px`,
+            top: `${resizeHandleInfo.tooltipY || timelineBounds.top - 60}px`,
+            transform: 'translateX(-50%)'
+          }"
+        >
+          <div class="bg-green-600/90 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-md font-medium shadow-lg border border-white/20">
+            <div class="text-center">
+              <div class="font-semibold mb-1">
+                {{ resizeHandleInfo.handleType === 'left' ? 'Resizing Start' : 'Resizing End' }}
+              </div>
+              <div>{{ formatDuration(resizeHandleInfo.currentStartTime) }} - {{ formatDuration(resizeHandleInfo.currentEndTime) }}</div>
+              <div class="text-xs opacity-75 mt-1">Duration: {{ formatDuration(resizeHandleInfo.currentEndTime - resizeHandleInfo.currentStartTime) }}</div>
+            </div>
+            <div class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-1.5 h-1.5 bg-green-600/90 border-r border-b border-white/20"></div>
           </div>
         </div>
     </div>
@@ -550,6 +576,24 @@ const draggedSegmentInfo = ref<{
   tooltipY?: number
 } | null>(null)
 
+// Segment resizing state
+const isResizingSegment = ref(false)
+const resizeHandleInfo = ref<{
+  clipId: string
+  segmentIndex: number
+  handleType: 'left' | 'right'
+  originalStartTime: number
+  originalEndTime: number
+  originalMouseX: number
+  resizeStartTime: number
+  currentStartTime: number
+  currentEndTime: number
+  minStartTime: number
+  maxEndTime: number
+  tooltipX?: number
+  tooltipY?: number
+} | null>(null)
+
 // Movement constraints
 const movementConstraints = ref<{
   minStartTime: number
@@ -562,31 +606,53 @@ const movementConstraints = ref<{
 // Local reactive copy of clips for immediate visual updates
 const localClips = ref(props.clips ? [...props.clips] : [])
 
-// Computed clips that updates during dragging
+// Computed clips that updates during dragging or resizing
 const displayClips = computed(() => {
-  if (!isDraggingSegment.value || !draggedSegmentInfo.value) {
-    return localClips.value
+  // Handle dragging
+  if (isDraggingSegment.value && draggedSegmentInfo.value) {
+    const updatedClips = [...localClips.value]
+    const { clipId, segmentIndex, currentStartTime, currentEndTime } = draggedSegmentInfo.value
+
+    const clipIndex = updatedClips.findIndex(clip => clip.id === clipId)
+    if (clipIndex !== -1 && updatedClips[clipIndex].segments[segmentIndex]) {
+      updatedClips[clipIndex] = {
+        ...updatedClips[clipIndex],
+        segments: [...updatedClips[clipIndex].segments]
+      }
+      updatedClips[clipIndex].segments[segmentIndex] = {
+        ...updatedClips[clipIndex].segments[segmentIndex],
+        start_time: currentStartTime,
+        end_time: currentEndTime,
+        duration: currentEndTime - currentStartTime
+      }
+    }
+
+    return updatedClips
   }
 
-  // Create a copy with the dragged segment's position updated
-  const updatedClips = [...localClips.value]
-  const { clipId, segmentIndex, currentStartTime, currentEndTime } = draggedSegmentInfo.value
+  // Handle resizing
+  if (isResizingSegment.value && resizeHandleInfo.value) {
+    const updatedClips = [...localClips.value]
+    const { clipId, segmentIndex, currentStartTime, currentEndTime } = resizeHandleInfo.value
 
-  const clipIndex = updatedClips.findIndex(clip => clip.id === clipId)
-  if (clipIndex !== -1 && updatedClips[clipIndex].segments[segmentIndex]) {
-    updatedClips[clipIndex] = {
-      ...updatedClips[clipIndex],
-      segments: [...updatedClips[clipIndex].segments]
+    const clipIndex = updatedClips.findIndex(clip => clip.id === clipId)
+    if (clipIndex !== -1 && updatedClips[clipIndex].segments[segmentIndex]) {
+      updatedClips[clipIndex] = {
+        ...updatedClips[clipIndex],
+        segments: [...updatedClips[clipIndex].segments]
+      }
+      updatedClips[clipIndex].segments[segmentIndex] = {
+        ...updatedClips[clipIndex].segments[segmentIndex],
+        start_time: currentStartTime,
+        end_time: currentEndTime,
+        duration: currentEndTime - currentStartTime
+      }
     }
-    updatedClips[clipIndex].segments[segmentIndex] = {
-      ...updatedClips[clipIndex].segments[segmentIndex],
-      start_time: currentStartTime,
-      end_time: currentEndTime,
-      duration: currentEndTime - currentStartTime
-    }
+
+    return updatedClips
   }
 
-  return updatedClips
+  return localClips.value
 })
 
 function setTimelineClipRef(el: any, clipId: string) {
@@ -860,8 +926,8 @@ function onPanEnd() {
 
 // Drag selection handlers
 function onDragStart(event: MouseEvent) {
-  // Only start drag with left mouse button and not on clips
-  if (event.button !== 0 || event.target instanceof HTMLElement && event.target.closest('.clip-segment')) return
+  // Only start drag with left mouse button and not on clips, and not when resizing
+  if (event.button !== 0 || event.target instanceof HTMLElement && event.target.closest('.clip-segment') || isResizingSegment.value) return
 
   const container = timelineScrollContainer.value
   if (!container) return
@@ -1147,6 +1213,8 @@ function handleGlobalMouseMove(event: MouseEvent) {
     onDragMove(event)
   } else if (isDraggingSegment.value) {
     onSegmentMouseMove(event)
+  } else if (isResizingSegment.value) {
+    onResizeMouseMove(event)
   } else {
     // Check if we're still over the timeline area
     const container = timelineScrollContainer.value
@@ -1168,6 +1236,8 @@ function handleGlobalMouseUp() {
     onDragEnd()
   } else if (isDraggingSegment.value) {
     onSegmentMouseUp()
+  } else if (isResizingSegment.value) {
+    onResizeMouseUp()
   } else {
     onPanEnd()
   }
@@ -1387,6 +1457,52 @@ async function calculateMovementConstraints(clipId: string, segmentIndex: number
   }
 }
 
+// Calculate resize constraints for a segment
+async function calculateResizeConstraints(clipId: string, segmentIndex: number, handleType: 'left' | 'right'): Promise<{
+  minStartTime: number
+  maxEndTime: number
+}> {
+  try {
+    const adjacent = await getAdjacentClipSegments(clipId, segmentIndex)
+
+    let minStartTime = 0
+    let maxEndTime = props.duration || Infinity
+
+    // Can't go past previous segment's end time
+    if (adjacent.previous) {
+      minStartTime = adjacent.previous.end_time
+    }
+
+    // Can't go past next segment's start time
+    if (adjacent.next) {
+      maxEndTime = adjacent.next.start_time
+    }
+
+    // For left handle, we need to consider the current segment's end_time
+    // For right handle, we need to consider the current segment's start_time
+    const currentSegment = localClips.value
+      .find(clip => clip.id === clipId)?.segments[segmentIndex]
+
+    if (currentSegment) {
+      if (handleType === 'left') {
+        // Left handle can't go past current end_time - minimum duration
+        maxEndTime = Math.min(maxEndTime, currentSegment.end_time - 0.5) // Minimum 0.5 second duration
+      } else {
+        // Right handle can't go before current start_time + minimum duration
+        minStartTime = Math.max(minStartTime, currentSegment.start_time + 0.5) // Minimum 0.5 second duration
+      }
+    }
+
+    return { minStartTime, maxEndTime }
+  } catch (error) {
+    console.error('Error calculating resize constraints:', error)
+    return {
+      minStartTime: 0,
+      maxEndTime: props.duration || Infinity
+    }
+  }
+}
+
 // Handle mouse down on segment
 async function onSegmentMouseDown(event: MouseEvent, clipId: string, segmentIndex: number, segment: ClipSegment) {
   // Only start drag with left mouse button
@@ -1540,6 +1656,152 @@ async function onSegmentMouseUp() {
       emit('segmentUpdated', clipId, segmentIndex, currentStartTime, currentEndTime)
     } catch (error) {
       console.error('[Timeline] Error in final segment update:', error)
+    }
+  }
+}
+
+// Handle mouse down on resize handle
+async function onResizeMouseDown(event: MouseEvent, clipId: string, segmentIndex: number, segment: ClipSegment, handleType: 'left' | 'right') {
+  // Only start resize with left mouse button
+  if (event.button !== 0) return
+
+  // Prevent text selection and stop event propagation
+  event.preventDefault()
+  event.stopPropagation()
+
+  // Calculate resize constraints
+  const constraints = await calculateResizeConstraints(clipId, segmentIndex, handleType)
+
+  // Initialize resize state
+  isResizingSegment.value = true
+  resizeHandleInfo.value = {
+    clipId,
+    segmentIndex,
+    handleType,
+    originalStartTime: segment.start_time,
+    originalEndTime: segment.end_time,
+    originalMouseX: event.clientX,
+    resizeStartTime: Date.now(),
+    currentStartTime: segment.start_time,
+    currentEndTime: segment.end_time,
+    minStartTime: constraints.minStartTime,
+    maxEndTime: constraints.maxEndTime
+  }
+
+  // Change cursor globally
+  document.body.style.cursor = 'ew-resize'
+
+  // Hide tooltip during resize
+  showTimelineTooltip.value = false
+
+  // Initialize tooltip position
+  updateResizeTooltip()
+}
+
+// Update resize tooltip position to follow the handle
+function updateResizeTooltip() {
+  if (!isResizingSegment.value || !resizeHandleInfo.value || !timelineScrollContainer.value) return
+
+  const { currentStartTime, currentEndTime, handleType } = resizeHandleInfo.value
+  const container = timelineScrollContainer.value
+  const containerRect = container.getBoundingClientRect()
+  const scrollLeft = container.scrollLeft
+
+  // Calculate the position of the handle being dragged
+  const handleTime = handleType === 'left' ? currentStartTime : currentEndTime
+  const timePercent = props.duration ? handleTime / props.duration : 0
+
+  // Get the timeline content wrapper to account for zoom
+  const timelineContent = container.querySelector('.timeline-content-wrapper') as HTMLElement
+  if (!timelineContent) return
+
+  const contentWidth = timelineContent.offsetWidth
+  const handleX = contentWidth * timePercent
+
+  // Calculate the viewport position (account for scroll and container offset)
+  const viewportX = containerRect.left + handleX - scrollLeft
+
+  // Update tooltip position
+  resizeHandleInfo.value.tooltipX = viewportX
+  resizeHandleInfo.value.tooltipY = containerRect.top - 60
+}
+
+// Handle mouse move for segment resizing
+function onResizeMouseMove(event: MouseEvent) {
+  if (!isResizingSegment.value || !resizeHandleInfo.value || !props.duration) return
+
+  const { clipId, segmentIndex, handleType, originalStartTime, originalEndTime } = resizeHandleInfo.value
+  const deltaX = event.clientX - resizeHandleInfo.value.originalMouseX
+  const timelineWidth = timelineScrollContainer.value?.clientWidth || 1
+  const timeDelta = (deltaX / timelineWidth) * props.duration / zoomLevel.value
+
+  let newStartTime = originalStartTime
+  let newEndTime = originalEndTime
+
+  if (handleType === 'left') {
+    // Resize left handle: change start_time, keep end_time fixed
+    newStartTime = originalStartTime + timeDelta
+
+    // Apply constraints
+    newStartTime = Math.max(resizeHandleInfo.value.minStartTime, newStartTime)
+    newStartTime = Math.min(resizeHandleInfo.value.maxEndTime, newStartTime)
+
+    // Ensure minimum duration (0.5 seconds)
+    if (newEndTime - newStartTime < 0.5) {
+      newStartTime = newEndTime - 0.5
+    }
+  } else {
+    // Resize right handle: change end_time, keep start_time fixed
+    newEndTime = originalEndTime + timeDelta
+
+    // Apply constraints
+    newEndTime = Math.max(resizeHandleInfo.value.minStartTime, newEndTime)
+    newEndTime = Math.min(resizeHandleInfo.value.maxEndTime, newEndTime)
+
+    // Ensure minimum duration (0.5 seconds)
+    if (newEndTime - newStartTime < 0.5) {
+      newEndTime = newStartTime + 0.5
+    }
+  }
+
+  // Update resize state
+  resizeHandleInfo.value.currentStartTime = newStartTime
+  resizeHandleInfo.value.currentEndTime = newEndTime
+
+  // Update tooltip position to follow the handle
+  updateResizeTooltip()
+
+  // Use debounced update for smoother performance during resize
+  debouncedUpdateClip(clipId, segmentIndex, newStartTime, newEndTime)
+}
+
+// Handle mouse up to finish segment resizing
+async function onResizeMouseUp() {
+  if (!isResizingSegment.value || !resizeHandleInfo.value) return
+
+  const { clipId, segmentIndex, currentStartTime, currentEndTime, originalStartTime, originalEndTime } = resizeHandleInfo.value
+
+  // Cancel any pending debounced updates to prevent ghost flashing
+  debouncedUpdateClip.cancel()
+
+  // Reset resize state
+  isResizingSegment.value = false
+  resizeHandleInfo.value = null
+  document.body.style.cursor = ''
+
+  // Final database update and transcript realignment (only if significant change)
+  if (Math.abs(currentStartTime - originalStartTime) > 0.1 || Math.abs(currentEndTime - originalEndTime) > 0.1) {
+    try {
+      // Final immediate database update to ensure latest state is saved
+      await updateClipSegment(clipId, segmentIndex, currentStartTime, currentEndTime)
+
+      // Realign transcript if needed
+      await realignClipSegment(clipId, segmentIndex, originalStartTime, originalEndTime, currentStartTime, currentEndTime)
+
+      // Emit update to parent
+      emit('segmentUpdated', clipId, segmentIndex, currentStartTime, currentEndTime)
+    } catch (error) {
+      console.error('[Timeline] Error in final segment resize update:', error)
     }
   }
 }
@@ -1701,6 +1963,11 @@ async function onSegmentMouseUp() {
 
 /* No transitions during drag for smoother performance */
 .clip-segment.dragging {
+  transition: none !important;
+}
+
+/* No transitions during resize for smoother performance */
+.clip-segment.resizing {
   transition: none !important;
 }
 
@@ -1940,6 +2207,15 @@ async function onSegmentMouseUp() {
   border-width: 2px !important;
 }
 
+/* Segment resizing styles */
+.clip-segment.resizing {
+  z-index: 30 !important;
+  transform: scale(1.01);
+  box-shadow: 0 6px 20px rgba(34, 197, 94, 0.4);
+  border-color: rgb(34, 197, 94) !important;
+  border-width: 2px !important;
+}
+
 .clip-segment.dragging::before {
   content: '';
   position: absolute;
@@ -1976,6 +2252,13 @@ async function onSegmentMouseUp() {
 .clip-segment:not(.dragging):hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+/* Active resize handle styling */
+.clip-segment.resizing .resize-handle {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  background: rgba(255, 255, 255, 0.8) !important;
 }
 
 .clip-segment.dragging {
