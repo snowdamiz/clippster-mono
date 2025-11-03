@@ -527,6 +527,7 @@ import {
   type ClipSegment
 } from '../utils/timelineUtils'
 import { useTranscriptData } from '../composables/useTranscriptData'
+import { useTimelineInteraction } from '../composables/useTimelineInteraction'
 
 interface Clip {
   id: string
@@ -616,11 +617,45 @@ const timelineScrollContainer = ref<HTMLElement | null>(null)
 const timelineClipElements = ref<Map<string, HTMLElement>>(new Map())
 const zoomSlider = ref<HTMLInputElement | null>(null)
 
-// Zoom state
-const zoomLevel = ref(1.0) // 1.0 = normal zoom, >1.0 = zoomed in
-const minZoom = 1.0
-const maxZoom = 10.0
-const zoomStep = 0.1
+// Use timeline interaction composable
+const {
+  zoomState,
+  panState,
+  dragSelectionState,
+  timelineBounds,
+  setZoomLevel,
+  handleRulerWheel,
+  updateSliderProgress,
+  startPan,
+  movePan,
+  endPan,
+  startDragSelection,
+  moveDragSelection,
+  endDragSelection,
+  updateTimelineBounds
+} = useTimelineInteraction(
+  timelineScrollContainer,
+  computed(() => props.duration),
+  {
+    onZoomChange: (zoomLevel) => emit('zoomChanged', zoomLevel),
+    onDragSelection: (startPercent, endPercent) => {
+      // Handle drag selection zoom if needed
+    }
+  }
+)
+
+// Zoom, pan, and drag selection state is now managed by useTimelineInteraction composable
+const zoomLevel = computed(() => zoomState.value.zoomLevel)
+const minZoom = computed(() => zoomState.value.minZoom)
+const maxZoom = computed(() => zoomState.value.maxZoom)
+const zoomStep = computed(() => zoomState.value.zoomStep)
+
+const isPanning = computed(() => panState.value.isPanning)
+const isDragging = computed(() => dragSelectionState.value.isDragging)
+const dragStartX = computed(() => dragSelectionState.value.dragStartX)
+const dragEndX = computed(() => dragSelectionState.value.dragEndX)
+const dragStartPercent = computed(() => dragSelectionState.value.dragStartPercent)
+const dragEndPercent = computed(() => dragSelectionState.value.dragEndPercent)
 
 // Debounced database update function for smoother performance
 const debouncedUpdateClip = debounce(async (clipId: string, segmentIndex: number, newStartTime: number, newEndTime: number) => {
@@ -649,22 +684,10 @@ const debouncedUpdateClip = debounce(async (clipId: string, segmentIndex: number
   }
 }, 100) // 100ms debounce for smoother performance
 
-// Panning state
-const isPanning = ref(false)
-const panStartX = ref(0)
-const panScrollLeft = ref(0)
-
-// Drag selection state for zoom
-const isDragging = ref(false)
-const dragStartX = ref(0)
-const dragEndX = ref(0)
-const dragStartPercent = ref(0)
-const dragEndPercent = ref(0)
-
 // Timeline hover line state
 const showTimelineHoverLine = ref(false)
 const timelineHoverLinePosition = ref(0) // X position in pixels relative to timeline container
-const timelineBounds = ref({ top: 0, bottom: 0 }) // Timeline container bounds
+// timelineBounds is now managed by useTimelineInteraction composable
 
 // Custom tooltip state
 const showTimelineTooltip = ref(false)
@@ -892,235 +915,52 @@ function onTimelineClipClick(clipId: string) {
   emit('scrollToClipsPanel', clipId)
 }
 
-// Zoom handler for timeline ruler
-function onRulerWheel(event: WheelEvent) {
-  event.preventDefault()
-
-  // Determine zoom direction
-  const delta = event.deltaY > 0 ? -zoomStep : zoomStep
-
-  // Calculate new zoom level
-  const newZoom = Math.max(minZoom, Math.min(maxZoom, zoomLevel.value + delta))
-
-  // Get current hover position as a percentage of the visible timeline
-  const container = timelineScrollContainer.value
-  const timelineContent = container?.querySelector('.timeline-content-wrapper')
-  if (container && timelineContent) {
-    const contentRect = timelineContent.getBoundingClientRect()
-    const containerRect = container.getBoundingClientRect()
-    const relativeX = event.clientX - containerRect.left
-
-    // Calculate the timeline position being hovered over
-    const currentScrollLeft = container.scrollLeft
-    const currentContentWidth = contentRect.width
-    const hoveredTimelinePosition = currentScrollLeft + (relativeX)
-    const hoveredPercentOfContent = Math.max(0, Math.min(1, hoveredTimelinePosition / currentContentWidth))
-
-    // Update zoom level
-    zoomLevel.value = newZoom
-
-    // Wait for DOM to update, then calculate new scroll position
-    nextTick(() => {
-      if (container) {
-        const newContentRect = timelineContent.getBoundingClientRect()
-        const newContentWidth = newContentRect.width
-
-        // Calculate new scroll position to keep the same content position under cursor
-        const newScrollLeft = (hoveredPercentOfContent * newContentWidth) - relativeX
-
-        // Apply smooth scrolling to new position
-        container.scrollLeft = Math.max(0, newScrollLeft)
-      }
-    })
-  } else {
-    // Fallback: just update zoom level
-    zoomLevel.value = newZoom
-  }
-
-  // Emit zoom change to parent
-  emit('zoomChanged', newZoom)
-}
+// Zoom, pan, and drag selection functions are now managed by useTimelineInteraction composable
 
 // Zoom slider change handler
 function onZoomSliderChange() {
   // Update CSS variable for filled track
-  updateSliderProgress()
+  updateSliderProgress(zoomSlider.value)
 
   // Emit zoom change to parent
   emit('zoomChanged', zoomLevel.value)
 }
 
-// Update slider progress background
-function updateSliderProgress() {
-  if (zoomSlider.value) {
-    const percentage = ((zoomLevel.value - minZoom) / (maxZoom - minZoom)) * 100
-    const background = `linear-gradient(to right,
-      rgba(255, 255, 255, 0.6) 0%,
-      rgba(255, 255, 255, 0.6) ${percentage}%,
-      rgba(255, 255, 255, 0.2) ${percentage}%,
-      rgba(255, 255, 255, 0.2) 100%)`
-    zoomSlider.value.style.background = background
-  }
+// Event handler wrappers that call composable functions
+function onRulerWheel(event: WheelEvent) {
+  handleRulerWheel(event)
 }
 
-// Panning handlers for timeline ruler
 function onPanStart(event: MouseEvent) {
-  // Only pan with left mouse button
-  if (event.button !== 0) return
-
-  isPanning.value = true
-  panStartX.value = event.clientX
-  panScrollLeft.value = timelineScrollContainer.value?.scrollLeft || 0
-
   // Hide tooltip when panning starts
   showTimelineTooltip.value = false
   clearTooltipData()
-
-  // Change cursor to indicate panning
-  document.body.style.cursor = 'grabbing'
-  event.preventDefault()
+  startPan(event)
 }
 
 function onPanMove(event: MouseEvent) {
-  if (!isPanning.value) return
-
-  event.preventDefault()
-
-  const deltaX = event.clientX - panStartX.value
-  const newScrollLeft = panScrollLeft.value - deltaX
-
-  if (timelineScrollContainer.value) {
-    timelineScrollContainer.value.scrollLeft = newScrollLeft
-  }
+  movePan(event)
 }
 
 function onPanEnd() {
-  if (isPanning.value) {
-    isPanning.value = false
-    // Reset cursor
-    document.body.style.cursor = ''
-  }
+  endPan()
 }
 
-// Drag selection handlers
 function onDragStart(event: MouseEvent) {
-  // Only start drag with left mouse button and not on clips, and not when resizing
-  if (event.button !== 0 || event.target instanceof HTMLElement && event.target.closest('.clip-segment') || isResizingSegment.value) return
-
-  const container = timelineScrollContainer.value
-  if (!container) return
-
-  const rect = container.getBoundingClientRect()
-  const relativeX = event.clientX - rect.left
-
-  // Only allow drag selection in timeline content area (after track labels)
-  const trackLabelWidth = 64 // 4rem = 64px (w-16)
-  if (relativeX < trackLabelWidth) return
-
-  // Initialize drag selection
-  isDragging.value = true
-  dragStartX.value = event.clientX
-  dragEndX.value = event.clientX
-
   // Hide tooltip when dragging starts
   showTimelineTooltip.value = false
   clearTooltipData()
-
-  // Calculate percentages relative to the zoomed timeline content
-  const timelineContent = container.querySelector('.timeline-content-wrapper')
-  if (timelineContent) {
-    const contentRect = timelineContent.getBoundingClientRect()
-    const contentRelativeX = event.clientX - contentRect.left
-    dragStartPercent.value = Math.max(0, Math.min(1, contentRelativeX / contentRect.width))
-    dragEndPercent.value = dragStartPercent.value
-  }
-
-  // Update timeline bounds for selection area
-  timelineBounds.value = {
-    top: rect.top,
-    bottom: rect.bottom
-  }
-
+  startDragSelection(event)
   // Hide hover line during drag
   showTimelineHoverLine.value = false
-
-  event.preventDefault()
 }
 
 function onDragMove(event: MouseEvent) {
-  if (!isDragging.value) return
-
-  dragEndX.value = event.clientX
-
-  const container = timelineScrollContainer.value
-  if (!container) return
-
-  // Update end percentage based on current mouse position
-  const timelineContent = container.querySelector('.timeline-content-wrapper')
-  if (timelineContent) {
-    const contentRect = timelineContent.getBoundingClientRect()
-    const contentRelativeX = event.clientX - contentRect.left
-    dragEndPercent.value = Math.max(0, Math.min(1, contentRelativeX / contentRect.width))
-  }
-
-  event.preventDefault()
+  moveDragSelection(event)
 }
 
 function onDragEnd() {
-  if (!isDragging.value) return
-
-  // Calculate the selected time range
-  const startPercent = Math.min(dragStartPercent.value, dragEndPercent.value)
-  const endPercent = Math.max(dragStartPercent.value, dragEndPercent.value)
-  const selectionDuration = endPercent - startPercent
-
-  // Only zoom if the selection is meaningful (at least 5% of timeline)
-  if (selectionDuration >= 0.05) {
-    // Calculate new zoom level to fit the selection
-    const targetZoom = Math.min(maxZoom, Math.max(minZoom, 1.0 / selectionDuration))
-
-    // Update zoom level first
-    zoomLevel.value = targetZoom
-
-    // Wait for the zoom to be applied and DOM to update, then set scroll position
-    nextTick(() => {
-      if (timelineScrollContainer.value) {
-        const container = timelineScrollContainer.value
-        const contentWidth = container.scrollWidth // This will be updated after zoom
-        const containerWidth = container.clientWidth
-        const maxScrollLeft = contentWidth - containerWidth
-
-        // Calculate the position of the selection in the zoomed content
-        // The selection start position in the zoomed content
-        const selectionStartPositionInContent = startPercent * contentWidth
-        const selectionWidthInContent = selectionDuration * contentWidth
-
-        // Calculate the target scroll position to show the selection
-        // We want to center the selection, or show it starting from the left if it's very wide
-        let targetScrollLeft: number
-        if (selectionWidthInContent >= containerWidth) {
-          // Selection is wider than container, show it starting from left
-          targetScrollLeft = Math.max(0, Math.min(maxScrollLeft, selectionStartPositionInContent - 20)) // 20px padding
-        } else {
-          // Center the selection in the viewport
-          const centerOfSelection = selectionStartPositionInContent + (selectionWidthInContent / 2)
-          targetScrollLeft = Math.max(0, Math.min(maxScrollLeft, centerOfSelection - (containerWidth / 2)))
-        }
-
-        container.scrollLeft = targetScrollLeft
-      }
-    })
-
-    // Emit zoom change to parent
-    emit('zoomChanged', targetZoom)
-  }
-
-  // Reset drag state
-  isDragging.value = false
-  dragStartX.value = 0
-  dragEndX.value = 0
-  dragStartPercent.value = 0
-  dragEndPercent.value = 0
+  endDragSelection()
 }
 
 // Timeline hover line handlers
@@ -1189,7 +1029,7 @@ function onTimelineMouseLeaveGlobal() {
   clearTooltipData()
   // Cancel drag if mouse leaves timeline
   if (isDragging.value) {
-    onDragEnd()
+    endDragSelection()
   }
 }
 
@@ -1259,7 +1099,7 @@ watch(
   [() => props.currentTime, () => props.duration, () => props.videoSrc, zoomLevel],
   () => {
     updateGlobalPlayheadPosition()
-    updateSliderProgress()
+    updateSliderProgress(zoomSlider.value)
   },
   { immediate: true }
 )
@@ -1296,9 +1136,9 @@ function handleScroll() {
 // Global mouse event handlers for better panning and drag selection experience
 function handleGlobalMouseMove(event: MouseEvent) {
   if (isPanning.value) {
-    onPanMove(event)
+    movePan(event)
   } else if (isDragging.value) {
-    onDragMove(event)
+    moveDragSelection(event)
   } else if (isDraggingSegment.value) {
     onSegmentMouseMove(event)
   } else if (isResizingSegment.value) {
@@ -1322,13 +1162,13 @@ function handleGlobalMouseMove(event: MouseEvent) {
 
 function handleGlobalMouseUp() {
   if (isDragging.value) {
-    onDragEnd()
+    endDragSelection()
   } else if (isDraggingSegment.value) {
     onSegmentMouseUp()
   } else if (isResizingSegment.value) {
     onResizeMouseUp()
   } else {
-    onPanEnd()
+    endPan()
   }
 }
 
@@ -1402,11 +1242,7 @@ onMounted(() => {
     // Add resize observer to update positions when container resizes
     const resizeObserver = new ResizeObserver(() => {
       // Update timeline bounds
-      const newRect = container.getBoundingClientRect()
-      timelineBounds.value = {
-        top: newRect.top,
-        bottom: newRect.bottom
-      }
+      updateTimelineBounds()
 
       // Update global playhead position
       updateGlobalPlayheadPosition()
@@ -1418,11 +1254,7 @@ onMounted(() => {
     // Initialize playhead position after DOM is fully rendered
     nextTick(() => {
       // Set initial bounds
-      const rect = container.getBoundingClientRect()
-      timelineBounds.value = {
-        top: rect.top,
-        bottom: rect.bottom
-      }
+      updateTimelineBounds()
 
       // Try positioning with increasing delays
       const tryPositioning = (delay: number) => {
@@ -1450,10 +1282,7 @@ onMounted(() => {
           }
 
           // Update bounds with the correct container rect
-          timelineBounds.value = {
-            top: currentRect.top,
-            bottom: currentRect.bottom
-          }
+          updateTimelineBounds()
 
           tryPositioning(delay)
         }, delay)
