@@ -1379,11 +1379,40 @@ export async function persistClipDetectionResults(
           console.log('[Database] Transcript already exists for raw video, using existing transcript')
           transcriptId = existingTranscript.id
 
-          // Optionally delete existing segments to refresh them
-          const db = await getDatabase()
-          await db.execute('DELETE FROM transcript_segments WHERE transcript_id = ?', [transcriptId])
+          // Check if this was a fresh transcription or cached
+          const usedCachedTranscript = detectionResults.processing_info?.used_cached_transcript
+
+          if (!usedCachedTranscript) {
+            console.log('[Database] Fresh transcription received, updating existing transcript data')
+            // Update the existing transcript with fresh data
+            const transcriptText = detectionResults.transcript.text ||
+                                 (detectionResults.transcript.segments?.map((seg: any) => seg.text).join(' ') || '') ||
+                                 JSON.stringify(detectionResults.transcript)
+
+            const language = detectionResults.transcript.language
+            const duration = detectionResults.transcript.duration ||
+                            (detectionResults.transcript.segments?.reduce((acc: number, seg: any) =>
+                              Math.max(acc, seg.end_time || 0), 0) || null)
+
+            const db = await getDatabase()
+            await db.execute(
+              'UPDATE transcripts SET raw_json = ?, text = ?, language = ?, duration = ? WHERE id = ?',
+              [
+                JSON.stringify(detectionResults.transcript),
+                transcriptText,
+                language,
+                duration,
+                transcriptId
+              ]
+            )
+
+            // Delete existing segments to refresh them
+            await db.execute('DELETE FROM transcript_segments WHERE transcript_id = ?', [transcriptId])
+          } else {
+            console.log('[Database] Used cached transcript, no database update needed')
+          }
         } else {
-          // Extract transcript data from Whisper response
+          // Extract transcript data from Whisper response (only when no existing transcript)
           const transcriptText = detectionResults.transcript.text ||
                                (detectionResults.transcript.segments?.map((seg: any) => seg.text).join(' ') || '') ||
                                JSON.stringify(detectionResults.transcript)
@@ -1402,8 +1431,10 @@ export async function persistClipDetectionResults(
           )
         }
 
-        // Store transcript segments if available
-        if (detectionResults.transcript.segments && Array.isArray(detectionResults.transcript.segments)) {
+        // Store transcript segments if available (only for fresh transcriptions)
+        const usedCachedTranscript = detectionResults.processing_info?.used_cached_transcript
+        if (!usedCachedTranscript && detectionResults.transcript.segments && Array.isArray(detectionResults.transcript.segments)) {
+          console.log('[Database] Storing fresh transcript segments')
           for (let i = 0; i < detectionResults.transcript.segments.length; i++) {
             const segment = detectionResults.transcript.segments[i]
             await createTranscriptSegment(
@@ -1414,6 +1445,8 @@ export async function persistClipDetectionResults(
               i
             )
           }
+        } else if (usedCachedTranscript) {
+          console.log('[Database] Using cached transcript segments, no segment storage needed')
         }
       }
     } catch (error) {

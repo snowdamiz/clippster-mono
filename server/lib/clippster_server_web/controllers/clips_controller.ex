@@ -6,22 +6,48 @@ defmodule ClippsterServerWeb.ClipsController do
   alias ClippsterServer.ClipValidation
   alias ClippsterServerWeb.ProgressChannel
 
-  def detect(conn, %{"audio" => audio_upload, "project_id" => project_id, "prompt" => user_prompt}) do
+  def detect(conn, %{"project_id" => project_id, "prompt" => user_prompt} = params) do
     IO.puts("[ClipsController] Starting clip detection for project #{project_id}")
-    IO.puts("[ClipsController] Audio filename: #{audio_upload.filename}")
-    IO.puts("[ClipsController] Audio content type: #{audio_upload.content_type}")
     IO.puts("[ClipsController] User prompt: #{String.slice(user_prompt, 0, 100)}...")
+
+    # Check if we're using a cached transcript or fresh audio
+    using_cached_transcript = Map.get(params, "using_cached_transcript", "false") == "true"
+
+    IO.puts("[ClipsController] Using cached transcript: #{using_cached_transcript}")
 
     try do
       # Broadcast initial progress
       ProgressChannel.broadcast_progress(project_id, "starting", 0, "Initializing clip detection...")
 
-      # Step 1: Forward audio to Whisper API
-      IO.puts("[ClipsController] Sending audio to Whisper API...")
-      ProgressChannel.broadcast_progress(project_id, "transcribing", 10, "Transcribing audio with Whisper...")
-      whisper_result = WhisperAPI.transcribe(audio_upload)
-      IO.puts("[ClipsController] WhisperAPI call completed")
-      ProgressChannel.broadcast_progress(project_id, "transcribing", 40, "Audio transcription completed")
+      # Step 1: Get transcript data (either from cache or transcribe fresh audio)
+      {whisper_result, processing_type} = cond do
+        using_cached_transcript and Map.has_key?(params, "transcript") ->
+          IO.puts("[ClipsController] Using cached transcript data...")
+          ProgressChannel.broadcast_progress(project_id, "transcribing", 40, "Using cached transcript...")
+
+          # Parse cached transcript data
+          transcript_data = Jason.decode!(params["transcript"])
+          # raw_response is already a JSON string from the database
+          cached_whisper_response = Jason.decode!(transcript_data["raw_response"])
+          IO.puts("[ClipsController] Cached transcript parsed successfully")
+          {{:ok, cached_whisper_response}, "cached"}
+
+        Map.has_key?(params, "audio") ->
+          audio_upload = params["audio"]
+          IO.puts("[ClipsController] Audio filename: #{audio_upload.filename}")
+          IO.puts("[ClipsController] Audio content type: #{audio_upload.content_type}")
+
+          # Forward audio to Whisper API
+          IO.puts("[ClipsController] Sending audio to Whisper API...")
+          ProgressChannel.broadcast_progress(project_id, "transcribing", 10, "Transcribing audio with Whisper...")
+          whisper_result = WhisperAPI.transcribe(audio_upload)
+          IO.puts("[ClipsController] WhisperAPI call completed")
+          ProgressChannel.broadcast_progress(project_id, "transcribing", 40, "Audio transcription completed")
+          {whisper_result, "fresh"}
+
+        true ->
+          throw {:error, "Either audio file or transcript data must be provided"}
+      end
 
       case whisper_result do
         {:ok, whisper_response} ->
@@ -115,10 +141,21 @@ defmodule ClippsterServerWeb.ClipsController do
 
                       # Step 6: Return enhanced response with validation data
                       ProgressChannel.broadcast_progress(project_id, "completed", 100, "Clip detection completed successfully!")
+                      completion_message = if processing_type == "cached" do
+                        "Clip detection completed using cached transcript!"
+                      else
+                        "Clip detection completed successfully!"
+                      end
+
                       json(conn, %{
                         success: true,
                         clips: enhanced_response,
                         transcript: whisper_response,
+                        processing_info: %{
+                          used_cached_transcript: processing_type == "cached",
+                          processing_type: processing_type,
+                          completion_message: completion_message
+                        },
                         validation: %{
                           qualityScore: validation_result.qualityScore,
                           issues: validation_result.issues,
@@ -130,10 +167,21 @@ defmodule ClippsterServerWeb.ClipsController do
                     _ ->
                       IO.puts("[ClipsController] Enhanced validation failed, using original clips")
                       # Fall back to original clips if enhanced validation fails
+                      completion_message = if processing_type == "cached" do
+                        "Clip detection completed using cached transcript!"
+                      else
+                        "Clip detection completed successfully!"
+                      end
+
                       json(conn, %{
                         success: true,
                         clips: ai_response,
                         transcript: whisper_response,
+                        processing_info: %{
+                          used_cached_transcript: processing_type == "cached",
+                          processing_type: processing_type,
+                          completion_message: completion_message
+                        },
                         validation: %{
                           qualityScore: 0.0,
                           issues: ["Enhanced validation failed"],

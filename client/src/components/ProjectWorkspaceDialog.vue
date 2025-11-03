@@ -268,8 +268,8 @@ async function onDetectClips(prompt: string) {
     resetProgress()
     setProgressProjectId(props.project.id.toString())
 
-    // Get the video path from the project's associated raw video
-    const { getAllRawVideos, persistClipDetectionResults } = await import('@/services/database')
+    // Step 1: Check if transcript already exists for this video
+    const { getAllRawVideos, persistClipDetectionResults, getTranscriptByRawVideoId } = await import('@/services/database')
     const rawVideos = await getAllRawVideos()
     const projectVideo = rawVideos.find(v => v.project_id === props.project?.id)
 
@@ -278,15 +278,39 @@ async function onDetectClips(prompt: string) {
       throw new Error('No video found for project')
     }
 
-    // Step 1: Generate OGG audio file from video using FFmpeg - optimized for transcription
-    const audioFile = await generateAudioFromVideo(projectVideo.file_path)
+    // Check for existing transcript
+    const existingTranscript = await getTranscriptByRawVideoId(projectVideo.id)
+    let usingCachedTranscript = false
+
+    if (existingTranscript) {
+      console.log('[ProjectWorkspaceDialog] Found existing transcript, skipping audio extraction and transcription')
+      usingCachedTranscript = true
+    }
+
     const processingStartTime = Date.now()
 
-    // Step 2: Transmit audio to server for processing
+    // Step 2: Prepare request data (either transcript or audio)
     const formData = new FormData()
-    formData.append('audio', audioFile, audioFile.name)
+    if (usingCachedTranscript && existingTranscript) {
+      // Send cached transcript instead of audio
+      formData.append('transcript', JSON.stringify({
+        id: existingTranscript.id,
+        raw_response: existingTranscript.raw_json, // This is already a JSON string in DB
+        text: existingTranscript.text,
+        language: existingTranscript.language,
+        duration: existingTranscript.duration
+      }))
+      console.log('[ProjectWorkspaceDialog] Using cached transcript for clip detection')
+    } else {
+      // Generate OGG audio file from video using FFmpeg - optimized for transcription
+      const audioFile = await generateAudioFromVideo(projectVideo.file_path)
+      formData.append('audio', audioFile, audioFile.name)
+      console.log('[ProjectWorkspaceDialog] Generated fresh audio for transcription')
+    }
+
     formData.append('project_id', props.project.id.toString())
     formData.append('prompt', prompt)
+    formData.append('using_cached_transcript', usingCachedTranscript.toString())
 
     const response = await fetch(`${API_BASE}/api/clips/detect`, {
       method: 'POST',
@@ -322,6 +346,14 @@ async function onDetectClips(prompt: string) {
       throw new Error(result.error)
     }
     const processingTimeMs = Date.now() - processingStartTime
+
+    // Log whether cached transcript was used
+    if (result.processing_info && result.processing_info.used_cached_transcript) {
+      console.log('[ProjectWorkspaceDialog] ✅ Used cached transcript - saved time and API costs!')
+      console.log('[ProjectWorkspaceDialog] Processing completed in:', processingTimeMs, 'ms')
+    } else {
+      console.log('[ProjectWorkspaceDialog] 🔄 Fresh transcription completed in:', processingTimeMs, 'ms')
+    }
 
     // Check for nested structure
     if (result.clips && typeof result.clips === 'object' && result.clips.clips) {
@@ -430,6 +462,8 @@ function showClipDetectionResult(result: any, sessionId?: string) {
   const corrections = validation.corrections || []
   const clipsProcessed = validation.clipsProcessed || 0
   const clipsFound = result.clips?.length || 0
+  const processingInfo = result.processing_info || {}
+  const usedCachedTranscript = processingInfo.used_cached_transcript || false
 
   // Determine quality score color
   let qualityColor = 'text-red-400'
@@ -448,6 +482,17 @@ function showClipDetectionResult(result: any, sessionId?: string) {
   // Create validation summary HTML
   const validationSummary = `
     <div class="bg-[#0a0a0a] rounded-lg p-4 space-y-3">
+      ${usedCachedTranscript ? `
+        <div class="flex items-center justify-between bg-green-500/10 rounded-lg px-3 py-2 border border-green-500/30">
+          <span class="text-green-400 text-sm font-medium flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            Used Cached Transcript
+          </span>
+          <span class="text-green-400 text-xs">Saved time & API costs</span>
+        </div>
+      ` : ''}
       ${sessionId ? `
         <div class="flex items-center justify-between">
           <span class="text-foreground/70 text-sm">Detection Session:</span>
