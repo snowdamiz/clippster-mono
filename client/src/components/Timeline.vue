@@ -32,7 +32,10 @@
       </div>
 
       <!-- Timeline Tracks Container -->
-      <div class="flex-1 pr-1 bg-muted/20 border border-border/40 rounded-lg relative overflow-y-auto overflow-x-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800"
+      <div :class="[
+           'flex-1 pr-1 bg-muted/20 border border-border/40 rounded-lg relative overflow-x-auto',
+           shouldShowScrollbar ? 'overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800' : 'overflow-y-hidden'
+         ]"
            ref="timelineScrollContainer"
            :style="{ maxHeight: calculatedHeight - 56 + 'px' }"
            @mousemove="onTimelineMouseMove"
@@ -329,9 +332,37 @@ const calculatedHeight = computed(() => {
 
   // Apply reasonable bounds
   const minHeight = 140 // Minimum height when no clips (56 + 32 + 56)
-  const maxHeight = 360 // Reasonable max height to prevent timeline from taking over dialog
+  const maxHeight = 420 // Increased max height to allow more clips before scrollbar
 
   return Math.max(minHeight, Math.min(maxHeight, totalHeight))
+})
+
+// Determine if scrollbar should be shown based on content vs container height
+const shouldShowScrollbar = computed(() => {
+  const headerHeight = 56 // Header section height
+  const rulerHeight = 32 // Timeline ruler height (h-8)
+  const mainTrackHeight = 56 // Main video track height (h-14)
+  const clipTrackHeight = 48 // Height per clip track (min-h-12)
+  const bottomPadding = props.clips.length > 0 ? 34 : 8 // Dynamic bottom padding
+
+  const numberOfClips = props.clips.length
+  const contentHeight = rulerHeight + mainTrackHeight + (numberOfClips * clipTrackHeight) + bottomPadding
+  const availableHeight = calculatedHeight.value - headerHeight
+
+  // Only show scrollbar when content actually exceeds available height (small buffer for precision)
+  const needsScrollbar = contentHeight > availableHeight
+
+  console.log('[Timeline] Scrollbar calculation:', {
+    clips: numberOfClips,
+    contentHeight,
+    availableHeight,
+    calculatedHeight: calculatedHeight.value,
+    bottomPadding,
+    needsScrollbar,
+    difference: contentHeight - availableHeight
+  })
+
+  return needsScrollbar
 })
 
 interface Emits {
