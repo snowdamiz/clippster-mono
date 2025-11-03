@@ -33,9 +33,9 @@
 
             <!-- Reverse 10 Seconds Button -->
             <button
+              @click="seekVideo(-10)"
               class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors duration-150"
-              title="Reverse 10 seconds"
-              disabled
+              title="Reverse 10 seconds (← arrow key)"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.333 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z" />
@@ -44,9 +44,9 @@
 
             <!-- Fast Forward 10 Seconds Button -->
             <button
+              @click="seekVideo(10)"
               class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors duration-150"
-              title="Fast forward 10 seconds"
-              disabled
+              title="Fast forward 10 seconds (→ arrow key)"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z" />
@@ -1786,6 +1786,11 @@ function handleGlobalMouseUp() {
 
 // Handle keyboard events
 function handleKeyDown(event: KeyboardEvent) {
+  // Don't handle keyboard events if user is typing in input fields
+  if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+    return
+  }
+
   // Activate cut tool when 'x' key is pressed
   if (event.key === 'x' || event.key === 'X') {
     event.preventDefault()
@@ -1798,6 +1803,17 @@ function handleKeyDown(event: KeyboardEvent) {
   if (event.key === 'Escape' && isCutToolActive.value) {
     event.preventDefault()
     toggleCutTool()
+  }
+
+  // Video navigation with arrow keys
+  if (!isCutToolActive.value && props.videoSrc && props.duration) {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      seekVideo(-10)
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      seekVideo(10)
+    }
   }
 }
 
@@ -2396,6 +2412,44 @@ async function onResizeMouseUp() {
       emit('segmentUpdated', clipId, segmentIndex, currentStartTime, currentEndTime)
     } catch (error) {
       console.error('[Timeline] Error in final segment resize update:', error)
+    }
+  }
+}
+
+// Video seek functions
+
+// Seek video by specified number of seconds
+function seekVideo(seconds: number) {
+  if (!props.videoSrc || !props.duration) return
+
+  const newTime = Math.max(0, Math.min(props.duration, props.currentTime + seconds))
+
+  // Emit a seek event to parent component
+  const syntheticEvent = {
+    clientX: 0,
+    clientY: 0,
+    preventDefault: () => {},
+    stopPropagation: () => {},
+    currentTarget: null,
+    target: null
+  } as MouseEvent
+
+  // Calculate the position as a percentage of the timeline
+  const container = timelineScrollContainer.value
+  if (container) {
+    const videoTrack = container.querySelector('.flex-1.h-8.bg-\\[\\#0a0a0a\\]\\/50.rounded-md.relative') as HTMLElement
+    if (videoTrack) {
+      const videoTrackRect = videoTrack.getBoundingClientRect()
+      const targetX = videoTrackRect.left + (videoTrackRect.width * (newTime / props.duration))
+
+      // Create a proper synthetic event
+      syntheticEvent.clientX = targetX
+      syntheticEvent.clientY = videoTrackRect.top + videoTrackRect.height / 2
+      syntheticEvent.currentTarget = videoTrack
+      syntheticEvent.target = videoTrack
+
+      // Trigger the seek
+      onVideoTrackClick(syntheticEvent)
     }
   }
 }
