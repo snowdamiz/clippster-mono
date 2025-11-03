@@ -321,10 +321,11 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { updateClipSegment, getAdjacentClipSegments, realignClipSegment } from '../services/database'
 
-// Simple debounce utility function with flush capability
+// Simple debounce utility function with flush and cancel capabilities
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): {
   (...args: Parameters<T>): void
   flush: () => void
+  cancel: () => void
 } {
   let timeout: NodeJS.Timeout | null = null
   let pendingArgs: Parameters<T> | null = null
@@ -335,6 +336,7 @@ function debounce<T extends (...args: any[]) => any>(func: T, wait: number): {
     timeout = setTimeout(() => {
       func(...pendingArgs!)
       pendingArgs = null
+      timeout = null
     }, wait)
   }
 
@@ -346,6 +348,14 @@ function debounce<T extends (...args: any[]) => any>(func: T, wait: number): {
         pendingArgs = null
       }
       timeout = null
+    }
+  }
+
+  debounced.cancel = () => {
+    if (timeout) {
+      clearTimeout(timeout)
+      timeout = null
+      pendingArgs = null
     }
   }
 
@@ -1323,6 +1333,7 @@ async function onSegmentMouseDown(event: MouseEvent, clipId: string, segmentInde
 function onSegmentMouseMove(event: MouseEvent) {
   if (!isDraggingSegment.value || !draggedSegmentInfo.value || !props.duration) return
 
+  const { clipId, segmentIndex } = draggedSegmentInfo.value
   const deltaX = event.clientX - draggedSegmentInfo.value.originalMouseX
   const timelineWidth = timelineScrollContainer.value?.clientWidth || 1
   const timeDelta = (deltaX / timelineWidth) * props.duration / zoomLevel.value
@@ -1399,39 +1410,32 @@ async function onSegmentMouseUp() {
 
   const { clipId, segmentIndex, currentStartTime, currentEndTime, originalStartTime, originalEndTime } = draggedSegmentInfo.value
 
-  // Flush any pending debounced updates first
-  debouncedUpdateClip.flush()
+  // Store the original values before we modify them
+  const originalOriginalStartTime = originalStartTime
+  const originalOriginalEndTime = originalEndTime
 
-  // Reset drag state
+  // Update the drag info to commit the final position first
+  if (draggedSegmentInfo.value) {
+    draggedSegmentInfo.value.originalStartTime = currentStartTime
+    draggedSegmentInfo.value.originalEndTime = currentEndTime
+  }
+
+  // Cancel any pending debounced updates to prevent ghost flashing
+  debouncedUpdateClip.cancel()
+
+  // Now reset drag state (the final position is now the "original" position)
   isDraggingSegment.value = false
   draggedSegmentInfo.value = null
   document.body.style.cursor = ''
 
   // Final database update and transcript realignment (only if significant change)
-  if (Math.abs(currentStartTime - originalStartTime) > 0.1 || Math.abs(currentEndTime - originalEndTime) > 0.1) {
+  if (Math.abs(currentStartTime - originalOriginalStartTime) > 0.1 || Math.abs(currentEndTime - originalOriginalEndTime) > 0.1) {
     try {
       // Final immediate database update to ensure latest state is saved
       await updateClipSegment(clipId, segmentIndex, currentStartTime, currentEndTime)
 
       // Realign transcript if needed
-      await realignClipSegment(clipId, segmentIndex, originalStartTime, originalEndTime, currentStartTime, currentEndTime)
-
-      // Force immediate visual update by updating localClips directly
-      const clipIndex = localClips.value.findIndex(clip => clip.id === clipId)
-      if (clipIndex !== -1 && localClips.value[clipIndex].segments[segmentIndex]) {
-        const updatedClips = [...localClips.value]
-        updatedClips[clipIndex] = {
-          ...updatedClips[clipIndex],
-          segments: [...updatedClips[clipIndex].segments]
-        }
-        updatedClips[clipIndex].segments[segmentIndex] = {
-          ...updatedClips[clipIndex].segments[segmentIndex],
-          start_time: currentStartTime,
-          end_time: currentEndTime,
-          duration: currentEndTime - currentStartTime
-        }
-        localClips.value = updatedClips
-      }
+      await realignClipSegment(clipId, segmentIndex, originalOriginalStartTime, originalOriginalEndTime, currentStartTime, currentEndTime)
 
       // Emit update to parent
       emit('segmentUpdated', clipId, segmentIndex, currentStartTime, currentEndTime)
