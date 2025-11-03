@@ -614,7 +614,6 @@ function onRulerWheel(event: WheelEvent) {
     const contentRect = timelineContent.getBoundingClientRect()
     const containerRect = container.getBoundingClientRect()
     const relativeX = event.clientX - containerRect.left
-    const currentHoverPercent = Math.max(0, Math.min(1, relativeX / containerRect.width))
 
     // Calculate the timeline position being hovered over
     const currentScrollLeft = container.scrollLeft
