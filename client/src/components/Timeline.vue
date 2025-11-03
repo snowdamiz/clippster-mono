@@ -239,7 +239,7 @@
         <!-- Global Playhead Line - positioned like hover line but follows video time -->
         <div
           v-if="videoSrc && duration > 0"
-          class="fixed bg-white shadow-lg z-25 pointer-events-none transition-all duration-100"
+          class="fixed bg-white/70 shadow-lg z-25 pointer-events-none transition-all duration-100"
           :style="{
             left: `${globalPlayheadPosition}px`,
             top: `${timelineBounds.top}px`,
@@ -247,7 +247,7 @@
             width: '1px'
           }"
         >
-          <div class="absolute -top-1 -left-1 w-2 h-2 bg-white rounded-full shadow-md"></div>
+          <div class="absolute top-0 -left-1 w-2 h-2 bg-white rounded-full shadow-md"></div>
           <div class="absolute bottom-0 -left-1 w-2 h-2 bg-white/80 rounded-full"></div>
         </div>
 
@@ -607,8 +607,41 @@ function onRulerWheel(event: WheelEvent) {
   // Calculate new zoom level
   const newZoom = Math.max(minZoom, Math.min(maxZoom, zoomLevel.value + delta))
 
-  // Update zoom level
-  zoomLevel.value = newZoom
+  // Get current hover position as a percentage of the visible timeline
+  const container = timelineScrollContainer.value
+  const timelineContent = container?.querySelector('.timeline-content-wrapper')
+  if (container && timelineContent) {
+    const contentRect = timelineContent.getBoundingClientRect()
+    const containerRect = container.getBoundingClientRect()
+    const relativeX = event.clientX - containerRect.left
+    const currentHoverPercent = Math.max(0, Math.min(1, relativeX / containerRect.width))
+
+    // Calculate the timeline position being hovered over
+    const currentScrollLeft = container.scrollLeft
+    const currentContentWidth = contentRect.width
+    const hoveredTimelinePosition = currentScrollLeft + (relativeX)
+    const hoveredPercentOfContent = Math.max(0, Math.min(1, hoveredTimelinePosition / currentContentWidth))
+
+    // Update zoom level
+    zoomLevel.value = newZoom
+
+    // Wait for DOM to update, then calculate new scroll position
+    nextTick(() => {
+      if (container) {
+        const newContentRect = timelineContent.getBoundingClientRect()
+        const newContentWidth = newContentRect.width
+
+        // Calculate new scroll position to keep the same content position under cursor
+        const newScrollLeft = (hoveredPercentOfContent * newContentWidth) - relativeX
+
+        // Apply smooth scrolling to new position
+        container.scrollLeft = Math.max(0, newScrollLeft)
+      }
+    })
+  } else {
+    // Fallback: just update zoom level
+    zoomLevel.value = newZoom
+  }
 
   // Emit zoom change to parent
   emit('zoomChanged', newZoom)
