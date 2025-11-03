@@ -299,8 +299,8 @@
           v-if="isDraggingSegment && draggedSegmentInfo"
           class="fixed pointer-events-none z-50 transition-all duration-75"
           :style="{
-            left: `${draggedSegmentInfo.originalMouseX}px`,
-            top: `${timelineBounds.top - 60}px`,
+            left: `${draggedSegmentInfo.tooltipX || draggedSegmentInfo.originalMouseX}px`,
+            top: `${draggedSegmentInfo.tooltipY || timelineBounds.top - 60}px`,
             transform: 'translateX(-50%)'
           }"
         >
@@ -545,6 +545,8 @@ const draggedSegmentInfo = ref<{
   dragStartTime: number
   currentStartTime: number
   currentEndTime: number
+  tooltipX?: number
+  tooltipY?: number
 } | null>(null)
 
 // Movement constraints
@@ -1090,6 +1092,16 @@ watch(
   { immediate: true }
 )
 
+// Update tooltip position when zoom changes during drag
+watch(
+  zoomLevel,
+  () => {
+    if (isDraggingSegment.value) {
+      updateSegmentDragTooltip()
+    }
+  }
+)
+
 // Sync localClips with props.clips
 watch(
   () => props.clips,
@@ -1327,6 +1339,37 @@ async function onSegmentMouseDown(event: MouseEvent, clipId: string, segmentInde
 
   // Hide tooltip during drag
   showTimelineTooltip.value = false
+
+  // Initialize tooltip position
+  updateSegmentDragTooltip()
+}
+
+// Update segment drag tooltip position to follow the segment
+function updateSegmentDragTooltip() {
+  if (!isDraggingSegment.value || !draggedSegmentInfo.value || !timelineScrollContainer.value) return
+
+  const { currentStartTime, currentEndTime } = draggedSegmentInfo.value
+  const container = timelineScrollContainer.value
+  const containerRect = container.getBoundingClientRect()
+  const scrollLeft = container.scrollLeft
+
+  // Calculate the position of the segment center in the timeline
+  const segmentCenterTime = (currentStartTime + currentEndTime) / 2
+  const timePercent = props.duration ? segmentCenterTime / props.duration : 0
+
+  // Get the timeline content wrapper to account for zoom
+  const timelineContent = container.querySelector('.timeline-content-wrapper') as HTMLElement
+  if (!timelineContent) return
+
+  const contentWidth = timelineContent.offsetWidth
+  const segmentCenterX = contentWidth * timePercent
+
+  // Calculate the viewport position (account for scroll and container offset)
+  const viewportX = containerRect.left + segmentCenterX - scrollLeft
+
+  // Update tooltip position
+  draggedSegmentInfo.value.tooltipX = viewportX
+  draggedSegmentInfo.value.tooltipY = containerRect.top - 60
 }
 
 // Handle mouse move for segment dragging
@@ -1399,6 +1442,9 @@ function onSegmentMouseMove(event: MouseEvent) {
   // Update drag state
   draggedSegmentInfo.value.currentStartTime = newStartTime
   draggedSegmentInfo.value.currentEndTime = newEndTime
+
+  // Update tooltip position to follow the segment
+  updateSegmentDragTooltip()
 
   // Use debounced update for smoother performance during drag
   debouncedUpdateClip(clipId, segmentIndex, newStartTime, newEndTime)
