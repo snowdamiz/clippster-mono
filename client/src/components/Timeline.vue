@@ -316,9 +316,9 @@
               </div>
             </div>
 
-            <!-- Fallback when no transcript -->
+            <!-- Fallback when no transcript or in dead space -->
             <div v-else class="text-center text-white/50 text-xs">
-              No transcript available
+              Dead Space
             </div>
 
             <div class="absolute top-full left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-45 w-1.5 h-1.5 bg-black/90 border-r border-b border-white/20"></div>
@@ -837,13 +837,14 @@ function findWordsAroundTime(timestamp: number, allWords: WordInfo[]): {
   // For larger arrays, use binary search to find approximate position
   let left = 0
   let right = allWords.length - 1
-  let closestIndex = 0
+  let closestIndex = -1
 
   while (left <= right) {
     const mid = Math.floor((left + right) / 2)
     const word = allWords[mid]
 
     if (timestamp >= word.start && timestamp <= word.end) {
+      // Found exact match - word is being spoken at this timestamp
       closestIndex = mid
       break
     }
@@ -853,35 +854,89 @@ function findWordsAroundTime(timestamp: number, allWords: WordInfo[]): {
     } else {
       left = mid + 1
     }
-
-    // Track closest match
-    if (Math.abs(word.start - timestamp) < Math.abs(allWords[closestIndex].start - timestamp)) {
-      closestIndex = mid
-    }
   }
 
-  // Fine-tune search around the binary search result
-  const searchStart = Math.max(0, closestIndex - 10)
-  const searchEnd = Math.min(allWords.length - 1, closestIndex + 10)
-  let finalIndex = closestIndex
+  // If we found an exact match, get context words around it
+  if (closestIndex !== -1) {
+    // Get 5 words: 2 before, 1 current, 2 after
+    const startIndex = Math.max(0, closestIndex - 2)
+    const endIndex = Math.min(allWords.length - 1, closestIndex + 2)
+    const words = allWords.slice(startIndex, endIndex + 1)
+    return { words, centerIndex: closestIndex - startIndex }
+  }
 
-  for (let i = searchStart; i <= searchEnd; i++) {
-    const word = allWords[i]
-    if (timestamp >= word.start && timestamp <= word.end) {
-      finalIndex = i
+  // No exact match found - check if we're in dead space
+  // Find the nearest words to determine if we're in a gap
+  let previousWord: WordInfo | null = null
+  let nextWord: WordInfo | null = null
+
+  // Find the previous word (ends before current timestamp)
+  for (let i = allWords.length - 1; i >= 0; i--) {
+    if (allWords[i].end < timestamp) {
+      previousWord = allWords[i]
       break
     }
-    if (Math.abs(word.start - timestamp) < Math.abs(allWords[finalIndex].start - timestamp)) {
-      finalIndex = i
+  }
+
+  // Find the next word (starts after current timestamp)
+  for (let i = 0; i < allWords.length; i++) {
+    if (allWords[i].start > timestamp) {
+      nextWord = allWords[i]
+      break
     }
   }
 
-  // Get 5 words: 2 before, 1 current, 2 after
-  const startIndex = Math.max(0, finalIndex - 2)
-  const endIndex = Math.min(allWords.length - 1, finalIndex + 2)
-  const words = allWords.slice(startIndex, endIndex + 1)
+  // Check if we're in significant dead space (more than 1 second gap)
+  const deadSpaceThreshold = 1.0 // 1 second
+  if (previousWord && nextWord) {
+    const gapSize = nextWord.start - previousWord.end
+    if (gapSize > deadSpaceThreshold && timestamp > previousWord.end && timestamp < nextWord.start) {
+      // We're in significant dead space - return empty
+      return { words: [], centerIndex: 0 }
+    }
+  } else if (previousWord && timestamp - previousWord.end > deadSpaceThreshold) {
+    // After the last word with significant gap
+    return { words: [], centerIndex: 0 }
+  } else if (nextWord && nextWord.start - timestamp > deadSpaceThreshold) {
+    // Before the first word with significant gap
+    return { words: [], centerIndex: 0 }
+  }
 
-  return { words, centerIndex: finalIndex - startIndex }
+  // If not in significant dead space, find the closest word for small gaps
+  let closestDistance = Infinity
+  let closestWordIndex = -1
+
+  for (let i = 0; i < allWords.length; i++) {
+    const word = allWords[i]
+
+    // Check if timestamp is within this word
+    if (timestamp >= word.start && timestamp <= word.end) {
+      closestWordIndex = i
+      break
+    }
+
+    // Track closest word by distance to word start
+    const distance = Math.abs(word.start - timestamp)
+    if (distance < closestDistance) {
+      closestDistance = distance
+      closestWordIndex = i
+    }
+  }
+
+  // If the closest word is too far away, return empty (dead space)
+  if (closestDistance > 2.0) { // 2 second threshold for "too far"
+    return { words: [], centerIndex: 0 }
+  }
+
+  // Otherwise, return context around the closest word
+  if (closestWordIndex !== -1) {
+    const startIndex = Math.max(0, closestWordIndex - 2)
+    const endIndex = Math.min(allWords.length - 1, closestWordIndex + 2)
+    const words = allWords.slice(startIndex, endIndex + 1)
+    return { words, centerIndex: closestWordIndex - startIndex }
+  }
+
+  return { words: [], centerIndex: 0 }
 }
 
 // Fallback linear search for small arrays
@@ -889,14 +944,16 @@ function linearWordSearch(timestamp: number, allWords: WordInfo[]): {
   words: WordInfo[]
   centerIndex: number
 } {
+  let exactMatchIndex = -1
   let closestIndex = 0
   let closestDistance = Infinity
 
+  // First, look for exact match (timestamp within word boundaries)
   for (let i = 0; i < allWords.length; i++) {
     const word = allWords[i]
 
     if (timestamp >= word.start && timestamp <= word.end) {
-      closestIndex = i
+      exactMatchIndex = i
       break
     }
 
@@ -907,6 +964,56 @@ function linearWordSearch(timestamp: number, allWords: WordInfo[]): {
     }
   }
 
+  // If we found an exact match, use it
+  if (exactMatchIndex !== -1) {
+    const startIndex = Math.max(0, exactMatchIndex - 2)
+    const endIndex = Math.min(allWords.length - 1, exactMatchIndex + 2)
+    const words = allWords.slice(startIndex, endIndex + 1)
+    return { words, centerIndex: exactMatchIndex - startIndex }
+  }
+
+  // No exact match - check for dead space
+  let previousWord: WordInfo | null = null
+  let nextWord: WordInfo | null = null
+
+  // Find the previous word (ends before current timestamp)
+  for (let i = allWords.length - 1; i >= 0; i--) {
+    if (allWords[i].end < timestamp) {
+      previousWord = allWords[i]
+      break
+    }
+  }
+
+  // Find the next word (starts after current timestamp)
+  for (let i = 0; i < allWords.length; i++) {
+    if (allWords[i].start > timestamp) {
+      nextWord = allWords[i]
+      break
+    }
+  }
+
+  // Check if we're in significant dead space (more than 1 second gap)
+  const deadSpaceThreshold = 1.0 // 1 second
+  if (previousWord && nextWord) {
+    const gapSize = nextWord.start - previousWord.end
+    if (gapSize > deadSpaceThreshold && timestamp > previousWord.end && timestamp < nextWord.start) {
+      // We're in significant dead space - return empty
+      return { words: [], centerIndex: 0 }
+    }
+  } else if (previousWord && timestamp - previousWord.end > deadSpaceThreshold) {
+    // After the last word with significant gap
+    return { words: [], centerIndex: 0 }
+  } else if (nextWord && nextWord.start - timestamp > deadSpaceThreshold) {
+    // Before the first word with significant gap
+    return { words: [], centerIndex: 0 }
+  }
+
+  // If the closest word is too far away, return empty (dead space)
+  if (closestDistance > 2.0) { // 2 second threshold for "too far"
+    return { words: [], centerIndex: 0 }
+  }
+
+  // Otherwise, return context around the closest word for small gaps
   const startIndex = Math.max(0, closestIndex - 2)
   const endIndex = Math.min(allWords.length - 1, closestIndex + 2)
   const words = allWords.slice(startIndex, endIndex + 1)
@@ -938,13 +1045,15 @@ const debouncedUpdateTooltipWords = debounce((timestamp: number) => {
     tooltipTranscriptWords.value = words
     centerWordIndex.value = centerIndex
 
-    // Cache the result
+    // Cache the result (including empty results for dead space)
     wordSearchCache.value.set(cacheKey, { words, centerIndex })
 
     // Limit cache size to prevent memory issues
     if (wordSearchCache.value.size > 1000) {
       const firstKey = wordSearchCache.value.keys().next().value
-      wordSearchCache.value.delete(firstKey)
+      if (firstKey !== undefined) {
+        wordSearchCache.value.delete(firstKey)
+      }
     }
   }
 }, 30) // Slightly increased for better performance
@@ -1470,8 +1579,6 @@ function updateGlobalPlayheadPosition() {
   isPlayheadInitialized.value = true
 }
 
-// Debounced version for smoother updates during component initialization
-const debouncedUpdatePlayhead = debounce(updateGlobalPlayheadPosition, 50)
 
 // Watch for changes that affect global playhead position and slider
 watch(
@@ -1508,7 +1615,7 @@ watch(
 watch(
   () => props.projectId,
   (newProjectId) => {
-    loadTranscriptData(newProjectId)
+    loadTranscriptData(newProjectId || null)
   },
   { immediate: true }
 )
