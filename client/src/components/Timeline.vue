@@ -17,9 +17,14 @@
           <div class="flex items-center gap-1 bg-muted/30 rounded-lg">
             <!-- Cut Button -->
             <button
-              class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors duration-150"
-              title="Cut"
-              disabled
+              @click="toggleCutTool"
+              :class="[
+                'p-1.5 rounded transition-all duration-150',
+                isCutToolActive
+                  ? 'text-blue-600 bg-blue-100/20 hover:bg-blue-100/30'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              ]"
+              :title="isCutToolActive ? 'Cut tool active (click to deactivate)' : 'Cut tool (click to activate)'"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 1 0 4.243 4.243 3 3 0 0 0-4.243-4.243zm0-5.758a3 3 0 1 0 4.243-4.243 3 3 0 0 0-4.243 4.243z" />
@@ -213,6 +218,8 @@
                     ? 'cursor-grabbing z-30 shadow-2xl border-2 border-blue-400 dragging'
                     : isResizingSegment && resizeHandleInfo?.clipId === clip.id && resizeHandleInfo?.segmentIndex === segIndex
                     ? 'cursor-ew-resize z-30 shadow-2xl border-2 border-green-400 resizing'
+                    : isCutToolActive && cutHoverInfo?.clipId === clip.id && cutHoverInfo?.segmentIndex === segIndex
+                    ? 'cursor-crosshair z-25 shadow-xl border-2 border-orange-400 ring-2 ring-orange-400/50 ring-offset-1 ring-offset-transparent'
                     : 'cursor-grab hover:cursor-grab transition-all duration-200 ease-out',
                   clip.run_number ? `run-${clip.run_number}` : '',
                   props.currentlyPlayingClipId === clip.id ? 'shadow-lg z-20' :
@@ -234,11 +241,43 @@
                 }"
                 :data-run-color="clip.run_color"
                 :title="`${clip.title} - ${formatDuration(getSegmentDisplayTime(segment, 'start'))} to ${formatDuration(getSegmentDisplayTime(segment, 'end'))}${clip.run_number ? ` (Run ${clip.run_number})` : ''}`"
-                @mouseenter="hoveredSegmentKey = `${clip.id}_${segIndex}`"
-                @mouseleave="hoveredSegmentKey = null"
-                @mousedown="!isResizingSegment && onSegmentMouseDown($event, clip.id, segIndex, segment)"
+                @mouseenter="!isCutToolActive ? (hoveredSegmentKey = `${clip.id}_${segIndex}`) : onSegmentHoverForCut($event, clip.id, segIndex, segment)"
+                @mousemove="isCutToolActive && onSegmentHoverForCut($event, clip.id, segIndex, segment)"
+                @mouseleave="!isCutToolActive ? (hoveredSegmentKey = null) : (cutHoverInfo = null)"
+                @mousedown="!isResizingSegment && (isCutToolActive ? onSegmentClickForCut($event, clip.id, segIndex, segment) : onSegmentMouseDown($event, clip.id, segIndex, segment))"
               >
                 <span class="text-xs text-white/90 font-medium truncate px-1 drop-shadow-sm">{{ clip.title }}</span>
+
+                <!-- Cut preview indicator -->
+                <div
+                  v-if="isCutToolActive && cutHoverInfo?.clipId === clip.id && cutHoverInfo?.segmentIndex === segIndex"
+                  class="absolute top-0 bottom-0 pointer-events-none z-40"
+                  :style="{
+                    left: `${cutHoverInfo.cutPosition}%`,
+                    transform: 'translateX(-50%)'
+                  }"
+                >
+                  <!-- Vertical cut line -->
+                  <div class="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-0.5 bg-orange-400 shadow-lg shadow-orange-400/50"></div>
+
+                  <!-- Top cut indicator -->
+                  <div
+                    class="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-orange-400 rounded-full shadow-md shadow-orange-400/50 border border-white/80 cut-indicator flex items-center justify-center"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-1.5 w-1.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </div>
+
+                  <!-- Bottom cut indicator -->
+                  <div
+                    class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-2 h-2 bg-orange-400 rounded-full shadow-md shadow-orange-400/50 border border-white/80 cut-indicator flex items-center justify-center"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-1.5 w-1.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </div>
+                </div>
 
                 <!-- Left resize handle -->
                 <div
@@ -457,7 +496,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { updateClipSegment, getAdjacentClipSegments, realignClipSegment, getTranscriptWithSegmentsByProjectId } from '../services/database'
+import { updateClipSegment, getAdjacentClipSegments, realignClipSegment, splitClipSegment, getTranscriptWithSegmentsByProjectId } from '../services/database'
 
 // Simple debounce utility function with flush and cancel capabilities
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): {
@@ -732,6 +771,16 @@ const resizeHandleInfo = ref<{
   maxEndTime: number
   tooltipX?: number
   tooltipY?: number
+} | null>(null)
+
+// Cut tool state
+const isCutToolActive = ref(false)
+const cutHoverInfo = ref<{
+  clipId: string
+  segmentIndex: number
+  cutTime: number
+  cutPosition: number // percentage (0-100)
+  cursorPosition: number // percentage (0-100) for custom cursor position
 } | null>(null)
 
 // Movement constraints
@@ -2332,6 +2381,93 @@ async function onResizeMouseUp() {
   }
 }
 
+// Cut tool functions
+
+// Toggle cut tool on/off
+function toggleCutTool() {
+  isCutToolActive.value = !isCutToolActive.value
+
+  // Reset cut hover state when deactivating
+  if (!isCutToolActive.value) {
+    cutHoverInfo.value = null
+    hoveredSegmentKey.value = null
+  }
+
+  // Disable other interactions when cut tool is active
+  if (isCutToolActive.value) {
+    // Clear any existing drag/resize states
+    isDraggingSegment.value = false
+    isResizingSegment.value = false
+    draggedSegmentInfo.value = null
+    resizeHandleInfo.value = null
+  }
+}
+
+// Handle segment hover for cut preview
+function onSegmentHoverForCut(event: MouseEvent, clipId: string, segmentIndex: number, segment: ClipSegment) {
+  if (!isCutToolActive.value || !props.duration) return
+
+  const segmentElement = event.target as HTMLElement
+  if (!segmentElement) return
+
+  const rect = segmentElement.getBoundingClientRect()
+  const relativeX = event.clientX - rect.left
+  const segmentWidth = rect.width
+
+  // Calculate the cut position as a percentage within the segment
+  const cutPositionPercent = (relativeX / segmentWidth) * 100
+
+  // Calculate the actual cut time within the video
+  const segmentStartTime = getSegmentDisplayTime(segment, 'start')
+  const segmentEndTime = getSegmentDisplayTime(segment, 'end')
+  const segmentDuration = segmentEndTime - segmentStartTime
+  const cutTime = segmentStartTime + (segmentDuration * cutPositionPercent / 100)
+
+  // Validate minimum segment durations (0.5 seconds each)
+  const leftDuration = cutTime - segmentStartTime
+  const rightDuration = segmentEndTime - cutTime
+
+  if (leftDuration >= 0.5 && rightDuration >= 0.5) {
+    cutHoverInfo.value = {
+      clipId,
+      segmentIndex,
+      cutTime,
+      cutPosition: cutPositionPercent,
+      cursorPosition: cutPositionPercent
+    }
+  } else {
+    // Not enough space for a valid cut
+    cutHoverInfo.value = null
+  }
+}
+
+// Handle segment click for cut operation
+async function onSegmentClickForCut(event: MouseEvent, clipId: string, segmentIndex: number, segment: ClipSegment) {
+  if (!isCutToolActive.value || !cutHoverInfo.value) return
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  try {
+    // Perform the cut operation
+    const result = await splitClipSegment(clipId, segmentIndex, cutHoverInfo.value.cutTime)
+
+    // Refresh the clips data to show the split segments
+    emit('refreshClipsData')
+
+    // Reset cut tool state
+    isCutToolActive.value = false
+    cutHoverInfo.value = null
+
+    console.log(`[Timeline] Successfully split segment ${segmentIndex} into segments ${result.leftSegmentIndex} and ${result.rightSegmentIndex}`)
+
+  } catch (error) {
+    console.error('[Timeline] Failed to split segment:', error)
+    // Show error feedback to user (could add a toast/notification here)
+    alert(`Failed to split segment: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
 </script>
 
 <style scoped>
@@ -2853,5 +2989,65 @@ async function onResizeMouseUp() {
 @keyframes snap-pulse {
   0%, 100% { opacity: 0.6; }
   50% { opacity: 1; }
+}
+
+/* Cut tool styles */
+.clip-segment.cursor-crosshair {
+  background: linear-gradient(to right, rgba(251, 146, 60, 0.3), rgba(251, 146, 60, 0.4)) !important;
+  border-color: rgb(251, 146, 60) !important;
+  transform: translateY(-1px);
+}
+
+.clip-segment.cursor-crosshair:hover {
+  background: linear-gradient(to right, rgba(251, 146, 60, 0.4), rgba(251, 146, 60, 0.5)) !important;
+  transform: translateY(-2px);
+}
+
+/* Enhanced cut preview animations */
+@keyframes cut-line-pulse {
+  0%, 100% {
+    opacity: 0.9;
+    box-shadow: 0 0 10px rgba(251, 146, 60, 0.8);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 20px rgba(251, 146, 60, 1);
+  }
+}
+
+@keyframes cut-indicator-float {
+  0%, 100% {
+    transform: translateY(-50%) translateX(-50%) scale(1);
+  }
+  50% {
+    transform: translateY(-50%) translateX(-50%) scale(1.1);
+  }
+}
+
+/* Cut tool active button styling */
+button.text-blue-600 {
+  animation: cut-pulse 2s ease-in-out infinite;
+}
+
+button.text-blue-600:hover {
+  animation-play-state: paused;
+}
+
+/* Cut line styling enhancement */
+.bg-orange-400 {
+  animation: cut-line-pulse 2s ease-in-out infinite;
+}
+
+/* Force consistent rendering for cut indicators */
+.cut-indicator {
+  transform: translateZ(0); /* Force hardware acceleration */
+  backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Hide crosshair cursor during cut mode but maintain rendering consistency */
+.clip-segment.cursor-crosshair {
+  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1" fill="transparent"/></svg>'), none !important;
 }
 </style>
