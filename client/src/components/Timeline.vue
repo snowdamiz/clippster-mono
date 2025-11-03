@@ -514,7 +514,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { updateClipSegment, getAdjacentClipSegments, realignClipSegment, splitClipSegment, getTranscriptWithSegmentsByProjectId } from '../services/database'
+import { updateClipSegment, getAdjacentClipSegments, realignClipSegment, splitClipSegment } from '../services/database'
 import {
   debounce,
   throttle,
@@ -522,14 +522,11 @@ import {
   hexToDarkerHex,
   generateClipGradient,
   getSegmentDisplayTime,
-  parseTranscriptToWords,
-  findWordsAroundTime,
-  linearWordSearch,
   generateTimestamps,
-  type WordInfo,
   type Timestamp,
   type ClipSegment
 } from '../utils/timelineUtils'
+import { useTranscriptData } from '../composables/useTranscriptData'
 
 interface Clip {
   id: string
@@ -674,20 +671,7 @@ const showTimelineTooltip = ref(false)
 const tooltipPosition = ref({ x: 0, y: 0 })
 const tooltipTime = ref(0)
 
-// Transcript data for enhanced tooltips
-const transcriptData = ref<{
-  transcript: any
-  segments: any[]
-  words: WordInfo[]
-} | null>(null)
-const tooltipTranscriptWords = ref<WordInfo[]>([])
-const centerWordIndex = ref(0)
-
-// Transcript data for drag and resize tooltips
-const dragTooltipTranscriptWords = ref<WordInfo[]>([])
-const dragTooltipCenterWordIndex = ref(0)
-const resizeTooltipTranscriptWords = ref<WordInfo[]>([])
-const resizeTooltipCenterWordIndex = ref(0)
+// Transcript-related state is now managed by useTranscriptData composable
 
 // Global playhead state
 const globalPlayheadPosition = ref(0) // X position in pixels for the global playhead line
@@ -753,6 +737,23 @@ const movementConstraints = ref<{
   maxEndTime: Infinity
 })
 
+// Use transcript data composable
+const {
+  transcriptData,
+  tooltipTranscriptWords,
+  centerWordIndex,
+  dragTooltipTranscriptWords,
+  dragTooltipCenterWordIndex,
+  resizeTooltipTranscriptWords,
+  resizeTooltipCenterWordIndex,
+  debouncedUpdateTooltipWords,
+  updateDragTooltipWords,
+  updateResizeTooltipWords,
+  clearTooltipData,
+  clearDragTooltipData,
+  clearResizeTooltipData
+} = useTranscriptData(computed(() => props.projectId))
+
 // Local reactive copy of clips for immediate visual updates
 const localClips = ref(props.clips ? [...props.clips] : [])
 
@@ -813,79 +814,12 @@ function setTimelineClipRef(el: any, clipId: string) {
   }
 }
 
-// Load transcript data for enhanced tooltips
-async function loadTranscriptData(projectId: string | null) {
-  if (!projectId) {
-    transcriptData.value = null
-    return
-  }
-
-  try {
-    const { transcript, segments } = await getTranscriptWithSegmentsByProjectId(projectId)
-
-    if (transcript && transcript.raw_json) {
-      // Parse the raw JSON to extract word-level timing
-      const words = parseTranscriptToWords(transcript.raw_json)
-
-      transcriptData.value = {
-        transcript,
-        segments,
-        words
-      }
-
-      // Clear cache when new transcript data is loaded
-      wordSearchCache.value.clear()
-    } else {
-      transcriptData.value = null
-      wordSearchCache.value.clear()
-    }
-  } catch (error) {
-    console.error('[Timeline] Failed to load transcript data:', error)
-    transcriptData.value = null
-    wordSearchCache.value.clear()
-  }
-}
-
-// parseTranscriptToWords is now imported from timelineUtils
-
-// findWordsAroundTime and linearWordSearch are now imported from timelineUtils
-
-// Cache for word search results to improve performance
-const wordSearchCache = ref<Map<number, { words: WordInfo[], centerIndex: number }>>(new Map())
+// Transcript-related functions are now managed by useTranscriptData composable
 
 // Throttled function for immediate tooltip updates (position)
 const throttledUpdateTooltipPosition = throttle((timestamp: number) => {
   tooltipTime.value = timestamp
 }, 16) // ~60fps
-
-// Optimized function for updating tooltip words
-const debouncedUpdateTooltipWords = debounce((timestamp: number) => {
-  if (transcriptData.value && transcriptData.value.words.length > 0) {
-    // Check cache first
-    const cacheKey = Math.round(timestamp * 10) // Round to 100ms precision
-    if (wordSearchCache.value.has(cacheKey)) {
-      const cached = wordSearchCache.value.get(cacheKey)!
-      tooltipTranscriptWords.value = cached.words
-      centerWordIndex.value = cached.centerIndex
-      return
-    }
-
-    const { words, centerIndex } = findWordsAroundTime(timestamp, transcriptData.value.words)
-    tooltipTranscriptWords.value = words
-    centerWordIndex.value = centerIndex
-
-    // Cache the result (including empty results for dead space)
-    wordSearchCache.value.set(cacheKey, { words, centerIndex })
-
-    // Limit cache size to prevent memory issues
-    if (wordSearchCache.value.size > 1000) {
-      const firstKey = wordSearchCache.value.keys().next().value
-      if (firstKey !== undefined) {
-        wordSearchCache.value.delete(firstKey)
-      }
-    }
-  }
-}, 30) // Slightly increased for better performance
 
 // Function to scroll timeline clip into view
 function scrollTimelineClipIntoView(clipId: string) {
@@ -912,11 +846,10 @@ function scrollTimelineClipIntoView(clipId: string) {
   }
 }
 
-// Expose function to parent
+// Expose functions to parent
 defineExpose({
   scrollTimelineClipIntoView,
-  zoomLevel,
-  loadTranscriptData
+  zoomLevel
 })
 
 // Intelligent timestamp generation based on video duration and zoom level
@@ -1041,8 +974,7 @@ function onPanStart(event: MouseEvent) {
 
   // Hide tooltip when panning starts
   showTimelineTooltip.value = false
-  tooltipTranscriptWords.value = []
-  centerWordIndex.value = 0
+  clearTooltipData()
 
   // Change cursor to indicate panning
   document.body.style.cursor = 'grabbing'
@@ -1092,9 +1024,7 @@ function onDragStart(event: MouseEvent) {
 
   // Hide tooltip when dragging starts
   showTimelineTooltip.value = false
-  tooltipTranscriptWords.value = []
-  centerWordIndex.value = 0
-  debouncedUpdateTooltipWords.cancel()
+  clearTooltipData()
 
   // Calculate percentages relative to the zoomed timeline content
   const timelineContent = container.querySelector('.timeline-content-wrapper')
@@ -1249,16 +1179,14 @@ function onTimelineMouseMove(event: MouseEvent) {
   } else {
     showTimelineHoverLine.value = false
     showTimelineTooltip.value = false
-    tooltipTranscriptWords.value = []
-    centerWordIndex.value = 0
+    clearTooltipData()
   }
 }
 
 function onTimelineMouseLeaveGlobal() {
   showTimelineHoverLine.value = false
   showTimelineTooltip.value = false
-  tooltipTranscriptWords.value = []
-  centerWordIndex.value = 0
+  clearTooltipData()
   // Cancel drag if mouse leaves timeline
   if (isDragging.value) {
     onDragEnd()
@@ -1276,6 +1204,7 @@ function onRulerMouseLeave() {
   onPanEnd()
   showTimelineHoverLine.value = false
   showTimelineTooltip.value = false
+  clearTooltipData()
 }
 
 // Update global playhead position based on current time
@@ -1356,14 +1285,7 @@ watch(
   { immediate: true, deep: true }
 )
 
-// Load transcript data when projectId changes
-watch(
-  () => props.projectId,
-  (newProjectId) => {
-    loadTranscriptData(newProjectId || null)
-  },
-  { immediate: true }
-)
+// projectId watching is now handled by useTranscriptData composable
 
 // Handle scroll events to update global playhead position
 function handleScroll() {
@@ -1392,6 +1314,7 @@ function handleGlobalMouseMove(event: MouseEvent) {
       } else {
         showTimelineHoverLine.value = false
         showTimelineTooltip.value = false
+        clearTooltipData()
       }
     }
   }
@@ -1566,11 +1489,7 @@ onUnmounted(() => {
   // Reset cursor in case component is unmounted while panning
   document.body.style.cursor = ''
 
-  // Cancel any pending debounced updates
-  debouncedUpdateTooltipWords.cancel()
-
-  // Clear cache
-  wordSearchCache.value.clear()
+  // Transcript cleanup is now handled by useTranscriptData composable
 })
 
 // hexToDarkerHex, generateClipGradient, and getSegmentDisplayTime are now imported from timelineUtils
@@ -1693,9 +1612,7 @@ async function onSegmentMouseDown(event: MouseEvent, clipId: string, segmentInde
 
   // Hide tooltip during drag
   showTimelineTooltip.value = false
-  tooltipTranscriptWords.value = []
-  centerWordIndex.value = 0
-  debouncedUpdateTooltipWords.cancel()
+  clearTooltipData()
 
   // Initialize tooltip position
   updateSegmentDragTooltip()
@@ -1739,14 +1656,7 @@ function updateSegmentDragTooltip() {
   draggedSegmentInfo.value.tooltipY = container.getBoundingClientRect().top - 60
 
   // Update transcript words for drag tooltip
-  if (transcriptData.value && transcriptData.value.words.length > 0) {
-    const { words, centerIndex } = findWordsAroundTime(currentStartTime, transcriptData.value.words)
-    dragTooltipTranscriptWords.value = words
-    dragTooltipCenterWordIndex.value = centerIndex
-  } else {
-    dragTooltipTranscriptWords.value = []
-    dragTooltipCenterWordIndex.value = 0
-  }
+  updateDragTooltipWords(currentStartTime)
 }
 
 // Handle mouse move for segment dragging
@@ -1827,8 +1737,7 @@ async function onSegmentMouseUp() {
   document.body.style.cursor = ''
 
   // Clear drag transcript data
-  dragTooltipTranscriptWords.value = []
-  dragTooltipCenterWordIndex.value = 0
+  clearDragTooltipData()
 
   // Final database update and transcript realignment (only if significant change)
   if (Math.abs(currentStartTime - originalOriginalStartTime) > 0.1 || Math.abs(currentEndTime - originalOriginalEndTime) > 0.1) {
@@ -1880,9 +1789,7 @@ async function onResizeMouseDown(event: MouseEvent, clipId: string, segmentIndex
 
   // Hide tooltip during resize
   showTimelineTooltip.value = false
-  tooltipTranscriptWords.value = []
-  centerWordIndex.value = 0
-  debouncedUpdateTooltipWords.cancel()
+  clearTooltipData()
 
   // Initialize tooltip position
   updateResizeTooltip()
@@ -1927,14 +1834,7 @@ function updateResizeTooltip() {
   resizeHandleInfo.value.tooltipY = container.getBoundingClientRect().top - 60
 
   // Update transcript words for resize tooltip
-  if (transcriptData.value && transcriptData.value.words.length > 0) {
-    const { words, centerIndex } = findWordsAroundTime(handleTime, transcriptData.value.words)
-    resizeTooltipTranscriptWords.value = words
-    resizeTooltipCenterWordIndex.value = centerIndex
-  } else {
-    resizeTooltipTranscriptWords.value = []
-    resizeTooltipCenterWordIndex.value = 0
-  }
+  updateResizeTooltipWords(handleTime)
 }
 
 // Handle mouse move for segment resizing
@@ -2001,8 +1901,7 @@ async function onResizeMouseUp() {
   document.body.style.cursor = ''
 
   // Clear resize transcript data
-  resizeTooltipTranscriptWords.value = []
-  resizeTooltipCenterWordIndex.value = 0
+  clearResizeTooltipData()
 
   // Final database update and transcript realignment (only if significant change)
   if (Math.abs(currentStartTime - originalStartTime) > 0.1 || Math.abs(currentEndTime - originalEndTime) > 0.1) {
