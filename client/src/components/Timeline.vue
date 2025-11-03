@@ -335,12 +335,36 @@
             transform: 'translateX(-50%)'
           }"
         >
-          <div class="bg-blue-600/90 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-md font-medium shadow-lg border border-white/20">
+          <div class="bg-blue-600/90 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-md font-medium shadow-lg border border-white/20 max-w-xs">
             <div class="text-center">
               <div class="font-semibold mb-1">Moving Segment</div>
               <div>{{ formatDuration(draggedSegmentInfo.currentStartTime) }} - {{ formatDuration(draggedSegmentInfo.currentEndTime) }}</div>
               <div class="text-xs opacity-75 mt-1">Duration: {{ formatDuration(draggedSegmentInfo.currentEndTime - draggedSegmentInfo.currentStartTime) }}</div>
             </div>
+
+            <!-- Transcript Words -->
+            <div v-if="dragTooltipTranscriptWords.length > 0" class="text-center mt-2 pt-2 border-t border-white/20">
+              <div class="transcript-words space-x-1">
+                <span
+                  v-for="(word, index) in dragTooltipTranscriptWords"
+                  :key="index"
+                  :class="[
+                    'transition-all duration-0',
+                    index === dragTooltipCenterWordIndex
+                      ? 'word-highlight'
+                      : 'word-normal'
+                  ]"
+                >
+                  {{ word.word }}
+                </span>
+              </div>
+            </div>
+
+            <!-- Fallback when no transcript -->
+            <div v-else class="text-center text-white/50 text-xs mt-2 pt-2 border-t border-white/20">
+              No transcript
+            </div>
+
             <div class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-1.5 h-1.5 bg-blue-600/90 border-r border-b border-white/20"></div>
           </div>
         </div>
@@ -355,7 +379,7 @@
             transform: 'translateX(-50%)'
           }"
         >
-          <div class="bg-green-600/90 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-md font-medium shadow-lg border border-white/20">
+          <div class="bg-green-600/90 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-md font-medium shadow-lg border border-white/20 max-w-xs">
             <div class="text-center">
               <div class="font-semibold mb-1">
                 {{ resizeHandleInfo.handleType === 'left' ? 'Resizing Start' : 'Resizing End' }}
@@ -363,6 +387,30 @@
               <div>{{ formatDuration(resizeHandleInfo.currentStartTime) }} - {{ formatDuration(resizeHandleInfo.currentEndTime) }}</div>
               <div class="text-xs opacity-75 mt-1">Duration: {{ formatDuration(resizeHandleInfo.currentEndTime - resizeHandleInfo.currentStartTime) }}</div>
             </div>
+
+            <!-- Transcript Words -->
+            <div v-if="resizeTooltipTranscriptWords.length > 0" class="text-center mt-2 pt-2 border-t border-white/20">
+              <div class="transcript-words space-x-1">
+                <span
+                  v-for="(word, index) in resizeTooltipTranscriptWords"
+                  :key="index"
+                  :class="[
+                    'transition-all duration-0',
+                    index === resizeTooltipCenterWordIndex
+                      ? 'word-highlight'
+                      : 'word-normal'
+                  ]"
+                >
+                  {{ word.word }}
+                </span>
+              </div>
+            </div>
+
+            <!-- Fallback when no transcript -->
+            <div v-else class="text-center text-white/50 text-xs mt-2 pt-2 border-t border-white/20">
+              No transcript
+            </div>
+
             <div class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-1.5 h-1.5 bg-green-600/90 border-r border-b border-white/20"></div>
           </div>
         </div>
@@ -612,6 +660,12 @@ const transcriptData = ref<{
 } | null>(null)
 const tooltipTranscriptWords = ref<WordInfo[]>([])
 const centerWordIndex = ref(0)
+
+// Transcript data for drag and resize tooltips
+const dragTooltipTranscriptWords = ref<WordInfo[]>([])
+const dragTooltipCenterWordIndex = ref(0)
+const resizeTooltipTranscriptWords = ref<WordInfo[]>([])
+const resizeTooltipCenterWordIndex = ref(0)
 
 // Global playhead state
 const globalPlayheadPosition = ref(0) // X position in pixels for the global playhead line
@@ -2004,6 +2058,16 @@ function updateSegmentDragTooltip() {
   // Update tooltip position
   draggedSegmentInfo.value.tooltipX = targetX
   draggedSegmentInfo.value.tooltipY = container.getBoundingClientRect().top - 60
+
+  // Update transcript words for drag tooltip
+  if (transcriptData.value && transcriptData.value.words.length > 0) {
+    const { words, centerIndex } = findWordsAroundTime(currentStartTime, transcriptData.value.words)
+    dragTooltipTranscriptWords.value = words
+    dragTooltipCenterWordIndex.value = centerIndex
+  } else {
+    dragTooltipTranscriptWords.value = []
+    dragTooltipCenterWordIndex.value = 0
+  }
 }
 
 // Handle mouse move for segment dragging
@@ -2082,6 +2146,10 @@ async function onSegmentMouseUp() {
   isDraggingSegment.value = false
   draggedSegmentInfo.value = null
   document.body.style.cursor = ''
+
+  // Clear drag transcript data
+  dragTooltipTranscriptWords.value = []
+  dragTooltipCenterWordIndex.value = 0
 
   // Final database update and transcript realignment (only if significant change)
   if (Math.abs(currentStartTime - originalOriginalStartTime) > 0.1 || Math.abs(currentEndTime - originalOriginalEndTime) > 0.1) {
@@ -2178,6 +2246,16 @@ function updateResizeTooltip() {
   // Update tooltip position
   resizeHandleInfo.value.tooltipX = targetX
   resizeHandleInfo.value.tooltipY = container.getBoundingClientRect().top - 60
+
+  // Update transcript words for resize tooltip
+  if (transcriptData.value && transcriptData.value.words.length > 0) {
+    const { words, centerIndex } = findWordsAroundTime(handleTime, transcriptData.value.words)
+    resizeTooltipTranscriptWords.value = words
+    resizeTooltipCenterWordIndex.value = centerIndex
+  } else {
+    resizeTooltipTranscriptWords.value = []
+    resizeTooltipCenterWordIndex.value = 0
+  }
 }
 
 // Handle mouse move for segment resizing
@@ -2242,6 +2320,10 @@ async function onResizeMouseUp() {
   isResizingSegment.value = false
   resizeHandleInfo.value = null
   document.body.style.cursor = ''
+
+  // Clear resize transcript data
+  resizeTooltipTranscriptWords.value = []
+  resizeTooltipCenterWordIndex.value = 0
 
   // Final database update and transcript realignment (only if significant change)
   if (Math.abs(currentStartTime - originalStartTime) > 0.1 || Math.abs(currentEndTime - originalEndTime) > 0.1) {
