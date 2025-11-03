@@ -178,7 +178,7 @@
                   width: `${duration ? ((segment.end_time - segment.start_time) / duration) * 100 : 0}%`,
                   ...generateClipGradient(clip.run_color),
                   ...(hoveredClipId === clip.id || props.hoveredTimelineClipId === clip.id ? {
-                    borderColor: clip.run_color || '#10B981',
+                    borderColor: '#ffffff',
                     borderWidth: '2px',
                     borderStyle: 'solid'
                   } : {})
@@ -321,7 +321,7 @@ const props = withDefaults(defineProps<Props>(), {
 const calculatedHeight = computed(() => {
   const headerHeight = 56 // Header section height (pt-3 + content + mb-3 + spacing)
   const rulerHeight = 32 // Timeline ruler height
-  const mainTrackHeight = 56 // Main video track height
+  const mainTrackHeight = 86 // Main video track height
   const clipTrackHeight = 48 // Height per clip track
 
   const numberOfClips = props.clips.length
@@ -331,7 +331,7 @@ const calculatedHeight = computed(() => {
   const totalHeight = headerHeight + tracksHeight
 
   // Apply reasonable bounds
-  const minHeight = 140 // Minimum height when no clips (56 + 32 + 56)
+  const minHeight = 148 // Minimum height when no clips (56 + 32 + 56)
   const maxHeight = 420 // Increased max height to allow more clips before scrollbar
 
   return Math.max(minHeight, Math.min(maxHeight, totalHeight))
