@@ -1,10 +1,13 @@
 <template>
   <div class="bg-[#0a0a0a]/30 border-t border-border transition-all duration-300 ease-in-out"
        :style="{
-         height: calculatedHeight + 'px'
+         height: props.clips.length >= 6
+          ? calculatedHeight + 30 + 'px' 
+          : props.clips.length >= 5 
+            ? calculatedHeight + 14 + 'px' 
+            : calculatedHeight + 'px'
        }">
     <div class="pt-3 px-4 h-full flex flex-col" :style="{
-      paddingBottom: props.clips.length > 0 ? '64px' : '8px',
       height: props.clips.length > 0 ? 'auto' : '146px'
     }">
       <!-- Timeline Header -->
@@ -546,7 +549,7 @@ const calculatedHeight = computed(() => {
 
   // Apply reasonable bounds
   const minHeight = 148 // Minimum height when no clips (56 + 32 + 56)
-  const maxHeight = 420 // Increased max height to allow more clips before scrollbar
+  const maxHeight = 400 // Increased max height to allow more clips before scrollbar
 
   return Math.max(minHeight, Math.min(maxHeight, totalHeight))
 })
@@ -1124,8 +1127,7 @@ function scrollTimelineClipIntoView(clipId: string) {
 // Expose function to parent
 defineExpose({
   scrollTimelineClipIntoView,
-  zoomLevel,
-  loadTranscriptData
+  zoomLevel
 })
 
 // Intelligent timestamp generation based on video duration and zoom level
