@@ -108,14 +108,7 @@
                   :style="{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }"
                 ></div>
 
-                <!-- Playhead -->
-                <div
-                  class="absolute top-0 bottom-0 w-0.5 bg-white shadow-lg z-10 transition-all duration-100"
-                  :style="{ left: `${duration ? (currentTime / duration) * 100 : 0}%` }"
-                >
-                  <div class="absolute -top-1 -left-1 w-3 h-3 bg-white rounded-full shadow-md"></div>
-                </div>
-
+  
                 <!-- Hover time indicator -->
                 <div
                   v-if="timelineHoverTime !== null"
@@ -185,6 +178,8 @@
           </div>
         </div>
 
+  
+  
         </div>
         <!-- End Timeline Content Wrapper -->
         </div>
@@ -202,6 +197,21 @@
         >
           <div class="absolute top-0 -left-1 w-2 h-2 bg-white/60 rounded-full"></div>
           <div class="absolute bottom-0 -left-1 w-2 h-2 bg-white/60 rounded-full"></div>
+        </div>
+
+        <!-- Global Playhead Line - positioned like hover line but follows video time -->
+        <div
+          v-if="videoSrc && duration > 0"
+          class="fixed bg-white shadow-lg z-25 pointer-events-none transition-all duration-100"
+          :style="{
+            left: `${globalPlayheadPosition}px`,
+            top: `${timelineBounds.top}px`,
+            height: `${timelineBounds.bottom - timelineBounds.top}px`,
+            width: '1px'
+          }"
+        >
+          <div class="absolute -top-1 -left-1 w-2 h-2 bg-white rounded-full shadow-md"></div>
+          <div class="absolute bottom-0 -left-1 w-2 h-2 bg-white/80 rounded-full"></div>
         </div>
 
         <!-- Drag Selection Area -->
@@ -229,7 +239,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 
 interface Timestamp {
   time: number
@@ -332,6 +342,9 @@ const dragEndPercent = ref(0)
 const showTimelineHoverLine = ref(false)
 const timelineHoverLinePosition = ref(0) // X position in pixels relative to timeline container
 const timelineBounds = ref({ top: 0, bottom: 0 }) // Timeline container bounds
+
+// Global playhead state
+const globalPlayheadPosition = ref(0) // X position in pixels for the global playhead line
 
 function setTimelineClipRef(el: any, clipId: string) {
   if (el && el instanceof HTMLElement) {
@@ -672,7 +685,7 @@ function onTimelineMouseMove(event: MouseEvent) {
   const rect = container.getBoundingClientRect()
   const relativeX = event.clientX - rect.left
 
-  // Update timeline bounds for constraining the hover line
+  // Update timeline bounds for constraining both hover line and global playhead
   timelineBounds.value = {
     top: rect.top,
     bottom: rect.bottom
@@ -709,6 +722,61 @@ function onRulerMouseLeave() {
   showTimelineHoverLine.value = false
 }
 
+// Update global playhead position based on current time
+function updateGlobalPlayheadPosition() {
+  if (!props.videoSrc || !props.duration || props.duration <= 0 || props.currentTime < 0) {
+    return
+  }
+
+  const container = timelineScrollContainer.value
+  if (!container) return
+
+  const rect = container.getBoundingClientRect()
+  const trackLabelWidth = 64 // w-16 = 64px
+
+  // Calculate the time percentage
+  const timePercent = props.currentTime / props.duration
+
+  // Find the video track content element to get its current playhead position as reference
+  const videoTrack = container.querySelector('.flex-1.h-8.bg-\\[\\#0a0a0a\\]\\/50.rounded-md.relative') as HTMLElement
+  if (!videoTrack) return
+
+  // Create a temporary div positioned at the time percentage within the video track
+  const tempDiv = document.createElement('div')
+  tempDiv.style.position = 'absolute'
+  tempDiv.style.left = `${timePercent * 100}%`
+  tempDiv.style.top = '0'
+  tempDiv.style.width = '1px'
+  tempDiv.style.height = '1px'
+  tempDiv.style.pointerEvents = 'none'
+  tempDiv.style.opacity = '0'
+
+  videoTrack.appendChild(tempDiv)
+
+  // Get the absolute position of this temp div
+  const tempRect = tempDiv.getBoundingClientRect()
+  const targetX = tempRect.left + tempRect.width / 2
+
+  // Clean up
+  videoTrack.removeChild(tempDiv)
+
+  globalPlayheadPosition.value = targetX
+}
+
+// Watch for changes that affect global playhead position
+watch(
+  [() => props.currentTime, () => props.duration, () => props.videoSrc, zoomLevel],
+  () => {
+    updateGlobalPlayheadPosition()
+  },
+  { immediate: true }
+)
+
+// Handle scroll events to update global playhead position
+function handleScroll() {
+  updateGlobalPlayheadPosition()
+}
+
 // Global mouse event handlers for better panning and drag selection experience
 function handleGlobalMouseMove(event: MouseEvent) {
   if (isPanning.value) {
@@ -738,15 +806,58 @@ function handleGlobalMouseUp() {
   }
 }
 
+
 // Setup and cleanup global event listeners
 onMounted(() => {
   document.addEventListener('mousemove', handleGlobalMouseMove)
   document.addEventListener('mouseup', handleGlobalMouseUp)
+
+  // Initialize timeline bounds for hover line
+  const container = timelineScrollContainer.value
+  if (container) {
+    const rect = container.getBoundingClientRect()
+    timelineBounds.value = {
+      top: rect.top,
+      bottom: rect.bottom
+    }
+
+    // Add scroll listener to update global playhead position
+    container.addEventListener('scroll', handleScroll)
+
+    // Add resize observer to update positions when container resizes
+    const resizeObserver = new ResizeObserver(() => {
+      // Update timeline bounds
+      const newRect = container.getBoundingClientRect()
+      timelineBounds.value = {
+        top: newRect.top,
+        bottom: newRect.bottom
+      }
+
+      // Update global playhead position
+      updateGlobalPlayheadPosition()
+    })
+
+    resizeObserver.observe(container)
+    ;(container as any)._resizeObserver = resizeObserver
+  }
 })
 
 onUnmounted(() => {
   document.removeEventListener('mousemove', handleGlobalMouseMove)
   document.removeEventListener('mouseup', handleGlobalMouseUp)
+
+  // Clean up event listeners and observers
+  const container = timelineScrollContainer.value
+  if (container) {
+    container.removeEventListener('scroll', handleScroll)
+
+    const resizeObserver = (container as any)._resizeObserver
+    if (resizeObserver) {
+      resizeObserver.disconnect()
+      delete (container as any)._resizeObserver
+    }
+  }
+
   // Reset cursor in case component is unmounted while panning
   document.body.style.cursor = ''
 })
@@ -832,28 +943,6 @@ function generateClipGradient(runColor: string | undefined) {
   background: rgba(0, 0, 0, 0.7);
 }
 
-.playhead {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: white;
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
-  transition: left 0.1s ease;
-  z-index: 10;
-}
-
-.playhead::before {
-  content: '';
-  position: absolute;
-  top: -4px;
-  left: -6px;
-  width: 12px;
-  height: 12px;
-  background: white;
-  border-radius: 50%;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
 
 /* Video track styling */
 .video-track {
@@ -1077,5 +1166,38 @@ function generateClipGradient(runColor: string | undefined) {
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
+}
+
+/* Global playhead line styling */
+.global-playhead-line {
+  position: fixed;
+  background: white;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
+  z-index: 25;
+  pointer-events: none;
+  transition: left 0.1s ease;
+}
+
+.global-playhead-line::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -6px;
+  width: 12px;
+  height: 12px;
+  background: white;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.global-playhead-line::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: -4px;
+  width: 8px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 50%;
 }
 </style>
