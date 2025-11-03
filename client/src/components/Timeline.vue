@@ -172,11 +172,12 @@
                 :ref="el => setTimelineClipRef(el, clip.id)"
                 class="clip-segment absolute h-6 border rounded-md flex items-center justify-center pointer-events-auto group"
                 :class="[
-                  'transition-all duration-75',
+                  isDraggingSegment && draggedSegmentInfo?.clipId === clip.id && draggedSegmentInfo?.segmentIndex === segIndex
+                    ? 'cursor-grabbing z-30 shadow-2xl border-2 border-blue-400 dragging'
+                    : 'cursor-grab hover:cursor-grab transition-all duration-200 ease-out',
                   clip.run_number ? `run-${clip.run_number}` : '',
                   props.currentlyPlayingClipId === clip.id ? 'shadow-lg z-20' :
-                  (hoveredClipId === clip.id || props.hoveredTimelineClipId === clip.id && !props.currentlyPlayingClipId) ? 'shadow-lg z-20' : '',
-                  isDraggingSegment && draggedSegmentInfo?.clipId === clip.id && draggedSegmentInfo?.segmentIndex === segIndex ? 'cursor-grabbing z-30 shadow-2xl border-2 border-blue-400' : 'cursor-grab hover:cursor-grab'
+                  (hoveredClipId === clip.id || props.hoveredTimelineClipId === clip.id && !props.currentlyPlayingClipId) ? 'shadow-lg z-20' : ''
                 ]"
                 :style="{
                   left: `${duration ? (getSegmentDisplayTime(segment, 'start') / duration) * 100 : 0}%`,
@@ -320,6 +321,37 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { updateClipSegment, getAdjacentClipSegments, realignClipSegment } from '../services/database'
 
+// Simple debounce utility function with flush capability
+function debounce<T extends (...args: any[]) => any>(func: T, wait: number): {
+  (...args: Parameters<T>): void
+  flush: () => void
+} {
+  let timeout: NodeJS.Timeout | null = null
+  let pendingArgs: Parameters<T> | null = null
+
+  const debounced = (...args: Parameters<T>) => {
+    pendingArgs = args
+    if (timeout) clearTimeout(timeout)
+    timeout = setTimeout(() => {
+      func(...pendingArgs!)
+      pendingArgs = null
+    }, wait)
+  }
+
+  debounced.flush = () => {
+    if (timeout) {
+      clearTimeout(timeout)
+      if (pendingArgs) {
+        func(...pendingArgs)
+        pendingArgs = null
+      }
+      timeout = null
+    }
+  }
+
+  return debounced
+}
+
 interface Timestamp {
   time: number
   position: number
@@ -436,6 +468,33 @@ const zoomLevel = ref(1.0) // 1.0 = normal zoom, >1.0 = zoomed in
 const minZoom = 1.0
 const maxZoom = 10.0
 const zoomStep = 0.1
+
+// Debounced database update function for smoother performance
+const debouncedUpdateClip = debounce(async (clipId: string, segmentIndex: number, newStartTime: number, newEndTime: number) => {
+  try {
+    await updateClipSegment(clipId, segmentIndex, newStartTime, newEndTime)
+
+    // Update local clip data for immediate visual feedback
+    const clipIndex = localClips.value.findIndex(clip => clip.id === clipId)
+    if (clipIndex !== -1 && localClips.value[clipIndex].segments[segmentIndex]) {
+      // Create a new clips array to trigger reactivity
+      const updatedClips = [...localClips.value]
+      updatedClips[clipIndex] = {
+        ...updatedClips[clipIndex],
+        segments: [...updatedClips[clipIndex].segments]
+      }
+      updatedClips[clipIndex].segments[segmentIndex] = {
+        ...updatedClips[clipIndex].segments[segmentIndex],
+        start_time: newStartTime,
+        end_time: newEndTime,
+        duration: newEndTime - newStartTime
+      }
+      localClips.value = updatedClips
+    }
+  } catch (error) {
+    console.error('Error updating clip segment:', error)
+  }
+}, 100) // 100ms debounce for smoother performance
 
 // Panning state
 const isPanning = ref(false)
@@ -1218,11 +1277,7 @@ async function calculateMovementConstraints(clipId: string, segmentIndex: number
       maxEndTime
     }
 
-    console.log('[Timeline] Final constraints:', {
-      minStartTime: minStartTime.toFixed(2),
-      maxEndTime: maxEndTime.toFixed(2),
-      availableSpace: (maxEndTime - minStartTime).toFixed(2)
-    })
+    // Constraints calculated successfully
   } catch (error) {
     console.error('Error calculating movement constraints:', error)
     movementConstraints.value = {
@@ -1278,15 +1333,7 @@ function onSegmentMouseMove(event: MouseEvent) {
   // Preserve original duration
   const originalDuration = draggedSegmentInfo.value.originalEndTime - draggedSegmentInfo.value.originalStartTime
 
-  console.log('[Timeline] Drag Debug:', {
-    deltaX,
-    timeDelta,
-    originalDuration,
-    originalRange: `${draggedSegmentInfo.value.originalStartTime.toFixed(2)}-${draggedSegmentInfo.value.originalEndTime.toFixed(2)}`,
-    initialNewRange: `${newStartTime.toFixed(2)}-${newEndTime.toFixed(2)}`,
-    constraints: movementConstraints.value,
-    duration: props.duration
-  })
+  // Removed debug logging for smoother performance
 
   // Apply movement constraints
   newStartTime = Math.max(movementConstraints.value.minStartTime, newStartTime)
@@ -1338,15 +1385,12 @@ function onSegmentMouseMove(event: MouseEvent) {
     }
   }
 
-  console.log('[Timeline] Final result:', {
-    finalRange: `${newStartTime.toFixed(2)}-${newEndTime.toFixed(2)}`,
-    finalDuration: (newEndTime - newStartTime).toFixed(2),
-    originalDuration: originalDuration.toFixed(2)
-  })
-
   // Update drag state
   draggedSegmentInfo.value.currentStartTime = newStartTime
   draggedSegmentInfo.value.currentEndTime = newEndTime
+
+  // Use debounced update for smoother performance during drag
+  debouncedUpdateClip(clipId, segmentIndex, newStartTime, newEndTime)
 }
 
 // Handle mouse up to finish segment dragging
@@ -1355,24 +1399,26 @@ async function onSegmentMouseUp() {
 
   const { clipId, segmentIndex, currentStartTime, currentEndTime, originalStartTime, originalEndTime } = draggedSegmentInfo.value
 
+  // Flush any pending debounced updates first
+  debouncedUpdateClip.flush()
+
   // Reset drag state
   isDraggingSegment.value = false
   draggedSegmentInfo.value = null
   document.body.style.cursor = ''
 
-  // Only update if position actually changed
+  // Final database update and transcript realignment (only if significant change)
   if (Math.abs(currentStartTime - originalStartTime) > 0.1 || Math.abs(currentEndTime - originalEndTime) > 0.1) {
     try {
-      // Update database
+      // Final immediate database update to ensure latest state is saved
       await updateClipSegment(clipId, segmentIndex, currentStartTime, currentEndTime)
 
       // Realign transcript if needed
       await realignClipSegment(clipId, segmentIndex, originalStartTime, originalEndTime, currentStartTime, currentEndTime)
 
-      // Update local clip data for immediate visual feedback
+      // Force immediate visual update by updating localClips directly
       const clipIndex = localClips.value.findIndex(clip => clip.id === clipId)
       if (clipIndex !== -1 && localClips.value[clipIndex].segments[segmentIndex]) {
-        // Create a new clips array to trigger reactivity
         const updatedClips = [...localClips.value]
         updatedClips[clipIndex] = {
           ...updatedClips[clipIndex],
@@ -1384,21 +1430,13 @@ async function onSegmentMouseUp() {
           end_time: currentEndTime,
           duration: currentEndTime - currentStartTime
         }
-
-        // Update localClips to trigger reactivity
         localClips.value = updatedClips
       }
 
       // Emit update to parent
       emit('segmentUpdated', clipId, segmentIndex, currentStartTime, currentEndTime)
-
-      console.log(`[Timeline] Segment ${segmentIndex} of clip ${clipId} updated:`, {
-        from: `${formatDuration(originalStartTime)} - ${formatDuration(originalEndTime)}`,
-        to: `${formatDuration(currentStartTime)} - ${formatDuration(currentEndTime)}`
-      })
     } catch (error) {
-      console.error('[Timeline] Error updating segment:', error)
-      // Could show error notification here
+      console.error('[Timeline] Error in final segment update:', error)
     }
   }
 }
@@ -1554,7 +1592,13 @@ async function onSegmentMouseUp() {
 
 /* Clip segment animations */
 .clip-segment {
-  transition: all 0.15s ease;
+  transition: transform 0.2s ease-out, box-shadow 0.2s ease-out, border-color 0.15s ease;
+  will-change: transform, box-shadow;
+}
+
+/* No transitions during drag for smoother performance */
+.clip-segment.dragging {
+  transition: none !important;
 }
 
 /* Individual hover effect removed - clips only highlight through bidirectional system */
@@ -1833,6 +1877,14 @@ async function onSegmentMouseUp() {
 
 .clip-segment.dragging {
   cursor: grabbing !important;
+  transform: scale(1.02);
+}
+
+/* Smooth transitions for non-dragging states */
+.clip-segment:not(.dragging) {
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.15s ease;
 }
 
 /* Prevent text selection during drag */
