@@ -33,9 +33,18 @@
 
             <!-- Reverse 10 Seconds Button -->
             <button
-              @click="seekVideo(-10)"
-              class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors duration-150"
-              title="Reverse 10 seconds (← arrow key)"
+              @mousedown="startContinuousSeeking('reverse')"
+              @mouseup="stopContinuousSeeking"
+              @mouseleave="stopContinuousSeeking"
+              @touchstart="startContinuousSeeking('reverse')"
+              @touchend="stopContinuousSeeking"
+              :class="[
+                'p-1.5 rounded transition-colors duration-150',
+                isSeeking && seekDirection === 'reverse'
+                  ? 'text-blue-600 bg-blue-100/20 hover:bg-blue-100/30'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              ]"
+              :title="isSeeking && seekDirection === 'reverse' ? 'Seeking 2x speed (release to stop)' : 'Reverse 10 seconds (← arrow key)'"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.333 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z" />
@@ -44,9 +53,18 @@
 
             <!-- Fast Forward 10 Seconds Button -->
             <button
-              @click="seekVideo(10)"
-              class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors duration-150"
-              title="Fast forward 10 seconds (→ arrow key)"
+              @mousedown="startContinuousSeeking('forward')"
+              @mouseup="stopContinuousSeeking"
+              @mouseleave="stopContinuousSeeking"
+              @touchstart="startContinuousSeeking('forward')"
+              @touchend="stopContinuousSeeking"
+              :class="[
+                'p-1.5 rounded transition-colors duration-150',
+                isSeeking && seekDirection === 'forward'
+                  ? 'text-blue-600 bg-blue-100/20 hover:bg-blue-100/30'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              ]"
+              :title="isSeeking && seekDirection === 'forward' ? 'Seeking 2x speed (release to stop)' : 'Fast forward 10 seconds (→ arrow key)'"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z" />
@@ -782,6 +800,11 @@ const cutHoverInfo = ref<{
   cutPosition: number // percentage (0-100)
   cursorPosition: number // percentage (0-100) for custom cursor position
 } | null>(null)
+
+// Continuous seeking state
+const isSeeking = ref(false)
+const seekDirection = ref<'forward' | 'reverse' | null>(null)
+const seekInterval = ref<number | null>(null)
 
 // Movement constraints
 const movementConstraints = ref<{
@@ -1805,15 +1828,29 @@ function handleKeyDown(event: KeyboardEvent) {
     toggleCutTool()
   }
 
-  // Video navigation with arrow keys
+  // Video navigation with arrow keys (continuous seeking)
   if (!isCutToolActive.value && props.videoSrc && props.duration) {
-    if (event.key === 'ArrowLeft') {
+    if (event.key === 'ArrowLeft' && !isSeeking.value) {
       event.preventDefault()
-      seekVideo(-10)
-    } else if (event.key === 'ArrowRight') {
+      startContinuousSeeking('reverse')
+    } else if (event.key === 'ArrowRight' && !isSeeking.value) {
       event.preventDefault()
-      seekVideo(10)
+      startContinuousSeeking('forward')
     }
+  }
+}
+
+// Handle keyboard key up events
+function handleKeyUp(event: KeyboardEvent) {
+  // Don't handle keyboard events if user is typing in input fields
+  if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+    return
+  }
+
+  // Stop continuous seeking when arrow keys are released
+  if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && isSeeking.value) {
+    event.preventDefault()
+    stopContinuousSeeking()
   }
 }
 
@@ -1823,6 +1860,7 @@ onMounted(() => {
   document.addEventListener('mousemove', handleGlobalMouseMove)
   document.addEventListener('mouseup', handleGlobalMouseUp)
   document.addEventListener('keydown', handleKeyDown)
+  document.addEventListener('keyup', handleKeyUp)
 
   // Initialize timeline bounds for hover line
   const container = timelineScrollContainer.value
@@ -1906,6 +1944,10 @@ onUnmounted(() => {
   document.removeEventListener('mousemove', handleGlobalMouseMove)
   document.removeEventListener('mouseup', handleGlobalMouseUp)
   document.removeEventListener('keydown', handleKeyDown)
+  document.removeEventListener('keyup', handleKeyUp)
+
+  // Clean up continuous seeking
+  stopContinuousSeeking()
 
   // Clean up event listeners and observers
   const container = timelineScrollContainer.value
@@ -2452,6 +2494,34 @@ function seekVideo(seconds: number) {
       onVideoTrackClick(syntheticEvent)
     }
   }
+}
+
+// Start continuous seeking
+function startContinuousSeeking(direction: 'forward' | 'reverse') {
+  if (!props.videoSrc || !props.duration) return
+
+  isSeeking.value = true
+  seekDirection.value = direction
+
+  // Start continuous seeking at 2x speed immediately (no initial jump)
+  seekInterval.value = setInterval(() => {
+    if (seekDirection.value === 'forward') {
+      seekVideo(1) // Seek 1 second every 100ms = 10 seconds per second
+    } else {
+      seekVideo(-1) // Seek -1 second every 100ms = -10 seconds per second
+    }
+  }, 100)
+}
+
+// Stop continuous seeking
+function stopContinuousSeeking() {
+  if (seekInterval.value) {
+    clearInterval(seekInterval.value)
+    seekInterval.value = null
+  }
+
+  isSeeking.value = false
+  seekDirection.value = null
 }
 
 // Cut tool functions
