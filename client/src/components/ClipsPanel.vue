@@ -87,11 +87,17 @@
             :class="[
               'p-3 bg-muted/15 border rounded-lg cursor-pointer',
               index === clips.length - 1 ? 'mb-4' : '',
-              hoveredTimelineClipId === clip.id ? '' : 'transition-all duration-200'
+              // Only apply transition if not the currently playing clip
+              !(props.isPlayingSegments && props.playingClipId === clip.id) ? 'transition-all duration-200' : '',
+              // Playing clip gets green styling
+              props.isPlayingSegments && props.playingClipId === clip.id ? 'ring-2 ring-green-500/50 bg-green-500/10' : ''
             ]"
             :style="{
-              borderColor: (hoveredTimelineClipId === clip.id || hoveredClipId === clip.id) ? (clip.session_run_color || '#8B5CF6') : undefined,
-              borderWidth: (hoveredTimelineClipId === clip.id || hoveredClipId === clip.id) ? '1px' : undefined
+              // Prioritize playing state over hover state
+              borderColor: (props.isPlayingSegments && props.playingClipId === clip.id) ? '#10b981' :
+                         (hoveredTimelineClipId === clip.id || hoveredClipId === clip.id) ? (clip.session_run_color || '#8B5CF6') : undefined,
+              borderWidth: (props.isPlayingSegments && props.playingClipId === clip.id) ||
+                         (hoveredTimelineClipId === clip.id || hoveredClipId === clip.id) ? '1px' : undefined
             }"
             @click="onClipClick(clip.id)"
           >
@@ -113,6 +119,10 @@
                   <span v-if="clip.session_created_at" class="flex items-center gap-1">
                     <ClockIcon class="h-2 w-2" />
                     {{ formatTimestamp(clip.session_created_at) }}
+                  </span>
+                  <span v-if="props.isPlayingSegments && props.playingClipId === clip.id" class="flex items-center gap-1 text-green-400">
+                    <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                    Playing segments
                   </span>
                 </div>
               </div>
@@ -144,7 +154,7 @@
                 <button
                   class="p-1 hover:bg-muted/50 rounded transition-colors"
                   title="Play clip"
-                  @click.stop
+                  @click.stop="onPlayClip(clip)"
                 >
                   <PlayIcon class="h-3 w-3 text-foreground/60" />
                 </button>
@@ -235,6 +245,8 @@ interface Props {
   generationError?: string
   projectId?: string
   hoveredTimelineClipId?: string | null
+  playingClipId?: string | null
+  isPlayingSegments?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -242,7 +254,9 @@ const props = withDefaults(defineProps<Props>(), {
   generationProgress: 0,
   generationStage: '',
   generationMessage: '',
-  generationError: ''
+  generationError: '',
+  playingClipId: null,
+  isPlayingSegments: false
 })
 
 interface Emits {
@@ -251,6 +265,7 @@ interface Emits {
   (e: 'clipLeave'): void
   (e: 'scrollToTimeline'): void
   (e: 'deleteClip', clipId: string): void
+  (e: 'playClip', clip: ClipWithVersion): void
 }
 
 const emit = defineEmits<Emits>()
@@ -389,6 +404,11 @@ function handleDetectClips() {
 function onDeleteClip(clipId: string) {
   console.log('[ClipsPanel] Delete button clicked for clip:', clipId)
   emit('deleteClip', clipId)
+}
+
+function onPlayClip(clip: ClipWithVersion) {
+  console.log('[ClipsPanel] Play button clicked for clip:', clip.id)
+  emit('playClip', clip)
 }
 
 function onPromptChange(promptId: string, promptContent: string) {

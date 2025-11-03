@@ -786,9 +786,6 @@ function updateGlobalPlayheadPosition() {
   const container = timelineScrollContainer.value
   if (!container) return
 
-  const rect = container.getBoundingClientRect()
-  const trackLabelWidth = 64 // w-16 = 64px
-
   // Calculate the time percentage
   const timePercent = props.currentTime / props.duration
 

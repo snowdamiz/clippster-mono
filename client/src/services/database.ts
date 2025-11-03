@@ -1380,7 +1380,7 @@ export async function persistClipDetectionResults(
           transcriptId = existingTranscript.id
 
           // Check if this was a fresh transcription or cached
-          const usedCachedTranscript = detectionResults.processing_info?.used_cached_transcript
+          const usedCachedTranscript = (detectionResults as any).processing_info?.used_cached_transcript
 
           if (!usedCachedTranscript) {
             console.log('[Database] Fresh transcription received, updating existing transcript data')
@@ -1432,7 +1432,7 @@ export async function persistClipDetectionResults(
         }
 
         // Store transcript segments if available (only for fresh transcriptions)
-        const usedCachedTranscript = detectionResults.processing_info?.used_cached_transcript
+        const usedCachedTranscript = (detectionResults as any).processing_info?.used_cached_transcript
         if (!usedCachedTranscript && detectionResults.transcript.segments && Array.isArray(detectionResults.transcript.segments)) {
           console.log('[Database] Storing fresh transcript segments')
           for (let i = 0; i < detectionResults.transcript.segments.length; i++) {

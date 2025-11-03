@@ -1,5 +1,5 @@
 import { ref, watch, nextTick, onMounted, computed, type Ref } from 'vue'
-import { type Project, getAllRawVideos, type RawVideo } from '@/services/database'
+import { type Project, getAllRawVideos, type RawVideo, type ClipSegment } from '@/services/database'
 import { invoke } from '@tauri-apps/api/core'
 
 export function useVideoPlayer(project: Ref<Project | null | undefined>) {
@@ -21,6 +21,12 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   // Video data
   const availableVideos = ref<RawVideo[]>([])
   const currentVideo = ref<RawVideo | null>(null)
+
+  // Segmented playback state
+  const isPlayingSegments = ref(false)
+  const currentSegments = ref<ClipSegment[]>([])
+  const currentSegmentIndex = ref(0)
+  const segmentPlaybackEnded = ref(false)
 
   // Timeline timestamps
   const timelineTimestamps = computed(() => {
@@ -139,6 +145,12 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   function togglePlayPause() {
     if (!videoElement.value) return
 
+    // If we're playing segments, stop segmented playback first
+    if (isPlayingSegments.value) {
+      stopSegmentedPlayback()
+      return
+    }
+
     if (videoElement.value.paused) {
       videoElement.value.play()
       isPlaying.value = true
@@ -150,6 +162,11 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
 
   function seekTimeline(event: MouseEvent) {
     if (!videoElement.value || !videoSrc.value) return
+
+    // If we're playing segments, stop segmented playback when user seeks
+    if (isPlayingSegments.value) {
+      stopSegmentedPlayback()
+    }
 
     const timeline = event.currentTarget as HTMLElement
     const rect = timeline.getBoundingClientRect()
@@ -226,6 +243,11 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     if (videoElement.value.buffered.length > 0) {
       buffered.value = videoElement.value.buffered.end(videoElement.value.buffered.length - 1)
     }
+
+    // Handle segmented playback
+    if (isPlayingSegments.value && currentSegments.value.length > 0) {
+      checkSegmentPlayback()
+    }
   }
 
   function onLoadedMetadata() {
@@ -243,6 +265,12 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   function onVideoEnded() {
     isPlaying.value = false
     currentTime.value = 0
+
+    // If we were playing segments, the segment playback logic will handle ending
+    // But if video ends naturally during segmented playback, stop segment mode
+    if (isPlayingSegments.value) {
+      stopSegmentedPlayback()
+    }
   }
 
   function onLoadStart() {
@@ -328,6 +356,145 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     videoLoading.value = false
     timelineHoverTime.value = null
     timelineHoverPosition.value = 0
+    stopSegmentedPlayback()
+  }
+
+  // Segmented playback functions
+  function playClipSegments(segments: ClipSegment[]) {
+    if (!segments || segments.length === 0) {
+      console.warn('[useVideoPlayer] No segments provided for playback')
+      return
+    }
+
+    if (!videoElement.value) {
+      console.warn('[useVideoPlayer] Video element not available for segmented playback')
+      return
+    }
+
+    if (!videoSrc.value) {
+      console.warn('[useVideoPlayer] No video source loaded for segmented playback')
+      return
+    }
+
+    console.log('[useVideoPlayer] Starting segmented playback for', segments.length, 'segments')
+
+    try {
+      // Sort segments by start time to ensure proper order
+      currentSegments.value = segments.sort((a, b) => a.start_time - b.start_time)
+      currentSegmentIndex.value = 0
+      isPlayingSegments.value = true
+      segmentPlaybackEnded.value = false
+
+      // Seek to first segment and start playback
+      const firstSegment = currentSegments.value[0]
+      if (firstSegment) {
+        // Validate segment times
+        if (firstSegment.start_time < 0 || firstSegment.end_time <= firstSegment.start_time) {
+          console.warn('[useVideoPlayer] Invalid segment times:', firstSegment)
+          stopSegmentedPlayback()
+          return
+        }
+
+        videoElement.value.currentTime = firstSegment.start_time
+        const playPromise = videoElement.value.play()
+
+        if (playPromise !== undefined) {
+          playPromise.catch(error => {
+            console.error('[useVideoPlayer] Failed to start segmented playback:', error)
+            stopSegmentedPlayback()
+          })
+        }
+
+        isPlaying.value = true
+      }
+    } catch (error) {
+      console.error('[useVideoPlayer] Error starting segmented playback:', error)
+      stopSegmentedPlayback()
+    }
+  }
+
+  function checkSegmentPlayback() {
+    if (!isPlayingSegments.value || currentSegments.value.length === 0 || !videoElement.value) {
+      return
+    }
+
+    try {
+      const currentSegment = currentSegments.value[currentSegmentIndex.value]
+      if (!currentSegment) return
+
+      const currentVideoTime = videoElement.value.currentTime
+      const segmentEndTime = currentSegment.end_time
+
+      // Validate segment end time
+      if (segmentEndTime <= currentSegment.start_time) {
+        console.warn('[useVideoPlayer] Invalid segment end time, skipping:', currentSegment)
+        currentSegmentIndex.value++
+        if (currentSegmentIndex.value >= currentSegments.value.length) {
+          stopSegmentedPlayback()
+        }
+        return
+      }
+
+      // Add a small buffer (0.1s) to account for video frame timing
+      const endTimeBuffer = Math.max(segmentEndTime - 0.1, segmentEndTime * 0.95) // Ensure we don't go too far back
+
+      if (currentVideoTime >= endTimeBuffer) {
+        // Move to next segment
+        currentSegmentIndex.value++
+
+        if (currentSegmentIndex.value >= currentSegments.value.length) {
+          // All segments played, stop playback
+          stopSegmentedPlayback()
+        } else {
+          // Jump to next segment
+          const nextSegment = currentSegments.value[currentSegmentIndex.value]
+          if (nextSegment && nextSegment.start_time >= 0) {
+            console.log('[useVideoPlayer] Jumping to segment', currentSegmentIndex.value + 1, 'at', nextSegment.start_time)
+            videoElement.value.currentTime = nextSegment.start_time
+          } else {
+            console.warn('[useVideoPlayer] Invalid next segment, stopping playback:', nextSegment)
+            stopSegmentedPlayback()
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[useVideoPlayer] Error in segment playback check:', error)
+      stopSegmentedPlayback()
+    }
+  }
+
+  function stopSegmentedPlayback() {
+    if (isPlayingSegments.value) {
+      console.log('[useVideoPlayer] Stopping segmented playback')
+    }
+
+    isPlayingSegments.value = false
+    currentSegments.value = []
+    currentSegmentIndex.value = 0
+    segmentPlaybackEnded.value = true
+
+    // Stop video playback
+    if (videoElement.value && !videoElement.value.paused) {
+      videoElement.value.pause()
+      isPlaying.value = false
+    }
+
+    // Reset the ended flag after a short delay
+    setTimeout(() => {
+      segmentPlaybackEnded.value = false
+    }, 100)
+  }
+
+  // Override togglePlayPause to handle segmented playback
+  function togglePlayPauseWithSegments() {
+    if (isPlayingSegments.value) {
+      // If playing segments, stop and return to normal mode
+      stopSegmentedPlayback()
+      return
+    }
+
+    // Normal play/pause behavior
+    togglePlayPause()
   }
 
   // Watchers
@@ -393,9 +560,16 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     timelineTimestamps,
     currentVideo,
 
+    // Segmented playback state
+    isPlayingSegments,
+    currentSegments,
+    currentSegmentIndex,
+    segmentPlaybackEnded,
+
     // Methods
     formatDuration,
     togglePlayPause,
+    togglePlayPauseWithSegments,
     seekTimeline,
     onTimelineTrackHover,
     onTimelineZoomChanged,
@@ -409,6 +583,8 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     onVideoError,
     loadVideos,
     loadVideoForProject,
-    resetVideoState
+    resetVideoState,
+    playClipSegments,
+    stopSegmentedPlayback
   }
 }

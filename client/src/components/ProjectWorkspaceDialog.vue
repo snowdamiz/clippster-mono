@@ -75,10 +75,13 @@
                 :generation-error="clipError"
                 :project-id="project?.id"
                 :hovered-timeline-clip-id="hoveredTimelineClipId"
+                :is-playing-segments="isPlayingSegments"
+                :playing-clip-id="getCurrentPlayingClipId()"
                 @detectClips="onDetectClips"
                 @clipHover="onClipHover"
                 @scrollToTimeline="onScrollToTimeline"
                 @deleteClip="onDeleteClip"
+                @playClip="onPlayClip"
               />
             </div>
           </div>
@@ -93,7 +96,7 @@
             :timeline-hover-position="timelineHoverPosition"
             :clips="timelineClips"
             :hovered-clip-id="hoveredClipId"
-            :hovered-timeline-clip-id="hoveredTimelineClipId"
+            :hovered-timeline-clip-id="hoveredTimelineClipId || currentlyPlayingClipId"
             @seekTimeline="seekTimeline"
             @timelineTrackHover="onTimelineTrackHover"
             @timelineMouseLeave="onTimelineMouseLeave"
@@ -183,6 +186,9 @@ const clipGenerationInProgress = ref(false)
 const showDeleteDialog = ref(false)
 const clipToDelete = ref<string | null>(null)
 
+// Segmented playback tracking
+const currentlyPlayingClipId = ref<string | null>(null)
+
 // Panel collapse state
 const transcriptCollapsed = ref(false)
 const clipsCollapsed = ref(false)
@@ -237,7 +243,11 @@ const {
   onVideoError,
   loadVideos,
   loadVideoForProject,
-  resetVideoState
+  resetVideoState,
+  playClipSegments,
+  stopSegmentedPlayback,
+  isPlayingSegments,
+  segmentPlaybackEnded
 } = useVideoPlayer(projectRef)
 
 function close() {
@@ -598,6 +608,12 @@ function handleTimelineZoomChanged(zoomLevel: number) {
 
 // Clip hover event handlers
 function onClipHover(clipId: string) {
+  // If a clip is currently playing, stop playback when user selects a different clip
+  if (isPlayingSegments.value && currentlyPlayingClipId.value !== clipId) {
+    stopSegmentedPlayback()
+    currentlyPlayingClipId.value = null
+  }
+
   // Clear both states first to ensure no duplicates
   hoveredClipId.value = null
   hoveredTimelineClipId.value = null
@@ -628,6 +644,12 @@ function onClipHover(clipId: string) {
 
 // Timeline clip hover/click event handler
 function onTimelineClipHover(clipId: string) {
+  // If a clip is currently playing, stop playback when user selects a different clip
+  if (isPlayingSegments.value && currentlyPlayingClipId.value !== clipId) {
+    stopSegmentedPlayback()
+    currentlyPlayingClipId.value = null
+  }
+
   // Clear both states first to ensure no duplicates
   hoveredClipId.value = null
   hoveredTimelineClipId.value = null
@@ -778,6 +800,61 @@ function onVideoElementReady(element: HTMLVideoElement) {
   videoElement.value = element
 }
 
+function getCurrentPlayingClipId(): string | null {
+  return currentlyPlayingClipId.value
+}
+
+// Function to handle clip playback
+function onPlayClip(clip: any) {
+  console.log('[ProjectWorkspaceDialog] Playing clip:', clip.id)
+
+  // Clear any previous selections when starting playback
+  hoveredClipId.value = null
+  hoveredTimelineClipId.value = null
+
+  // Track the currently playing clip
+  currentlyPlayingClipId.value = clip.id
+
+  // Get segments from the clip
+  let segments: any[] = []
+
+  if (clip.current_version_segments && Array.isArray(clip.current_version_segments) && clip.current_version_segments.length > 0) {
+    // Use the proper segments from database
+    segments = clip.current_version_segments.map((segment: any) => ({
+      id: segment.id,
+      clip_version_id: segment.clip_version_id,
+      segment_index: segment.segment_index,
+      start_time: segment.start_time,
+      end_time: segment.end_time,
+      duration: segment.duration || (segment.end_time - segment.start_time),
+      transcript: segment.transcript || null,
+      created_at: segment.created_at
+    }))
+  } else if (clip.current_version) {
+    // Fallback: create single segment from version timing
+    segments = [
+      {
+        id: `fallback-${clip.id}`,
+        clip_version_id: clip.current_version.id || clip.id,
+        segment_index: 0,
+        start_time: clip.current_version.start_time || 0,
+        end_time: clip.current_version.end_time || 0,
+        duration: (clip.current_version.end_time || 0) - (clip.current_version.start_time || 0),
+        transcript: clip.current_version.description || null,
+        created_at: Date.now()
+      }
+    ]
+  }
+
+  if (segments.length > 0) {
+    console.log('[ProjectWorkspaceDialog] Playing segments:', segments)
+    playClipSegments(segments)
+  } else {
+    console.warn('[ProjectWorkspaceDialog] No segments found for clip:', clip.id)
+    currentlyPlayingClipId.value = null
+  }
+}
+
 // Watch for dialog open/close
 watch(() => props.modelValue, async (newValue) => {
   if (newValue) {
@@ -835,6 +912,22 @@ watch([clipGenerationInProgress, clipProgress], async ([isInProgress, progress])
       // Also refresh timeline clips
       await loadTimelineClips(props.project!.id)
     }, 1500)
+  }
+})
+
+// Watch for segmented playback state changes
+watch([isPlayingSegments, segmentPlaybackEnded], ([isPlaying, ended]) => {
+  if (!isPlaying && ended) {
+    // Clear the currently playing clip when playback ends
+    currentlyPlayingClipId.value = null
+  }
+})
+
+// Watch for dialog close to reset playback state
+watch(() => props.modelValue, (newValue) => {
+  if (!newValue) {
+    currentlyPlayingClipId.value = null
+    stopSegmentedPlayback()
   }
 })
 
