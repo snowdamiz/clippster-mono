@@ -7,11 +7,15 @@
       icon="M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4"
     >
       <template #actions>
-        <button class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all">
+        <button
+          @click="openClipsFolder"
+          :disabled="!hasAnyClipsWithFiles"
+          :title="hasAnyClipsWithFiles ? 'Open clips folder' : 'No clips available to show in folder'"
+          class="p-3 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
           </svg>
-          Upload Clip
         </button>
       </template>
 
@@ -155,9 +159,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { getGeneratedClips, getDetectedClips, deleteClip, getThumbnailByClipId, getProject, getRawVideosByProjectId, type Clip, type Project, type RawVideo } from '@/services/database'
+import { getStoragePath } from '@/services/storage'
 import { useFormatters } from '@/composables/useFormatters'
 import PageLayout from '@/components/PageLayout.vue'
 import LoadingState from '@/components/LoadingState.vue'
@@ -175,6 +181,11 @@ const thumbnailCache = ref<Map<string, string>>(new Map())
 const rawVideoCache = ref<Map<string, (RawVideo & { thumbnail_path: string | null })[]>>(new Map())
 const projectCache = ref<Map<string, Project>>(new Map())
 const { getRelativeTime } = useFormatters()
+
+// Computed property to check if any clips have actual files
+const hasAnyClipsWithFiles = computed(() => {
+  return clips.value.some(clip => clip.file_path && clip.file_path.trim() !== '')
+})
 
 async function loadClips() {
   loading.value = true
@@ -320,6 +331,16 @@ function getClipStatusText(status: string | null): string {
       return 'Processing'
     default:
       return 'Unknown'
+  }
+}
+
+async function openClipsFolder() {
+  try {
+    const basePath = await getStoragePath('base')
+    console.log(`[Clips] Opening base Clippster directory: ${basePath}`)
+    await revealItemInDir(basePath)
+  } catch (err) {
+    console.error('Failed to open Clippster directory:', err)
   }
 }
 
