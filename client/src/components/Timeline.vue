@@ -266,6 +266,22 @@
             </div>
           </div>
         </div>
+
+        <!-- Custom Timeline Tooltip -->
+        <div
+          v-if="showTimelineTooltip && !isPanning && !isDragging"
+          class="fixed pointer-events-none z-50 transition-all duration-75"
+          :style="{
+            left: `${tooltipPosition.x}px`,
+            top: `${tooltipPosition.y}px`,
+            transform: 'translateX(-50%)'
+          }"
+        >
+          <div class="bg-black/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-md font-medium shadow-lg border border-white/20">
+            {{ formatDuration(tooltipTime) }}
+            <div class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-1.5 h-1.5 bg-black/90 border-r border-b border-white/20"></div>
+          </div>
+        </div>
     </div>
   </div>
 </template>
@@ -403,6 +419,11 @@ const dragEndPercent = ref(0)
 const showTimelineHoverLine = ref(false)
 const timelineHoverLinePosition = ref(0) // X position in pixels relative to timeline container
 const timelineBounds = ref({ top: 0, bottom: 0 }) // Timeline container bounds
+
+// Custom tooltip state
+const showTimelineTooltip = ref(false)
+const tooltipPosition = ref({ x: 0, y: 0 })
+const tooltipTime = ref(0)
 
 // Global playhead state
 const globalPlayheadPosition = ref(0) // X position in pixels for the global playhead line
@@ -618,6 +639,9 @@ function onPanStart(event: MouseEvent) {
   panStartX.value = event.clientX
   panScrollLeft.value = timelineScrollContainer.value?.scrollLeft || 0
 
+  // Hide tooltip when panning starts
+  showTimelineTooltip.value = false
+
   // Change cursor to indicate panning
   document.body.style.cursor = 'grabbing'
   event.preventDefault()
@@ -663,6 +687,9 @@ function onDragStart(event: MouseEvent) {
   isDragging.value = true
   dragStartX.value = event.clientX
   dragEndX.value = event.clientX
+
+  // Hide tooltip when dragging starts
+  showTimelineTooltip.value = false
 
   // Calculate percentages relative to the zoomed timeline content
   const timelineContent = container.querySelector('.timeline-content-wrapper')
@@ -783,13 +810,32 @@ function onTimelineMouseMove(event: MouseEvent) {
     showTimelineHoverLine.value = true
     // Position the line exactly where the cursor is (absolute viewport position)
     timelineHoverLinePosition.value = event.clientX
+
+    // Calculate time for tooltip
+    const timelineContent = container.querySelector('.timeline-content-wrapper')
+    if (timelineContent) {
+      const contentRect = timelineContent.getBoundingClientRect()
+      const contentRelativeX = event.clientX - contentRect.left
+      const timePercent = Math.max(0, Math.min(1, contentRelativeX / contentRect.width))
+      const hoverTime = timePercent * props.duration
+
+      // Update custom tooltip
+      showTimelineTooltip.value = true
+      tooltipPosition.value = {
+        x: event.clientX,
+        y: event.clientY - 40 // Position above cursor
+      }
+      tooltipTime.value = hoverTime
+    }
   } else {
     showTimelineHoverLine.value = false
+    showTimelineTooltip.value = false
   }
 }
 
 function onTimelineMouseLeaveGlobal() {
   showTimelineHoverLine.value = false
+  showTimelineTooltip.value = false
   // Cancel drag if mouse leaves timeline
   if (isDragging.value) {
     onDragEnd()
@@ -806,6 +852,7 @@ function onRulerMouseMove(event: MouseEvent) {
 function onRulerMouseLeave() {
   onPanEnd()
   showTimelineHoverLine.value = false
+  showTimelineTooltip.value = false
 }
 
 // Update global playhead position based on current time
@@ -877,6 +924,7 @@ function handleGlobalMouseMove(event: MouseEvent) {
         onTimelineMouseMove(event)
       } else {
         showTimelineHoverLine.value = false
+        showTimelineTooltip.value = false
       }
     }
   }
