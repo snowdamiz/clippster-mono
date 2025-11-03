@@ -15,7 +15,6 @@ defmodule ClippsterServer.ClipValidation do
   @fuzzy_match_threshold 0.65
   @max_search_radius 300
   @word_levenshtein_distance 2
-  @timestamp_tolerance 0.3
 
   @type word :: %{
     optional(:start) => float(),
@@ -628,19 +627,6 @@ defmodule ClippsterServer.ClipValidation do
     end
   end
 
-  defp calculate_clip_quality_score(issues, corrections) do
-    # Simple quality score based on issues and corrections
-    base_score = 1.0
-    issue_penalty = length(issues) * 0.1
-    correction_penalty = length(corrections) * 0.05
-
-    Kernel.max(0.0, base_score - issue_penalty - correction_penalty)
-  end
-
-  @doc """
-  Validates clips using segment-level timestamps instead of word-level.
-  This is a fallback when word-level data is not available.
-  """
   defp validate_and_correct_clips_with_segments(clips, segments, verbose) do
     Logger.info("[ClipValidation] Starting segment-level validation for #{length(clips)} clips")
 
@@ -682,9 +668,6 @@ defmodule ClippsterServer.ClipValidation do
     end
   end
 
-  @doc """
-  Validates a single clip against segment boundaries.
-  """
   defp validate_clip_with_segments(clip, segments, clip_index, verbose) do
     Logger.debug("[ClipValidation] Validating clip #{clip_index} against #{length(segments)} segments")
 
@@ -730,9 +713,6 @@ defmodule ClippsterServer.ClipValidation do
     }
   end
 
-  @doc """
-  Validates a single clip segment against the available transcript segments.
-  """
   defp validate_segment_with_segments(clip_segment, transcript_segments, clip_index, segment_index, verbose) do
     if verbose do
       Logger.debug("[ClipValidation] Validating segment #{clip_index}.#{segment_index}: #{clip_segment["start_time"]} - #{clip_segment["end_time"]}")
@@ -792,9 +772,6 @@ defmodule ClippsterServer.ClipValidation do
     }
   end
 
-  @doc """
-  Checks if a clip segment overlaps with available transcript segments.
-  """
   defp check_segment_overlap(clip_start, clip_end, transcript_segments) do
     overlapping_segments = Enum.count(transcript_segments, fn segment ->
       segment_start = segment["start"]
@@ -813,9 +790,6 @@ defmodule ClippsterServer.ClipValidation do
 
   # New AI-enhanced validation functions
 
-  @doc """
-  Validates an AI-enhanced segment using timing analysis data.
-  """
   defp validate_ai_enhanced_segment(segment, _words, clip_index, segment_index, verbose) do
     if verbose do
       Logger.debug("[ClipValidation] AI-enhanced validation of segment #{clip_index}.#{segment_index}")

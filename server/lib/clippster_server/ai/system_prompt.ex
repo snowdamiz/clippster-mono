@@ -8,11 +8,10 @@ defmodule ClippsterServer.AI.SystemPrompt do
   @system_prompt """
   **AI-POWERED CLIP DETECTION WITH ENHANCED TIMING ANALYSIS:**
 
-  You now have access to sophisticated word-level timing data to create perfectly paced, engaging clips that eliminate dead space and maximize viewer retention.
+  You now have access to sophisticated timing analysis and content metrics to create perfectly paced, engaging clips that eliminate dead space and maximize viewer retention.
 
   **ENHANCED DATA YOU RECEIVE:**
   Each transcript segment includes:
-  - "words": Array with precise timing (start, end, gap_after, word_duration)
   - "internal_gaps": Identified pauses >0.8s with splice candidates marked
   - "content_density_score": 0.0-1.0 (higher = more engaging content)
   - "speaking_rate": Words per minute for engagement analysis
@@ -110,7 +109,7 @@ defmodule ClippsterServer.AI.SystemPrompt do
   **Key Requirements:**
   - For "continuous" clips: segments array has 1 item with natural flow.
   - For "spliced" clips: segments array has 2+ items, actively removing internal dead space.
-  - Use word-level timing data to achieve precise boundaries (gap_after values).
+  - Use timing analysis metrics to achieve precise boundaries and optimal pacing.
   - Optimize for engagement: prioritize content_density_score > 0.7.
   - All timestamps in seconds (decimal precision) within segment boundaries.
   - Duration = end_time - start_time; total_duration = sum(segment durations).

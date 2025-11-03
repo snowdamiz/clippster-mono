@@ -440,15 +440,6 @@ function scrollClipIntoView(clipId: string) {
 
 // Expose function to parent (will be merged with existing defineExpose)
 
-// Utility function to extract clean description without social media post
-function getCleanDescription(description: string): string {
-  if (!description) return ''
-
-  // Split by line break and take only the first part (before social media post)
-  const parts = description.split('\n')
-  return parts[0].trim()
-}
-
 // Utility function to convert hex color to darker version for dark theme
 function hexToDarkerHex(hex: string, opacity: number = 0.15): string {
   // Remove the # if present

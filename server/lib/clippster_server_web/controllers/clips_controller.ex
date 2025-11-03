@@ -58,21 +58,29 @@ defmodule ClippsterServerWeb.ClipsController do
 
           IO.puts("[ClipsController] Word-level timestamps available: #{words_available}")
 
-          # Step 2: Process verbose_json response with enhanced word timing for AI
+          # Step 2: Process verbose_json response - create optimized version for AI, keep full data for validation
           IO.puts("[ClipsController] Processing Whisper response with enhanced timing...")
-          processed_transcript = process_whisper_response_enhanced(whisper_response)
+          # Keep full enhanced response for validation
+          full_enhanced_transcript = process_whisper_response_enhanced(whisper_response)
+          # Create optimized version for AI (words stripped)
+          ai_transcript = process_whisper_response_for_ai(full_enhanced_transcript)
 
-          IO.puts("[ClipsController] Processed transcript keys: #{inspect(Map.keys(processed_transcript))}")
-          if processed_transcript["segments"] do
-            IO.puts("[ClipsController] First segment keys: #{inspect(Map.keys(hd(processed_transcript["segments"])))}")
+          IO.puts("[ClipsController] Full enhanced transcript keys: #{inspect(Map.keys(full_enhanced_transcript))}")
+          if full_enhanced_transcript["segments"] do
+            IO.puts("[ClipsController] First segment keys: #{inspect(Map.keys(hd(full_enhanced_transcript["segments"])))}")
           end
 
-          # Step 3: Send to OpenRouter API with system prompt
-          IO.puts("[ClipsController] Sending transcript to OpenRouter API...")
+          IO.puts("[ClipsController] AI transcript keys: #{inspect(Map.keys(ai_transcript))}")
+          if ai_transcript["segments"] do
+            IO.puts("[ClipsController] AI first segment keys: #{inspect(Map.keys(hd(ai_transcript["segments"])))}")
+          end
+
+          # Step 3: Send to OpenRouter API with system prompt using optimized transcript
+          IO.puts("[ClipsController] Sending optimized transcript to OpenRouter API...")
           ProgressChannel.broadcast_progress(project_id, "analyzing", 50, "Analyzing transcript for clip-worthy moments...")
           system_prompt = SystemPrompt.get()
 
-          ai_result = OpenRouterAPI.generate_clips(processed_transcript, system_prompt, user_prompt)
+          ai_result = OpenRouterAPI.generate_clips(ai_transcript, system_prompt, user_prompt)
           IO.puts("[ClipsController] OpenRouter API call completed")
           ProgressChannel.broadcast_progress(project_id, "analyzing", 80, "AI analysis completed")
 
@@ -601,5 +609,45 @@ defmodule ClippsterServerWeb.ClipsController do
     |> Enum.filter(fn word ->
       Enum.any?(filler_patterns, &String.contains?(word, &1))
     end)
+  end
+
+  # Process Whisper response for AI - strip words array to reduce payload size
+  # Keep enhanced analysis metrics but remove the massive words array
+  defp process_whisper_response_for_ai(full_enhanced_transcript) do
+    IO.puts("[ClipsController] Creating optimized transcript for AI...")
+
+    # Process segments to strip words but keep enhanced metrics
+    optimized_segments = case full_enhanced_transcript["segments"] do
+      segments when is_list(segments) ->
+        segments
+        |> Enum.map(fn segment ->
+          # Strip the words array but keep all enhanced analysis
+          segment
+          |> Map.delete("words")
+          |> Map.delete("verbose_json")  # Remove any nested verbose data
+        end)
+      _ ->
+        IO.puts("[ClipsController] No segments found in enhanced transcript")
+        []
+    end
+
+    # Create optimized transcript structure
+    optimized_transcript = %{
+      "duration" => Map.get(full_enhanced_transcript, "duration"),
+      "language" => Map.get(full_enhanced_transcript, "language"),
+      "text" => Map.get(full_enhanced_transcript, "text"),
+      "segments" => optimized_segments,
+      # Keep metadata about processing but not the heavy data
+      "processing_info" => %{
+        "segments_processed" => length(optimized_segments),
+        "words_stripped" => true,
+        "enhanced_metrics_preserved" => true
+      }
+    }
+
+    IO.puts("[ClipsController] Optimized transcript created with #{length(optimized_segments)} segments")
+    IO.puts("[ClipsController] Words array stripped to reduce AI payload size")
+
+    optimized_transcript
   end
 end
