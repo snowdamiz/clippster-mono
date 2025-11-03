@@ -993,6 +993,7 @@ function onTimelineMouseMove(event: MouseEvent) {
     top: rect.top,
     bottom: rect.bottom
   }
+  console.log('[Timeline] Bounds updated by hover:', timelineBounds.value)
 
   // Only show hover line if we're in the timeline content area (after track labels)
   const trackLabelWidth = 64 // 4rem = 64px (w-16)
@@ -1054,19 +1055,20 @@ function updateGlobalPlayheadPosition() {
   const container = timelineScrollContainer.value
   if (!container) return
 
-  // CRITICAL: Update timeline bounds first - this is what positions the playhead correctly!
-  const rect = container.getBoundingClientRect()
-  timelineBounds.value = {
-    top: rect.top,
-    bottom: rect.bottom
+  // Find the video track content element to get its current playhead position as reference
+  const videoTrack = container.querySelector('.flex-1.h-8.bg-\\[\\#0a0a0a\\]\\/50.rounded-md.relative') as HTMLElement
+  if (!videoTrack) {
+    // Video track doesn't exist yet, retry during initialization
+    if (!isPlayheadInitialized.value) {
+      requestAnimationFrame(() => {
+        updateGlobalPlayheadPosition()
+      })
+    }
+    return
   }
 
   // Calculate the time percentage
   const timePercent = props.currentTime / props.duration
-
-  // Find the video track content element to get its current playhead position as reference
-  const videoTrack = container.querySelector('.flex-1.h-8.bg-\\[\\#0a0a0a\\]\\/50.rounded-md.relative') as HTMLElement
-  if (!videoTrack) return
 
   // Create a temporary div positioned at the time percentage within the video track
   const tempDiv = document.createElement('div')
@@ -1087,6 +1089,12 @@ function updateGlobalPlayheadPosition() {
   // Clean up
   videoTrack.removeChild(tempDiv)
 
+  console.log('[Timeline] Setting playhead position:', {
+    targetX,
+    videoTrackRect: videoTrack.getBoundingClientRect(),
+    timePercent,
+    bounds: timelineBounds.value
+  })
   globalPlayheadPosition.value = targetX
   isPlayheadInitialized.value = true
 }
@@ -1201,7 +1209,59 @@ onMounted(() => {
 
     // Initialize playhead position after DOM is fully rendered
     nextTick(() => {
-      updateGlobalPlayheadPosition()
+      // Set initial bounds
+      const rect = container.getBoundingClientRect()
+      timelineBounds.value = {
+        top: rect.top,
+        bottom: rect.bottom
+      }
+      console.log('[Timeline] Initial bounds set:', timelineBounds.value, 'container rect:', rect)
+
+      // Try positioning with increasing delays
+      const tryPositioning = (delay: number) => {
+        setTimeout(() => {
+          const wasInitialized = isPlayheadInitialized.value
+          updateGlobalPlayheadPosition()
+
+          // If still not initialized after this attempt, try again with longer delay
+          if (!isPlayheadInitialized.value && !wasInitialized && delay < 1000) {
+            console.log(`[Timeline] Video track not ready, retrying in ${delay * 2}ms`)
+            tryPositioning(delay * 2)
+          } else if (isPlayheadInitialized.value) {
+            console.log('[Timeline] Playhead successfully positioned')
+          }
+        }, delay)
+      }
+
+      // Start with 200ms delay but also check if container height is stable
+      const checkHeightAndPosition = (delay: number) => {
+        setTimeout(() => {
+          const currentRect = container.getBoundingClientRect()
+          const expectedMinHeight = 300 // Timeline should be at least 300px tall when fully rendered
+
+          if (currentRect.height < expectedMinHeight && delay < 1000) {
+            // Container is still expanding, wait longer
+            console.log(`[Timeline] Container still expanding (${currentRect.height}px), retrying in ${delay * 2}ms`)
+            checkHeightAndPosition(delay * 2)
+            return
+          }
+
+          // Container height looks good, update bounds and try positioning
+          console.log(`[Timeline] Container height stable (${currentRect.height}px), updating bounds and positioning`)
+
+          // Update bounds with the correct container rect
+          timelineBounds.value = {
+            top: currentRect.top,
+            bottom: currentRect.bottom
+          }
+          console.log('[Timeline] Bounds updated to correct values:', timelineBounds.value)
+
+          tryPositioning(delay)
+        }, delay)
+      }
+
+      // Start with 200ms delay
+      checkHeightAndPosition(200)
     })
   }
 })
