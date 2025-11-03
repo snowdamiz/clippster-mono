@@ -1276,7 +1276,7 @@ async function calculateMovementConstraints(clipId: string, segmentIndex: number
     }
 
     // Get original duration from the dragged segment info
-    const originalDuration = draggedSegmentInfo.value?.originalEndTime - draggedSegmentInfo.value?.originalStartTime || 0
+    const originalDuration = (draggedSegmentInfo.value?.originalEndTime || 0) - (draggedSegmentInfo.value?.originalStartTime || 0) || 0
     console.log('[Timeline] Duration preservation constraint:', {
       originalDuration: originalDuration.toFixed(2),
       minStartTime: minStartTime.toFixed(2),
@@ -1386,9 +1386,6 @@ function onSegmentMouseMove(event: MouseEvent) {
 
   // Preserve original duration
   const originalDuration = draggedSegmentInfo.value.originalEndTime - draggedSegmentInfo.value.originalStartTime
-
-  // Calculate the allowed movement range that preserves original duration
-  const maxAllowedStart = movementConstraints.value.maxEndTime - originalDuration
 
   // Apply constraints that prevent shrinking
   if (newStartTime < movementConstraints.value.minStartTime) {

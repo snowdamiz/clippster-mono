@@ -187,15 +187,6 @@
           >
             <button
               class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-              title="Play"
-              @click.stop="handleClipClick(clip)"
-            >
-              <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </button>
-            <button
-              class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
               title="Download"
               @click.stop="handleDownloadClip(clip)"
             >
@@ -211,15 +202,6 @@
           ]">
             <span class="text-sm font-medium text-muted-foreground">{{ clip.clipId }}</span>
             <div class="flex items-center gap-1">
-              <button
-                class="p-2 rounded-md transition-colors hover:bg-muted"
-                title="Play"
-                @click.stop="handleClipClick(clip)"
-              >
-                <svg class="h-4 w-4 transition-colors text-muted-foreground hover:text-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </button>
               <button
                 class="p-2 rounded-md transition-colors hover:bg-muted"
                 title="Download"
