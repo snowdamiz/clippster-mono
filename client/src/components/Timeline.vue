@@ -178,7 +178,7 @@
 
                 <!-- Left resize handle -->
                 <div
-                  class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 hover:w-3.5 group-hover:opacity-100 group-hover:pointer-events-auto"
+                  class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 hover:w-2 group-hover:opacity-100 group-hover:pointer-events-auto"
                   :class="{ 'opacity-100 pointer-events-auto': hoveredSegmentKey === `${clip.id}_${segIndex}` }"
                 >
                   <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
@@ -186,7 +186,7 @@
 
                 <!-- Right resize handle -->
                 <div
-                  class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 hover:w-3.5 group-hover:opacity-100 group-hover:pointer-events-auto"
+                  class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 hover:w-2 group-hover:opacity-100 group-hover:pointer-events-auto"
                   :class="{ 'opacity-100 pointer-events-auto': hoveredSegmentKey === `${clip.id}_${segIndex}` }"
                 >
                   <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
@@ -341,7 +341,7 @@ const timelineClipElements = ref<Map<string, HTMLElement>>(new Map())
 // Zoom state
 const zoomLevel = ref(1.0) // 1.0 = normal zoom, >1.0 = zoomed in
 const minZoom = 1.0
-const maxZoom = 4.0
+const maxZoom = 10.0
 const zoomStep = 0.1
 
 // Panning state
