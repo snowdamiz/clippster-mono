@@ -104,6 +104,8 @@
             @timelineClipHover="onTimelineClipHover"
             @scrollToClipsPanel="onScrollToClipsPanel"
             @zoomChanged="handleTimelineZoomChanged"
+            @segmentUpdated="onSegmentUpdated"
+            @refreshClipsData="onRefreshClipsData"
           />
         </div>
       </div>
@@ -611,6 +613,50 @@ function onTimelineMouseLeave() {
 
 function handleTimelineZoomChanged(zoomLevel: number) {
   onTimelineZoomChanged(zoomLevel)
+}
+
+// Handle segment updates from Timeline
+function onSegmentUpdated(clipId: string, segmentIndex: number, newStartTime: number, newEndTime: number) {
+  console.log('[ProjectWorkspaceDialog] Segment updated:', { clipId, segmentIndex, newStartTime, newEndTime })
+
+  // Refresh the ClipsPanel data to get the updated segment positions
+  if (props.project) {
+    // Use both methods to ensure refresh happens reliably
+    setTimeout(async () => {
+      // Method 1: Direct refresh if ClipsPanel ref is available
+      if (clipsPanelRef.value) {
+        clipsPanelRef.value.refreshClips()
+      }
+
+      // Method 2: Event-based refresh as fallback
+      const refreshEvent = new CustomEvent('refresh-clips', { detail: { projectId: props.project!.id } })
+      document.dispatchEvent(refreshEvent)
+
+      // Also refresh timeline clips to ensure consistency
+      await loadTimelineClips(props.project!.id)
+    }, 100)
+  }
+}
+
+// Handle general clips data refresh request from Timeline
+function onRefreshClipsData() {
+  console.log('[ProjectWorkspaceDialog] Refreshing clips data')
+
+  if (props.project) {
+    setTimeout(async () => {
+      // Method 1: Direct refresh if ClipsPanel ref is available
+      if (clipsPanelRef.value) {
+        clipsPanelRef.value.refreshClips()
+      }
+
+      // Method 2: Event-based refresh as fallback
+      const refreshEvent = new CustomEvent('refresh-clips', { detail: { projectId: props.project!.id } })
+      document.dispatchEvent(refreshEvent)
+
+      // Also refresh timeline clips
+      await loadTimelineClips(props.project!.id)
+    }, 100)
+  }
 }
 
 // Clip hover event handlers
