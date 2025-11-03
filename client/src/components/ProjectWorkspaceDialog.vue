@@ -395,6 +395,12 @@ async function onDetectClips(prompt: string) {
           const refreshEvent = new CustomEvent('refresh-clips', { detail: { projectId: props.project!.id } })
           document.dispatchEvent(refreshEvent)
         }
+
+        // Also refresh the Projects page to update clip counts
+        const projectsRefreshEvent = new CustomEvent('refresh-clips-projects', {
+          detail: { projectId: props.project!.id }
+        })
+        document.dispatchEvent(projectsRefreshEvent)
       }, 1000)
     }
 
@@ -716,6 +722,14 @@ async function deleteClipConfirmed() {
     // Show success message
     const { success } = useToast()
     success('Clip Deleted', 'The clip has been permanently deleted.')
+
+    // Emit refresh event to update Projects page
+    setTimeout(() => {
+      const refreshEvent = new CustomEvent('refresh-clips-projects', {
+        detail: { projectId: props.project!.id }
+      })
+      document.dispatchEvent(refreshEvent)
+    }, 100)
   } catch (error) {
     console.error('[ProjectWorkspaceDialog] Failed to delete clip:', error)
 
@@ -908,6 +922,12 @@ watch([clipGenerationInProgress, clipProgress], async ([isInProgress, progress])
     setTimeout(async () => {
       const refreshEvent = new CustomEvent('refresh-clips', { detail: { projectId: props.project!.id } })
       document.dispatchEvent(refreshEvent)
+
+      // Also refresh Projects page to update clip counts
+      const projectsRefreshEvent = new CustomEvent('refresh-clips-projects', {
+        detail: { projectId: props.project!.id }
+      })
+      document.dispatchEvent(projectsRefreshEvent)
 
       // Also refresh timeline clips
       await loadTimelineClips(props.project!.id)

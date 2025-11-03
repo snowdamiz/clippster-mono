@@ -192,9 +192,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { getAllProjects, getClipsByProjectId, deleteProject, createProject, updateProject, getRawVideosByProjectId, updateRawVideo, hasRawVideosForProject, hasClipsForProject, type Project, type RawVideo } from '@/services/database'
+import { getAllProjects, getClipsWithVersionsByProjectId, deleteProject, createProject, updateProject, getRawVideosByProjectId, updateRawVideo, hasRawVideosForProject, hasClipsForProject, type Project, type RawVideo } from '@/services/database'
 import { useFormatters } from '@/composables/useFormatters'
 import { useToast } from '@/composables/useToast'
 import PageLayout from '@/components/PageLayout.vue'
@@ -226,7 +226,7 @@ async function loadProjects() {
 
     // Load clip counts and video thumbnails for each project
     for (const project of projects.value) {
-      const clips = await getClipsByProjectId(project.id)
+      const clips = await getClipsWithVersionsByProjectId(project.id)
       clipCounts.value[project.id] = clips.length
 
       // Load videos for this project
@@ -399,7 +399,21 @@ async function deleteProjectConfirmed() {
   }
 }
 
+// Listen for clip refresh events from workspace dialog
+function handleClipRefreshEvent(_event: CustomEvent) {
+  console.log('[Projects] Received clip refresh event, reloading projects')
+  loadProjects()
+}
+
 onMounted(() => {
   loadProjects()
+
+  // Add event listener for clip refresh events
+  document.addEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener)
+})
+
+onUnmounted(() => {
+  // Clean up event listener
+  document.removeEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener)
 })
 </script>
