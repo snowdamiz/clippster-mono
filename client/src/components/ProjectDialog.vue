@@ -143,7 +143,7 @@
           <!-- Header with video count -->
           <div v-if="availableVideos.length > 0" class="flex items-center justify-between mb-4">
             <p class="text-sm text-muted-foreground">
-              {{ availableVideos.length }} video{{ availableVideos.length !== 1 ? 's' : '' }}
+              {{ videoCountInfo }}
               <span v-if="totalPages > 1">• Page {{ currentPage }} of {{ totalPages }}</span>
             </p>
           </div>
@@ -155,21 +155,43 @@
               type="button"
               @click="selectVideoFromLibrary(video)"
               class="group relative bg-card border-2 rounded-lg overflow-hidden transition-all"
-              :class="selectedVideo?.id === video.id ? 'border-purple-500' : 'border-border hover:border-foreground/20'"
+              :class="[
+                selectedVideo?.id === video.id ? 'border-purple-500' : 'border-border',
+                isVideoAvailable(video) ? 'hover:border-foreground/20' : 'opacity-60 cursor-not-allowed'
+              ]"
+              :disabled="!isVideoAvailable(video)"
             >
               <!-- Thumbnail -->
               <div class="aspect-video bg-muted/50 relative">
-                <img 
+                <img
                   v-if="getThumbnailUrl(video)"
                   :src="getThumbnailUrl(video)!"
                   :alt="video.original_filename || 'Video thumbnail'"
                   class="w-full h-full object-cover"
+                  :class="{ 'filter brightness-75': !isVideoAvailable(video) }"
                 />
-                <div v-else class="absolute inset-0 flex items-center justify-center">
+                <div v-else class="absolute inset-0 flex items-center justify-center" :class="{ 'opacity-50': !isVideoAvailable(video) }">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-muted-foreground/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                   </svg>
                 </div>
+
+                <!-- Status Badge -->
+                <div class="absolute top-2 left-2">
+                  <span
+                    class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium backdrop-blur-sm"
+                    :class="[
+                      isVideoAvailable(video)
+                        ? 'bg-green-500/80 text-white'
+                        : video.project_id === props.project?.id
+                          ? 'bg-blue-500/80 text-white'
+                          : 'bg-orange-500/80 text-white'
+                    ]"
+                  >
+                    {{ getVideoStatusText(video) }}
+                  </span>
+                </div>
+
                 <!-- Selected Indicator -->
                 <div v-if="selectedVideo?.id === video.id" class="absolute inset-0 bg-purple-500/20 flex items-center justify-center">
                   <div class="bg-purple-600 rounded-full p-1">
@@ -196,8 +218,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-muted-foreground mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
-            <p class="text-muted-foreground">No videos available</p>
-            <p class="text-sm text-muted-foreground mt-1">Upload videos first to select them here</p>
+            <p class="text-muted-foreground">{{ emptyStateMessage }}</p>
           </div>
         </div>
         
@@ -304,7 +325,7 @@
 <script setup lang="ts">
 import { ref, watch, reactive, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { getAllRawVideos, type Project, type RawVideo } from '@/services/database'
+import { getAllRawVideos, getProject, type Project, type RawVideo } from '@/services/database'
 import { useFormatters } from '@/composables/useFormatters'
 
 export interface ProjectFormData {
@@ -336,6 +357,7 @@ const showVideoSelector = ref(false)
 const availableVideos = ref<RawVideo[]>([])
 const selectedVideo = ref<RawVideo | null>(null)
 const thumbnailCache = ref<Map<string, string>>(new Map())
+const projectCache = ref<Map<string, string>>(new Map())
 const { formatDuration } = useFormatters()
 
 // Pagination state
@@ -348,6 +370,23 @@ const paginatedVideos = computed(() => {
   const startIndex = (currentPage.value - 1) * videosPerPage
   const endIndex = startIndex + videosPerPage
   return availableVideos.value.slice(startIndex, endIndex)
+})
+
+// Computed property for empty state message
+const emptyStateMessage = computed(() => {
+  return 'No videos found. Upload some videos to get started.'
+})
+
+// Computed property for video count breakdown
+const videoCountInfo = computed(() => {
+  const total = availableVideos.value.length
+  const available = availableVideos.value.filter(v => isVideoAvailable(v)).length
+  const unavailable = total - available
+
+  if (unavailable > 0) {
+    return `${total} video${total !== 1 ? 's' : ''} (${available} available, ${unavailable} in projects)`
+  }
+  return `${total} video${total !== 1 ? 's' : ''} available`
 })
 
 // Pagination functions
@@ -448,6 +487,15 @@ async function handleSubmit() {
 }
 
 function selectVideoFromLibrary(video: RawVideo) {
+  if (!isVideoAvailable(video)) {
+    // Provide feedback about why the video can't be selected
+    if (video.project_id && projectCache.value.has(video.project_id)) {
+      const projectName = projectCache.value.get(video.project_id)
+      // Could add a toast notification here if you have one available
+      console.log(`This video is already assigned to project: ${projectName}`)
+    }
+    return // Don't allow selection of videos that are already associated with other projects
+  }
   selectedVideo.value = video
   showVideoSelector.value = false
 }
@@ -460,11 +508,54 @@ function getThumbnailUrl(video: RawVideo): string | null {
   return thumbnailCache.value.get(video.id) || null
 }
 
+function isVideoAvailable(video: RawVideo): boolean {
+  // Video is available if it has no project association
+  // or if editing and it's associated with the current project
+  if (isEdit.value && props.project && video.project_id === props.project.id) {
+    return true
+  }
+  return video.project_id === null
+}
+
+async function getProjectName(projectId: string): Promise<string> {
+  // Check cache first
+  if (projectCache.value.has(projectId)) {
+    return projectCache.value.get(projectId)!
+  }
+
+  try {
+    const project = await getProject(projectId)
+    const projectName = project?.name || 'Unknown Project'
+    projectCache.value.set(projectId, projectName)
+    return projectName
+  } catch (error) {
+    console.warn('Failed to get project name:', projectId, error)
+    const fallbackName = 'Unknown Project'
+    projectCache.value.set(projectId, fallbackName)
+    return fallbackName
+  }
+}
+
+function getVideoStatusText(video: RawVideo): string {
+  if (isEdit.value && props.project && video.project_id === props.project.id) {
+    return 'Current Project'
+  }
+  if (video.project_id) {
+    const projectName = projectCache.value.get(video.project_id)
+    return projectName ? `In: ${projectName}` : 'In Project'
+  }
+  return 'Available'
+}
+
 async function loadAvailableVideos() {
   try {
-    availableVideos.value = await getAllRawVideos()
-    // Load thumbnails
+    const allVideos = await getAllRawVideos()
+    // Show all videos, but indicate which ones are available
+    availableVideos.value = allVideos
+
+    // Load thumbnails and project names
     for (const video of availableVideos.value) {
+      // Load thumbnails
       if (video.thumbnail_path && !thumbnailCache.value.has(video.id)) {
         try {
           const dataUrl = await invoke<string>('read_file_as_data_url', {
@@ -473,6 +564,15 @@ async function loadAvailableVideos() {
           thumbnailCache.value.set(video.id, dataUrl)
         } catch (error) {
           console.warn('Failed to load thumbnail for video:', video.id, error)
+        }
+      }
+
+      // Load project names for videos that have project associations
+      if (video.project_id && !projectCache.value.has(video.project_id)) {
+        try {
+          await getProjectName(video.project_id)
+        } catch (error) {
+          console.warn('Failed to load project name for video:', video.id, error)
         }
       }
     }
