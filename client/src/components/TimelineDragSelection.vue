@@ -6,7 +6,7 @@
       left: `${Math.min(dragStartX, dragEndX)}px`,
       top: `${timelineBoundsTop}px`,
       width: `${Math.abs(dragEndX - dragStartX)}px`,
-      height: `${timelineBoundsBottom - timelineBoundsTop}px`
+      height: `${timelineBoundsBottom - timelineBoundsTop}px`,
     }"
   >
     <div
@@ -22,23 +22,23 @@
 </template>
 
 <script setup lang="ts">
-  import { formatDuration } from '../utils/timelineUtils'
-  import { TIMELINE_CONSTANTS } from '../constants/timelineConstants'
+  import { formatDuration } from '../utils/timelineUtils';
+  import { TIMELINE_CONSTANTS } from '../constants/timelineConstants';
 
   interface Props {
-    isDragging: boolean
-    dragStartX: number
-    dragEndX: number
-    dragStartPercent: number
-    dragEndPercent: number
-    timelineBoundsTop: number
-    timelineBoundsBottom: number
-    duration: number
+    isDragging: boolean;
+    dragStartX: number;
+    dragEndX: number;
+    dragStartPercent: number;
+    dragEndPercent: number;
+    timelineBoundsTop: number;
+    timelineBoundsBottom: number;
+    duration: number;
   }
 
-  const props = defineProps<Props>()
+  defineProps<Props>();
 
-  const DRAG_SELECTION_THRESHOLD = TIMELINE_CONSTANTS.DRAG_SELECTION_THRESHOLD
+  const DRAG_SELECTION_THRESHOLD = TIMELINE_CONSTANTS.DRAG_SELECTION_THRESHOLD;
 </script>
 
 <style scoped>

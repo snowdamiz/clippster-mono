@@ -68,36 +68,36 @@
 </template>
 
 <script setup lang="ts">
-  import { formatDuration } from '../utils/timelineUtils'
+  import { formatDuration } from '../utils/timelineUtils';
 
   interface Props {
-    videoSrc: string | null
-    currentTime: number
-    duration: number
-    timelineHoverTime: number | null
-    timelineHoverPosition: number
+    videoSrc: string | null;
+    currentTime: number;
+    duration: number;
+    timelineHoverTime: number | null;
+    timelineHoverPosition: number;
   }
 
-  const props = defineProps<Props>()
+  defineProps<Props>();
 
   interface Emits {
-    (e: 'videoTrackClick', event: MouseEvent): void
-    (e: 'timelineTrackHover', event: MouseEvent): void
-    (e: 'timelineMouseLeave'): void
+    (e: 'videoTrackClick', event: MouseEvent): void;
+    (e: 'timelineTrackHover', event: MouseEvent): void;
+    (e: 'timelineMouseLeave'): void;
   }
 
-  const emit = defineEmits<Emits>()
+  const emit = defineEmits<Emits>();
 
   function onVideoTrackClick(event: MouseEvent) {
-    emit('videoTrackClick', event)
+    emit('videoTrackClick', event);
   }
 
   function onTimelineTrackHover(event: MouseEvent) {
-    emit('timelineTrackHover', event)
+    emit('timelineTrackHover', event);
   }
 
   function onTimelineMouseLeave() {
-    emit('timelineMouseLeave')
+    emit('timelineMouseLeave');
   }
 </script>
 
