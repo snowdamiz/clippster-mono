@@ -11,88 +11,21 @@
       height: props.clips.length > 0 ? 'auto' : '146px'
     }">
       <!-- Timeline Header -->
-      <div class="flex items-center justify-between mb-3 pr-1 flex-shrink-0">
-        <div class="flex items-center gap-2">
-          <!-- Timeline Toolbar -->
-          <div class="flex items-center gap-1 bg-muted/30 rounded-lg">
-            <!-- Cut Button -->
-            <button
-              @click="toggleCutTool"
-              :class="[
-                'p-1.5 rounded transition-all duration-150',
-                isCutToolActive
-                  ? 'text-blue-600 bg-blue-100/20 hover:bg-blue-100/30'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-              ]"
-              :title="isCutToolActive ? 'Cut tool active (click to deactivate)' : 'Cut tool (click to activate)'"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 1 0 4.243 4.243 3 3 0 0 0-4.243-4.243zm0-5.758a3 3 0 1 0 4.243-4.243 3 3 0 0 0-4.243 4.243z" />
-              </svg>
-            </button>
-
-            <!-- Reverse 10 Seconds Button -->
-            <button
-              @mousedown="startContinuousSeeking('reverse')"
-              @mouseup="stopContinuousSeeking"
-              @mouseleave="stopContinuousSeeking"
-              @touchstart="startContinuousSeeking('reverse')"
-              @touchend="stopContinuousSeeking"
-              :class="[
-                'p-1.5 rounded transition-colors duration-150',
-                isSeeking && seekDirection === 'reverse'
-                  ? 'text-blue-600 bg-blue-100/20 hover:bg-blue-100/30'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-              ]"
-              :title="isSeeking && seekDirection === 'reverse' ? 'Seeking 2x speed (release to stop)' : 'Reverse 10 seconds (← arrow key)'"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.333 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z" />
-              </svg>
-            </button>
-
-            <!-- Fast Forward 10 Seconds Button -->
-            <button
-              @mousedown="startContinuousSeeking('forward')"
-              @mouseup="stopContinuousSeeking"
-              @mouseleave="stopContinuousSeeking"
-              @touchstart="startContinuousSeeking('forward')"
-              @touchend="stopContinuousSeeking"
-              :class="[
-                'p-1.5 rounded transition-colors duration-150',
-                isSeeking && seekDirection === 'forward'
-                  ? 'text-blue-600 bg-blue-100/20 hover:bg-blue-100/30'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-              ]"
-              :title="isSeeking && seekDirection === 'forward' ? 'Seeking 2x speed (release to stop)' : 'Fast forward 10 seconds (→ arrow key)'"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z" />
-              </svg>
-            </button>
-          </div>
-          <!-- Zoom Slider -->
-          <div class="flex items-center gap-2 bg-muted/30 rounded-lg px-2.5 py-1.5">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-muted-foreground/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-            </svg>
-            <input
-              ref="zoomSlider"
-              type="range"
-              :min="minZoom"
-              :max="maxZoom"
-              :step="zoomStep"
-              v-model="zoomLevel"
-              class="w-20 h-1 bg-muted-foreground/30 rounded-lg appearance-none cursor-pointer slider-zoom"
-              @input="onZoomSliderChange"
-            />
-            <span class="text-xs text-muted-foreground/70 min-w-[2rem] text-right">{{ Math.round(zoomLevel * 100) }}%</span>
-          </div>
-        </div>
-        <div class="flex items-center gap-2">
-          <span v-if="displayClips.length > 0" class="text-xs text-muted-foreground">{{ displayClips.length }} clips</span>
-        </div>
-      </div>
+      <TimelineHeader
+        :isCutToolActive="isCutToolActive"
+        :isSeeking="isSeeking"
+        :seekDirection="seekDirection"
+        :zoomLevel="zoomLevel"
+        :minZoom="minZoom"
+        :maxZoom="maxZoom"
+        :zoomStep="zoomStep"
+        :clipCount="displayClips.length"
+        @toggleCutTool="toggleCutTool"
+        @startContinuousSeeking="startContinuousSeeking"
+        @stopContinuousSeeking="stopContinuousSeeking"
+        @zoomChanged="onZoomSliderChange"
+        ref="timelineHeaderRef"
+      />
 
       <!-- Timeline Tracks Container -->
       <div :class="[
@@ -511,6 +444,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import TimelineHeader from './TimelineHeader.vue'
 import { updateClipSegment, getAdjacentClipSegments, realignClipSegment, splitClipSegment } from '../services/database'
 import {
   debounce,
@@ -619,7 +553,8 @@ const emit = defineEmits<Emits>()
 // Refs for scroll containers
 const timelineScrollContainer = ref<HTMLElement | null>(null)
 const timelineClipElements = ref<Map<string, HTMLElement>>(new Map())
-const zoomSlider = ref<HTMLInputElement | null>(null)
+const timelineHeaderRef = ref<{ zoomSlider: HTMLInputElement | null } | null>(null)
+const zoomSlider = computed(() => timelineHeaderRef.value?.zoomSlider || null)
 
 // Use timeline interaction composable
 const {
@@ -634,7 +569,8 @@ const {
   startDragSelection,
   moveDragSelection,
   endDragSelection,
-  updateTimelineBounds
+  updateTimelineBounds,
+  setZoomLevel
 } = useTimelineInteraction(
   timelineScrollContainer,
   computed(() => props.duration),
@@ -936,12 +872,12 @@ function onTimelineClipClick(clipId: string) {
 // Zoom, pan, and drag selection functions are now managed by useTimelineInteraction composable
 
 // Zoom slider change handler
-function onZoomSliderChange() {
+function onZoomSliderChange(newZoomLevel: number) {
+  // Update the zoom level in the composable
+  setZoomLevel(newZoomLevel)
+
   // Update CSS variable for filled track
   updateSliderProgress(zoomSlider.value)
-
-  // Emit zoom change to parent
-  emit('zoomChanged', zoomLevel.value)
 }
 
 // Event handler wrappers that call composable functions
@@ -2103,71 +2039,6 @@ async function onSegmentClickForCut(event: MouseEvent, clipId: string, segmentIn
   border-radius: 50%;
 }
 
-/* Zoom slider styling */
-.slider-zoom {
-  -webkit-appearance: none;
-  appearance: none;
-  outline: none;
-  transition: opacity 0.2s;
-}
-
-/* Base track styling - will be updated by JavaScript */
-.slider-zoom::-webkit-slider-track {
-  width: 100%;
-  height: 4px;
-  border-radius: 2px;
-  cursor: pointer;
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.slider-zoom::-moz-range-track {
-  width: 100%;
-  height: 4px;
-  border-radius: 2px;
-  cursor: pointer;
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.slider-zoom::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 12px;
-  height: 12px;
-  background: white;
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  transition: all 0.2s ease;
-}
-
-.slider-zoom::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  background: white;
-  border-radius: 50%;
-  cursor: pointer;
-  border: none;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  transition: all 0.2s ease;
-}
-
-.slider-zoom:hover::-webkit-slider-thumb {
-  transform: scale(1.2);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-}
-
-.slider-zoom:hover::-moz-range-thumb {
-  transform: scale(1.2);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-}
-
-.slider-zoom:active::-webkit-slider-thumb {
-  transform: scale(1.1);
-}
-
-.slider-zoom:active::-moz-range-thumb {
-  transform: scale(1.1);
-}
 
 /* Segment dragging styles */
 .clip-segment.dragging {
