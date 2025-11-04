@@ -94,8 +94,8 @@
         </div>
         <!-- End Timeline Content Wrapper -->
       </div>
-      <!-- Timeline Hover Line - positioned relative to viewport but constrained to timeline bounds -->
 
+      <!-- Timeline Hover Line - positioned relative to viewport but constrained to timeline bounds -->
       <div
         v-if="showTimelineHoverLine && !isPanning && !isDragging"
         class="fixed bg-white/40 z-30 pointer-events-none transition-opacity duration-150"
@@ -107,9 +107,9 @@
         }"
       >
         <div class="absolute top-0 -left-1 w-2 h-2 bg-white/60 rounded-full"></div>
-
         <div class="absolute bottom-0 -left-1 w-2 h-2 bg-white/60 rounded-full"></div>
       </div>
+
       <!-- Global Playhead Line - positioned like hover line but follows video time -->
       <div
         v-if="videoSrc && duration > 0"
@@ -125,6 +125,7 @@
 
         <div class="absolute bottom-0 -left-1 w-2 h-2 bg-white/80 rounded-full"></div>
       </div>
+
       <!-- Drag Selection Area -->
       <div
         v-if="isDragging"
@@ -146,6 +147,7 @@
           </div>
         </div>
       </div>
+
       <!-- Custom Timeline Tooltip -->
       <div
         v-if="showTimelineTooltip && !isPanning && !isDragging && !isDraggingSegment && !isResizingSegment"
@@ -181,104 +183,23 @@
           ></div>
         </div>
       </div>
+
       <!-- Segment Drag Tooltip -->
-      <div
-        v-if="isDraggingSegment && draggedSegmentInfo"
-        class="fixed pointer-events-none z-50 transition-all duration-75"
-        :style="{
-          left: `${draggedSegmentInfo.tooltipX || draggedSegmentInfo.originalMouseX}px`,
-          top: `${draggedSegmentInfo.tooltipY || timelineBounds.top - 60}px`,
-          transform: 'translateX(-50%)'
-        }"
-      >
-        <div
-          class="bg-blue-600/90 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-md font-medium shadow-lg border border-white/20 max-w-xs"
-        >
-          <div class="text-center">
-            <div class="font-semibold mb-1">Moving Segment</div>
-
-            <div>
-              {{ formatDuration(draggedSegmentInfo.currentStartTime) }} -
-              {{ formatDuration(draggedSegmentInfo.currentEndTime) }}
-            </div>
-
-            <div class="text-xs opacity-75 mt-1">
-              Duration: {{ formatDuration(draggedSegmentInfo.currentEndTime - draggedSegmentInfo.currentStartTime) }}
-            </div>
-          </div>
-          <!-- Transcript Words -->
-          <div v-if="dragTooltipTranscriptWords.length > 0" class="text-center mt-2 pt-2 border-t border-white/20">
-            <div class="transcript-words space-x-1">
-              <span
-                v-for="(word, index) in dragTooltipTranscriptWords"
-                :key="index"
-                :class="[
-                  'transition-all duration-0',
-                  index === dragTooltipCenterWordIndex ? 'word-highlight' : 'word-normal'
-                ]"
-              >
-                {{ word.word }}
-              </span>
-            </div>
-          </div>
-          <!-- Fallback when no transcript -->
-          <div v-else class="text-center text-white/50 text-xs mt-2 pt-2 border-t border-white/20">No transcript</div>
-
-          <div
-            class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-1.5 h-1.5 bg-blue-600/90 border-r border-b border-white/20"
-          ></div>
-        </div>
-      </div>
+      <TimelineDragTooltip
+        :isDraggingSegment="isDraggingSegment"
+        :draggedSegmentInfo="draggedSegmentInfo"
+        :timelineBoundsTop="timelineBounds.top"
+        :dragTooltipTranscriptWords="dragTooltipTranscriptWords"
+        :dragTooltipCenterWordIndex="dragTooltipCenterWordIndex"
+      />
       <!-- Segment Resize Tooltip -->
-      <div
-        v-if="isResizingSegment && resizeHandleInfo"
-        class="fixed pointer-events-none z-50 transition-all duration-75"
-        :style="{
-          left: `${resizeHandleInfo.tooltipX || resizeHandleInfo.originalMouseX}px`,
-          top: `${resizeHandleInfo.tooltipY || timelineBounds.top - 60}px`,
-          transform: 'translateX(-50%)'
-        }"
-      >
-        <div
-          class="bg-green-600/90 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-md font-medium shadow-lg border border-white/20 max-w-xs"
-        >
-          <div class="text-center">
-            <div class="font-semibold mb-1">
-              {{ resizeHandleInfo.handleType === 'left' ? 'Resizing Start' : 'Resizing End' }}
-            </div>
-
-            <div>
-              {{ formatDuration(resizeHandleInfo.currentStartTime) }} -
-              {{ formatDuration(resizeHandleInfo.currentEndTime) }}
-            </div>
-
-            <div class="text-xs opacity-75 mt-1">
-              Duration: {{ formatDuration(resizeHandleInfo.currentEndTime - resizeHandleInfo.currentStartTime) }}
-            </div>
-          </div>
-          <!-- Transcript Words -->
-          <div v-if="resizeTooltipTranscriptWords.length > 0" class="text-center mt-2 pt-2 border-t border-white/20">
-            <div class="transcript-words space-x-1">
-              <span
-                v-for="(word, index) in resizeTooltipTranscriptWords"
-                :key="index"
-                :class="[
-                  'transition-all duration-0',
-                  index === resizeTooltipCenterWordIndex ? 'word-highlight' : 'word-normal'
-                ]"
-              >
-                {{ word.word }}
-              </span>
-            </div>
-          </div>
-          <!-- Fallback when no transcript -->
-          <div v-else class="text-center text-white/50 text-xs mt-2 pt-2 border-t border-white/20">No transcript</div>
-
-          <div
-            class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-1.5 h-1.5 bg-green-600/90 border-r border-b border-white/20"
-          ></div>
-        </div>
-      </div>
+      <TimelineResizeTooltip
+        :isResizingSegment="isResizingSegment"
+        :resizeHandleInfo="resizeHandleInfo"
+        :timelineBoundsTop="timelineBounds.top"
+        :resizeTooltipTranscriptWords="resizeTooltipTranscriptWords"
+        :resizeTooltipCenterWordIndex="resizeTooltipCenterWordIndex"
+      />
     </div>
   </div>
 </template>
@@ -289,21 +210,15 @@
   import TimelineRuler from './TimelineRuler.vue'
   import TimelineVideoTrack from './TimelineVideoTrack.vue'
   import TimelineClipTrack from './TimelineClipTrack.vue'
+  import TimelineResizeTooltip from './TimelineResizeTooltip.vue'
+  import TimelineDragTooltip from './TimelineDragTooltip.vue'
   import {
     updateClipSegment,
     getAdjacentClipSegments,
     realignClipSegment,
     splitClipSegment
   } from '../services/database'
-  import {
-    debounce,
-    throttle,
-    formatDuration,
-    generateClipGradient,
-    getSegmentDisplayTime,
-    generateTimestamps,
-    type ClipSegment
-  } from '../utils/timelineUtils'
+  import { debounce, throttle, formatDuration, type ClipSegment } from '../utils/timelineUtils'
   import { seekVideoBySeconds, createSeekEvent } from '../utils/videoSeekUtils'
   import { TIMELINE_HEIGHTS, TIMELINE_BOUNDS, TRACK_DIMENSIONS, SELECTORS } from '../utils/timelineConstants'
   import { TIMELINE_CONSTANTS, SEEK_CONFIG } from '../constants/timelineConstants'
