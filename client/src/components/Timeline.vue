@@ -295,6 +295,7 @@
                   </div>
                   <!-- Left resize handle -->
                   <div
+                    v-if="!getSegmentAdjacency(clip.id, segIndex).hasPrevious"
                     class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 hover:w-2 group-hover:opacity-100 group-hover:pointer-events-auto"
                     :class="{
                       'opacity-100 pointer-events-auto': hoveredSegmentKey === `${clip.id}_${segIndex}`
@@ -305,6 +306,7 @@
                   </div>
                   <!-- Right resize handle -->
                   <div
+                    v-if="!getSegmentAdjacency(clip.id, segIndex).hasNext"
                     class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 hover:w-2 group-hover:opacity-100 group-hover:pointer-events-auto"
                     :class="{
                       'opacity-100 pointer-events-auto': hoveredSegmentKey === `${clip.id}_${segIndex}`
@@ -844,6 +846,42 @@
     clearResizeTooltipData,
     loadTranscriptData
   } = useTranscriptData(computed(() => props.projectId || null))
+
+  // Check if a segment has adjacent segments using local data (synchronous)
+  function getSegmentAdjacencySync(clipId: string, segmentIndex: number): { hasPrevious: boolean; hasNext: boolean } {
+    const clip = localClips.value.find((c) => c.id === clipId)
+    if (!clip || !clip.segments || clip.segments.length <= 1) {
+      return { hasPrevious: false, hasNext: false }
+    }
+
+    const currentSegment = clip.segments[segmentIndex]
+    if (!currentSegment) {
+      return { hasPrevious: false, hasNext: false }
+    }
+
+    // Check if previous segment exists and is touching in time
+    let hasPrevious = false
+    if (segmentIndex > 0) {
+      const previousSegment = clip.segments[segmentIndex - 1]
+      // Check if segments are touching (allowing for very small gaps due to floating point precision)
+      hasPrevious = Math.abs(previousSegment.end_time - currentSegment.start_time) < 0.01
+    }
+
+    // Check if next segment exists and is touching in time
+    let hasNext = false
+    if (segmentIndex < clip.segments.length - 1) {
+      const nextSegment = clip.segments[segmentIndex + 1]
+      // Check if segments are touching (allowing for very small gaps due to floating point precision)
+      hasNext = Math.abs(nextSegment.start_time - currentSegment.end_time) < 0.01
+    }
+
+    return { hasPrevious, hasNext }
+  }
+
+  // Get adjacency status for a segment
+  function getSegmentAdjacency(clipId: string, segmentIndex: number): { hasPrevious: boolean; hasNext: boolean } {
+    return getSegmentAdjacencySync(clipId, segmentIndex)
+  }
 
   function setTimelineClipRef(el: any, clipId: string) {
     if (el && el instanceof HTMLElement) {
