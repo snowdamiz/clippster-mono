@@ -1767,7 +1767,14 @@
   function onSegmentHoverForCut(event: MouseEvent, clipId: string, segmentIndex: number, segment: ClipSegment) {
     if (!isCutToolActive.value || !props.duration) return
 
-    const segmentElement = event.target as HTMLElement
+    // Find the actual segment element, not a child element
+    let segmentElement = event.target as HTMLElement
+
+    // If the target is a child element, traverse up to find the segment container
+    while (segmentElement && !segmentElement.classList.contains('clip-segment')) {
+      segmentElement = segmentElement.parentElement as HTMLElement
+    }
+
     if (!segmentElement) return
 
     // Use the extracted utility function
