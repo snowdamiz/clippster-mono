@@ -71,10 +71,8 @@ export function useTranscriptData(projectId: Ref<string | null>) {
   }
 
   // Throttled function for immediate tooltip updates (position)
-  function updateTooltipPosition(timestamp: number) {
-    // This will be handled by the component with throttling
-    // Just update the timestamp in the component
-  }
+  // This will be handled by the component with throttling
+  // Just update the timestamp in the component
 
   // Optimized function for updating tooltip words
   const debouncedUpdateTooltipWords = debounce((timestamp: number) => {

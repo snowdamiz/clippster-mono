@@ -519,11 +519,9 @@ import {
   debounce,
   throttle,
   formatDuration,
-  hexToDarkerHex,
   generateClipGradient,
   getSegmentDisplayTime,
   generateTimestamps,
-  type Timestamp,
   type ClipSegment
 } from '../utils/timelineUtils'
 import { useTranscriptData } from '../composables/useTranscriptData'
@@ -623,7 +621,6 @@ const {
   panState,
   dragSelectionState,
   timelineBounds,
-  setZoomLevel,
   handleRulerWheel,
   updateSliderProgress,
   startPan,
@@ -638,7 +635,7 @@ const {
   computed(() => props.duration),
   {
     onZoomChange: (zoomLevel) => emit('zoomChanged', zoomLevel),
-    onDragSelection: (startPercent, endPercent) => {
+    onDragSelection: () => {
       // Handle drag selection zoom if needed
     }
   }
@@ -774,8 +771,9 @@ const {
   updateResizeTooltipWords,
   clearTooltipData,
   clearDragTooltipData,
-  clearResizeTooltipData
-} = useTranscriptData(computed(() => props.projectId))
+  clearResizeTooltipData,
+  loadTranscriptData
+} = useTranscriptData(computed(() => props.projectId || null))
 
 // Local reactive copy of clips for immediate visual updates
 const localClips = ref(props.clips ? [...props.clips] : [])
@@ -872,7 +870,8 @@ function scrollTimelineClipIntoView(clipId: string) {
 // Expose functions to parent
 defineExpose({
   scrollTimelineClipIntoView,
-  zoomLevel
+  zoomLevel,
+  loadTranscriptData
 })
 
 // Intelligent timestamp generation based on video duration and zoom level
@@ -938,9 +937,6 @@ function onPanStart(event: MouseEvent) {
   startPan(event)
 }
 
-function onPanMove(event: MouseEvent) {
-  movePan(event)
-}
 
 function onPanEnd() {
   endPan()
@@ -955,13 +951,7 @@ function onDragStart(event: MouseEvent) {
   showTimelineHoverLine.value = false
 }
 
-function onDragMove(event: MouseEvent) {
-  moveDragSelection(event)
-}
 
-function onDragEnd() {
-  endDragSelection()
-}
 
 // Timeline hover line handlers
 function onTimelineMouseMove(event: MouseEvent) {
