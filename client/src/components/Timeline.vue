@@ -364,7 +364,7 @@
           }"
         >
           <div
-            v-if="Math.abs(dragEndX - dragStartX) > 80"
+            v-if="Math.abs(dragEndX - dragStartX) > TIMELINE_CONSTANTS.DRAG_SELECTION_THRESHOLD"
             class="absolute inset-0 flex items-center justify-center"
           >
             <div class="bg-blue-500/80 text-white text-xs px-2 py-1 rounded font-medium">
@@ -532,6 +532,7 @@ import {
   SEEKING_CONFIG,
   SELECTORS
 } from '../utils/timelineConstants'
+import { TIMELINE_CONSTANTS, TIMELINE_DIMENSIONS, SEEK_CONFIG } from '../constants/timelineConstants'
 import { useTranscriptData } from '../composables/useTranscriptData'
 import { useTimelineInteraction } from '../composables/useTimelineInteraction'
 
@@ -945,7 +946,7 @@ function onTimelineWheel(event: WheelEvent) {
     const container = timelineScrollContainer.value
     if (container) {
       // Scroll horizontally based on wheel delta
-      const scrollAmount = event.deltaY * 2 // Adjust multiplier for desired speed
+      const scrollAmount = event.deltaY * TIMELINE_CONSTANTS.HORIZONTAL_SCROLL_MULTIPLIER // Adjust multiplier for desired speed
       container.scrollLeft -= scrollAmount
     }
   } else {
@@ -1008,7 +1009,7 @@ function onTimelineMouseMove(event: MouseEvent) {
       showTimelineTooltip.value = true
       tooltipPosition.value = {
         x: event.clientX,
-        y: event.clientY - 80 // Position further above cursor to avoid text
+        y: event.clientY - TIMELINE_CONSTANTS.TOOLTIP_OFFSET_Y // Position further above cursor to avoid text
       }
 
       // Update timestamp immediately (throttled)
@@ -1256,7 +1257,7 @@ onMounted(() => {
       const checkHeightAndPosition = (delay: number) => {
         setTimeout(() => {
           const currentRect = container.getBoundingClientRect()
-          const expectedMinHeight = 300 // Timeline should be at least 300px tall when fully rendered
+          const expectedMinHeight = TIMELINE_CONSTANTS.EXPECTED_MIN_HEIGHT // Timeline should be at least this tall when fully rendered
 
           if (currentRect.height < expectedMinHeight && delay < 1000) {
             // Container is still expanding, wait longer
@@ -1377,10 +1378,10 @@ async function calculateResizeConstraints(clipId: string, segmentIndex: number, 
     if (currentSegment) {
       if (handleType === 'left') {
         // Left handle can't go past current end_time - minimum duration
-        maxEndTime = Math.min(maxEndTime, currentSegment.end_time - 0.5) // Minimum 0.5 second duration
+        maxEndTime = Math.min(maxEndTime, currentSegment.end_time - TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION) // Minimum duration
       } else {
         // Right handle can't go before current start_time + minimum duration
-        minStartTime = Math.max(minStartTime, currentSegment.start_time + 0.5) // Minimum 0.5 second duration
+        minStartTime = Math.max(minStartTime, currentSegment.start_time + TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION) // Minimum duration
       }
     }
 
@@ -1465,7 +1466,7 @@ function updateSegmentDragTooltip() {
 
   // Update tooltip position
   draggedSegmentInfo.value.tooltipX = targetX
-  draggedSegmentInfo.value.tooltipY = container.getBoundingClientRect().top - 60
+  draggedSegmentInfo.value.tooltipY = container.getBoundingClientRect().top - TIMELINE_CONSTANTS.DRAG_TOOLTIP_OFFSET_Y
 
   // Update transcript words for drag tooltip
   updateDragTooltipWords(currentStartTime)
@@ -1643,7 +1644,7 @@ function updateResizeTooltip() {
 
   // Update tooltip position
   resizeHandleInfo.value.tooltipX = targetX
-  resizeHandleInfo.value.tooltipY = container.getBoundingClientRect().top - 60
+  resizeHandleInfo.value.tooltipY = container.getBoundingClientRect().top - TIMELINE_CONSTANTS.DRAG_TOOLTIP_OFFSET_Y
 
   // Update transcript words for resize tooltip
   updateResizeTooltipWords(handleTime)
@@ -1669,9 +1670,9 @@ function onResizeMouseMove(event: MouseEvent) {
     newStartTime = Math.max(resizeHandleInfo.value.minStartTime, newStartTime)
     newStartTime = Math.min(resizeHandleInfo.value.maxEndTime, newStartTime)
 
-    // Ensure minimum duration (0.5 seconds)
-    if (newEndTime - newStartTime < 0.5) {
-      newStartTime = newEndTime - 0.5
+    // Ensure minimum duration
+    if (newEndTime - newStartTime < TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION) {
+      newStartTime = newEndTime - TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION
     }
   } else {
     // Resize right handle: change end_time, keep start_time fixed
@@ -1681,9 +1682,9 @@ function onResizeMouseMove(event: MouseEvent) {
     newEndTime = Math.max(resizeHandleInfo.value.minStartTime, newEndTime)
     newEndTime = Math.min(resizeHandleInfo.value.maxEndTime, newEndTime)
 
-    // Ensure minimum duration (0.5 seconds)
-    if (newEndTime - newStartTime < 0.5) {
-      newEndTime = newStartTime + 0.5
+    // Ensure minimum duration
+    if (newEndTime - newStartTime < TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION) {
+      newEndTime = newStartTime + TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION
     }
   }
 
@@ -1764,10 +1765,10 @@ function startContinuousSeeking(direction: 'forward' | 'reverse') {
   // Start continuous seeking at high speed immediately (no initial jump)
   seekInterval.value = setInterval(() => {
     const seekAmount = seekDirection.value === 'forward'
-      ? SEEKING_CONFIG.SECONDS_PER_INTERVAL
-      : -SEEKING_CONFIG.SECONDS_PER_INTERVAL
+      ? SEEK_CONFIG.SECONDS_PER_INTERVAL
+      : -SEEK_CONFIG.SECONDS_PER_INTERVAL
     seekVideo(seekAmount)
-  }, SEEKING_CONFIG.INTERVAL_MS)
+  }, SEEK_CONFIG.INTERVAL_MS)
 }
 
 // Stop continuous seeking
@@ -1823,11 +1824,11 @@ function onSegmentHoverForCut(event: MouseEvent, clipId: string, segmentIndex: n
   const segmentDuration = segmentEndTime - segmentStartTime
   const cutTime = segmentStartTime + (segmentDuration * cutPositionPercent / 100)
 
-  // Validate minimum segment durations (0.5 seconds each)
+  // Validate minimum segment durations
   const leftDuration = cutTime - segmentStartTime
   const rightDuration = segmentEndTime - cutTime
 
-  if (leftDuration >= 0.5 && rightDuration >= 0.5) {
+  if (leftDuration >= TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION && rightDuration >= TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION) {
     cutHoverInfo.value = {
       clipId,
       segmentIndex,

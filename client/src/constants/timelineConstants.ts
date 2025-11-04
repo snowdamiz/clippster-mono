@@ -1,0 +1,61 @@
+// Timeline component constants
+export const TIMELINE_CONSTANTS = {
+  // Heights and dimensions
+  HEADER_HEIGHT: 56,
+  RULER_HEIGHT: 32,
+  MAIN_TRACK_HEIGHT: 56,
+  CLIP_TRACK_HEIGHT: 48,
+  BOTTOM_PADDING_WITH_CLIPS: 30,
+  BOTTOM_PADDING_NO_CLIPS: 16,
+  LABEL_WIDTH: 64, // 4rem = 64px
+
+  // Timeline bounds
+  MIN_HEIGHT: 200,
+  MAX_HEIGHT: 800,
+
+  // Zoom settings
+  MIN_ZOOM: 0.1,
+  MAX_ZOOM: 5.0,
+  ZOOM_STEP: 0.1,
+  DEFAULT_ZOOM: 1.0,
+
+  // Interaction delays
+  TOOLTIP_THROTTLE: 16, // ~60fps
+  DEBOUNCE_DELAY: 100,
+  RESIZE_OBSERVER_DELAY: 200,
+
+  // Minimum durations
+  MIN_SEGMENT_DURATION: 0.5, // seconds
+
+  // Seeking configuration
+  SEEK_INTERVAL_MS: 100,
+  SECONDS_PER_INTERVAL: 0.2,
+
+  // Animation durations
+  TRANSITION_DURATION: 200,
+  HOVER_TRANSITION: 150,
+
+  // Scroll speeds
+  HORIZONTAL_SCROLL_MULTIPLIER: 2,
+
+  // UI thresholds
+  DRAG_SELECTION_THRESHOLD: 80, // pixels
+  EXPECTED_MIN_HEIGHT: 300, // pixels
+
+  // Positioning
+  TOOLTIP_OFFSET_Y: 80,
+  DRAG_TOOLTIP_OFFSET_Y: 60,
+} as const
+
+// Timeline dimensions for calculations
+export const TIMELINE_DIMENSIONS = {
+  LABEL_WIDTH: TIMELINE_CONSTANTS.LABEL_WIDTH,
+  TOOLTIP_THROTTLE: TIMELINE_CONSTANTS.TOOLTIP_THROTTLE,
+  DEBOUNCE_DELAY: TIMELINE_CONSTANTS.DEBOUNCE_DELAY,
+} as const
+
+// Seek configuration
+export const SEEK_CONFIG = {
+  INTERVAL_MS: TIMELINE_CONSTANTS.SEEK_INTERVAL_MS,
+  SECONDS_PER_INTERVAL: TIMELINE_CONSTANTS.SECONDS_PER_INTERVAL,
+} as const
