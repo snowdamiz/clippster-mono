@@ -6,6 +6,200 @@ defmodule ClippsterServerWeb.ClipsController do
   alias ClippsterServer.ClipValidation
   alias ClippsterServerWeb.ProgressChannel
 
+  def detect_chunked(conn, %{"project_id" => project_id, "prompt" => user_prompt, "chunks" => chunks_metadata}) do
+    IO.puts("[ClipsController] Starting chunked clip detection for project #{project_id}")
+    IO.puts("[ClipsController] Processing #{length(chunks_metadata)} chunks")
+    IO.puts("[ClipsController] User prompt: #{String.slice(user_prompt, 0, 100)}...")
+
+    try do
+      # Broadcast initial progress
+      ProgressChannel.broadcast_progress(project_id, "starting", 0, "Initializing chunked clip detection...")
+
+      # Process chunks in parallel batches
+      chunks_with_index = chunks_metadata |> Enum.with_index()
+      total_chunks = length(chunks_metadata)
+
+      IO.puts("[ClipsController] Processing chunks in parallel batches...")
+      ProgressChannel.broadcast_progress(project_id, "transcribing", 10, "Processing #{total_chunks} audio chunks...")
+
+      # Process chunks in batches of 2 to manage API limits
+      batch_size = 2
+      batches = chunks_with_index |> Enum.chunk_every(batch_size)
+
+      all_chunk_results = batches
+      |> Enum.with_index()
+      |> Enum.flat_map(fn {batch, batch_index} ->
+        IO.puts("[ClipsController] Processing batch #{batch_index + 1}/#{length(batches)} (#{length(batch)} chunks)")
+
+        # Update progress for batch start
+        batch_progress = 10 + (batch_index * 70 / length(batches))
+        ProgressChannel.broadcast_progress(project_id, "transcribing", trunc(batch_progress),
+          "Transcribing batch #{batch_index + 1}/#{length(batches)}...")
+
+        # Process chunks in this batch in parallel
+        batch
+        |> Enum.map(fn {chunk_metadata, chunk_index} ->
+          chunk_progress = batch_progress + ((chunk_index + 1) * (70 / length(batches)) / length(batch))
+          ProgressChannel.broadcast_progress(project_id, "transcribing", trunc(chunk_progress),
+            "Transcribing chunk #{chunk_index + 1}/#{total_chunks}...")
+
+          process_single_chunk(chunk_metadata, chunk_index, project_id)
+        end)
+      end)
+
+      IO.puts("[ClipsController] All chunks processed. #{length(all_chunk_results)} results received")
+
+      # Separate successful and failed chunks
+      {successful_chunks, failed_chunks} = Enum.split_with(all_chunk_results, &match?({:ok, _}, &1))
+
+      if length(failed_chunks) > 0 do
+        IO.puts("[ClipsController] Warning: #{length(failed_chunks)} chunks failed to process")
+        failed_chunks |> Enum.each(fn {:error, reason} ->
+          IO.puts("[ClipsController] Failed chunk: #{inspect(reason)}")
+        end)
+      end
+
+      if length(successful_chunks) == 0 do
+        throw {:error, "All chunks failed to process"}
+      end
+
+      # Extract successful results
+      chunk_transcripts = successful_chunks |> Enum.map(fn {:ok, result} -> result end)
+
+      # Reconstruct timeline from chunks
+      IO.puts("[ClipsController] Reconstructing timeline from #{length(chunk_transcripts)} successful chunks...")
+      ProgressChannel.broadcast_progress(project_id, "analyzing", 85, "Reconstructing timeline and detecting clips...")
+
+      reconstructed_transcript = reconstruct_timeline_from_chunks(chunk_transcripts)
+
+      # Send to OpenRouter API with reconstructed transcript
+      IO.puts("[ClipsController] Sending reconstructed transcript to OpenRouter API...")
+      system_prompt = SystemPrompt.get()
+
+      ai_result = OpenRouterAPI.generate_clips(reconstructed_transcript, system_prompt, user_prompt)
+      IO.puts("[ClipsController] OpenRouter API call completed")
+
+      case ai_result do
+        {:ok, ai_response} ->
+          IO.puts("[ClipsController] AI response received from OpenRouter")
+
+          # Validate AI response structure
+          case validate_ai_response(ai_response) do
+            :ok ->
+              IO.puts("[ClipsController] AI response validation successful")
+
+              # Enhanced validation using original chunk data
+              IO.puts("[ClipsController] Starting enhanced clip validation with chunk data...")
+              ProgressChannel.broadcast_progress(project_id, "validating", 90, "Validating clips with chunk timing data...")
+
+              # Use the first successful chunk's original data for validation (most complete)
+              validation_chunk = hd(successful_chunks) |> elem(1)
+              case ClipValidation.validate_and_correct_clips(ai_response["clips"], validation_chunk.original_whisper_response, true) do
+                {:ok, validation_result} ->
+                  IO.puts("[ClipsController] Enhanced validation completed")
+                  IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
+
+                  # Replace clips with validated and corrected versions
+                  enhanced_response = ai_response
+                  |> Map.put("clips", validation_result.validatedClips)
+                  |> Map.put("validation_metadata", %{
+                    "qualityScore" => validation_result.qualityScore,
+                    "issuesCount" => length(validation_result.issues),
+                    "correctionsCount" => length(validation_result.corrections),
+                    "validatedAt" => DateTime.utc_now() |> DateTime.to_iso8601(),
+                    "chunksProcessed" => length(successful_chunks),
+                    "chunksFailed" => length(failed_chunks)
+                  })
+
+                  # Step 6: Return enhanced response with chunk processing data
+                  ProgressChannel.broadcast_progress(project_id, "completed", 100,
+                    "Chunked clip detection completed! Processed #{length(successful_chunks)}/#{total_chunks} chunks successfully.")
+
+                  json(conn, %{
+                    success: true,
+                    clips: enhanced_response,
+                    transcript: reconstructed_transcript,
+                    processing_info: %{
+                      used_chunked_processing: true,
+                      total_chunks: total_chunks,
+                      successful_chunks: length(successful_chunks),
+                      failed_chunks: length(failed_chunks),
+                      completion_message: "Clip detection completed using chunked processing!"
+                    },
+                    validation: %{
+                      qualityScore: validation_result.qualityScore,
+                      issues: validation_result.issues,
+                      corrections: validation_result.corrections,
+                      clipsProcessed: length(validation_result.validatedClips)
+                    }
+                  })
+
+                _ ->
+                  IO.puts("[ClipsController] Enhanced validation failed, using original clips")
+                  # Fall back to original clips if enhanced validation fails
+                  ProgressChannel.broadcast_progress(project_id, "completed", 100,
+                    "Chunked clip detection completed! Processed #{length(successful_chunks)}/#{total_chunks} chunks.")
+
+                  json(conn, %{
+                    success: true,
+                    clips: ai_response,
+                    transcript: reconstructed_transcript,
+                    processing_info: %{
+                      used_chunked_processing: true,
+                      total_chunks: total_chunks,
+                      successful_chunks: length(successful_chunks),
+                      failed_chunks: length(failed_chunks),
+                      completion_message: "Clip detection completed using chunked processing!"
+                    },
+                    validation: %{
+                      qualityScore: 0.0,
+                      issues: ["Enhanced validation failed"],
+                      corrections: []
+                    }
+                  })
+              end
+
+            {:error, reason} ->
+              IO.puts("[ClipsController] AI response validation failed: #{reason}")
+              conn
+              |> put_status(500)
+              |> json(%{
+                success: false,
+                error: "Invalid AI response structure",
+                details: reason
+              })
+          end
+
+        {:error, reason} ->
+          IO.puts("[ClipsController] OpenRouter API failed: #{inspect(reason)}")
+          # Broadcast error to frontend
+          ProgressChannel.broadcast_progress(project_id, "error", 0, "AI analysis failed. No credits were charged.")
+          conn
+          |> put_status(500)
+          |> json(%{
+            success: false,
+            error: "AI clip generation failed",
+            details: reason,
+            noCreditsCharged: true
+          })
+      end
+
+    rescue
+      error ->
+        IO.puts("[ClipsController] Error in detect_chunked: #{inspect(error)}")
+        # Broadcast error to frontend
+        ProgressChannel.broadcast_progress(project_id, "error", 0, "Chunked clip detection failed. No credits were charged.")
+        conn
+        |> put_status(500)
+        |> json(%{
+          success: false,
+          error: "Chunked clip detection failed",
+          details: Exception.message(error),
+          noCreditsCharged: true
+        })
+    end
+  end
+
   def detect(conn, %{"project_id" => project_id, "prompt" => user_prompt} = params) do
     IO.puts("[ClipsController] Starting clip detection for project #{project_id}")
     IO.puts("[ClipsController] User prompt: #{String.slice(user_prompt, 0, 100)}...")
@@ -697,5 +891,159 @@ defmodule ClippsterServerWeb.ClipsController do
     IO.puts("[ClipsController] Words array stripped to reduce AI payload size")
 
     optimized_transcript
+  end
+
+  # Process a single chunk and return transcribed result with timing adjustment
+  defp process_single_chunk(chunk_metadata, chunk_index, _project_id) do
+    try do
+      chunk_id = Map.get(chunk_metadata, "chunk_id")
+      base64_data = Map.get(chunk_metadata, "base64_data")
+      start_time = Map.get(chunk_metadata, "start_time")
+      end_time = Map.get(chunk_metadata, "end_time")
+
+      IO.puts("[ClipsController] Processing chunk #{chunk_index}: #{chunk_id} (#{start_time}s - #{end_time}s)")
+
+      # Decode base64 audio data
+      audio_data = Base.decode64!(base64_data)
+
+      # Create a temporary upload structure for WhisperAPI
+      chunk_upload = %{
+        filename: Map.get(chunk_metadata, "filename"),
+        content_type: "audio/ogg",
+        path: "/tmp/chunk_#{chunk_id}.ogg"
+      }
+
+      # Transcribe chunk using Whisper API
+      case WhisperAPI.transcribe_binary(audio_data, chunk_upload) do
+        {:ok, whisper_response} ->
+          IO.puts("[ClipsController] Chunk #{chunk_index} transcription successful")
+
+          # Adjust timestamps in the response by chunk start_time
+          adjusted_response = adjust_timestamps_for_chunk(whisper_response, start_time)
+
+          # Return result with original response for validation
+          {:ok, %{
+            chunk_id: chunk_id,
+            chunk_index: chunk_index,
+            start_time: start_time,
+            end_time: end_time,
+            adjusted_whisper_response: adjusted_response,
+            original_whisper_response: whisper_response,
+            transcription: adjusted_response
+          }}
+
+        {:error, reason} ->
+          IO.puts("[ClipsController] Chunk #{chunk_index} transcription failed: #{inspect(reason)}")
+          {:error, %{chunk_id: chunk_id, chunk_index: chunk_index, reason: reason}}
+      end
+
+    rescue
+      error ->
+        IO.puts("[ClipsController] Error processing chunk #{chunk_index}: #{inspect(error)}")
+        {:error, %{chunk_id: "unknown", chunk_index: chunk_index, reason: Exception.message(error)}}
+    end
+  end
+
+  # Adjust timestamps in Whisper response by chunk offset
+  defp adjust_timestamps_for_chunk(whisper_response, chunk_start_time) do
+    IO.puts("[ClipsController] Adjusting timestamps for chunk starting at #{chunk_start_time}s")
+
+    # Adjust segments
+    adjusted_segments = case Map.get(whisper_response, "segments") do
+      segments when is_list(segments) ->
+        segments
+        |> Enum.map(fn segment ->
+          segment
+          |> Map.put("start", Map.get(segment, "start", 0) + chunk_start_time)
+          |> Map.put("end", Map.get(segment, "end", 0) + chunk_start_time)
+        end)
+      _ ->
+        []
+    end
+
+    # Adjust words if available
+    adjusted_words = case Map.get(whisper_response, "words") do
+      words when is_list(words) ->
+        words
+        |> Enum.map(fn word ->
+          word
+          |> Map.put("start", Map.get(word, "start", 0) + chunk_start_time)
+          |> Map.put("end", Map.get(word, "end", 0) + chunk_start_time)
+        end)
+      _ ->
+        []
+    end
+
+    # Update duration to reflect the full timeline position
+    original_duration = Map.get(whisper_response, "duration", 0)
+    adjusted_duration = original_duration + chunk_start_time
+
+    # Return adjusted response
+    whisper_response
+    |> Map.put("segments", adjusted_segments)
+    |> Map.put("words", adjusted_words)
+    |> Map.put("duration", adjusted_duration)
+    |> Map.put("chunk_processing_metadata", %{
+      "original_start_time" => chunk_start_time,
+      "original_duration" => original_duration,
+      "adjusted_duration" => adjusted_duration,
+      "adjusted_at" => DateTime.utc_now() |> DateTime.to_iso8601()
+    })
+  end
+
+  # Reconstruct timeline from multiple chunk transcripts
+  defp reconstruct_timeline_from_chunks(chunk_transcripts) do
+    IO.puts("[ClipsController] Reconstructing timeline from #{length(chunk_transcripts)} chunks")
+
+    # Sort chunks by start_time to ensure proper order
+    sorted_chunks = chunk_transcripts
+    |> Enum.sort_by(&Map.get(&1, :start_time, 0))
+
+    # Combine all segments from all chunks
+    all_segments = sorted_chunks
+    |> Enum.flat_map(fn chunk ->
+      Map.get(chunk.adjusted_whisper_response, "segments", [])
+    end)
+
+    # Combine all words from all chunks
+    all_words = sorted_chunks
+    |> Enum.flat_map(fn chunk ->
+      Map.get(chunk.adjusted_whisper_response, "words", [])
+    end)
+
+    # Calculate total duration
+    total_duration = sorted_chunks
+    |> Enum.map(fn chunk -> Map.get(chunk, :end_time, 0) end)
+    |> Enum.max()
+    |> Kernel.||(0)
+
+    # Combine text from all chunks
+    combined_text = sorted_chunks
+    |> Enum.map_join(" ", fn chunk ->
+      Map.get(chunk.adjusted_whisper_response, "text", "")
+    end)
+
+    # Create reconstructed transcript
+    reconstructed_transcript = %{
+      "duration" => total_duration,
+      "text" => combined_text,
+      "segments" => all_segments,
+      "words" => all_words,
+      "language" => "en", # Default language, could be detected from chunks
+      "chunk_reconstruction_metadata" => %{
+        "chunks_processed" => length(chunk_transcripts),
+        "total_segments" => length(all_segments),
+        "total_words" => length(all_words),
+        "reconstructed_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
+        "chunk_ids" => Enum.map(sorted_chunks, &Map.get(&1, :chunk_id))
+      }
+    }
+
+    IO.puts("[ClipsController] Timeline reconstruction completed:")
+    IO.puts("[ClipsController]   Total duration: #{total_duration}s")
+    IO.puts("[ClipsController]   Total segments: #{length(all_segments)}")
+    IO.puts("[ClipsController]   Total words: #{length(all_words)}")
+
+    reconstructed_transcript
   end
 end

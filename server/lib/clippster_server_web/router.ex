@@ -52,6 +52,7 @@ defmodule ClippsterServerWeb.Router do
     pipe_through :api_auth
 
     post "/clips/detect", ClipsController, :detect
+    post "/clips/detect-chunked", ClipsController, :detect_chunked
   end
 
   

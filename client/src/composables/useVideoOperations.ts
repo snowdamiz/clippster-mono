@@ -3,6 +3,7 @@ import { createRawVideo, deleteRawVideo, type RawVideo } from '@/services/databa
 import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { useToast } from '@/composables/useToast'
+import { useAudioChunking, type AudioChunk } from './useAudioChunking'
 
 export function useVideoOperations() {
   const uploading = ref(false)
@@ -125,11 +126,72 @@ export function useVideoOperations() {
     }
   }
 
+  async function prepareVideoForChunking(
+    videoPath: string,
+    projectId: string,
+    options: {
+      chunkDurationMinutes?: number
+      overlapSeconds?: number
+    } = {}
+  ): Promise<{ success: boolean; chunks?: AudioChunk[]; error?: string }> {
+    try {
+      console.log('[VideoOperations] Preparing video for chunking:', {
+        videoPath,
+        projectId,
+        options
+      })
+
+      // First check if file exists
+      const fileExists = await invoke<boolean>('check_file_exists', { path: videoPath })
+      if (!fileExists) {
+        return { success: false, error: 'Video file not found' }
+      }
+
+      // Use audio chunking composable
+      const { extractAndChunkVideo } = useAudioChunking()
+      const result = await extractAndChunkVideo(videoPath, projectId, options)
+
+      if (result.success && result.chunks) {
+        console.log('[VideoOperations] Chunking completed successfully:', {
+          chunksCount: result.chunks.length,
+          totalSize: result.chunks.reduce((sum, chunk) => sum + chunk.file_size, 0)
+        })
+      }
+
+      return result
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err)
+      console.error('[VideoOperations] Chunk preparation failed:', errorMessage)
+      return { success: false, error: errorMessage }
+    }
+  }
+
+  // Get video duration for chunking estimates
+  async function getVideoDuration(
+    videoPath: string
+  ): Promise<{ success: boolean; duration?: number; error?: string }> {
+    try {
+      // This could be implemented by calling a new Tauri command that uses FFmpeg to get duration
+      // For now, we'll return a placeholder implementation
+      console.log('[VideoOperations] Getting video duration for:', videoPath)
+
+      // TODO: Implement actual duration detection via FFmpeg
+      // This would involve adding a new Tauri command or using existing infrastructure
+
+      return { success: false, error: 'Duration detection not implemented yet' }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err)
+      return { success: false, error: errorMessage }
+    }
+  }
+
   return {
     uploading,
     uploadVideo,
     deleteVideo,
     loadVideoThumbnail,
-    prepareVideoForPlayback
+    prepareVideoForPlayback,
+    prepareVideoForChunking,
+    getVideoDuration
   }
 }

@@ -6,6 +6,85 @@ defmodule ClippsterServer.AI.WhisperAPI do
 
   @whisper_api_url "https://api.lemonfox.ai/v1/audio/transcriptions"
 
+  def transcribe_binary(audio_binary, upload_metadata) do
+    IO.puts("[WhisperAPI] Starting binary transcription...")
+    IO.puts("[WhisperAPI] Audio filename: #{upload_metadata.filename}")
+    IO.puts("[WhisperAPI] Audio content type: #{upload_metadata.content_type}")
+    IO.puts("[WhisperAPI] Audio binary size: #{byte_size(audio_binary)} bytes")
+
+    # Get API key from environment
+    api_key = System.get_env("WHIPSER_API_KEY")
+
+    case api_key do
+      nil ->
+        IO.puts("[WhisperAPI] WHIPSER_API_KEY environment variable not set")
+        {:error, "WHIPSER_API_KEY environment variable not set"}
+
+      _ ->
+        IO.puts("[WhisperAPI] API key configured")
+        IO.puts("[WhisperAPI] API key (first 8 chars): #{String.slice(api_key, 0, 8)}...")
+
+        # Debug: Check if binary size is reasonable
+        actual_size = byte_size(audio_binary)
+        if actual_size > 50_000_000 do  # 50MB threshold
+          IO.puts("[WhisperAPI] WARNING: Binary seems too large (#{actual_size} bytes)")
+        end
+
+        # Use Finch HTTP client
+        IO.puts("[WhisperAPI] Sending binary request to Whisper API...")
+
+        # Create multipart boundary
+        boundary = "----WebKitFormBoundary#{:crypto.strong_rand_bytes(16) |> Base.encode16()}"
+
+        # Build multipart body with binary data
+        multipart_body = build_prototype_multipart_body(audio_binary, upload_metadata.filename, upload_metadata.content_type, boundary)
+
+        request = Finch.build(
+          :post,
+          @whisper_api_url,
+          [
+            {"Authorization", "Bearer #{api_key}"},
+            {"User-Agent", "Clippster/1.0"},
+            {"Content-Type", "multipart/form-data; boundary=#{boundary}"}
+          ],
+          multipart_body
+        )
+
+        IO.puts("[WhisperAPI] Making Finch binary request...")
+        case Finch.request(request, ClippsterFinch, receive_timeout: 60_000) do
+          {:ok, %Finch.Response{status: 200, body: body}} ->
+            IO.puts("[WhisperAPI] Received response from API")
+            IO.puts("[WhisperAPI] Response body length: #{byte_size(body)} bytes")
+
+            case Jason.decode(body) do
+              {:ok, response} ->
+                IO.puts("[WhisperAPI] Successfully decoded JSON response")
+                IO.puts("[WhisperAPI] Response keys: #{inspect(Map.keys(response))}")
+                {:ok, response}
+
+              {:error, reason} ->
+                IO.puts("[WhisperAPI] Failed to decode JSON: #{inspect(reason)}")
+                IO.puts("[WhisperAPI] Response body: #{String.slice(body, 0, 500)}...")
+                {:error, "Invalid JSON response: #{inspect(reason)}"}
+            end
+
+          {:ok, %Finch.Response{status: status_code, body: body}} ->
+            IO.puts("[WhisperAPI] API returned error status: #{status_code}")
+            IO.puts("[WhisperAPI] Error body: #{body}")
+            {:error, "Whisper API error (#{status_code}): #{body}"}
+
+          {:error, reason} ->
+            IO.puts("[WhisperAPI] HTTP request failed: #{inspect(reason)}")
+            {:error, "Network error: #{inspect(reason)}"}
+        end
+    end
+  rescue
+    error ->
+      IO.puts("[WhisperAPI] Error in binary transcription rescue: #{inspect(error)}")
+      IO.puts("[WhisperAPI] Error type: #{inspect(Exception.format(:error, error, []))}")
+      {:error, "Unexpected error in binary transcription: #{inspect(error)}"}
+  end
+
   def transcribe(audio_upload) do
     IO.puts("[WhisperAPI] Starting transcription...")
     IO.puts("[WhisperAPI] Audio filename: #{audio_upload.filename}")
