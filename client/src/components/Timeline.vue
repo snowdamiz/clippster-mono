@@ -111,19 +111,13 @@
       </div>
 
       <!-- Global Playhead Line - positioned like hover line but follows video time -->
-      <div
-        v-if="videoSrc && duration > 0"
-        class="fixed bg-white/70 shadow-lg z-25 pointer-events-none transition-all duration-100"
-        :style="{
-          left: `${globalPlayheadPosition}px`,
-          top: `${timelineBounds.top}px`,
-          height: `${timelineBounds.bottom - timelineBounds.top}px`,
-          width: '1px'
-        }"
-      >
-        <div class="absolute top-0 -left-1 w-2 h-2 bg-white rounded-full shadow-md"></div>
-        <div class="absolute bottom-0 -left-1 w-2 h-2 bg-white/80 rounded-full"></div>
-      </div>
+      <TimelinePlayhead
+        :videoSrc="videoSrc"
+        :duration="duration"
+        :position="globalPlayheadPosition"
+        :timelineBoundsTop="timelineBounds.top"
+        :timelineBoundsBottom="timelineBounds.bottom"
+      />
 
       <!-- Drag Selection Area -->
       <TimelineDragSelection
@@ -180,6 +174,7 @@
   import TimelineDragTooltip from './TimelineDragTooltip.vue'
   import TimelineTooltip from './TimelineTooltip.vue'
   import TimelineDragSelection from './TimelineDragSelection.vue'
+  import TimelinePlayhead from './TimelinePlayhead.vue'
   import {
     updateClipSegment,
     getAdjacentClipSegments,
@@ -1706,39 +1701,6 @@
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
-  }
-
-  /* Global playhead line styling */
-  .global-playhead-line {
-    position: fixed;
-    background: white;
-    box-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
-    z-index: 25;
-    pointer-events: none;
-    transition: left 0.1s ease;
-  }
-
-  .global-playhead-line::before {
-    content: '';
-    position: absolute;
-    top: -4px;
-    left: -6px;
-    width: 12px;
-    height: 12px;
-    background: white;
-    border-radius: 50%;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-  }
-
-  .global-playhead-line::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: -4px;
-    width: 8px;
-    height: 8px;
-    background: rgba(255, 255, 255, 0.8);
-    border-radius: 50%;
   }
 
   /* Collision warning styles */
