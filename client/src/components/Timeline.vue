@@ -282,6 +282,7 @@
     moveDragSelection,
     endDragSelection,
     updateTimelineBounds,
+    setTimelineBoundsWhenStable,
     setZoomLevel
   } = useTimelineInteraction(
     timelineScrollContainer,
@@ -376,6 +377,7 @@
   // Global playhead state
   const globalPlayheadPosition = ref(0) // X position in pixels for the global playhead line
   const isPlayheadInitialized = ref(false) // Track if playhead has been properly initialized
+  const isTimelineStable = ref(false) // Track if timeline height has stabilized
 
   // Timeline hover line state
   const showTimelineHoverLine = ref(false)
@@ -721,10 +723,13 @@
     const rect = container.getBoundingClientRect()
     const relativeX = event.clientX - rect.left
 
-    // Update timeline bounds for constraining both hover line and global playhead
-    timelineBounds.value = {
-      top: rect.top,
-      bottom: rect.bottom
+    // Update timeline bounds - either immediately if stable, or set them when stability is achieved
+    if (isTimelineStable.value) {
+      setTimelineBoundsWhenStable(rect.top, rect.bottom)
+    } else {
+      // If timeline isn't stable yet, set bounds but they might be incorrect
+      // This will be corrected when timeline becomes stable
+      timelineBounds.value = { top: rect.top, bottom: rect.bottom }
     }
 
     // Only show hover line if we're in the timeline content area (after track labels)
@@ -779,6 +784,46 @@
     }
   }
 
+  // Detect timeline height stability by monitoring height changes over time
+  function waitForTimelineStability(callback: () => void) {
+    const container = timelineScrollContainer.value
+    if (!container) return
+
+    let lastHeight = 0
+    let stableCount = 0
+    const stabilityThreshold = 5 // Number of consecutive stable measurements required
+    const checkInterval = 50 // Check every 50ms
+
+    const stabilityChecker = setInterval(() => {
+      const currentRect = container.getBoundingClientRect()
+      const currentHeight = currentRect.height
+
+      if (currentHeight === lastHeight) {
+        stableCount++
+        if (stableCount >= stabilityThreshold) {
+          // Timeline height is stable
+          clearInterval(stabilityChecker)
+          isTimelineStable.value = true
+          callback()
+        }
+      } else {
+        // Height changed, reset stability counter
+        stableCount = 0
+        lastHeight = currentHeight
+      }
+    }, checkInterval)
+
+    // Fallback timeout in case timeline never stabilizes
+    setTimeout(() => {
+      clearInterval(stabilityChecker)
+      if (!isTimelineStable.value) {
+        console.warn('[Timeline] Height stability check timed out, proceeding with initialization')
+        isTimelineStable.value = true
+        callback()
+      }
+    }, 2000) // 2 second timeout
+  }
+
   // Update global playhead position based on current time
   function updateGlobalPlayheadPosition() {
     if (!canPositionPlayhead(props.videoSrc, props.duration, props.currentTime)) {
@@ -788,11 +833,16 @@
     const container = timelineScrollContainer.value
     if (!container) return
 
+    // Only update playhead position if timeline is stable or if it's the first initialization
+    if (!isTimelineStable.value && !isPlayheadInitialized.value) {
+      return
+    }
+
     // Find the video track content element to get its current playhead position as reference
     const videoTrack = container.querySelector(SELECTORS.VIDEO_TRACK) as HTMLElement
     if (!videoTrack) {
       // Video track doesn't exist yet, retry during initialization
-      if (!isPlayheadInitialized.value) {
+      if (!isPlayheadInitialized.value && isTimelineStable.value) {
         requestAnimationFrame(() => {
           updateGlobalPlayheadPosition()
         })
@@ -830,8 +880,10 @@
 
   // Handle scroll events to update global playhead position
   function handleScroll() {
-    // Use immediate update for scroll events as they need to feel responsive
-    updateGlobalPlayheadPosition()
+    // Only update playhead position if timeline is stable
+    if (isTimelineStable.value) {
+      updateGlobalPlayheadPosition()
+    }
   }
 
   // Global mouse event handlers for better panning and drag selection experience
@@ -934,66 +986,34 @@
     // Initialize timeline bounds for hover line
     const container = timelineScrollContainer.value
     if (container) {
-      const rect = container.getBoundingClientRect()
-      timelineBounds.value = {
-        top: rect.top,
-        bottom: rect.bottom
-      }
-
       // Add scroll listener to update global playhead position
       container.addEventListener('scroll', handleScroll)
 
       // Add resize observer to update positions when container resizes
       const resizeObserver = new ResizeObserver(() => {
-        // Update timeline bounds
-        updateTimelineBounds()
+        // Update timeline bounds if timeline is stable
+        if (isTimelineStable.value) {
+          const rect = container.getBoundingClientRect()
+          setTimelineBoundsWhenStable(rect.top, rect.bottom)
 
-        // Update global playhead position
-        updateGlobalPlayheadPosition()
+          // Update global playhead position
+          updateGlobalPlayheadPosition()
+        }
       })
 
       resizeObserver.observe(container)
       ;(container as any)._resizeObserver = resizeObserver
 
-      // Initialize playhead position after DOM is fully rendered
-      nextTick(() => {
-        // Set initial bounds
-        updateTimelineBounds()
+      // Wait for timeline height to stabilize before initializing bounds and playhead
+      waitForTimelineStability(() => {
+        // Set final bounds after timeline is stable
+        const rect = container.getBoundingClientRect()
+        setTimelineBoundsWhenStable(rect.top, rect.bottom)
 
-        // Try positioning with increasing delays
-        const tryPositioning = (delay: number) => {
-          setTimeout(() => {
-            const wasInitialized = isPlayheadInitialized.value
-            updateGlobalPlayheadPosition()
-
-            // If still not initialized after this attempt, try again with longer delay
-            if (!isPlayheadInitialized.value && !wasInitialized && delay < 1000) {
-              tryPositioning(delay * 2)
-            }
-          }, delay)
-        }
-
-        // Start with 200ms delay but also check if container height is stable
-        const checkHeightAndPosition = (delay: number) => {
-          setTimeout(() => {
-            const currentRect = container.getBoundingClientRect()
-            const expectedMinHeight = TIMELINE_CONSTANTS.EXPECTED_MIN_HEIGHT // Timeline should be at least this tall when fully rendered
-
-            if (currentRect.height < expectedMinHeight && delay < 1000) {
-              // Container is still expanding, wait longer
-              checkHeightAndPosition(delay * 2)
-              return
-            }
-
-            // Update bounds with the correct container rect
-            updateTimelineBounds()
-
-            tryPositioning(delay)
-          }, delay)
-        }
-
-        // Start with 200ms delay
-        checkHeightAndPosition(200)
+        // Initialize playhead position with stable timeline
+        nextTick(() => {
+          updateGlobalPlayheadPosition()
+        })
       })
     }
   })

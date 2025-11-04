@@ -318,6 +318,11 @@ export function useTimelineInteraction(
     }
   }
 
+  // Set timeline bounds only when timeline is stable (to be called from parent)
+  function setTimelineBoundsWhenStable(top: number, bottom: number) {
+    timelineBounds.value = { top, bottom }
+  }
+
   return {
     // State
     zoomState,
@@ -341,6 +346,7 @@ export function useTimelineInteraction(
     endDragSelection,
 
     // Utility functions
-    updateTimelineBounds
+    updateTimelineBounds,
+    setTimelineBoundsWhenStable
   }
 }

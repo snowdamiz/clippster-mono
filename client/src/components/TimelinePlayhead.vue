@@ -8,10 +8,7 @@
       height: `${timelineBoundsBottom - timelineBoundsTop}px`,
       width: '1px'
     }"
-  >
-    <div class="absolute top-0 -left-1 w-2 h-2 bg-white rounded-full shadow-md"></div>
-    <div class="absolute bottom-0 -left-1 w-2 h-2 bg-white/80 rounded-full"></div>
-  </div>
+  ></div>
 </template>
 
 <script setup lang="ts">
@@ -40,9 +37,9 @@
     content: '';
     position: absolute;
     top: -4px;
-    left: -6px;
-    width: 12px;
-    height: 12px;
+    left: -4px;
+    width: 8px;
+    height: 8px;
     background: white;
     border-radius: 50%;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
