@@ -3,7 +3,9 @@
  */
 
 import { ClipSegment } from './timelineUtils'
+import { ClipSegment as DatabaseClipSegment } from '../services/database'
 import { TIMELINE_CONSTANTS } from '../constants/timelineConstants'
+
 
 export interface MovementConstraints {
   minStartTime: number
@@ -20,8 +22,8 @@ export interface ResizeConstraints {
  */
 export function calculateMovementConstraints(
   segmentDuration: number,
-  adjacentPrevious: ClipSegment | null,
-  adjacentNext: ClipSegment | null,
+  adjacentPrevious: DatabaseClipSegment | null,
+  adjacentNext: DatabaseClipSegment | null,
   videoDuration: number
 ): MovementConstraints {
   let minStartTime = 0
@@ -55,8 +57,8 @@ export function calculateMovementConstraints(
 export function calculateResizeConstraints(
   handleType: 'left' | 'right',
   currentSegment: ClipSegment,
-  adjacentPrevious: ClipSegment | null,
-  adjacentNext: ClipSegment | null,
+  adjacentPrevious: DatabaseClipSegment | null,
+  adjacentNext: DatabaseClipSegment | null,
   videoDuration: number
 ): ResizeConstraints {
   let minStartTime = 0
@@ -98,9 +100,6 @@ export function applyMovementConstraints(
   let startTime = newStartTime
   let endTime = newEndTime
 
-  // Preserve original duration
-  const duration = endTime - startTime
-
   // Apply constraints that prevent shrinking
   if (startTime < constraints.minStartTime) {
     // Moving left would violate constraint, stop at boundary
@@ -138,9 +137,7 @@ export function applyResizeConstraints(
   newStartTime: number,
   newEndTime: number,
   handleType: 'left' | 'right',
-  constraints: ResizeConstraints,
-  originalStartTime: number,
-  originalEndTime: number
+  constraints: ResizeConstraints
 ): { startTime: number; endTime: number } {
   let startTime = newStartTime
   let endTime = newEndTime

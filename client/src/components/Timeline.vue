@@ -529,10 +529,9 @@ import {
   TIMELINE_HEIGHTS,
   TIMELINE_BOUNDS,
   TRACK_DIMENSIONS,
-  SEEKING_CONFIG,
   SELECTORS
 } from '../utils/timelineConstants'
-import { TIMELINE_CONSTANTS, TIMELINE_DIMENSIONS, SEEK_CONFIG } from '../constants/timelineConstants'
+import { TIMELINE_CONSTANTS, SEEK_CONFIG } from '../constants/timelineConstants'
 import { useTranscriptData } from '../composables/useTranscriptData'
 import { useTimelineInteraction } from '../composables/useTimelineInteraction'
 import {
@@ -542,9 +541,7 @@ import {
 } from '../utils/timelinePlayhead'
 import {
   calculateMovementConstraints as calcMovementConstraints,
-  calculateResizeConstraints as calcResizeConstraints,
-  applyMovementConstraints,
-  applyResizeConstraints
+  calculateResizeConstraints as calcResizeConstraints
 } from '../utils/timelineConstraints'
 import {
   createCutHoverInfo

@@ -2,8 +2,8 @@
  * Timeline cut tool utilities
  */
 
-import { ClipSegment } from './timelineUtils'
-import { getSegmentDisplayTime } from './timelineUtils'
+import { ClipSegment, getSegmentDisplayTime } from './timelineUtils'
+
 import { TIMELINE_CONSTANTS } from '../constants/timelineConstants'
 
 export interface CutHoverInfo {
@@ -20,8 +20,7 @@ export interface CutHoverInfo {
 export function calculateCutPosition(
   event: MouseEvent,
   segmentElement: HTMLElement,
-  segment: ClipSegment,
-  duration: number
+  segment: ClipSegment
 ): CutHoverInfo | null {
   const rect = segmentElement.getBoundingClientRect()
   const relativeX = event.clientX - rect.left
@@ -61,11 +60,11 @@ export function createCutHoverInfo(
   event: MouseEvent,
   segmentElement: HTMLElement,
   segment: ClipSegment,
-  duration: number,
+  _duration: number,
   clipId: string,
   segmentIndex: number
 ): CutHoverInfo | null {
-  const cutInfo = calculateCutPosition(event, segmentElement, segment, duration)
+  const cutInfo = calculateCutPosition(event, segmentElement, segment)
 
   if (cutInfo) {
     return {
