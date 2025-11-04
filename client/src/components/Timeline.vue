@@ -92,7 +92,7 @@
           <div class="flex items-center h-14 px-2 border-b border-border/20 relative">
             <!-- Track Label -->
             <div
-              class="w-16 h-10 pr-2 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-0 z-10 bg-[#101010] backdrop-blur-sm"
+              class="w-16 h-10 pr-2 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-0 z-30 bg-[#101010] backdrop-blur-sm"
             >
               <div>
                 <div class="font-medium">Main</div>
@@ -163,7 +163,7 @@
           >
             <!-- Track Label -->
             <div
-              class="w-16 h-8 pr-2 flex items-center justify-center sticky left-0 z-10 bg-[#101010] backdrop-blur-sm"
+              class="w-16 h-8 pr-2 flex items-center justify-center sticky left-0 z-30 bg-[#101010] backdrop-blur-sm"
             >
               <div class="text-xs text-center">
                 <div class="font-medium text-foreground/80">Clip {{ index + 1 }}</div>
