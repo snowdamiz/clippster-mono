@@ -37,6 +37,7 @@ export const TIMELINE_CONSTANTS = {
 
   // Scroll speeds
   HORIZONTAL_SCROLL_MULTIPLIER: 2,
+  VERTICAL_SCROLL_MULTIPLIER: 1,
 
   // UI thresholds
   DRAG_SELECTION_THRESHOLD: 80, // pixels
