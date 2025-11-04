@@ -104,6 +104,7 @@
            @mousemove="onTimelineMouseMove"
            @mouseleave="onTimelineMouseLeaveGlobal"
            @mousedown="onDragStart"
+           @wheel="onTimelineWheel"
            @contextmenu.prevent>
         <!-- Timeline Content Wrapper - handles zoom width -->
         <div class="timeline-content-wrapper"
@@ -932,8 +933,30 @@ function onZoomSliderChange() {
 }
 
 // Event handler wrappers that call composable functions
+function onTimelineWheel(event: WheelEvent) {
+  // Check if Ctrl/Cmd key is pressed for horizontal scrolling
+  const isCtrlPressed = event.ctrlKey || event.metaKey // metaKey is Cmd on Mac
+
+  if (isCtrlPressed) {
+    // Prevent default vertical scrolling
+    event.preventDefault()
+
+    // Handle horizontal scrolling/panning
+    const container = timelineScrollContainer.value
+    if (container) {
+      // Scroll horizontally based on wheel delta
+      const scrollAmount = event.deltaY * 2 // Adjust multiplier for desired speed
+      container.scrollLeft -= scrollAmount
+    }
+  } else {
+    // Regular zoom functionality
+    handleRulerWheel(event)
+  }
+}
+
+// Use the same function for both ruler and timeline wheel events
 function onRulerWheel(event: WheelEvent) {
-  handleRulerWheel(event)
+  onTimelineWheel(event)
 }
 
 
