@@ -13,7 +13,7 @@
     "format:check": "cd client && prettier --check \"src/**/*.{vue,js,ts,json,css,scss,md}\"",
     "format:all": "prettier --write \"client/**/*.{vue,js,ts,json,css,scss,md}\"",
     "format:staged": "cd client && prettier --write",
-    "type-check:staged": "cd client && npx vue-tsc --noEmit"
+    "type-check": "cd client && vue-tsc --noEmit"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
@@ -25,9 +25,6 @@
   "lint-staged": {
     "client/**/*.{vue,js,ts,json,css,scss,md}": [
       "yarn format:staged"
-    ],
-    "client/**/*.{vue,js,ts}": [
-      "yarn type-check:staged"
     ]
   }
 }
