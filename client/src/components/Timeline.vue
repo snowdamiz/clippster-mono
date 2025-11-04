@@ -533,7 +533,6 @@ import {
   TIMELINE_BOUNDS,
   TRACK_DIMENSIONS,
   SEEKING_CONFIG,
-  CUT_CONFIG,
   SELECTORS
 } from '../utils/timelineConstants'
 import { useTranscriptData } from '../composables/useTranscriptData'
@@ -652,48 +651,84 @@ const dragEndX = computed(() => dragSelectionState.value.dragEndX)
 const dragStartPercent = computed(() => dragSelectionState.value.dragStartPercent)
 const dragEndPercent = computed(() => dragSelectionState.value.dragEndPercent)
 
-// Debounced database update function for smoother performance
-const debouncedUpdateClip = debounce(async (clipId: string, segmentIndex: number, newStartTime: number, newEndTime: number) => {
-  try {
-    await updateClipSegment(clipId, segmentIndex, newStartTime, newEndTime)
+// Timeline bounds for constraining interactions
+// timelineBounds is now managed by useTimelineInteraction composable
 
-    // Update local clip data for immediate visual feedback
-    const clipIndex = localClips.value.findIndex(clip => clip.id === clipId)
-    if (clipIndex !== -1 && localClips.value[clipIndex].segments[segmentIndex]) {
-      // Create a new clips array to trigger reactivity
-      const updatedClips = [...localClips.value]
+// Local reactive copy of clips for immediate visual updates
+const localClips = ref(props.clips ? [...props.clips] : [])
+
+// Sync localClips with props.clips
+watch(
+  () => props.clips,
+  (newClips) => {
+    if (newClips) {
+      localClips.value = [...newClips]
+    }
+  },
+  { immediate: true, deep: true }
+)
+
+// Computed clips that updates during dragging or resizing
+const displayClips = computed(() => {
+  // Handle dragging
+  if (isDraggingSegment.value && draggedSegmentInfo.value) {
+    const updatedClips = [...localClips.value]
+    const { clipId, segmentIndex, currentStartTime, currentEndTime } = draggedSegmentInfo.value
+
+    const clipIndex = updatedClips.findIndex(clip => clip.id === clipId)
+    if (clipIndex !== -1 && updatedClips[clipIndex].segments[segmentIndex]) {
       updatedClips[clipIndex] = {
         ...updatedClips[clipIndex],
         segments: [...updatedClips[clipIndex].segments]
       }
       updatedClips[clipIndex].segments[segmentIndex] = {
         ...updatedClips[clipIndex].segments[segmentIndex],
-        start_time: newStartTime,
-        end_time: newEndTime,
-        duration: newEndTime - newStartTime
+        start_time: currentStartTime,
+        end_time: currentEndTime,
+        duration: currentEndTime - currentStartTime
       }
-      localClips.value = updatedClips
     }
-  } catch (error) {
-    console.error('Error updating clip segment:', error)
+
+    return updatedClips
   }
-}, TRACK_DIMENSIONS.DEBOUNCE_DELAY) // Debounce for smoother performance
+
+  // Handle resizing
+  if (isResizingSegment.value && resizeHandleInfo.value) {
+    const updatedClips = [...localClips.value]
+    const { clipId, segmentIndex, currentStartTime, currentEndTime } = resizeHandleInfo.value
+
+    const clipIndex = updatedClips.findIndex(clip => clip.id === clipId)
+    if (clipIndex !== -1 && updatedClips[clipIndex].segments[segmentIndex]) {
+      updatedClips[clipIndex] = {
+        ...updatedClips[clipIndex],
+        segments: [...updatedClips[clipIndex].segments]
+      }
+      updatedClips[clipIndex].segments[segmentIndex] = {
+        ...updatedClips[clipIndex].segments[segmentIndex],
+        start_time: currentStartTime,
+        end_time: currentEndTime,
+        duration: currentEndTime - currentStartTime
+      }
+    }
+
+    return updatedClips
+  }
+
+  return localClips.value
+})
+
+// Global playhead state
+const globalPlayheadPosition = ref(0) // X position in pixels for the global playhead line
+const isPlayheadInitialized = ref(false) // Track if playhead has been properly initialized
 
 // Timeline hover line state
 const showTimelineHoverLine = ref(false)
 const timelineHoverLinePosition = ref(0) // X position in pixels relative to timeline container
-// timelineBounds is now managed by useTimelineInteraction composable
 
 // Custom tooltip state
 const showTimelineTooltip = ref(false)
 const tooltipPosition = ref({ x: 0, y: 0 })
 const tooltipTime = ref(0)
-
-// Transcript-related state is now managed by useTranscriptData composable
-
-// Global playhead state
-const globalPlayheadPosition = ref(0) // X position in pixels for the global playhead line
-const isPlayheadInitialized = ref(false) // Track if playhead has been properly initialized
 
 // Segment hover state
 const hoveredSegmentKey = ref<string | null>(null) // Track which specific segment is hovered
@@ -755,6 +790,35 @@ const movementConstraints = ref<{
   maxEndTime: Infinity
 })
 
+// Debounced database update function for smoother performance
+const debouncedUpdateClip = debounce(async (clipId: string, segmentIndex: number, newStartTime: number, newEndTime: number) => {
+  try {
+    await updateClipSegment(clipId, segmentIndex, newStartTime, newEndTime)
+
+    // Update local clip data for immediate visual feedback
+    const clipIndex = localClips.value.findIndex(clip => clip.id === clipId)
+    if (clipIndex !== -1 && localClips.value[clipIndex].segments[segmentIndex]) {
+      // Create a new clips array to trigger reactivity
+      const updatedClips = [...localClips.value]
+      updatedClips[clipIndex] = {
+        ...updatedClips[clipIndex],
+        segments: [...updatedClips[clipIndex].segments]
+      }
+      updatedClips[clipIndex].segments[segmentIndex] = {
+        ...updatedClips[clipIndex].segments[segmentIndex],
+        start_time: newStartTime,
+        end_time: newEndTime,
+        duration: newEndTime - newStartTime
+      }
+      localClips.value = updatedClips
+    }
+  } catch (error) {
+    console.error('Error updating clip segment:', error)
+  }
+}, TRACK_DIMENSIONS.DEBOUNCE_DELAY) // Debounce for smoother performance
+
+// Transcript-related state is now managed by useTranscriptData composable
+
 // Use transcript data composable
 const {
   transcriptData,
@@ -773,57 +837,6 @@ const {
   loadTranscriptData
 } = useTranscriptData(computed(() => props.projectId || null))
 
-// Local reactive copy of clips for immediate visual updates
-const localClips = ref(props.clips ? [...props.clips] : [])
-
-// Computed clips that updates during dragging or resizing
-const displayClips = computed(() => {
-  // Handle dragging
-  if (isDraggingSegment.value && draggedSegmentInfo.value) {
-    const updatedClips = [...localClips.value]
-    const { clipId, segmentIndex, currentStartTime, currentEndTime } = draggedSegmentInfo.value
-
-    const clipIndex = updatedClips.findIndex(clip => clip.id === clipId)
-    if (clipIndex !== -1 && updatedClips[clipIndex].segments[segmentIndex]) {
-      updatedClips[clipIndex] = {
-        ...updatedClips[clipIndex],
-        segments: [...updatedClips[clipIndex].segments]
-      }
-      updatedClips[clipIndex].segments[segmentIndex] = {
-        ...updatedClips[clipIndex].segments[segmentIndex],
-        start_time: currentStartTime,
-        end_time: currentEndTime,
-        duration: currentEndTime - currentStartTime
-      }
-    }
-
-    return updatedClips
-  }
-
-  // Handle resizing
-  if (isResizingSegment.value && resizeHandleInfo.value) {
-    const updatedClips = [...localClips.value]
-    const { clipId, segmentIndex, currentStartTime, currentEndTime } = resizeHandleInfo.value
-
-    const clipIndex = updatedClips.findIndex(clip => clip.id === clipId)
-    if (clipIndex !== -1 && updatedClips[clipIndex].segments[segmentIndex]) {
-      updatedClips[clipIndex] = {
-        ...updatedClips[clipIndex],
-        segments: [...updatedClips[clipIndex].segments]
-      }
-      updatedClips[clipIndex].segments[segmentIndex] = {
-        ...updatedClips[clipIndex].segments[segmentIndex],
-        start_time: currentStartTime,
-        end_time: currentEndTime,
-        duration: currentEndTime - currentStartTime
-      }
-    }
-
-    return updatedClips
-  }
-
-  return localClips.value
-})
 
 function setTimelineClipRef(el: any, clipId: string) {
   if (el && el instanceof HTMLElement) {
@@ -1100,16 +1113,6 @@ watch(
   }
 )
 
-// Sync localClips with props.clips
-watch(
-  () => props.clips,
-  (newClips) => {
-    if (newClips) {
-      localClips.value = [...newClips]
-    }
-  },
-  { immediate: true, deep: true }
-)
 
 // projectId watching is now handled by useTranscriptData composable
 
