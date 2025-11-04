@@ -96,19 +96,14 @@
       </div>
 
       <!-- Timeline Hover Line - positioned relative to viewport but constrained to timeline bounds -->
-      <div
-        v-if="showTimelineHoverLine && !isPanning && !isDragging"
-        class="fixed bg-white/40 z-30 pointer-events-none transition-opacity duration-150"
-        :style="{
-          left: `${timelineHoverLinePosition}px`,
-          top: `${timelineBounds.top}px`,
-          height: `${timelineBounds.bottom - timelineBounds.top}px`,
-          width: '1px'
-        }"
-      >
-        <div class="absolute top-0 -left-1 w-2 h-2 bg-white/60 rounded-full"></div>
-        <div class="absolute bottom-0 -left-1 w-2 h-2 bg-white/60 rounded-full"></div>
-      </div>
+      <TimelineHoverLine
+        :showLine="showTimelineHoverLine"
+        :position="timelineHoverLinePosition"
+        :timelineBoundsTop="timelineBounds.top"
+        :timelineBoundsBottom="timelineBounds.bottom"
+        :isPanning="isPanning"
+        :isDragging="isDragging"
+      />
 
       <!-- Global Playhead Line - positioned like hover line but follows video time -->
       <TimelinePlayhead
@@ -175,13 +170,14 @@
   import TimelineTooltip from './TimelineTooltip.vue'
   import TimelineDragSelection from './TimelineDragSelection.vue'
   import TimelinePlayhead from './TimelinePlayhead.vue'
+  import TimelineHoverLine from './TimelineHoverLine.vue'
   import {
     updateClipSegment,
     getAdjacentClipSegments,
     realignClipSegment,
     splitClipSegment
   } from '../services/database'
-  import { debounce, throttle, formatDuration, type ClipSegment } from '../utils/timelineUtils'
+  import { debounce, throttle, type ClipSegment } from '../utils/timelineUtils'
   import { seekVideoBySeconds, createSeekEvent } from '../utils/videoSeekUtils'
   import { TIMELINE_HEIGHTS, TIMELINE_BOUNDS, TRACK_DIMENSIONS, SELECTORS } from '../utils/timelineConstants'
   import { TIMELINE_CONSTANTS, SEEK_CONFIG } from '../constants/timelineConstants'
@@ -1652,37 +1648,6 @@
   /* Timeline content wrapper for zoom */
   .timeline-content-wrapper {
     min-width: 100%;
-  }
-
-  /* Timeline hover line */
-  .timeline-hover-line {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 1px;
-    background: rgba(255, 255, 255, 0.4);
-    z-index: 30;
-    pointer-events: none;
-    transition: opacity 0.15s ease;
-  }
-
-  .timeline-hover-line::before,
-  .timeline-hover-line::after {
-    content: '';
-    position: absolute;
-    width: 8px;
-    height: 8px;
-    background: rgba(255, 255, 255, 0.6);
-    border-radius: 50%;
-    left: -3.5px;
-  }
-
-  .timeline-hover-line::before {
-    top: 0;
-  }
-
-  .timeline-hover-line::after {
-    bottom: 0;
   }
 
   /* Timeline cursor changes */
