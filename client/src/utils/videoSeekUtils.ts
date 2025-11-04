@@ -18,7 +18,14 @@ export function createSeekEvent(
   if (!videoTrackElement || !duration || duration <= 0) return null
 
   const videoTrackRect = videoTrackElement.getBoundingClientRect()
-  const targetX = videoTrackRect.left + videoTrackRect.width * (targetTime / duration)
+
+  // Calculate position relative to the video track element (not absolute)
+  const relativeX = videoTrackRect.width * (targetTime / duration)
+  const targetX = videoTrackRect.left + relativeX
+
+  console.log('[createSeekEvent] targetTime:', targetTime, 'duration:', duration)
+  console.log('[createSeekEvent] videoTrackRect.width:', videoTrackRect.width)
+  console.log('[createSeekEvent] relativeX:', relativeX, 'targetX:', targetX)
 
   // Create a proper synthetic event
   const syntheticEvent = new MouseEvent('click', {

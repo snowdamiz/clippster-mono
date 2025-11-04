@@ -13,6 +13,7 @@
     <!-- Video Track Content -->
     <div class="flex-1 h-10 relative flex items-center">
       <div
+        data-video-track="true"
         class="flex-1 h-8 bg-[#0a0a0a]/50 rounded-md relative cursor-pointer group"
         @click="onVideoTrackClick"
         @mousemove="onTimelineTrackHover"

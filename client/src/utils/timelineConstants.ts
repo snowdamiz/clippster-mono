@@ -69,7 +69,7 @@ export const CURSOR_STATES = {
 
 // CSS selectors used frequently
 export const SELECTORS = {
-  VIDEO_TRACK: '.flex-1.h-8.bg-\\[\\#0a0a0a\\]\\/50.rounded-md.relative',
+  VIDEO_TRACK: '[data-video-track="true"]',
   TIMELINE_CONTENT: '.timeline-content-wrapper',
   TIMELINE_CONTAINER: '.timeline-scroll-container'
 } as const

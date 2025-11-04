@@ -164,24 +164,45 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   }
 
   function seekTimeline(event: MouseEvent) {
-    if (!videoElement.value || !videoSrc.value) return
+    console.log('[useVideoPlayer] seekTimeline called')
+    console.log('[useVideoPlayer] videoElement.value:', !!videoElement.value)
+    console.log('[useVideoPlayer] videoSrc.value:', !!videoSrc.value)
+
+    if (!videoElement.value || !videoSrc.value) {
+      console.log('[useVideoPlayer] Early return - no videoElement or videoSrc')
+      return
+    }
 
     // If we're playing segments, stop segmented playback when user seeks
     if (isPlayingSegments.value) {
+      console.log('[useVideoPlayer] Stopping segment playback')
       stopSegmentedPlayback()
     }
 
     const timeline = event.currentTarget as HTMLElement
+    console.log('[useVideoPlayer] Timeline element:', !!timeline)
+
     const rect = timeline.getBoundingClientRect()
     const clickX = event.clientX - rect.left
     const clickPercent = Math.max(0, Math.min(1, clickX / rect.width))
 
+    console.log('[useVideoPlayer] clickX:', clickX, 'clickPercent:', clickPercent)
+
     const videoDuration = videoElement.value.duration || duration.value
-    if (!videoDuration || isNaN(videoDuration)) return
+    console.log('[useVideoPlayer] videoDuration:', videoDuration)
+
+    if (!videoDuration || isNaN(videoDuration)) {
+      console.log('[useVideoPlayer] Early return - invalid videoDuration')
+      return
+    }
 
     const seekTime = clickPercent * videoDuration
+    console.log('[useVideoPlayer] Calculated seekTime:', seekTime)
+
     videoElement.value.currentTime = seekTime
     currentTime.value = seekTime
+
+    console.log('[useVideoPlayer] Video currentTime set to:', videoElement.value.currentTime)
   }
 
   function onTimelineTrackHover(event: MouseEvent) {

@@ -582,13 +582,20 @@
   // formatDuration is now imported from timelineUtils
 
   function onSeekTimeline(event: MouseEvent) {
+    console.log('[Timeline] onSeekTimeline called, emitting seekTimeline event')
     emit('seekTimeline', event)
   }
 
   function onVideoTrackClick(event: MouseEvent) {
+    console.log('[Timeline] onVideoTrackClick called')
+    console.log('[Timeline] isDragging.value:', isDragging.value)
+
     // Only seek if we're not in the middle of a drag selection
     if (!isDragging.value) {
+      console.log('[Timeline] Calling onSeekTimeline')
       onSeekTimeline(event)
+    } else {
+      console.log('[Timeline] Not seeking - currently dragging')
     }
   }
 
@@ -1422,35 +1429,65 @@
 
   // Seek video by specified number of seconds
   function seekVideo(seconds: number) {
-    if (!props.videoSrc || !props.duration) return
+    console.log('[Timeline] seekVideo called with seconds:', seconds)
+    console.log('[Timeline] props.currentTime:', props.currentTime, 'props.duration:', props.duration)
+    console.log('[Timeline] seekDirection:', seekDirection.value)
+
+    if (!props.videoSrc || !props.duration) {
+      console.log('[Timeline] Early return from seekVideo - no videoSrc or duration')
+      return
+    }
 
     const newTime = seekVideoBySeconds(props.currentTime, props.duration, seconds)
+    console.log('[Timeline] Calculated newTime:', newTime, '(based on props.currentTime:', props.currentTime, ')')
 
     // Calculate the position as a percentage of the timeline
     const container = timelineScrollContainer.value
+    console.log('[Timeline] Container found:', !!container)
+
     if (container) {
       const videoTrack = container.querySelector(SELECTORS.VIDEO_TRACK) as HTMLElement
+      console.log('[Timeline] Video track element found:', !!videoTrack)
+      console.log('[Timeline] Using selector:', SELECTORS.VIDEO_TRACK)
+
       if (videoTrack) {
         const syntheticEvent = createSeekEvent(newTime, props.duration, videoTrack)
+        console.log('[Timeline] Synthetic event created:', !!syntheticEvent)
+
         if (syntheticEvent) {
+          console.log('[Timeline] Triggering onVideoTrackClick with event')
           // Trigger the seek
           onVideoTrackClick(syntheticEvent)
+        } else {
+          console.log('[Timeline] Failed to create synthetic event')
         }
+      } else {
+        console.log('[Timeline] Video track element not found with selector')
+        // Log all child elements to debug
+        console.log('[Timeline] Container children:', container.innerHTML)
       }
     }
   }
 
   // Start continuous seeking
   function startContinuousSeeking(direction: 'forward' | 'reverse') {
-    if (!props.videoSrc || !props.duration) return
+    console.log('[Timeline] startContinuousSeeking called with direction:', direction)
+    console.log('[Timeline] videoSrc:', props.videoSrc, 'duration:', props.duration)
+
+    if (!props.videoSrc || !props.duration) {
+      console.log('[Timeline] Early return - no videoSrc or duration')
+      return
+    }
 
     isSeeking.value = true
     seekDirection.value = direction
+    console.log('[Timeline] Seeking started, isSeeking:', isSeeking.value, 'direction:', seekDirection.value)
 
     // Start continuous seeking at high speed immediately (no initial jump)
     seekInterval.value = setInterval(() => {
       const seekAmount =
         seekDirection.value === 'forward' ? SEEK_CONFIG.SECONDS_PER_INTERVAL : -SEEK_CONFIG.SECONDS_PER_INTERVAL
+      console.log('[Timeline] Interval tick, seeking by:', seekAmount, 'seconds')
       seekVideo(seekAmount)
     }, SEEK_CONFIG.INTERVAL_MS)
   }
