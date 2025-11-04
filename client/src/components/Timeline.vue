@@ -535,6 +535,20 @@ import {
 import { TIMELINE_CONSTANTS, TIMELINE_DIMENSIONS, SEEK_CONFIG } from '../constants/timelineConstants'
 import { useTranscriptData } from '../composables/useTranscriptData'
 import { useTimelineInteraction } from '../composables/useTimelineInteraction'
+import {
+  getXPositionAtTime,
+  calculateTimePercent,
+  canPositionPlayhead
+} from '../utils/timelinePlayhead'
+import {
+  calculateMovementConstraints as calcMovementConstraints,
+  calculateResizeConstraints as calcResizeConstraints,
+  applyMovementConstraints,
+  applyResizeConstraints
+} from '../utils/timelineConstraints'
+import {
+  createCutHoverInfo
+} from '../utils/timelineCut'
 
 interface Clip {
   id: string
@@ -1043,7 +1057,7 @@ function onTimelineMouseLeaveGlobal() {
 
 // Update global playhead position based on current time
 function updateGlobalPlayheadPosition() {
-  if (!props.videoSrc || !props.duration || props.duration <= 0 || props.currentTime < 0) {
+  if (!canPositionPlayhead(props.videoSrc, props.duration, props.currentTime)) {
     return
   }
 
@@ -1063,26 +1077,10 @@ function updateGlobalPlayheadPosition() {
   }
 
   // Calculate the time percentage
-  const timePercent = props.currentTime / props.duration
+  const timePercent = calculateTimePercent(props.currentTime, props.duration)
 
-  // Create a temporary div positioned at the time percentage within the video track
-  const tempDiv = document.createElement('div')
-  tempDiv.style.position = 'absolute'
-  tempDiv.style.left = `${timePercent * 100}%`
-  tempDiv.style.top = '0'
-  tempDiv.style.width = '1px'
-  tempDiv.style.height = '1px'
-  tempDiv.style.pointerEvents = 'none'
-  tempDiv.style.opacity = '0'
-
-  videoTrack.appendChild(tempDiv)
-
-  // Get the absolute position of this temp div
-  const tempRect = tempDiv.getBoundingClientRect()
-  const targetX = tempRect.left + tempRect.width / 2
-
-  // Clean up
-  videoTrack.removeChild(tempDiv)
+  // Get the absolute position using the extracted utility
+  const targetX = getXPositionAtTime(videoTrack, timePercent)
   globalPlayheadPosition.value = targetX
   isPlayheadInitialized.value = true
 }
@@ -1312,32 +1310,18 @@ async function calculateMovementConstraints(clipId: string, segmentIndex: number
   try {
     const adjacent = await getAdjacentClipSegments(clipId, segmentIndex)
 
-    let minStartTime = 0
-    let maxEndTime = props.duration || Infinity
-
-    // Can't go past previous segment's end time
-    if (adjacent.previous) {
-      minStartTime = adjacent.previous.end_time
-    }
-
-    // Can't go past next segment's start time
-    if (adjacent.next) {
-      maxEndTime = adjacent.next.start_time
-    }
-
     // Get original duration from the dragged segment info
     const originalDuration = (draggedSegmentInfo.value?.originalEndTime || 0) - (draggedSegmentInfo.value?.originalStartTime || 0) || 0
 
-    // IMPORTANT: Ensure we have enough space for the original duration
-    // If the maxEndTime doesn't allow the original duration, we need to adjust it
-    if (maxEndTime < minStartTime + originalDuration) {
-      maxEndTime = minStartTime + originalDuration
-    }
+    // Use the extracted utility function
+    const constraints = calcMovementConstraints(
+      originalDuration,
+      adjacent.previous,
+      adjacent.next,
+      props.duration || Infinity
+    )
 
-    movementConstraints.value = {
-      minStartTime,
-      maxEndTime
-    }
+    movementConstraints.value = constraints
 
     // Constraints calculated successfully
   } catch (error) {
@@ -1357,35 +1341,24 @@ async function calculateResizeConstraints(clipId: string, segmentIndex: number, 
   try {
     const adjacent = await getAdjacentClipSegments(clipId, segmentIndex)
 
-    let minStartTime = 0
-    let maxEndTime = props.duration || Infinity
-
-    // Can't go past previous segment's end time
-    if (adjacent.previous) {
-      minStartTime = adjacent.previous.end_time
-    }
-
-    // Can't go past next segment's start time
-    if (adjacent.next) {
-      maxEndTime = adjacent.next.start_time
-    }
-
-    // For left handle, we need to consider the current segment's end_time
-    // For right handle, we need to consider the current segment's start_time
+    // Get the current segment
     const currentSegment = localClips.value
       .find(clip => clip.id === clipId)?.segments[segmentIndex]
 
-    if (currentSegment) {
-      if (handleType === 'left') {
-        // Left handle can't go past current end_time - minimum duration
-        maxEndTime = Math.min(maxEndTime, currentSegment.end_time - TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION) // Minimum duration
-      } else {
-        // Right handle can't go before current start_time + minimum duration
-        minStartTime = Math.max(minStartTime, currentSegment.start_time + TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION) // Minimum duration
-      }
+    if (!currentSegment) {
+      throw new Error('Current segment not found')
     }
 
-    return { minStartTime, maxEndTime }
+    // Use the extracted utility function
+    const constraints = calcResizeConstraints(
+      handleType,
+      currentSegment,
+      adjacent.previous,
+      adjacent.next,
+      props.duration || Infinity
+    )
+
+    return constraints
   } catch (error) {
     console.error('Error calculating resize constraints:', error)
     return {
@@ -1445,24 +1418,8 @@ function updateSegmentDragTooltip() {
   // Calculate the time percentage for the segment start time
   const timePercent = props.duration ? currentStartTime / props.duration : 0
 
-  // Create a temporary div positioned at the time percentage within the video track
-  const tempDiv = document.createElement('div')
-  tempDiv.style.position = 'absolute'
-  tempDiv.style.left = `${timePercent * 100}%`
-  tempDiv.style.top = '0'
-  tempDiv.style.width = '1px'
-  tempDiv.style.height = '1px'
-  tempDiv.style.pointerEvents = 'none'
-  tempDiv.style.opacity = '0'
-
-  videoTrack.appendChild(tempDiv)
-
-  // Get the absolute position of this temp div
-  const tempRect = tempDiv.getBoundingClientRect()
-  const targetX = tempRect.left + tempRect.width / 2
-
-  // Clean up
-  videoTrack.removeChild(tempDiv)
+  // Get the absolute position using the extracted utility
+  const targetX = getXPositionAtTime(videoTrack, timePercent)
 
   // Update tooltip position
   draggedSegmentInfo.value.tooltipX = targetX
@@ -1623,24 +1580,8 @@ function updateResizeTooltip() {
   const handleTime = handleType === 'left' ? currentStartTime : currentEndTime
   const timePercent = props.duration ? handleTime / props.duration : 0
 
-  // Create a temporary div positioned at the time percentage within the video track
-  const tempDiv = document.createElement('div')
-  tempDiv.style.position = 'absolute'
-  tempDiv.style.left = `${timePercent * 100}%`
-  tempDiv.style.top = '0'
-  tempDiv.style.width = '1px'
-  tempDiv.style.height = '1px'
-  tempDiv.style.pointerEvents = 'none'
-  tempDiv.style.opacity = '0'
-
-  videoTrack.appendChild(tempDiv)
-
-  // Get the absolute position of this temp div
-  const tempRect = tempDiv.getBoundingClientRect()
-  const targetX = tempRect.left + tempRect.width / 2
-
-  // Clean up
-  videoTrack.removeChild(tempDiv)
+  // Get the absolute position using the extracted utility
+  const targetX = getXPositionAtTime(videoTrack, timePercent)
 
   // Update tooltip position
   resizeHandleInfo.value.tooltipX = targetX
@@ -1811,35 +1752,10 @@ function onSegmentHoverForCut(event: MouseEvent, clipId: string, segmentIndex: n
   const segmentElement = event.target as HTMLElement
   if (!segmentElement) return
 
-  const rect = segmentElement.getBoundingClientRect()
-  const relativeX = event.clientX - rect.left
-  const segmentWidth = rect.width
+  // Use the extracted utility function
+  const cutInfo = createCutHoverInfo(event, segmentElement, segment, props.duration, clipId, segmentIndex)
 
-  // Calculate the cut position as a percentage within the segment
-  const cutPositionPercent = (relativeX / segmentWidth) * 100
-
-  // Calculate the actual cut time within the video
-  const segmentStartTime = getSegmentDisplayTime(segment, 'start')
-  const segmentEndTime = getSegmentDisplayTime(segment, 'end')
-  const segmentDuration = segmentEndTime - segmentStartTime
-  const cutTime = segmentStartTime + (segmentDuration * cutPositionPercent / 100)
-
-  // Validate minimum segment durations
-  const leftDuration = cutTime - segmentStartTime
-  const rightDuration = segmentEndTime - cutTime
-
-  if (leftDuration >= TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION && rightDuration >= TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION) {
-    cutHoverInfo.value = {
-      clipId,
-      segmentIndex,
-      cutTime,
-      cutPosition: cutPositionPercent,
-      cursorPosition: cutPositionPercent
-    }
-  } else {
-    // Not enough space for a valid cut
-    cutHoverInfo.value = null
-  }
+  cutHoverInfo.value = cutInfo
 }
 
 // Handle segment click for cut operation
