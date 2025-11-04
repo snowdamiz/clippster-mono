@@ -436,6 +436,7 @@
   const isSeeking = ref(false)
   const seekDirection = ref<'forward' | 'reverse' | null>(null)
   const seekInterval = ref<NodeJS.Timeout | null>(null)
+  const currentSeekTime = ref(0) // Track our current seek position for continuous seeking
 
   // Movement constraints
   const movementConstraints = ref<{
@@ -1427,7 +1428,41 @@
 
   // Video seek functions
 
-  // Seek video by specified number of seconds
+  // Seek video to specific time (used for continuous seeking)
+  function seekVideoToTime(targetTime: number) {
+    console.log('[Timeline] seekVideoToTime called with targetTime:', targetTime)
+
+    if (!props.videoSrc || !props.duration) {
+      console.log('[Timeline] Early return from seekVideoToTime - no videoSrc or duration')
+      return
+    }
+
+    console.log('[Timeline] Direct seeking to time:', targetTime, '(bypassing synthetic events)')
+
+    // Find the video element directly and set its currentTime
+    const container = timelineScrollContainer.value
+    if (container) {
+      // Look for the video element in the page
+      const videoElement = document.querySelector('video') as HTMLVideoElement
+      if (videoElement) {
+        console.log('[Timeline] Found video element, setting currentTime to:', targetTime)
+        videoElement.currentTime = targetTime
+        console.log('[Timeline] Video currentTime set to:', videoElement.currentTime)
+      } else {
+        console.log('[Timeline] Video element not found, falling back to synthetic event')
+        // Fall back to the original synthetic event approach
+        const videoTrack = container.querySelector(SELECTORS.VIDEO_TRACK) as HTMLElement
+        if (videoTrack) {
+          const syntheticEvent = createSeekEvent(targetTime, props.duration, videoTrack)
+          if (syntheticEvent) {
+            onVideoTrackClick(syntheticEvent)
+          }
+        }
+      }
+    }
+  }
+
+  // Seek video by specified number of seconds (kept for backward compatibility)
   function seekVideo(seconds: number) {
     console.log('[Timeline] seekVideo called with seconds:', seconds)
     console.log('[Timeline] props.currentTime:', props.currentTime, 'props.duration:', props.duration)
@@ -1441,32 +1476,8 @@
     const newTime = seekVideoBySeconds(props.currentTime, props.duration, seconds)
     console.log('[Timeline] Calculated newTime:', newTime, '(based on props.currentTime:', props.currentTime, ')')
 
-    // Calculate the position as a percentage of the timeline
-    const container = timelineScrollContainer.value
-    console.log('[Timeline] Container found:', !!container)
-
-    if (container) {
-      const videoTrack = container.querySelector(SELECTORS.VIDEO_TRACK) as HTMLElement
-      console.log('[Timeline] Video track element found:', !!videoTrack)
-      console.log('[Timeline] Using selector:', SELECTORS.VIDEO_TRACK)
-
-      if (videoTrack) {
-        const syntheticEvent = createSeekEvent(newTime, props.duration, videoTrack)
-        console.log('[Timeline] Synthetic event created:', !!syntheticEvent)
-
-        if (syntheticEvent) {
-          console.log('[Timeline] Triggering onVideoTrackClick with event')
-          // Trigger the seek
-          onVideoTrackClick(syntheticEvent)
-        } else {
-          console.log('[Timeline] Failed to create synthetic event')
-        }
-      } else {
-        console.log('[Timeline] Video track element not found with selector')
-        // Log all child elements to debug
-        console.log('[Timeline] Container children:', container.innerHTML)
-      }
-    }
+    // Use the new seekVideoToTime function
+    seekVideoToTime(newTime)
   }
 
   // Start continuous seeking
@@ -1481,14 +1492,24 @@
 
     isSeeking.value = true
     seekDirection.value = direction
+
+    // Initialize our seek position from the current video time
+    currentSeekTime.value = props.currentTime
     console.log('[Timeline] Seeking started, isSeeking:', isSeeking.value, 'direction:', seekDirection.value)
+    console.log('[Timeline] Initial currentSeekTime:', currentSeekTime.value)
 
     // Start continuous seeking at high speed immediately (no initial jump)
     seekInterval.value = setInterval(() => {
       const seekAmount =
         seekDirection.value === 'forward' ? SEEK_CONFIG.SECONDS_PER_INTERVAL : -SEEK_CONFIG.SECONDS_PER_INTERVAL
       console.log('[Timeline] Interval tick, seeking by:', seekAmount, 'seconds')
-      seekVideo(seekAmount)
+
+      // Update our tracked seek position
+      currentSeekTime.value += seekAmount
+      currentSeekTime.value = Math.max(0, Math.min(props.duration, currentSeekTime.value))
+
+      console.log('[Timeline] Updated currentSeekTime:', currentSeekTime.value)
+      seekVideoToTime(currentSeekTime.value)
     }, SEEK_CONFIG.INTERVAL_MS)
   }
 

@@ -186,7 +186,14 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     const clickX = event.clientX - rect.left
     const clickPercent = Math.max(0, Math.min(1, clickX / rect.width))
 
-    console.log('[useVideoPlayer] clickX:', clickX, 'clickPercent:', clickPercent)
+    console.log('[useVideoPlayer] rect.left:', rect.left, 'event.clientX:', event.clientX)
+    console.log('[useVideoPlayer] clickX:', clickX, 'rect.width:', rect.width)
+    console.log(
+      '[useVideoPlayer] clickPercent (raw):',
+      clickX / rect.width,
+      'clickPercent (clamped):',
+      clickPercent
+    )
 
     const videoDuration = videoElement.value.duration || duration.value
     console.log('[useVideoPlayer] videoDuration:', videoDuration)
