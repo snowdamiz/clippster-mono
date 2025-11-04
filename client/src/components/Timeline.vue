@@ -524,6 +524,18 @@ import {
   generateTimestamps,
   type ClipSegment
 } from '../utils/timelineUtils'
+import {
+  seekVideoBySeconds,
+  createSeekEvent
+} from '../utils/videoSeekUtils'
+import {
+  TIMELINE_HEIGHTS,
+  TIMELINE_BOUNDS,
+  TRACK_DIMENSIONS,
+  SEEKING_CONFIG,
+  CUT_CONFIG,
+  SELECTORS
+} from '../utils/timelineConstants'
 import { useTranscriptData } from '../composables/useTranscriptData'
 import { useTimelineInteraction } from '../composables/useTimelineInteraction'
 
@@ -561,40 +573,26 @@ const props = withDefaults(defineProps<Props>(), {
 
 // Calculate timeline height dynamically based on tracks
 const calculatedHeight = computed(() => {
-  const headerHeight = 56 // Header section height (pt-3 + content + mb-3 + spacing)
-  const rulerHeight = 32 // Timeline ruler height
-  const mainTrackHeight = 86 // Main video track height
-  const clipTrackHeight = 48 // Height per clip track
-
   const numberOfClips = displayClips.value.length
 
   // Calculate total content height: header + ruler + main track + clip tracks
-  const tracksHeight = rulerHeight + mainTrackHeight + (numberOfClips * clipTrackHeight)
-  const totalHeight = headerHeight + tracksHeight
+  const tracksHeight = TIMELINE_HEIGHTS.RULER + TIMELINE_HEIGHTS.MAIN_TRACK + (numberOfClips * TIMELINE_HEIGHTS.CLIP_TRACK)
+  const totalHeight = TIMELINE_HEIGHTS.HEADER + tracksHeight
 
   // Apply reasonable bounds
-  const minHeight = 148 // Minimum height when no clips (56 + 32 + 56)
-  const maxHeight = 400 // Increased max height to allow more clips before scrollbar
-
-  return Math.max(minHeight, Math.min(maxHeight, totalHeight))
+  return Math.max(TIMELINE_BOUNDS.MIN_HEIGHT, Math.min(TIMELINE_BOUNDS.MAX_HEIGHT, totalHeight))
 })
 
 // Determine if scrollbar should be shown based on content vs container height
 const shouldShowScrollbar = computed(() => {
-  const headerHeight = 56 // Header section height
-  const rulerHeight = 32 // Timeline ruler height (h-8)
-  const mainTrackHeight = 56 // Main video track height (h-14)
-  const clipTrackHeight = 48 // Height per clip track (min-h-12)
-  const bottomPadding = props.clips.length > 0 ? 34 : 8 // Dynamic bottom padding
-
   const numberOfClips = displayClips.value.length
-  const contentHeight = rulerHeight + mainTrackHeight + (numberOfClips * clipTrackHeight) + bottomPadding
-  const availableHeight = calculatedHeight.value - headerHeight
+  const bottomPadding = props.clips.length > 0 ? TIMELINE_HEIGHTS.BOTTOM_PADDING_WITH_CLIPS : TIMELINE_HEIGHTS.BOTTOM_PADDING_NO_CLIPS
+
+  const contentHeight = TIMELINE_HEIGHTS.RULER + TIMELINE_HEIGHTS.MAIN_TRACK + (numberOfClips * TIMELINE_HEIGHTS.CLIP_TRACK) + bottomPadding
+  const availableHeight = calculatedHeight.value - TIMELINE_HEIGHTS.HEADER
 
   // Only show scrollbar when content actually exceeds available height (small buffer for precision)
-  const needsScrollbar = contentHeight > availableHeight
-
-  return needsScrollbar
+  return contentHeight > availableHeight
 })
 
 interface Emits {
@@ -679,7 +677,7 @@ const debouncedUpdateClip = debounce(async (clipId: string, segmentIndex: number
   } catch (error) {
     console.error('Error updating clip segment:', error)
   }
-}, 100) // 100ms debounce for smoother performance
+}, TRACK_DIMENSIONS.DEBOUNCE_DELAY) // Debounce for smoother performance
 
 // Timeline hover line state
 const showTimelineHoverLine = ref(false)
@@ -840,7 +838,7 @@ function setTimelineClipRef(el: any, clipId: string) {
 // Throttled function for immediate tooltip updates (position)
 const throttledUpdateTooltipPosition = throttle((timestamp: number) => {
   tooltipTime.value = timestamp
-}, 16) // ~60fps
+}, TRACK_DIMENSIONS.TOOLTIP_THROTTLE) // ~60fps
 
 // Function to scroll timeline clip into view
 function scrollTimelineClipIntoView(clipId: string) {
@@ -970,8 +968,7 @@ function onTimelineMouseMove(event: MouseEvent) {
   }
 
   // Only show hover line if we're in the timeline content area (after track labels)
-  const trackLabelWidth = 64 // 4rem = 64px (w-16)
-  if (relativeX >= trackLabelWidth) {
+  if (relativeX >= TRACK_DIMENSIONS.LABEL_WIDTH) {
     showTimelineHoverLine.value = true
     // Position the line exactly where the cursor is (absolute viewport position)
     timelineHoverLinePosition.value = event.clientX
@@ -981,10 +978,9 @@ function onTimelineMouseMove(event: MouseEvent) {
     if (timelineContent) {
       const contentRect = timelineContent.getBoundingClientRect()
 
-      // Account for track label width (64px) - only the area after track labels represents the timeline
-      const trackLabelWidth = 64 // w-16 = 4rem = 64px
-      const contentRelativeX = Math.max(0, event.clientX - contentRect.left - trackLabelWidth)
-      const contentWidth = Math.max(1, contentRect.width - trackLabelWidth)
+      // Account for track label width - only the area after track labels represents the timeline
+      const contentRelativeX = Math.max(0, event.clientX - contentRect.left - TRACK_DIMENSIONS.LABEL_WIDTH)
+      const contentWidth = Math.max(1, contentRect.width - TRACK_DIMENSIONS.LABEL_WIDTH)
       const timePercent = Math.max(0, Math.min(1, contentRelativeX / contentWidth))
       const hoverTime = timePercent * props.duration
 
@@ -1047,7 +1043,7 @@ function updateGlobalPlayheadPosition() {
   if (!container) return
 
   // Find the video track content element to get its current playhead position as reference
-  const videoTrack = container.querySelector('.flex-1.h-8.bg-\\[\\#0a0a0a\\]\\/50.rounded-md.relative') as HTMLElement
+  const videoTrack = container.querySelector(SELECTORS.VIDEO_TRACK) as HTMLElement
   if (!videoTrack) {
     // Video track doesn't exist yet, retry during initialization
     if (!isPlayheadInitialized.value) {
@@ -1445,7 +1441,7 @@ function updateSegmentDragTooltip() {
   const container = timelineScrollContainer.value
 
   // Find the video track content element to use as positioning reference
-  const videoTrack = container.querySelector('.flex-1.h-8.bg-\\[\\#0a0a0a\\]\\/50.rounded-md.relative') as HTMLElement
+  const videoTrack = container.querySelector(SELECTORS.VIDEO_TRACK) as HTMLElement
   if (!videoTrack) return
 
   // Calculate the time percentage for the segment start time
@@ -1622,7 +1618,7 @@ function updateResizeTooltip() {
   const container = timelineScrollContainer.value
 
   // Find the video track content element to use as positioning reference
-  const videoTrack = container.querySelector('.flex-1.h-8.bg-\\[\\#0a0a0a\\]\\/50.rounded-md.relative') as HTMLElement
+  const videoTrack = container.querySelector(SELECTORS.VIDEO_TRACK) as HTMLElement
   if (!videoTrack) return
 
   // Calculate the position of the handle being dragged
@@ -1745,36 +1741,18 @@ async function onResizeMouseUp() {
 function seekVideo(seconds: number) {
   if (!props.videoSrc || !props.duration) return
 
-  const newTime = Math.max(0, Math.min(props.duration, props.currentTime + seconds))
-
-  // Emit a seek event to parent component
+  const newTime = seekVideoBySeconds(props.currentTime, props.duration, seconds)
 
   // Calculate the position as a percentage of the timeline
   const container = timelineScrollContainer.value
   if (container) {
-    const videoTrack = container.querySelector('.flex-1.h-8.bg-\\[\\#0a0a0a\\]\\/50.rounded-md.relative') as HTMLElement
+    const videoTrack = container.querySelector(SELECTORS.VIDEO_TRACK) as HTMLElement
     if (videoTrack) {
-      const videoTrackRect = videoTrack.getBoundingClientRect()
-      const targetX = videoTrackRect.left + (videoTrackRect.width * (newTime / props.duration))
-
-      // Create a proper synthetic event
-      const syntheticEvent = new MouseEvent('click', {
-        clientX: targetX,
-        clientY: videoTrackRect.top + videoTrackRect.height / 2,
-        bubbles: true,
-        cancelable: true
-      })
-      Object.defineProperty(syntheticEvent, 'currentTarget', {
-        value: videoTrack,
-        writable: false
-      })
-      Object.defineProperty(syntheticEvent, 'target', {
-        value: videoTrack,
-        writable: false
-      })
-
-      // Trigger the seek
-      onVideoTrackClick(syntheticEvent)
+      const syntheticEvent = createSeekEvent(newTime, props.duration, videoTrack)
+      if (syntheticEvent) {
+        // Trigger the seek
+        onVideoTrackClick(syntheticEvent)
+      }
     }
   }
 }
@@ -1786,14 +1764,13 @@ function startContinuousSeeking(direction: 'forward' | 'reverse') {
   isSeeking.value = true
   seekDirection.value = direction
 
-  // Start continuous seeking at 2x speed immediately (no initial jump)
+  // Start continuous seeking at high speed immediately (no initial jump)
   seekInterval.value = setInterval(() => {
-    if (seekDirection.value === 'forward') {
-      seekVideo(1) // Seek 1 second every 100ms = 10 seconds per second
-    } else {
-      seekVideo(-1) // Seek -1 second every 100ms = -10 seconds per second
-    }
-  }, 100)
+    const seekAmount = seekDirection.value === 'forward'
+      ? SEEKING_CONFIG.SECONDS_PER_INTERVAL
+      : -SEEKING_CONFIG.SECONDS_PER_INTERVAL
+    seekVideo(seekAmount)
+  }, SEEKING_CONFIG.INTERVAL_MS)
 }
 
 // Stop continuous seeking

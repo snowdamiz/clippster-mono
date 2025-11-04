@@ -183,3 +183,4 @@ cd client && vue-tsc --noEmit
 - Use Pinia stores for shared state
 - Auth store handles user session
 - Local storage for persistence
+- @client\src\components\Timeline.vue Start slowly refactoring this component a small time at a time. Start with the easiest to do. Stop between steps to let me test. Dont assume anything this is a complex task, check all relevant code.
