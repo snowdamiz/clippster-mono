@@ -1,11 +1,12 @@
 {
-  "semi": false,
+  "semi": true,
   "singleQuote": true,
   "tabWidth": 2,
-  "trailingComma": "none",
+  "trailingComma": "es5",
   "printWidth": 120,
   "endOfLine": "lf",
   "htmlWhitespaceSensitivity": "ignore",
+  "vueIndentScriptAndStyle": true,
   "overrides": [
     {
       "files": "*.vue",
@@ -13,13 +14,18 @@
         "parser": "vue",
         "vueIndentScriptAndStyle": true,
         "htmlWhitespaceSensitivity": "ignore",
-        "printWidth": 120
+        "printWidth": 120,
+        "embeddedLanguageFormatting": "auto",
+        "semi": true,
+        "trailingComma": "es5"
       }
     },
     {
       "files": "*.{js,ts}",
       "options": {
-        "printWidth": 100
+        "printWidth": 100,
+        "semi": true,
+        "trailingComma": "es5"
       }
     }
   ]

@@ -52,8 +52,8 @@
                 v-for="search in pumpFunStore.getRecentSearches.slice(0, 10)"
                 :key="search.mintId"
                 @click="
-                  handleRecentSearchClick(search)
-                  showRecentDropdown = false
+                  handleRecentSearchClick(search);
+                  showRecentDropdown = false;
                 "
                 class="w-full text-left px-3 py-2 rounded-md hover:bg-muted/80 transition-colors flex items-center gap-2 group"
                 :title="`Search: ${search.displayText}`"
@@ -76,8 +76,8 @@
               </button>
               <button
                 @click="
-                  pumpFunStore.clearRecentSearches()
-                  showRecentDropdown = false
+                  pumpFunStore.clearRecentSearches();
+                  showRecentDropdown = false;
                 "
                 class="w-full text-left px-3 py-2 rounded-md hover:bg-red-500/10 text-red-400 text-xs transition-colors mt-1"
                 title="Clear all recent searches"
@@ -217,7 +217,7 @@
               backgroundImage: `url(${clip.thumbnailUrl})`,
               backgroundSize: 'cover',
               backgroundPosition: 'center',
-              backgroundRepeat: 'no-repeat'
+              backgroundRepeat: 'no-repeat',
             }"
           >
             <!-- Dark vignette overlay -->
@@ -228,7 +228,7 @@
             <span
               :class="[
                 'text-xs px-2 py-1 rounded-md',
-                clip.thumbnailUrl ? 'text-white/70 bg-white/10 backdrop-blur-sm' : 'text-muted-foreground bg-muted'
+                clip.thumbnailUrl ? 'text-white/70 bg-white/10 backdrop-blur-sm' : 'text-muted-foreground bg-muted',
               ]"
             >
               {{ formatDuration(clip.duration) }}
@@ -241,7 +241,7 @@
                 'text-lg font-semibold mb-0.5 group-hover:transition-colors line-clamp-2',
                 clip.thumbnailUrl
                   ? 'text-white group-hover:text-white/80'
-                  : 'text-foreground group-hover:text-foreground/80'
+                  : 'text-foreground group-hover:text-foreground/80',
               ]"
             >
               {{ clip.title }}
@@ -376,8 +376,8 @@
                     v-for="search in pumpFunStore.getRecentSearches.slice(0, 10)"
                     :key="search.mintId"
                     @click="
-                      handleRecentSearchClick(search)
-                      showEmptyRecentDropdown = false
+                      handleRecentSearchClick(search);
+                      showEmptyRecentDropdown = false;
                     "
                     class="w-full text-left px-3 py-2 rounded-md hover:bg-muted/80 transition-colors flex items-center gap-2 group"
                     :title="`Search: ${search.displayText}`"
@@ -400,8 +400,8 @@
                   </button>
                   <button
                     @click="
-                      pumpFunStore.clearRecentSearches()
-                      showEmptyRecentDropdown = false
+                      pumpFunStore.clearRecentSearches();
+                      showEmptyRecentDropdown = false;
                     "
                     class="w-full text-left px-3 py-2 rounded-md hover:bg-red-500/10 text-red-400 text-xs transition-colors mt-1"
                     title="Clear all recent searches"
@@ -476,177 +476,177 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted, onUnmounted } from 'vue'
-  import { useRouter } from 'vue-router'
-  import PageLayout from '@/components/PageLayout.vue'
-  import EmptyState from '@/components/EmptyState.vue'
-  import SearchInput from '@/components/SearchInput.vue'
-  import { type PumpFunClip } from '@/services/pumpfun'
-  import { useToast } from '@/composables/useToast'
-  import { useDownloads } from '@/composables/useDownloads'
-  import { usePumpFunStore } from '@/stores/pumpfun'
+  import { ref, computed, onMounted, onUnmounted } from 'vue';
+  import { useRouter } from 'vue-router';
+  import PageLayout from '@/components/PageLayout.vue';
+  import EmptyState from '@/components/EmptyState.vue';
+  import SearchInput from '@/components/SearchInput.vue';
+  import { type PumpFunClip } from '@/services/pumpfun';
+  import { useToast } from '@/composables/useToast';
+  import { useDownloads } from '@/composables/useDownloads';
+  import { usePumpFunStore } from '@/stores/pumpfun';
 
-  const { success, error: showError } = useToast()
-  const { startDownload } = useDownloads()
-  const router = useRouter()
-  const pumpFunStore = usePumpFunStore()
+  const { success, error: showError } = useToast();
+  const { startDownload } = useDownloads();
+  const router = useRouter();
+  const pumpFunStore = usePumpFunStore();
 
   // Initialize component
   onMounted(() => {
     // Add click outside listener to close dropdown
-    document.addEventListener('click', handleClickOutside)
-  })
+    document.addEventListener('click', handleClickOutside);
+  });
 
   // Clean up event listener
   onUnmounted(() => {
-    document.removeEventListener('click', handleClickOutside)
-  })
+    document.removeEventListener('click', handleClickOutside);
+  });
 
   // Handle click outside to close dropdowns
   function handleClickOutside(event: Event) {
-    const target = event.target as HTMLElement
+    const target = event.target as HTMLElement;
     if (!target.closest('.relative')) {
-      showRecentDropdown.value = false
-      showEmptyRecentDropdown.value = false
+      showRecentDropdown.value = false;
+      showEmptyRecentDropdown.value = false;
     }
   }
 
-  const mintId = ref(pumpFunStore.currentMintId)
-  const showDownloadDialog = ref(false)
-  const clipToDownload = ref<PumpFunClip | null>(null)
-  const downloadStarting = ref(false)
-  const showRecentDropdown = ref(false)
-  const showEmptyRecentDropdown = ref(false)
+  const mintId = ref(pumpFunStore.currentMintId);
+  const showDownloadDialog = ref(false);
+  const clipToDownload = ref<PumpFunClip | null>(null);
+  const downloadStarting = ref(false);
+  const showRecentDropdown = ref(false);
+  const showEmptyRecentDropdown = ref(false);
 
   // Computed properties for dialog
   const formatDuration = (duration?: number) => {
-    if (!duration) return 'Unknown'
-    const hours = Math.floor(duration / 3600)
-    const minutes = Math.floor((duration % 3600) / 60)
-    const seconds = Math.floor(duration % 60)
+    if (!duration) return 'Unknown';
+    const hours = Math.floor(duration / 3600);
+    const minutes = Math.floor((duration % 3600) / 60);
+    const seconds = Math.floor(duration % 60);
 
     if (hours > 0) {
-      return `${hours}h ${minutes}m ${seconds}s`
+      return `${hours}h ${minutes}m ${seconds}s`;
     } else if (minutes > 0) {
-      return `${minutes}m ${seconds}s`
+      return `${minutes}m ${seconds}s`;
     } else {
-      return `${seconds}s`
+      return `${seconds}s`;
     }
-  }
+  };
 
   const estimatedDownloadTime = computed(() => {
-    if (!clipToDownload.value?.duration) return 'Unknown'
+    if (!clipToDownload.value?.duration) return 'Unknown';
 
     // Estimate based on 1 GB per hour of video content
-    const estimatedSizeGB = (clipToDownload.value.duration / 3600) * 1
+    const estimatedSizeGB = (clipToDownload.value.duration / 3600) * 1;
     // Assume average download speed of 50 Mbps
-    const avgDownloadSpeedMbps = 50
+    const avgDownloadSpeedMbps = 50;
     // Convert GB to Mb and calculate download time in seconds
-    const downloadTimeSeconds = (estimatedSizeGB * 8000) / avgDownloadSpeedMbps
+    const downloadTimeSeconds = (estimatedSizeGB * 8000) / avgDownloadSpeedMbps;
 
-    return formatDuration(downloadTimeSeconds)
-  })
+    return formatDuration(downloadTimeSeconds);
+  });
 
   // Format relative time for stream dates
   function formatRelativeTime(timestamp?: number | string | Date) {
-    if (!timestamp) return 'Streamed recently'
+    if (!timestamp) return 'Streamed recently';
 
-    const date = new Date(timestamp)
-    const now = new Date()
-    const secondsAgo = Math.floor((now.getTime() - date.getTime()) / 1000)
+    const date = new Date(timestamp);
+    const now = new Date();
+    const secondsAgo = Math.floor((now.getTime() - date.getTime()) / 1000);
 
-    if (secondsAgo < 60) return 'Streamed just now'
-    if (secondsAgo < 3600) return `Streamed ${Math.floor(secondsAgo / 60)} minutes ago`
-    if (secondsAgo < 86400) return `Streamed ${Math.floor(secondsAgo / 3600)} hours ago`
-    if (secondsAgo < 604800) return `Streamed ${Math.floor(secondsAgo / 86400)} days ago`
+    if (secondsAgo < 60) return 'Streamed just now';
+    if (secondsAgo < 3600) return `Streamed ${Math.floor(secondsAgo / 60)} minutes ago`;
+    if (secondsAgo < 86400) return `Streamed ${Math.floor(secondsAgo / 3600)} hours ago`;
+    if (secondsAgo < 604800) return `Streamed ${Math.floor(secondsAgo / 86400)} days ago`;
 
-    return `Streamed ${Math.floor(secondsAgo / 604800)} weeks ago`
+    return `Streamed ${Math.floor(secondsAgo / 604800)} weeks ago`;
   }
 
   function handleRecentSearchClick(search: { mintId: string; displayText: string }) {
-    mintId.value = search.displayText
-    handleSearch()
+    mintId.value = search.displayText;
+    handleSearch();
   }
 
   async function handleSearch() {
-    const input = mintId.value.trim()
+    const input = mintId.value.trim();
 
     if (!input) {
-      showError('Invalid Input', 'Please enter a mint ID or PumpFun URL')
-      return
+      showError('Invalid Input', 'Please enter a mint ID or PumpFun URL');
+      return;
     }
 
     // Only update the input field to show the extracted mint ID if it's different from current
     // and we're not dealing with a recent search selection
-    const isRecentSearchSelection = pumpFunStore.getRecentSearches.some((search) => search.displayText === input)
+    const isRecentSearchSelection = pumpFunStore.getRecentSearches.some((search) => search.displayText === input);
 
     if (!isRecentSearchSelection && input !== pumpFunStore.currentMintId && pumpFunStore.currentMintId) {
-      mintId.value = pumpFunStore.currentMintId
+      mintId.value = pumpFunStore.currentMintId;
     }
 
     try {
-      const result = await pumpFunStore.searchClips(input, 20)
+      const result = await pumpFunStore.searchClips(input, 20);
 
       if (result.success) {
         if (result.total === 0) {
-          showError('No VODs Found', 'This mint ID has no available VODs')
+          showError('No VODs Found', 'This mint ID has no available VODs');
         } else {
-          success('VODs Loaded', `Found ${result.total} VOD${result.total !== 1 ? 's' : ''}`)
+          success('VODs Loaded', `Found ${result.total} VOD${result.total !== 1 ? 's' : ''}`);
         }
       } else {
-        showError('Search Failed', result.error || 'Failed to fetch VODs')
+        showError('Search Failed', result.error || 'Failed to fetch VODs');
       }
     } catch (err) {
-      showError('Error', err instanceof Error ? err.message : 'An unexpected error occurred')
+      showError('Error', err instanceof Error ? err.message : 'An unexpected error occurred');
     }
   }
 
   function handleClipClick(clip: PumpFunClip) {
-    console.log('Clicked clip:', clip)
+    console.log('Clicked clip:', clip);
     // TODO: Implement clip playback or details view
   }
 
   function handleDownloadClip(clip: PumpFunClip) {
-    clipToDownload.value = clip
-    showDownloadDialog.value = true
+    clipToDownload.value = clip;
+    showDownloadDialog.value = true;
   }
 
   async function downloadClipConfirmed() {
-    if (!clipToDownload.value) return
+    if (!clipToDownload.value) return;
 
-    const clip = clipToDownload.value // Store reference for error handling
-    downloadStarting.value = true
+    const clip = clipToDownload.value; // Store reference for error handling
+    downloadStarting.value = true;
 
     try {
       // Get the best available video URL
-      const videoUrl = clip.mp4Url || clip.playlistUrl
+      const videoUrl = clip.mp4Url || clip.playlistUrl;
       if (!videoUrl) {
-        throw new Error('No video URL available for this VOD')
+        throw new Error('No video URL available for this VOD');
       }
 
       // Start the download
-      await startDownload(clip.title, videoUrl, pumpFunStore.currentMintId)
+      await startDownload(clip.title, videoUrl, pumpFunStore.currentMintId);
 
       // Show success toast
-      success('Download Started', `Downloading "${clip.title}"`)
+      success('Download Started', `Downloading "${clip.title}"`);
 
       // Close dialog immediately
-      showDownloadDialog.value = false
-      clipToDownload.value = null
+      showDownloadDialog.value = false;
+      clipToDownload.value = null;
 
       // Small delay to show loading state briefly, then navigate
       setTimeout(() => {
-        downloadStarting.value = false
+        downloadStarting.value = false;
         // Navigate to Videos page to see progress
-        router.push('/dashboard/videos')
-      }, 500)
+        router.push('/dashboard/videos');
+      }, 500);
     } catch (err) {
-      console.error('Failed to download clip:', err)
-      showError('Download Failed', `Failed to download "${clip.title}": ${err}`)
+      console.error('Failed to download clip:', err);
+      showError('Download Failed', `Failed to download "${clip.title}": ${err}`);
       // Reset loading state on error
-      downloadStarting.value = false
-      showDownloadDialog.value = false
-      clipToDownload.value = null
+      downloadStarting.value = false;
+      showDownloadDialog.value = false;
+      clipToDownload.value = null;
     }
   }
 </script>
