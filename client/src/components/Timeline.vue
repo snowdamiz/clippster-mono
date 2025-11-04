@@ -110,13 +110,9 @@
              :class="{ 'dragging': isDragging }"
              :style="{ width: `${100 * zoomLevel}%` }">
           <!-- Shared Timestamp Ruler -->
-          <div class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 px-2 sticky top-0 z-10 backdrop-blur-sm timeline-ruler sticky-ruler cursor-ew-resize"
+          <div class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 px-2 sticky top-0 z-10 backdrop-blur-sm timeline-ruler sticky-ruler"
                @wheel="onRulerWheel"
-               @mousedown="onPanStart"
-               @mousemove="onRulerMouseMove"
-               @mouseup="onPanEnd"
-               @mouseleave="onRulerMouseLeave"
-               title="Scroll to zoom, click and drag to pan timeline">
+               title="Scroll to zoom">
             <!-- Track label spacer -->
             <div class="w-16 pr-2 flex items-center justify-center">
               <span class="text-xs text-muted-foreground/50 font-medium">Time</span>
@@ -620,7 +616,6 @@ const {
   timelineBounds,
   handleRulerWheel,
   updateSliderProgress,
-  startPan,
   movePan,
   endPan,
   startDragSelection,
@@ -941,17 +936,6 @@ function onRulerWheel(event: WheelEvent) {
   handleRulerWheel(event)
 }
 
-function onPanStart(event: MouseEvent) {
-  // Hide tooltip when panning starts
-  showTimelineTooltip.value = false
-  clearTooltipData()
-  startPan(event)
-}
-
-
-function onPanEnd() {
-  endPan()
-}
 
 function onDragStart(event: MouseEvent) {
   // Hide tooltip when dragging starts
@@ -1032,19 +1016,6 @@ function onTimelineMouseLeaveGlobal() {
   }
 }
 
-function onRulerMouseMove(event: MouseEvent) {
-  if (isPanning.value) return
-
-  // Also update hover line when over ruler
-  onTimelineMouseMove(event)
-}
-
-function onRulerMouseLeave() {
-  onPanEnd()
-  showTimelineHoverLine.value = false
-  showTimelineTooltip.value = false
-  clearTooltipData()
-}
 
 // Update global playhead position based on current time
 function updateGlobalPlayheadPosition() {
@@ -2057,12 +2028,7 @@ async function onSegmentClickForCut(event: MouseEvent, clipId: string, segmentIn
   background: rgba(10, 10, 10, 0.6);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  cursor: grab;
   user-select: none;
-}
-
-.timeline-ruler:active {
-  cursor: grabbing;
 }
 
 .timeline-tick {
