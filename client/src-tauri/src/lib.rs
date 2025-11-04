@@ -1545,6 +1545,12 @@ pub fn run() {
                             sql: include_str!("../migrations/020_simple_cascade_fix.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 21,
+                            description: "add_chunked_transcripts",
+                            sql: include_str!("../migrations/021_add_chunked_transcripts.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                           ],
                 )
                 .build(),

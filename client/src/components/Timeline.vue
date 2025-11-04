@@ -7,13 +7,13 @@
           ? calculatedHeight + 30 + 'px'
           : props.clips.length >= 5
             ? calculatedHeight + 14 + 'px'
-            : calculatedHeight + 'px'
+            : calculatedHeight - 12 + 'px'
     }"
   >
     <div
       class="pt-3 px-4 h-full flex flex-col"
       :style="{
-        height: props.clips.length > 0 ? 'auto' : '146px'
+        height: props.clips.length > 0 ? 'auto' : '142px'
       }"
     >
       <!-- Timeline Header -->

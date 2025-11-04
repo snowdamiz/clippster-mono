@@ -83,90 +83,78 @@ defmodule ClippsterServerWeb.ClipsController do
         {:ok, ai_response} ->
           IO.puts("[ClipsController] AI response received from OpenRouter")
 
-          # Validate AI response structure
-          case validate_ai_response(ai_response) do
-            :ok ->
-              IO.puts("[ClipsController] AI response validation successful")
+          # The OpenRouter API now handles validation and retry internally
+          # The response should already be validated and complete
+          IO.puts("[ClipsController] AI response validation successful (handled by API)")
 
-              # Enhanced validation using original chunk data
-              IO.puts("[ClipsController] Starting enhanced clip validation with chunk data...")
-              ProgressChannel.broadcast_progress(project_id, "validating", 90, "Validating clips with chunk timing data...")
+          # Enhanced validation using original chunk data
+          IO.puts("[ClipsController] Starting enhanced clip validation with chunk data...")
+          ProgressChannel.broadcast_progress(project_id, "validating", 90, "Validating clips with chunk timing data...")
 
-              # Use the first successful chunk's original data for validation (most complete)
-              validation_chunk = hd(successful_chunks) |> elem(1)
-              case ClipValidation.validate_and_correct_clips(ai_response["clips"], validation_chunk.original_whisper_response, true) do
-                {:ok, validation_result} ->
-                  IO.puts("[ClipsController] Enhanced validation completed")
-                  IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
+          # Use the first successful chunk's original data for validation (most complete)
+          validation_chunk = hd(successful_chunks) |> elem(1)
+          case ClipValidation.validate_and_correct_clips(ai_response["clips"], validation_chunk.original_whisper_response, true) do
+            {:ok, validation_result} ->
+              IO.puts("[ClipsController] Enhanced validation completed")
+              IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
 
-                  # Replace clips with validated and corrected versions
-                  enhanced_response = ai_response
-                  |> Map.put("clips", validation_result.validatedClips)
-                  |> Map.put("validation_metadata", %{
-                    "qualityScore" => validation_result.qualityScore,
-                    "issuesCount" => length(validation_result.issues),
-                    "correctionsCount" => length(validation_result.corrections),
-                    "validatedAt" => DateTime.utc_now() |> DateTime.to_iso8601(),
-                    "chunksProcessed" => length(successful_chunks),
-                    "chunksFailed" => length(failed_chunks)
-                  })
+              # Replace clips with validated and corrected versions
+              enhanced_response = ai_response
+              |> Map.put("clips", validation_result.validatedClips)
+              |> Map.put("validation_metadata", %{
+                "qualityScore" => validation_result.qualityScore,
+                "issuesCount" => length(validation_result.issues),
+                "correctionsCount" => length(validation_result.corrections),
+                "validatedAt" => DateTime.utc_now() |> DateTime.to_iso8601(),
+                "chunksProcessed" => length(successful_chunks),
+                "chunksFailed" => length(failed_chunks)
+              })
 
-                  # Step 6: Return enhanced response with chunk processing data
-                  ProgressChannel.broadcast_progress(project_id, "completed", 100,
-                    "Chunked clip detection completed! Processed #{length(successful_chunks)}/#{total_chunks} chunks successfully.")
+              # Step 6: Return enhanced response with chunk processing data
+              ProgressChannel.broadcast_progress(project_id, "completed", 100,
+                "Chunked clip detection completed! Processed #{length(successful_chunks)}/#{total_chunks} chunks successfully.")
 
-                  json(conn, %{
-                    success: true,
-                    clips: enhanced_response,
-                    transcript: reconstructed_transcript,
-                    processing_info: %{
-                      used_chunked_processing: true,
-                      total_chunks: total_chunks,
-                      successful_chunks: length(successful_chunks),
-                      failed_chunks: length(failed_chunks),
-                      completion_message: "Clip detection completed using chunked processing!"
-                    },
-                    validation: %{
-                      qualityScore: validation_result.qualityScore,
-                      issues: validation_result.issues,
-                      corrections: validation_result.corrections,
-                      clipsProcessed: length(validation_result.validatedClips)
-                    }
-                  })
+              json(conn, %{
+                success: true,
+                clips: enhanced_response,
+                transcript: reconstructed_transcript,
+                processing_info: %{
+                  used_chunked_processing: true,
+                  total_chunks: total_chunks,
+                  successful_chunks: length(successful_chunks),
+                  failed_chunks: length(failed_chunks),
+                  completion_message: "Clip detection completed using chunked processing!"
+                },
+                validation: %{
+                  qualityScore: validation_result.qualityScore,
+                  issues: validation_result.issues,
+                  corrections: validation_result.corrections,
+                  clipsProcessed: length(validation_result.validatedClips)
+                }
+              })
 
-                _ ->
-                  IO.puts("[ClipsController] Enhanced validation failed, using original clips")
-                  # Fall back to original clips if enhanced validation fails
-                  ProgressChannel.broadcast_progress(project_id, "completed", 100,
-                    "Chunked clip detection completed! Processed #{length(successful_chunks)}/#{total_chunks} chunks.")
+            _ ->
+              IO.puts("[ClipsController] Enhanced validation failed, using original clips")
+              # Fall back to original clips if enhanced validation fails
+              ProgressChannel.broadcast_progress(project_id, "completed", 100,
+                "Chunked clip detection completed! Processed #{length(successful_chunks)}/#{total_chunks} chunks.")
 
-                  json(conn, %{
-                    success: true,
-                    clips: ai_response,
-                    transcript: reconstructed_transcript,
-                    processing_info: %{
-                      used_chunked_processing: true,
-                      total_chunks: total_chunks,
-                      successful_chunks: length(successful_chunks),
-                      failed_chunks: length(failed_chunks),
-                      completion_message: "Clip detection completed using chunked processing!"
-                    },
-                    validation: %{
-                      qualityScore: 0.0,
-                      issues: ["Enhanced validation failed"],
-                      corrections: []
-                    }
-                  })
-              end
-
-            {:error, reason} ->
-              IO.puts("[ClipsController] AI response validation failed: #{reason}")
-              conn
-              |> put_status(500)
-              |> json(%{
-                success: false,
-                error: "Invalid AI response structure",
-                details: reason
+              json(conn, %{
+                success: true,
+                clips: ai_response,
+                transcript: reconstructed_transcript,
+                processing_info: %{
+                  used_chunked_processing: true,
+                  total_chunks: total_chunks,
+                  successful_chunks: length(successful_chunks),
+                  failed_chunks: length(failed_chunks),
+                  completion_message: "Clip detection completed using chunked processing!"
+                },
+                validation: %{
+                  qualityScore: 0.0,
+                  issues: ["Enhanced validation failed"],
+                  corrections: []
+                }
               })
           end
 

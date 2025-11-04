@@ -232,12 +232,12 @@ export function useAudioChunking() {
 
   return {
     // State
-    isExtracting: readonly(isExtracting),
-    isChunking: readonly(isChunking),
+    isExtracting,
+    isChunking,
     isProcessing,
-    progress: readonly(progress),
-    chunks: readonly(chunks),
-    error: readonly(error),
+    progress,
+    chunks,
+    error,
 
     // Computed
     progressPercentage,

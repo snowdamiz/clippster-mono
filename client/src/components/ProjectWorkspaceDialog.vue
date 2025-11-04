@@ -284,133 +284,75 @@
       resetProgress()
       setProgressProjectId(props.project.id.toString())
 
-      // Step 1: Check if transcript already exists for this video
-      const { getAllRawVideos, persistClipDetectionResults, getTranscriptByRawVideoId } = await import(
-        '@/services/database'
-      )
-      const rawVideos = await getAllRawVideos()
-      const projectVideo = rawVideos.find((v) => v.project_id === props.project?.id)
+      console.log('[ProjectWorkspaceDialog] Starting enhanced clip detection with chunking support')
 
-      if (!projectVideo) {
-        console.error('[ProjectWorkspaceDialog] No video found for project')
-        throw new Error('No video found for project')
-      }
+      // Use the new chunked detection system
+      const { useChunkedClipDetection } = await import('@/composables/useChunkedClipDetection')
+      const { detectClipsWithChunking, progress: chunkedProgress } = useChunkedClipDetection()
 
-      // Check for existing transcript
-      const existingTranscript = await getTranscriptByRawVideoId(projectVideo.id)
-      let usingCachedTranscript = false
+      // Watch chunked detection progress and update UI
+      const stopProgressWatch = watch(
+        chunkedProgress,
+        (newProgress) => {
+          clipProgress.value = newProgress.progress
+          clipStage.value = newProgress.stage
+          clipMessage.value = newProgress.message
 
-      if (existingTranscript) {
-        usingCachedTranscript = true
-      }
-
-      const processingStartTime = Date.now()
-
-      // Step 2: Prepare request data (either transcript or audio)
-      const formData = new FormData()
-      if (usingCachedTranscript && existingTranscript) {
-        // Send cached transcript instead of audio
-        formData.append(
-          'transcript',
-          JSON.stringify({
-            id: existingTranscript.id,
-            raw_response: existingTranscript.raw_json, // This is already a JSON string in DB
-            text: existingTranscript.text,
-            language: existingTranscript.language,
-            duration: existingTranscript.duration
-          })
-        )
-      } else {
-        // Generate OGG audio file from video using FFmpeg - optimized for transcription
-        const audioFile = await generateAudioFromVideo(projectVideo.file_path)
-        formData.append('audio', audioFile, audioFile.name)
-      }
-
-      formData.append('project_id', props.project.id.toString())
-      formData.append('prompt', prompt)
-      formData.append('using_cached_transcript', usingCachedTranscript.toString())
-
-      const response = await fetch(`${API_BASE}/api/clips/detect`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('auth_token')}`
-        },
-        body: formData
-      })
-
-      if (!response.ok) {
-        let errorMessage = `Server error: ${response.status}`
-
-        // Try to get more detailed error from response
-        try {
-          const errorData = await response.json()
-          if (errorData.error) {
-            errorMessage = errorData.error
-            if (errorData.details) {
-              errorMessage += `: ${errorData.details}`
-            }
+          if (newProgress.error) {
+            clipError.value = newProgress.error
           }
-        } catch (e) {
-          // If we can't parse JSON, use the status-based message
+        },
+        { immediate: true }
+      )
+
+      try {
+        // Perform enhanced clip detection
+        const result = await detectClipsWithChunking(props.project.id, prompt, {
+          chunkDurationMinutes: 30,
+          overlapSeconds: 30,
+          forceReprocess: false
+        })
+
+        if (result.success) {
+          console.log('[ProjectWorkspaceDialog] Enhanced clip detection successful')
+
+          // Trigger UI refresh for successful detection
+          if (props.project) {
+            setTimeout(() => {
+              const clipsPanel = document.querySelector('[data-clips-panel]') as any
+              if (clipsPanel && clipsPanel.__vueParentComponent && clipsPanel.__vueParentComponent.exposed) {
+                clipsPanel.__vueParentComponent.exposed.refreshClips?.()
+              } else {
+                const refreshEvent = new CustomEvent('refresh-clips', {
+                  detail: { projectId: props.project!.id }
+                })
+                document.dispatchEvent(refreshEvent)
+              }
+
+              const projectsRefreshEvent = new CustomEvent('refresh-clips-projects', {
+                detail: { projectId: props.project!.id }
+              })
+              document.dispatchEvent(projectsRefreshEvent)
+
+              if (timelineRef.value && timelineRef.value.loadTranscriptData) {
+                timelineRef.value.loadTranscriptData(props.project!.id)
+              }
+            }, 1000)
+          }
+
+          // Show success completion state
+          clipProgress.value = 100
+          clipStage.value = 'completed'
+          clipMessage.value = 'Clip detection completed successfully!'
+          return
         }
 
-        throw new Error(errorMessage)
+        // If enhanced detection failed, the error handling below will catch it
+      } finally {
+        stopProgressWatch()
       }
-
-      const result = await response.json()
-
-      // Check if the response indicates an error even with 200 status
-      if (!result.success && result.error) {
-        throw new Error(result.error)
-      }
-      const processingTimeMs = Date.now() - processingStartTime
-
-      // Check for nested structure
-      if (result.clips && typeof result.clips === 'object' && result.clips.clips) {
-        result.clips = result.clips.clips
-      }
-
-      // Step 3: Persist detected clips to database with versioning
-      const sessionId = await persistClipDetectionResults(props.project.id, prompt, result, {
-        processingTimeMs,
-        detectionModel: 'claude-3.5-sonnet',
-        serverResponseId: result.jobId || null
-      })
-
-      // Step 5: Trigger UI refresh to show the new clips
-      if (props.project) {
-        // Force the ClipsPanel to reload clips by directly calling the refresh function
-        setTimeout(() => {
-          const clipsPanel = document.querySelector('[data-clips-panel]') as any
-          if (clipsPanel && clipsPanel.__vueParentComponent && clipsPanel.__vueParentComponent.exposed) {
-            // Try to access the exposed refreshClips method
-            clipsPanel.__vueParentComponent.exposed.refreshClips?.()
-          } else {
-            // Fallback: emit a custom event to trigger refresh
-            const refreshEvent = new CustomEvent('refresh-clips', {
-              detail: { projectId: props.project!.id }
-            })
-            document.dispatchEvent(refreshEvent)
-          }
-
-          // Also refresh the Projects page to update clip counts
-          const projectsRefreshEvent = new CustomEvent('refresh-clips-projects', {
-            detail: { projectId: props.project!.id }
-          })
-          document.dispatchEvent(projectsRefreshEvent)
-
-          // IMPORTANT: Reload timeline transcript data for tooltips
-          // This fixes the issue where transcript tooltips don't show on first hover after clip detection
-          if (timelineRef.value && timelineRef.value.loadTranscriptData) {
-            timelineRef.value.loadTranscriptData(props.project!.id)
-          }
-        }, 1000)
-      }
-
-      // Step 4: Display results with session information
-      showClipDetectionResult(result, sessionId)
     } catch (error) {
-      console.error('[ProjectWorkspaceDialog] Clip detection failed:', error)
+      console.error('[ProjectWorkspaceDialog] Enhanced detection failed:', error)
 
       // Show error toast to user
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
@@ -428,6 +370,10 @@
       } else {
         showError('Clip Detection Failed', `${errorMessage}. No credits were charged.`, 8000)
       }
+
+      // Update progress UI to show error
+      clipError.value = errorMessage
+      clipStage.value = 'error'
 
       // Keep progress dialog open to show the error
     } finally {
