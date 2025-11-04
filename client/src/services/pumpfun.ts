@@ -32,7 +32,7 @@ export function extractMintId(input: string): string | null {
     }
 
     // Extract path segments and look for mint ID
-    const pathSegments = url.pathname.split('/').filter(segment => segment.length > 0)
+    const pathSegments = url.pathname.split('/').filter((segment) => segment.length > 0)
 
     // Look for patterns like /coin/{mintId} or /base/{mintId}
     for (let i = 0; i < pathSegments.length - 1; i++) {
@@ -104,7 +104,7 @@ export async function getPumpFunClips(
     return parsed
   } catch (error) {
     console.error('Failed to fetch PumpFun clips:', error)
-    
+
     // Try to parse error message if it's JSON
     if (typeof error === 'string') {
       try {
@@ -113,7 +113,7 @@ export async function getPumpFunClips(
         // Not JSON, return generic error
       }
     }
-    
+
     return {
       success: false,
       clips: [],
@@ -129,17 +129,17 @@ export async function getPumpFunClips(
  */
 export function formatDuration(seconds: number): string {
   if (!seconds || seconds === 0) return '0s'
-  
+
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
   const secs = Math.floor(seconds % 60)
-  
+
   const parts: string[] = []
-  
+
   if (hours > 0) parts.push(`${hours}h`)
   if (minutes > 0) parts.push(`${minutes}m`)
   if (secs > 0 || parts.length === 0) parts.push(`${secs}s`)
-  
+
   return parts.join(' ')
 }
 
@@ -148,7 +148,7 @@ export function formatDuration(seconds: number): string {
  */
 export function formatRelativeTime(dateString?: string): string {
   if (!dateString) return 'Unknown'
-  
+
   try {
     const date = new Date(dateString)
     const now = new Date()
@@ -157,7 +157,7 @@ export function formatRelativeTime(dateString?: string): string {
     const diffMins = Math.floor(diffSecs / 60)
     const diffHours = Math.floor(diffMins / 60)
     const diffDays = Math.floor(diffHours / 24)
-    
+
     if (diffDays > 0) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
     if (diffHours > 0) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
     if (diffMins > 0) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`

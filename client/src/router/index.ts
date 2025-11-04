@@ -97,7 +97,7 @@ const router = createRouter({
 // Navigation guard to check authentication
 router.beforeEach((to, _from, next) => {
   const authStore = useAuthStore()
-  
+
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     next('/login')
   } else {

@@ -6,64 +6,100 @@
       :show-header="!loading && videos.length > 0"
       icon="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
     >
-    <template #actions>
-      <div class="flex items-center gap-2">
-        <button
-          @click="openVideosFolder"
-          title="Open videos folder"
-          class="p-3 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-all"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-          </svg>
-        </button>
-        <button
-          @click="handleUpload"
-          :disabled="uploading"
-          class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-          </svg>
-          {{ uploading ? 'Uploading...' : 'Upload Video' }}
-        </button>
-      </div>
-    </template>
+      <template #actions>
+        <div class="flex items-center gap-2">
+          <button
+            @click="openVideosFolder"
+            title="Open videos folder"
+            class="p-3 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-all"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+              />
+            </svg>
+          </button>
+          <button
+            @click="handleUpload"
+            :disabled="uploading"
+            class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+              />
+            </svg>
+            {{ uploading ? 'Uploading...' : 'Upload Video' }}
+          </button>
+        </div>
+      </template>
+      <!-- Loading State -->
+      <LoadingState v-if="loading" message="Loading videos..." />
+      <!-- Content when not loading -->
 
-    <!-- Loading State -->
-    <LoadingState v-if="loading" message="Loading videos..." />
-
-    <!-- Content when not loading -->
-    <div v-else>
+      <div v-else>
         <!-- Header with stats -->
-        <div v-if="videos.length > 0 || uploading || activeDownloads.length > 0" class="flex items-center justify-between mb-4">
+        <div
+          v-if="videos.length > 0 || uploading || activeDownloads.length > 0"
+          class="flex items-center justify-between mb-4"
+        >
           <p class="text-sm text-muted-foreground">
             <span v-if="activeDownloads.length > 0">
               {{ activeDownloads.length }} download{{ activeDownloads.length !== 1 ? 's' : '' }} in progress
               <span v-if="videos.length > 0">• {{ videos.length }} video{{ videos.length !== 1 ? 's' : '' }}</span>
             </span>
-            <span v-else-if="videos.length > 0">
-              {{ videos.length }} video{{ videos.length !== 1 ? 's' : '' }}
-            </span>
+            <span v-else-if="videos.length > 0">{{ videos.length }} video{{ videos.length !== 1 ? 's' : '' }}</span>
           </p>
         </div>
-
         <!-- Videos Grid -->
-        <div v-if="videos.length > 0 || uploading || activeDownloads.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div
+          v-if="videos.length > 0 || uploading || activeDownloads.length > 0"
+          class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
+        >
           <!-- Skeleton loader card for uploading -->
-          <div v-if="uploading" class="relative bg-card border border-border rounded-lg overflow-hidden aspect-video animate-pulse">
+          <div
+            v-if="uploading"
+            class="relative bg-card border border-border rounded-lg overflow-hidden aspect-video animate-pulse"
+          >
             <!-- Thumbnail skeleton -->
             <div class="absolute inset-0 bg-muted/50 flex items-center justify-center">
               <div class="flex flex-col items-center gap-3">
-                <svg class="animate-spin h-8 w-8 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <svg
+                  class="animate-spin h-8 w-8 text-muted-foreground"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+
+                  <path
+                    class="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
                 </svg>
                 <span class="text-sm text-muted-foreground">Uploading...</span>
               </div>
             </div>
           </div>
-
           <!-- Active download cards -->
           <div
             v-for="download in activeDownloads"
@@ -84,37 +120,45 @@
               <!-- Dark vignette overlay -->
               <div class="absolute inset-0 bg-gradient-to-br from-black/80 via-black/60 to-black/90"></div>
             </div>
-
             <!-- Download progress overlay -->
             <div class="absolute inset-0 bg-black/60 z-10 flex items-center justify-center">
               <div class="text-center text-white p-3">
-                <svg class="animate-spin h-6 w-6 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <svg
+                  class="animate-spin h-6 w-6 mx-auto mb-2"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+
+                  <path
+                    class="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
                 </svg>
                 <h3 class="font-semibold text-base mb-2 line-clamp-2 px-2">{{ download.title }}</h3>
+
                 <div class="text-sm mb-2">{{ Math.round(download.progress?.progress || 0) }}%</div>
+
                 <div class="bg-white/20 align-center w-full justify-center rounded-full h-2 mb-2">
                   <div
                     class="bg-white h-2 rounded-full transition-all duration-300"
                     :style="{ width: `${download.progress?.progress || 0}%` }"
                   ></div>
                 </div>
+
                 <div class="text-xs opacity-80">
                   <span v-if="download.progress?.current_time && download.progress?.total_time">
-                    {{ formatDuration(download.progress.current_time) }} / {{ formatDuration(download.progress.total_time) }}
+                    {{ formatDuration(download.progress.current_time) }} /
+                    {{ formatDuration(download.progress.total_time) }}
                   </span>
-                  <span v-else-if="download.result?.file_size">
-                    {{ formatFileSize(download.result.file_size) }}
-                  </span>
-                  <span v-else>
-                    Downloading...
-                  </span>
+                  <span v-else-if="download.result?.file_size">{{ formatFileSize(download.result.file_size) }}</span>
+                  <span v-else>Downloading...</span>
                 </div>
               </div>
             </div>
           </div>
-
           <!-- Existing video cards -->
           <div
             v-for="video in paginatedVideos"
@@ -136,48 +180,63 @@
               <!-- Dark vignette overlay -->
               <div class="absolute inset-0 bg-gradient-to-br from-black/80 via-black/60 to-black/90"></div>
             </div>
-
             <!-- Top left project badge -->
             <div v-if="video.project_id" class="absolute top-4 left-4 z-10">
-              <span :class="[
-                'text-xs px-2 py-1 rounded-md flex items-center gap-1',
-                getThumbnailUrl(video)
-                  ? 'text-white/70 bg-white/10 backdrop-blur-sm'
-                  : 'text-muted-foreground bg-muted'
-              ]">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              <span
+                :class="[
+                  'text-xs px-2 py-1 rounded-md flex items-center gap-1',
+                  getThumbnailUrl(video)
+                    ? 'text-white/70 bg-white/10 backdrop-blur-sm'
+                    : 'text-muted-foreground bg-muted'
+                ]"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="h-3 w-3"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                  />
                 </svg>
                 In Project
               </span>
             </div>
-
             <!-- Top right video duration -->
             <div class="absolute top-4 right-4 z-10">
-              <span :class="[
-                'text-xs px-2 py-1 rounded-md',
-                getThumbnailUrl(video)
-                  ? 'text-white/70 bg-white/10 backdrop-blur-sm'
-                  : 'text-muted-foreground bg-muted'
-              ]">{{ formatDuration(video.duration || undefined) }}</span>
+              <span
+                :class="[
+                  'text-xs px-2 py-1 rounded-md',
+                  getThumbnailUrl(video)
+                    ? 'text-white/70 bg-white/10 backdrop-blur-sm'
+                    : 'text-muted-foreground bg-muted'
+                ]"
+              >
+                {{ formatDuration(video.duration || undefined) }}
+              </span>
             </div>
-
             <!-- Bottom left title and description -->
             <div class="absolute bottom-4 left-4 right-4 z-10">
-              <h3 :class="[
-                'text-lg font-semibold mb-1 group-hover:transition-colors line-clamp-2',
-                getThumbnailUrl(video)
-                  ? 'text-white group-hover:text-white/80'
-                  : 'text-foreground group-hover:text-foreground/80'
-              ]">{{ video.original_filename }}</h3>
-              <p :class="[
-                'text-sm line-clamp-2',
-                getThumbnailUrl(video)
-                  ? 'text-white/80'
-                  : 'text-muted-foreground'
-              ]">{{ formatRelativeTime(video.created_at) }}</p>
-            </div>
+              <h3
+                :class="[
+                  'text-lg font-semibold mb-1 group-hover:transition-colors line-clamp-2',
+                  getThumbnailUrl(video)
+                    ? 'text-white group-hover:text-white/80'
+                    : 'text-foreground group-hover:text-foreground/80'
+                ]"
+              >
+                {{ video.original_filename }}
+              </h3>
 
+              <p :class="['text-sm line-clamp-2', getThumbnailUrl(video) ? 'text-white/80' : 'text-muted-foreground']">
+                {{ formatRelativeTime(video.created_at) }}
+              </p>
+            </div>
             <!-- Hover Overlay Buttons -->
             <div
               v-if="getThumbnailUrl(video)"
@@ -188,9 +247,26 @@
                 title="Play"
                 @click.stop="playVideo(video)"
               >
-                <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <svg
+                  class="h-6 w-6"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                  />
+
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
                 </svg>
               </button>
               <button
@@ -198,16 +274,24 @@
                 title="Delete"
                 @click.stop="confirmDelete(video)"
               >
-                <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                <svg
+                  class="h-6 w-6"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                  />
                 </svg>
               </button>
             </div>
-
-            </div>
+          </div>
         </div>
-
-  
         <!-- Empty State -->
         <EmptyState
           v-if="videos.length === 0 && !uploading && activeDownloads.length === 0"
@@ -216,397 +300,412 @@
           button-text="Upload Video"
           @action="handleUpload"
         >
-      <template #icon>
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-          </svg>
-      </template>
-    </EmptyState>
-      </div> <!-- Close content when not loading -->
-  </PageLayout>
-
-  <!-- Video Player Dialog -->
-  <VideoPlayerDialog
-    :video="videoToPlay"
-    :show-video-player="showVideoPlayer"
-    @close="handleVideoPlayerClose"
-  />
-
+          <template #icon>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-16 w-16 text-muted-foreground"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+              />
+            </svg>
+          </template>
+        </EmptyState>
+      </div>
+      <!-- Close content when not loading -->
+    </PageLayout>
+    <!-- Video Player Dialog -->
+    <VideoPlayerDialog :video="videoToPlay" :show-video-player="showVideoPlayer" @close="handleVideoPlayerClose" />
     <!-- Delete Confirmation Modal -->
-  <DeleteConfirmationModal
-    :show="showDeleteDialog"
-    :title="videoHasClips ? 'Delete Video with Referenced Clips' : 'Delete Video'"
-    :message="videoHasClips ? 'This video has detected clips that reference it. The video file will be deleted, but all detected clips will remain in your projects. Are you sure you want to delete' : 'Are you sure you want to delete'"
-    :item-name="videoToDelete?.original_filename || videoToDelete?.file_path.split(/[\\\/]/).pop()"
-    suffix="?"
-    confirm-text="Delete"
-    @close="handleDeleteDialogClose"
-    @confirm="deleteVideoConfirmed"
-  />
-
-  <!-- Pagination Footer -->
-  <PaginationFooter
-    v-if="!loading && videos.length > 0"
-    :current-page="currentPage"
-    :total-pages="totalPages"
-    :total-items="videos.length"
-    item-label="video"
-    @go-to-page="goToPage"
-    @previous="previousPage"
-    @next="nextPage"
-  />
+    <DeleteConfirmationModal
+      :show="showDeleteDialog"
+      :title="videoHasClips ? 'Delete Video with Referenced Clips' : 'Delete Video'"
+      :message="
+        videoHasClips
+          ? 'This video has detected clips that reference it. The video file will be deleted, but all detected clips will remain in your projects. Are you sure you want to delete'
+          : 'Are you sure you want to delete'
+      "
+      :item-name="videoToDelete?.original_filename || videoToDelete?.file_path.split(/[\\\/]/).pop()"
+      suffix="?"
+      confirm-text="Delete"
+      @close="handleDeleteDialogClose"
+      @confirm="deleteVideoConfirmed"
+    />
+    <!-- Pagination Footer -->
+    <PaginationFooter
+      v-if="!loading && videos.length > 0"
+      :current-page="currentPage"
+      :total-pages="totalPages"
+      :total-items="videos.length"
+      item-label="video"
+      @go-to-page="goToPage"
+      @previous="previousPage"
+      @next="nextPage"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { getAllRawVideos, hasClipsReferencingRawVideo, getProject, type RawVideo, type Project } from '@/services/database'
-import { useToast } from '@/composables/useToast'
-import { useDownloads } from '@/composables/useDownloads'
-import { useVideoOperations } from '@/composables/useVideoOperations'
-import { revealItemInDir } from '@tauri-apps/plugin-opener'
-import { getStoragePath } from '@/services/storage'
-import PageLayout from '@/components/PageLayout.vue'
-import LoadingState from '@/components/LoadingState.vue'
-import EmptyState from '@/components/EmptyState.vue'
-import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue'
-import DeleteConfirmationModal from '@/components/DeleteConfirmationModal.vue'
-import PaginationFooter from '@/components/PaginationFooter.vue'
+  import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+  import {
+    getAllRawVideos,
+    hasClipsReferencingRawVideo,
+    getProject,
+    type RawVideo,
+    type Project
+  } from '@/services/database'
+  import { useToast } from '@/composables/useToast'
+  import { useDownloads } from '@/composables/useDownloads'
+  import { useVideoOperations } from '@/composables/useVideoOperations'
+  import { revealItemInDir } from '@tauri-apps/plugin-opener'
+  import { getStoragePath } from '@/services/storage'
+  import PageLayout from '@/components/PageLayout.vue'
+  import LoadingState from '@/components/LoadingState.vue'
+  import EmptyState from '@/components/EmptyState.vue'
+  import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue'
+  import DeleteConfirmationModal from '@/components/DeleteConfirmationModal.vue'
+  import PaginationFooter from '@/components/PaginationFooter.vue'
 
-const videos = ref<RawVideo[]>([])
-const loading = ref(true)
-const showDeleteDialog = ref(false)
-const videoToDelete = ref<RawVideo | null>(null)
-const videoHasClips = ref(false) // True if clips reference this video
-const showVideoPlayer = ref(false)
-const videoToPlay = ref<RawVideo | null>(null)
-const thumbnailCache = ref<Map<string, string>>(new Map())
-const projectCache = ref<Map<string, Project>>(new Map())
-const { success, error } = useToast()
+  const videos = ref<RawVideo[]>([])
+  const loading = ref(true)
+  const showDeleteDialog = ref(false)
+  const videoToDelete = ref<RawVideo | null>(null)
+  const videoHasClips = ref(false) // True if clips reference this video
+  const showVideoPlayer = ref(false)
+  const videoToPlay = ref<RawVideo | null>(null)
+  const thumbnailCache = ref<Map<string, string>>(new Map())
+  const projectCache = ref<Map<string, Project>>(new Map())
+  const { success, error } = useToast()
 
-// Video operations composable
-const { uploading, uploadVideo, deleteVideo, loadVideoThumbnail } = useVideoOperations()
+  // Video operations composable
+  const { uploading, uploadVideo, deleteVideo, loadVideoThumbnail } = useVideoOperations()
 
-// Pagination state
-const currentPage = ref(1)
-const videosPerPage = 20
+  // Pagination state
+  const currentPage = ref(1)
+  const videosPerPage = 20
 
-// Downloads setup
-const {
-  initialize: initializeDownloads,
-  getActiveDownloads,
-  cleanupOldDownloads,
-  onDownloadComplete
-} = useDownloads()
+  // Downloads setup
+  const {
+    initialize: initializeDownloads,
+    getActiveDownloads,
+    cleanupOldDownloads,
+    onDownloadComplete
+  } = useDownloads()
 
-const activeDownloads = computed(() => getActiveDownloads())
+  const activeDownloads = computed(() => getActiveDownloads())
 
-// Format file size utility
-function formatFileSize(bytes?: number): string {
-  if (!bytes || bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
-}
-
-// Format relative time for video dates
-function formatRelativeTime(timestamp?: string | Date | number): string {
-  if (!timestamp) return 'Added recently'
-
-  // Handle different timestamp formats
-  let date: Date
-
-  try {
-    if (typeof timestamp === 'string') {
-      // Handle ISO format or other string formats
-      date = new Date(timestamp)
-    } else if (typeof timestamp === 'number') {
-      // Handle Unix timestamp (could be seconds or milliseconds)
-      // If the number is very small, it's likely seconds, not milliseconds
-      date = new Date(timestamp < 10000000000 ? timestamp * 1000 : timestamp)
-    } else if (timestamp instanceof Date) {
-      date = timestamp
-    } else {
-      console.warn('[Videos] Unknown timestamp format:', timestamp)
-      return 'Added recently'
-    }
-
-    // Check if date is valid
-    if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
-      console.warn('[Videos] Invalid date created from timestamp:', timestamp, 'Result:', date)
-      return 'Added recently'
-    }
-  } catch (error) {
-    console.error('[Videos] Error creating date from timestamp:', timestamp, error)
-    return 'Added recently'
+  // Format file size utility
+  function formatFileSize(bytes?: number): string {
+    if (!bytes || bytes === 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
   }
 
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
+  // Format relative time for video dates
+  function formatRelativeTime(timestamp?: string | Date | number): string {
+    if (!timestamp) return 'Added recently'
 
-  // Handle negative differences (future dates)
-  if (diffMs < 0) {
-    return 'Added recently'
-  }
+    // Handle different timestamp formats
+    let date: Date
 
-  const secondsAgo = Math.floor(diffMs / 1000)
-  const minutesAgo = Math.floor(secondsAgo / 60)
-  const hoursAgo = Math.floor(minutesAgo / 60)
-  const daysAgo = Math.floor(hoursAgo / 24)
-
-  // Debug logging
-  if (daysAgo > 365) {
-    console.warn('[Videos] Very old date detected:', {
-      timestamp,
-      date: date.toISOString(),
-      now: now.toISOString(),
-      daysAgo
-    })
-  }
-
-  if (secondsAgo < 60) return 'Added just now'
-  if (minutesAgo < 60) return `Added ${minutesAgo} minute${minutesAgo !== 1 ? 's' : ''} ago`
-  if (hoursAgo < 24) return `Added ${hoursAgo} hour${hoursAgo !== 1 ? 's' : ''} ago`
-  if (daysAgo < 7) return `Added ${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago`
-
-  // For dates older than a week, show the actual date
-  const weeksAgo = Math.floor(daysAgo / 7)
-  if (weeksAgo < 4) {
-    return `Added ${weeksAgo} week${weeksAgo !== 1 ? 's' : ''} ago`
-  }
-
-  // For very old dates, show formatted date
-  const options: Intl.DateTimeFormatOptions = {
-    month: 'short',
-    day: 'numeric',
-    year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
-  }
-  return `Added ${date.toLocaleDateString('en-US', options)}`
-}
-
-// Format video duration
-function formatDuration(seconds?: number): string {
-  if (!seconds) return 'Unknown'
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const secs = Math.floor(seconds % 60)
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-  } else {
-    return `${minutes}:${secs.toString().padStart(2, '0')}`
-  }
-}
-
-// Pagination computed properties
-const totalPages = computed(() => Math.ceil(videos.value.length / videosPerPage))
-const paginatedVideos = computed(() => {
-  const startIndex = (currentPage.value - 1) * videosPerPage
-  const endIndex = startIndex + videosPerPage
-  const paginated = videos.value.slice(startIndex, endIndex)
-  return paginated
-})
-
-// Pagination functions
-function goToPage(page: number) {
-  if (page >= 1 && page <= totalPages.value) {
-    currentPage.value = page
-  }
-}
-
-function nextPage() {
-  if (currentPage.value < totalPages.value) {
-    currentPage.value++
-  }
-}
-
-function previousPage() {
-  if (currentPage.value > 1) {
-    currentPage.value--
-  }
-}
-
-// Reset to first page when videos change
-watch(videos, () => {
-  currentPage.value = 1
-})
-
-let cleanupInterval: ReturnType<typeof setInterval> | null = null
-let unregisterDownloadCallback: (() => void) | null = null
-
-async function loadVideos() {
-  loading.value = true
-  try {
-    videos.value = await getAllRawVideos()
-
-    // Reset pagination to first page when loading new videos
-    currentPage.value = 1
-    // Load thumbnails and project info
-    for (const video of videos.value) {
-      await loadVideoThumbnail(video, thumbnailCache.value)
-
-      // Load project info if video has a project
-      if (video.project_id) {
-        await getProjectInfo(video.project_id)
+    try {
+      if (typeof timestamp === 'string') {
+        // Handle ISO format or other string formats
+        date = new Date(timestamp)
+      } else if (typeof timestamp === 'number') {
+        // Handle Unix timestamp (could be seconds or milliseconds)
+        // If the number is very small, it's likely seconds, not milliseconds
+        date = new Date(timestamp < 10000000000 ? timestamp * 1000 : timestamp)
+      } else if (timestamp instanceof Date) {
+        date = timestamp
+      } else {
+        console.warn('[Videos] Unknown timestamp format:', timestamp)
+        return 'Added recently'
       }
-    }
-  } catch (error) {
-    console.error('Failed to load videos:', error)
-  } finally {
-    loading.value = false
-  }
-}
 
-// Handle download completion - immediately refresh the videos list
-function handleDownloadComplete(download: any) {
-  // Immediately refresh the videos list to show the newly completed download
-  loadVideos()
-
-  // Show a success notification if available
-  if (download.result?.success && download.rawVideoId) {
-    success('Download Complete', `"${download.title}" has been downloaded and added to your videos`)
-  }
-}
-
-function getThumbnailUrl(video: RawVideo): string | null {
-  return thumbnailCache.value.get(video.id) || null
-}
-
-async function getProjectInfo(projectId: string): Promise<Project | null> {
-  // Check cache first
-  if (projectCache.value.has(projectId)) {
-    return projectCache.value.get(projectId) || null
-  }
-
-  try {
-    const project = await getProject(projectId)
-    if (project) {
-      projectCache.value.set(projectId, project)
-    }
-    return project
-  } catch (error) {
-    console.error('Failed to get project info:', error)
-    return null
-  }
-}
-
-async function handleUpload() {
-  const result = await uploadVideo()
-  if (result.success) {
-    // Reload videos list
-    await loadVideos()
-  }
-}
-
-async function playVideo(video: RawVideo) {
-  try {
-    // Create a fresh copy of the video object to ensure reactivity
-    // This helps when reopening the same video
-    videoToPlay.value = { ...video }
-    showVideoPlayer.value = true
-  } catch (err) {
-    console.error('Failed to prepare video:', err)
-  }
-}
-
-function handleVideoPlayerClose() {
-  showVideoPlayer.value = false
-  // Clear the video reference to ensure proper reload when reopening
-  setTimeout(() => {
-    videoToPlay.value = null
-  }, 100)
-}
-
-async function confirmDelete(video: RawVideo) {
-  videoToDelete.value = video
-
-  // Check if video has clips
-  try {
-    videoHasClips.value = await hasClipsReferencingRawVideo(video.id)
-    showDeleteDialog.value = true
-  } catch (err) {
-    console.error('Failed to check if video has clips:', err)
-    // If we can't check, proceed with normal deletion
-    videoHasClips.value = false
-    showDeleteDialog.value = true
-  }
-}
-
-function handleDeleteDialogClose() {
-  showDeleteDialog.value = false
-  videoHasClips.value = false
-  videoToDelete.value = null
-}
-
-async function deleteVideoConfirmed() {
-  if (!videoToDelete.value) return
-
-  const result = await deleteVideo(videoToDelete.value)
-
-  if (result.success) {
-    // Remove from thumbnail cache if exists
-    if (videoToDelete.value.id && thumbnailCache.value.has(videoToDelete.value.id)) {
-      thumbnailCache.value.delete(videoToDelete.value.id)
+      // Check if date is valid
+      if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
+        console.warn('[Videos] Invalid date created from timestamp:', timestamp, 'Result:', date)
+        return 'Added recently'
+      }
+    } catch (error) {
+      console.error('[Videos] Error creating date from timestamp:', timestamp, error)
+      return 'Added recently'
     }
 
-    await loadVideos()
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+
+    // Handle negative differences (future dates)
+    if (diffMs < 0) {
+      return 'Added recently'
+    }
+
+    const secondsAgo = Math.floor(diffMs / 1000)
+    const minutesAgo = Math.floor(secondsAgo / 60)
+    const hoursAgo = Math.floor(minutesAgo / 60)
+    const daysAgo = Math.floor(hoursAgo / 24)
+
+    // Debug logging
+    if (daysAgo > 365) {
+      console.warn('[Videos] Very old date detected:', {
+        timestamp,
+        date: date.toISOString(),
+        now: now.toISOString(),
+        daysAgo
+      })
+    }
+
+    if (secondsAgo < 60) return 'Added just now'
+    if (minutesAgo < 60) return `Added ${minutesAgo} minute${minutesAgo !== 1 ? 's' : ''} ago`
+    if (hoursAgo < 24) return `Added ${hoursAgo} hour${hoursAgo !== 1 ? 's' : ''} ago`
+    if (daysAgo < 7) return `Added ${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago`
+
+    // For dates older than a week, show the actual date
+    const weeksAgo = Math.floor(daysAgo / 7)
+    if (weeksAgo < 4) {
+      return `Added ${weeksAgo} week${weeksAgo !== 1 ? 's' : ''} ago`
+    }
+
+    // For very old dates, show formatted date
+    const options: Intl.DateTimeFormatOptions = {
+      month: 'short',
+      day: 'numeric',
+      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    }
+    return `Added ${date.toLocaleDateString('en-US', options)}`
   }
 
-  showDeleteDialog.value = false
-  videoHasClips.value = false
-  videoToDelete.value = null
-}
+  // Format video duration
+  function formatDuration(seconds?: number): string {
+    if (!seconds) return 'Unknown'
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    const secs = Math.floor(seconds % 60)
 
-async function openVideosFolder() {
-  try {
-    const videosPath = await getStoragePath('videos')
-    // Use the first video file if available, otherwise use a dummy path
-    if (videos.value.length > 0) {
-      // Reveal the first video file, which will open the videos folder
-      await revealItemInDir(videos.value[0].file_path)
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
     } else {
-      // If no videos, append a dummy filename to open the videos folder
-      // The file doesn't need to exist, revealItemInDir will still open the parent folder
-      await revealItemInDir(videosPath + '\\dummy.mp4')
+      return `${minutes}:${secs.toString().padStart(2, '0')}`
     }
-  } catch (err) {
-    console.error('Failed to open videos folder:', err)
-    error('Failed to open folder', 'Unable to open the videos folder')
   }
-}
 
-onMounted(async () => {
-  // Initialize downloads system
-  await initializeDownloads()
+  // Pagination computed properties
+  const totalPages = computed(() => Math.ceil(videos.value.length / videosPerPage))
+  const paginatedVideos = computed(() => {
+    const startIndex = (currentPage.value - 1) * videosPerPage
+    const endIndex = startIndex + videosPerPage
+    const paginated = videos.value.slice(startIndex, endIndex)
+    return paginated
+  })
 
-  // Register for download completion events for immediate updates
-  unregisterDownloadCallback = onDownloadComplete(handleDownloadComplete)
-
-  // Load videos (will show existing videos + any recently completed downloads)
-  await loadVideos()
-
-  // Set up periodic cleanup (no longer need to check for completed downloads)
-  cleanupInterval = setInterval(() => {
-    cleanupOldDownloads()
-  }, 2000) // Cleanup every 2 seconds
-})
-
-onUnmounted(() => {
-  if (cleanupInterval) {
-    clearInterval(cleanupInterval)
+  // Pagination functions
+  function goToPage(page: number) {
+    if (page >= 1 && page <= totalPages.value) {
+      currentPage.value = page
+    }
   }
-  if (unregisterDownloadCallback) {
-    unregisterDownloadCallback()
+
+  function nextPage() {
+    if (currentPage.value < totalPages.value) {
+      currentPage.value++
+    }
   }
-})
+
+  function previousPage() {
+    if (currentPage.value > 1) {
+      currentPage.value--
+    }
+  }
+
+  // Reset to first page when videos change
+  watch(videos, () => {
+    currentPage.value = 1
+  })
+
+  let cleanupInterval: ReturnType<typeof setInterval> | null = null
+  let unregisterDownloadCallback: (() => void) | null = null
+
+  async function loadVideos() {
+    loading.value = true
+    try {
+      videos.value = await getAllRawVideos()
+
+      // Reset pagination to first page when loading new videos
+      currentPage.value = 1
+      // Load thumbnails and project info
+      for (const video of videos.value) {
+        await loadVideoThumbnail(video, thumbnailCache.value)
+
+        // Load project info if video has a project
+        if (video.project_id) {
+          await getProjectInfo(video.project_id)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load videos:', error)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // Handle download completion - immediately refresh the videos list
+  function handleDownloadComplete(download: any) {
+    // Immediately refresh the videos list to show the newly completed download
+    loadVideos()
+
+    // Show a success notification if available
+    if (download.result?.success && download.rawVideoId) {
+      success('Download Complete', `"${download.title}" has been downloaded and added to your videos`)
+    }
+  }
+
+  function getThumbnailUrl(video: RawVideo): string | null {
+    return thumbnailCache.value.get(video.id) || null
+  }
+
+  async function getProjectInfo(projectId: string): Promise<Project | null> {
+    // Check cache first
+    if (projectCache.value.has(projectId)) {
+      return projectCache.value.get(projectId) || null
+    }
+
+    try {
+      const project = await getProject(projectId)
+      if (project) {
+        projectCache.value.set(projectId, project)
+      }
+      return project
+    } catch (error) {
+      console.error('Failed to get project info:', error)
+      return null
+    }
+  }
+
+  async function handleUpload() {
+    const result = await uploadVideo()
+    if (result.success) {
+      // Reload videos list
+      await loadVideos()
+    }
+  }
+
+  async function playVideo(video: RawVideo) {
+    try {
+      // Create a fresh copy of the video object to ensure reactivity
+      // This helps when reopening the same video
+      videoToPlay.value = { ...video }
+      showVideoPlayer.value = true
+    } catch (err) {
+      console.error('Failed to prepare video:', err)
+    }
+  }
+
+  function handleVideoPlayerClose() {
+    showVideoPlayer.value = false
+    // Clear the video reference to ensure proper reload when reopening
+    setTimeout(() => {
+      videoToPlay.value = null
+    }, 100)
+  }
+
+  async function confirmDelete(video: RawVideo) {
+    videoToDelete.value = video
+
+    // Check if video has clips
+    try {
+      videoHasClips.value = await hasClipsReferencingRawVideo(video.id)
+      showDeleteDialog.value = true
+    } catch (err) {
+      console.error('Failed to check if video has clips:', err)
+      // If we can't check, proceed with normal deletion
+      videoHasClips.value = false
+      showDeleteDialog.value = true
+    }
+  }
+
+  function handleDeleteDialogClose() {
+    showDeleteDialog.value = false
+    videoHasClips.value = false
+    videoToDelete.value = null
+  }
+
+  async function deleteVideoConfirmed() {
+    if (!videoToDelete.value) return
+
+    const result = await deleteVideo(videoToDelete.value)
+
+    if (result.success) {
+      // Remove from thumbnail cache if exists
+      if (videoToDelete.value.id && thumbnailCache.value.has(videoToDelete.value.id)) {
+        thumbnailCache.value.delete(videoToDelete.value.id)
+      }
+
+      await loadVideos()
+    }
+
+    showDeleteDialog.value = false
+    videoHasClips.value = false
+    videoToDelete.value = null
+  }
+
+  async function openVideosFolder() {
+    try {
+      const videosPath = await getStoragePath('videos')
+      // Use the first video file if available, otherwise use a dummy path
+      if (videos.value.length > 0) {
+        // Reveal the first video file, which will open the videos folder
+        await revealItemInDir(videos.value[0].file_path)
+      } else {
+        // If no videos, append a dummy filename to open the videos folder
+        // The file doesn't need to exist, revealItemInDir will still open the parent folder
+        await revealItemInDir(videosPath + '\\dummy.mp4')
+      }
+    } catch (err) {
+      console.error('Failed to open videos folder:', err)
+      error('Failed to open folder', 'Unable to open the videos folder')
+    }
+  }
+
+  onMounted(async () => {
+    // Initialize downloads system
+    await initializeDownloads()
+
+    // Register for download completion events for immediate updates
+    unregisterDownloadCallback = onDownloadComplete(handleDownloadComplete)
+
+    // Load videos (will show existing videos + any recently completed downloads)
+    await loadVideos()
+
+    // Set up periodic cleanup (no longer need to check for completed downloads)
+    cleanupInterval = setInterval(() => {
+      cleanupOldDownloads()
+    }, 2000) // Cleanup every 2 seconds
+  })
+
+  onUnmounted(() => {
+    if (cleanupInterval) {
+      clearInterval(cleanupInterval)
+    }
+    if (unregisterDownloadCallback) {
+      unregisterDownloadCallback()
+    }
+  })
 </script>
 
 <style scoped>
-/* Root wrapper to ensure single root element for Transition */
-.videos-page {
-  position: relative;
-  width: 100%;
-  min-height: 100%;
-}
+  /* Root wrapper to ensure single root element for Transition */
+  .videos-page {
+    position: relative;
+    width: 100%;
+    min-height: 100%;
+  }
 </style>

@@ -13,14 +13,12 @@
           <span v-if="itemName" class="font-semibold text-foreground">"{{ itemName }}"</span>
           {{ suffix }} This action cannot be undone.
         </p>
-
         <button
           class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg font-semibold hover:from-red-700 hover:to-red-800 transition-all"
           @click="$emit('confirm')"
         >
           {{ confirmText }}
         </button>
-
         <button
           class="w-full py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 transition-all"
           @click="$emit('close')"
@@ -33,26 +31,26 @@
 </template>
 
 <script setup lang="ts">
-interface Props {
-  show: boolean
-  title?: string
-  message?: string
-  itemName?: string
-  suffix?: string
-  confirmText?: string
-}
+  interface Props {
+    show: boolean
+    title?: string
+    message?: string
+    itemName?: string
+    suffix?: string
+    confirmText?: string
+  }
 
-interface Emits {
-  (e: 'close'): void
-  (e: 'confirm'): void
-}
+  interface Emits {
+    (e: 'close'): void
+    (e: 'confirm'): void
+  }
 
-withDefaults(defineProps<Props>(), {
-  title: 'Delete Item',
-  message: 'Are you sure you want to delete',
-  suffix: '?',
-  confirmText: 'Delete'
-})
+  withDefaults(defineProps<Props>(), {
+    title: 'Delete Item',
+    message: 'Are you sure you want to delete',
+    suffix: '?',
+    confirmText: 'Delete'
+  })
 
-defineEmits<Emits>()
+  defineEmits<Emits>()
 </script>

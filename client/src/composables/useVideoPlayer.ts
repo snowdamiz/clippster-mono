@@ -112,7 +112,10 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
       })
     }
 
-    if (filteredTimestamps.length === 0 || filteredTimestamps[filteredTimestamps.length - 1].time < totalDuration - 1) {
+    if (
+      filteredTimestamps.length === 0 ||
+      filteredTimestamps[filteredTimestamps.length - 1].time < totalDuration - 1
+    ) {
       filteredTimestamps.push({
         time: totalDuration,
         position: 99.5,
@@ -283,7 +286,8 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
 
   function onVideoError(event: Event) {
     videoLoading.value = false
-    videoError.value = 'Failed to load video. The file may be corrupted or in an unsupported format.'
+    videoError.value =
+      'Failed to load video. The file may be corrupted or in an unsupported format.'
     console.error('Video error:', event)
     videoSrc.value = null
   }
@@ -317,7 +321,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
 
       // Look for video using project_id relationship
       if (projectData?.id) {
-        const projectVideo = availableVideos.value.find(v => v.project_id === projectData.id)
+        const projectVideo = availableVideos.value.find((v) => v.project_id === projectData.id)
         if (projectVideo) {
           videoPath = projectVideo.file_path
           currentVideo.value = projectVideo
@@ -397,7 +401,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
         const playPromise = videoElement.value.play()
 
         if (playPromise !== undefined) {
-          playPromise.catch(error => {
+          playPromise.catch((error) => {
             console.error('[useVideoPlayer] Failed to start segmented playback:', error)
             stopSegmentedPlayback()
           })
@@ -521,9 +525,13 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     }
   })
 
-  watch(project, () => {
-    loadVideoForProject()
-  }, { immediate: true })
+  watch(
+    project,
+    () => {
+      loadVideoForProject()
+    },
+    { immediate: true }
+  )
 
   onMounted(() => {
     if (videoSrc.value && !videoElement.value) {

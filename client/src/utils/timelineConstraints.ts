@@ -6,7 +6,6 @@ import { ClipSegment } from './timelineUtils'
 import { ClipSegment as DatabaseClipSegment } from '../services/database'
 import { TIMELINE_CONSTANTS } from '../constants/timelineConstants'
 
-
 export interface MovementConstraints {
   minStartTime: number
   maxEndTime: number
@@ -78,10 +77,16 @@ export function calculateResizeConstraints(
   // For right handle, we need to consider the current segment's start_time
   if (handleType === 'left') {
     // Left handle can't go past current end_time - minimum duration
-    maxEndTime = Math.min(maxEndTime, currentSegment.end_time - TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION)
+    maxEndTime = Math.min(
+      maxEndTime,
+      currentSegment.end_time - TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION
+    )
   } else {
     // Right handle can't go before current start_time + minimum duration
-    minStartTime = Math.max(minStartTime, currentSegment.start_time + TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION)
+    minStartTime = Math.max(
+      minStartTime,
+      currentSegment.start_time + TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION
+    )
   }
 
   return { minStartTime, maxEndTime }
@@ -121,7 +126,8 @@ export function applyMovementConstraints(
   }
 
   // Final check: if we still can't maintain original duration, don't move at all
-  if (endTime - startTime < originalDuration * 0.99) { // Allow tiny floating point errors
+  if (endTime - startTime < originalDuration * 0.99) {
+    // Allow tiny floating point errors
     // Revert to original position - constraint hit, can't move further in this direction
     startTime = constraints.minStartTime // This will be handled by caller
     endTime = startTime + originalDuration

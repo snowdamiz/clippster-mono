@@ -28,9 +28,10 @@ export function useContinuousSeeking(options: ContinuousSeekingOptions) {
 
     // Start continuous seeking at high speed immediately (no initial jump)
     seekInterval.value = setInterval(() => {
-      const seekAmount = seekDirection.value === 'forward'
-        ? SEEKING_CONFIG.SECONDS_PER_INTERVAL
-        : -SEEKING_CONFIG.SECONDS_PER_INTERVAL
+      const seekAmount =
+        seekDirection.value === 'forward'
+          ? SEEKING_CONFIG.SECONDS_PER_INTERVAL
+          : -SEEKING_CONFIG.SECONDS_PER_INTERVAL
       onSeekVideo(seekAmount)
     }, SEEKING_CONFIG.INTERVAL_MS)
   }

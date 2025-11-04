@@ -38,13 +38,7 @@ export function useTimelineInteraction(
   duration: Ref<number>,
   options: TimelineInteractionOptions = {}
 ) {
-  const {
-    minZoom = 1.0,
-    maxZoom = 10.0,
-    zoomStep = 0.1,
-    onZoomChange,
-    onDragSelection
-  } = options
+  const { minZoom = 1.0, maxZoom = 10.0, zoomStep = 0.1, onZoomChange, onDragSelection } = options
 
   // Zoom state
   const zoomState = ref<ZoomState>({
@@ -102,7 +96,10 @@ export function useTimelineInteraction(
       const currentScrollLeft = container.scrollLeft
       const currentContentWidth = contentRect.width
       const hoveredTimelinePosition = currentScrollLeft + relativeX
-      const hoveredPercentOfContent = Math.max(0, Math.min(1, hoveredTimelinePosition / currentContentWidth))
+      const hoveredPercentOfContent = Math.max(
+        0,
+        Math.min(1, hoveredTimelinePosition / currentContentWidth)
+      )
 
       // Update zoom level
       setZoomLevel(newZoom)
@@ -114,7 +111,7 @@ export function useTimelineInteraction(
           const newContentWidth = newContentRect.width
 
           // Calculate new scroll position to keep the same content position under cursor
-          const newScrollLeft = (hoveredPercentOfContent * newContentWidth) - relativeX
+          const newScrollLeft = hoveredPercentOfContent * newContentWidth - relativeX
 
           // Apply smooth scrolling to new position
           container.scrollLeft = Math.max(0, newScrollLeft)
@@ -175,7 +172,10 @@ export function useTimelineInteraction(
   // Drag selection handlers
   function startDragSelection(event: MouseEvent) {
     // Only start drag with left mouse button and not on clips
-    if (event.button !== 0 || event.target instanceof HTMLElement && event.target.closest('.clip-segment')) {
+    if (
+      event.button !== 0 ||
+      (event.target instanceof HTMLElement && event.target.closest('.clip-segment'))
+    ) {
       return
     }
 
@@ -199,7 +199,10 @@ export function useTimelineInteraction(
     if (timelineContent) {
       const contentRect = timelineContent.getBoundingClientRect()
       const contentRelativeX = event.clientX - contentRect.left
-      dragSelectionState.value.dragStartPercent = Math.max(0, Math.min(1, contentRelativeX / contentRect.width))
+      dragSelectionState.value.dragStartPercent = Math.max(
+        0,
+        Math.min(1, contentRelativeX / contentRect.width)
+      )
       dragSelectionState.value.dragEndPercent = dragSelectionState.value.dragStartPercent
     }
 
@@ -225,7 +228,10 @@ export function useTimelineInteraction(
     if (timelineContent) {
       const contentRect = timelineContent.getBoundingClientRect()
       const contentRelativeX = event.clientX - contentRect.left
-      dragSelectionState.value.dragEndPercent = Math.max(0, Math.min(1, contentRelativeX / contentRect.width))
+      dragSelectionState.value.dragEndPercent = Math.max(
+        0,
+        Math.min(1, contentRelativeX / contentRect.width)
+      )
     }
 
     event.preventDefault()
@@ -235,8 +241,14 @@ export function useTimelineInteraction(
     if (!dragSelectionState.value.isDragging) return
 
     // Calculate the selected time range
-    const startPercent = Math.min(dragSelectionState.value.dragStartPercent, dragSelectionState.value.dragEndPercent)
-    const endPercent = Math.max(dragSelectionState.value.dragStartPercent, dragSelectionState.value.dragEndPercent)
+    const startPercent = Math.min(
+      dragSelectionState.value.dragStartPercent,
+      dragSelectionState.value.dragEndPercent
+    )
+    const endPercent = Math.max(
+      dragSelectionState.value.dragStartPercent,
+      dragSelectionState.value.dragEndPercent
+    )
     const selectionDuration = endPercent - startPercent
 
     // Only zoom if the selection is meaningful (at least 5% of timeline)
@@ -265,11 +277,18 @@ export function useTimelineInteraction(
             let targetScrollLeft: number
             if (selectionWidthInContent >= containerWidth) {
               // Selection is wider than container, show it starting from left
-              targetScrollLeft = Math.max(0, Math.min(maxScrollLeft, selectionStartPositionInContent - 20)) // 20px padding
+              targetScrollLeft = Math.max(
+                0,
+                Math.min(maxScrollLeft, selectionStartPositionInContent - 20)
+              ) // 20px padding
             } else {
               // Center the selection in the viewport
-              const centerOfSelection = selectionStartPositionInContent + (selectionWidthInContent / 2)
-              targetScrollLeft = Math.max(0, Math.min(maxScrollLeft, centerOfSelection - (containerWidth / 2)))
+              const centerOfSelection =
+                selectionStartPositionInContent + selectionWidthInContent / 2
+              targetScrollLeft = Math.max(
+                0,
+                Math.min(maxScrollLeft, centerOfSelection - containerWidth / 2)
+              )
             }
 
             container.scrollLeft = targetScrollLeft

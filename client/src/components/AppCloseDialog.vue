@@ -9,20 +9,21 @@
 
       <div class="space-y-4">
         <p class="text-muted-foreground">
-          There {{ activeDownloadsCount === 1 ? 'is' : 'are' }} <span class="font-semibold text-foreground">{{ activeDownloadsCount }}</span> active download{{ activeDownloadsCount !== 1 ? 's' : '' }} in progress.
+          There {{ activeDownloadsCount === 1 ? 'is' : 'are' }}
+          <span class="font-semibold text-foreground">{{ activeDownloadsCount }}</span>
+          active download{{ activeDownloadsCount !== 1 ? 's' : '' }} in progress.
         </p>
 
         <p class="text-muted-foreground">
-          Are you sure you want to close the application? This will cancel all active downloads and remove any partially downloaded files. This action cannot be undone.
+          Are you sure you want to close the application? This will cancel all active downloads and remove any partially
+          downloaded files. This action cannot be undone.
         </p>
-
         <button
           class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg font-semibold hover:from-red-700 hover:to-red-800 transition-all"
           @click="confirmClose"
         >
           Close and Cancel Downloads
         </button>
-
         <button
           class="w-full py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 transition-all"
           @click="cancelClose"
@@ -35,16 +36,11 @@
 </template>
 
 <script setup lang="ts">
-import { useWindowClose } from '@/composables/useWindowClose'
+  import { useWindowClose } from '@/composables/useWindowClose'
 
-const {
-  showCloseDialog,
-  activeDownloadsCount,
-  confirmCloseWithCleanup,
-  cancelClose
-} = useWindowClose()
+  const { showCloseDialog, activeDownloadsCount, confirmCloseWithCleanup, cancelClose } = useWindowClose()
 
-async function confirmClose() {
-  await confirmCloseWithCleanup()
-}
+  async function confirmClose() {
+    await confirmCloseWithCleanup()
+  }
 </script>

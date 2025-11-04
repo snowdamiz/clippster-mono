@@ -3,17 +3,14 @@
  * Handles dragging, resizing, cutting of clip segments
  */
 import { ref, computed, type Ref } from 'vue'
-import { updateClipSegment, getAdjacentClipSegments, realignClipSegment, splitClipSegment } from '../services/database'
 import {
-  TRACK_DIMENSIONS,
-  CUT_CONFIG,
-  SELECTORS
-} from '../utils/timelineConstants'
-import {
-  debounce,
-  getSegmentDisplayTime,
-  type ClipSegment
-} from '../utils/timelineUtils'
+  updateClipSegment,
+  getAdjacentClipSegments,
+  realignClipSegment,
+  splitClipSegment
+} from '../services/database'
+import { TRACK_DIMENSIONS, CUT_CONFIG, SELECTORS } from '../utils/timelineConstants'
+import { debounce, getSegmentDisplayTime, type ClipSegment } from '../utils/timelineUtils'
 
 export interface DraggedSegmentInfo {
   clipId: string
@@ -56,7 +53,12 @@ export interface SegmentManipulationOptions {
   duration: Ref<number>
   zoomLevel: Ref<number>
   timelineContainer: Ref<HTMLElement | null>
-  onSegmentUpdated?: (clipId: string, segmentIndex: number, newStartTime: number, newEndTime: number) => void
+  onSegmentUpdated?: (
+    clipId: string,
+    segmentIndex: number,
+    newStartTime: number,
+    newEndTime: number
+  ) => void
   onRefreshClipsData?: () => void
 }
 
@@ -88,31 +90,34 @@ export function useSegmentManipulation(options: SegmentManipulationOptions) {
   })
 
   // Debounced database update function for smoother performance
-  const debouncedUpdateClip = debounce(async (clipId: string, segmentIndex: number, newStartTime: number, newEndTime: number) => {
-    try {
-      await updateClipSegment(clipId, segmentIndex, newStartTime, newEndTime)
+  const debouncedUpdateClip = debounce(
+    async (clipId: string, segmentIndex: number, newStartTime: number, newEndTime: number) => {
+      try {
+        await updateClipSegment(clipId, segmentIndex, newStartTime, newEndTime)
 
-      // Update local clip data for immediate visual feedback
-      const clipIndex = localClips.value.findIndex(clip => clip.id === clipId)
-      if (clipIndex !== -1 && localClips.value[clipIndex].segments[segmentIndex]) {
-        // Create a new clips array to trigger reactivity
-        const updatedClips = [...localClips.value]
-        updatedClips[clipIndex] = {
-          ...updatedClips[clipIndex],
-          segments: [...updatedClips[clipIndex].segments]
+        // Update local clip data for immediate visual feedback
+        const clipIndex = localClips.value.findIndex((clip) => clip.id === clipId)
+        if (clipIndex !== -1 && localClips.value[clipIndex].segments[segmentIndex]) {
+          // Create a new clips array to trigger reactivity
+          const updatedClips = [...localClips.value]
+          updatedClips[clipIndex] = {
+            ...updatedClips[clipIndex],
+            segments: [...updatedClips[clipIndex].segments]
+          }
+          updatedClips[clipIndex].segments[segmentIndex] = {
+            ...updatedClips[clipIndex].segments[segmentIndex],
+            start_time: newStartTime,
+            end_time: newEndTime,
+            duration: newEndTime - newStartTime
+          }
+          localClips.value = updatedClips
         }
-        updatedClips[clipIndex].segments[segmentIndex] = {
-          ...updatedClips[clipIndex].segments[segmentIndex],
-          start_time: newStartTime,
-          end_time: newEndTime,
-          duration: newEndTime - newStartTime
-        }
-        localClips.value = updatedClips
+      } catch (error) {
+        console.error('Error updating clip segment:', error)
       }
-    } catch (error) {
-      console.error('Error updating clip segment:', error)
-    }
-  }, TRACK_DIMENSIONS.DEBOUNCE_DELAY)
+    },
+    TRACK_DIMENSIONS.DEBOUNCE_DELAY
+  )
 
   // Computed clips that updates during dragging or resizing
   const displayClips = computed(() => {
@@ -121,7 +126,7 @@ export function useSegmentManipulation(options: SegmentManipulationOptions) {
     // Handle dragging
     if (isDraggingSegment.value && draggedSegmentInfo.value) {
       const { clipId, segmentIndex, currentStartTime, currentEndTime } = draggedSegmentInfo.value
-      const clipIndex = clips.findIndex(clip => clip.id === clipId)
+      const clipIndex = clips.findIndex((clip) => clip.id === clipId)
       if (clipIndex !== -1 && clips[clipIndex].segments[segmentIndex]) {
         clips = [...clips]
         clips[clipIndex] = {
@@ -140,7 +145,7 @@ export function useSegmentManipulation(options: SegmentManipulationOptions) {
     // Handle resizing
     if (isResizingSegment.value && resizeHandleInfo.value) {
       const { clipId, segmentIndex, currentStartTime, currentEndTime } = resizeHandleInfo.value
-      const clipIndex = clips.findIndex(clip => clip.id === clipId)
+      const clipIndex = clips.findIndex((clip) => clip.id === clipId)
       if (clipIndex !== -1 && clips[clipIndex].segments[segmentIndex]) {
         clips = [...clips]
         clips[clipIndex] = {
@@ -183,7 +188,9 @@ export function useSegmentManipulation(options: SegmentManipulationOptions) {
       }
 
       // Get original duration from the dragged segment info
-      const originalDuration = (draggedSegmentInfo.value?.originalEndTime || 0) - (draggedSegmentInfo.value?.originalStartTime || 0) || 0
+      const originalDuration =
+        (draggedSegmentInfo.value?.originalEndTime || 0) -
+          (draggedSegmentInfo.value?.originalStartTime || 0) || 0
 
       // IMPORTANT: Ensure we have enough space for the original duration
       if (maxEndTime < minStartTime + originalDuration) {
@@ -204,7 +211,11 @@ export function useSegmentManipulation(options: SegmentManipulationOptions) {
   }
 
   // Calculate resize constraints for a segment
-  async function calculateResizeConstraints(clipId: string, segmentIndex: number, handleType: 'left' | 'right'): Promise<{
+  async function calculateResizeConstraints(
+    clipId: string,
+    segmentIndex: number,
+    handleType: 'left' | 'right'
+  ): Promise<{
     minStartTime: number
     maxEndTime: number
   }> {
@@ -226,16 +237,23 @@ export function useSegmentManipulation(options: SegmentManipulationOptions) {
 
       // For left handle, we need to consider the current segment's end_time
       // For right handle, we need to consider the current segment's start_time
-      const currentSegment = localClips.value
-        .find(clip => clip.id === clipId)?.segments[segmentIndex]
+      const currentSegment = localClips.value.find((clip) => clip.id === clipId)?.segments[
+        segmentIndex
+      ]
 
       if (currentSegment) {
         if (handleType === 'left') {
           // Left handle can't go past current end_time - minimum duration
-          maxEndTime = Math.min(maxEndTime, currentSegment.end_time - CUT_CONFIG.MIN_SEGMENT_DURATION)
+          maxEndTime = Math.min(
+            maxEndTime,
+            currentSegment.end_time - CUT_CONFIG.MIN_SEGMENT_DURATION
+          )
         } else {
           // Right handle can't go before current start_time + minimum duration
-          minStartTime = Math.max(minStartTime, currentSegment.start_time + CUT_CONFIG.MIN_SEGMENT_DURATION)
+          minStartTime = Math.max(
+            minStartTime,
+            currentSegment.start_time + CUT_CONFIG.MIN_SEGMENT_DURATION
+          )
         }
       }
 
@@ -294,13 +312,14 @@ export function useSegmentManipulation(options: SegmentManipulationOptions) {
     const { clipId, segmentIndex } = draggedSegmentInfo.value
     const deltaX = event.clientX - draggedSegmentInfo.value.originalMouseX
     const timelineWidth = timelineContainer.value?.clientWidth || 1
-    const timeDelta = (deltaX / timelineWidth) * duration.value / zoomLevel.value
+    const timeDelta = ((deltaX / timelineWidth) * duration.value) / zoomLevel.value
 
     let newStartTime = draggedSegmentInfo.value.originalStartTime + timeDelta
     let newEndTime = draggedSegmentInfo.value.originalEndTime + timeDelta
 
     // Preserve original duration
-    const originalDuration = draggedSegmentInfo.value.originalEndTime - draggedSegmentInfo.value.originalStartTime
+    const originalDuration =
+      draggedSegmentInfo.value.originalEndTime - draggedSegmentInfo.value.originalStartTime
 
     // Apply constraints that prevent shrinking
     if (newStartTime < movementConstraints.value.minStartTime) {
@@ -323,7 +342,8 @@ export function useSegmentManipulation(options: SegmentManipulationOptions) {
     }
 
     // Final check: if we still can't maintain original duration, don't move at all
-    if (newEndTime - newStartTime < originalDuration * 0.99) { // Allow tiny floating point errors
+    if (newEndTime - newStartTime < originalDuration * 0.99) {
+      // Allow tiny floating point errors
       // Revert to original position - constraint hit, can't move further in this direction
       newStartTime = draggedSegmentInfo.value.originalStartTime
       newEndTime = draggedSegmentInfo.value.originalEndTime
@@ -344,7 +364,14 @@ export function useSegmentManipulation(options: SegmentManipulationOptions) {
   async function onSegmentMouseUp() {
     if (!isDraggingSegment.value || !draggedSegmentInfo.value) return
 
-    const { clipId, segmentIndex, currentStartTime, currentEndTime, originalStartTime, originalEndTime } = draggedSegmentInfo.value
+    const {
+      clipId,
+      segmentIndex,
+      currentStartTime,
+      currentEndTime,
+      originalStartTime,
+      originalEndTime
+    } = draggedSegmentInfo.value
 
     // Store the original values before we modify them
     const originalOriginalStartTime = originalStartTime
@@ -365,13 +392,23 @@ export function useSegmentManipulation(options: SegmentManipulationOptions) {
     document.body.style.cursor = ''
 
     // Final database update and transcript realignment (only if significant change)
-    if (Math.abs(currentStartTime - originalOriginalStartTime) > 0.1 || Math.abs(currentEndTime - originalOriginalEndTime) > 0.1) {
+    if (
+      Math.abs(currentStartTime - originalOriginalStartTime) > 0.1 ||
+      Math.abs(currentEndTime - originalOriginalEndTime) > 0.1
+    ) {
       try {
         // Final immediate database update to ensure latest state is saved
         await updateClipSegment(clipId, segmentIndex, currentStartTime, currentEndTime)
 
         // Realign transcript if needed
-        await realignClipSegment(clipId, segmentIndex, originalOriginalStartTime, originalOriginalEndTime, currentStartTime, currentEndTime)
+        await realignClipSegment(
+          clipId,
+          segmentIndex,
+          originalOriginalStartTime,
+          originalOriginalEndTime,
+          currentStartTime,
+          currentEndTime
+        )
 
         // Emit update to parent
         onSegmentUpdated?.(clipId, segmentIndex, currentStartTime, currentEndTime)
@@ -382,7 +419,12 @@ export function useSegmentManipulation(options: SegmentManipulationOptions) {
   }
 
   // Handle mouse down on segment
-  async function onSegmentMouseDown(event: MouseEvent, clipId: string, segmentIndex: number, segment: ClipSegment) {
+  async function onSegmentMouseDown(
+    event: MouseEvent,
+    clipId: string,
+    segmentIndex: number,
+    segment: ClipSegment
+  ) {
     // Only start drag with left mouse button
     if (event.button !== 0) return
 
@@ -434,7 +476,12 @@ export function useSegmentManipulation(options: SegmentManipulationOptions) {
   }
 
   // Handle segment hover for cut preview
-  function onSegmentHoverForCut(event: MouseEvent, clipId: string, segmentIndex: number, segment: ClipSegment) {
+  function onSegmentHoverForCut(
+    event: MouseEvent,
+    clipId: string,
+    segmentIndex: number,
+    segment: ClipSegment
+  ) {
     if (!isCutToolActive.value || !duration.value) return
 
     const segmentElement = event.target as HTMLElement
@@ -451,13 +498,16 @@ export function useSegmentManipulation(options: SegmentManipulationOptions) {
     const segmentStartTime = getSegmentDisplayTime(segment, 'start')
     const segmentEndTime = getSegmentDisplayTime(segment, 'end')
     const segmentDuration = segmentEndTime - segmentStartTime
-    const cutTime = segmentStartTime + (segmentDuration * cutPositionPercent / 100)
+    const cutTime = segmentStartTime + (segmentDuration * cutPositionPercent) / 100
 
     // Validate minimum segment durations (0.5 seconds each)
     const leftDuration = cutTime - segmentStartTime
     const rightDuration = segmentEndTime - cutTime
 
-    if (leftDuration >= CUT_CONFIG.MIN_SEGMENT_DURATION && rightDuration >= CUT_CONFIG.MIN_SEGMENT_DURATION) {
+    if (
+      leftDuration >= CUT_CONFIG.MIN_SEGMENT_DURATION &&
+      rightDuration >= CUT_CONFIG.MIN_SEGMENT_DURATION
+    ) {
       cutHoverInfo.value = {
         clipId,
         segmentIndex,
@@ -472,7 +522,12 @@ export function useSegmentManipulation(options: SegmentManipulationOptions) {
   }
 
   // Handle segment click for cut operation
-  async function onSegmentClickForCut(_event: MouseEvent, clipId: string, segmentIndex: number, _segment: ClipSegment) {
+  async function onSegmentClickForCut(
+    _event: MouseEvent,
+    clipId: string,
+    segmentIndex: number,
+    _segment: ClipSegment
+  ) {
     if (!isCutToolActive.value || !cutHoverInfo.value) return
 
     try {
@@ -486,8 +541,9 @@ export function useSegmentManipulation(options: SegmentManipulationOptions) {
       isCutToolActive.value = false
       cutHoverInfo.value = null
 
-      console.log(`[useSegmentManipulation] Successfully split segment ${segmentIndex} into segments ${result.leftSegmentIndex} and ${result.rightSegmentIndex}`)
-
+      console.log(
+        `[useSegmentManipulation] Successfully split segment ${segmentIndex} into segments ${result.leftSegmentIndex} and ${result.rightSegmentIndex}`
+      )
     } catch (error) {
       console.error('[useSegmentManipulation] Failed to split segment:', error)
       // Show error feedback to user (could add a toast/notification here)

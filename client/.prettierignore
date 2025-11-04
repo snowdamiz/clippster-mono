@@ -1,0 +1,27 @@
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+build
+
+# Tauri
+src-tauri
+
+# Generated files
+*.min.js
+*.d.ts
+
+# Config files that should maintain their format
+package-lock.json
+yarn.lock
+
+# Logs
+*.log
+
+# Environment files
+.env*
+
+# Temporary files
+*.tmp
+.temp

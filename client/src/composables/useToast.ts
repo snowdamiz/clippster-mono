@@ -42,7 +42,7 @@ function addToast(options: ToastOptions): string {
 }
 
 function removeToast(id: string) {
-  const index = state.toasts.findIndex(t => t.id === id)
+  const index = state.toasts.findIndex((t) => t.id === id)
   if (index !== -1) {
     state.toasts.splice(index, 1)
   }

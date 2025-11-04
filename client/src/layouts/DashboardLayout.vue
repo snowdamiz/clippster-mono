@@ -1,18 +1,14 @@
 <template>
   <div class="min-h-screen bg-background flex">
     <DashboardSidebar />
-
     <!-- Main content area with left margin to account for fixed sidebar -->
     <main class="flex-1 ml-64">
       <DashboardHeader />
-
       <!-- Page content with top margin to account for fixed header -->
       <div class="px-6 pb-8 pt-24">
         <div class="max-w-7xl mx-auto">
           <router-view v-slot="{ Component }">
-            <transition name="fade" mode="out-in">
-              <component :is="Component" />
-            </transition>
+            <transition name="fade" mode="out-in"><component :is="Component" /></transition>
           </router-view>
         </div>
       </div>
@@ -21,18 +17,18 @@
 </template>
 
 <script setup lang="ts">
-import DashboardSidebar from '@/components/DashboardSidebar.vue'
-import DashboardHeader from '@/components/DashboardHeader.vue'
+  import DashboardSidebar from '@/components/DashboardSidebar.vue'
+  import DashboardHeader from '@/components/DashboardHeader.vue'
 </script>
 
 <style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.1s ease;
-}
+  .fade-enter-active,
+  .fade-leave-active {
+    transition: opacity 0.1s ease;
+  }
 
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
+  .fade-enter-from,
+  .fade-leave-to {
+    opacity: 0;
+  }
 </style>

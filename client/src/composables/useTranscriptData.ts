@@ -35,7 +35,7 @@ export function useTranscriptData(projectId: Ref<string | null>) {
   const resizeTooltipCenterWordIndex = ref(0)
 
   // Cache for word search results to improve performance
-  const wordSearchCache = ref<Map<number, { words: WordInfo[], centerIndex: number }>>(new Map())
+  const wordSearchCache = ref<Map<number, { words: WordInfo[]; centerIndex: number }>>(new Map())
 
   // Load transcript data for enhanced tooltips
   async function loadTranscriptData(projectId: string | null) {

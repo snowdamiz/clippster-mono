@@ -7,7 +7,6 @@ const showCloseDialog = ref(false)
 const activeDownloadsCount = ref(0)
 
 export function useWindowClose() {
-
   async function initializeWindowCloseHandler() {
     // Listen for window close events from Tauri
     await listen<number>('window-close-requested', (event) => {

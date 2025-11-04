@@ -67,7 +67,7 @@ export const usePumpFunStore = defineStore('pumpfun', {
     // Add a search to recent searches
     addToRecentSearches(mintId: string, displayText: string) {
       // Remove existing entry if it exists
-      this.recentSearches = this.recentSearches.filter(search => search.mintId !== mintId)
+      this.recentSearches = this.recentSearches.filter((search) => search.mintId !== mintId)
 
       // Add new entry at the beginning
       this.recentSearches.unshift({
@@ -91,7 +91,7 @@ export const usePumpFunStore = defineStore('pumpfun', {
 
     // Remove a specific recent search
     removeFromRecentSearches(mintId: string) {
-      this.recentSearches = this.recentSearches.filter(search => search.mintId !== mintId)
+      this.recentSearches = this.recentSearches.filter((search) => search.mintId !== mintId)
       this.saveRecentSearches()
     },
 
@@ -120,7 +120,7 @@ export const usePumpFunStore = defineStore('pumpfun', {
 
         if (result.success) {
           // Filter out clips shorter than 3 minutes (180 seconds)
-          const filteredClips = result.clips.filter(clip => clip.duration >= 180)
+          const filteredClips = result.clips.filter((clip) => clip.duration >= 180)
           this.clips = filteredClips
           this.hasMore = result.hasMore
           this.total = filteredClips.length

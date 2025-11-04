@@ -14,113 +14,142 @@
           class="p-3 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+            />
           </svg>
         </button>
       </template>
-
       <!-- Loading State -->
       <LoadingState v-if="loading" message="Loading clips..." />
-
       <!-- Content when not loading -->
+
       <div v-else>
-          <!-- Header with stats -->
-          <div v-if="clips.length > 0" class="flex items-center justify-between mb-4">
-            <p class="text-sm text-muted-foreground">
-              {{ clips.length }} clip{{ clips.length !== 1 ? 's' : '' }}
-            </p>
-          </div>
-
-          <!-- Clips Grid -->
-          <div v-if="clips.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <!-- Header with stats -->
+        <div v-if="clips.length > 0" class="flex items-center justify-between mb-4">
+          <p class="text-sm text-muted-foreground">{{ clips.length }} clip{{ clips.length !== 1 ? 's' : '' }}</p>
+        </div>
+        <!-- Clips Grid -->
+        <div v-if="clips.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div
+            v-for="clip in clips"
+            :key="clip.id"
+            class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer group aspect-video"
+            @click="playClip(clip)"
+          >
+            <!-- Thumbnail background with vignette -->
             <div
-              v-for="clip in clips"
-              :key="clip.id"
-              class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer group aspect-video"
-              @click="playClip(clip)"
+              v-if="getThumbnailUrl(clip)"
+              class="absolute inset-0 z-0"
+              :style="{
+                backgroundImage: `url(${getThumbnailUrl(clip)})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                backgroundRepeat: 'no-repeat'
+              }"
             >
-              <!-- Thumbnail background with vignette -->
-              <div
-                v-if="getThumbnailUrl(clip)"
-                class="absolute inset-0 z-0"
-                :style="{
-                  backgroundImage: `url(${getThumbnailUrl(clip)})`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                  backgroundRepeat: 'no-repeat'
-                }"
-              >
-                <!-- Dark vignette overlay -->
-                <div class="absolute inset-0 bg-gradient-to-br from-black/80 via-black/60 to-black/90"></div>
-              </div>
-
-  
-              <!-- Top right status badge -->
-              <div class="absolute top-4 right-4 z-10">
-                <span :class="[
+              <!-- Dark vignette overlay -->
+              <div class="absolute inset-0 bg-gradient-to-br from-black/80 via-black/60 to-black/90"></div>
+            </div>
+            <!-- Top right status badge -->
+            <div class="absolute top-4 right-4 z-10">
+              <span
+                :class="[
                   'text-xs px-2 py-1 rounded-md border',
                   getThumbnailUrl(clip)
                     ? getClipStatusBadgeClass(clip.status)
                     : 'text-muted-foreground bg-muted border-border'
-                ]">
-                  {{ getClipStatusText(clip.status) }}
-                </span>
-              </div>
-
-              <!-- Bottom left title and description -->
-              <div class="absolute bottom-4 left-4 right-4 z-10">
-                <h3 :class="[
+                ]"
+              >
+                {{ getClipStatusText(clip.status) }}
+              </span>
+            </div>
+            <!-- Bottom left title and description -->
+            <div class="absolute bottom-4 left-4 right-4 z-10">
+              <h3
+                :class="[
                   'text-lg font-semibold mb-1 group-hover:transition-colors line-clamp-2',
                   getThumbnailUrl(clip)
                     ? 'text-white group-hover:text-white/80'
                     : 'text-foreground group-hover:text-foreground/80'
-                ]">{{ clip.name || 'Untitled Clip' }}</h3>
-                <p :class="[
-                  'text-xs mb-1 line-clamp-1',
-                  getThumbnailUrl(clip)
-                    ? 'text-white/70'
-                    : 'text-muted-foreground/80'
-                ]" v-if="clip.project_id && getProjectName(clip.project_id)">
-                  {{ getProjectName(clip.project_id) }}
-                </p>
-                <p :class="[
-                  'text-sm line-clamp-1',
-                  getThumbnailUrl(clip)
-                    ? 'text-white/80'
-                    : 'text-muted-foreground'
-                ]">{{ getRelativeTime(clip.created_at) }}</p>
-              </div>
-
-              <!-- Hover Overlay Buttons -->
-              <div
-                v-if="getThumbnailUrl(clip)"
-                class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20 flex items-center justify-center gap-4"
+                ]"
               >
-                <button
-                  class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                  :title="clip.status === 'detected' && !clip.file_path ? 'Clip not generated yet' : 'Play'"
-                  @click.stop="playClip(clip)"
-                  :disabled="clip.status === 'detected' && !clip.file_path"
-                >
-                  <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </button>
-                <button
-                  class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                  title="Delete"
-                  @click.stop="confirmDelete(clip)"
-                >
-                  <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-              </div>
+                {{ clip.name || 'Untitled Clip' }}
+              </h3>
 
-              </div>
+              <p
+                :class="[
+                  'text-xs mb-1 line-clamp-1',
+                  getThumbnailUrl(clip) ? 'text-white/70' : 'text-muted-foreground/80'
+                ]"
+                v-if="clip.project_id && getProjectName(clip.project_id)"
+              >
+                {{ getProjectName(clip.project_id) }}
+              </p>
+
+              <p :class="['text-sm line-clamp-1', getThumbnailUrl(clip) ? 'text-white/80' : 'text-muted-foreground']">
+                {{ getRelativeTime(clip.created_at) }}
+              </p>
+            </div>
+            <!-- Hover Overlay Buttons -->
+            <div
+              v-if="getThumbnailUrl(clip)"
+              class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20 flex items-center justify-center gap-4"
+            >
+              <button
+                class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                :title="clip.status === 'detected' && !clip.file_path ? 'Clip not generated yet' : 'Play'"
+                @click.stop="playClip(clip)"
+                :disabled="clip.status === 'detected' && !clip.file_path"
+              >
+                <svg
+                  class="h-6 w-6"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                  />
+
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+              </button>
+              <button
+                class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                title="Delete"
+                @click.stop="confirmDelete(clip)"
+              >
+                <svg
+                  class="h-6 w-6"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                  />
+                </svg>
+              </button>
+            </div>
           </div>
-
+        </div>
         <!-- Empty State -->
         <EmptyState
           v-if="clips.length === 0"
@@ -129,22 +158,34 @@
           button-text="Upload Clip"
         >
           <template #icon>
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-16 w-16 text-muted-foreground"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+              />
+
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
           </template>
         </EmptyState>
-      </div> <!-- Close content when not loading -->
+      </div>
+      <!-- Close content when not loading -->
     </PageLayout>
-
     <!-- Video Player Dialog -->
-    <VideoPlayerDialog
-      :video="clipToPlay"
-      :show-video-player="showVideoPlayer"
-      @close="showVideoPlayer = false"
-    />
-
+    <VideoPlayerDialog :video="clipToPlay" :show-video-player="showVideoPlayer" @close="showVideoPlayer = false" />
     <!-- Delete Confirmation Modal -->
     <DeleteConfirmationModal
       :show="showDeleteDialog"
@@ -160,261 +201,270 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
-import { revealItemInDir } from '@tauri-apps/plugin-opener'
-import { getGeneratedClips, getDetectedClips, deleteClip, getThumbnailByClipId, getProject, getRawVideosByProjectId, type Clip, type Project, type RawVideo } from '@/services/database'
-import { getStoragePath } from '@/services/storage'
-import { useFormatters } from '@/composables/useFormatters'
-import PageLayout from '@/components/PageLayout.vue'
-import LoadingState from '@/components/LoadingState.vue'
-import EmptyState from '@/components/EmptyState.vue'
-import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue'
-import DeleteConfirmationModal from '@/components/DeleteConfirmationModal.vue'
+  import { ref, onMounted, computed } from 'vue'
+  import { invoke } from '@tauri-apps/api/core'
+  import { revealItemInDir } from '@tauri-apps/plugin-opener'
+  import {
+    getGeneratedClips,
+    getDetectedClips,
+    deleteClip,
+    getThumbnailByClipId,
+    getProject,
+    getRawVideosByProjectId,
+    type Clip,
+    type Project,
+    type RawVideo
+  } from '@/services/database'
+  import { getStoragePath } from '@/services/storage'
+  import { useFormatters } from '@/composables/useFormatters'
+  import PageLayout from '@/components/PageLayout.vue'
+  import LoadingState from '@/components/LoadingState.vue'
+  import EmptyState from '@/components/EmptyState.vue'
+  import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue'
+  import DeleteConfirmationModal from '@/components/DeleteConfirmationModal.vue'
 
-const clips = ref<Clip[]>([])
-const loading = ref(true)
-const showDeleteDialog = ref(false)
-const clipToDelete = ref<Clip | null>(null)
-const showVideoPlayer = ref(false)
-const clipToPlay = ref<RawVideo | null>(null)
-const thumbnailCache = ref<Map<string, string>>(new Map())
-const rawVideoCache = ref<Map<string, (RawVideo & { thumbnail_path: string | null })[]>>(new Map())
-const projectCache = ref<Map<string, Project>>(new Map())
-const { getRelativeTime } = useFormatters()
+  const clips = ref<Clip[]>([])
+  const loading = ref(true)
+  const showDeleteDialog = ref(false)
+  const clipToDelete = ref<Clip | null>(null)
+  const showVideoPlayer = ref(false)
+  const clipToPlay = ref<RawVideo | null>(null)
+  const thumbnailCache = ref<Map<string, string>>(new Map())
+  const rawVideoCache = ref<Map<string, (RawVideo & { thumbnail_path: string | null })[]>>(new Map())
+  const projectCache = ref<Map<string, Project>>(new Map())
+  const { getRelativeTime } = useFormatters()
 
-// Computed property to check if any clips have actual files
-const hasAnyClipsWithFiles = computed(() => {
-  return clips.value.some(clip => clip.file_path && clip.file_path.trim() !== '')
-})
+  // Computed property to check if any clips have actual files
+  const hasAnyClipsWithFiles = computed(() => {
+    return clips.value.some((clip) => clip.file_path && clip.file_path.trim() !== '')
+  })
 
-async function loadClips() {
-  loading.value = true
-  try {
-    // Load both generated and detected clips
-    const [generatedClips, detectedClips] = await Promise.all([
-      getGeneratedClips(),
-      getDetectedClips()
-    ])
+  async function loadClips() {
+    loading.value = true
+    try {
+      // Load both generated and detected clips
+      const [generatedClips, detectedClips] = await Promise.all([getGeneratedClips(), getDetectedClips()])
 
-    // Combine and sort by created_at date
-    clips.value = [...generatedClips, ...detectedClips].sort((a, b) => b.created_at - a.created_at)
+      // Combine and sort by created_at date
+      clips.value = [...generatedClips, ...detectedClips].sort((a, b) => b.created_at - a.created_at)
 
-    // Load thumbnails, project info, and raw videos for all clips
-    for (const clip of clips.value) {
-      await loadClipThumbnail(clip)
+      // Load thumbnails, project info, and raw videos for all clips
+      for (const clip of clips.value) {
+        await loadClipThumbnail(clip)
 
-      // Load project info if clip has a project
-      if (clip.project_id) {
-        await getProjectInfo(clip.project_id)
-        // Load raw videos for this project to use as fallback thumbnails
-        await loadRawVideosForProject(clip.project_id)
-      }
-    }
-  } catch (error) {
-    console.error('Failed to load clips:', error)
-  } finally {
-    loading.value = false
-  }
-}
-
-async function loadRawVideosForProject(projectId: string): Promise<void> {
-  // Check cache first
-  if (rawVideoCache.value.has(projectId)) {
-    return
-  }
-
-  try {
-    const rawVideos = await getRawVideosByProjectId(projectId)
-
-    // Convert raw video thumbnails to data URLs for caching
-    const processedRawVideos = await Promise.all(rawVideos.map(async (video) => {
-      let thumbnailDataUrl = null
-      if (video.thumbnail_path) {
-        try {
-          thumbnailDataUrl = await invoke<string>('read_file_as_data_url', {
-            filePath: video.thumbnail_path
-          })
-        } catch (error) {
-          console.warn(`Failed to load raw video thumbnail for ${video.id}:`, error)
+        // Load project info if clip has a project
+        if (clip.project_id) {
+          await getProjectInfo(clip.project_id)
+          // Load raw videos for this project to use as fallback thumbnails
+          await loadRawVideosForProject(clip.project_id)
         }
       }
-      return { ...video, thumbnail_path: thumbnailDataUrl }
-    }))
-
-    rawVideoCache.value.set(projectId, processedRawVideos)
-  } catch (error) {
-    console.error('Failed to load raw videos for project:', error)
-  }
-}
-
-async function loadClipThumbnail(clip: Clip) {
-  try {
-    const thumbnail = await getThumbnailByClipId(clip.id)
-    if (thumbnail && thumbnail.file_path) {
-      // Convert local file path to data URL for browser display
-      const dataUrl = await invoke<string>('read_file_as_data_url', {
-        filePath: thumbnail.file_path
-      })
-      thumbnailCache.value.set(clip.id, dataUrl)
-    }
-  } catch (error) {
-    console.error(`Failed to load thumbnail for clip ${clip.id}:`, error)
-  }
-}
-
-async function getProjectInfo(projectId: string): Promise<Project | null> {
-  // Check cache first
-  if (projectCache.value.has(projectId)) {
-    return projectCache.value.get(projectId) || null
-  }
-
-  try {
-    const project = await getProject(projectId)
-    if (project) {
-      projectCache.value.set(projectId, project)
-    }
-    return project
-  } catch (error) {
-    console.error('Failed to get project info:', error)
-    return null
-  }
-}
-
-function getThumbnailUrl(clip: Clip): string | null {
-  // First try to get clip-specific thumbnail
-  const clipThumbnail = thumbnailCache.value.get(clip.id)
-  if (clipThumbnail) {
-    return clipThumbnail
-  }
-
-  // If no clip thumbnail and this is a detected clip, try to use raw video thumbnail
-  if (clip.status === 'detected' && clip.project_id) {
-    const rawVideos = rawVideoCache.value.get(clip.project_id)
-    if (rawVideos && rawVideos.length > 0) {
-      // Use the first raw video's thumbnail as fallback
-      const rawVideo = rawVideos[0]
-      if (rawVideo.thumbnail_path) {
-        return rawVideo.thumbnail_path
-      }
+    } catch (error) {
+      console.error('Failed to load clips:', error)
+    } finally {
+      loading.value = false
     }
   }
 
-  return null
-}
-
-function getClipStatusBadgeClass(status: string | null): string {
-  switch (status) {
-    case 'generated':
-      return 'bg-green-500/20 text-green-300 border-green-500/30'
-    case 'detected':
-      return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30'
-    case 'processing':
-      return 'bg-blue-500/20 text-blue-300 border-blue-500/30'
-    default:
-      return 'bg-gray-500/20 text-gray-300 border-gray-500/30'
-  }
-}
-
-function getProjectName(projectId: string): string | null {
-  const project = projectCache.value.get(projectId)
-  return project?.name || null
-}
-
-function getClipStatusText(status: string | null): string {
-  switch (status) {
-    case 'generated':
-      return 'Generated'
-    case 'detected':
-      return 'Detected'
-    case 'processing':
-      return 'Processing'
-    default:
-      return 'Unknown'
-  }
-}
-
-async function openClipsFolder() {
-  try {
-    const basePath = await getStoragePath('base')
-    await revealItemInDir(basePath)
-  } catch (err) {
-    console.error('Failed to open Clippster directory:', err)
-  }
-}
-
-async function playClip(clip: Clip) {
-  try {
-    // Check if clip has a valid file path
-    if (!clip.file_path) {
-      console.warn(`[Clips] Clip ${clip.id} has no file path, cannot play`)
+  async function loadRawVideosForProject(projectId: string): Promise<void> {
+    // Check cache first
+    if (rawVideoCache.value.has(projectId)) {
       return
     }
 
-    // Convert clip to RawVideo-like format for the video player
-    const clipAsVideo = {
-      id: clip.id,
-      project_id: clip.project_id,
-      file_path: clip.file_path,
-      original_filename: clip.name || 'Untitled Clip',
-      thumbnail_path: getThumbnailUrl(clip),
-      duration: clip.duration,
-      width: null,
-      height: null,
-      frame_rate: null,
-      codec: null,
-      file_size: null,
-      original_project_id: null,
-      created_at: clip.created_at,
-      updated_at: clip.updated_at
+    try {
+      const rawVideos = await getRawVideosByProjectId(projectId)
+
+      // Convert raw video thumbnails to data URLs for caching
+      const processedRawVideos = await Promise.all(
+        rawVideos.map(async (video) => {
+          let thumbnailDataUrl = null
+          if (video.thumbnail_path) {
+            try {
+              thumbnailDataUrl = await invoke<string>('read_file_as_data_url', {
+                filePath: video.thumbnail_path
+              })
+            } catch (error) {
+              console.warn(`Failed to load raw video thumbnail for ${video.id}:`, error)
+            }
+          }
+          return { ...video, thumbnail_path: thumbnailDataUrl }
+        })
+      )
+
+      rawVideoCache.value.set(projectId, processedRawVideos)
+    } catch (error) {
+      console.error('Failed to load raw videos for project:', error)
     }
-    clipToPlay.value = clipAsVideo
-    showVideoPlayer.value = true
-  } catch (err) {
-    console.error('Failed to prepare clip:', err)
-  }
-}
-
-async function confirmDelete(clip: Clip) {
-  clipToDelete.value = clip
-  showDeleteDialog.value = true
-}
-
-function handleDeleteDialogClose() {
-  showDeleteDialog.value = false
-  clipToDelete.value = null
-}
-
-async function deleteClipConfirmed() {
-  if (!clipToDelete.value) return
-
-  try {
-    await deleteClip(clipToDelete.value.id)
-
-    // Remove from thumbnail cache if exists
-    if (clipToDelete.value.id && thumbnailCache.value.has(clipToDelete.value.id)) {
-      thumbnailCache.value.delete(clipToDelete.value.id)
-    }
-
-    await loadClips()
-  } catch (error) {
-    console.error('Failed to delete clip:', error)
   }
 
-  showDeleteDialog.value = false
-  clipToDelete.value = null
-}
+  async function loadClipThumbnail(clip: Clip) {
+    try {
+      const thumbnail = await getThumbnailByClipId(clip.id)
+      if (thumbnail && thumbnail.file_path) {
+        // Convert local file path to data URL for browser display
+        const dataUrl = await invoke<string>('read_file_as_data_url', {
+          filePath: thumbnail.file_path
+        })
+        thumbnailCache.value.set(clip.id, dataUrl)
+      }
+    } catch (error) {
+      console.error(`Failed to load thumbnail for clip ${clip.id}:`, error)
+    }
+  }
 
-onMounted(() => {
-  loadClips()
-})
+  async function getProjectInfo(projectId: string): Promise<Project | null> {
+    // Check cache first
+    if (projectCache.value.has(projectId)) {
+      return projectCache.value.get(projectId) || null
+    }
+
+    try {
+      const project = await getProject(projectId)
+      if (project) {
+        projectCache.value.set(projectId, project)
+      }
+      return project
+    } catch (error) {
+      console.error('Failed to get project info:', error)
+      return null
+    }
+  }
+
+  function getThumbnailUrl(clip: Clip): string | null {
+    // First try to get clip-specific thumbnail
+    const clipThumbnail = thumbnailCache.value.get(clip.id)
+    if (clipThumbnail) {
+      return clipThumbnail
+    }
+
+    // If no clip thumbnail and this is a detected clip, try to use raw video thumbnail
+    if (clip.status === 'detected' && clip.project_id) {
+      const rawVideos = rawVideoCache.value.get(clip.project_id)
+      if (rawVideos && rawVideos.length > 0) {
+        // Use the first raw video's thumbnail as fallback
+        const rawVideo = rawVideos[0]
+        if (rawVideo.thumbnail_path) {
+          return rawVideo.thumbnail_path
+        }
+      }
+    }
+
+    return null
+  }
+
+  function getClipStatusBadgeClass(status: string | null): string {
+    switch (status) {
+      case 'generated':
+        return 'bg-green-500/20 text-green-300 border-green-500/30'
+      case 'detected':
+        return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30'
+      case 'processing':
+        return 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+      default:
+        return 'bg-gray-500/20 text-gray-300 border-gray-500/30'
+    }
+  }
+
+  function getProjectName(projectId: string): string | null {
+    const project = projectCache.value.get(projectId)
+    return project?.name || null
+  }
+
+  function getClipStatusText(status: string | null): string {
+    switch (status) {
+      case 'generated':
+        return 'Generated'
+      case 'detected':
+        return 'Detected'
+      case 'processing':
+        return 'Processing'
+      default:
+        return 'Unknown'
+    }
+  }
+
+  async function openClipsFolder() {
+    try {
+      const basePath = await getStoragePath('base')
+      await revealItemInDir(basePath)
+    } catch (err) {
+      console.error('Failed to open Clippster directory:', err)
+    }
+  }
+
+  async function playClip(clip: Clip) {
+    try {
+      // Check if clip has a valid file path
+      if (!clip.file_path) {
+        console.warn(`[Clips] Clip ${clip.id} has no file path, cannot play`)
+        return
+      }
+
+      // Convert clip to RawVideo-like format for the video player
+      const clipAsVideo = {
+        id: clip.id,
+        project_id: clip.project_id,
+        file_path: clip.file_path,
+        original_filename: clip.name || 'Untitled Clip',
+        thumbnail_path: getThumbnailUrl(clip),
+        duration: clip.duration,
+        width: null,
+        height: null,
+        frame_rate: null,
+        codec: null,
+        file_size: null,
+        original_project_id: null,
+        created_at: clip.created_at,
+        updated_at: clip.updated_at
+      }
+      clipToPlay.value = clipAsVideo
+      showVideoPlayer.value = true
+    } catch (err) {
+      console.error('Failed to prepare clip:', err)
+    }
+  }
+
+  async function confirmDelete(clip: Clip) {
+    clipToDelete.value = clip
+    showDeleteDialog.value = true
+  }
+
+  function handleDeleteDialogClose() {
+    showDeleteDialog.value = false
+    clipToDelete.value = null
+  }
+
+  async function deleteClipConfirmed() {
+    if (!clipToDelete.value) return
+
+    try {
+      await deleteClip(clipToDelete.value.id)
+
+      // Remove from thumbnail cache if exists
+      if (clipToDelete.value.id && thumbnailCache.value.has(clipToDelete.value.id)) {
+        thumbnailCache.value.delete(clipToDelete.value.id)
+      }
+
+      await loadClips()
+    } catch (error) {
+      console.error('Failed to delete clip:', error)
+    }
+
+    showDeleteDialog.value = false
+    clipToDelete.value = null
+  }
+
+  onMounted(() => {
+    loadClips()
+  })
 </script>
 
 <style scoped>
-/* Root wrapper to ensure single root element for Transition */
-.clips-page {
-  position: relative;
-  width: 100%;
-  min-height: 100%;
-}
+  /* Root wrapper to ensure single root element for Transition */
+  .clips-page {
+    position: relative;
+    width: 100%;
+    min-height: 100%;
+  }
 </style>

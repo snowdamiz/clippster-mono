@@ -1,0 +1,52 @@
+# Dependencies
+node_modules
+**/node_modules
+
+# Build outputs
+dist
+build
+**/dist
+**/build
+
+# Tauri
+src-tauri
+**/src-tauri
+
+# Generated files
+*.min.js
+*.d.ts
+**/*.min.js
+**/*.d.ts
+
+# Config files that should maintain their format
+package-lock.json
+yarn.lock
+**/package-lock.json
+**/yarn.lock
+
+# Logs
+*.log
+**/*.log
+
+# Environment files
+.env*
+**/.env*
+
+# Temporary files
+*.tmp
+.temp
+**/*.tmp
+**/.temp
+
+# Elixir/Phoenix (server)
+server/_build
+server/deps
+server/priv/static
+*.exs
+*.eex
+*.leex
+
+# Database
+*.db
+*.sqlite
+*.sqlite3

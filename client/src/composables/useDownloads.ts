@@ -41,7 +41,6 @@ const activeDownloads = reactive<Map<string, ActiveDownload>>(new Map())
 const isInitialized = ref(false)
 
 export function useDownloads() {
-
   async function initialize() {
     if (isInitialized.value) {
       return
@@ -53,7 +52,10 @@ export function useDownloads() {
       if (download) {
         download.progress = event.payload
       } else {
-        console.warn('[Downloads] Received progress for unknown download:', event.payload.download_id)
+        console.warn(
+          '[Downloads] Received progress for unknown download:',
+          event.payload.download_id
+        )
       }
     })
 
@@ -74,13 +76,13 @@ export function useDownloads() {
               height: event.payload.height,
               frameRate: undefined, // We don't have this info from the basic download
               codec: event.payload.codec,
-              fileSize: event.payload.file_size,
+              fileSize: event.payload.file_size
             })
 
             download.rawVideoId = rawVideoId
 
             // Notify all listeners about completion
-            completionCallbacks.forEach(callback => {
+            completionCallbacks.forEach((callback) => {
               try {
                 callback(download)
               } catch (error) {
@@ -92,18 +94,17 @@ export function useDownloads() {
           }
         }
       } else {
-        console.warn('[Downloads] Received completion for unknown download:', event.payload.download_id)
+        console.warn(
+          '[Downloads] Received completion for unknown download:',
+          event.payload.download_id
+        )
       }
     })
 
     isInitialized.value = true
   }
 
-  async function startDownload(
-    title: string,
-    videoUrl: string,
-    mintId: string
-  ): Promise<string> {
+  async function startDownload(title: string, videoUrl: string, mintId: string): Promise<string> {
     await initialize()
 
     const downloadId = generateId()
@@ -115,7 +116,7 @@ export function useDownloads() {
       progress: {
         download_id: downloadId,
         progress: 0,
-        status: 'Initializing...',
+        status: 'Initializing...'
       }
     }
 
@@ -128,7 +129,7 @@ export function useDownloads() {
         title,
         videoUrl,
         mintId
-      }).catch(error => {
+      }).catch((error) => {
         console.error('[Downloads] Error in download command (async):', error)
         // Remove from active downloads if failed to start
         activeDownloads.delete(downloadId)
@@ -154,13 +155,13 @@ export function useDownloads() {
 
   function getActiveDownloads(): ActiveDownload[] {
     return Array.from(activeDownloads.values()).filter(
-      download => !download.result || download.result.success === undefined
+      (download) => !download.result || download.result.success === undefined
     )
   }
 
   function getCompletedDownloads(): ActiveDownload[] {
     return Array.from(activeDownloads.values()).filter(
-      download => download.result && download.result.success !== undefined
+      (download) => download.result && download.result.success !== undefined
     )
   }
 
@@ -213,6 +214,6 @@ export function useDownloads() {
     removeDownload,
     clearCompleted,
     cleanupOldDownloads,
-    onDownloadComplete,
+    onDownloadComplete
   }
 }

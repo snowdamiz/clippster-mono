@@ -7,9 +7,27 @@
     "server": "cd server && mix phx.server",
     "landing": "cd landing && yarn dev",
     "tauri": "cd client && yarn tauri dev",
-    "dev": "concurrently \"yarn server\" \"yarn tauri\" --names \"server,client\" --prefix-colors \"blue,magenta\""
+    "dev": "concurrently \"yarn server\" \"yarn tauri\" --names \"server,client\" --prefix-colors \"blue,magenta\"",
+    "prepare": "husky",
+    "format": "cd client && prettier --write \"src/**/*.{vue,js,ts,json,css,scss,md}\"",
+    "format:check": "cd client && prettier --check \"src/**/*.{vue,js,ts,json,css,scss,md}\"",
+    "format:all": "prettier --write \"client/**/*.{vue,js,ts,json,css,scss,md}\"",
+    "format:staged": "cd client && prettier --write",
+    "type-check:staged": "cd client && npx vue-tsc --noEmit"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.6",
+    "prettier": "^3.6.2",
+    "prettier-plugin-vue": "^1.1.6"
+  },
+  "lint-staged": {
+    "client/**/*.{vue,js,ts,json,css,scss,md}": [
+      "yarn format:staged"
+    ],
+    "client/**/*.{vue,js,ts}": [
+      "yarn type-check:staged"
+    ]
   }
 }

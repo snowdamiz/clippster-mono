@@ -15,10 +15,12 @@ export function useVideoOperations() {
       // Open file dialog with video file filters
       const selected = await open({
         multiple: false,
-        filters: [{
-          name: 'Video',
-          extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v']
-        }]
+        filters: [
+          {
+            name: 'Video',
+            extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v']
+          }
+        ]
       })
 
       if (!selected) return { success: false, cancelled: true } // User cancelled
@@ -26,9 +28,12 @@ export function useVideoOperations() {
       uploading.value = true
 
       // Copy video to storage directory
-      const result = await invoke<{ destination_path: string; original_filename: string }>('copy_video_to_storage', {
-        sourcePath: selected
-      })
+      const result = await invoke<{ destination_path: string; original_filename: string }>(
+        'copy_video_to_storage',
+        {
+          sourcePath: selected
+        }
+      )
 
       // Generate thumbnail
       let thumbnailPath: string | undefined
@@ -67,7 +72,8 @@ export function useVideoOperations() {
   }
 
   async function deleteVideo(video: RawVideo) {
-    const deletedVideoName = video.original_filename || video.file_path.split(/[\\\/]/).pop() || 'Video'
+    const deletedVideoName =
+      video.original_filename || video.file_path.split(/[\\\/]/).pop() || 'Video'
 
     try {
       // Delete video file but preserve thumbnail for project cards

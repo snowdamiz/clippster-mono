@@ -4,11 +4,7 @@
  */
 
 // Seek video by specified number of seconds
-export function seekVideoBySeconds(
-  currentTime: number,
-  duration: number,
-  seconds: number
-): number {
+export function seekVideoBySeconds(currentTime: number, duration: number, seconds: number): number {
   if (!duration || duration <= 0) return currentTime
   return Math.max(0, Math.min(duration, currentTime + seconds))
 }
@@ -22,7 +18,7 @@ export function createSeekEvent(
   if (!videoTrackElement || !duration || duration <= 0) return null
 
   const videoTrackRect = videoTrackElement.getBoundingClientRect()
-  const targetX = videoTrackRect.left + (videoTrackRect.width * (targetTime / duration))
+  const targetX = videoTrackRect.left + videoTrackRect.width * (targetTime / duration)
 
   // Create a proper synthetic event
   const syntheticEvent = new MouseEvent('click', {

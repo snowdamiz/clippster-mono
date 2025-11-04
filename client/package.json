@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "format": "prettier --write \"src/**/*.{vue,js,ts,json,css,scss,md}\"",
+    "format:check": "prettier --check \"src/**/*.{vue,js,ts,json,css,scss,md}\"",
+    "prepare": "husky"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",
@@ -28,6 +31,7 @@
     "vue-router": "4"
   },
   "devDependencies": {
+    "@prettier/plugin-pug": "^3.4.2",
     "@tailwindcss/postcss": "^4.1.16",
     "@tauri-apps/cli": "^2",
     "@types/node": "^24.9.1",
@@ -36,7 +40,11 @@
     "autoprefixer": "^10.4.21",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.6",
     "postcss": "^8.5.6",
+    "prettier": "^3.6.2",
+    "prettier-plugin-vue": "^1.1.6",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^4.1.16",
     "typescript": "~5.6.2",

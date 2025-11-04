@@ -4,23 +4,19 @@
     <div class="h-16 px-6 flex items-center border-b border-border">
       <img src="/logo.svg" alt="Clippster" class="h-7 w-auto" />
     </div>
-
     <!-- Navigation -->
     <nav class="p-4">
       <ul class="space-y-1">
         <template v-for="(item, index) in navigationItems" :key="item.path">
           <!-- Category Label -->
           <li v-if="item.category && shouldShowCategory(item.category, index)" class="pt-4 pb-2 px-3">
-            <span class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{{ item.category }}</span>
+            <span class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              {{ item.category }}
+            </span>
           </li>
-          
           <!-- Navigation Item -->
           <li>
-            <router-link
-              :to="item.path"
-              class="nav-link"
-              :class="{ 'nav-link-active': isActive(item.path) }"
-            >
+            <router-link :to="item.path" class="nav-link" :class="{ 'nav-link-active': isActive(item.path) }">
               <div
                 v-if="item.useImage"
                 class="h-5 w-5 transition-all"
@@ -64,91 +60,85 @@
         </template>
       </ul>
     </nav>
-
     <!-- User info and logout at bottom -->
     <div class="absolute bottom-0 w-64 p-4 border-t border-border">
       <div class="flex items-center justify-between">
         <span class="font-mono text-xs text-primary">{{ formattedAddress }}</span>
-        <button
-          @click="handleDisconnect"
-          class="disconnect-btn"
-        >
-          Disconnect
-        </button>
+        <button @click="handleDisconnect" class="disconnect-btn">Disconnect</button>
       </div>
     </div>
   </aside>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
-import { useWallet } from '@/composables/useWallet'
-import { navigationItems } from '@/config/navigation'
+  import { computed } from 'vue'
+  import { useRoute, useRouter } from 'vue-router'
+  import { useAuthStore } from '@/stores/auth'
+  import { useWallet } from '@/composables/useWallet'
+  import { navigationItems } from '@/config/navigation'
 
-const route = useRoute()
-const router = useRouter()
-const authStore = useAuthStore()
-const { formatAddress } = useWallet()
+  const route = useRoute()
+  const router = useRouter()
+  const authStore = useAuthStore()
+  const { formatAddress } = useWallet()
 
-const isActive = (path: string) => {
-  return route.path.startsWith(path)
-}
+  const isActive = (path: string) => {
+    return route.path.startsWith(path)
+  }
 
-const shouldShowCategory = (category: string, index: number) => {
-  // Only show category label for the first item with that category
-  if (index === 0) return true
-  const previousItem = navigationItems[index - 1]
-  return previousItem.category !== category
-}
+  const shouldShowCategory = (category: string, index: number) => {
+    // Only show category label for the first item with that category
+    if (index === 0) return true
+    const previousItem = navigationItems[index - 1]
+    return previousItem.category !== category
+  }
 
-const formattedAddress = computed(() => formatAddress(authStore.walletAddress))
+  const formattedAddress = computed(() => formatAddress(authStore.walletAddress))
 
-const handleDisconnect = () => {
-  authStore.logout()
-  router.push('/login')
-}
+  const handleDisconnect = () => {
+    authStore.logout()
+    router.push('/login')
+  }
 </script>
 
 <style scoped>
-.nav-link {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.625rem 0.75rem;
-  border-radius: 0.35rem;
-  color: var(--muted-foreground);
-}
+  .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 0.75rem;
+    border-radius: 0.35rem;
+    color: var(--muted-foreground);
+  }
 
-.nav-link:hover {
-  color: var(--foreground);
-  background-color: var(--accent);
-}
+  .nav-link:hover {
+    color: var(--foreground);
+    background-color: var(--accent);
+  }
 
-.nav-link-active {
-  background-color: rgb(255 255 255 / 0.1);
-  color: white;
-}
+  .nav-link-active {
+    background-color: rgb(255 255 255 / 0.1);
+    color: white;
+  }
 
-.nav-link-active:hover {
-  background-color: rgb(255 255 255 / 0.15);
-  color: rgb(255 255 255);
-}
+  .nav-link-active:hover {
+    background-color: rgb(255 255 255 / 0.15);
+    color: rgb(255 255 255);
+  }
 
-.disconnect-btn {
-  padding: 0.375rem 0.625rem;
-  font-size: 0.75rem;
-  line-height: 1rem;
-  color: rgb(239 68 68);
-  border: 1px solid transparent;
-  border-radius: 0.25rem;
-  cursor: pointer;
-}
+  .disconnect-btn {
+    padding: 0.375rem 0.625rem;
+    font-size: 0.75rem;
+    line-height: 1rem;
+    color: rgb(239 68 68);
+    border: 1px solid transparent;
+    border-radius: 0.25rem;
+    cursor: pointer;
+  }
 
-.disconnect-btn:hover {
-  color: rgb(248 113 113);
-  border-color: rgb(248 113 113 / 0.3);
-  background-color: rgb(248 113 113 / 0.05);
-}
+  .disconnect-btn:hover {
+    color: rgb(248 113 113);
+    border-color: rgb(248 113 113 / 0.3);
+    background-color: rgb(248 113 113 / 0.05);
+  }
 </style>

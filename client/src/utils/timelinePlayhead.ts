@@ -10,10 +10,7 @@ export interface TimelineBounds {
 /**
  * Calculate the position of a temporary div at a specific time percentage
  */
-export function createTempDivAtTime(
-  videoTrack: HTMLElement,
-  timePercent: number
-): HTMLDivElement {
+export function createTempDivAtTime(videoTrack: HTMLElement, timePercent: number): HTMLDivElement {
   const tempDiv = document.createElement('div')
   tempDiv.style.position = 'absolute'
   tempDiv.style.left = `${timePercent * 100}%`
@@ -30,10 +27,7 @@ export function createTempDivAtTime(
 /**
  * Get the absolute X position for a given time percentage
  */
-export function getXPositionAtTime(
-  videoTrack: HTMLElement,
-  timePercent: number
-): number {
+export function getXPositionAtTime(videoTrack: HTMLElement, timePercent: number): number {
   const tempDiv = createTempDivAtTime(videoTrack, timePercent)
 
   // Get the absolute position of this temp div

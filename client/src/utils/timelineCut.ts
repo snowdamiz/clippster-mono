@@ -33,14 +33,16 @@ export function calculateCutPosition(
   const segmentStartTime = getSegmentDisplayTime(segment, 'start')
   const segmentEndTime = getSegmentDisplayTime(segment, 'end')
   const segmentDuration = segmentEndTime - segmentStartTime
-  const cutTime = segmentStartTime + (segmentDuration * cutPositionPercent / 100)
+  const cutTime = segmentStartTime + (segmentDuration * cutPositionPercent) / 100
 
   // Validate minimum segment durations
   const leftDuration = cutTime - segmentStartTime
   const rightDuration = segmentEndTime - cutTime
 
-  if (leftDuration >= TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION &&
-      rightDuration >= TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION) {
+  if (
+    leftDuration >= TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION &&
+    rightDuration >= TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION
+  ) {
     return {
       clipId: '', // Will be set by caller
       segmentIndex: 0, // Will be set by caller

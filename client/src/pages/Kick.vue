@@ -22,12 +22,17 @@
           }"
         />
       </div>
+
       <h3 class="text-xl font-semibold text-foreground mb-2">Kick Integration Coming Soon</h3>
-      <p class="text-muted-foreground text-center max-w-md">We're working hard to bring Kick streaming content management to Clippster. This feature will allow you to import, organize, and create clips from your Kick streams.</p>
+
+      <p class="text-muted-foreground text-center max-w-md">
+        We're working hard to bring Kick streaming content management to Clippster. This feature will allow you to
+        import, organize, and create clips from your Kick streams.
+      </p>
     </div>
   </PageLayout>
 </template>
 
 <script setup lang="ts">
-import PageLayout from '@/components/PageLayout.vue'
+  import PageLayout from '@/components/PageLayout.vue'
 </script>

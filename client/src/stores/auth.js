@@ -52,7 +52,9 @@ export const useAuthStore = defineStore('auth', {
           listen('wallet-auth-complete', (event) => {
             cleanup()
             resolve(event.payload)
-          }).then(u => { unlisten = u })
+          }).then((u) => {
+            unlisten = u
+          })
 
           // Fallback: poll for result every second
           pollInterval = setInterval(async () => {
@@ -109,7 +111,6 @@ export const useAuthStore = defineStore('auth', {
         localStorage.setItem('user', JSON.stringify(data.user))
 
         return { success: true }
-
       } catch (error) {
         console.error('Auth error:', error)
         this.error = error.message

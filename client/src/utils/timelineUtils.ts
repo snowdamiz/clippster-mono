@@ -26,7 +26,10 @@ export interface ClipSegment {
 }
 
 // Higher-order utility functions
-export function debounce<T extends (...args: any[]) => any>(func: T, wait: number): {
+export function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): {
   (...args: Parameters<T>): void
   flush: () => void
   cancel: () => void
@@ -66,16 +69,19 @@ export function debounce<T extends (...args: any[]) => any>(func: T, wait: numbe
   return debounced
 }
 
-export function throttle<T extends (...args: any[]) => any>(func: T, limit: number): {
+export function throttle<T extends (...args: any[]) => any>(
+  func: T,
+  limit: number
+): {
   (...args: Parameters<T>): void
 } {
   let inThrottle: boolean = false
 
-  return function(this: any, ...args: Parameters<T>) {
+  return function (this: any, ...args: Parameters<T>) {
     if (!inThrottle) {
       func.apply(this, args)
       inThrottle = true
-      setTimeout(() => inThrottle = false, limit)
+      setTimeout(() => (inThrottle = false), limit)
     }
   }
 }
@@ -201,7 +207,10 @@ export function parseTranscriptToWords(rawJson: string): WordInfo[] {
 }
 
 // Fallback linear search for small arrays
-export function linearWordSearch(timestamp: number, allWords: WordInfo[]): {
+export function linearWordSearch(
+  timestamp: number,
+  allWords: WordInfo[]
+): {
   words: WordInfo[]
   centerIndex: number
 } {
@@ -257,7 +266,11 @@ export function linearWordSearch(timestamp: number, allWords: WordInfo[]): {
   const deadSpaceThreshold = 1.0 // 1 second
   if (previousWord && nextWord) {
     const gapSize = nextWord.start - previousWord.end
-    if (gapSize > deadSpaceThreshold && timestamp > previousWord.end && timestamp < nextWord.start) {
+    if (
+      gapSize > deadSpaceThreshold &&
+      timestamp > previousWord.end &&
+      timestamp < nextWord.start
+    ) {
       // We're in significant dead space - return empty
       return { words: [], centerIndex: 0 }
     }
@@ -270,7 +283,8 @@ export function linearWordSearch(timestamp: number, allWords: WordInfo[]): {
   }
 
   // If the closest word is too far away, return empty (dead space)
-  if (closestDistance > 2.0) { // 2 second threshold for "too far"
+  if (closestDistance > 2.0) {
+    // 2 second threshold for "too far"
     return { words: [], centerIndex: 0 }
   }
 
@@ -283,7 +297,10 @@ export function linearWordSearch(timestamp: number, allWords: WordInfo[]): {
 }
 
 // Optimized word search using binary search for large arrays
-export function findWordsAroundTime(timestamp: number, allWords: WordInfo[]): {
+export function findWordsAroundTime(
+  timestamp: number,
+  allWords: WordInfo[]
+): {
   words: WordInfo[]
   centerIndex: number
 } {
@@ -352,7 +369,11 @@ export function findWordsAroundTime(timestamp: number, allWords: WordInfo[]): {
   const deadSpaceThreshold = 1.0 // 1 second
   if (previousWord && nextWord) {
     const gapSize = nextWord.start - previousWord.end
-    if (gapSize > deadSpaceThreshold && timestamp > previousWord.end && timestamp < nextWord.start) {
+    if (
+      gapSize > deadSpaceThreshold &&
+      timestamp > previousWord.end &&
+      timestamp < nextWord.start
+    ) {
       // We're in significant dead space - return empty
       return { words: [], centerIndex: 0 }
     }
@@ -386,7 +407,8 @@ export function findWordsAroundTime(timestamp: number, allWords: WordInfo[]): {
   }
 
   // If the closest word is too far away, return empty (dead space)
-  if (closestDistance > 2.0) { // 2 second threshold for "too far"
+  if (closestDistance > 2.0) {
+    // 2 second threshold for "too far"
     return { words: [], centerIndex: 0 }
   }
 
@@ -408,7 +430,7 @@ export function generateTimestamps(duration: number, zoomLevel: number): Timesta
   const timestamps: Timestamp[] = []
 
   // Determine optimal interval based on video duration and zoom level
-  function getOptimalInterval(duration: number, zoom: number): { major: number, minor: number } {
+  function getOptimalInterval(duration: number, zoom: number): { major: number; minor: number } {
     const seconds = duration / zoom // Apply zoom to make intervals smaller when zoomed in
 
     // For very short videos (< 30 seconds at current zoom)

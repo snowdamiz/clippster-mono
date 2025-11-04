@@ -254,11 +254,15 @@ export async function ensureClipVersioningTables(): Promise<void> {
       `)
     } else {
       // Add run_color column if it doesn't exist (for existing tables)
-      const pragmaResult = await db.select<{ name: string }[]>("PRAGMA table_info(clip_detection_sessions)")
-      const hasRunColorColumn = pragmaResult.some(column => column.name === 'run_color')
+      const pragmaResult = await db.select<{ name: string }[]>(
+        'PRAGMA table_info(clip_detection_sessions)'
+      )
+      const hasRunColorColumn = pragmaResult.some((column) => column.name === 'run_color')
 
       if (!hasRunColorColumn) {
-        await db.execute("ALTER TABLE clip_detection_sessions ADD COLUMN run_color TEXT NOT NULL DEFAULT '#8B5CF6'")
+        await db.execute(
+          "ALTER TABLE clip_detection_sessions ADD COLUMN run_color TEXT NOT NULL DEFAULT '#8B5CF6'"
+        )
       }
     }
 
@@ -295,26 +299,26 @@ export async function ensureClipVersioningTables(): Promise<void> {
     // Add columns to clips table if they don't exist
     // Check if columns exist first to avoid ALTER TABLE errors
     try {
-      const columnResult = await db.select<any[]>("PRAGMA table_info(clips)")
-      const columns = columnResult.map(col => col.name)
+      const columnResult = await db.select<any[]>('PRAGMA table_info(clips)')
+      const columns = columnResult.map((col) => col.name)
 
       if (!columns.includes('current_version_id')) {
-        await db.execute("ALTER TABLE clips ADD COLUMN current_version_id TEXT")
+        await db.execute('ALTER TABLE clips ADD COLUMN current_version_id TEXT')
       }
 
       if (!columns.includes('detection_session_id')) {
-        await db.execute("ALTER TABLE clips ADD COLUMN detection_session_id TEXT")
+        await db.execute('ALTER TABLE clips ADD COLUMN detection_session_id TEXT')
       }
     } catch (e) {
       console.error('[Frontend] Error adding columns to clips table:', e)
       // Try the basic ALTER TABLE as fallback
       try {
-        await db.execute("ALTER TABLE clips ADD COLUMN current_version_id TEXT")
+        await db.execute('ALTER TABLE clips ADD COLUMN current_version_id TEXT')
       } catch {
         // Ignore if still fails
       }
       try {
-        await db.execute("ALTER TABLE clips ADD COLUMN detection_session_id TEXT")
+        await db.execute('ALTER TABLE clips ADD COLUMN detection_session_id TEXT')
       } catch {
         // Ignore if still fails
       }
@@ -322,13 +326,13 @@ export async function ensureClipVersioningTables(): Promise<void> {
 
     // Create indexes
     const indexes = [
-      "CREATE INDEX IF NOT EXISTS idx_clip_detection_sessions_project_id ON clip_detection_sessions(project_id)",
-      "CREATE INDEX IF NOT EXISTS idx_clip_detection_sessions_created_at ON clip_detection_sessions(created_at)",
-      "CREATE INDEX IF NOT EXISTS idx_clip_versions_clip_id ON clip_versions(clip_id)",
-      "CREATE INDEX IF NOT EXISTS idx_clip_versions_session_id ON clip_versions(session_id)",
-      "CREATE INDEX IF NOT EXISTS idx_clip_versions_parent_version_id ON clip_versions(parent_version_id)",
-      "CREATE INDEX IF NOT EXISTS idx_clips_detection_session_id ON clips(detection_session_id)",
-      "CREATE INDEX IF NOT EXISTS idx_clips_current_version_id ON clips(current_version_id)"
+      'CREATE INDEX IF NOT EXISTS idx_clip_detection_sessions_project_id ON clip_detection_sessions(project_id)',
+      'CREATE INDEX IF NOT EXISTS idx_clip_detection_sessions_created_at ON clip_detection_sessions(created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_clip_versions_clip_id ON clip_versions(clip_id)',
+      'CREATE INDEX IF NOT EXISTS idx_clip_versions_session_id ON clip_versions(session_id)',
+      'CREATE INDEX IF NOT EXISTS idx_clip_versions_parent_version_id ON clip_versions(parent_version_id)',
+      'CREATE INDEX IF NOT EXISTS idx_clips_detection_session_id ON clips(detection_session_id)',
+      'CREATE INDEX IF NOT EXISTS idx_clips_current_version_id ON clips(current_version_id)'
     ]
 
     for (const indexSql of indexes) {
@@ -365,7 +369,12 @@ export async function getAllProjects(): Promise<Project[]> {
   return await db.select<Project[]>('SELECT * FROM projects ORDER BY updated_at DESC')
 }
 
-export async function updateProject(id: string, name?: string, description?: string, thumbnailPath?: string): Promise<void> {
+export async function updateProject(
+  id: string,
+  name?: string,
+  description?: string,
+  thumbnailPath?: string
+): Promise<void> {
   const db = await getDatabase()
   const now = timestamp()
 
@@ -389,10 +398,7 @@ export async function updateProject(id: string, name?: string, description?: str
   values.push(now)
   values.push(id)
 
-  await db.execute(
-    `UPDATE projects SET ${updates.join(', ')} WHERE id = ?`,
-    values
-  )
+  await db.execute(`UPDATE projects SET ${updates.join(', ')} WHERE id = ?`, values)
 }
 
 export async function deleteProject(id: string): Promise<void> {
@@ -403,30 +409,23 @@ export async function deleteProject(id: string): Promise<void> {
 
   try {
     // Disassociate raw videos from this project (has project_id)
-    await db.execute(
-      'UPDATE raw_videos SET project_id = NULL WHERE project_id = ?',
-      [id]
-    )
+    await db.execute('UPDATE raw_videos SET project_id = NULL WHERE project_id = ?', [id])
   } catch (error) {
     console.warn('[Database] raw_videos project_id column update failed:', error)
   }
 
   try {
     // Disassociate clips from this project (has project_id)
-    await db.execute(
-      'UPDATE clips SET project_id = NULL WHERE project_id = ?',
-      [id]
-    )
+    await db.execute('UPDATE clips SET project_id = NULL WHERE project_id = ?', [id])
   } catch (error) {
     console.warn('[Database] clips project_id column update failed:', error)
   }
 
   try {
     // Disassociate clip detection sessions from this project (has project_id)
-    await db.execute(
-      'UPDATE clip_detection_sessions SET project_id = NULL WHERE project_id = ?',
-      [id]
-    )
+    await db.execute('UPDATE clip_detection_sessions SET project_id = NULL WHERE project_id = ?', [
+      id
+    ])
   } catch (error) {
     console.warn('[Database] clip_detection_sessions project_id column update failed:', error)
   }
@@ -461,12 +460,12 @@ export async function createPrompt(name: string, content: string): Promise<strin
   const db = await getDatabase()
   const id = generateId()
   const now = timestamp()
-  
+
   await db.execute(
     'INSERT INTO prompts (id, name, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
     [id, name, content, now, now]
   )
-  
+
   return id
 }
 
@@ -484,10 +483,10 @@ export async function getAllPrompts(): Promise<Prompt[]> {
 export async function updatePrompt(id: string, name?: string, content?: string): Promise<void> {
   const db = await getDatabase()
   const now = timestamp()
-  
+
   const updates: string[] = []
   const values: any[] = []
-  
+
   if (name !== undefined) {
     updates.push('name = ?')
     values.push(name)
@@ -496,15 +495,12 @@ export async function updatePrompt(id: string, name?: string, content?: string):
     updates.push('content = ?')
     values.push(content)
   }
-  
+
   updates.push('updated_at = ?')
   values.push(now)
   values.push(id)
-  
-  await db.execute(
-    `UPDATE prompts SET ${updates.join(', ')} WHERE id = ?`,
-    values
-  )
+
+  await db.execute(`UPDATE prompts SET ${updates.join(', ')} WHERE id = ?`, values)
 }
 
 export async function deletePrompt(id: string): Promise<void> {
@@ -515,17 +511,16 @@ export async function deletePrompt(id: string): Promise<void> {
 // Seed default prompt
 export async function seedDefaultPrompt(): Promise<void> {
   const db = await getDatabase()
-  
+
   // Check if the default prompt already exists
-  const existing = await db.select<Prompt[]>(
-    'SELECT * FROM prompts WHERE name = ?',
-    ['Default Clip Detector']
-  )
-  
+  const existing = await db.select<Prompt[]>('SELECT * FROM prompts WHERE name = ?', [
+    'Default Clip Detector'
+  ])
+
   if (existing.length > 0) {
     return
   }
-  
+
   // Create the default prompt
   const defaultPromptContent = `Analyze this stream transcript and identify ALL clip-worthy moments for TikTok/Shorts/X.
 
@@ -557,7 +552,7 @@ export async function seedDefaultPrompt(): Promise<void> {
 
 **WHAT TO LOOK FOR:**
 - Strong emotions or shifts; humor/awkwardness; drama/tension/conflict; surprises/reveals; bold claims; unusual behavior; struggle/vulnerability; high energy; relatable/resonant lines; quotable statements; notable reactions or audience moments.`
-  
+
   try {
     await createPrompt('Default Clip Detector', defaultPromptContent)
   } catch (error) {
@@ -588,10 +583,9 @@ export async function createTranscript(
 
 export async function getTranscriptByRawVideoId(rawVideoId: string): Promise<Transcript | null> {
   const db = await getDatabase()
-  const result = await db.select<Transcript[]>(
-    'SELECT * FROM transcripts WHERE raw_video_id = ?',
-    [rawVideoId]
-  )
+  const result = await db.select<Transcript[]>('SELECT * FROM transcripts WHERE raw_video_id = ?', [
+    rawVideoId
+  ])
   return result[0] || null
 }
 
@@ -618,12 +612,12 @@ export async function createTranscriptSegment(
   const db = await getDatabase()
   const id = generateId()
   const now = timestamp()
-  
+
   await db.execute(
     'INSERT INTO transcript_segments (id, transcript_id, clip_id, start_time, end_time, text, segment_index, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     [id, transcriptId, clipId || null, startTime, endTime, text, segmentIndex, now]
   )
-  
+
   return id
 }
 
@@ -635,7 +629,9 @@ export async function getTranscriptSegments(transcriptId: string): Promise<Trans
   )
 }
 
-export async function getTranscriptWithSegmentsByProjectId(projectId: string): Promise<{ transcript: Transcript | null, segments: TranscriptSegment[] }> {
+export async function getTranscriptWithSegmentsByProjectId(
+  projectId: string
+): Promise<{ transcript: Transcript | null; segments: TranscriptSegment[] }> {
   const transcript = await getTranscriptByProjectId(projectId)
   const segments = transcript ? await getTranscriptSegments(transcript.id) : []
   return { transcript, segments }
@@ -684,7 +680,7 @@ export async function createClip(
   const db = await getDatabase()
   const id = generateId()
   const now = timestamp()
-  
+
   await db.execute(
     'INSERT INTO clips (id, project_id, name, file_path, duration, start_time, end_time, order_index, intro_id, outro_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
@@ -699,34 +695,30 @@ export async function createClip(
       options?.introId || null,
       options?.outroId || null,
       now,
-      now,
+      now
     ]
   )
-  
+
   return id
 }
 
 export async function getAllClips(): Promise<Clip[]> {
   const db = await getDatabase()
-  return await db.select<Clip[]>(
-    'SELECT * FROM clips ORDER BY created_at DESC'
-  )
+  return await db.select<Clip[]>('SELECT * FROM clips ORDER BY created_at DESC')
 }
 
 export async function getGeneratedClips(): Promise<Clip[]> {
   const db = await getDatabase()
-  return await db.select<Clip[]>(
-    'SELECT * FROM clips WHERE status = ? ORDER BY created_at DESC',
-    ['generated']
-  )
+  return await db.select<Clip[]>('SELECT * FROM clips WHERE status = ? ORDER BY created_at DESC', [
+    'generated'
+  ])
 }
 
 export async function getDetectedClips(): Promise<Clip[]> {
   const db = await getDatabase()
-  return await db.select<Clip[]>(
-    'SELECT * FROM clips WHERE status = ? ORDER BY created_at DESC',
-    ['detected']
-  )
+  return await db.select<Clip[]>('SELECT * FROM clips WHERE status = ? ORDER BY created_at DESC', [
+    'detected'
+  ])
 }
 
 export async function getClipsByProjectId(projectId: string): Promise<Clip[]> {
@@ -737,26 +729,26 @@ export async function getClipsByProjectId(projectId: string): Promise<Clip[]> {
   )
 }
 
-export async function updateClip(id: string, updates: Partial<Omit<Clip, 'id' | 'project_id' | 'created_at'>>): Promise<void> {
+export async function updateClip(
+  id: string,
+  updates: Partial<Omit<Clip, 'id' | 'project_id' | 'created_at'>>
+): Promise<void> {
   const db = await getDatabase()
   const now = timestamp()
-  
+
   const updateFields: string[] = []
   const values: any[] = []
-  
+
   for (const [key, value] of Object.entries(updates)) {
     updateFields.push(`${key} = ?`)
     values.push(value)
   }
-  
+
   updateFields.push('updated_at = ?')
   values.push(now)
   values.push(id)
-  
-  await db.execute(
-    `UPDATE clips SET ${updateFields.join(', ')} WHERE id = ?`,
-    values
-  )
+
+  await db.execute(`UPDATE clips SET ${updateFields.join(', ')} WHERE id = ?`, values)
 }
 
 export async function deleteClip(id: string): Promise<void> {
@@ -774,25 +766,25 @@ export async function createIntroOutro(
   const db = await getDatabase()
   const id = generateId()
   const now = timestamp()
-  
+
   await db.execute(
     'INSERT INTO intro_outros (id, type, name, file_path, duration, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     [id, type, name, filePath, duration || null, now, now]
   )
-  
+
   return id
 }
 
 export async function getAllIntroOutros(type?: 'intro' | 'outro'): Promise<IntroOutro[]> {
   const db = await getDatabase()
-  
+
   if (type) {
     return await db.select<IntroOutro[]>(
       'SELECT * FROM intro_outros WHERE type = ? ORDER BY name',
       [type]
     )
   }
-  
+
   return await db.select<IntroOutro[]>('SELECT * FROM intro_outros ORDER BY type, name')
 }
 
@@ -811,21 +803,20 @@ export async function createThumbnail(
   const db = await getDatabase()
   const id = generateId()
   const now = timestamp()
-  
+
   await db.execute(
     'INSERT INTO thumbnails (id, clip_id, file_path, width, height, created_at) VALUES (?, ?, ?, ?, ?, ?)',
     [id, clipId, filePath, width || null, height || null, now]
   )
-  
+
   return id
 }
 
 export async function getThumbnailByClipId(clipId: string): Promise<Thumbnail | null> {
   const db = await getDatabase()
-  const result = await db.select<Thumbnail[]>(
-    'SELECT * FROM thumbnails WHERE clip_id = ?',
-    [clipId]
-  )
+  const result = await db.select<Thumbnail[]>('SELECT * FROM thumbnails WHERE clip_id = ?', [
+    clipId
+  ])
   return result[0] || null
 }
 
@@ -847,7 +838,7 @@ export async function createRawVideo(
   const db = await getDatabase()
   const id = generateId()
   const now = timestamp()
-  
+
   await db.execute(
     'INSERT INTO raw_videos (id, project_id, file_path, original_filename, thumbnail_path, duration, width, height, frame_rate, codec, file_size, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
@@ -863,26 +854,21 @@ export async function createRawVideo(
       options?.codec || null,
       options?.fileSize || null,
       now,
-      now,
+      now
     ]
   )
-  
+
   return id
 }
 
 export async function getAllRawVideos(): Promise<RawVideo[]> {
   const db = await getDatabase()
-  return await db.select<RawVideo[]>(
-    'SELECT * FROM raw_videos ORDER BY created_at DESC'
-  )
+  return await db.select<RawVideo[]>('SELECT * FROM raw_videos ORDER BY created_at DESC')
 }
 
 export async function getRawVideo(id: string): Promise<RawVideo | null> {
   const db = await getDatabase()
-  const result = await db.select<RawVideo[]>(
-    'SELECT * FROM raw_videos WHERE id = ?',
-    [id]
-  )
+  const result = await db.select<RawVideo[]>('SELECT * FROM raw_videos WHERE id = ?', [id])
   return result[0] || null
 }
 
@@ -896,26 +882,28 @@ export async function getRawVideosByProjectId(projectId: string): Promise<RawVid
 
 export async function getRawVideoByPath(filePath: string): Promise<RawVideo | null> {
   const db = await getDatabase()
-  const result = await db.select<RawVideo[]>(
-    'SELECT * FROM raw_videos WHERE file_path = ?',
-    [filePath]
-  )
+  const result = await db.select<RawVideo[]>('SELECT * FROM raw_videos WHERE file_path = ?', [
+    filePath
+  ])
   return result[0] || null
 }
 
-export async function updateRawVideo(id: string, updates: Partial<{
-  project_id?: string | null,
-  file_path?: string,
-  original_filename?: string,
-  thumbnail_path?: string,
-  duration?: number,
-  width?: number,
-  height?: number,
-  frame_rate?: number,
-  codec?: string,
-  file_size?: number,
-  original_project_id?: string | null
-}>): Promise<void> {
+export async function updateRawVideo(
+  id: string,
+  updates: Partial<{
+    project_id?: string | null
+    file_path?: string
+    original_filename?: string
+    thumbnail_path?: string
+    duration?: number
+    width?: number
+    height?: number
+    frame_rate?: number
+    codec?: string
+    file_size?: number
+    original_project_id?: string | null
+  }>
+): Promise<void> {
   const db = await getDatabase()
   const dbUpdates: string[] = []
   const values: any[] = []
@@ -981,10 +969,7 @@ export async function updateRawVideo(id: string, updates: Partial<{
   values.push(timestamp())
   values.push(id)
 
-  await db.execute(
-    `UPDATE raw_videos SET ${dbUpdates.join(', ')} WHERE id = ?`,
-    values
-  )
+  await db.execute(`UPDATE raw_videos SET ${dbUpdates.join(', ')} WHERE id = ?`, values)
 }
 
 export async function deleteRawVideo(id: string): Promise<void> {
@@ -1021,7 +1006,7 @@ function generateRunColor(): string {
     '#EC4899', // Pink
     '#6366F1', // Indigo
     '#14B8A6', // Teal
-    '#A855F7', // Violet
+    '#A855F7' // Violet
   ]
 
   // Pick a random color from the predefined list
@@ -1079,7 +1064,9 @@ export async function getClipDetectionSession(id: string): Promise<ClipDetection
   return result[0] || null
 }
 
-export async function getClipDetectionSessionsByProjectId(projectId: string): Promise<ClipDetectionSession[]> {
+export async function getClipDetectionSessionsByProjectId(
+  projectId: string
+): Promise<ClipDetectionSession[]> {
   const db = await getDatabase()
   return await db.select<ClipDetectionSession[]>(
     'SELECT * FROM clip_detection_sessions WHERE project_id = ? ORDER BY created_at DESC',
@@ -1089,7 +1076,9 @@ export async function getClipDetectionSessionsByProjectId(projectId: string): Pr
 
 export async function updateClipDetectionSession(
   id: string,
-  updates: Partial<Omit<ClipDetectionSession, 'id' | 'project_id' | 'prompt' | 'detection_model' | 'created_at'>>
+  updates: Partial<
+    Omit<ClipDetectionSession, 'id' | 'project_id' | 'prompt' | 'detection_model' | 'created_at'>
+  >
 ): Promise<void> {
   const db = await getDatabase()
 
@@ -1103,10 +1092,10 @@ export async function updateClipDetectionSession(
 
   if (updateFields.length === 0) return
 
-  await db.execute(
-    `UPDATE clip_detection_sessions SET ${updateFields.join(', ')} WHERE id = ?`,
-    [...values, id]
-  )
+  await db.execute(`UPDATE clip_detection_sessions SET ${updateFields.join(', ')} WHERE id = ?`, [
+    ...values,
+    id
+  ])
 }
 
 export async function deleteClipDetectionSession(id: string): Promise<void> {
@@ -1169,10 +1158,7 @@ export async function createClipVersion(
 
 export async function getClipVersion(id: string): Promise<ClipVersion | null> {
   const db = await getDatabase()
-  const result = await db.select<ClipVersion[]>(
-    'SELECT * FROM clip_versions WHERE id = ?',
-    [id]
-  )
+  const result = await db.select<ClipVersion[]>('SELECT * FROM clip_versions WHERE id = ?', [id])
   return result[0] || null
 }
 
@@ -1213,12 +1199,11 @@ export async function updateClipSegment(
   )
 }
 
-
 // Get adjacent clip segments for collision detection
 export async function getAdjacentClipSegments(
   clipId: string,
   segmentIndex: number
-): Promise<{ previous: ClipSegment | null, next: ClipSegment | null }> {
+): Promise<{ previous: ClipSegment | null; next: ClipSegment | null }> {
   const db = await getDatabase()
 
   // Get the current version ID for this clip
@@ -1276,7 +1261,7 @@ export async function splitClipSegment(
   clipId: string,
   segmentIndex: number,
   cutTime: number
-): Promise<{ leftSegmentIndex: number, rightSegmentIndex: number }> {
+): Promise<{ leftSegmentIndex: number; rightSegmentIndex: number }> {
   const db = await getDatabase()
 
   // Get the current version ID for this clip
@@ -1402,10 +1387,7 @@ export async function splitClipSegment(
     )
 
     // Delete the original segment to free up its index
-    await db.execute(
-      'DELETE FROM clip_segments WHERE id = ?',
-      [segmentToSplit.id]
-    )
+    await db.execute('DELETE FROM clip_segments WHERE id = ?', [segmentToSplit.id])
 
     // Now insert the left segment at the original index
     await db.execute(
@@ -1445,10 +1427,11 @@ export async function splitClipSegment(
       leftSegmentIndex: segmentIndex,
       rightSegmentIndex: segmentIndex + 1
     }
-
   } catch (error) {
     console.error('[Database] Failed to split segment:', error)
-    throw new Error(`Failed to split segment: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    throw new Error(
+      `Failed to split segment: ${error instanceof Error ? error.message : 'Unknown error'}`
+    )
   }
 }
 
@@ -1538,7 +1521,6 @@ export async function realignClipSegment(
       'UPDATE clip_segments SET transcript = ? WHERE clip_version_id = ? AND segment_index = ?',
       [realignedTranscript, versionId, segmentIndex]
     )
-
   } catch (error) {
     console.error('[Database] Failed to realign segment transcript:', error)
     // Continue without transcript realignment - segment timing is still updated
@@ -1643,7 +1625,7 @@ export async function createVersionedClip(
           i,
           segment.start_time,
           segment.end_time,
-          segment.duration || (segment.end_time - segment.start_time),
+          segment.duration || segment.end_time - segment.start_time,
           segment.transcript || null,
           now
         ]
@@ -1660,7 +1642,9 @@ export async function createVersionedClip(
   return clipId
 }
 
-export async function getClipsWithVersionsByProjectId(projectId: string): Promise<ClipWithVersion[]> {
+export async function getClipsWithVersionsByProjectId(
+  projectId: string
+): Promise<ClipWithVersion[]> {
   const db = await getDatabase()
 
   const clips = await db.select<ClipWithVersion[]>(
@@ -1704,27 +1688,29 @@ export async function getClipsWithVersionsByProjectId(projectId: string): Promis
     }
   }
 
-  return clips.map(clip => {
+  return clips.map((clip) => {
     const mapped = {
       ...clip,
-      current_version: clip.current_version_id ? {
-        id: clip.current_version_id,
-        clip_id: clip.id,
-        session_id: clip.detection_session_id || '',
-        version_number: 1,
-        parent_version_id: null,
-        name: clip.current_version_name || clip.name || '',
-        description: clip.current_version_description || null,
-        start_time: clip.current_version_start_time || clip.start_time || 0,
-        end_time: clip.current_version_end_time || clip.end_time || 0,
-        confidence_score: clip.current_version_confidence_score,
-        relevance_score: clip.current_version_relevance_score,
-        detection_reason: clip.current_version_detection_reason,
-        tags: clip.current_version_tags,
-        change_type: clip.current_version_change_type as 'detected' | 'modified' | 'deleted',
-        change_description: null,
-        created_at: clip.current_version_created_at
-      } : undefined
+      current_version: clip.current_version_id
+        ? {
+            id: clip.current_version_id,
+            clip_id: clip.id,
+            session_id: clip.detection_session_id || '',
+            version_number: 1,
+            parent_version_id: null,
+            name: clip.current_version_name || clip.name || '',
+            description: clip.current_version_description || null,
+            start_time: clip.current_version_start_time || clip.start_time || 0,
+            end_time: clip.current_version_end_time || clip.end_time || 0,
+            confidence_score: clip.current_version_confidence_score,
+            relevance_score: clip.current_version_relevance_score,
+            detection_reason: clip.current_version_detection_reason,
+            tags: clip.current_version_tags,
+            change_type: clip.current_version_change_type as 'detected' | 'modified' | 'deleted',
+            change_description: null,
+            created_at: clip.current_version_created_at
+          }
+        : undefined
     }
 
     return mapped
@@ -1747,7 +1733,11 @@ export async function persistClipDetectionResults(
 ): Promise<string> {
   const startTime = Date.now()
   // Check for nested structure in clips property
-  if (detectionResults.clips && typeof detectionResults.clips === 'object' && (detectionResults.clips as any).clips) {
+  if (
+    detectionResults.clips &&
+    typeof detectionResults.clips === 'object' &&
+    (detectionResults.clips as any).clips
+  ) {
     ;(detectionResults as any).clips = (detectionResults.clips as any).clips
   }
 
@@ -1786,18 +1776,25 @@ export async function persistClipDetectionResults(
           transcriptId = existingTranscript.id
 
           // Check if this was a fresh transcription or cached
-          const usedCachedTranscript = (detectionResults as any).processing_info?.used_cached_transcript
+          const usedCachedTranscript = (detectionResults as any).processing_info
+            ?.used_cached_transcript
 
           if (!usedCachedTranscript) {
             // Update the existing transcript with fresh data
-            const transcriptText = detectionResults.transcript.text ||
-                                 (detectionResults.transcript.segments?.map((seg: any) => seg.text).join(' ') || '') ||
-                                 JSON.stringify(detectionResults.transcript)
+            const transcriptText =
+              detectionResults.transcript.text ||
+              detectionResults.transcript.segments?.map((seg: any) => seg.text).join(' ') ||
+              '' ||
+              JSON.stringify(detectionResults.transcript)
 
             const language = detectionResults.transcript.language
-            const duration = detectionResults.transcript.duration ||
-                            (detectionResults.transcript.segments?.reduce((acc: number, seg: any) =>
-                              Math.max(acc, seg.end_time || 0), 0) || null)
+            const duration =
+              detectionResults.transcript.duration ||
+              detectionResults.transcript.segments?.reduce(
+                (acc: number, seg: any) => Math.max(acc, seg.end_time || 0),
+                0
+              ) ||
+              null
 
             const db = await getDatabase()
             await db.execute(
@@ -1812,20 +1809,28 @@ export async function persistClipDetectionResults(
             )
 
             // Delete existing segments to refresh them
-            await db.execute('DELETE FROM transcript_segments WHERE transcript_id = ?', [transcriptId])
+            await db.execute('DELETE FROM transcript_segments WHERE transcript_id = ?', [
+              transcriptId
+            ])
           } else {
             console.log('[Database] Used cached transcript, no database update needed')
           }
         } else {
           // Extract transcript data from Whisper response (only when no existing transcript)
-          const transcriptText = detectionResults.transcript.text ||
-                               (detectionResults.transcript.segments?.map((seg: any) => seg.text).join(' ') || '') ||
-                               JSON.stringify(detectionResults.transcript)
+          const transcriptText =
+            detectionResults.transcript.text ||
+            detectionResults.transcript.segments?.map((seg: any) => seg.text).join(' ') ||
+            '' ||
+            JSON.stringify(detectionResults.transcript)
 
           const language = detectionResults.transcript.language
-          const duration = detectionResults.transcript.duration ||
-                          (detectionResults.transcript.segments?.reduce((acc: number, seg: any) =>
-                            Math.max(acc, seg.end_time || 0), 0) || null)
+          const duration =
+            detectionResults.transcript.duration ||
+            detectionResults.transcript.segments?.reduce(
+              (acc: number, seg: any) => Math.max(acc, seg.end_time || 0),
+              0
+            ) ||
+            null
 
           transcriptId = await createTranscript(
             rawVideo.id, // Use raw_video_id instead of project_id
@@ -1837,8 +1842,13 @@ export async function persistClipDetectionResults(
         }
 
         // Store transcript segments if available (only for fresh transcriptions)
-        const usedCachedTranscript = (detectionResults as any).processing_info?.used_cached_transcript
-        if (!usedCachedTranscript && detectionResults.transcript.segments && Array.isArray(detectionResults.transcript.segments)) {
+        const usedCachedTranscript = (detectionResults as any).processing_info
+          ?.used_cached_transcript
+        if (
+          !usedCachedTranscript &&
+          detectionResults.transcript.segments &&
+          Array.isArray(detectionResults.transcript.segments)
+        ) {
           for (let i = 0; i < detectionResults.transcript.segments.length; i++) {
             const segment = detectionResults.transcript.segments[i]
             await createTranscriptSegment(
@@ -1861,18 +1871,14 @@ export async function persistClipDetectionResults(
   }
 
   // Create detection session
-  const sessionId = await createClipDetectionSession(
-    projectId,
-    prompt,
-    {
-      detectionModel: options?.detectionModel || 'claude-3.5-sonnet',
-      serverResponseId: options?.serverResponseId,
-      qualityScore: detectionResults.validation?.qualityScore,
-      totalClipsDetected: detectionResults.clips?.length || 0,
-      processingTimeMs: options?.processingTimeMs || (Date.now() - startTime),
-      validationData: detectionResults.validation
-    }
-  )
+  const sessionId = await createClipDetectionSession(projectId, prompt, {
+    detectionModel: options?.detectionModel || 'claude-3.5-sonnet',
+    serverResponseId: options?.serverResponseId,
+    qualityScore: detectionResults.validation?.qualityScore,
+    totalClipsDetected: detectionResults.clips?.length || 0,
+    processingTimeMs: options?.processingTimeMs || Date.now() - startTime,
+    validationData: detectionResults.validation
+  })
 
   // Keep all existing clips - each detection run creates new clips without removing previous ones
   // This allows users to see all clips generated across all detection runs
@@ -1892,7 +1898,6 @@ export async function persistClipDetectionResults(
       const lastSegment = clipData.segments[clipData.segments.length - 1]
       startTime = firstSegment.start_time || 0
       endTime = lastSegment.end_time || 0
-
     } else if (clipData.total_duration) {
       // Fallback to total_duration if available
       endTime = clipData.total_duration
@@ -1913,7 +1918,8 @@ export async function persistClipDetectionResults(
       description: clipData.description || clipData.summary || clipData.socialMediaPost,
       confidenceScore: clipData.confidenceScore || clipData.confidence,
       relevanceScore: clipData.relevanceScore || clipData.relevance,
-      detectionReason: clipData.reason || clipData.detectionReason || 'AI detected clip-worthy moment',
+      detectionReason:
+        clipData.reason || clipData.detectionReason || 'AI detected clip-worthy moment',
       tags: clipData.tags || clipData.keywords || [],
       segments: clipData.segments || []
     }
@@ -1965,10 +1971,7 @@ export async function restoreClipVersion(clipId: string, versionId: string): Pro
   )
 
   // Update the clip's current version
-  await db.execute(
-    'UPDATE clips SET current_version_id = ? WHERE id = ?',
-    [newVersionId, clipId]
-  )
+  await db.execute('UPDATE clips SET current_version_id = ? WHERE id = ?', [newVersionId, clipId])
 
   // Also update the clip's basic fields for compatibility
   await db.execute(

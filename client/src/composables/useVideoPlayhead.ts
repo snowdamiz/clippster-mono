@@ -142,7 +142,7 @@ export function useVideoPlayhead(options: VideoPlayheadOptions) {
 
     const timePercent = currentTime.value / duration.value
     const videoTrackRect = videoTrack.getBoundingClientRect()
-    const targetX = videoTrackRect.left + (videoTrackRect.width * timePercent)
+    const targetX = videoTrackRect.left + videoTrackRect.width * timePercent
 
     return new MouseEvent('mousemove', {
       clientX: targetX,
