@@ -1010,15 +1010,44 @@
         const scrollAmount = event.deltaY * TIMELINE_CONSTANTS.VERTICAL_SCROLL_MULTIPLIER
         container.scrollTop += scrollAmount
       }
-    } else {
-      // Regular zoom functionality
-      handleRulerWheel(event)
     }
+    // Regular zoom functionality removed - zoom now only works on the ruler
   }
 
-  // Use the same function for both ruler and timeline wheel events
+  // Ruler wheel handler - handles zoom functionality
   function onRulerWheel(event: WheelEvent) {
-    onTimelineWheel(event)
+    // Check if Ctrl/Cmd key is pressed for horizontal scrolling
+    const isCtrlPressed = event.ctrlKey || event.metaKey // metaKey is Cmd on Mac
+
+    // Check if Alt key is pressed for vertical scrolling
+    const isAltPressed = event.altKey // Alt key works on all platforms
+
+    if (isCtrlPressed) {
+      // Prevent default vertical scrolling
+      event.preventDefault()
+
+      // Handle horizontal scrolling/panning
+      const container = timelineScrollContainer.value
+      if (container) {
+        // Scroll horizontally based on wheel delta
+        const scrollAmount = event.deltaY * TIMELINE_CONSTANTS.HORIZONTAL_SCROLL_MULTIPLIER // Adjust multiplier for desired speed
+        container.scrollLeft -= scrollAmount
+      }
+    } else if (isAltPressed) {
+      // Prevent default vertical scrolling
+      event.preventDefault()
+
+      // Handle vertical scrolling through clips
+      const container = timelineScrollContainer.value
+      if (container) {
+        // Scroll vertically based on wheel delta (inverted for natural scrolling)
+        const scrollAmount = event.deltaY * TIMELINE_CONSTANTS.VERTICAL_SCROLL_MULTIPLIER
+        container.scrollTop += scrollAmount
+      }
+    } else {
+      // Regular zoom functionality - only available on ruler
+      handleRulerWheel(event)
+    }
   }
 
   function onDragStart(event: MouseEvent) {
