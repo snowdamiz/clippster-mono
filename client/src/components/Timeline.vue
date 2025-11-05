@@ -2,20 +2,10 @@
   <div
     class="bg-[#0a0a0a]/30 border-t border-border transition-all duration-300 ease-in-out"
     :style="{
-      height:
-        props.clips.length >= 6
-          ? calculatedHeight + 30 + 'px'
-          : props.clips.length >= 5
-            ? calculatedHeight + 14 + 'px'
-            : calculatedHeight - 12 + 'px',
+      height: calculatedHeight + 'px',
     }"
   >
-    <div
-      class="pt-3 px-4 h-full flex flex-col"
-      :style="{
-        height: props.clips.length > 0 ? 'auto' : '142px',
-      }"
-    >
+    <div class="pt-3 px-4 h-full flex flex-col">
       <!-- Timeline Header -->
       <TimelineHeader
         :isCutToolActive="isCutToolActive"
@@ -41,7 +31,7 @@
             : 'overflow-y-hidden',
         ]"
         ref="timelineScrollContainer"
-        :style="{ maxHeight: calculatedHeight - 56 + 'px' }"
+        :style="{ maxHeight: calculatedHeight - 86 + 'px' }"
         @mousemove="onTimelineMouseMove"
         @mouseleave="onTimelineMouseLeaveGlobal"
         @mousedown="onDragStart"
@@ -226,30 +216,47 @@
   const calculatedHeight = computed(() => {
     const numberOfClips = displayClips.value.length;
 
-    // Calculate total content height: header + ruler + main track + clip tracks
-    const tracksHeight =
-      TIMELINE_HEIGHTS.RULER + TIMELINE_HEIGHTS.MAIN_TRACK + numberOfClips * TIMELINE_HEIGHTS.CLIP_TRACK;
-    const totalHeight = TIMELINE_HEIGHTS.HEADER + tracksHeight;
+    // Calculate total needed height with consistent padding
+    const totalHeight =
+      TIMELINE_HEIGHTS.HEADER + // Header section
+      TIMELINE_HEIGHTS.RULER + // Timeline ruler
+      TIMELINE_HEIGHTS.MAIN_TRACK + // Main video track
+      numberOfClips * TIMELINE_HEIGHTS.CLIP_TRACK + // Clip tracks
+      TIMELINE_HEIGHTS.BASE_BOTTOM_PADDING; // Consistent bottom padding
+
+    // Account for layout overflow (padding, margins, borders, sticky positioning)
+    const adjustedHeight = totalHeight - 30; // Subtract 30px to prevent overflow
 
     // Apply reasonable bounds
-    return Math.max(TIMELINE_BOUNDS.MIN_HEIGHT, Math.min(TIMELINE_BOUNDS.MAX_HEIGHT, totalHeight));
+    const finalHeight = Math.max(TIMELINE_BOUNDS.MIN_HEIGHT, Math.min(TIMELINE_BOUNDS.MAX_HEIGHT, adjustedHeight));
+
+    // Debug logging
+    console.log('[Timeline] Height calculation:', {
+      numberOfClips,
+      totalHeight,
+      adjustedHeight,
+      finalHeight,
+      appliedHeight: finalHeight + 'px',
+    });
+
+    return finalHeight;
   });
 
   // Determine if scrollbar should be shown based on content vs container height
   const shouldShowScrollbar = computed(() => {
     const numberOfClips = displayClips.value.length;
-    const bottomPadding =
-      props.clips.length > 0 ? TIMELINE_HEIGHTS.BOTTOM_PADDING_WITH_CLIPS : TIMELINE_HEIGHTS.BOTTOM_PADDING_NO_CLIPS;
 
     const contentHeight =
-      TIMELINE_HEIGHTS.RULER +
-      TIMELINE_HEIGHTS.MAIN_TRACK +
-      numberOfClips * TIMELINE_HEIGHTS.CLIP_TRACK +
-      bottomPadding;
-    const availableHeight = calculatedHeight.value - TIMELINE_HEIGHTS.HEADER;
+      TIMELINE_HEIGHTS.HEADER + // Header
+      TIMELINE_HEIGHTS.RULER + // Ruler
+      TIMELINE_HEIGHTS.MAIN_TRACK + // Main track
+      numberOfClips * TIMELINE_HEIGHTS.CLIP_TRACK + // Clip tracks
+      TIMELINE_HEIGHTS.BASE_BOTTOM_PADDING; // Bottom padding
+
+    const availableHeight = calculatedHeight.value;
 
     // Only show scrollbar when content actually exceeds available height (small buffer for precision)
-    return contentHeight > availableHeight;
+    return contentHeight > availableHeight + 2; // 2px buffer to prevent flickering
   });
 
   interface Emits {
