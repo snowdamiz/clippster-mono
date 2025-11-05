@@ -6,51 +6,44 @@ defmodule ClippsterServerWeb.ClipsController do
   alias ClippsterServer.ClipValidation
   alias ClippsterServerWeb.ProgressChannel
 
-  def detect_chunked(conn, %{"project_id" => project_id, "prompt" => user_prompt, "chunks" => chunks_metadata}) do
+  def detect_chunked(conn, %{"project_id" => project_id, "prompt" => user_prompt, "chunks" => chunks_json}) do
+    # Parse chunks JSON since FormData sends it as a string
+    chunks_metadata = case Jason.decode(chunks_json) do
+      {:ok, parsed_chunks} when is_list(parsed_chunks) ->
+        parsed_chunks
+      {:ok, _} ->
+        throw {:error, "chunks must be a list"}
+      {:error, _} ->
+        throw {:error, "chunks must be valid JSON"}
+    end
+
     IO.puts("[ClipsController] Starting chunked clip detection for project #{project_id}")
     IO.puts("[ClipsController] Processing #{length(chunks_metadata)} chunks")
     IO.puts("[ClipsController] User prompt: #{String.slice(user_prompt, 0, 100)}...")
+
+    # Check if chunks array is empty
+    if length(chunks_metadata) == 0 do
+      IO.puts("[ClipsController] No chunks provided - this indicates incomplete chunked transcript data")
+      throw {:error, "No chunks available for processing. The chunked transcript may be incomplete or not yet generated."}
+    end
+
+    # Determine processing mode based on chunk content
+    processing_mode = determine_chunk_processing_mode(chunks_metadata)
+    IO.puts("[ClipsController] Using processing mode: #{processing_mode}")
 
     try do
       # Broadcast initial progress
       ProgressChannel.broadcast_progress(project_id, "starting", 0, "Initializing chunked clip detection...")
 
-      # Process chunks in parallel batches
-      chunks_with_index = chunks_metadata |> Enum.with_index()
-      total_chunks = length(chunks_metadata)
+      # Process chunks based on their content type
+      {chunk_transcripts, successful_chunks, failed_chunks} = case processing_mode do
+        :pre_transcribed ->
+          process_pre_transcribed_chunks(chunks_metadata, project_id)
+        :raw_audio ->
+          process_raw_audio_chunks(chunks_metadata, project_id)
+      end
 
-      IO.puts("[ClipsController] Processing chunks in parallel batches...")
-      ProgressChannel.broadcast_progress(project_id, "transcribing", 10, "Processing #{total_chunks} audio chunks...")
-
-      # Process chunks in batches of 2 to manage API limits
-      batch_size = 2
-      batches = chunks_with_index |> Enum.chunk_every(batch_size)
-
-      all_chunk_results = batches
-      |> Enum.with_index()
-      |> Enum.flat_map(fn {batch, batch_index} ->
-        IO.puts("[ClipsController] Processing batch #{batch_index + 1}/#{length(batches)} (#{length(batch)} chunks)")
-
-        # Update progress for batch start
-        batch_progress = 10 + (batch_index * 70 / length(batches))
-        ProgressChannel.broadcast_progress(project_id, "transcribing", trunc(batch_progress),
-          "Transcribing batch #{batch_index + 1}/#{length(batches)}...")
-
-        # Process chunks in this batch in parallel
-        batch
-        |> Enum.map(fn {chunk_metadata, chunk_index} ->
-          chunk_progress = batch_progress + ((chunk_index + 1) * (70 / length(batches)) / length(batch))
-          ProgressChannel.broadcast_progress(project_id, "transcribing", trunc(chunk_progress),
-            "Transcribing chunk #{chunk_index + 1}/#{total_chunks}...")
-
-          process_single_chunk(chunk_metadata, chunk_index, project_id)
-        end)
-      end)
-
-      IO.puts("[ClipsController] All chunks processed. #{length(all_chunk_results)} results received")
-
-      # Separate successful and failed chunks
-      {successful_chunks, failed_chunks} = Enum.split_with(all_chunk_results, &match?({:ok, _}, &1))
+      IO.puts("[ClipsController] All chunks processed. #{length(chunk_transcripts)} results received")
 
       if length(failed_chunks) > 0 do
         IO.puts("[ClipsController] Warning: #{length(failed_chunks)} chunks failed to process")
@@ -62,9 +55,6 @@ defmodule ClippsterServerWeb.ClipsController do
       if length(successful_chunks) == 0 do
         throw {:error, "All chunks failed to process"}
       end
-
-      # Extract successful results
-      chunk_transcripts = successful_chunks |> Enum.map(fn {:ok, result} -> result end)
 
       # Reconstruct timeline from chunks
       IO.puts("[ClipsController] Reconstructing timeline from #{length(chunk_transcripts)} successful chunks...")
@@ -92,7 +82,11 @@ defmodule ClippsterServerWeb.ClipsController do
           ProgressChannel.broadcast_progress(project_id, "validating", 90, "Validating clips with chunk timing data...")
 
           # Use the first successful chunk's original data for validation (most complete)
-          validation_chunk = hd(successful_chunks) |> elem(1)
+          first_successful_result = hd(successful_chunks)
+          validation_chunk = case first_successful_result do
+            {:ok, chunk_result} -> chunk_result
+            _ -> throw {:error, "Invalid successful chunk structure"}
+          end
           case ClipValidation.validate_and_correct_clips(ai_response["clips"], validation_chunk.original_whisper_response, true) do
             {:ok, validation_result} ->
               IO.puts("[ClipsController] Enhanced validation completed")
@@ -111,8 +105,9 @@ defmodule ClippsterServerWeb.ClipsController do
               })
 
               # Step 6: Return enhanced response with chunk processing data
+              total_processed = length(successful_chunks) + length(failed_chunks)
               ProgressChannel.broadcast_progress(project_id, "completed", 100,
-                "Chunked clip detection completed! Processed #{length(successful_chunks)}/#{total_chunks} chunks successfully.")
+                "Chunked clip detection completed! Processed #{length(successful_chunks)}/#{total_processed} chunks successfully.")
 
               json(conn, %{
                 success: true,
@@ -120,7 +115,7 @@ defmodule ClippsterServerWeb.ClipsController do
                 transcript: reconstructed_transcript,
                 processing_info: %{
                   used_chunked_processing: true,
-                  total_chunks: total_chunks,
+                  total_chunks: total_processed,
                   successful_chunks: length(successful_chunks),
                   failed_chunks: length(failed_chunks),
                   completion_message: "Clip detection completed using chunked processing!"
@@ -136,8 +131,9 @@ defmodule ClippsterServerWeb.ClipsController do
             _ ->
               IO.puts("[ClipsController] Enhanced validation failed, using original clips")
               # Fall back to original clips if enhanced validation fails
+              total_processed = length(successful_chunks) + length(failed_chunks)
               ProgressChannel.broadcast_progress(project_id, "completed", 100,
-                "Chunked clip detection completed! Processed #{length(successful_chunks)}/#{total_chunks} chunks.")
+                "Chunked clip detection completed! Processed #{length(successful_chunks)}/#{total_processed} chunks.")
 
               json(conn, %{
                 success: true,
@@ -145,7 +141,7 @@ defmodule ClippsterServerWeb.ClipsController do
                 transcript: reconstructed_transcript,
                 processing_info: %{
                   used_chunked_processing: true,
-                  total_chunks: total_chunks,
+                  total_chunks: total_processed,
                   successful_chunks: length(successful_chunks),
                   failed_chunks: length(failed_chunks),
                   completion_message: "Clip detection completed using chunked processing!"
@@ -425,6 +421,138 @@ defmodule ClippsterServerWeb.ClipsController do
           details: Exception.message(error),
           noCreditsCharged: true
         })
+    end
+  end
+
+  # Determine chunk processing mode based on chunk content
+  defp determine_chunk_processing_mode(chunks_metadata) do
+    # Check the first chunk to determine the processing mode
+    case chunks_metadata do
+      [first_chunk | _] ->
+        cond do
+          # Check if chunks contain raw audio data (original design)
+          Map.has_key?(first_chunk, "base64_data") ->
+            :raw_audio
+
+          # Check if chunks contain pre-transcribed data (current frontend behavior)
+          Map.has_key?(first_chunk, "raw_json") ->
+            :pre_transcribed
+
+          # Default to raw audio if unsure
+          true ->
+            IO.puts("[ClipsController] Warning: Could not determine chunk type, defaulting to raw audio")
+            :raw_audio
+        end
+
+      [] ->
+        throw {:error, "No chunks provided"}
+    end
+  end
+
+  # Process pre-transcribed chunks (contains raw_json, no transcription needed)
+  defp process_pre_transcribed_chunks(chunks_metadata, project_id) do
+    total_chunks = length(chunks_metadata)
+    IO.puts("[ClipsController] Processing #{total_chunks} pre-transcribed chunks")
+    ProgressChannel.broadcast_progress(project_id, "transcribing", 10, "Processing #{total_chunks} cached transcript chunks...")
+
+    # Process chunks in parallel
+    all_chunk_results = chunks_metadata
+    |> Enum.with_index()
+    |> Enum.map(fn {chunk_metadata, chunk_index} ->
+      chunk_progress = 10 + ((chunk_index + 1) * 80 / total_chunks)
+      ProgressChannel.broadcast_progress(project_id, "transcribing", trunc(chunk_progress),
+        "Processing chunk #{chunk_index + 1}/#{total_chunks}...")
+
+      process_pre_transcribed_chunk(chunk_metadata, chunk_index, project_id)
+    end)
+
+    # Separate successful and failed chunks
+    {successful_chunks, failed_chunks} = Enum.split_with(all_chunk_results, &match?({:ok, _}, &1))
+
+    # Extract successful results
+    chunk_transcripts = successful_chunks |> Enum.map(fn {:ok, result} -> result end)
+
+    {chunk_transcripts, successful_chunks, failed_chunks}
+  end
+
+  # Process raw audio chunks (contains base64_data, needs transcription)
+  defp process_raw_audio_chunks(chunks_metadata, project_id) do
+    total_chunks = length(chunks_metadata)
+    IO.puts("[ClipsController] Processing #{total_chunks} raw audio chunks")
+    ProgressChannel.broadcast_progress(project_id, "transcribing", 10, "Transcribing #{total_chunks} audio chunks...")
+
+    # Process chunks in batches of 2 to manage API limits
+    batch_size = 2
+    chunks_with_index = chunks_metadata |> Enum.with_index()
+    batches = chunks_with_index |> Enum.chunk_every(batch_size)
+
+    all_chunk_results = batches
+    |> Enum.with_index()
+    |> Enum.flat_map(fn {batch, batch_index} ->
+      IO.puts("[ClipsController] Processing batch #{batch_index + 1}/#{length(batches)} (#{length(batch)} chunks)")
+
+      # Update progress for batch start
+      batch_progress = 10 + (batch_index * 70 / length(batches))
+      ProgressChannel.broadcast_progress(project_id, "transcribing", trunc(batch_progress),
+        "Transcribing batch #{batch_index + 1}/#{length(batches)}...")
+
+      # Process chunks in this batch in parallel
+      batch
+      |> Enum.map(fn {chunk_metadata, chunk_index} ->
+        chunk_progress = batch_progress + ((chunk_index + 1) * (70 / length(batches)) / length(batch))
+        ProgressChannel.broadcast_progress(project_id, "transcribing", trunc(chunk_progress),
+          "Transcribing chunk #{chunk_index + 1}/#{total_chunks}...")
+
+        process_single_chunk(chunk_metadata, chunk_index, project_id)
+      end)
+    end)
+
+    # Separate successful and failed chunks
+    {successful_chunks, failed_chunks} = Enum.split_with(all_chunk_results, &match?({:ok, _}, &1))
+
+    # Extract successful results
+    chunk_transcripts = successful_chunks |> Enum.map(fn {:ok, result} -> result end)
+
+    {chunk_transcripts, successful_chunks, failed_chunks}
+  end
+
+  # Process a single pre-transcribed chunk
+  defp process_pre_transcribed_chunk(chunk_metadata, chunk_index, _project_id) do
+    try do
+      chunk_id = Map.get(chunk_metadata, "chunk_id")
+      raw_json = Map.get(chunk_metadata, "raw_json")
+      start_time = Map.get(chunk_metadata, "start_time")
+      end_time = Map.get(chunk_metadata, "end_time")
+
+      IO.puts("[ClipsController] Processing pre-transcribed chunk #{chunk_index}: #{chunk_id} (#{start_time}s - #{end_time}s)")
+
+      # Parse the pre-transcribed JSON data
+      case Jason.decode(raw_json) do
+        {:ok, whisper_response} ->
+          IO.puts("[ClipsController] Chunk #{chunk_index} JSON parsed successfully")
+
+          # Create result structure consistent with raw audio processing
+          chunk_result = %{
+            chunk_id: chunk_id,
+            chunk_index: chunk_index,
+            start_time: start_time,
+            end_time: end_time,
+            adjusted_whisper_response: whisper_response,  # Already has correct timestamps
+            original_whisper_response: whisper_response,
+            transcription: whisper_response
+          }
+
+          {:ok, chunk_result}
+
+        {:error, reason} ->
+          IO.puts("[ClipsController] Chunk #{chunk_index} JSON parsing failed: #{inspect(reason)}")
+          {:error, %{chunk_id: chunk_id, chunk_index: chunk_index, reason: "JSON parsing failed: #{inspect(reason)}"}}
+      end
+
+    rescue
+      error ->
+        IO.puts("[ClipsController] Error processing pre-transcribed chunk #{chunk_index}: #{inspect(error)}")
+        {:error, %{chunk_id: "unknown", chunk_index: chunk_index, reason: Exception.message(error)}}
     end
   end
 

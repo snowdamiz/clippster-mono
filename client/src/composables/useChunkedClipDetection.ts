@@ -95,11 +95,22 @@ export function useChunkedClipDetection() {
       if (!forceReprocess) {
         const cachedMetadata = await getCachedChunkMetadata(projectVideo.id);
 
-        if (cachedMetadata && cachedMetadata.hasCachedTranscript) {
+        if (cachedMetadata && cachedMetadata.hasCachedTranscript && cachedMetadata.chunks && cachedMetadata.chunks.length > 0) {
           console.log(
-            '[ChunkedClipDetection] Found complete cached transcript, using chunked processing'
+            '[ChunkedClipDetection] Found complete cached transcript, using chunked processing',
+            { chunksCount: cachedMetadata.chunks.length }
           );
           return await processWithCachedChunks(projectId, prompt, cachedMetadata, projectVideo);
+        } else if (cachedMetadata && cachedMetadata.hasCachedTranscript && (!cachedMetadata.chunks || cachedMetadata.chunks.length === 0)) {
+          console.warn(
+            '[ChunkedClipDetection] Found chunked transcript record but no actual chunks - falling back to traditional processing'
+          );
+          // Fall back to traditional processing if chunks are empty
+          const existingTranscript = await getTranscriptByRawVideoId(projectVideo.id);
+          if (existingTranscript) {
+            return await processWithTraditionalTranscript(projectId, prompt, existingTranscript);
+          }
+          // If no traditional transcript either, continue with fresh audio processing
         }
       }
 
