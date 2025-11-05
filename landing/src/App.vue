@@ -267,8 +267,8 @@ const getPlatformName = (p: string) => {
               <span class="text-muted-foreground ml-2">hours</span>
             </div>
             <div class="mb-6">
-              <div class="text-3xl font-bold mb-1">$45</div>
-              <div class="text-xs text-muted-foreground mt-1">$0.90/hour</div>
+              <div class="text-3xl font-bold mb-1">$50</div>
+              <div class="text-xs text-muted-foreground mt-1">$1.00/hour</div>
             </div>
             <ul class="space-y-2.5 mb-6 flex-1">
               <li class="flex items-center gap-2 text-sm text-muted-foreground">
@@ -295,12 +295,12 @@ const getPlatformName = (p: string) => {
           <div class="p-6 flex-1 flex flex-col">
             <h3 class="text-2xl font-bold mb-2">Studio</h3>
             <div class="mb-4">
-              <span class="text-4xl font-bold text-foreground">500</span>
+              <span class="text-4xl font-bold text-foreground">250</span>
               <span class="text-muted-foreground ml-2">hours</span>
             </div>
             <div class="mb-6">
               <div class="text-3xl font-bold mb-1">$200</div>
-              <div class="text-xs text-muted-foreground mt-1">$0.40/hour</div>
+              <div class="text-xs text-muted-foreground mt-1">$0.80/hour</div>
             </div>
             <ul class="space-y-2.5 mb-6 flex-1">
               <li class="flex items-center gap-2 text-sm text-muted-foreground">
@@ -313,7 +313,7 @@ const getPlatformName = (p: string) => {
               </li>
               <li class="flex items-center gap-2 text-sm text-muted-foreground">
                 <Check class="h-4 w-4 text-green-500 flex-shrink-0" />
-                <span>~250-500 videos</span>
+                <span>~125-250 videos</span>
               </li>
             </ul>
             <div class="text-center text-sm text-muted-foreground">

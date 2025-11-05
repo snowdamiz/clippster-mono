@@ -110,13 +110,6 @@
                 </svg>
                 <span>Use anytime, no limits</span>
               </li>
-
-              <li class="flex items-center gap-2 text-sm text-muted-foreground">
-                <svg class="h-4 w-4 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                </svg>
-                <span>~{{ Math.floor(packs[packKey].hours / 2) }}-{{ packs[packKey].hours }} videos</span>
-              </li>
             </ul>
             <!-- Button -->
             <button
@@ -390,55 +383,55 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted } from 'vue'
-  import { useAuthStore } from '@/stores/auth'
-  import { useToast } from '@/composables/useToast'
+  import { ref, onMounted } from 'vue';
+  import { useAuthStore } from '@/stores/auth';
+  import { useToast } from '@/composables/useToast';
 
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000'
-  const authStore = useAuthStore()
-  const { success: showSuccessToast, error: showErrorToast } = useToast()
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+  const authStore = useAuthStore();
+  const { success: showSuccessToast, error: showErrorToast } = useToast();
 
-  const loading = ref(true)
-  const packs = ref<any>({})
-  const packOrder = ref(['starter', 'creator', 'pro', 'studio'])
-  const companyWallet = ref('')
-  const solUsdRate = ref(0)
-  const balance = ref({ hours_remaining: 0, hours_used: 0 })
+  const loading = ref(true);
+  const packs = ref<any>({});
+  const packOrder = ref(['starter', 'creator', 'pro', 'studio']);
+  const companyWallet = ref('');
+  const solUsdRate = ref(0);
+  const balance = ref({ hours_remaining: 0, hours_used: 0 });
 
-  const showPaymentModal = ref(false)
-  const selectedPack = ref<any>(null)
-  const paymentStep = ref<'confirm' | 'processing' | 'success' | 'error'>('confirm')
-  const processing = ref(false)
-  const paymentStatus = ref('')
-  const errorMessage = ref('')
+  const showPaymentModal = ref(false);
+  const selectedPack = ref<any>(null);
+  const paymentStep = ref<'confirm' | 'processing' | 'success' | 'error'>('confirm');
+  const processing = ref(false);
+  const paymentStatus = ref('');
+  const errorMessage = ref('');
 
   async function retryLoad() {
-    loading.value = true
-    await Promise.all([fetchPricing(), fetchBalance()])
-    loading.value = false
+    loading.value = true;
+    await Promise.all([fetchPricing(), fetchBalance()]);
+    loading.value = false;
   }
 
   onMounted(async () => {
-    await retryLoad()
-  })
+    await retryLoad();
+  });
 
   async function fetchPricing() {
     try {
-      const response = await fetch(`${API_BASE}/api/pricing`)
-      const data = await response.json()
+      const response = await fetch(`${API_BASE}/api/pricing`);
+      const data = await response.json();
       if (data.success) {
-        packs.value = data.packs
-        solUsdRate.value = data.sol_usd_rate
-        companyWallet.value = data.company_wallet_address
+        packs.value = data.packs;
+        solUsdRate.value = data.sol_usd_rate;
+        companyWallet.value = data.company_wallet_address;
       } else {
-        throw new Error(data.error || 'Failed to fetch pricing')
+        throw new Error(data.error || 'Failed to fetch pricing');
       }
     } catch (error: any) {
-      console.error('Failed to fetch pricing:', error)
+      console.error('Failed to fetch pricing:', error);
       showErrorToast(
         'Failed to load pricing',
         error.message || 'An error occurred while loading credit pack prices. Please try again.'
-      )
+      );
     }
   }
 
@@ -447,21 +440,21 @@
       const response = await fetch(`${API_BASE}/api/credits/balance`, {
         headers: {
           Authorization: `Bearer ${authStore.token}`,
-          'Content-Type': 'application/json'
-        }
-      })
-      const data = await response.json()
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await response.json();
       if (data.success) {
-        balance.value = data.balance
+        balance.value = data.balance;
       } else {
-        throw new Error(data.error || 'Failed to fetch balance')
+        throw new Error(data.error || 'Failed to fetch balance');
       }
     } catch (error: any) {
-      console.error('Failed to fetch balance:', error)
+      console.error('Failed to fetch balance:', error);
       showErrorToast(
         'Failed to load balance',
         error.message || 'An error occurred while loading your credit balance. Please try again.'
-      )
+      );
     }
   }
 
@@ -469,17 +462,17 @@
   // No need for separate client-side price fetching
 
   function calculateSolAmount(usdAmount: number): number {
-    if (solUsdRate.value === 0) return 0
-    return usdAmount / solUsdRate.value
+    if (solUsdRate.value === 0) return 0;
+    return usdAmount / solUsdRate.value;
   }
 
   function getSolAmountForPack(packKey: string): number {
     // Use server-provided SOL amount if available
     if (packs.value[packKey]?.sol_amount) {
-      return packs.value[packKey].sol_amount
+      return packs.value[packKey].sol_amount;
     }
     // Fallback calculation
-    return calculateSolAmount(packs.value[packKey]?.usd || 0)
+    return calculateSolAmount(packs.value[packKey]?.usd || 0);
   }
 
   function selectPack(key: string, pack: any) {
@@ -487,70 +480,73 @@
       key,
       hours: pack.hours,
       usd: pack.usd,
-      solAmount: pack.sol_amount || calculateSolAmount(pack.usd)
-    }
-    showPaymentModal.value = true
-    paymentStep.value = 'confirm'
+      solAmount: pack.sol_amount || calculateSolAmount(pack.usd),
+    };
+    showPaymentModal.value = true;
+    paymentStep.value = 'confirm';
   }
 
   async function initiatePayment() {
-    processing.value = true
-    paymentStep.value = 'processing'
-    paymentStatus.value = 'Opening payment window...'
+    processing.value = true;
+    paymentStep.value = 'processing';
+    paymentStatus.value = 'Opening payment window...';
 
     try {
-      const { invoke } = await import('@tauri-apps/api/core')
-      const { listen } = await import('@tauri-apps/api/event')
+      const { invoke } = await import('@tauri-apps/api/core');
+      const { listen } = await import('@tauri-apps/api/event');
 
       // Set up listener for payment completion
       const unlisten = await listen('wallet-payment-complete', async (event: any) => {
-        const paymentResult = event.payload
+        const paymentResult = event.payload;
 
         // Verify payment with backend
-        paymentStatus.value = 'Verifying payment...'
+        paymentStatus.value = 'Verifying payment...';
         try {
           const confirmResponse = await fetch(`${API_BASE}/api/payments/confirm`, {
             method: 'POST',
             headers: {
               Authorization: `Bearer ${authStore.token}`,
-              'Content-Type': 'application/json'
+              'Content-Type': 'application/json',
             },
             body: JSON.stringify({
               tx_signature: paymentResult.signature,
-              pack_type: paymentResult.pack_key
-            })
-          })
+              pack_type: paymentResult.pack_key,
+            }),
+          });
 
-          const confirmData = await confirmResponse.json()
+          const confirmData = await confirmResponse.json();
 
           if (confirmData.success) {
-            balance.value = confirmData.balance
-            paymentStep.value = 'success'
-            processing.value = false
+            balance.value = confirmData.balance;
+            paymentStep.value = 'success';
+            processing.value = false;
 
             // Show success toast
-            showSuccessToast('Purchase successful', `${paymentResult.pack_hours} hours have been added to your account`)
+            showSuccessToast(
+              'Purchase successful',
+              `${paymentResult.pack_hours} hours have been added to your account`
+            );
 
             // Cleanup listener
-            unlisten()
+            unlisten();
 
             // Refresh balance
-            await fetchBalance()
+            await fetchBalance();
           } else {
-            throw new Error(confirmData.error || 'Payment confirmation failed')
+            throw new Error(confirmData.error || 'Payment confirmation failed');
           }
         } catch (error: any) {
-          console.error('Payment verification error:', error)
-          errorMessage.value = error.message || 'Payment verification failed'
-          paymentStep.value = 'error'
-          processing.value = false
+          console.error('Payment verification error:', error);
+          errorMessage.value = error.message || 'Payment verification failed';
+          paymentStep.value = 'error';
+          processing.value = false;
           showErrorToast(
             'Payment verification failed',
             error.message || 'An error occurred while verifying your payment. Please contact support.'
-          )
-          unlisten()
+          );
+          unlisten();
         }
-      })
+      });
 
       // Open payment window in browser
       await invoke('open_wallet_payment_window', {
@@ -560,27 +556,27 @@
         usd: selectedPack.value.usd,
         sol: selectedPack.value.solAmount,
         companyWallet: companyWallet.value,
-        authToken: authStore.token
-      })
+        authToken: authStore.token,
+      });
 
-      paymentStatus.value = 'Complete payment in your browser...'
+      paymentStatus.value = 'Complete payment in your browser...';
     } catch (error: any) {
-      console.error('Payment error:', error)
-      errorMessage.value = error.message || 'Failed to open payment window'
-      paymentStep.value = 'error'
-      processing.value = false
+      console.error('Payment error:', error);
+      errorMessage.value = error.message || 'Failed to open payment window';
+      paymentStep.value = 'error';
+      processing.value = false;
       showErrorToast(
         'Payment failed',
         error.message || 'An error occurred while processing your payment. Please try again.'
-      )
+      );
     }
   }
 
   function closePaymentModal() {
     if (!processing.value) {
-      showPaymentModal.value = false
-      selectedPack.value = null
-      paymentStep.value = 'confirm'
+      showPaymentModal.value = false;
+      selectedPack.value = null;
+      paymentStep.value = 'confirm';
     }
   }
 </script>
