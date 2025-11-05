@@ -246,17 +246,26 @@
   const shouldShowScrollbar = computed(() => {
     const numberOfClips = displayClips.value.length;
 
-    const contentHeight =
-      TIMELINE_HEIGHTS.HEADER + // Header
-      TIMELINE_HEIGHTS.RULER + // Ruler
-      TIMELINE_HEIGHTS.MAIN_TRACK + // Main track
-      numberOfClips * TIMELINE_HEIGHTS.CLIP_TRACK + // Clip tracks
-      TIMELINE_HEIGHTS.BASE_BOTTOM_PADDING; // Bottom padding
+    // Calculate the actual content height within the tracks container
+    const tracksContentHeight =
+      TIMELINE_HEIGHTS.RULER + // Ruler (inside tracks container)
+      TIMELINE_HEIGHTS.MAIN_TRACK + // Main video track
+      numberOfClips * TIMELINE_HEIGHTS.CLIP_TRACK; // Clip tracks
 
-    const availableHeight = calculatedHeight.value;
+    // Available height within tracks container (accounting for header + padding)
+    const availableTracksHeight = calculatedHeight.value - 86; // Matches the maxHeight calculation
 
-    // Only show scrollbar when content actually exceeds available height (small buffer for precision)
-    return contentHeight > availableHeight + 2; // 2px buffer to prevent flickering
+    // Debug logging for scrollbar
+    console.log('[Timeline] Scrollbar calculation:', {
+      numberOfClips,
+      tracksContentHeight,
+      availableTracksHeight,
+      difference: tracksContentHeight - availableTracksHeight,
+      showScrollbar: tracksContentHeight > availableTracksHeight + 5,
+    });
+
+    // Only show scrollbar when tracks content actually exceeds available tracks height
+    return tracksContentHeight > availableTracksHeight + 5; // 5px buffer to prevent premature scrollbar
   });
 
   interface Emits {
