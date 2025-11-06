@@ -120,6 +120,9 @@
                 <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Last Updated
                 </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody class="bg-card divide-y divide-border">
@@ -194,6 +197,68 @@
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                   {{ formatDate(user.updated_at) }}
                 </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                  <div class="flex items-center gap-2">
+                    <button
+                      v-if="!user.is_admin"
+                      @click="confirmPromoteUser(user)"
+                      :disabled="promotingUserId === user.id"
+                      class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white text-xs font-medium rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <svg
+                        v-if="promotingUserId === user.id"
+                        xmlns="http://www.w3.org/2000/svg"
+                        class="h-3 w-3 mr-1 animate-spin"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          class="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          stroke-width="4"
+                        ></circle>
+                        <path
+                          class="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        ></path>
+                      </svg>
+                      <svg
+                        v-else
+                        xmlns="http://www.w3.org/2000/svg"
+                        class="h-3 w-3 mr-1"
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
+                      >
+                        <path
+                          d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"
+                        />
+                      </svg>
+                      Promote
+                    </button>
+                    <span
+                      v-else
+                      class="inline-flex items-center px-2 py-1 text-xs font-medium text-muted-foreground bg-muted rounded-md"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        class="h-3 w-3 mr-1 text-green-500"
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
+                      >
+                        <path
+                          fill-rule="evenodd"
+                          d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                          clip-rule="evenodd"
+                        />
+                      </svg>
+                      Admin
+                    </span>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -225,6 +290,18 @@
         Load Users
       </button>
     </div>
+
+    <!-- Promotion Confirmation Modal -->
+    <DeleteConfirmationModal
+      :show="showPromoteDialog"
+      title="Promote User to Admin"
+      :message="'Are you sure you want to promote'"
+      :item-name="formatWalletAddress(userToPromote?.wallet_address || '')"
+      suffix="to admin?"
+      confirm-text="Promote"
+      @close="handlePromoteDialogClose"
+      @confirm="promoteUserConfirmed"
+    />
   </PageLayout>
 </template>
 
@@ -232,6 +309,7 @@
   import { ref, onMounted } from 'vue';
   import { useAuthStore } from '@/stores/auth';
   import PageLayout from '@/components/PageLayout.vue';
+  import DeleteConfirmationModal from '@/components/DeleteConfirmationModal.vue';
 
   interface User {
     id: number;
@@ -251,6 +329,9 @@
   const users = ref<User[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  const promotingUserId = ref<number | null>(null);
+  const showPromoteDialog = ref(false);
+  const userToPromote = ref<User | null>(null);
 
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -324,6 +405,73 @@
       console.log('Copied to clipboard:', text);
     } catch (err) {
       console.error('Failed to copy to clipboard:', err);
+    }
+  };
+
+  const confirmPromoteUser = (user: User) => {
+    userToPromote.value = user;
+    showPromoteDialog.value = true;
+  };
+
+  const handlePromoteDialogClose = () => {
+    showPromoteDialog.value = false;
+    userToPromote.value = null;
+  };
+
+  const promoteUserConfirmed = async () => {
+    if (!userToPromote.value) return;
+
+    promotingUserId.value = userToPromote.value.id;
+
+    try {
+      console.log(`🔐 Admin - Promoting user ${userToPromote.value.id} to admin...`);
+
+      const response = await fetch(`${API_BASE}/api/admin/users/${userToPromote.value.id}/promote`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${authStore.token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('🔐 Admin - Promote response status:', response.status);
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error('Admin access required');
+        } else if (response.status === 401) {
+          throw new Error('Authentication required');
+        } else if (response.status === 404) {
+          throw new Error('User not found');
+        } else {
+          throw new Error(`Failed to promote user: ${response.statusText}`);
+        }
+      }
+
+      const data = await response.json();
+      console.log('🔐 Admin - Promote response data:', data);
+
+      if (data.success) {
+        // Update the user in the local state
+        const userIndex = users.value.findIndex((u) => u.id === userToPromote.value!.id);
+        if (userIndex !== -1) {
+          users.value[userIndex] = {
+            ...users.value[userIndex],
+            is_admin: true,
+            updated_at: data.user.updated_at,
+          };
+        }
+        console.log(`🔐 Admin - Successfully promoted user ${userToPromote.value.id} to admin`);
+      } else {
+        throw new Error(data.error || 'Failed to promote user');
+      }
+    } catch (err) {
+      console.error('🔐 Admin - Error promoting user:', err);
+      error.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    } finally {
+      promotingUserId.value = null;
+      showPromoteDialog.value = false;
+      userToPromote.value = null;
     }
   };
 
