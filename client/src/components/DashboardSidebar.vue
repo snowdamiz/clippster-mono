@@ -10,7 +10,7 @@
         <template v-for="(item, index) in visibleNavigationItems" :key="item.path">
           <!-- Category Label -->
           <li v-if="item.category && shouldShowCategory(item.category, index)" class="pt-4 pb-2 px-3">
-            <span class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            <span class="text-xs font-semibold text-white/90 uppercase tracking-wider">
               {{ item.category }}
             </span>
           </li>
