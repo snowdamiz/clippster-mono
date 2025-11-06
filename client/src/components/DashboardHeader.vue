@@ -3,9 +3,9 @@
     class="fixed top-0 left-64 right-0 h-16 px-6 flex items-center justify-between border-b border-border/40 bg-background z-10"
   >
     <nav class="flex items-center gap-2 text-sm">
-      <span class="text-muted-foreground">Dashboard</span>
       <template v-for="(crumb, index) in breadcrumbs" :key="index">
         <svg
+          v-if="index > 0"
           xmlns="http://www.w3.org/2000/svg"
           class="h-3.5 w-3.5 text-muted-foreground/50"
           fill="none"
@@ -27,11 +27,7 @@
 
     <div class="flex items-center gap-4">
       <!-- Credit Balance -->
-      <router-link
-        to="/dashboard/pricing"
-        class="flex items-center gap-2 cursor-pointer"
-        title="View Pricing & Purchase Credits"
-      >
+      <router-link to="/pricing" class="flex items-center gap-2 cursor-pointer" title="View Pricing & Purchase Credits">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           class="h-4 w-4 text-white"
@@ -80,7 +76,7 @@
     // Access breadcrumbTitle to make computed reactive to it
     const dynamicTitle = breadcrumbTitle.value;
 
-    const pathSegments = route.path.split('/').filter((s) => s && s !== 'dashboard');
+    const pathSegments = route.path.split('/').filter((s) => s);
     const crumbs: Breadcrumb[] = [];
 
     if (pathSegments.length === 0) return crumbs;
@@ -120,7 +116,7 @@
       // Build the path - but not for UUIDs (they don't have routes) or if it's the last segment
       let linkPath: string | undefined = undefined;
       if (!isLast && !isUUID) {
-        linkPath = '/dashboard/' + pathSegments.slice(0, i + 1).join('/');
+        linkPath = '/' + pathSegments.slice(0, i + 1).join('/');
       }
 
       crumbs.push({

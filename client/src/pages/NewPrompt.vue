@@ -268,28 +268,28 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, computed, onMounted } from 'vue'
-  import { useRouter } from 'vue-router'
-  import { createPrompt } from '@/services/database'
-  import { useToast } from '@/composables/useToast'
-  import PageLayout from '@/components/PageLayout.vue'
+  import { ref, reactive, computed, onMounted } from 'vue';
+  import { useRouter } from 'vue-router';
+  import { createPrompt } from '@/services/database';
+  import { useToast } from '@/composables/useToast';
+  import PageLayout from '@/components/PageLayout.vue';
 
-  const router = useRouter()
-  const { success, error } = useToast()
-  const saving = ref(false)
-  const nameInput = ref<HTMLInputElement | null>(null)
-  const nameError = ref('')
-  const contentError = ref('')
+  const router = useRouter();
+  const { success, error } = useToast();
+  const saving = ref(false);
+  const nameInput = ref<HTMLInputElement | null>(null);
+  const nameError = ref('');
+  const contentError = ref('');
 
   const formData = reactive({
     name: '',
-    content: ''
-  })
+    content: '',
+  });
 
   interface Example {
-    name: string
-    preview: string
-    content: string
+    name: string;
+    preview: string;
+    content: string;
   }
 
   const examples: Example[] = [
@@ -325,54 +325,54 @@
    - Prefer 20–75s when possible for short-form platforms.
 
 **WHAT TO LOOK FOR:**
-- Strong emotions or shifts; humor/awkwardness; drama/tension/conflict; surprises/reveals; bold claims; unusual behavior; struggle/vulnerability; high energy; relatable/resonant lines; quotable statements; notable reactions or audience moments.`
-    }
-  ]
+- Strong emotions or shifts; humor/awkwardness; drama/tension/conflict; surprises/reveals; bold claims; unusual behavior; struggle/vulnerability; high energy; relatable/resonant lines; quotable statements; notable reactions or audience moments.`,
+    },
+  ];
 
   const isFormValid = computed(() => {
-    return formData.name.trim().length > 0 && formData.content.trim().length > 0
-  })
+    return formData.name.trim().length > 0 && formData.content.trim().length > 0;
+  });
 
   function resetForm() {
-    formData.name = ''
-    formData.content = ''
-    nameInput.value?.focus()
+    formData.name = '';
+    formData.content = '';
+    nameInput.value?.focus();
   }
 
   function loadExample(example: Example) {
-    formData.name = example.name
-    formData.content = example.content
-    nameError.value = ''
-    contentError.value = ''
+    formData.name = example.name;
+    formData.content = example.content;
+    nameError.value = '';
+    contentError.value = '';
     // Scroll to top smoothly
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   async function handleSubmit() {
     if (!isFormValid.value) {
-      return
+      return;
     }
 
-    saving.value = true
+    saving.value = true;
     try {
-      await createPrompt(formData.name.trim(), formData.content.trim())
-      success('Prompt created', `"${formData.name.trim()}" has been created successfully`)
+      await createPrompt(formData.name.trim(), formData.content.trim());
+      success('Prompt created', `"${formData.name.trim()}" has been created successfully`);
       // Navigate back to prompts list
-      router.push('/dashboard/prompts')
+      router.push('/prompts');
     } catch (err) {
-      console.error('Failed to create prompt:', err)
-      error('Failed to create prompt', 'An error occurred while creating the prompt. Please try again.')
+      console.error('Failed to create prompt:', err);
+      error('Failed to create prompt', 'An error occurred while creating the prompt. Please try again.');
     } finally {
-      saving.value = false
+      saving.value = false;
     }
   }
 
   function handleCancel() {
-    router.push('/dashboard/prompts')
+    router.push('/prompts');
   }
 
   onMounted(() => {
     // Auto-focus the name input
-    nameInput.value?.focus()
-  })
+    nameInput.value?.focus();
+  });
 </script>

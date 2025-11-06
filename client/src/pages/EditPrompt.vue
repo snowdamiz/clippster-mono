@@ -31,7 +31,7 @@
 
       <p class="text-muted-foreground mb-6">The prompt you're looking for doesn't exist.</p>
       <button
-        @click="router.push('/dashboard/prompts')"
+        @click="router.push('/prompts')"
         class="px-5 py-2.5 bg-gradient-to-br from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white rounded-lg font-medium shadow-sm transition-all"
       >
         Back to Prompts
@@ -244,101 +244,101 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
-  import { useRouter, useRoute } from 'vue-router'
-  import { getPrompt, updatePrompt, type Prompt } from '@/services/database'
-  import { useBreadcrumb } from '@/composables/useBreadcrumb'
-  import { useToast } from '@/composables/useToast'
-  import PageLayout from '@/components/PageLayout.vue'
-  import LoadingState from '@/components/LoadingState.vue'
+  import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
+  import { useRouter, useRoute } from 'vue-router';
+  import { getPrompt, updatePrompt, type Prompt } from '@/services/database';
+  import { useBreadcrumb } from '@/composables/useBreadcrumb';
+  import { useToast } from '@/composables/useToast';
+  import PageLayout from '@/components/PageLayout.vue';
+  import LoadingState from '@/components/LoadingState.vue';
 
-  const router = useRouter()
-  const route = useRoute()
-  const { success, error } = useToast()
-  const loading = ref(true)
-  const saving = ref(false)
-  const prompt = ref<Prompt | null>(null)
-  const nameInput = ref<HTMLInputElement | null>(null)
+  const router = useRouter();
+  const route = useRoute();
+  const { success, error } = useToast();
+  const loading = ref(true);
+  const saving = ref(false);
+  const prompt = ref<Prompt | null>(null);
+  const nameInput = ref<HTMLInputElement | null>(null);
 
   // Use breadcrumb composable
-  const { setBreadcrumbTitle, clearBreadcrumbTitle } = useBreadcrumb()
+  const { setBreadcrumbTitle, clearBreadcrumbTitle } = useBreadcrumb();
 
   const formData = reactive({
     name: '',
-    content: ''
-  })
+    content: '',
+  });
 
   const originalData = reactive({
     name: '',
-    content: ''
-  })
+    content: '',
+  });
 
   const isFormValid = computed(() => {
-    return formData.name.trim().length > 0 && formData.content.trim().length > 0
-  })
+    return formData.name.trim().length > 0 && formData.content.trim().length > 0;
+  });
 
   const hasChanges = computed(() => {
-    return formData.name !== originalData.name || formData.content !== originalData.content
-  })
+    return formData.name !== originalData.name || formData.content !== originalData.content;
+  });
 
   function resetForm() {
-    formData.name = originalData.name
-    formData.content = originalData.content
-    nameInput.value?.focus()
+    formData.name = originalData.name;
+    formData.content = originalData.content;
+    nameInput.value?.focus();
   }
 
   async function loadPrompt() {
-    const promptId = route.params.id as string
-    loading.value = true
+    const promptId = route.params.id as string;
+    loading.value = true;
 
     try {
-      const data = await getPrompt(promptId)
+      const data = await getPrompt(promptId);
       if (data) {
-        prompt.value = data
-        formData.name = data.name
-        formData.content = data.content
-        originalData.name = data.name
-        originalData.content = data.content
+        prompt.value = data;
+        formData.name = data.name;
+        formData.content = data.content;
+        originalData.name = data.name;
+        originalData.content = data.content;
 
         // Set breadcrumb title
-        setBreadcrumbTitle(data.name)
+        setBreadcrumbTitle(data.name);
       }
     } catch (err) {
-      console.error('Failed to load prompt:', err)
-      error('Failed to load prompt', 'An error occurred while loading the prompt. Please try again.')
+      console.error('Failed to load prompt:', err);
+      error('Failed to load prompt', 'An error occurred while loading the prompt. Please try again.');
     } finally {
-      loading.value = false
+      loading.value = false;
     }
   }
 
   async function handleSubmit() {
     if (!isFormValid.value || !hasChanges.value || !prompt.value) {
-      return
+      return;
     }
 
-    saving.value = true
+    saving.value = true;
     try {
-      await updatePrompt(prompt.value.id, formData.name.trim(), formData.content.trim())
-      success('Prompt updated', `"${formData.name.trim()}" has been updated successfully`)
-      router.push('/dashboard/prompts')
+      await updatePrompt(prompt.value.id, formData.name.trim(), formData.content.trim());
+      success('Prompt updated', `"${formData.name.trim()}" has been updated successfully`);
+      router.push('/prompts');
     } catch (err) {
-      console.error('Failed to update prompt:', err)
-      error('Failed to update prompt', 'An error occurred while updating the prompt. Please try again.')
+      console.error('Failed to update prompt:', err);
+      error('Failed to update prompt', 'An error occurred while updating the prompt. Please try again.');
     } finally {
-      saving.value = false
+      saving.value = false;
     }
   }
 
   function handleCancel() {
-    router.push('/dashboard/prompts')
+    router.push('/prompts');
   }
 
   onMounted(() => {
-    loadPrompt()
-  })
+    loadPrompt();
+  });
 
   onUnmounted(() => {
     // Clear breadcrumb title when leaving the page
-    clearBreadcrumbTitle()
-  })
+    clearBreadcrumbTitle();
+  });
 </script>

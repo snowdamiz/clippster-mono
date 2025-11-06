@@ -201,86 +201,86 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted } from 'vue'
-  import { useRouter } from 'vue-router'
-  import { getAllPrompts, deletePrompt, type Prompt } from '@/services/database'
-  import { useFormatters } from '@/composables/useFormatters'
-  import { useToast } from '@/composables/useToast'
-  import PageLayout from '@/components/PageLayout.vue'
-  import LoadingState from '@/components/LoadingState.vue'
-  import EmptyState from '@/components/EmptyState.vue'
+  import { ref, onMounted } from 'vue';
+  import { useRouter } from 'vue-router';
+  import { getAllPrompts, deletePrompt, type Prompt } from '@/services/database';
+  import { useFormatters } from '@/composables/useFormatters';
+  import { useToast } from '@/composables/useToast';
+  import PageLayout from '@/components/PageLayout.vue';
+  import LoadingState from '@/components/LoadingState.vue';
+  import EmptyState from '@/components/EmptyState.vue';
 
-  const router = useRouter()
-  const { success, error } = useToast()
-  const prompts = ref<Prompt[]>([])
-  const loading = ref(true)
-  const { getRelativeTime } = useFormatters()
-  const copiedId = ref<string | null>(null)
-  const showDeleteDialog = ref(false)
-  const promptToDelete = ref<Prompt | null>(null)
+  const router = useRouter();
+  const { success, error } = useToast();
+  const prompts = ref<Prompt[]>([]);
+  const loading = ref(true);
+  const { getRelativeTime } = useFormatters();
+  const copiedId = ref<string | null>(null);
+  const showDeleteDialog = ref(false);
+  const promptToDelete = ref<Prompt | null>(null);
 
   function navigateToNew() {
-    router.push('/dashboard/prompts/new')
+    router.push('/prompts/new');
   }
 
   function isDefaultPrompt(prompt: Prompt): boolean {
-    return prompt.name === 'Default Clip Detector'
+    return prompt.name === 'Default Clip Detector';
   }
 
   async function loadPrompts() {
-    loading.value = true
+    loading.value = true;
     try {
-      prompts.value = await getAllPrompts()
+      prompts.value = await getAllPrompts();
     } catch (err) {
-      console.error('Failed to load prompts:', err)
-      error('Failed to load prompts', 'An error occurred while loading prompts. Please try again.')
+      console.error('Failed to load prompts:', err);
+      error('Failed to load prompts', 'An error occurred while loading prompts. Please try again.');
     } finally {
-      loading.value = false
+      loading.value = false;
     }
   }
 
   async function copyPrompt(prompt: Prompt) {
     try {
-      await navigator.clipboard.writeText(prompt.content)
-      copiedId.value = prompt.id
-      success('Prompt copied', `"${prompt.name}" has been copied to clipboard`)
+      await navigator.clipboard.writeText(prompt.content);
+      copiedId.value = prompt.id;
+      success('Prompt copied', `"${prompt.name}" has been copied to clipboard`);
       // Clear the copied state after 2 seconds
       setTimeout(() => {
-        copiedId.value = null
-      }, 2000)
+        copiedId.value = null;
+      }, 2000);
     } catch (error) {
-      console.error('Failed to copy prompt:', error)
+      console.error('Failed to copy prompt:', error);
     }
   }
 
   function editPrompt(prompt: Prompt) {
-    router.push(`/dashboard/prompts/${prompt.id}/edit`)
+    router.push(`/prompts/${prompt.id}/edit`);
   }
 
   function confirmDelete(prompt: Prompt) {
-    promptToDelete.value = prompt
-    showDeleteDialog.value = true
+    promptToDelete.value = prompt;
+    showDeleteDialog.value = true;
   }
 
   async function deletePromptConfirmed() {
-    if (!promptToDelete.value) return
+    if (!promptToDelete.value) return;
 
-    const deletedPromptName = promptToDelete.value.name
+    const deletedPromptName = promptToDelete.value.name;
 
     try {
-      await deletePrompt(promptToDelete.value.id)
-      success('Prompt deleted', `"${deletedPromptName}" has been deleted successfully`)
-      await loadPrompts()
+      await deletePrompt(promptToDelete.value.id);
+      success('Prompt deleted', `"${deletedPromptName}" has been deleted successfully`);
+      await loadPrompts();
     } catch (err) {
-      console.error('Failed to delete prompt:', err)
-      error('Failed to delete prompt', 'An error occurred while deleting the prompt. Please try again.')
+      console.error('Failed to delete prompt:', err);
+      error('Failed to delete prompt', 'An error occurred while deleting the prompt. Please try again.');
     } finally {
-      showDeleteDialog.value = false
-      promptToDelete.value = null
+      showDeleteDialog.value = false;
+      promptToDelete.value = null;
     }
   }
 
   onMounted(() => {
-    loadPrompts()
-  })
+    loadPrompts();
+  });
 </script>

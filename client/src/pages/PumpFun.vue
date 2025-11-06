@@ -638,7 +638,7 @@
       setTimeout(() => {
         downloadStarting.value = false;
         // Navigate to Videos page to see progress
-        router.push('/dashboard/videos');
+        router.push('/videos');
       }, 500);
     } catch (err) {
       console.error('Failed to download clip:', err);

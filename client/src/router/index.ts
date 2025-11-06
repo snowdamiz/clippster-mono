@@ -1,108 +1,173 @@
-import { createRouter, createWebHistory } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { createRouter, createWebHistory } from 'vue-router';
+import { useAuthStore } from '@/stores/auth';
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
       path: '/',
-      redirect: '/dashboard'
+      redirect: '/projects',
+    },
+    {
+      path: '/dashboard',
+      redirect: '/projects',
     },
     {
       path: '/videos',
-      redirect: '/dashboard/videos'
+      redirect: '/clips',
     },
     {
       path: '/login',
       name: 'login',
       component: () => import('@/components/WalletAuth.vue'),
       beforeEnter: (_to, _from, next) => {
-        const authStore = useAuthStore()
+        const authStore = useAuthStore();
         if (authStore.isAuthenticated) {
-          next('/dashboard')
+          next('/projects');
         } else {
-          next()
+          next();
         }
-      }
+      },
     },
     {
-      path: '/dashboard',
+      path: '/projects',
+      name: 'projects',
       component: () => import('@/layouts/DashboardLayout.vue'),
       meta: { requiresAuth: true },
       children: [
         {
           path: '',
-          redirect: '/dashboard/projects'
+          name: 'projects-home',
+          component: () => import('@/pages/Projects.vue'),
+        },
+      ],
+    },
+    {
+      path: '/clips',
+      name: 'clips',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'clips-home',
+          component: () => import('@/pages/Clips.vue'),
+        },
+      ],
+    },
+    {
+      path: '/videos',
+      name: 'videos',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'videos-home',
+          component: () => import('@/pages/Videos.vue'),
+        },
+      ],
+    },
+    {
+      path: '/prompts',
+      name: 'prompts',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'prompts-home',
+          component: () => import('@/pages/Prompts.vue'),
         },
         {
-          path: 'projects',
-          name: 'projects',
-          component: () => import('@/pages/Projects.vue')
-        },
-        {
-          path: 'videos',
-          name: 'videos',
-          component: () => import('@/pages/Videos.vue')
-        },
-        {
-          path: 'clips',
-          name: 'clips',
-          component: () => import('@/pages/Clips.vue')
-        },
-        {
-          path: 'prompts',
-          name: 'prompts',
-          component: () => import('@/pages/Prompts.vue')
-        },
-        {
-          path: 'prompts/new',
+          path: 'new',
           name: 'prompts-new',
-          component: () => import('@/pages/NewPrompt.vue')
+          component: () => import('@/pages/NewPrompt.vue'),
         },
         {
-          path: 'prompts/:id/edit',
+          path: ':id/edit',
           name: 'prompts-edit',
-          component: () => import('@/pages/EditPrompt.vue')
+          component: () => import('@/pages/EditPrompt.vue'),
         },
+      ],
+    },
+    {
+      path: '/pricing',
+      name: 'pricing',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
         {
-          path: 'pricing',
-          name: 'pricing',
-          component: () => import('@/pages/Pricing.vue')
+          path: '',
+          name: 'pricing-home',
+          component: () => import('@/pages/Pricing.vue'),
         },
+      ],
+    },
+    {
+      path: '/pumpfun',
+      name: 'pumpfun',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
         {
-          path: 'pumpfun',
-          name: 'pumpfun',
-          component: () => import('@/pages/PumpFun.vue')
+          path: '',
+          name: 'pumpfun-home',
+          component: () => import('@/pages/PumpFun.vue'),
         },
+      ],
+    },
+    {
+      path: '/kick',
+      name: 'kick',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
         {
-          path: 'kick',
-          name: 'kick',
-          component: () => import('@/pages/Kick.vue')
+          path: '',
+          name: 'kick-home',
+          component: () => import('@/pages/Kick.vue'),
         },
+      ],
+    },
+    {
+      path: '/twitch',
+      name: 'twitch',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
         {
-          path: 'twitch',
-          name: 'twitch',
-          component: () => import('@/pages/Twitch.vue')
+          path: '',
+          name: 'twitch-home',
+          component: () => import('@/pages/Twitch.vue'),
         },
+      ],
+    },
+    {
+      path: '/youtube',
+      name: 'youtube',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
         {
-          path: 'youtube',
-          name: 'youtube',
-          component: () => import('@/pages/YouTube.vue')
-        }
-      ]
-    }
-  ]
-})
+          path: '',
+          name: 'youtube-home',
+          component: () => import('@/pages/YouTube.vue'),
+        },
+      ],
+    },
+  ],
+});
 
 // Navigation guard to check authentication
 router.beforeEach((to, _from, next) => {
-  const authStore = useAuthStore()
+  const authStore = useAuthStore();
 
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-    next('/login')
+    next('/login');
   } else {
-    next()
+    next();
   }
-})
+});
 
-export default router
+export default router;
