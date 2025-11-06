@@ -24,7 +24,7 @@
       <div
         v-for="project in projects"
         :key="project.id"
-        class="relative bg-card shadow-lg rounded-lg overflow-hidden cursor-pointer group hover:scale-102 transition-all"
+        class="relative bg-card rounded-lg overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
         @click="openWorkspace(project)"
       >
         <!-- Thumbnail background with vignette -->
@@ -41,115 +41,129 @@
           <!-- Dark vignette overlay -->
           <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60"></div>
         </div>
-
-        <div class="relative z-10 p-4.5 pb-5">
-          <div class="flex items-start justify-between mb-5">
-            <div :class="['p-3 rounded-lg', getThumbnailUrl(project.id) ? 'bg-white/10 backdrop-blur-sm' : 'bg-muted']">
-              <svg
-                :class="['h-6 w-6', getThumbnailUrl(project.id) ? 'text-white' : 'text-foreground']"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-                />
-              </svg>
-            </div>
-            <span
-              :class="[
-                'text-xs px-2 py-1 rounded-md',
-                getThumbnailUrl(project.id)
-                  ? 'text-white/70 bg-white/10 backdrop-blur-sm'
-                  : 'text-muted-foreground bg-muted',
-              ]"
+        <!-- Fallback background for projects without thumbnails -->
+        <div v-else class="absolute inset-0 z-0 bg-muted">
+          <div class="absolute inset-0 bg-gradient-to-br from-black/20 via-transparent to-black/40"></div>
+          <!-- Centered folder icon -->
+          <div class="absolute inset-0 flex items-center justify-center opacity-20">
+            <svg
+              class="h-16 w-16 text-foreground"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
             >
-              {{ getRelativeTime(project.updated_at) }}
-            </span>
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+              />
+            </svg>
           </div>
+        </div>
 
-          <h3 :class="['text-lg font-semibold mb-0.5', getThumbnailUrl(project.id) ? 'text-white' : 'text-foreground']">
+        <!-- Top right time badge -->
+        <div class="absolute top-4 right-4 z-10">
+          <span
+            :class="[
+              'text-xs px-2 py-1 rounded-md',
+              getThumbnailUrl(project.id)
+                ? 'text-white/70 bg-white/10 backdrop-blur-sm'
+                : 'text-muted-foreground bg-muted',
+            ]"
+          >
+            {{ getRelativeTime(project.updated_at) }}
+          </span>
+        </div>
+        <!-- Bottom left title and description -->
+        <div class="absolute bottom-2 left-2 right-2 z-10 bg-black/40 backdrop-blur-sm p-2 rounded-md">
+          <h3
+            :class="[
+              'text-md font-semibold mb-1 group-hover:transition-colors line-clamp-2',
+              getThumbnailUrl(project.id)
+                ? 'text-white group-hover:text-white/80'
+                : 'text-foreground group-hover:text-foreground/80',
+            ]"
+          >
             {{ project.name }}
           </h3>
 
-          <p :class="['text-sm line-clamp-2', getThumbnailUrl(project.id) ? 'text-white/80' : 'text-muted-foreground']">
-            {{ project.description || 'No description' }}
+          <p :class="['text-xs line-clamp-2', getThumbnailUrl(project.id) ? 'text-white/80' : 'text-muted-foreground']">
+            {{ project.description || 'No description' }} • {{ getClipCount(project.id) }} clips
           </p>
         </div>
-
+        <!-- Hover Overlay Buttons -->
         <div
-          :class="[
-            'flex items-center justify-between px-4 py-2',
-            getThumbnailUrl(project.id) ? 'border-white/10 bg-black/40 backdrop-blur-md' : 'border-border bg-[#141414]',
-          ]"
+          class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20 flex items-center justify-center gap-4"
         >
-          <span
-            :class="['text-sm font-medium', getThumbnailUrl(project.id) ? 'text-white/80' : 'text-muted-foreground']"
+          <button
+            class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+            title="Open Workspace"
+            @click.stop="openWorkspace(project)"
           >
-            {{ getClipCount(project.id) }} clips
-          </span>
-          <div class="flex items-center gap-1">
-            <button
-              :class="[
-                'p-2 rounded-md transition-colors',
-                getThumbnailUrl(project.id) ? 'hover:bg-white/10' : 'hover:bg-muted',
-              ]"
-              title="Edit"
-              @click.stop="editProject(project)"
+            <svg
+              class="h-6 w-6"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
             >
-              <svg
-                :class="[
-                  'h-4 w-4 transition-colors',
-                  getThumbnailUrl(project.id)
-                    ? 'text-white/60 hover:text-white'
-                    : 'text-muted-foreground hover:text-foreground',
-                ]"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                />
-              </svg>
-            </button>
-            <button
-              :class="[
-                'p-2 rounded-md transition-colors',
-                getThumbnailUrl(project.id) ? 'hover:bg-white/10' : 'hover:bg-muted',
-              ]"
-              title="Delete"
-              @click.stop="confirmDelete(project)"
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+              />
+
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          </button>
+          <button
+            class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+            title="Edit"
+            @click.stop="editProject(project)"
+          >
+            <svg
+              class="h-6 w-6"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
             >
-              <svg
-                :class="[
-                  'h-4 w-4 transition-colors',
-                  getThumbnailUrl(project.id)
-                    ? 'text-white/60 hover:text-white'
-                    : 'text-muted-foreground hover:text-foreground',
-                ]"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                />
-              </svg>
-            </button>
-          </div>
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+              />
+            </svg>
+          </button>
+          <button
+            class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+            title="Delete"
+            @click.stop="confirmDelete(project)"
+          >
+            <svg
+              class="h-6 w-6"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              />
+            </svg>
+          </button>
         </div>
       </div>
     </div>
