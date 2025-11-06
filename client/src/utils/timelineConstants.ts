@@ -28,7 +28,7 @@ export const ZOOM_CONFIG = {
 
 // Track dimensions
 export const TRACK_DIMENSIONS = {
-  LABEL_WIDTH: 64, // Width of track labels (w-16 = 4rem = 64px)
+  LABEL_WIDTH: 74, // Width of track labels (w-16 = 4rem = 64px)
   MIN_SEGMENT_DURATION: 0.5, // Minimum segment duration in seconds
   DEBOUNCE_DELAY: 100, // Debounce delay for database updates (ms)
   TOOLTIP_THROTTLE: 16, // Throttle delay for tooltip updates (~60fps)
