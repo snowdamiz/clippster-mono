@@ -65,7 +65,7 @@
         <!-- Popular Badge -->
         <div
           v-if="packKey === 'creator'"
-          class="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-xs font-bold px-4 py-1 rounded-full z-10 whitespace-nowrap"
+          class="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-xs font-bold px-4 py-1 rounded-full z-5 whitespace-nowrap"
         >
           ⭐ MOST POPULAR
         </div>
@@ -312,7 +312,7 @@
             <!-- Stripe Payment Button (Coming Soon) -->
             <div class="relative">
               <div
-                class="absolute -top-3 -right-3 bg-purple-700 text-white text-[11px] font-bold px-2 py-0.5 rounded-full z-10 whitespace-nowrap"
+                class="absolute -top-3 -right-3 bg-purple-700 text-white text-[11px] font-bold px-2 py-0.5 rounded-full z-5 whitespace-nowrap"
               >
                 Coming Soon
               </div>

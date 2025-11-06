@@ -29,7 +29,7 @@
       <!-- Credit Balance -->
       <router-link
         to="/dashboard/pricing"
-        class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-muted/70 to-muted/50 rounded-lg hover:from-purple-500/80 hover:to-indigo-700 transition-all cursor-pointer shadow-sm hover:shadow-md"
+        class="flex items-center gap-2 cursor-pointer"
         title="View Pricing & Purchase Credits"
       >
         <svg
@@ -56,110 +56,110 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, ref, onMounted } from 'vue'
-  import { useRoute } from 'vue-router'
-  import { useAuthStore } from '@/stores/auth'
-  import { useBreadcrumb } from '@/composables/useBreadcrumb'
+  import { computed, ref, onMounted } from 'vue';
+  import { useRoute } from 'vue-router';
+  import { useAuthStore } from '@/stores/auth';
+  import { useBreadcrumb } from '@/composables/useBreadcrumb';
 
-  const route = useRoute()
-  const authStore = useAuthStore()
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+  const route = useRoute();
+  const authStore = useAuthStore();
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
-  const hoursRemaining = ref(0)
-  const loadingBalance = ref(false)
+  const hoursRemaining = ref(0);
+  const loadingBalance = ref(false);
 
   // Get breadcrumb title from composable
-  const { breadcrumbTitle } = useBreadcrumb()
+  const { breadcrumbTitle } = useBreadcrumb();
 
   interface Breadcrumb {
-    title: string
-    path?: string
+    title: string;
+    path?: string;
   }
 
   const breadcrumbs = computed<Breadcrumb[]>(() => {
     // Access breadcrumbTitle to make computed reactive to it
-    const dynamicTitle = breadcrumbTitle.value
+    const dynamicTitle = breadcrumbTitle.value;
 
-    const pathSegments = route.path.split('/').filter((s) => s && s !== 'dashboard')
-    const crumbs: Breadcrumb[] = []
+    const pathSegments = route.path.split('/').filter((s) => s && s !== 'dashboard');
+    const crumbs: Breadcrumb[] = [];
 
-    if (pathSegments.length === 0) return crumbs
+    if (pathSegments.length === 0) return crumbs;
 
     // Handle nested routes
     for (let i = 0; i < pathSegments.length; i++) {
-      const segment = pathSegments[i]
-      const isLast = i === pathSegments.length - 1
+      const segment = pathSegments[i];
+      const isLast = i === pathSegments.length - 1;
 
       // Check if this is a UUID segment (8-4-4-4-12 format)
-      const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-      const isUUID = uuidPattern.test(segment)
+      const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const isUUID = uuidPattern.test(segment);
 
       // Format the title
-      let title = segment
-      let shouldSkip = false
+      let title = segment;
+      let shouldSkip = false;
 
       if (segment === 'new') {
         // Get the parent segment to create "New [Parent]"
-        const parent = pathSegments[i - 1] || ''
-        title = `New ${parent.slice(0, -1)}` // Remove trailing 's' for singular
+        const parent = pathSegments[i - 1] || '';
+        title = `New ${parent.slice(0, -1)}`; // Remove trailing 's' for singular
       } else if (segment === 'edit') {
         // Show "Edit" in the breadcrumb
-        title = 'Edit'
+        title = 'Edit';
       } else if (isUUID) {
         // Replace UUID with the breadcrumb title from composable
         if (dynamicTitle) {
-          title = dynamicTitle
+          title = dynamicTitle;
         } else {
           // Skip UUID segments that don't have a breadcrumb title yet
-          shouldSkip = true
+          shouldSkip = true;
         }
       }
 
-      if (shouldSkip) continue
+      if (shouldSkip) continue;
 
       // Build the path - but not for UUIDs (they don't have routes) or if it's the last segment
-      let linkPath: string | undefined = undefined
+      let linkPath: string | undefined = undefined;
       if (!isLast && !isUUID) {
-        linkPath = '/dashboard/' + pathSegments.slice(0, i + 1).join('/')
+        linkPath = '/dashboard/' + pathSegments.slice(0, i + 1).join('/');
       }
 
       crumbs.push({
         title,
-        path: linkPath
-      })
+        path: linkPath,
+      });
     }
 
-    return crumbs
-  })
+    return crumbs;
+  });
 
   async function fetchBalance() {
-    if (!authStore.token) return
+    if (!authStore.token) return;
 
-    loadingBalance.value = true
+    loadingBalance.value = true;
     try {
       const response = await fetch(`${API_BASE}/api/credits/balance`, {
         headers: {
           Authorization: `Bearer ${authStore.token}`,
-          'Content-Type': 'application/json'
-        }
-      })
+          'Content-Type': 'application/json',
+        },
+      });
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await response.json();
         if (data.success) {
-          hoursRemaining.value = parseFloat(data.balance.hours_remaining.toFixed(1))
+          hoursRemaining.value = parseFloat(data.balance.hours_remaining.toFixed(1));
         }
       }
     } catch (error) {
-      console.error('Failed to fetch balance:', error)
+      console.error('Failed to fetch balance:', error);
     } finally {
-      loadingBalance.value = false
+      loadingBalance.value = false;
     }
   }
 
   onMounted(() => {
-    fetchBalance()
+    fetchBalance();
     // Refresh balance every 30 seconds
-    setInterval(fetchBalance, 30000)
-  })
+    setInterval(fetchBalance, 30000);
+  });
 </script>

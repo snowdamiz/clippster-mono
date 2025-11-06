@@ -55,7 +55,7 @@
               <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60"></div>
             </div>
             <!-- Top right status badge -->
-            <div class="absolute top-4 right-4 z-10">
+            <div class="absolute top-4 right-4 z-5">
               <span
                 :class="[
                   'text-xs px-2 py-1 rounded-md border',
@@ -68,7 +68,7 @@
               </span>
             </div>
             <!-- Bottom left title and description -->
-            <div class="absolute bottom-2 left-2 right-2 z-10 bg-black/40 backdrop-blur-sm p-2 rounded-md">
+            <div class="absolute bottom-2 left-2 right-2 z-5 bg-black/40 backdrop-blur-sm p-2 rounded-md">
               <h3
                 :class="[
                   'text-md font-semibold mb-1 group-hover:transition-colors line-clamp-2',
@@ -97,7 +97,7 @@
             <!-- Hover Overlay Buttons -->
             <div
               v-if="getThumbnailUrl(clip)"
-              class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20 flex items-center justify-center gap-4"
+              class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-4"
             >
               <button
                 class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
