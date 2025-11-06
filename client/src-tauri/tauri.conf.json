@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "clippster-ui",
+        "title": "Clippster",
         "width": 1500,
         "height": 950
       }
