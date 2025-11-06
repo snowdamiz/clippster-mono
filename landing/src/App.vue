@@ -28,12 +28,12 @@ const getPlatformName = (p: string) => {
 <template>
   <div class="min-h-screen bg-background text-foreground">
     <!-- Header -->
-    <header class="border-b border-border/50 backdrop-blur-sm sticky top-0 z-50 bg-background/80">
+    <header role="banner" class="border-b border-border/50 backdrop-blur-sm sticky top-0 z-50 bg-background/80">
       <div class="container mx-auto px-4 py-4 flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <img src="/logo.svg" alt="clippster" class="h-8" />
+          <img src="/logo.svg" alt="Clippster - AI Video Clip Generator" class="h-8" />
         </div>
-        <nav class="hidden md:flex gap-8">
+        <nav role="navigation" aria-label="Main navigation" class="hidden md:flex gap-8">
           <a href="#features" class="text-sm text-muted-foreground hover:text-foreground transition-colors">Features</a>
           <a href="#pricing" class="text-sm text-muted-foreground hover:text-foreground transition-colors">Pricing</a>
           <a href="#download" class="text-sm text-muted-foreground hover:text-foreground transition-colors">Download</a>
@@ -45,7 +45,8 @@ const getPlatformName = (p: string) => {
     </header>
 
     <!-- Hero Section -->
-    <section class="relative container mx-auto px-4 py-20 md:py-32 overflow-hidden">
+    <main>
+      <section role="banner" aria-labelledby="hero-heading" class="relative container mx-auto px-4 py-20 md:py-32 overflow-hidden">
       <!-- Background decoration -->
       <div class="absolute inset-0 -z-10">
         <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
@@ -57,12 +58,12 @@ const getPlatformName = (p: string) => {
           <Sparkles class="w-4 h-4 text-purple-400" />
           <span>AI-Powered Clip Generation</span>
         </div>
-        <h1 class="text-5xl md:text-7xl font-bold tracking-tight leading-tight md:leading-tight">
+        <h1 id="hero-heading" class="text-5xl md:text-7xl font-bold tracking-tight leading-tight md:leading-tight">
           Turn Long Videos Into<br /><span class="bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">Viral Clips</span>
         </h1>
         <p class="text-xl text-muted-foreground max-w-2xl mx-auto">
-          AI finds your best moments and turns them into engaging clips. 
-          Fast, affordable, and ridiculously easy to use.
+          AI finds your best moments and turns them into viral clips for TikTok, YouTube Shorts, and Instagram Reels.
+          Save 72-81% compared to subscription-based alternatives while keeping your videos private on your computer.
         </p>
         <div class="flex flex-col sm:flex-row gap-4 justify-center items-center">
           <a href="#download" class="px-8 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all font-semibold text-lg shadow-lg shadow-purple-500/25 inline-block">
@@ -79,7 +80,7 @@ const getPlatformName = (p: string) => {
     </section>
 
     <!-- Features Section -->
-    <section id="features" class="relative container mx-auto px-4 py-20">
+    <section id="features" role="region" aria-labelledby="features-heading" class="relative container mx-auto px-4 py-20">
       <!-- Background decoration -->
       <div class="absolute inset-0 -z-10 overflow-hidden">
         <div class="absolute top-0 left-1/3 w-96 h-96 bg-purple-500/8 rounded-full blur-3xl"></div>
@@ -88,7 +89,7 @@ const getPlatformName = (p: string) => {
       
       <div class="relative">
         <div class="text-center space-y-4 mb-16">
-          <h2 class="text-3xl md:text-5xl font-bold">Why Choose <span class="bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">Clippster?</span></h2>
+          <h2 id="features-heading" class="text-3xl md:text-5xl font-bold">Why Choose <span class="bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">Clippster?</span></h2>
           <p class="text-muted-foreground text-lg">The smarter way to create clips</p>
         </div>
         
@@ -101,7 +102,8 @@ const getPlatformName = (p: string) => {
               </div>
               <h3 class="text-xl font-semibold">72-81% Cheaper</h3>
               <p class="text-muted-foreground">
-                Save thousands compared to Opus Clips subscription plans. Same quality, better price.
+                Save thousands compared to Opus Clips and other subscription-based video editing tools.
+                Pay once, use forever with no recurring fees.
               </p>
             </div>
           </div>
@@ -114,7 +116,8 @@ const getPlatformName = (p: string) => {
               </div>
               <h3 class="text-xl font-semibold">Privacy First</h3>
               <p class="text-muted-foreground">
-                Desktop app means your videos stay on your machine. No cloud uploads, total control.
+                Desktop application keeps your videos secure on your local machine. No cloud uploads, data mining, or privacy concerns.
+                Perfect for sensitive content and professional creators.
               </p>
             </div>
           </div>
@@ -127,7 +130,8 @@ const getPlatformName = (p: string) => {
               </div>
               <h3 class="text-xl font-semibold">Crypto Native</h3>
               <p class="text-muted-foreground">
-                Pay with SOL via Phantom. No credit cards, no personal info, instant transactions.
+                Pay with SOL via Phantom wallet. No credit cards required, no personal information collected,
+                instant global transactions. Web3 creator tools for the modern economy.
               </p>
             </div>
           </div>
@@ -136,9 +140,9 @@ const getPlatformName = (p: string) => {
     </section>
 
     <!-- How It Works -->
-    <section id="how" class="container mx-auto px-4 py-20 border-t border-border">
+    <section id="how" role="region" aria-labelledby="how-heading" class="container mx-auto px-4 py-20 border-t border-border">
       <div class="text-center space-y-4 mb-16">
-        <h2 class="text-3xl md:text-5xl font-bold">Simple. Fast. Effective.</h2>
+        <h2 id="how-heading" class="text-3xl md:text-5xl font-bold">Simple. Fast. Effective.</h2>
         <p class="text-muted-foreground text-lg">Get viral clips in 3 easy steps</p>
       </div>
 
@@ -182,9 +186,9 @@ const getPlatformName = (p: string) => {
     </section>
 
     <!-- Pricing -->
-    <section id="pricing" class="container mx-auto px-4 py-20">
+    <section id="pricing" role="region" aria-labelledby="pricing-heading" class="container mx-auto px-4 py-20">
       <div class="text-center space-y-4 mb-16">
-        <h2 class="text-3xl md:text-5xl font-bold">Choose Your <span class="bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">Credit Pack</span></h2>
+        <h2 id="pricing-heading" class="text-3xl md:text-5xl font-bold">Choose Your <span class="bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">Credit Pack</span></h2>
         <p class="text-muted-foreground text-lg">Pay once, use forever. No subscriptions, no expiration dates.</p>
       </div>
 
@@ -335,7 +339,7 @@ const getPlatformName = (p: string) => {
     </section>
 
     <!-- Download Section -->
-    <section id="download" class="container mx-auto px-4 py-20">
+    <section id="download" role="region" aria-labelledby="download-heading" class="container mx-auto px-4 py-20">
       <div class="relative">
         <!-- Background decoration -->
         <div class="absolute inset-0 -z-10 overflow-hidden">
@@ -347,7 +351,7 @@ const getPlatformName = (p: string) => {
           <!-- Top gradient bar -->
           <div class="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600"></div>
           
-          <h2 class="text-3xl md:text-5xl font-bold">Download <span class="bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">Clippster</span></h2>
+          <h2 id="download-heading" class="text-3xl md:text-5xl font-bold">Download <span class="bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">Clippster</span></h2>
           <p class="text-xl text-muted-foreground">
             Available for Windows and macOS. Install once, clip forever.
           </p>
@@ -366,12 +370,14 @@ const getPlatformName = (p: string) => {
       </div>
     </section>
 
+    </main>
+
     <!-- Footer -->
-    <footer class="border-t border-border mt-20">
+    <footer role="contentinfo" class="border-t border-border mt-20">
       <div class="container mx-auto px-4 py-8">
         <div class="flex flex-col md:flex-row justify-between items-center gap-4">
           <div class="flex items-center gap-2">
-            <img src="/logo.svg" alt="clippster" class="h-6" />
+            <img src="/logo.svg" alt="Clippster - AI Video Clip Generator" class="h-6" />
           </div>
           <div class="text-sm text-muted-foreground">
             © 2025 Clippster. All rights reserved.
