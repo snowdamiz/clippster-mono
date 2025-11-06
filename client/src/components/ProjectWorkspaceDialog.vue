@@ -173,8 +173,10 @@
   import { useVideoPlayer } from '@/composables/useVideoPlayer';
   import { useProgressSocket } from '@/composables/useProgressSocket';
   import { useToast } from '@/composables/useToast';
+  import { useWindowClose } from '@/composables/useWindowClose';
 
   const { error: showError } = useToast();
+  const { setClipGenerationInProgress } = useWindowClose();
 
   const props = defineProps<{
     modelValue: boolean;
@@ -282,6 +284,17 @@
       resetProgress();
       setProgressProjectId(props.project.id.toString());
 
+      // Notify window close handlers that clip generation is starting
+      setClipGenerationInProgress(true);
+
+      // Also set backend state for window close handling
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('set_clip_generation_in_progress', { inProgress: true });
+      } catch (error) {
+        console.error('[ProjectWorkspaceDialog] Failed to set backend clip generation state:', error);
+      }
+
       console.log('[ProjectWorkspaceDialog] Starting enhanced clip detection with chunking support');
 
       // Use the new chunked detection system
@@ -376,8 +389,18 @@
       // Keep progress dialog open to show the error
     } finally {
       // Don't immediately hide progress - let the user see the completion/error state
-      setTimeout(() => {
+      setTimeout(async () => {
         clipGenerationInProgress.value = false;
+        // Notify window close handlers that clip generation has ended
+        setClipGenerationInProgress(false);
+
+        // Also clear backend state
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('set_clip_generation_in_progress', { inProgress: false });
+        } catch (error) {
+          console.error('[ProjectWorkspaceDialog] Failed to clear backend clip generation state:', error);
+        }
       }, 1000);
     }
   }

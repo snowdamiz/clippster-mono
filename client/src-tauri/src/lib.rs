@@ -61,6 +61,7 @@ struct AudioChunk {
 static AUTH_RESULT: Lazy<Arc<Mutex<Option<AuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 static PAYMENT_RESULT: Lazy<Arc<Mutex<Option<PaymentResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 static ACTIVE_DOWNLOADS: Lazy<Arc<Mutex<HashMap<String, bool>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+static CLIP_GENERATION_IN_PROGRESS: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
 static AUTH_SERVER_PORT: u16 = 48274;
 static PAYMENT_SERVER_PORT: u16 = 48275;
 static VIDEO_SERVER_PORT: u16 = 48276;
@@ -821,6 +822,20 @@ async fn cancel_all_downloads() -> Result<Vec<String>, String> {
 async fn check_file_exists(path: String) -> Result<bool, String> {
     use std::path::Path;
     Ok(Path::new(&path).exists())
+}
+
+#[tauri::command]
+async fn set_clip_generation_in_progress(in_progress: bool) -> Result<(), String> {
+    let mut clip_gen = CLIP_GENERATION_IN_PROGRESS.lock().unwrap();
+    *clip_gen = in_progress;
+    println!("[Rust] Clip generation in progress set to: {}", in_progress);
+    Ok(())
+}
+
+#[tauri::command]
+async fn is_clip_generation_in_progress() -> Result<bool, String> {
+    let clip_gen = CLIP_GENERATION_IN_PROGRESS.lock().unwrap();
+    Ok(*clip_gen)
 }
 
 #[tauri::command]
@@ -1587,8 +1602,18 @@ pub fn run() {
                         downloads.len()
                     };
 
-                    if active_count > 0 {
-                        println!("[Rust] {} active downloads found, preventing close and showing dialog", active_count);
+                    // Check if clip generation is in progress
+                    let clip_gen_in_progress = {
+                        let clip_gen = CLIP_GENERATION_IN_PROGRESS.lock().unwrap();
+                        *clip_gen
+                    };
+
+                    // Show dialog if there are active downloads OR clip generation in progress
+                    if active_count > 0 || clip_gen_in_progress {
+                        println!(
+                            "[Rust] Operations in progress - Downloads: {}, Clip Generation: {}",
+                            active_count, clip_gen_in_progress
+                        );
 
                         // Prevent the window from closing immediately
                         api.prevent_close();
@@ -1596,7 +1621,7 @@ pub fn run() {
                         // Emit event to frontend to show confirmation dialog
                         let _ = app_handle.emit("window-close-requested", active_count);
                     } else {
-                        println!("[Rust] No active downloads, allowing close");
+                        println!("[Rust] No active operations, allowing close");
                     }
                 }
             });
@@ -1617,6 +1642,8 @@ pub fn run() {
             get_active_downloads_count,
             cancel_all_downloads,
             check_file_exists,
+            set_clip_generation_in_progress,
+            is_clip_generation_in_progress,
             extract_audio_from_video,
             extract_and_chunk_audio,
             storage::get_storage_paths,
