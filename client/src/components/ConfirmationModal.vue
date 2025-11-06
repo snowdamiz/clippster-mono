@@ -46,10 +46,10 @@
   }
 
   withDefaults(defineProps<Props>(), {
-    title: 'Delete Item',
-    message: 'Are you sure you want to delete',
+    title: 'Confirm Action',
+    message: 'Are you sure you want to',
     suffix: '?',
-    confirmText: 'Delete',
+    confirmText: 'Confirm',
   });
 
   defineEmits<Emits>();

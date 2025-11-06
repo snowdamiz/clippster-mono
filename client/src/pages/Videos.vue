@@ -323,7 +323,7 @@
     <!-- Video Player Dialog -->
     <VideoPlayerDialog :video="videoToPlay" :show-video-player="showVideoPlayer" @close="handleVideoPlayerClose" />
     <!-- Delete Confirmation Modal -->
-    <DeleteConfirmationModal
+    <ConfirmationModal
       :show="showDeleteDialog"
       :title="videoHasClips ? 'Delete Video with Referenced Clips' : 'Delete Video'"
       :message="
@@ -369,7 +369,7 @@
   import LoadingState from '@/components/LoadingState.vue';
   import EmptyState from '@/components/EmptyState.vue';
   import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
-  import DeleteConfirmationModal from '@/components/DeleteConfirmationModal.vue';
+  import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import PaginationFooter from '@/components/PaginationFooter.vue';
 
   const videos = ref<RawVideo[]>([]);

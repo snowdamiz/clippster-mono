@@ -131,7 +131,7 @@
     @close="closeProgress"
   />
   <!-- Delete Confirmation Modal -->
-  <DeleteConfirmationModal
+  <ConfirmationModal
     :show="showDeleteDialog"
     title="Delete Clip"
     message="Are you sure you want to delete this clip?"
@@ -169,7 +169,7 @@
   import ClipsPanel from './ClipsPanel.vue';
   import Timeline from './Timeline.vue';
   import ClipGenerationProgress from './ClipGenerationProgress.vue';
-  import DeleteConfirmationModal from './DeleteConfirmationModal.vue';
+  import ConfirmationModal from './ConfirmationModal.vue';
   import { useVideoPlayer } from '@/composables/useVideoPlayer';
   import { useProgressSocket } from '@/composables/useProgressSocket';
   import { useToast } from '@/composables/useToast';

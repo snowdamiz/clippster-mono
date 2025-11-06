@@ -187,7 +187,7 @@
     <!-- Video Player Dialog -->
     <VideoPlayerDialog :video="clipToPlay" :show-video-player="showVideoPlayer" @close="showVideoPlayer = false" />
     <!-- Delete Confirmation Modal -->
-    <DeleteConfirmationModal
+    <ConfirmationModal
       :show="showDeleteDialog"
       title="Delete Clip"
       :message="'Are you sure you want to delete'"
@@ -221,7 +221,7 @@
   import LoadingState from '@/components/LoadingState.vue';
   import EmptyState from '@/components/EmptyState.vue';
   import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
-  import DeleteConfirmationModal from '@/components/DeleteConfirmationModal.vue';
+  import ConfirmationModal from '@/components/ConfirmationModal.vue';
 
   const clips = ref<Clip[]>([]);
   const loading = ref(true);

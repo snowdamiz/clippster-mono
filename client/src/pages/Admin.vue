@@ -292,7 +292,7 @@
     </div>
 
     <!-- Promotion Confirmation Modal -->
-    <DeleteConfirmationModal
+    <ConfirmationModal
       :show="showPromoteDialog"
       title="Promote User to Admin"
       :message="'Are you sure you want to promote'"
@@ -309,7 +309,7 @@
   import { ref, onMounted } from 'vue';
   import { useAuthStore } from '@/stores/auth';
   import PageLayout from '@/components/PageLayout.vue';
-  import DeleteConfirmationModal from '@/components/DeleteConfirmationModal.vue';
+  import ConfirmationModal from '@/components/ConfirmationModal.vue';
 
   interface User {
     id: number;
