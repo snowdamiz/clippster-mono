@@ -483,6 +483,15 @@ export async function hasClipsForProject(projectId: string): Promise<boolean> {
   return (result[0]?.count || 0) > 0;
 }
 
+export async function hasDetectedOrGeneratedClips(projectId: string): Promise<boolean> {
+  const db = await getDatabase();
+  const result = await db.select<{ count: number }[]>(
+    'SELECT COUNT(*) as count FROM clips WHERE project_id = ? AND status IN ("detected", "generated")',
+    [projectId]
+  );
+  return (result[0]?.count || 0) > 0;
+}
+
 // Prompt queries
 export async function createPrompt(name: string, content: string): Promise<string> {
   const db = await getDatabase();

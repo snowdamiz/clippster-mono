@@ -43,6 +43,34 @@
               Raw Video
               <span class="text-red-500">*</span>
             </label>
+            <!-- Warning message when project has detected/generated clips -->
+            <div
+              v-if="isEdit && hasDetectedOrGeneratedClipsLocked"
+              class="mb-3 p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg"
+            >
+              <div class="flex items-start gap-2">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.82 16.5c-.77.833.192 2.5 1.732 2.5z"
+                  />
+                </svg>
+                <div>
+                  <p class="text-sm font-medium text-amber-800 dark:text-amber-200">Video selection locked</p>
+                  <p class="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                    This project contains detected or generated clips, so the raw video cannot be changed.
+                  </p>
+                </div>
+              </div>
+            </div>
             <!-- Selected Video Display -->
             <div
               v-if="selectedVideo"
@@ -89,6 +117,8 @@
                 @click="clearVideoSelection"
                 class="p-1 hover:bg-muted rounded"
                 title="Remove selection"
+                :disabled="isEdit && hasDetectedOrGeneratedClipsLocked"
+                :class="{ 'opacity-50 cursor-not-allowed': isEdit && hasDetectedOrGeneratedClipsLocked }"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -106,7 +136,11 @@
               type="button"
               @click="showVideoSelector = true"
               class="w-full px-4 py-3 bg-muted hover:bg-muted/80 border rounded-lg text-foreground transition-all flex items-center justify-center gap-2"
-              :class="{ 'border-red-500': errors.selectedVideoId }"
+              :class="{
+                'border-red-500': errors.selectedVideoId,
+                'opacity-50 cursor-not-allowed': isEdit && hasDetectedOrGeneratedClipsLocked,
+              }"
+              :disabled="isEdit && hasDetectedOrGeneratedClipsLocked"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -194,7 +228,7 @@
               class="group relative bg-card border-2 rounded-lg overflow-hidden transition-all"
               :class="[
                 selectedVideo?.id === video.id ? 'border-purple-500' : 'border-border',
-                isVideoAvailable(video) ? 'hover:border-foreground/20' : 'opacity-60 cursor-not-allowed'
+                isVideoAvailable(video) ? 'hover:border-foreground/20' : 'opacity-60 cursor-not-allowed',
               ]"
               :disabled="!isVideoAvailable(video)"
             >
@@ -236,7 +270,7 @@
                         ? 'bg-green-500/80 text-white'
                         : video.project_id === props.project?.id
                           ? 'bg-blue-500/80 text-white'
-                          : 'bg-orange-500/80 text-white'
+                          : 'bg-orange-500/80 text-white',
                     ]"
                   >
                     {{ getVideoStatusText(video) }}
@@ -329,7 +363,7 @@
                     @click="goToPage(page)"
                     :class="[
                       'px-2.5 py-1.5 rounded-md transition-all text-sm font-medium',
-                      currentPage === page ? 'text-purple-500' : 'hover:bg-muted/80 text-foreground'
+                      currentPage === page ? 'text-purple-500' : 'hover:bg-muted/80 text-foreground',
                     ]"
                   >
                     {{ page }}
@@ -344,7 +378,7 @@
                     @click="goToPage(page)"
                     :class="[
                       'px-2.5 py-1.5 rounded-md transition-all text-sm font-medium',
-                      currentPage === page ? 'text-purple-500' : 'hover:bg-muted/80 text-foreground'
+                      currentPage === page ? 'text-purple-500' : 'hover:bg-muted/80 text-foreground',
                     ]"
                   >
                     {{ page }}
@@ -362,7 +396,7 @@
                     @click="goToPage(page)"
                     :class="[
                       'px-2.5 py-1.5 rounded-md transition-all text-sm font-medium',
-                      currentPage === page ? 'bg-purple-500 text-white' : 'hover:bg-muted/80 text-foreground'
+                      currentPage === page ? 'bg-purple-500 text-white' : 'hover:bg-muted/80 text-foreground',
                     ]"
                   >
                     {{ page }}
@@ -396,236 +430,260 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch, reactive, computed } from 'vue'
-  import { invoke } from '@tauri-apps/api/core'
-  import { getAllRawVideos, getProject, type Project, type RawVideo } from '@/services/database'
-  import { useFormatters } from '@/composables/useFormatters'
+  import { ref, watch, reactive, computed } from 'vue';
+  import { invoke } from '@tauri-apps/api/core';
+  import {
+    getAllRawVideos,
+    getProject,
+    hasDetectedOrGeneratedClips,
+    type Project,
+    type RawVideo,
+  } from '@/services/database';
+  import { useFormatters } from '@/composables/useFormatters';
 
   export interface ProjectFormData {
-    name: string
-    description: string
-    selectedVideoId?: string
+    name: string;
+    description: string;
+    selectedVideoId?: string;
   }
 
   const props = defineProps<{
-    modelValue: boolean
-    project?: Project | null
-  }>()
+    modelValue: boolean;
+    project?: Project | null;
+  }>();
 
   const emit = defineEmits<{
-    'update:modelValue': [value: boolean]
-    submit: [data: ProjectFormData]
-  }>()
+    'update:modelValue': [value: boolean];
+    submit: [data: ProjectFormData];
+  }>();
 
-  const loading = ref(false)
-  const isEdit = ref(false)
+  const loading = ref(false);
+  const isEdit = ref(false);
+  const hasDetectedOrGeneratedClipsLocked = ref(false);
   const formData = reactive<ProjectFormData>({
     name: '',
     description: '',
-    selectedVideoId: ''
-  })
+    selectedVideoId: '',
+  });
 
-  const errors = reactive<Partial<Record<keyof ProjectFormData, string>>>({})
-  const showVideoSelector = ref(false)
-  const availableVideos = ref<RawVideo[]>([])
-  const selectedVideo = ref<RawVideo | null>(null)
-  const thumbnailCache = ref<Map<string, string>>(new Map())
-  const projectCache = ref<Map<string, string>>(new Map())
-  const { formatDuration } = useFormatters()
+  const errors = reactive<Partial<Record<keyof ProjectFormData, string>>>({});
+  const showVideoSelector = ref(false);
+  const availableVideos = ref<RawVideo[]>([]);
+  const selectedVideo = ref<RawVideo | null>(null);
+  const thumbnailCache = ref<Map<string, string>>(new Map());
+  const projectCache = ref<Map<string, string>>(new Map());
+  const { formatDuration } = useFormatters();
 
   // Pagination state
-  const currentPage = ref(1)
-  const videosPerPage = 8
+  const currentPage = ref(1);
+  const videosPerPage = 8;
 
   // Pagination computed properties
-  const totalPages = computed(() => Math.ceil(availableVideos.value.length / videosPerPage))
+  const totalPages = computed(() => Math.ceil(availableVideos.value.length / videosPerPage));
   const paginatedVideos = computed(() => {
-    const startIndex = (currentPage.value - 1) * videosPerPage
-    const endIndex = startIndex + videosPerPage
-    return availableVideos.value.slice(startIndex, endIndex)
-  })
+    const startIndex = (currentPage.value - 1) * videosPerPage;
+    const endIndex = startIndex + videosPerPage;
+    return availableVideos.value.slice(startIndex, endIndex);
+  });
 
   // Computed property for empty state message
   const emptyStateMessage = computed(() => {
-    return 'No videos found. Upload some videos to get started.'
-  })
+    return 'No videos found. Upload some videos to get started.';
+  });
 
   // Computed property for video count breakdown
   const videoCountInfo = computed(() => {
-    const total = availableVideos.value.length
-    const available = availableVideos.value.filter((v) => isVideoAvailable(v)).length
-    const unavailable = total - available
+    const total = availableVideos.value.length;
+    const available = availableVideos.value.filter((v) => isVideoAvailable(v)).length;
+    const unavailable = total - available;
 
     if (unavailable > 0) {
-      return `${total} video${total !== 1 ? 's' : ''} (${available} available, ${unavailable} in projects)`
+      return `${total} video${total !== 1 ? 's' : ''} (${available} available, ${unavailable} in projects)`;
     }
-    return `${total} video${total !== 1 ? 's' : ''} available`
-  })
+    return `${total} video${total !== 1 ? 's' : ''} available`;
+  });
 
   // Pagination functions
   function goToPage(page: number) {
     if (page >= 1 && page <= totalPages.value) {
-      currentPage.value = page
+      currentPage.value = page;
     }
   }
 
   function nextPage() {
     if (currentPage.value < totalPages.value) {
-      currentPage.value++
+      currentPage.value++;
     }
   }
 
   function previousPage() {
     if (currentPage.value > 1) {
-      currentPage.value--
+      currentPage.value--;
     }
   }
 
   // Reset to first page when available videos change
   watch(availableVideos, () => {
-    currentPage.value = 1
-  })
+    currentPage.value = 1;
+  });
+
+  // Check if project has detected or generated clips when editing
+  async function checkProjectClips() {
+    if (isEdit.value && props.project) {
+      try {
+        hasDetectedOrGeneratedClipsLocked.value = await hasDetectedOrGeneratedClips(props.project.id);
+      } catch (error) {
+        console.error('Failed to check project clips:', error);
+        hasDetectedOrGeneratedClipsLocked.value = false;
+      }
+    } else {
+      hasDetectedOrGeneratedClipsLocked.value = false;
+    }
+  }
 
   // Watch for project prop changes to populate form for editing
   watch(
     () => props.project,
-    (newProject) => {
+    async (newProject) => {
       if (newProject) {
-        isEdit.value = true
-        formData.name = newProject.name
-        formData.description = newProject.description || ''
+        isEdit.value = true;
+        formData.name = newProject.name;
+        formData.description = newProject.description || '';
+        // Check if project has detected or generated clips
+        await checkProjectClips();
         // Try to find a video associated with this project
         if (availableVideos.value.length > 0) {
-          const matchingVideo = availableVideos.value.find((v) => v.project_id === newProject.id)
+          const matchingVideo = availableVideos.value.find((v) => v.project_id === newProject.id);
           if (matchingVideo) {
-            selectedVideo.value = matchingVideo
+            selectedVideo.value = matchingVideo;
           }
         }
       } else {
-        isEdit.value = false
-        resetForm()
+        isEdit.value = false;
+        hasDetectedOrGeneratedClipsLocked.value = false;
+        resetForm();
       }
     },
     { immediate: true }
-  )
+  );
 
   // Reset form when dialog opens/closes
   watch(
     () => props.modelValue,
     (isOpen) => {
       if (isOpen) {
-        loadAvailableVideos()
+        loadAvailableVideos();
         if (!props.project) {
-          resetForm()
+          resetForm();
         }
       }
     }
-  )
+  );
 
   function resetForm() {
-    formData.name = ''
-    formData.description = ''
-    selectedVideo.value = null
-    Object.keys(errors).forEach((key) => delete errors[key as keyof ProjectFormData])
+    formData.name = '';
+    formData.description = '';
+    selectedVideo.value = null;
+    Object.keys(errors).forEach((key) => delete errors[key as keyof ProjectFormData]);
   }
 
   function validateForm(): boolean {
-    Object.keys(errors).forEach((key) => delete errors[key as keyof ProjectFormData])
+    Object.keys(errors).forEach((key) => delete errors[key as keyof ProjectFormData]);
 
     if (!formData.name.trim()) {
-      errors.name = 'Project name is required'
-      return false
+      errors.name = 'Project name is required';
+      return false;
     }
 
     if (formData.name.trim().length < 2) {
-      errors.name = 'Project name must be at least 2 characters'
-      return false
+      errors.name = 'Project name must be at least 2 characters';
+      return false;
     }
 
     // Require video selection for new projects (not when editing)
     if (!isEdit.value && !selectedVideo.value) {
-      errors.selectedVideoId = 'Video file is required'
-      return false
+      errors.selectedVideoId = 'Video file is required';
+      return false;
     }
 
-    return true
+    return true;
   }
 
   async function handleSubmit() {
-    if (!validateForm()) return
+    if (!validateForm()) return;
 
-    loading.value = true
+    loading.value = true;
     try {
       emit('submit', {
         name: formData.name.trim(),
         description: formData.description.trim(),
-        selectedVideoId: selectedVideo.value?.id
-      })
+        selectedVideoId: selectedVideo.value?.id,
+      });
     } finally {
-      loading.value = false
+      loading.value = false;
     }
   }
 
   function selectVideoFromLibrary(video: RawVideo) {
     if (!isVideoAvailable(video)) {
-      return // Don't allow selection of videos that are already associated with other projects
+      return; // Don't allow selection of videos that are already associated with other projects
     }
-    selectedVideo.value = video
-    showVideoSelector.value = false
+    selectedVideo.value = video;
+    showVideoSelector.value = false;
   }
 
   function clearVideoSelection() {
-    selectedVideo.value = null
+    selectedVideo.value = null;
   }
 
   function getThumbnailUrl(video: RawVideo): string | null {
-    return thumbnailCache.value.get(video.id) || null
+    return thumbnailCache.value.get(video.id) || null;
   }
 
   function isVideoAvailable(video: RawVideo): boolean {
     // Video is available if it has no project association
     // or if editing and it's associated with the current project
     if (isEdit.value && props.project && video.project_id === props.project.id) {
-      return true
+      return true;
     }
-    return video.project_id === null
+    return video.project_id === null;
   }
 
   async function getProjectName(projectId: string): Promise<string> {
     // Check cache first
     if (projectCache.value.has(projectId)) {
-      return projectCache.value.get(projectId)!
+      return projectCache.value.get(projectId)!;
     }
 
     try {
-      const project = await getProject(projectId)
-      const projectName = project?.name || 'Unknown Project'
-      projectCache.value.set(projectId, projectName)
-      return projectName
+      const project = await getProject(projectId);
+      const projectName = project?.name || 'Unknown Project';
+      projectCache.value.set(projectId, projectName);
+      return projectName;
     } catch (error) {
-      console.warn('Failed to get project name:', projectId, error)
-      const fallbackName = 'Unknown Project'
-      projectCache.value.set(projectId, fallbackName)
-      return fallbackName
+      console.warn('Failed to get project name:', projectId, error);
+      const fallbackName = 'Unknown Project';
+      projectCache.value.set(projectId, fallbackName);
+      return fallbackName;
     }
   }
 
   function getVideoStatusText(video: RawVideo): string {
     if (isEdit.value && props.project && video.project_id === props.project.id) {
-      return 'Current Project'
+      return 'Current Project';
     }
     if (video.project_id) {
-      const projectName = projectCache.value.get(video.project_id)
-      return projectName ? `In: ${projectName}` : 'In Project'
+      const projectName = projectCache.value.get(video.project_id);
+      return projectName ? `In: ${projectName}` : 'In Project';
     }
-    return 'Available'
+    return 'Available';
   }
 
   async function loadAvailableVideos() {
     try {
-      const allVideos = await getAllRawVideos()
+      const allVideos = await getAllRawVideos();
       // Show all videos, but indicate which ones are available
-      availableVideos.value = allVideos
+      availableVideos.value = allVideos;
 
       // Load thumbnails and project names
       for (const video of availableVideos.value) {
@@ -633,31 +691,31 @@
         if (video.thumbnail_path && !thumbnailCache.value.has(video.id)) {
           try {
             const dataUrl = await invoke<string>('read_file_as_data_url', {
-              filePath: video.thumbnail_path
-            })
-            thumbnailCache.value.set(video.id, dataUrl)
+              filePath: video.thumbnail_path,
+            });
+            thumbnailCache.value.set(video.id, dataUrl);
           } catch (error) {
-            console.warn('Failed to load thumbnail for video:', video.id, error)
+            console.warn('Failed to load thumbnail for video:', video.id, error);
           }
         }
 
         // Load project names for videos that have project associations
         if (video.project_id && !projectCache.value.has(video.project_id)) {
           try {
-            await getProjectName(video.project_id)
+            await getProjectName(video.project_id);
           } catch (error) {
-            console.warn('Failed to load project name for video:', video.id, error)
+            console.warn('Failed to load project name for video:', video.id, error);
           }
         }
       }
     } catch (error) {
-      console.error('Failed to load available videos:', error)
+      console.error('Failed to load available videos:', error);
     }
   }
 
   function close() {
     if (!loading.value) {
-      emit('update:modelValue', false)
+      emit('update:modelValue', false);
     }
   }
 </script>
