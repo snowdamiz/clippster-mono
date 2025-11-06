@@ -114,7 +114,7 @@
                 backgroundImage: `url(${download.result.thumbnail_path})`,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',
-                backgroundRepeat: 'no-repeat'
+                backgroundRepeat: 'no-repeat',
               }"
             >
               <!-- Dark vignette overlay -->
@@ -163,7 +163,7 @@
           <div
             v-for="video in paginatedVideos"
             :key="video.id"
-            class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer group aspect-video"
+            class="relative bg-card rounded-lg overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
             @click="playVideo(video)"
           >
             <!-- Thumbnail background with vignette -->
@@ -174,11 +174,11 @@
                 backgroundImage: `url(${getThumbnailUrl(video)})`,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',
-                backgroundRepeat: 'no-repeat'
+                backgroundRepeat: 'no-repeat',
               }"
             >
               <!-- Dark vignette overlay -->
-              <div class="absolute inset-0 bg-gradient-to-br from-black/80 via-black/60 to-black/90"></div>
+              <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60"></div>
             </div>
             <!-- Top left project badge -->
             <div v-if="video.project_id" class="absolute top-4 left-4 z-10">
@@ -187,7 +187,7 @@
                   'text-xs px-2 py-1 rounded-md flex items-center gap-1',
                   getThumbnailUrl(video)
                     ? 'text-white/70 bg-white/10 backdrop-blur-sm'
-                    : 'text-muted-foreground bg-muted'
+                    : 'text-muted-foreground bg-muted',
                 ]"
               >
                 <svg
@@ -214,26 +214,26 @@
                   'text-xs px-2 py-1 rounded-md',
                   getThumbnailUrl(video)
                     ? 'text-white/70 bg-white/10 backdrop-blur-sm'
-                    : 'text-muted-foreground bg-muted'
+                    : 'text-muted-foreground bg-muted',
                 ]"
               >
                 {{ formatDuration(video.duration || undefined) }}
               </span>
             </div>
             <!-- Bottom left title and description -->
-            <div class="absolute bottom-4 left-4 right-4 z-10">
+            <div class="absolute bottom-2 left-2 right-2 z-10 bg-black/40 backdrop-blur-sm p-2 rounded-md">
               <h3
                 :class="[
-                  'text-lg font-semibold mb-1 group-hover:transition-colors line-clamp-2',
+                  'text-md font-semibold mb-1 group-hover:transition-colors line-clamp-2',
                   getThumbnailUrl(video)
                     ? 'text-white group-hover:text-white/80'
-                    : 'text-foreground group-hover:text-foreground/80'
+                    : 'text-foreground group-hover:text-foreground/80',
                 ]"
               >
                 {{ video.original_filename }}
               </h3>
 
-              <p :class="['text-sm line-clamp-2', getThumbnailUrl(video) ? 'text-white/80' : 'text-muted-foreground']">
+              <p :class="['text-xs line-clamp-2', getThumbnailUrl(video) ? 'text-white/80' : 'text-muted-foreground']">
                 {{ formatRelativeTime(video.created_at) }}
               </p>
             </div>
@@ -352,107 +352,107 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+  import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
   import {
     getAllRawVideos,
     hasClipsReferencingRawVideo,
     getProject,
     type RawVideo,
-    type Project
-  } from '@/services/database'
-  import { useToast } from '@/composables/useToast'
-  import { useDownloads } from '@/composables/useDownloads'
-  import { useVideoOperations } from '@/composables/useVideoOperations'
-  import { revealItemInDir } from '@tauri-apps/plugin-opener'
-  import { getStoragePath } from '@/services/storage'
-  import PageLayout from '@/components/PageLayout.vue'
-  import LoadingState from '@/components/LoadingState.vue'
-  import EmptyState from '@/components/EmptyState.vue'
-  import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue'
-  import DeleteConfirmationModal from '@/components/DeleteConfirmationModal.vue'
-  import PaginationFooter from '@/components/PaginationFooter.vue'
+    type Project,
+  } from '@/services/database';
+  import { useToast } from '@/composables/useToast';
+  import { useDownloads } from '@/composables/useDownloads';
+  import { useVideoOperations } from '@/composables/useVideoOperations';
+  import { revealItemInDir } from '@tauri-apps/plugin-opener';
+  import { getStoragePath } from '@/services/storage';
+  import PageLayout from '@/components/PageLayout.vue';
+  import LoadingState from '@/components/LoadingState.vue';
+  import EmptyState from '@/components/EmptyState.vue';
+  import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
+  import DeleteConfirmationModal from '@/components/DeleteConfirmationModal.vue';
+  import PaginationFooter from '@/components/PaginationFooter.vue';
 
-  const videos = ref<RawVideo[]>([])
-  const loading = ref(true)
-  const showDeleteDialog = ref(false)
-  const videoToDelete = ref<RawVideo | null>(null)
-  const videoHasClips = ref(false) // True if clips reference this video
-  const showVideoPlayer = ref(false)
-  const videoToPlay = ref<RawVideo | null>(null)
-  const thumbnailCache = ref<Map<string, string>>(new Map())
-  const projectCache = ref<Map<string, Project>>(new Map())
-  const { success, error } = useToast()
+  const videos = ref<RawVideo[]>([]);
+  const loading = ref(true);
+  const showDeleteDialog = ref(false);
+  const videoToDelete = ref<RawVideo | null>(null);
+  const videoHasClips = ref(false); // True if clips reference this video
+  const showVideoPlayer = ref(false);
+  const videoToPlay = ref<RawVideo | null>(null);
+  const thumbnailCache = ref<Map<string, string>>(new Map());
+  const projectCache = ref<Map<string, Project>>(new Map());
+  const { success, error } = useToast();
 
   // Video operations composable
-  const { uploading, uploadVideo, deleteVideo, loadVideoThumbnail } = useVideoOperations()
+  const { uploading, uploadVideo, deleteVideo, loadVideoThumbnail } = useVideoOperations();
 
   // Pagination state
-  const currentPage = ref(1)
-  const videosPerPage = 20
+  const currentPage = ref(1);
+  const videosPerPage = 20;
 
   // Downloads setup
   const {
     initialize: initializeDownloads,
     getActiveDownloads,
     cleanupOldDownloads,
-    onDownloadComplete
-  } = useDownloads()
+    onDownloadComplete,
+  } = useDownloads();
 
-  const activeDownloads = computed(() => getActiveDownloads())
+  const activeDownloads = computed(() => getActiveDownloads());
 
   // Format file size utility
   function formatFileSize(bytes?: number): string {
-    if (!bytes || bytes === 0) return '0 B'
-    const k = 1024
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
   // Format relative time for video dates
   function formatRelativeTime(timestamp?: string | Date | number): string {
-    if (!timestamp) return 'Added recently'
+    if (!timestamp) return 'Added recently';
 
     // Handle different timestamp formats
-    let date: Date
+    let date: Date;
 
     try {
       if (typeof timestamp === 'string') {
         // Handle ISO format or other string formats
-        date = new Date(timestamp)
+        date = new Date(timestamp);
       } else if (typeof timestamp === 'number') {
         // Handle Unix timestamp (could be seconds or milliseconds)
         // If the number is very small, it's likely seconds, not milliseconds
-        date = new Date(timestamp < 10000000000 ? timestamp * 1000 : timestamp)
+        date = new Date(timestamp < 10000000000 ? timestamp * 1000 : timestamp);
       } else if (timestamp instanceof Date) {
-        date = timestamp
+        date = timestamp;
       } else {
-        console.warn('[Videos] Unknown timestamp format:', timestamp)
-        return 'Added recently'
+        console.warn('[Videos] Unknown timestamp format:', timestamp);
+        return 'Added recently';
       }
 
       // Check if date is valid
       if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
-        console.warn('[Videos] Invalid date created from timestamp:', timestamp, 'Result:', date)
-        return 'Added recently'
+        console.warn('[Videos] Invalid date created from timestamp:', timestamp, 'Result:', date);
+        return 'Added recently';
       }
     } catch (error) {
-      console.error('[Videos] Error creating date from timestamp:', timestamp, error)
-      return 'Added recently'
+      console.error('[Videos] Error creating date from timestamp:', timestamp, error);
+      return 'Added recently';
     }
 
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
 
     // Handle negative differences (future dates)
     if (diffMs < 0) {
-      return 'Added recently'
+      return 'Added recently';
     }
 
-    const secondsAgo = Math.floor(diffMs / 1000)
-    const minutesAgo = Math.floor(secondsAgo / 60)
-    const hoursAgo = Math.floor(minutesAgo / 60)
-    const daysAgo = Math.floor(hoursAgo / 24)
+    const secondsAgo = Math.floor(diffMs / 1000);
+    const minutesAgo = Math.floor(secondsAgo / 60);
+    const hoursAgo = Math.floor(minutesAgo / 60);
+    const daysAgo = Math.floor(hoursAgo / 24);
 
     // Debug logging
     if (daysAgo > 365) {
@@ -460,141 +460,141 @@
         timestamp,
         date: date.toISOString(),
         now: now.toISOString(),
-        daysAgo
-      })
+        daysAgo,
+      });
     }
 
-    if (secondsAgo < 60) return 'Added just now'
-    if (minutesAgo < 60) return `Added ${minutesAgo} minute${minutesAgo !== 1 ? 's' : ''} ago`
-    if (hoursAgo < 24) return `Added ${hoursAgo} hour${hoursAgo !== 1 ? 's' : ''} ago`
-    if (daysAgo < 7) return `Added ${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago`
+    if (secondsAgo < 60) return 'Added just now';
+    if (minutesAgo < 60) return `Added ${minutesAgo} minute${minutesAgo !== 1 ? 's' : ''} ago`;
+    if (hoursAgo < 24) return `Added ${hoursAgo} hour${hoursAgo !== 1 ? 's' : ''} ago`;
+    if (daysAgo < 7) return `Added ${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago`;
 
     // For dates older than a week, show the actual date
-    const weeksAgo = Math.floor(daysAgo / 7)
+    const weeksAgo = Math.floor(daysAgo / 7);
     if (weeksAgo < 4) {
-      return `Added ${weeksAgo} week${weeksAgo !== 1 ? 's' : ''} ago`
+      return `Added ${weeksAgo} week${weeksAgo !== 1 ? 's' : ''} ago`;
     }
 
     // For very old dates, show formatted date
     const options: Intl.DateTimeFormatOptions = {
       month: 'short',
       day: 'numeric',
-      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
-    }
-    return `Added ${date.toLocaleDateString('en-US', options)}`
+      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+    };
+    return `Added ${date.toLocaleDateString('en-US', options)}`;
   }
 
   // Format video duration
   function formatDuration(seconds?: number): string {
-    if (!seconds) return 'Unknown'
-    const hours = Math.floor(seconds / 3600)
-    const minutes = Math.floor((seconds % 3600) / 60)
-    const secs = Math.floor(seconds % 60)
+    if (!seconds) return 'Unknown';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
 
     if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     } else {
-      return `${minutes}:${secs.toString().padStart(2, '0')}`
+      return `${minutes}:${secs.toString().padStart(2, '0')}`;
     }
   }
 
   // Pagination computed properties
-  const totalPages = computed(() => Math.ceil(videos.value.length / videosPerPage))
+  const totalPages = computed(() => Math.ceil(videos.value.length / videosPerPage));
   const paginatedVideos = computed(() => {
-    const startIndex = (currentPage.value - 1) * videosPerPage
-    const endIndex = startIndex + videosPerPage
-    const paginated = videos.value.slice(startIndex, endIndex)
-    return paginated
-  })
+    const startIndex = (currentPage.value - 1) * videosPerPage;
+    const endIndex = startIndex + videosPerPage;
+    const paginated = videos.value.slice(startIndex, endIndex);
+    return paginated;
+  });
 
   // Pagination functions
   function goToPage(page: number) {
     if (page >= 1 && page <= totalPages.value) {
-      currentPage.value = page
+      currentPage.value = page;
     }
   }
 
   function nextPage() {
     if (currentPage.value < totalPages.value) {
-      currentPage.value++
+      currentPage.value++;
     }
   }
 
   function previousPage() {
     if (currentPage.value > 1) {
-      currentPage.value--
+      currentPage.value--;
     }
   }
 
   // Reset to first page when videos change
   watch(videos, () => {
-    currentPage.value = 1
-  })
+    currentPage.value = 1;
+  });
 
-  let cleanupInterval: ReturnType<typeof setInterval> | null = null
-  let unregisterDownloadCallback: (() => void) | null = null
+  let cleanupInterval: ReturnType<typeof setInterval> | null = null;
+  let unregisterDownloadCallback: (() => void) | null = null;
 
   async function loadVideos() {
-    loading.value = true
+    loading.value = true;
     try {
-      videos.value = await getAllRawVideos()
+      videos.value = await getAllRawVideos();
 
       // Reset pagination to first page when loading new videos
-      currentPage.value = 1
+      currentPage.value = 1;
       // Load thumbnails and project info
       for (const video of videos.value) {
-        await loadVideoThumbnail(video, thumbnailCache.value)
+        await loadVideoThumbnail(video, thumbnailCache.value);
 
         // Load project info if video has a project
         if (video.project_id) {
-          await getProjectInfo(video.project_id)
+          await getProjectInfo(video.project_id);
         }
       }
     } catch (error) {
-      console.error('Failed to load videos:', error)
+      console.error('Failed to load videos:', error);
     } finally {
-      loading.value = false
+      loading.value = false;
     }
   }
 
   // Handle download completion - immediately refresh the videos list
   function handleDownloadComplete(download: any) {
     // Immediately refresh the videos list to show the newly completed download
-    loadVideos()
+    loadVideos();
 
     // Show a success notification if available
     if (download.result?.success && download.rawVideoId) {
-      success('Download Complete', `"${download.title}" has been downloaded and added to your videos`)
+      success('Download Complete', `"${download.title}" has been downloaded and added to your videos`);
     }
   }
 
   function getThumbnailUrl(video: RawVideo): string | null {
-    return thumbnailCache.value.get(video.id) || null
+    return thumbnailCache.value.get(video.id) || null;
   }
 
   async function getProjectInfo(projectId: string): Promise<Project | null> {
     // Check cache first
     if (projectCache.value.has(projectId)) {
-      return projectCache.value.get(projectId) || null
+      return projectCache.value.get(projectId) || null;
     }
 
     try {
-      const project = await getProject(projectId)
+      const project = await getProject(projectId);
       if (project) {
-        projectCache.value.set(projectId, project)
+        projectCache.value.set(projectId, project);
       }
-      return project
+      return project;
     } catch (error) {
-      console.error('Failed to get project info:', error)
-      return null
+      console.error('Failed to get project info:', error);
+      return null;
     }
   }
 
   async function handleUpload() {
-    const result = await uploadVideo()
+    const result = await uploadVideo();
     if (result.success) {
       // Reload videos list
-      await loadVideos()
+      await loadVideos();
     }
   }
 
@@ -602,103 +602,103 @@
     try {
       // Create a fresh copy of the video object to ensure reactivity
       // This helps when reopening the same video
-      videoToPlay.value = { ...video }
-      showVideoPlayer.value = true
+      videoToPlay.value = { ...video };
+      showVideoPlayer.value = true;
     } catch (err) {
-      console.error('Failed to prepare video:', err)
+      console.error('Failed to prepare video:', err);
     }
   }
 
   function handleVideoPlayerClose() {
-    showVideoPlayer.value = false
+    showVideoPlayer.value = false;
     // Clear the video reference to ensure proper reload when reopening
     setTimeout(() => {
-      videoToPlay.value = null
-    }, 100)
+      videoToPlay.value = null;
+    }, 100);
   }
 
   async function confirmDelete(video: RawVideo) {
-    videoToDelete.value = video
+    videoToDelete.value = video;
 
     // Check if video has clips
     try {
-      videoHasClips.value = await hasClipsReferencingRawVideo(video.id)
-      showDeleteDialog.value = true
+      videoHasClips.value = await hasClipsReferencingRawVideo(video.id);
+      showDeleteDialog.value = true;
     } catch (err) {
-      console.error('Failed to check if video has clips:', err)
+      console.error('Failed to check if video has clips:', err);
       // If we can't check, proceed with normal deletion
-      videoHasClips.value = false
-      showDeleteDialog.value = true
+      videoHasClips.value = false;
+      showDeleteDialog.value = true;
     }
   }
 
   function handleDeleteDialogClose() {
-    showDeleteDialog.value = false
-    videoHasClips.value = false
-    videoToDelete.value = null
+    showDeleteDialog.value = false;
+    videoHasClips.value = false;
+    videoToDelete.value = null;
   }
 
   async function deleteVideoConfirmed() {
-    if (!videoToDelete.value) return
+    if (!videoToDelete.value) return;
 
-    const result = await deleteVideo(videoToDelete.value)
+    const result = await deleteVideo(videoToDelete.value);
 
     if (result.success) {
       // Remove from thumbnail cache if exists
       if (videoToDelete.value.id && thumbnailCache.value.has(videoToDelete.value.id)) {
-        thumbnailCache.value.delete(videoToDelete.value.id)
+        thumbnailCache.value.delete(videoToDelete.value.id);
       }
 
-      await loadVideos()
+      await loadVideos();
     }
 
-    showDeleteDialog.value = false
-    videoHasClips.value = false
-    videoToDelete.value = null
+    showDeleteDialog.value = false;
+    videoHasClips.value = false;
+    videoToDelete.value = null;
   }
 
   async function openVideosFolder() {
     try {
-      const videosPath = await getStoragePath('videos')
+      const videosPath = await getStoragePath('videos');
       // Use the first video file if available, otherwise use a dummy path
       if (videos.value.length > 0) {
         // Reveal the first video file, which will open the videos folder
-        await revealItemInDir(videos.value[0].file_path)
+        await revealItemInDir(videos.value[0].file_path);
       } else {
         // If no videos, append a dummy filename to open the videos folder
         // The file doesn't need to exist, revealItemInDir will still open the parent folder
-        await revealItemInDir(videosPath + '\\dummy.mp4')
+        await revealItemInDir(videosPath + '\\dummy.mp4');
       }
     } catch (err) {
-      console.error('Failed to open videos folder:', err)
-      error('Failed to open folder', 'Unable to open the videos folder')
+      console.error('Failed to open videos folder:', err);
+      error('Failed to open folder', 'Unable to open the videos folder');
     }
   }
 
   onMounted(async () => {
     // Initialize downloads system
-    await initializeDownloads()
+    await initializeDownloads();
 
     // Register for download completion events for immediate updates
-    unregisterDownloadCallback = onDownloadComplete(handleDownloadComplete)
+    unregisterDownloadCallback = onDownloadComplete(handleDownloadComplete);
 
     // Load videos (will show existing videos + any recently completed downloads)
-    await loadVideos()
+    await loadVideos();
 
     // Set up periodic cleanup (no longer need to check for completed downloads)
     cleanupInterval = setInterval(() => {
-      cleanupOldDownloads()
-    }, 2000) // Cleanup every 2 seconds
-  })
+      cleanupOldDownloads();
+    }, 2000); // Cleanup every 2 seconds
+  });
 
   onUnmounted(() => {
     if (cleanupInterval) {
-      clearInterval(cleanupInterval)
+      clearInterval(cleanupInterval);
     }
     if (unregisterDownloadCallback) {
-      unregisterDownloadCallback()
+      unregisterDownloadCallback();
     }
-  })
+  });
 </script>
 
 <style scoped>

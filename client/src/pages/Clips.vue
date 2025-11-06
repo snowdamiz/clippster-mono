@@ -37,7 +37,7 @@
           <div
             v-for="clip in clips"
             :key="clip.id"
-            class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer group aspect-video"
+            class="relative bg-card rounded-lg overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
             @click="playClip(clip)"
           >
             <!-- Thumbnail background with vignette -->
@@ -48,11 +48,11 @@
                 backgroundImage: `url(${getThumbnailUrl(clip)})`,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',
-                backgroundRepeat: 'no-repeat'
+                backgroundRepeat: 'no-repeat',
               }"
             >
               <!-- Dark vignette overlay -->
-              <div class="absolute inset-0 bg-gradient-to-br from-black/80 via-black/60 to-black/90"></div>
+              <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60"></div>
             </div>
             <!-- Top right status badge -->
             <div class="absolute top-4 right-4 z-10">
@@ -61,20 +61,20 @@
                   'text-xs px-2 py-1 rounded-md border',
                   getThumbnailUrl(clip)
                     ? getClipStatusBadgeClass(clip.status)
-                    : 'text-muted-foreground bg-muted border-border'
+                    : 'text-muted-foreground bg-muted border-border',
                 ]"
               >
                 {{ getClipStatusText(clip.status) }}
               </span>
             </div>
             <!-- Bottom left title and description -->
-            <div class="absolute bottom-4 left-4 right-4 z-10">
+            <div class="absolute bottom-2 left-2 right-2 z-10 bg-black/40 backdrop-blur-sm p-2 rounded-md">
               <h3
                 :class="[
-                  'text-lg font-semibold mb-1 group-hover:transition-colors line-clamp-2',
+                  'text-md font-semibold mb-1 group-hover:transition-colors line-clamp-2',
                   getThumbnailUrl(clip)
                     ? 'text-white group-hover:text-white/80'
-                    : 'text-foreground group-hover:text-foreground/80'
+                    : 'text-foreground group-hover:text-foreground/80',
                 ]"
               >
                 {{ clip.name || 'Untitled Clip' }}
@@ -83,11 +83,11 @@
               <p
                 :class="[
                   'text-xs mb-1 line-clamp-1',
-                  getThumbnailUrl(clip) ? 'text-white/70' : 'text-muted-foreground/80'
+                  getThumbnailUrl(clip) ? 'text-white/70' : 'text-muted-foreground/80',
                 ]"
                 v-if="clip.project_id && getProjectName(clip.project_id)"
               >
-                {{ getProjectName(clip.project_id) }}
+                Project: {{ getProjectName(clip.project_id) }}
               </p>
 
               <p :class="['text-sm line-clamp-1', getThumbnailUrl(clip) ? 'text-white/80' : 'text-muted-foreground']">
@@ -201,9 +201,9 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, computed } from 'vue'
-  import { invoke } from '@tauri-apps/api/core'
-  import { revealItemInDir } from '@tauri-apps/plugin-opener'
+  import { ref, onMounted, computed } from 'vue';
+  import { invoke } from '@tauri-apps/api/core';
+  import { revealItemInDir } from '@tauri-apps/plugin-opener';
   import {
     getGeneratedClips,
     getDetectedClips,
@@ -213,183 +213,183 @@
     getRawVideosByProjectId,
     type Clip,
     type Project,
-    type RawVideo
-  } from '@/services/database'
-  import { getStoragePath } from '@/services/storage'
-  import { useFormatters } from '@/composables/useFormatters'
-  import PageLayout from '@/components/PageLayout.vue'
-  import LoadingState from '@/components/LoadingState.vue'
-  import EmptyState from '@/components/EmptyState.vue'
-  import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue'
-  import DeleteConfirmationModal from '@/components/DeleteConfirmationModal.vue'
+    type RawVideo,
+  } from '@/services/database';
+  import { getStoragePath } from '@/services/storage';
+  import { useFormatters } from '@/composables/useFormatters';
+  import PageLayout from '@/components/PageLayout.vue';
+  import LoadingState from '@/components/LoadingState.vue';
+  import EmptyState from '@/components/EmptyState.vue';
+  import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
+  import DeleteConfirmationModal from '@/components/DeleteConfirmationModal.vue';
 
-  const clips = ref<Clip[]>([])
-  const loading = ref(true)
-  const showDeleteDialog = ref(false)
-  const clipToDelete = ref<Clip | null>(null)
-  const showVideoPlayer = ref(false)
-  const clipToPlay = ref<RawVideo | null>(null)
-  const thumbnailCache = ref<Map<string, string>>(new Map())
-  const rawVideoCache = ref<Map<string, (RawVideo & { thumbnail_path: string | null })[]>>(new Map())
-  const projectCache = ref<Map<string, Project>>(new Map())
-  const { getRelativeTime } = useFormatters()
+  const clips = ref<Clip[]>([]);
+  const loading = ref(true);
+  const showDeleteDialog = ref(false);
+  const clipToDelete = ref<Clip | null>(null);
+  const showVideoPlayer = ref(false);
+  const clipToPlay = ref<RawVideo | null>(null);
+  const thumbnailCache = ref<Map<string, string>>(new Map());
+  const rawVideoCache = ref<Map<string, (RawVideo & { thumbnail_path: string | null })[]>>(new Map());
+  const projectCache = ref<Map<string, Project>>(new Map());
+  const { getRelativeTime } = useFormatters();
 
   // Computed property to check if any clips have actual files
   const hasAnyClipsWithFiles = computed(() => {
-    return clips.value.some((clip) => clip.file_path && clip.file_path.trim() !== '')
-  })
+    return clips.value.some((clip) => clip.file_path && clip.file_path.trim() !== '');
+  });
 
   async function loadClips() {
-    loading.value = true
+    loading.value = true;
     try {
       // Load both generated and detected clips
-      const [generatedClips, detectedClips] = await Promise.all([getGeneratedClips(), getDetectedClips()])
+      const [generatedClips, detectedClips] = await Promise.all([getGeneratedClips(), getDetectedClips()]);
 
       // Combine and sort by created_at date
-      clips.value = [...generatedClips, ...detectedClips].sort((a, b) => b.created_at - a.created_at)
+      clips.value = [...generatedClips, ...detectedClips].sort((a, b) => b.created_at - a.created_at);
 
       // Load thumbnails, project info, and raw videos for all clips
       for (const clip of clips.value) {
-        await loadClipThumbnail(clip)
+        await loadClipThumbnail(clip);
 
         // Load project info if clip has a project
         if (clip.project_id) {
-          await getProjectInfo(clip.project_id)
+          await getProjectInfo(clip.project_id);
           // Load raw videos for this project to use as fallback thumbnails
-          await loadRawVideosForProject(clip.project_id)
+          await loadRawVideosForProject(clip.project_id);
         }
       }
     } catch (error) {
-      console.error('Failed to load clips:', error)
+      console.error('Failed to load clips:', error);
     } finally {
-      loading.value = false
+      loading.value = false;
     }
   }
 
   async function loadRawVideosForProject(projectId: string): Promise<void> {
     // Check cache first
     if (rawVideoCache.value.has(projectId)) {
-      return
+      return;
     }
 
     try {
-      const rawVideos = await getRawVideosByProjectId(projectId)
+      const rawVideos = await getRawVideosByProjectId(projectId);
 
       // Convert raw video thumbnails to data URLs for caching
       const processedRawVideos = await Promise.all(
         rawVideos.map(async (video) => {
-          let thumbnailDataUrl = null
+          let thumbnailDataUrl = null;
           if (video.thumbnail_path) {
             try {
               thumbnailDataUrl = await invoke<string>('read_file_as_data_url', {
-                filePath: video.thumbnail_path
-              })
+                filePath: video.thumbnail_path,
+              });
             } catch (error) {
-              console.warn(`Failed to load raw video thumbnail for ${video.id}:`, error)
+              console.warn(`Failed to load raw video thumbnail for ${video.id}:`, error);
             }
           }
-          return { ...video, thumbnail_path: thumbnailDataUrl }
+          return { ...video, thumbnail_path: thumbnailDataUrl };
         })
-      )
+      );
 
-      rawVideoCache.value.set(projectId, processedRawVideos)
+      rawVideoCache.value.set(projectId, processedRawVideos);
     } catch (error) {
-      console.error('Failed to load raw videos for project:', error)
+      console.error('Failed to load raw videos for project:', error);
     }
   }
 
   async function loadClipThumbnail(clip: Clip) {
     try {
-      const thumbnail = await getThumbnailByClipId(clip.id)
+      const thumbnail = await getThumbnailByClipId(clip.id);
       if (thumbnail && thumbnail.file_path) {
         // Convert local file path to data URL for browser display
         const dataUrl = await invoke<string>('read_file_as_data_url', {
-          filePath: thumbnail.file_path
-        })
-        thumbnailCache.value.set(clip.id, dataUrl)
+          filePath: thumbnail.file_path,
+        });
+        thumbnailCache.value.set(clip.id, dataUrl);
       }
     } catch (error) {
-      console.error(`Failed to load thumbnail for clip ${clip.id}:`, error)
+      console.error(`Failed to load thumbnail for clip ${clip.id}:`, error);
     }
   }
 
   async function getProjectInfo(projectId: string): Promise<Project | null> {
     // Check cache first
     if (projectCache.value.has(projectId)) {
-      return projectCache.value.get(projectId) || null
+      return projectCache.value.get(projectId) || null;
     }
 
     try {
-      const project = await getProject(projectId)
+      const project = await getProject(projectId);
       if (project) {
-        projectCache.value.set(projectId, project)
+        projectCache.value.set(projectId, project);
       }
-      return project
+      return project;
     } catch (error) {
-      console.error('Failed to get project info:', error)
-      return null
+      console.error('Failed to get project info:', error);
+      return null;
     }
   }
 
   function getThumbnailUrl(clip: Clip): string | null {
     // First try to get clip-specific thumbnail
-    const clipThumbnail = thumbnailCache.value.get(clip.id)
+    const clipThumbnail = thumbnailCache.value.get(clip.id);
     if (clipThumbnail) {
-      return clipThumbnail
+      return clipThumbnail;
     }
 
     // If no clip thumbnail and this is a detected clip, try to use raw video thumbnail
     if (clip.status === 'detected' && clip.project_id) {
-      const rawVideos = rawVideoCache.value.get(clip.project_id)
+      const rawVideos = rawVideoCache.value.get(clip.project_id);
       if (rawVideos && rawVideos.length > 0) {
         // Use the first raw video's thumbnail as fallback
-        const rawVideo = rawVideos[0]
+        const rawVideo = rawVideos[0];
         if (rawVideo.thumbnail_path) {
-          return rawVideo.thumbnail_path
+          return rawVideo.thumbnail_path;
         }
       }
     }
 
-    return null
+    return null;
   }
 
   function getClipStatusBadgeClass(status: string | null): string {
     switch (status) {
       case 'generated':
-        return 'bg-green-500/20 text-green-300 border-green-500/30'
+        return 'bg-green-500/20 text-green-300 border-green-500/30';
       case 'detected':
-        return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30'
+        return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30';
       case 'processing':
-        return 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+        return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
       default:
-        return 'bg-gray-500/20 text-gray-300 border-gray-500/30'
+        return 'bg-gray-500/20 text-gray-300 border-gray-500/30';
     }
   }
 
   function getProjectName(projectId: string): string | null {
-    const project = projectCache.value.get(projectId)
-    return project?.name || null
+    const project = projectCache.value.get(projectId);
+    return project?.name || null;
   }
 
   function getClipStatusText(status: string | null): string {
     switch (status) {
       case 'generated':
-        return 'Generated'
+        return 'Generated';
       case 'detected':
-        return 'Detected'
+        return 'Detected';
       case 'processing':
-        return 'Processing'
+        return 'Processing';
       default:
-        return 'Unknown'
+        return 'Unknown';
     }
   }
 
   async function openClipsFolder() {
     try {
-      const basePath = await getStoragePath('base')
-      await revealItemInDir(basePath)
+      const basePath = await getStoragePath('base');
+      await revealItemInDir(basePath);
     } catch (err) {
-      console.error('Failed to open Clippster directory:', err)
+      console.error('Failed to open Clippster directory:', err);
     }
   }
 
@@ -397,8 +397,8 @@
     try {
       // Check if clip has a valid file path
       if (!clip.file_path) {
-        console.warn(`[Clips] Clip ${clip.id} has no file path, cannot play`)
-        return
+        console.warn(`[Clips] Clip ${clip.id} has no file path, cannot play`);
+        return;
       }
 
       // Convert clip to RawVideo-like format for the video player
@@ -416,48 +416,48 @@
         file_size: null,
         original_project_id: null,
         created_at: clip.created_at,
-        updated_at: clip.updated_at
-      }
-      clipToPlay.value = clipAsVideo
-      showVideoPlayer.value = true
+        updated_at: clip.updated_at,
+      };
+      clipToPlay.value = clipAsVideo;
+      showVideoPlayer.value = true;
     } catch (err) {
-      console.error('Failed to prepare clip:', err)
+      console.error('Failed to prepare clip:', err);
     }
   }
 
   async function confirmDelete(clip: Clip) {
-    clipToDelete.value = clip
-    showDeleteDialog.value = true
+    clipToDelete.value = clip;
+    showDeleteDialog.value = true;
   }
 
   function handleDeleteDialogClose() {
-    showDeleteDialog.value = false
-    clipToDelete.value = null
+    showDeleteDialog.value = false;
+    clipToDelete.value = null;
   }
 
   async function deleteClipConfirmed() {
-    if (!clipToDelete.value) return
+    if (!clipToDelete.value) return;
 
     try {
-      await deleteClip(clipToDelete.value.id)
+      await deleteClip(clipToDelete.value.id);
 
       // Remove from thumbnail cache if exists
       if (clipToDelete.value.id && thumbnailCache.value.has(clipToDelete.value.id)) {
-        thumbnailCache.value.delete(clipToDelete.value.id)
+        thumbnailCache.value.delete(clipToDelete.value.id);
       }
 
-      await loadClips()
+      await loadClips();
     } catch (error) {
-      console.error('Failed to delete clip:', error)
+      console.error('Failed to delete clip:', error);
     }
 
-    showDeleteDialog.value = false
-    clipToDelete.value = null
+    showDeleteDialog.value = false;
+    clipToDelete.value = null;
   }
 
   onMounted(() => {
-    loadClips()
-  })
+    loadClips();
+  });
 </script>
 
 <style scoped>

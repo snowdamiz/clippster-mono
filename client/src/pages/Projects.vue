@@ -24,7 +24,7 @@
       <div
         v-for="project in projects"
         :key="project.id"
-        class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer group"
+        class="relative bg-card shadow-lg rounded-lg overflow-hidden cursor-pointer group hover:scale-102 transition-all"
         @click="openWorkspace(project)"
       >
         <!-- Thumbnail background with vignette -->
@@ -35,11 +35,11 @@
             backgroundImage: `url(${getThumbnailUrl(project.id)})`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat'
+            backgroundRepeat: 'no-repeat',
           }"
         >
           <!-- Dark vignette overlay -->
-          <div class="absolute inset-0 bg-gradient-to-br from-black/80 via-black/60 to-black/90"></div>
+          <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60"></div>
         </div>
 
         <div class="relative z-10 p-4.5 pb-5">
@@ -65,21 +65,14 @@
                 'text-xs px-2 py-1 rounded-md',
                 getThumbnailUrl(project.id)
                   ? 'text-white/70 bg-white/10 backdrop-blur-sm'
-                  : 'text-muted-foreground bg-muted'
+                  : 'text-muted-foreground bg-muted',
               ]"
             >
               {{ getRelativeTime(project.updated_at) }}
             </span>
           </div>
 
-          <h3
-            :class="[
-              'text-lg font-semibold mb-0.5 group-hover:transition-colors',
-              getThumbnailUrl(project.id)
-                ? 'text-white group-hover:text-white/80'
-                : 'text-foreground group-hover:text-foreground/80'
-            ]"
-          >
+          <h3 :class="['text-lg font-semibold mb-0.5', getThumbnailUrl(project.id) ? 'text-white' : 'text-foreground']">
             {{ project.name }}
           </h3>
 
@@ -90,8 +83,8 @@
 
         <div
           :class="[
-            'flex items-center justify-between px-4 py-2 border-t',
-            getThumbnailUrl(project.id) ? 'border-white/10 bg-black/40 backdrop-blur-sm' : 'border-border bg-[#141414]'
+            'flex items-center justify-between px-4 py-2',
+            getThumbnailUrl(project.id) ? 'border-white/10 bg-black/40 backdrop-blur-md' : 'border-border bg-[#141414]',
           ]"
         >
           <span
@@ -103,7 +96,7 @@
             <button
               :class="[
                 'p-2 rounded-md transition-colors',
-                getThumbnailUrl(project.id) ? 'hover:bg-white/10' : 'hover:bg-muted'
+                getThumbnailUrl(project.id) ? 'hover:bg-white/10' : 'hover:bg-muted',
               ]"
               title="Edit"
               @click.stop="editProject(project)"
@@ -113,7 +106,7 @@
                   'h-4 w-4 transition-colors',
                   getThumbnailUrl(project.id)
                     ? 'text-white/60 hover:text-white'
-                    : 'text-muted-foreground hover:text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
                 ]"
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
@@ -131,7 +124,7 @@
             <button
               :class="[
                 'p-2 rounded-md transition-colors',
-                getThumbnailUrl(project.id) ? 'hover:bg-white/10' : 'hover:bg-muted'
+                getThumbnailUrl(project.id) ? 'hover:bg-white/10' : 'hover:bg-muted',
               ]"
               title="Delete"
               @click.stop="confirmDelete(project)"
@@ -141,7 +134,7 @@
                   'h-4 w-4 transition-colors',
                   getThumbnailUrl(project.id)
                     ? 'text-white/60 hover:text-white'
-                    : 'text-muted-foreground hover:text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
                 ]"
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
@@ -221,8 +214,8 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, onUnmounted } from 'vue'
-  import { invoke } from '@tauri-apps/api/core'
+  import { ref, onMounted, onUnmounted } from 'vue';
+  import { invoke } from '@tauri-apps/api/core';
   import {
     getAllProjects,
     getClipsWithVersionsByProjectId,
@@ -234,45 +227,45 @@
     hasRawVideosForProject,
     hasClipsForProject,
     type Project,
-    type RawVideo
-  } from '@/services/database'
-  import { useFormatters } from '@/composables/useFormatters'
-  import { useToast } from '@/composables/useToast'
-  import PageLayout from '@/components/PageLayout.vue'
-  import LoadingState from '@/components/LoadingState.vue'
-  import EmptyState from '@/components/EmptyState.vue'
-  import ProjectDialog, { type ProjectFormData } from '@/components/ProjectDialog.vue'
-  import ProjectWorkspaceDialog from '@/components/ProjectWorkspaceDialog.vue'
+    type RawVideo,
+  } from '@/services/database';
+  import { useFormatters } from '@/composables/useFormatters';
+  import { useToast } from '@/composables/useToast';
+  import PageLayout from '@/components/PageLayout.vue';
+  import LoadingState from '@/components/LoadingState.vue';
+  import EmptyState from '@/components/EmptyState.vue';
+  import ProjectDialog, { type ProjectFormData } from '@/components/ProjectDialog.vue';
+  import ProjectWorkspaceDialog from '@/components/ProjectWorkspaceDialog.vue';
 
-  const projects = ref<Project[]>([])
-  const loading = ref(true)
-  const clipCounts = ref<Record<string, number>>({})
-  const showDialog = ref(false)
-  const selectedProject = ref<Project | null>(null)
-  const showDeleteDialog = ref(false)
-  const projectToDelete = ref<Project | null>(null)
-  const projectHasVideos = ref(false)
-  const projectHasClips = ref(false)
-  const showWorkspaceDialog = ref(false)
-  const workspaceProject = ref<Project | null>(null)
-  const projectVideos = ref<Record<string, RawVideo[]>>({})
-  const thumbnailCache = ref<Map<string, string>>(new Map())
-  const { getRelativeTime } = useFormatters()
-  const { success, error } = useToast()
+  const projects = ref<Project[]>([]);
+  const loading = ref(true);
+  const clipCounts = ref<Record<string, number>>({});
+  const showDialog = ref(false);
+  const selectedProject = ref<Project | null>(null);
+  const showDeleteDialog = ref(false);
+  const projectToDelete = ref<Project | null>(null);
+  const projectHasVideos = ref(false);
+  const projectHasClips = ref(false);
+  const showWorkspaceDialog = ref(false);
+  const workspaceProject = ref<Project | null>(null);
+  const projectVideos = ref<Record<string, RawVideo[]>>({});
+  const thumbnailCache = ref<Map<string, string>>(new Map());
+  const { getRelativeTime } = useFormatters();
+  const { success, error } = useToast();
 
   async function loadProjects() {
-    loading.value = true
+    loading.value = true;
     try {
-      projects.value = await getAllProjects()
+      projects.value = await getAllProjects();
 
       // Load clip counts and video thumbnails for each project
       for (const project of projects.value) {
-        const clips = await getClipsWithVersionsByProjectId(project.id)
-        clipCounts.value[project.id] = clips.length
+        const clips = await getClipsWithVersionsByProjectId(project.id);
+        clipCounts.value[project.id] = clips.length;
 
         // Load videos for this project
-        const videos = await getRawVideosByProjectId(project.id)
-        projectVideos.value[project.id] = videos
+        const videos = await getRawVideosByProjectId(project.id);
+        projectVideos.value[project.id] = videos;
 
         // Load project thumbnail or use first video's thumbnail
         if (!thumbnailCache.value.has(project.id)) {
@@ -280,173 +273,173 @@
             // Use project's stored thumbnail if available
             try {
               const dataUrl = await invoke<string>('read_file_as_data_url', {
-                filePath: project.thumbnail_path
-              })
-              thumbnailCache.value.set(project.id, dataUrl)
+                filePath: project.thumbnail_path,
+              });
+              thumbnailCache.value.set(project.id, dataUrl);
             } catch (error) {
-              console.warn('Failed to load project thumbnail:', project.id, error)
+              console.warn('Failed to load project thumbnail:', project.id, error);
             }
           } else if (videos.length > 0 && videos[0].thumbnail_path) {
             // Fall back to first video's thumbnail
             try {
               const dataUrl = await invoke<string>('read_file_as_data_url', {
-                filePath: videos[0].thumbnail_path
-              })
-              thumbnailCache.value.set(project.id, dataUrl)
+                filePath: videos[0].thumbnail_path,
+              });
+              thumbnailCache.value.set(project.id, dataUrl);
 
               // Save this thumbnail to the project for future use
-              await updateProject(project.id, undefined, undefined, videos[0].thumbnail_path)
+              await updateProject(project.id, undefined, undefined, videos[0].thumbnail_path);
             } catch (error) {
-              console.warn('Failed to load video thumbnail for project:', project.id, error)
+              console.warn('Failed to load video thumbnail for project:', project.id, error);
             }
           }
         }
       }
     } catch (error) {
-      console.error('Failed to load projects:', error)
+      console.error('Failed to load projects:', error);
     } finally {
-      loading.value = false
+      loading.value = false;
     }
   }
 
   function getClipCount(projectId: string): number {
-    return clipCounts.value[projectId] || 0
+    return clipCounts.value[projectId] || 0;
   }
 
   function getThumbnailUrl(projectId: string): string | null {
-    return thumbnailCache.value.get(projectId) || null
+    return thumbnailCache.value.get(projectId) || null;
   }
 
   function openCreateDialog() {
-    selectedProject.value = null
-    showDialog.value = true
+    selectedProject.value = null;
+    showDialog.value = true;
   }
 
   function openWorkspace(project: Project) {
-    workspaceProject.value = project
-    showWorkspaceDialog.value = true
+    workspaceProject.value = project;
+    showWorkspaceDialog.value = true;
   }
 
   function editProject(project: Project) {
-    selectedProject.value = project
-    showDialog.value = true
+    selectedProject.value = project;
+    showDialog.value = true;
   }
 
   async function handleProjectSubmit(data: ProjectFormData) {
     try {
       if (selectedProject.value) {
         // Update existing project
-        await updateProject(selectedProject.value.id, data.name, data.description || undefined)
+        await updateProject(selectedProject.value.id, data.name, data.description || undefined);
 
         // Update video association if changed
         if (data.selectedVideoId !== undefined) {
           // First, remove existing video associations for this project
-          const existingVideos = await getRawVideosByProjectId(selectedProject.value.id)
+          const existingVideos = await getRawVideosByProjectId(selectedProject.value.id);
           for (const video of existingVideos) {
-            await updateRawVideo(video.id, { project_id: null })
+            await updateRawVideo(video.id, { project_id: null });
           }
 
           // Then associate the new video
           if (data.selectedVideoId) {
-            await updateRawVideo(data.selectedVideoId, { project_id: selectedProject.value.id })
+            await updateRawVideo(data.selectedVideoId, { project_id: selectedProject.value.id });
           }
         }
 
-        success('Project updated', `"${data.name}" has been updated successfully`)
+        success('Project updated', `"${data.name}" has been updated successfully`);
       } else {
         // Create new project
-        const projectId = await createProject(data.name, data.description || undefined)
+        const projectId = await createProject(data.name, data.description || undefined);
 
         // Associate the selected video with the new project
         if (data.selectedVideoId) {
-          await updateRawVideo(data.selectedVideoId, { project_id: projectId })
+          await updateRawVideo(data.selectedVideoId, { project_id: projectId });
         }
 
-        success('Project created', `"${data.name}" has been created successfully`)
+        success('Project created', `"${data.name}" has been created successfully`);
       }
 
       // Reload projects
-      await loadProjects()
+      await loadProjects();
 
       if (!selectedProject.value) {
         // For new projects, find the newly created project and open workspace
-        const newProject = projects.value.find((p) => p.name === data.name)
+        const newProject = projects.value.find((p) => p.name === data.name);
         if (newProject) {
-          workspaceProject.value = newProject
-          showWorkspaceDialog.value = true
+          workspaceProject.value = newProject;
+          showWorkspaceDialog.value = true;
         }
       }
 
       // Close dialog
-      showDialog.value = false
-      selectedProject.value = null
+      showDialog.value = false;
+      selectedProject.value = null;
     } catch (err) {
-      console.error('Failed to save project:', err)
+      console.error('Failed to save project:', err);
       error(
         selectedProject.value ? 'Failed to update project' : 'Failed to create project',
         'An error occurred while saving the project. Please try again.'
-      )
+      );
     }
   }
 
   async function confirmDelete(project: Project) {
-    projectToDelete.value = project
+    projectToDelete.value = project;
 
     // Check if project has videos and clips
     try {
-      projectHasVideos.value = await hasRawVideosForProject(project.id)
-      projectHasClips.value = await hasClipsForProject(project.id)
-      showDeleteDialog.value = true
+      projectHasVideos.value = await hasRawVideosForProject(project.id);
+      projectHasClips.value = await hasClipsForProject(project.id);
+      showDeleteDialog.value = true;
     } catch (err) {
-      console.error('Failed to check project contents:', err)
+      console.error('Failed to check project contents:', err);
       // If we can't check, proceed with normal deletion
-      projectHasVideos.value = false
-      projectHasClips.value = false
-      showDeleteDialog.value = true
+      projectHasVideos.value = false;
+      projectHasClips.value = false;
+      showDeleteDialog.value = true;
     }
   }
 
   function handleDeleteDialogClose() {
-    showDeleteDialog.value = false
-    projectHasVideos.value = false
-    projectHasClips.value = false
-    projectToDelete.value = null
+    showDeleteDialog.value = false;
+    projectHasVideos.value = false;
+    projectHasClips.value = false;
+    projectToDelete.value = null;
   }
 
   async function deleteProjectConfirmed() {
-    if (!projectToDelete.value) return
+    if (!projectToDelete.value) return;
 
-    const deletedProjectName = projectToDelete.value.name
+    const deletedProjectName = projectToDelete.value.name;
 
     try {
-      await deleteProject(projectToDelete.value.id)
-      success('Project deleted', `"${deletedProjectName}" has been deleted successfully`)
-      await loadProjects()
+      await deleteProject(projectToDelete.value.id);
+      success('Project deleted', `"${deletedProjectName}" has been deleted successfully`);
+      await loadProjects();
     } catch (err) {
-      console.error('Failed to delete project:', err)
-      error('Failed to delete project', 'An error occurred while deleting the project. Please try again.')
+      console.error('Failed to delete project:', err);
+      error('Failed to delete project', 'An error occurred while deleting the project. Please try again.');
     } finally {
-      showDeleteDialog.value = false
-      projectHasVideos.value = false
-      projectHasClips.value = false
-      projectToDelete.value = null
+      showDeleteDialog.value = false;
+      projectHasVideos.value = false;
+      projectHasClips.value = false;
+      projectToDelete.value = null;
     }
   }
 
   // Listen for clip refresh events from workspace dialog
   function handleClipRefreshEvent(_event: CustomEvent) {
-    loadProjects()
+    loadProjects();
   }
 
   onMounted(() => {
-    loadProjects()
+    loadProjects();
 
     // Add event listener for clip refresh events
-    document.addEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener)
-  })
+    document.addEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener);
+  });
 
   onUnmounted(() => {
     // Clean up event listener
-    document.removeEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener)
-  })
+    document.removeEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener);
+  });
 </script>

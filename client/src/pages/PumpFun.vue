@@ -221,24 +221,24 @@
             }"
           >
             <!-- Dark vignette overlay -->
-            <div class="absolute inset-0 bg-gradient-to-br from-black/40 via-black/30 to-black/50"></div>
+            <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60"></div>
           </div>
           <!-- Top right duration -->
           <div class="absolute top-4 right-4 z-10">
             <span
               :class="[
                 'text-xs px-2 py-1 rounded-md',
-                clip.thumbnailUrl ? 'text-white/70 bg-white/10 backdrop-blur-sm' : 'text-muted-foreground bg-muted',
+                clip.thumbnailUrl ? 'text-white/70 bg-muted/20 backdrop-blur-sm' : 'text-muted-foreground bg-muted',
               ]"
             >
               {{ formatDuration(clip.duration) }}
             </span>
           </div>
           <!-- Bottom left title and description -->
-          <div class="absolute bottom-4 left-4 right-4 z-10">
+          <div class="absolute bottom-2 left-2 right-2 z-10 bg-black/40 backdrop-blur-sm p-2 rounded-md">
             <h3
               :class="[
-                'text-lg font-semibold mb-0.5 group-hover:transition-colors line-clamp-2',
+                'text-md font-semibold mb-0.5 group-hover:transition-colors line-clamp-2',
                 clip.thumbnailUrl
                   ? 'text-white group-hover:text-white/80'
                   : 'text-foreground group-hover:text-foreground/80',
@@ -247,7 +247,7 @@
               {{ clip.title }}
             </h3>
 
-            <p :class="['text-sm line-clamp-2', clip.thumbnailUrl ? 'text-white/80' : 'text-muted-foreground']">
+            <p :class="['text-xs line-clamp-2', clip.thumbnailUrl ? 'text-white/80' : 'text-muted-foreground']">
               {{ clip.createdAt ? formatRelativeTime(clip.createdAt) : 'No timestamp available' }}
             </p>
           </div>
