@@ -152,16 +152,40 @@ const router = createRouter({
         },
       ],
     },
+    {
+      path: '/admin',
+      name: 'admin',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true },
+      children: [
+        {
+          path: '',
+          name: 'admin-home',
+          component: () => import('@/pages/Admin.vue'),
+        },
+      ],
+    },
   ],
 });
 
-// Navigation guard to check authentication
+// Navigation guard to check authentication and admin access
 router.beforeEach((to, _from, next) => {
   const authStore = useAuthStore();
 
+  console.log('🛡️ Router Guard - Route:', to.path);
+  console.log('🛡️ Router Guard - authStore.isAuthenticated:', authStore.isAuthenticated);
+  console.log('🛡️ Router Guard - authStore.user:', authStore.user);
+  console.log('🛡️ Router Guard - requiresAuth:', to.meta.requiresAuth);
+  console.log('🛡️ Router Guard - requiresAdmin:', to.meta.requiresAdmin);
+
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+    console.log('🛡️ Router Guard - Redirecting to login (not authenticated)');
     next('/login');
+  } else if (to.meta.requiresAdmin && !authStore.user?.is_admin) {
+    console.log('🛡️ Router Guard - Redirecting to projects (not admin)');
+    next('/projects'); // Redirect to projects if not admin
   } else {
+    console.log('🛡️ Router Guard - Proceeding to route');
     next();
   }
 });

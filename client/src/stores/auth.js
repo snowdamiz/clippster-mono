@@ -1,8 +1,8 @@
-import { defineStore } from 'pinia'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import { defineStore } from 'pinia';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -11,7 +11,7 @@ export const useAuthStore = defineStore('auth', {
     token: null,
     user: null,
     loading: false,
-    error: null
+    error: null,
   }),
 
   actions: {
@@ -20,61 +20,61 @@ export const useAuthStore = defineStore('auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          client_id: await this.getClientId()
-        })
-      })
+          client_id: await this.getClientId(),
+        }),
+      });
 
-      if (!response.ok) throw new Error('Failed to get challenge')
-      return await response.json()
+      if (!response.ok) throw new Error('Failed to get challenge');
+      return await response.json();
     },
 
     async authenticateWithWallet() {
-      this.loading = true
-      this.error = null
+      this.loading = true;
+      this.error = null;
 
       try {
         // Open wallet auth in browser
-        await invoke('open_wallet_auth_window')
+        await invoke('open_wallet_auth_window');
 
         // Listen for auth result via Tauri event or polling
         const result = await new Promise((resolve, reject) => {
-          let unlisten = null
-          let pollInterval = null
-          let timeoutId = null
+          let unlisten = null;
+          let pollInterval = null;
+          let timeoutId = null;
 
           const cleanup = () => {
-            if (unlisten) unlisten()
-            if (pollInterval) clearInterval(pollInterval)
-            if (timeoutId) clearTimeout(timeoutId)
-          }
+            if (unlisten) unlisten();
+            if (pollInterval) clearInterval(pollInterval);
+            if (timeoutId) clearTimeout(timeoutId);
+          };
 
           // Listen for event from Rust backend
           listen('wallet-auth-complete', (event) => {
-            cleanup()
-            resolve(event.payload)
+            cleanup();
+            resolve(event.payload);
           }).then((u) => {
-            unlisten = u
-          })
+            unlisten = u;
+          });
 
           // Fallback: poll for result every second
           pollInterval = setInterval(async () => {
             try {
-              const polledResult = await invoke('poll_auth_result')
+              const polledResult = await invoke('poll_auth_result');
               if (polledResult) {
-                cleanup()
-                resolve(polledResult)
+                cleanup();
+                resolve(polledResult);
               }
             } catch (error) {
-              console.error('Poll error:', error)
+              console.error('Poll error:', error);
             }
-          }, 1000)
+          }, 1000);
 
           // Timeout after 5 minutes
           timeoutId = setTimeout(() => {
-            cleanup()
-            reject(new Error('Authentication timeout - please try again'))
-          }, 300000)
-        })
+            cleanup();
+            reject(new Error('Authentication timeout - please try again'));
+          }, 300000);
+        });
 
         // Verify signature with backend
         const verifyResponse = await fetch(`${API_BASE}/api/auth/verify`, {
@@ -84,78 +84,91 @@ export const useAuthStore = defineStore('auth', {
             signature: result.signature,
             public_key: result.public_key,
             message: result.message,
-            nonce: result.nonce
-          })
-        })
+            nonce: result.nonce,
+          }),
+        });
 
         if (!verifyResponse.ok) {
-          const errorData = await verifyResponse.json()
-          throw new Error(errorData.error || 'Signature verification failed')
+          const errorData = await verifyResponse.json();
+          throw new Error(errorData.error || 'Signature verification failed');
         }
 
-        const data = await verifyResponse.json()
+        const data = await verifyResponse.json();
 
         if (!data.success) {
-          throw new Error(data.error || 'Authentication failed')
+          throw new Error(data.error || 'Authentication failed');
         }
 
         // Store auth data
-        this.token = data.token
-        this.walletAddress = data.wallet_address
-        this.user = data.user
-        this.isAuthenticated = true
+        this.token = data.token;
+        this.walletAddress = data.wallet_address;
+        this.user = data.user;
+        this.isAuthenticated = true;
+
+        console.log('🔐 Auth Store - Authentication successful');
+        console.log('🔐 Auth Store - user data:', this.user);
+        console.log('🔐 Auth Store - is_admin:', this.user?.is_admin);
 
         // Store in localStorage for persistence
-        localStorage.setItem('auth_token', data.token)
-        localStorage.setItem('wallet_address', data.wallet_address)
-        localStorage.setItem('user', JSON.stringify(data.user))
+        localStorage.setItem('auth_token', data.token);
+        localStorage.setItem('wallet_address', data.wallet_address);
+        localStorage.setItem('user', JSON.stringify(data.user));
 
-        return { success: true }
+        return { success: true };
       } catch (error) {
-        console.error('Auth error:', error)
-        this.error = error.message
-        return { success: false, error: error.message }
+        console.error('Auth error:', error);
+        this.error = error.message;
+        return { success: false, error: error.message };
       } finally {
-        this.loading = false
+        this.loading = false;
       }
     },
 
     async getClientId() {
-      let clientId = localStorage.getItem('client_id')
+      let clientId = localStorage.getItem('client_id');
       if (!clientId) {
-        clientId = crypto.randomUUID()
-        localStorage.setItem('client_id', clientId)
+        clientId = crypto.randomUUID();
+        localStorage.setItem('client_id', clientId);
       }
-      return clientId
+      return clientId;
     },
 
     logout() {
-      this.isAuthenticated = false
-      this.walletAddress = null
-      this.token = null
-      this.user = null
-      localStorage.removeItem('auth_token')
-      localStorage.removeItem('wallet_address')
-      localStorage.removeItem('user')
+      this.isAuthenticated = false;
+      this.walletAddress = null;
+      this.token = null;
+      this.user = null;
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('wallet_address');
+      localStorage.removeItem('user');
     },
 
     async checkAuth() {
-      const token = localStorage.getItem('auth_token')
-      const walletAddress = localStorage.getItem('wallet_address')
-      const userJson = localStorage.getItem('user')
+      const token = localStorage.getItem('auth_token');
+      const walletAddress = localStorage.getItem('wallet_address');
+      const userJson = localStorage.getItem('user');
+
+      console.log('🔐 Auth Store - checkAuth called');
+      console.log('🔐 Auth Store - token exists:', !!token);
+      console.log('🔐 Auth Store - walletAddress exists:', !!walletAddress);
+      console.log('🔐 Auth Store - userJson exists:', !!userJson);
 
       if (token && walletAddress && userJson) {
         try {
-          this.token = token
-          this.walletAddress = walletAddress
-          this.user = JSON.parse(userJson)
-          this.isAuthenticated = true
-          return true
+          this.token = token;
+          this.walletAddress = walletAddress;
+          this.user = JSON.parse(userJson);
+          this.isAuthenticated = true;
+          console.log('🔐 Auth Store - checkAuth successful');
+          console.log('🔐 Auth Store - parsed user:', this.user);
+          console.log('🔐 Auth Store - is_admin:', this.user?.is_admin);
+          return true;
         } catch (error) {
-          console.error('Failed to parse user data:', error)
+          console.error('Failed to parse user data:', error);
         }
       }
-      return false
-    }
-  }
-})
+      console.log('🔐 Auth Store - checkAuth failed');
+      return false;
+    },
+  },
+});

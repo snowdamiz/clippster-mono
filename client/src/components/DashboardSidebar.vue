@@ -7,7 +7,7 @@
     <!-- Navigation -->
     <nav class="p-4">
       <ul class="space-y-1">
-        <template v-for="(item, index) in navigationItems" :key="item.path">
+        <template v-for="(item, index) in visibleNavigationItems" :key="item.path">
           <!-- Category Label -->
           <li v-if="item.category && shouldShowCategory(item.category, index)" class="pt-4 pb-2 px-3">
             <span class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
@@ -21,7 +21,7 @@
                 v-if="item.useImage"
                 class="h-5 w-5 transition-all"
                 :class="{
-                  'brightness-0 invert': isActive(item.path)
+                  'brightness-0 invert': isActive(item.path),
                 }"
                 :style="{
                   backgroundColor: 'currentColor',
@@ -32,7 +32,7 @@
                   maskRepeat: 'no-repeat',
                   WebkitMaskRepeat: 'no-repeat',
                   maskPosition: 'center',
-                  WebkitMaskPosition: 'center'
+                  WebkitMaskPosition: 'center',
                 }"
               />
               <svg
@@ -71,34 +71,55 @@
 </template>
 
 <script setup lang="ts">
-  import { computed } from 'vue'
-  import { useRoute, useRouter } from 'vue-router'
-  import { useAuthStore } from '@/stores/auth'
-  import { useWallet } from '@/composables/useWallet'
-  import { navigationItems } from '@/config/navigation'
+  import { computed } from 'vue';
+  import { useRoute, useRouter } from 'vue-router';
+  import { useAuthStore } from '@/stores/auth';
+  import { useWallet } from '@/composables/useWallet';
+  import { navigationItems } from '@/config/navigation';
 
-  const route = useRoute()
-  const router = useRouter()
-  const authStore = useAuthStore()
-  const { formatAddress } = useWallet()
+  const route = useRoute();
+  const router = useRouter();
+  const authStore = useAuthStore();
+  const { formatAddress } = useWallet();
+
+  // Filter navigation items based on admin status
+  const visibleNavigationItems = computed(() => {
+    console.log('🔍 DashboardSidebar - Computing visible navigation items');
+    console.log('🔍 authStore.user:', authStore.user);
+    console.log('🔍 authStore.user?.is_admin:', authStore.user?.is_admin);
+    console.log('🔍 All navigation items:', navigationItems);
+
+    const filtered = navigationItems.filter((item) => {
+      console.log(`🔍 Checking item: ${item.name}, adminOnly: ${item.adminOnly}`);
+      if (item.adminOnly) {
+        const isAdmin = authStore.user?.is_admin === true;
+        console.log(`🔍 ${item.name} - Admin check: ${isAdmin}`);
+        return isAdmin;
+      }
+      return true;
+    });
+
+    console.log('🔍 Filtered navigation items:', filtered);
+    return filtered;
+  });
 
   const isActive = (path: string) => {
-    return route.path.startsWith(path)
-  }
+    return route.path.startsWith(path);
+  };
 
   const shouldShowCategory = (category: string, index: number) => {
     // Only show category label for the first item with that category
-    if (index === 0) return true
-    const previousItem = navigationItems[index - 1]
-    return previousItem.category !== category
-  }
+    if (index === 0) return true;
+    const previousItem = visibleNavigationItems.value[index - 1];
+    return previousItem.category !== category;
+  };
 
-  const formattedAddress = computed(() => formatAddress(authStore.walletAddress))
+  const formattedAddress = computed(() => formatAddress(authStore.walletAddress));
 
   const handleDisconnect = () => {
-    authStore.logout()
-    router.push('/login')
-  }
+    authStore.logout();
+    router.push('/login');
+  };
 </script>
 
 <style scoped>

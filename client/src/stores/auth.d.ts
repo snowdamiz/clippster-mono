@@ -4,6 +4,7 @@ export interface AuthState {
   isAuthenticated: boolean
   walletAddress: string | null
   token: string | null
+  user: { id: number; wallet_address: string; is_admin: boolean } | null
   loading: boolean
   error: string | null
 }

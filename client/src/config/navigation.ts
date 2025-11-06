@@ -6,6 +6,7 @@ export interface NavigationItem {
   disabled?: boolean;
   badge?: string;
   useImage?: boolean;
+  adminOnly?: boolean;
 }
 
 export const navigationItems: NavigationItem[] = [
@@ -28,6 +29,12 @@ export const navigationItems: NavigationItem[] = [
     name: 'Prompts',
     path: '/prompts',
     icon: 'M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-4l-4 4v-4z',
+  },
+  {
+    name: 'Admin',
+    path: '/admin',
+    icon: 'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4',
+    adminOnly: true,
   },
   {
     name: 'PumpFun',
