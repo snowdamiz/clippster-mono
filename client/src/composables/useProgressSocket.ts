@@ -64,7 +64,7 @@ export function useProgressSocket(initialProjectId: string | null) {
 
           channel
             .join()
-            .receive('ok', (resp: any) => {
+            .receive('ok', (_resp: any) => {
               isConnected.value = true;
               error.value = '';
             })

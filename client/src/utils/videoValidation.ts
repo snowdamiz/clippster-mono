@@ -52,7 +52,7 @@ export async function validateExistingVideo(
       filePath: videoRecord.file_path,
     });
 
-    if (!videoValidation.isValid) {
+    if (!videoValidation.is_valid) {
       const error = videoValidation.error || 'Video file is corrupted or invalid';
 
       if (autoCleanup) {
@@ -113,7 +113,7 @@ export async function validateExistingVideo(
 /**
  * Cleanup orphaned video (database record exists but file is missing)
  */
-async function cleanupOrphanedVideo(videoId: string, reason: string): Promise<void> {
+async function cleanupOrphanedVideo(videoId: string, _reason: string): Promise<void> {
   try {
     // Delete database record
     await deleteRawVideo(videoId);
@@ -129,7 +129,7 @@ async function cleanupCorruptedVideo(
   videoId: string,
   filePath: string,
   thumbnailPath: string | null,
-  reason: string
+  _reason: string
 ): Promise<void> {
   try {
     // Delete files if they exist

@@ -532,7 +532,7 @@ export function useSegmentManipulation(options: SegmentManipulationOptions) {
 
     try {
       // Perform the cut operation
-      const result = await splitClipSegment(clipId, segmentIndex, cutHoverInfo.value.cutTime);
+      await splitClipSegment(clipId, segmentIndex, cutHoverInfo.value.cutTime);
 
       // Refresh the clips data to show the split segments
       onRefreshClipsData?.();

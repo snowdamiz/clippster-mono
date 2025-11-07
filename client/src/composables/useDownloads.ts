@@ -77,7 +77,7 @@ export function useDownloads() {
             // Validate the downloaded video and thumbnail
             const validationResult = await validateDownloadedVideo(
               event.payload.file_path,
-              event.payload.thumbnail_path,
+              event.payload.thumbnail_path || null,
               download.title
             );
 
@@ -118,7 +118,7 @@ export function useDownloads() {
               // Cleanup corrupted files
               await cleanupCorruptedDownload(
                 event.payload.file_path,
-                validationResult.thumbnailPath || event.payload.thumbnail_path,
+                validationResult.thumbnailPath || event.payload.thumbnail_path || null,
                 download.rawVideoId
               );
 
@@ -144,7 +144,7 @@ export function useDownloads() {
             // Cleanup on validation error
             await cleanupCorruptedDownload(
               event.payload.file_path,
-              event.payload.thumbnail_path,
+              event.payload.thumbnail_path || null,
               download.rawVideoId
             );
 
@@ -321,7 +321,7 @@ export function useDownloads() {
   async function validateDownloadedVideo(
     filePath: string,
     thumbnailPath: string | null,
-    title: string
+    _title: string
   ): Promise<{ isValid: boolean; thumbnailPath?: string | null; error?: string }> {
     try {
       // Check if video file exists and has content
