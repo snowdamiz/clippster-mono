@@ -65,4 +65,23 @@ defmodule ClippsterServer.Accounts do
   def list_users do
     Repo.all(User)
   end
+
+  @doc """
+  Updates a user.
+  """
+  def update_user(user, attrs) do
+    user
+    |> User.changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc """
+  Promotes a user to admin.
+  """
+  def promote_user_to_admin(user_id) do
+    case get_user(user_id) do
+      nil -> {:error, :not_found}
+      user -> update_user(user, %{is_admin: true})
+    end
+  end
 end

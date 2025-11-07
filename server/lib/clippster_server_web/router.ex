@@ -20,6 +20,17 @@ defmodule ClippsterServerWeb.Router do
       max_age: 86400
   end
 
+  pipeline :api_admin do
+    plug :accepts, ["json"]
+    plug ClippsterServerWeb.AuthPlug
+    plug ClippsterServerWeb.AdminPlug
+    plug CORSPlug,
+      origin: &__MODULE__.cors_origins/0,
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+      max_age: 86400
+  end
+
   # Define CORS origins as a function to handle regex properly
   def cors_origins do
     [
@@ -53,6 +64,14 @@ defmodule ClippsterServerWeb.Router do
 
     post "/clips/detect", ClipsController, :detect
     post "/clips/detect-chunked", ClipsController, :detect_chunked
+  end
+
+  # Admin-only routes
+  scope "/api", ClippsterServerWeb do
+    pipe_through :api_admin
+
+    get "/admin/users", AdminController, :list_users
+    post "/admin/users/:user_id/promote", AdminController, :promote_user
   end
 
   

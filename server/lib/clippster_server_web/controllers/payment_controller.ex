@@ -51,14 +51,34 @@ defmodule ClippsterServerWeb.PaymentController do
   """
   def get_balance(conn, _params) do
     with {:ok, user_id} <- get_user_id_from_token(conn),
-         {:ok, balance} <- Credits.get_user_balance(user_id) do
-      json(conn, %{
-        success: true,
-        balance: %{
-          hours_remaining: Decimal.to_float(balance.hours_remaining),
-          hours_used: Decimal.to_float(balance.hours_used)
-        }
-      })
+         {:ok, claims} <- get_token_claims(conn) do
+      # Check if user is admin - admins have unlimited credits
+      if claims["is_admin"] do
+        json(conn, %{
+          success: true,
+          balance: %{
+            hours_remaining: :unlimited,
+            hours_used: Decimal.new(0)
+          }
+        })
+      else
+        # Regular user - get actual balance
+        case Credits.get_user_balance(user_id) do
+          {:ok, balance} ->
+            json(conn, %{
+              success: true,
+              balance: %{
+                hours_remaining: Decimal.to_float(balance.hours_remaining),
+                hours_used: Decimal.to_float(balance.hours_used)
+              }
+            })
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: to_string(reason)})
+        end
+      end
     else
       {:error, :unauthorized} ->
         conn
@@ -236,17 +256,21 @@ defmodule ClippsterServerWeb.PaymentController do
   # Private helper functions
 
   defp get_user_id_from_token(conn) do
+    case get_token_claims(conn) do
+      {:ok, claims} ->
+        {:ok, claims["user_id"]}
+
+      {:error, _} ->
+        {:error, :unauthorized}
+    end
+  end
+
+  defp get_token_claims(conn) do
     case get_req_header(conn, "authorization") do
       ["Bearer " <> token] ->
-        # TODO: Verify JWT token and extract user_id
+        # TODO: Verify JWT token and extract claims
         # For now, we'll decode it without verification for development
-        case decode_token(token) do
-          {:ok, claims} ->
-            {:ok, claims["user_id"]}
-
-          {:error, _} ->
-            {:error, :unauthorized}
-        end
+        decode_token(token)
 
       _ ->
         {:error, :unauthorized}
