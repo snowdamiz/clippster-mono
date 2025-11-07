@@ -1,16 +1,16 @@
-import { ref } from 'vue'
-import { createRawVideo, deleteRawVideo, type RawVideo } from '@/services/database'
-import { open } from '@tauri-apps/plugin-dialog'
-import { invoke } from '@tauri-apps/api/core'
-import { useToast } from '@/composables/useToast'
-import { useAudioChunking, type AudioChunk } from './useAudioChunking'
+import { ref } from 'vue';
+import { createRawVideo, deleteRawVideo, type RawVideo } from '@/services/database';
+import { open } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
+import { useToast } from '@/composables/useToast';
+import { useAudioChunking, type AudioChunk } from './useAudioChunking';
 
 export function useVideoOperations() {
-  const uploading = ref(false)
-  const { success, error } = useToast()
+  const uploading = ref(false);
+  const { success, error } = useToast();
 
   async function uploadVideo() {
-    if (uploading.value) return { success: false }
+    if (uploading.value) return { success: false };
 
     try {
       // Open file dialog with video file filters
@@ -19,110 +19,145 @@ export function useVideoOperations() {
         filters: [
           {
             name: 'Video',
-            extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v']
-          }
-        ]
-      })
+            extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v'],
+          },
+        ],
+      });
 
-      if (!selected) return { success: false, cancelled: true } // User cancelled
+      if (!selected) return { success: false, cancelled: true }; // User cancelled
 
-      uploading.value = true
+      uploading.value = true;
 
       // Copy video to storage directory
       const result = await invoke<{ destination_path: string; original_filename: string }>(
         'copy_video_to_storage',
         {
-          sourcePath: selected
+          sourcePath: selected,
         }
-      )
+      );
 
       // Generate thumbnail
-      let thumbnailPath: string | undefined
+      let thumbnailPath: string | undefined;
       try {
         thumbnailPath = await invoke<string>('generate_thumbnail', {
-          videoPath: result.destination_path
-        })
+          videoPath: result.destination_path,
+        });
+
+        // Verify the thumbnail was actually created
+        if (thumbnailPath) {
+          const thumbnailExists = await invoke<boolean>('check_file_exists', {
+            path: thumbnailPath,
+          });
+          if (!thumbnailExists) {
+            console.warn('Generated thumbnail file does not exist:', thumbnailPath);
+            thumbnailPath = undefined;
+          }
+        }
       } catch (error) {
-        console.warn('Failed to generate thumbnail:', error)
+        console.warn('Failed to generate thumbnail:', error);
+        thumbnailPath = undefined;
       }
 
       // Create raw_videos record with original filename and thumbnail
       await createRawVideo(result.destination_path, {
         originalFilename: result.original_filename,
-        thumbnailPath
-      })
+        thumbnailPath,
+      });
 
       // Show success toast
-      success('Video uploaded', `"${result.original_filename}" has been uploaded successfully`)
+      success('Video uploaded', `"${result.original_filename}" has been uploaded successfully`);
 
       return {
         success: true,
         video: {
           destination_path: result.destination_path,
           original_filename: result.original_filename,
-          thumbnail_path: thumbnailPath
-        }
-      }
+          thumbnail_path: thumbnailPath,
+        },
+      };
     } catch (err) {
-      console.error('Failed to upload video:', err)
-      error('Upload failed', `Failed to upload video: ${err}`)
-      return { success: false, error: err }
+      console.error('Failed to upload video:', err);
+      error('Upload failed', `Failed to upload video: ${err}`);
+      return { success: false, error: err };
     } finally {
-      uploading.value = false
+      uploading.value = false;
     }
   }
 
   async function deleteVideo(video: RawVideo) {
     const deletedVideoName =
-      video.original_filename || video.file_path.split(/[\\\/]/).pop() || 'Video'
+      video.original_filename || video.file_path.split(/[\\\/]/).pop() || 'Video';
 
     try {
       // Delete video file but preserve thumbnail for project cards
       await invoke('delete_video_file', {
         filePath: video.file_path,
-        thumbnailPath: undefined // Don't delete the thumbnail
-      })
+        thumbnailPath: undefined, // Don't delete the thumbnail
+      });
 
       // Delete the database record completely
-      await deleteRawVideo(video.id)
+      await deleteRawVideo(video.id);
 
       // Show success toast
-      success('Video deleted', `"${deletedVideoName}" has been deleted successfully`)
+      success('Video deleted', `"${deletedVideoName}" has been deleted successfully`);
 
-      return { success: true }
+      return { success: true };
     } catch (err) {
-      console.error('Failed to delete video:', err)
-      error('Delete failed', `Failed to delete video: ${err}`)
-      return { success: false, error: err }
+      console.error('Failed to delete video:', err);
+      error('Delete failed', `Failed to delete video: ${err}`);
+      return { success: false, error: err };
     }
   }
 
   async function loadVideoThumbnail(video: RawVideo, cache: Map<string, string>) {
-    if (video.thumbnail_path && !cache.has(video.id)) {
-      try {
-        const dataUrl = await invoke<string>('read_file_as_data_url', {
-          filePath: video.thumbnail_path
-        })
-        cache.set(video.id, dataUrl)
-        return dataUrl
-      } catch (error) {
-        console.warn('Failed to load thumbnail for video:', video.id, error)
-        return null
+    if (!cache.has(video.id)) {
+      // Check if video has a thumbnail path and if the file exists
+      if (video.thumbnail_path) {
+        try {
+          const fileExists = await invoke<boolean>('check_file_exists', {
+            path: video.thumbnail_path,
+          });
+
+          if (fileExists) {
+            try {
+              const dataUrl = await invoke<string>('read_file_as_data_url', {
+                filePath: video.thumbnail_path,
+              });
+              cache.set(video.id, dataUrl);
+              return dataUrl;
+            } catch (error) {
+              console.warn('Failed to load thumbnail for video:', video.id, error);
+            }
+          } else {
+            console.warn('Thumbnail file does not exist:', video.thumbnail_path);
+          }
+        } catch (error) {
+          console.warn('Failed to check thumbnail existence for video:', video.id, error);
+        }
+      } else {
+        console.warn('No thumbnail path for video:', video.id);
       }
+
+      // If we get here, either no thumbnail path, file doesn't exist, or failed to load
+      // Use error SVG as fallback
+      const errorSvgUrl = '/download_error.svg';
+      cache.set(video.id, errorSvgUrl);
+      return errorSvgUrl;
     }
-    return cache.get(video.id) || null
+
+    return cache.get(video.id) || '/download_error.svg';
   }
 
   async function prepareVideoForPlayback(video: RawVideo) {
     try {
       // Get video server port
-      const port = await invoke<number>('get_video_server_port')
+      const port = await invoke<number>('get_video_server_port');
       // Encode file path as base64 for URL
-      const encodedPath = btoa(video.file_path)
-      return `http://localhost:${port}/video/${encodedPath}`
+      const encodedPath = btoa(video.file_path);
+      return `http://localhost:${port}/video/${encodedPath}`;
     } catch (err) {
-      console.error('Failed to prepare video:', err)
-      throw err
+      console.error('Failed to prepare video:', err);
+      throw err;
     }
   }
 
@@ -130,39 +165,39 @@ export function useVideoOperations() {
     videoPath: string,
     projectId: string,
     options: {
-      chunkDurationMinutes?: number
-      overlapSeconds?: number
+      chunkDurationMinutes?: number;
+      overlapSeconds?: number;
     } = {}
   ): Promise<{ success: boolean; chunks?: AudioChunk[]; error?: string }> {
     try {
       console.log('[VideoOperations] Preparing video for chunking:', {
         videoPath,
         projectId,
-        options
-      })
+        options,
+      });
 
       // First check if file exists
-      const fileExists = await invoke<boolean>('check_file_exists', { path: videoPath })
+      const fileExists = await invoke<boolean>('check_file_exists', { path: videoPath });
       if (!fileExists) {
-        return { success: false, error: 'Video file not found' }
+        return { success: false, error: 'Video file not found' };
       }
 
       // Use audio chunking composable
-      const { extractAndChunkVideo } = useAudioChunking()
-      const result = await extractAndChunkVideo(videoPath, projectId, options)
+      const { extractAndChunkVideo } = useAudioChunking();
+      const result = await extractAndChunkVideo(videoPath, projectId, options);
 
       if (result.success && result.chunks) {
         console.log('[VideoOperations] Chunking completed successfully:', {
           chunksCount: result.chunks.length,
-          totalSize: result.chunks.reduce((sum, chunk) => sum + chunk.file_size, 0)
-        })
+          totalSize: result.chunks.reduce((sum, chunk) => sum + chunk.file_size, 0),
+        });
       }
 
-      return result
+      return result;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err)
-      console.error('[VideoOperations] Chunk preparation failed:', errorMessage)
-      return { success: false, error: errorMessage }
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error('[VideoOperations] Chunk preparation failed:', errorMessage);
+      return { success: false, error: errorMessage };
     }
   }
 
@@ -173,15 +208,15 @@ export function useVideoOperations() {
     try {
       // This could be implemented by calling a new Tauri command that uses FFmpeg to get duration
       // For now, we'll return a placeholder implementation
-      console.log('[VideoOperations] Getting video duration for:', videoPath)
+      console.log('[VideoOperations] Getting video duration for:', videoPath);
 
       // TODO: Implement actual duration detection via FFmpeg
       // This would involve adding a new Tauri command or using existing infrastructure
 
-      return { success: false, error: 'Duration detection not implemented yet' }
+      return { success: false, error: 'Duration detection not implemented yet' };
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err)
-      return { success: false, error: errorMessage }
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      return { success: false, error: errorMessage };
     }
   }
 
@@ -192,6 +227,6 @@ export function useVideoOperations() {
     loadVideoThumbnail,
     prepareVideoForPlayback,
     prepareVideoForChunking,
-    getVideoDuration
-  }
+    getVideoDuration,
+  };
 }

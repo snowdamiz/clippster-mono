@@ -281,13 +281,31 @@
           let thumbnailDataUrl = null;
           if (video.thumbnail_path) {
             try {
-              thumbnailDataUrl = await invoke<string>('read_file_as_data_url', {
-                filePath: video.thumbnail_path,
+              const fileExists = await invoke<boolean>('check_file_exists', {
+                path: video.thumbnail_path,
               });
+
+              if (fileExists) {
+                try {
+                  thumbnailDataUrl = await invoke<string>('read_file_as_data_url', {
+                    filePath: video.thumbnail_path,
+                  });
+                } catch (error) {
+                  console.warn(`Failed to load raw video thumbnail for ${video.id}:`, error);
+                }
+              } else {
+                console.warn(`Raw video thumbnail file does not exist: ${video.thumbnail_path}`);
+              }
             } catch (error) {
-              console.warn(`Failed to load raw video thumbnail for ${video.id}:`, error);
+              console.warn(`Failed to check thumbnail existence for ${video.id}:`, error);
             }
           }
+
+          // If no thumbnail path or failed to load, use error SVG
+          if (!thumbnailDataUrl) {
+            thumbnailDataUrl = '/download_error.svg';
+          }
+
           return { ...video, thumbnail_path: thumbnailDataUrl };
         })
       );

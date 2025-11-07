@@ -568,7 +568,13 @@
   }
 
   function getThumbnailUrl(video: RawVideo): string | null {
-    return thumbnailCache.value.get(video.id) || null;
+    const cachedUrl = thumbnailCache.value.get(video.id);
+    if (cachedUrl) {
+      return cachedUrl;
+    }
+
+    // If no cached thumbnail, return error SVG as fallback
+    return '/download_error.svg';
   }
 
   async function getProjectInfo(projectId: string): Promise<Project | null> {

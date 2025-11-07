@@ -637,7 +637,13 @@
   }
 
   function getThumbnailUrl(video: RawVideo): string | null {
-    return thumbnailCache.value.get(video.id) || null;
+    const cachedUrl = thumbnailCache.value.get(video.id);
+    if (cachedUrl) {
+      return cachedUrl;
+    }
+
+    // If no cached thumbnail, return error SVG as fallback
+    return '/download_error.svg';
   }
 
   function isVideoAvailable(video: RawVideo): boolean {
@@ -687,15 +693,38 @@
 
       // Load thumbnails and project names
       for (const video of availableVideos.value) {
-        // Load thumbnails
-        if (video.thumbnail_path && !thumbnailCache.value.has(video.id)) {
-          try {
-            const dataUrl = await invoke<string>('read_file_as_data_url', {
-              filePath: video.thumbnail_path,
-            });
-            thumbnailCache.value.set(video.id, dataUrl);
-          } catch (error) {
-            console.warn('Failed to load thumbnail for video:', video.id, error);
+        // Load thumbnails with fallback logic
+        if (!thumbnailCache.value.has(video.id)) {
+          if (video.thumbnail_path) {
+            try {
+              const fileExists = await invoke<boolean>('check_file_exists', {
+                path: video.thumbnail_path,
+              });
+
+              if (fileExists) {
+                try {
+                  const dataUrl = await invoke<string>('read_file_as_data_url', {
+                    filePath: video.thumbnail_path,
+                  });
+                  thumbnailCache.value.set(video.id, dataUrl);
+                } catch (error) {
+                  console.warn('Failed to load thumbnail for video:', video.id, error);
+                  // Use error SVG as fallback
+                  thumbnailCache.value.set(video.id, '/download_error.svg');
+                }
+              } else {
+                console.warn('Thumbnail file does not exist:', video.thumbnail_path);
+                // Use error SVG as fallback
+                thumbnailCache.value.set(video.id, '/download_error.svg');
+              }
+            } catch (error) {
+              console.warn('Failed to check thumbnail existence for video:', video.id, error);
+              // Use error SVG as fallback
+              thumbnailCache.value.set(video.id, '/download_error.svg');
+            }
+          } else {
+            // No thumbnail path, use error SVG as fallback
+            thumbnailCache.value.set(video.id, '/download_error.svg');
           }
         }
 
