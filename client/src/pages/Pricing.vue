@@ -27,12 +27,55 @@
 
       <div class="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-muted rounded-lg">
         <span class="text-sm text-muted-foreground">Current Balance:</span>
-        <span class="text-lg font-bold text-foreground">{{ balance.hours_remaining }} hours</span>
+        <span v-if="balance.hours_remaining === 'unlimited'" class="text-lg font-bold text-purple-600">
+          Unlimited Credits
+        </span>
+        <span v-else class="text-lg font-bold text-foreground">{{ balance.hours_remaining }} hours</span>
       </div>
     </div>
     <!-- Loading State -->
     <div v-if="loading" class="flex justify-center items-center py-20">
       <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+    </div>
+    <!-- Admin State -->
+    <div v-else-if="balance.hours_remaining === 'unlimited'" class="flex flex-col items-center justify-center py-20">
+      <div class="text-center max-w-md">
+        <div
+          class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-purple-500/20 to-indigo-500/20 rounded-full mb-6"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-8 w-8 text-purple-600"
+            fill="currentColor"
+            viewBox="0 0 20 20"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 00-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 00-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 002.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </div>
+        <h2 class="text-2xl font-bold text-foreground mb-2">Admin Access</h2>
+        <p class="text-muted-foreground text-lg mb-4">
+          You have unlimited credits as an administrator. Enjoy unrestricted access to all features!
+        </p>
+        <div
+          class="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500/20 to-indigo-500/20 rounded-lg border border-purple-500/30"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-5 w-5 text-purple-600"
+            fill="currentColor"
+            viewBox="0 0 20 20"
+          >
+            <path
+              d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"
+            />
+          </svg>
+          <span class="text-purple-600 font-medium">Unlimited Credits</span>
+        </div>
+      </div>
     </div>
     <!-- Error State -->
     <div v-else-if="!packs || Object.keys(packs).length === 0" class="flex flex-col items-center justify-center py-20">
@@ -396,7 +439,7 @@
   const packOrder = ref(['starter', 'creator', 'pro', 'studio']);
   const companyWallet = ref('');
   const solUsdRate = ref(0);
-  const balance = ref({ hours_remaining: 0, hours_used: 0 });
+  const balance = ref({ hours_remaining: 0 | 'unlimited', hours_used: 0 });
 
   const showPaymentModal = ref(false);
   const selectedPack = ref<any>(null);

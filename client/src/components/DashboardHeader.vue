@@ -43,7 +43,8 @@
           />
         </svg>
         <span class="text-sm font-semibold text-white" v-if="!loadingBalance">
-          Credits: {{ hoursRemaining }} {{ hoursRemaining === 1 ? 'hr' : 'hrs' }}
+          <span v-if="hoursRemaining === 'unlimited'">Credits: Unlimited</span>
+          <span v-else>Credits: {{ hoursRemaining }} {{ hoursRemaining === 1 ? 'hr' : 'hrs' }}</span>
         </span>
         <span class="text-sm font-semibold text-white" v-else><span class="animate-pulse">Loading...</span></span>
       </router-link>
@@ -61,7 +62,7 @@
   const authStore = useAuthStore();
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
-  const hoursRemaining = ref(0);
+  const hoursRemaining = ref(0 | 'unlimited');
   const loadingBalance = ref(false);
 
   // Get breadcrumb title from composable
@@ -143,7 +144,10 @@
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          hoursRemaining.value = parseFloat(data.balance.hours_remaining.toFixed(1));
+          hoursRemaining.value =
+            data.balance.hours_remaining === 'unlimited'
+              ? 'unlimited'
+              : parseFloat(data.balance.hours_remaining.toFixed(1));
         }
       }
     } catch (error) {
