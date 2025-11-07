@@ -15,18 +15,11 @@ defmodule ClippsterServerWeb.AdminController do
           hours_used: 0.0
         }
       else
-        case Credits.get_user_balance(user.id) do
-          {:ok, balance} ->
-            %{
-              hours_remaining: Decimal.to_float(balance.hours_remaining),
-              hours_used: Decimal.to_float(balance.hours_used)
-            }
-          {:error, _reason} ->
-            %{
-              hours_remaining: 0.0,
-              hours_used: 0.0
-            }
-        end
+        {:ok, balance} = Credits.get_user_balance(user.id)
+        %{
+          hours_remaining: Decimal.to_float(balance.hours_remaining),
+          hours_used: Decimal.to_float(balance.hours_used)
+        }
       end
 
       %{

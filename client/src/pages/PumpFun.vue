@@ -422,15 +422,53 @@
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
       @click.self="showDownloadDialog = false"
     >
-      <div class="bg-card rounded-2xl p-8 max-w-md w-full mx-4 border border-border">
+      <div class="bg-card rounded-2xl p-8 max-w-2xl w-full mx-4 border border-border max-h-[90vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-4">Download Stream</h2>
 
         <div class="space-y-4">
           <p class="text-muted-foreground">
-            Are you sure you want to download "
+            Download "
             <span class="font-semibold text-foreground">{{ clipToDownload?.title }}</span>
-            "? This will download the full stream to your device.
           </p>
+
+          <!-- Download Type Selection -->
+          <div class="space-y-3">
+            <label class="text-sm font-medium text-foreground">Download Type:</label>
+            <div class="flex gap-3">
+              <button
+                @click="useSegmentDownload = false"
+                :class="[
+                  'px-4 py-2 rounded-lg border transition-all font-medium',
+                  !useSegmentDownload
+                    ? 'bg-purple-600 text-white border-purple-600'
+                    : 'bg-muted text-foreground border-border hover:bg-muted/80',
+                ]"
+              >
+                Full Stream
+              </button>
+              <button
+                @click="useSegmentDownload = true"
+                :class="[
+                  'px-4 py-2 rounded-lg border transition-all font-medium',
+                  useSegmentDownload
+                    ? 'bg-purple-600 text-white border-purple-600'
+                    : 'bg-muted text-foreground border-border hover:bg-muted/80',
+                ]"
+              >
+                Custom Segment
+              </button>
+            </div>
+          </div>
+
+          <!-- Time Range Picker (shown only for segment downloads) -->
+          <div v-if="useSegmentDownload" class="space-y-4">
+            <TimeRangePicker
+              v-model="selectedTimeRange"
+              :total-duration="clipToDownload?.duration || 0"
+              @change="handleTimeRangeChange"
+            />
+          </div>
+
           <!-- Stream Details -->
           <div class="bg-muted/50 rounded-lg p-4 space-y-2">
             <div class="flex items-center justify-between text-sm">
@@ -438,15 +476,25 @@
               <span class="font-medium text-foreground">{{ formatDuration(clipToDownload?.duration) }}</span>
             </div>
 
+            <div v-if="useSegmentDownload" class="flex items-center justify-between text-sm">
+              <span class="text-muted-foreground">Selected Duration:</span>
+              <span class="font-medium text-foreground">
+                {{ formatDuration(selectedTimeRange.endTime - selectedTimeRange.startTime) }}
+              </span>
+            </div>
+
             <div class="flex items-center justify-between text-sm">
               <span class="text-muted-foreground">Estimated Download Time:</span>
               <span class="font-medium text-foreground">{{ estimatedDownloadTime }}</span>
             </div>
           </div>
+
           <button
             class="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             @click="downloadClipConfirmed"
-            :disabled="downloadStarting"
+            :disabled="
+              downloadStarting || (useSegmentDownload && selectedTimeRange.endTime <= selectedTimeRange.startTime)
+            "
           >
             <span v-if="downloadStarting" class="flex items-center justify-center gap-2">
               <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -458,9 +506,9 @@
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                 ></path>
               </svg>
-              Starting Download...
+              {{ useSegmentDownload ? 'Starting Segment Download...' : 'Starting Download...' }}
             </span>
-            <span v-else>Download</span>
+            <span v-else>{{ useSegmentDownload ? 'Download Segment' : 'Download Full Stream' }}</span>
           </button>
           <button
             class="w-full py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -481,6 +529,7 @@
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
   import SearchInput from '@/components/SearchInput.vue';
+  import TimeRangePicker from '@/components/TimeRangePicker.vue';
   import { type PumpFunClip } from '@/services/pumpfun';
   import { useToast } from '@/composables/useToast';
   import { useDownloads } from '@/composables/useDownloads';
@@ -518,6 +567,10 @@
   const showRecentDropdown = ref(false);
   const showEmptyRecentDropdown = ref(false);
 
+  // Time range selection
+  const useSegmentDownload = ref(false);
+  const selectedTimeRange = ref({ startTime: 0, endTime: 0 });
+
   // Computed properties for dialog
   const formatDuration = (duration?: number) => {
     if (!duration) return 'Unknown';
@@ -535,10 +588,14 @@
   };
 
   const estimatedDownloadTime = computed(() => {
-    if (!clipToDownload.value?.duration) return 'Unknown';
+    const duration = useSegmentDownload.value
+      ? selectedTimeRange.value.endTime - selectedTimeRange.value.startTime
+      : clipToDownload.value?.duration;
+
+    if (!duration) return 'Unknown';
 
     // Estimate based on 1 GB per hour of video content
-    const estimatedSizeGB = (clipToDownload.value.duration / 3600) * 1;
+    const estimatedSizeGB = (duration / 3600) * 1;
     // Assume average download speed of 50 Mbps
     const avgDownloadSpeedMbps = 50;
     // Convert GB to Mb and calculate download time in seconds
@@ -566,6 +623,10 @@
   function handleRecentSearchClick(search: { mintId: string; displayText: string }) {
     mintId.value = search.displayText;
     handleSearch();
+  }
+
+  function handleTimeRangeChange(range: { startTime: number; endTime: number }) {
+    selectedTimeRange.value = range;
   }
 
   async function handleSearch() {
@@ -608,6 +669,9 @@
 
   function handleDownloadClip(clip: PumpFunClip) {
     clipToDownload.value = clip;
+    // Reset segment download state
+    useSegmentDownload.value = false;
+    selectedTimeRange.value = { startTime: 0, endTime: clip.duration || 0 };
     showDownloadDialog.value = true;
   }
 
@@ -624,11 +688,17 @@
         throw new Error('No video URL available for this VOD');
       }
 
+      // Determine download parameters
+      const segmentRange = useSegmentDownload.value
+        ? { startTime: selectedTimeRange.value.startTime, endTime: selectedTimeRange.value.endTime }
+        : undefined;
+
       // Start the download
-      await startDownload(clip.title, videoUrl, pumpFunStore.currentMintId);
+      await startDownload(clip.title, videoUrl, pumpFunStore.currentMintId, segmentRange);
 
       // Show success toast
-      success('Download Started', `Downloading "${clip.title}"`);
+      const downloadType = useSegmentDownload.value ? 'segment' : 'full stream';
+      success('Download Started', `Downloading ${downloadType} of "${clip.title}"`);
 
       // Close dialog immediately
       showDownloadDialog.value = false;

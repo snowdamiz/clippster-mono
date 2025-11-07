@@ -27,7 +27,7 @@
 
       <div class="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-muted rounded-lg">
         <span class="text-sm text-muted-foreground">Current Balance:</span>
-        <span v-if="balance.hours_remaining === 'unlimited'" class="text-lg font-bold text-purple-600">
+        <span v-if="typeof balance.hours_remaining === 'string'" class="text-lg font-bold text-purple-600">
           Unlimited Credits
         </span>
         <span v-else class="text-lg font-bold text-foreground">{{ balance.hours_remaining }} hours</span>
@@ -38,7 +38,10 @@
       <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
     </div>
     <!-- Admin State -->
-    <div v-else-if="balance.hours_remaining === 'unlimited'" class="flex flex-col items-center justify-center py-20">
+    <div
+      v-else-if="typeof balance.hours_remaining === 'string'"
+      class="flex flex-col items-center justify-center py-20"
+    >
       <div class="text-center max-w-md">
         <div
           class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-purple-500/20 to-indigo-500/20 rounded-full mb-6"
@@ -439,7 +442,10 @@
   const packOrder = ref(['starter', 'creator', 'pro', 'studio']);
   const companyWallet = ref('');
   const solUsdRate = ref(0);
-  const balance = ref({ hours_remaining: 0 | 'unlimited', hours_used: 0 });
+  const balance = ref<{ hours_remaining: number | 'unlimited'; hours_used: number }>({
+    hours_remaining: 0,
+    hours_used: 0,
+  });
 
   const showPaymentModal = ref(false);
   const selectedPack = ref<any>(null);

@@ -63,21 +63,14 @@ defmodule ClippsterServerWeb.PaymentController do
         })
       else
         # Regular user - get actual balance
-        case Credits.get_user_balance(user_id) do
-          {:ok, balance} ->
-            json(conn, %{
-              success: true,
-              balance: %{
-                hours_remaining: Decimal.to_float(balance.hours_remaining),
-                hours_used: Decimal.to_float(balance.hours_used)
-              }
-            })
-
-          {:error, reason} ->
-            conn
-            |> put_status(500)
-            |> json(%{success: false, error: to_string(reason)})
-        end
+        {:ok, balance} = Credits.get_user_balance(user_id)
+        json(conn, %{
+          success: true,
+          balance: %{
+            hours_remaining: Decimal.to_float(balance.hours_remaining),
+            hours_used: Decimal.to_float(balance.hours_used)
+          }
+        })
       end
     else
       {:error, :unauthorized} ->
