@@ -422,101 +422,285 @@
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
       @click.self="showDownloadDialog = false"
     >
-      <div class="bg-card rounded-2xl p-8 max-w-2xl w-full mx-4 border border-border max-h-[90vh] overflow-y-auto">
-        <h2 class="text-2xl font-bold mb-4">Download Stream</h2>
+      <div
+        class="bg-card rounded-2xl p-6 max-w-lg w-full mx-4 border border-border max-h-[90vh] overflow-y-auto shadow-2xl"
+      >
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xl font-bold text-foreground">Download Stream</h2>
+          <button
+            @click="showDownloadDialog = false"
+            class="p-1.5 hover:bg-muted rounded-lg transition-colors"
+            :disabled="downloadStarting"
+          >
+            <svg
+              class="h-4 w-4 text-muted-foreground"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
 
+        <!-- Content -->
         <div class="space-y-4">
-          <p class="text-muted-foreground">
-            Downloading
-            <span class="font-semibold text-foreground">{{ downloadTitle }}</span>
-          </p>
+          <!-- Selected Video Info -->
+          <div class="bg-muted/30 rounded-lg p-3 border border-border/50">
+            <div class="flex items-center gap-2">
+              <div
+                class="w-8 h-8 bg-gradient-to-br from-purple-500/20 to-indigo-500/20 rounded-lg flex items-center justify-center flex-shrink-0"
+              >
+                <svg
+                  class="h-4 w-4 text-purple-500"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                  />
+                </svg>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-foreground truncate">{{ downloadTitle }}</p>
+                <p class="text-xs text-muted-foreground truncate">{{ clipToDownload?.clipId }}</p>
+              </div>
+            </div>
+          </div>
 
           <!-- Download Type Selection -->
-          <div class="space-y-3">
+          <div class="space-y-2">
             <label class="text-sm font-medium text-foreground">Download Type:</label>
-            <div class="flex gap-3">
+            <div class="grid grid-cols-2 gap-2">
               <button
                 @click="useSegmentDownload = false"
                 :class="[
-                  'px-4 py-2 rounded-lg border transition-all font-medium',
+                  'relative p-3 rounded-lg border-2 transition-all text-left',
                   !useSegmentDownload
-                    ? 'bg-purple-600 text-white border-purple-600'
-                    : 'bg-muted text-foreground border-border hover:bg-muted/80',
+                    ? 'border-purple-500 bg-purple-500/10'
+                    : 'border-border bg-card hover:bg-muted/50',
                 ]"
               >
-                Full Stream
+                <div class="flex items-center gap-2">
+                  <div
+                    :class="[
+                      'w-6 h-6 rounded flex items-center justify-center transition-colors flex-shrink-0',
+                      !useSegmentDownload ? 'bg-purple-500 text-white' : 'bg-muted text-muted-foreground',
+                    ]"
+                  >
+                    <svg
+                      class="h-3 w-3"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
+                      />
+                    </svg>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <h4
+                      :class="[
+                        'font-medium text-xs truncate',
+                        !useSegmentDownload ? 'text-purple-400' : 'text-foreground',
+                      ]"
+                    >
+                      Full Stream
+                    </h4>
+                  </div>
+                  <div v-if="!useSegmentDownload" class="flex-shrink-0">
+                    <div class="w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center">
+                      <svg
+                        class="h-2.5 w-2.5 text-white"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
               </button>
+
               <button
                 @click="useSegmentDownload = true"
                 :class="[
-                  'px-4 py-2 rounded-lg border transition-all font-medium',
-                  useSegmentDownload
-                    ? 'bg-purple-600 text-white border-purple-600'
-                    : 'bg-muted text-foreground border-border hover:bg-muted/80',
+                  'relative p-3 rounded-lg border-2 transition-all text-left',
+                  useSegmentDownload ? 'border-purple-500 bg-purple-500/10' : 'border-border bg-card hover:bg-muted/50',
                 ]"
               >
-                Custom Segment
+                <div class="flex items-center gap-2">
+                  <div
+                    :class="[
+                      'w-6 h-6 rounded flex items-center justify-center transition-colors flex-shrink-0',
+                      useSegmentDownload ? 'bg-purple-500 text-white' : 'bg-muted text-muted-foreground',
+                    ]"
+                  >
+                    <svg
+                      class="h-3 w-3"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <h4
+                      :class="[
+                        'font-medium text-xs truncate',
+                        useSegmentDownload ? 'text-purple-400' : 'text-foreground',
+                      ]"
+                    >
+                      Custom Segment
+                    </h4>
+                  </div>
+                  <div v-if="useSegmentDownload" class="flex-shrink-0">
+                    <div class="w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center">
+                      <svg
+                        class="h-2.5 w-2.5 text-white"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
               </button>
             </div>
           </div>
 
           <!-- Time Range Picker (shown only for segment downloads) -->
-          <div v-if="useSegmentDownload" class="space-y-4">
-            <TimeRangePicker
-              v-model="selectedTimeRange"
-              :total-duration="clipToDownload?.duration || 0"
-              @change="handleTimeRangeChange"
-            />
+          <div v-if="useSegmentDownload" class="space-y-2">
+            <label class="text-sm font-medium text-foreground flex items-center gap-1.5">
+              <svg
+                class="h-3.5 w-3.5 text-purple-400"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              Select Time Range:
+            </label>
+            <div class="bg-muted/20 rounded-lg p-3 border border-border/50">
+              <TimeRangePicker
+                v-model="selectedTimeRange"
+                :total-duration="clipToDownload?.duration || 0"
+                @change="handleTimeRangeChange"
+              />
+            </div>
           </div>
 
           <!-- Stream Details -->
-          <div class="bg-muted/50 rounded-lg p-4 space-y-2">
-            <div class="flex items-center justify-between text-sm">
-              <span class="text-muted-foreground">Stream Length:</span>
-              <span class="font-medium text-foreground">{{ formatDuration(clipToDownload?.duration) }}</span>
-            </div>
+          <div class="bg-muted/30 rounded-lg p-3 border border-border/50">
+            <div class="space-y-2">
+              <div class="flex items-center justify-between text-sm">
+                <span class="text-muted-foreground">Duration:</span>
+                <span class="font-medium text-foreground">{{ formatDuration(clipToDownload?.duration) }}</span>
+              </div>
 
-            <div v-if="useSegmentDownload" class="flex items-center justify-between text-sm">
-              <span class="text-muted-foreground">Selected Duration:</span>
-              <span class="font-medium text-foreground">
-                {{ formatDuration(selectedTimeRange.endTime - selectedTimeRange.startTime) }}
-              </span>
-            </div>
+              <div v-if="useSegmentDownload" class="flex items-center justify-between text-sm">
+                <span class="text-muted-foreground">Selected:</span>
+                <span class="font-medium text-purple-400">
+                  {{ formatDuration(selectedTimeRange.endTime - selectedTimeRange.startTime) }}
+                </span>
+              </div>
 
-            <div class="flex items-center justify-between text-sm">
-              <span class="text-muted-foreground">Estimated Download Time:</span>
-              <span class="font-medium text-foreground">{{ estimatedDownloadTime }}</span>
+              <div class="flex items-center justify-between text-sm">
+                <span class="text-muted-foreground">Est. Time:</span>
+                <span class="font-medium text-green-400">{{ estimatedDownloadTime }}</span>
+              </div>
             </div>
           </div>
 
-          <button
-            class="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            @click="downloadClipConfirmed"
-            :disabled="
-              downloadStarting || (useSegmentDownload && selectedTimeRange.endTime <= selectedTimeRange.startTime)
-            "
-          >
-            <span v-if="downloadStarting" class="flex items-center justify-center gap-2">
-              <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <!-- Action Buttons -->
+          <div class="space-y-2 pt-5 border-t border-border">
+            <button
+              class="w-full py-2.5 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl disabled:shadow-none"
+              @click="downloadClipConfirmed"
+              :disabled="
+                downloadStarting || (useSegmentDownload && selectedTimeRange.endTime <= selectedTimeRange.startTime)
+              "
+            >
+              <span v-if="downloadStarting" class="flex items-center justify-center gap-2">
+                <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path
+                    class="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                {{ useSegmentDownload ? 'Starting Segment Download...' : 'Starting Download...' }}
+              </span>
+              <span v-else class="flex items-center justify-center gap-2">
+                <svg
+                  class="h-4 w-4"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
+                  />
+                </svg>
+                {{ useSegmentDownload ? 'Download Segment' : 'Download Full Stream' }}
+              </span>
+            </button>
 
-                <path
-                  class="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                ></path>
-              </svg>
-              {{ useSegmentDownload ? 'Starting Segment Download...' : 'Starting Download...' }}
-            </span>
-            <span v-else>{{ useSegmentDownload ? 'Download Segment' : 'Download Full Stream' }}</span>
-          </button>
-          <button
-            class="w-full py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            @click="showDownloadDialog = false"
-            :disabled="downloadStarting"
-          >
-            Cancel
-          </button>
+            <button
+              class="w-full py-2.5 px-4 bg-muted/50 text-muted-foreground rounded-lg font-semibold hover:bg-muted transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-border/50 hover:border-border"
+              @click="showDownloadDialog = false"
+              :disabled="downloadStarting"
+            >
+              <span class="flex items-center justify-center gap-2">
+                <svg
+                  class="h-4 w-4"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Cancel
+              </span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

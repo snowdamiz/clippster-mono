@@ -25,7 +25,7 @@
           class="absolute w-4 h-4 bg-purple-600 rounded-full border-2 border-white shadow-lg cursor-grab active:cursor-grabbing z-40"
           :style="{
             left: `calc(${(startTime / totalDuration) * 100}% - 8px)`,
-            top: '-2px',
+            top: '-4px',
           }"
           @mousedown="startDragging($event, 'start')"
           @touchstart="startDragging($event, 'start')"
@@ -35,7 +35,7 @@
           class="absolute w-4 h-4 bg-purple-600 rounded-full border-2 border-white shadow-lg cursor-grab active:cursor-grabbing z-40"
           :style="{
             left: `calc(${(endTime / totalDuration) * 100}% - 8px)`,
-            top: '-2px',
+            top: '-4px',
           }"
           @mousedown="startDragging($event, 'end')"
           @touchstart="startDragging($event, 'end')"
