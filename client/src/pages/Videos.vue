@@ -239,7 +239,6 @@
             </div>
             <!-- Hover Overlay Buttons -->
             <div
-              v-if="getThumbnailUrl(video)"
               class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-4"
             >
               <button
