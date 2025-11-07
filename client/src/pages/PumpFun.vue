@@ -204,9 +204,9 @@
 
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         <div
-          v-for="clip in pumpFunStore.clips"
+          v-for="clip in paginatedClips"
           :key="clip.clipId"
-          class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer group aspect-video"
+          class="relative bg-card rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer group aspect-video hover:scale-102 transition-all"
           @click="handleClipClick(clip)"
         >
           <!-- Thumbnail background with vignette -->
@@ -520,16 +520,28 @@
         </div>
       </div>
     </div>
+    <!-- Pagination Footer -->
+    <PaginationFooter
+      v-if="pumpFunStore.clips.length > 0"
+      :current-page="currentPage"
+      :total-pages="totalPages"
+      :total-items="pumpFunStore.clips.length"
+      item-label="VOD"
+      @go-to-page="goToPage"
+      @previous="previousPage"
+      @next="nextPage"
+    />
   </PageLayout>
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted, onUnmounted } from 'vue';
+  import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
   import { useRouter } from 'vue-router';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
   import SearchInput from '@/components/SearchInput.vue';
   import TimeRangePicker from '@/components/TimeRangePicker.vue';
+  import PaginationFooter from '@/components/PaginationFooter.vue';
   import { type PumpFunClip } from '@/services/pumpfun';
   import { useToast } from '@/composables/useToast';
   import { useDownloads } from '@/composables/useDownloads';
@@ -572,6 +584,10 @@
   const useSegmentDownload = ref(false);
   const selectedTimeRange = ref({ startTime: 0, endTime: 0 });
   const nextSegmentNumber = ref(1); // Default to 1
+
+  // Pagination state
+  const currentPage = ref(1);
+  const clipsPerPage = 20;
 
   // Reactive computed property for download title
   const downloadTitle = computed(() => {
@@ -618,6 +634,42 @@
 
     return formatDuration(downloadTimeSeconds);
   });
+
+  // Pagination computed properties
+  const totalPages = computed(() => Math.ceil(pumpFunStore.clips.length / clipsPerPage));
+  const paginatedClips = computed(() => {
+    const startIndex = (currentPage.value - 1) * clipsPerPage;
+    const endIndex = startIndex + clipsPerPage;
+    const paginated = pumpFunStore.clips.slice(startIndex, endIndex);
+    return paginated;
+  });
+
+  // Pagination functions
+  function goToPage(page: number) {
+    if (page >= 1 && page <= totalPages.value) {
+      currentPage.value = page;
+    }
+  }
+
+  function nextPage() {
+    if (currentPage.value < totalPages.value) {
+      currentPage.value++;
+    }
+  }
+
+  function previousPage() {
+    if (currentPage.value > 1) {
+      currentPage.value--;
+    }
+  }
+
+  // Reset to first page when clips change
+  watch(
+    () => pumpFunStore.clips,
+    () => {
+      currentPage.value = 1;
+    }
+  );
 
   // Format relative time for stream dates
   function formatRelativeTime(timestamp?: number | string | Date) {

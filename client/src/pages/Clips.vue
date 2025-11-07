@@ -35,7 +35,7 @@
         <!-- Clips Grid -->
         <div v-if="clips.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           <div
-            v-for="clip in clips"
+            v-for="clip in paginatedClips"
             :key="clip.id"
             class="relative bg-card rounded-lg overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
             @click="playClip(clip)"
@@ -184,6 +184,17 @@
       </div>
       <!-- Close content when not loading -->
     </PageLayout>
+    <!-- Pagination Footer -->
+    <PaginationFooter
+      v-if="!loading && clips.length > 0"
+      :current-page="currentPage"
+      :total-pages="totalPages"
+      :total-items="clips.length"
+      item-label="clip"
+      @go-to-page="goToPage"
+      @previous="previousPage"
+      @next="nextPage"
+    />
     <!-- Video Player Dialog -->
     <VideoPlayerDialog :video="clipToPlay" :show-video-player="showVideoPlayer" @close="showVideoPlayer = false" />
     <!-- Delete Confirmation Modal -->
@@ -201,7 +212,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, computed } from 'vue';
+  import { ref, onMounted, computed, watch } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
   import {
@@ -222,6 +233,7 @@
   import EmptyState from '@/components/EmptyState.vue';
   import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
+  import PaginationFooter from '@/components/PaginationFooter.vue';
 
   const clips = ref<Clip[]>([]);
   const loading = ref(true);
@@ -234,9 +246,46 @@
   const projectCache = ref<Map<string, Project>>(new Map());
   const { getRelativeTime } = useFormatters();
 
+  // Pagination state
+  const currentPage = ref(1);
+  const clipsPerPage = 20;
+
   // Computed property to check if any clips have actual files
   const hasAnyClipsWithFiles = computed(() => {
     return clips.value.some((clip) => clip.file_path && clip.file_path.trim() !== '');
+  });
+
+  // Pagination computed properties
+  const totalPages = computed(() => Math.ceil(clips.value.length / clipsPerPage));
+  const paginatedClips = computed(() => {
+    const startIndex = (currentPage.value - 1) * clipsPerPage;
+    const endIndex = startIndex + clipsPerPage;
+    const paginated = clips.value.slice(startIndex, endIndex);
+    return paginated;
+  });
+
+  // Pagination functions
+  function goToPage(page: number) {
+    if (page >= 1 && page <= totalPages.value) {
+      currentPage.value = page;
+    }
+  }
+
+  function nextPage() {
+    if (currentPage.value < totalPages.value) {
+      currentPage.value++;
+    }
+  }
+
+  function previousPage() {
+    if (currentPage.value > 1) {
+      currentPage.value--;
+    }
+  }
+
+  // Reset to first page when clips change
+  watch(clips, () => {
+    currentPage.value = 1;
   });
 
   async function loadClips() {

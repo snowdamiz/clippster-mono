@@ -22,7 +22,7 @@
 
     <div v-else-if="projects.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
       <div
-        v-for="project in projects"
+        v-for="project in paginatedProjects"
         :key="project.id"
         class="relative bg-card rounded-lg overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
         @click="openWorkspace(project)"
@@ -167,6 +167,17 @@
         </div>
       </div>
     </div>
+    <!-- Pagination Footer -->
+    <PaginationFooter
+      v-if="!loading && projects.length > 0"
+      :current-page="currentPage"
+      :total-pages="totalPages"
+      :total-items="projects.length"
+      item-label="project"
+      @go-to-page="goToPage"
+      @previous="previousPage"
+      @next="nextPage"
+    />
     <!-- Empty State -->
     <EmptyState
       v-else
@@ -228,7 +239,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, onUnmounted } from 'vue';
+  import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import {
     getAllProjects,
@@ -250,6 +261,7 @@
   import EmptyState from '@/components/EmptyState.vue';
   import ProjectDialog, { type ProjectFormData } from '@/components/ProjectDialog.vue';
   import ProjectWorkspaceDialog from '@/components/ProjectWorkspaceDialog.vue';
+  import PaginationFooter from '@/components/PaginationFooter.vue';
 
   const projects = ref<Project[]>([]);
   const loading = ref(true);
@@ -266,6 +278,10 @@
   const thumbnailCache = ref<Map<string, string>>(new Map());
   const { getRelativeTime } = useFormatters();
   const { success, error } = useToast();
+
+  // Pagination state
+  const currentPage = ref(1);
+  const projectsPerPage = 20;
 
   async function loadProjects() {
     loading.value = true;
@@ -323,6 +339,39 @@
   function getThumbnailUrl(projectId: string): string | null {
     return thumbnailCache.value.get(projectId) || null;
   }
+
+  // Pagination computed properties
+  const totalPages = computed(() => Math.ceil(projects.value.length / projectsPerPage));
+  const paginatedProjects = computed(() => {
+    const startIndex = (currentPage.value - 1) * projectsPerPage;
+    const endIndex = startIndex + projectsPerPage;
+    const paginated = projects.value.slice(startIndex, endIndex);
+    return paginated;
+  });
+
+  // Pagination functions
+  function goToPage(page: number) {
+    if (page >= 1 && page <= totalPages.value) {
+      currentPage.value = page;
+    }
+  }
+
+  function nextPage() {
+    if (currentPage.value < totalPages.value) {
+      currentPage.value++;
+    }
+  }
+
+  function previousPage() {
+    if (currentPage.value > 1) {
+      currentPage.value--;
+    }
+  }
+
+  // Reset to first page when projects change
+  watch(projects, () => {
+    currentPage.value = 1;
+  });
 
   function openCreateDialog() {
     selectedProject.value = null;
