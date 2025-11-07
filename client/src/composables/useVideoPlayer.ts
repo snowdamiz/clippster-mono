@@ -1,83 +1,88 @@
-import { ref, watch, nextTick, onMounted, computed, type Ref } from 'vue'
-import { type Project, getAllRawVideos, type RawVideo, type ClipSegment } from '@/services/database'
-import { invoke } from '@tauri-apps/api/core'
+import { ref, watch, nextTick, onMounted, computed, type Ref } from 'vue';
+import {
+  type Project,
+  getAllRawVideos,
+  type RawVideo,
+  type ClipSegment,
+} from '@/services/database';
+import { invoke } from '@tauri-apps/api/core';
 
 export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   // Video player state
-  const videoElement = ref<HTMLVideoElement | null>(null)
-  const videoSrc = ref<string | null>(null)
-  const videoLoading = ref(false)
-  const videoError = ref<string | null>(null)
-  const isPlaying = ref(false)
-  const currentTime = ref(0)
-  const duration = ref(0)
-  const volume = ref(1)
-  const isMuted = ref(false)
-  const buffered = ref(0)
-  const timelineHoverTime = ref<number | null>(null)
-  const timelineHoverPosition = ref(0)
-  const timelineZoomLevel = ref(1.0)
+  const videoElement = ref<HTMLVideoElement | null>(null);
+  const videoSrc = ref<string | null>(null);
+  const videoLoading = ref(false);
+  const videoError = ref<string | null>(null);
+  const isPlaying = ref(false);
+  const currentTime = ref(0);
+  const duration = ref(0);
+  const volume = ref(1);
+  const isMuted = ref(false);
+  const buffered = ref(0);
+  const timelineHoverTime = ref<number | null>(null);
+  const timelineHoverPosition = ref(0);
+  const timelineZoomLevel = ref(1.0);
 
   // Video data
-  const availableVideos = ref<RawVideo[]>([])
-  const currentVideo = ref<RawVideo | null>(null)
+  const availableVideos = ref<RawVideo[]>([]);
+  const currentVideo = ref<RawVideo | null>(null);
 
   // Segmented playback state
-  const isPlayingSegments = ref(false)
-  const currentSegments = ref<ClipSegment[]>([])
-  const currentSegmentIndex = ref(0)
-  const segmentPlaybackEnded = ref(false)
+  const isPlayingSegments = ref(false);
+  const currentSegments = ref<ClipSegment[]>([]);
+  const currentSegmentIndex = ref(0);
+  const segmentPlaybackEnded = ref(false);
 
   // Timeline timestamps
   const timelineTimestamps = computed(() => {
-    if (!duration.value || duration.value <= 0) return []
+    if (!duration.value || duration.value <= 0) return [];
 
-    const timestamps = []
-    const totalDuration = duration.value
+    const timestamps = [];
+    const totalDuration = duration.value;
 
     // Smart interval calculation based on video duration
-    let baseInterval: number
+    let baseInterval: number;
     if (totalDuration <= 30) {
-      baseInterval = 5
+      baseInterval = 5;
     } else if (totalDuration <= 60) {
-      baseInterval = 10
+      baseInterval = 10;
     } else if (totalDuration <= 180) {
-      baseInterval = 15
+      baseInterval = 15;
     } else if (totalDuration <= 300) {
-      baseInterval = 30
+      baseInterval = 30;
     } else if (totalDuration <= 600) {
-      baseInterval = 60
+      baseInterval = 60;
     } else if (totalDuration <= 1800) {
-      baseInterval = 120
+      baseInterval = 120;
     } else if (totalDuration <= 3600) {
-      baseInterval = 300
+      baseInterval = 300;
     } else {
-      baseInterval = 600
+      baseInterval = 600;
     }
 
     // Adjust interval if we have too many timestamps
-    const estimatedTimestamps = Math.floor(totalDuration / baseInterval)
+    const estimatedTimestamps = Math.floor(totalDuration / baseInterval);
     if (estimatedTimestamps > 15) {
-      baseInterval = Math.ceil(totalDuration / 12)
+      baseInterval = Math.ceil(totalDuration / 12);
     } else if (estimatedTimestamps < 6 && totalDuration > 60) {
-      baseInterval = Math.max(baseInterval / 2, 30)
+      baseInterval = Math.max(baseInterval / 2, 30);
     }
 
     // Add timestamp at 0:00
     timestamps.push({
       time: 0,
       position: 0,
-      label: formatDuration(0)
-    })
+      label: formatDuration(0),
+    });
 
     // Add intermediate timestamps
     for (let time = baseInterval; time < totalDuration; time += baseInterval) {
-      const position = (time / totalDuration) * 100
+      const position = (time / totalDuration) * 100;
       timestamps.push({
         time,
         position,
-        label: formatDuration(time)
-      })
+        label: formatDuration(time),
+      });
     }
 
     // Add final timestamp at the end
@@ -85,21 +90,21 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
       timestamps.push({
         time: totalDuration,
         position: 99.5,
-        label: formatDuration(totalDuration)
-      })
+        label: formatDuration(totalDuration),
+      });
     }
 
     // Smart spacing algorithm
-    const idealCount = Math.max(6, Math.min(12, timestamps.length))
-    const minSpacing = 100 / idealCount
+    const idealCount = Math.max(6, Math.min(12, timestamps.length));
+    const minSpacing = 100 / idealCount;
 
-    const filteredTimestamps = []
-    let lastPosition = -minSpacing
+    const filteredTimestamps = [];
+    let lastPosition = -minSpacing;
 
     for (const timestamp of timestamps) {
       if (timestamp.position - lastPosition >= minSpacing) {
-        filteredTimestamps.push(timestamp)
-        lastPosition = timestamp.position
+        filteredTimestamps.push(timestamp);
+        lastPosition = timestamp.position;
       }
     }
 
@@ -108,8 +113,8 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
       filteredTimestamps.unshift({
         time: 0,
         position: 0,
-        label: formatDuration(0)
-      })
+        label: formatDuration(0),
+      });
     }
 
     if (
@@ -119,457 +124,435 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
       filteredTimestamps.push({
         time: totalDuration,
         position: 99.5,
-        label: formatDuration(totalDuration)
-      })
+        label: formatDuration(totalDuration),
+      });
     }
 
-    return filteredTimestamps
-  })
+    return filteredTimestamps;
+  });
 
   function formatDuration(seconds: number): string {
-    if (isNaN(seconds) || !isFinite(seconds)) return '0:00'
+    if (isNaN(seconds) || !isFinite(seconds)) return '0:00';
 
-    const totalSeconds = Math.floor(seconds)
+    const totalSeconds = Math.floor(seconds);
 
     if (totalSeconds < 60) {
-      return `0:${totalSeconds.toString().padStart(2, '0')}`
+      return `0:${totalSeconds.toString().padStart(2, '0')}`;
     } else if (totalSeconds < 3600) {
-      const minutes = Math.floor(totalSeconds / 60)
-      const remainingSeconds = totalSeconds % 60
-      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+      const minutes = Math.floor(totalSeconds / 60);
+      const remainingSeconds = totalSeconds % 60;
+      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
     } else {
-      const hours = Math.floor(totalSeconds / 3600)
-      const minutes = Math.floor((totalSeconds % 3600) / 60)
-      const remainingSeconds = totalSeconds % 60
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const remainingSeconds = totalSeconds % 60;
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
     }
   }
 
   function togglePlayPause() {
-    if (!videoElement.value) return
+    if (!videoElement.value) return;
 
     // If we're playing segments, stop segmented playback first
     if (isPlayingSegments.value) {
-      stopSegmentedPlayback()
-      return
+      stopSegmentedPlayback();
+      return;
     }
 
     if (videoElement.value.paused) {
-      videoElement.value.play()
-      isPlaying.value = true
+      videoElement.value.play();
+      isPlaying.value = true;
     } else {
-      videoElement.value.pause()
-      isPlaying.value = false
+      videoElement.value.pause();
+      isPlaying.value = false;
     }
   }
 
   function seekTimeline(event: MouseEvent) {
-    console.log('[useVideoPlayer] seekTimeline called')
-    console.log('[useVideoPlayer] videoElement.value:', !!videoElement.value)
-    console.log('[useVideoPlayer] videoSrc.value:', !!videoSrc.value)
-
     if (!videoElement.value || !videoSrc.value) {
-      console.log('[useVideoPlayer] Early return - no videoElement or videoSrc')
-      return
+      return;
     }
 
     // If we're playing segments, stop segmented playback when user seeks
     if (isPlayingSegments.value) {
-      console.log('[useVideoPlayer] Stopping segment playback')
-      stopSegmentedPlayback()
+      stopSegmentedPlayback();
     }
 
-    const timeline = event.currentTarget as HTMLElement
-    console.log('[useVideoPlayer] Timeline element:', !!timeline)
+    const timeline = event.currentTarget as HTMLElement;
+    const rect = timeline.getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    const clickPercent = Math.max(0, Math.min(1, clickX / rect.width));
 
-    const rect = timeline.getBoundingClientRect()
-    const clickX = event.clientX - rect.left
-    const clickPercent = Math.max(0, Math.min(1, clickX / rect.width))
-
-    console.log('[useVideoPlayer] rect.left:', rect.left, 'event.clientX:', event.clientX)
-    console.log('[useVideoPlayer] clickX:', clickX, 'rect.width:', rect.width)
-    console.log(
-      '[useVideoPlayer] clickPercent (raw):',
-      clickX / rect.width,
-      'clickPercent (clamped):',
-      clickPercent
-    )
-
-    const videoDuration = videoElement.value.duration || duration.value
-    console.log('[useVideoPlayer] videoDuration:', videoDuration)
+    const videoDuration = videoElement.value.duration || duration.value;
 
     if (!videoDuration || isNaN(videoDuration)) {
-      console.log('[useVideoPlayer] Early return - invalid videoDuration')
-      return
+      return;
     }
 
-    const seekTime = clickPercent * videoDuration
-    console.log('[useVideoPlayer] Calculated seekTime:', seekTime)
+    const seekTime = clickPercent * videoDuration;
 
-    videoElement.value.currentTime = seekTime
-    currentTime.value = seekTime
-
-    console.log('[useVideoPlayer] Video currentTime set to:', videoElement.value.currentTime)
+    videoElement.value.currentTime = seekTime;
+    currentTime.value = seekTime;
   }
 
   function onTimelineTrackHover(event: MouseEvent) {
-    if (!videoElement.value || !videoSrc.value) return
+    if (!videoElement.value || !videoSrc.value) return;
 
-    const timeline = event.currentTarget as HTMLElement
-    const rect = timeline.getBoundingClientRect()
-    const hoverX = event.clientX - rect.left
-    const hoverPercent = Math.max(0, Math.min(1, hoverX / rect.width))
+    const timeline = event.currentTarget as HTMLElement;
+    const rect = timeline.getBoundingClientRect();
+    const hoverX = event.clientX - rect.left;
+    const hoverPercent = Math.max(0, Math.min(1, hoverX / rect.width));
 
-    const videoDuration = videoElement.value.duration || duration.value
-    if (!videoDuration || isNaN(videoDuration)) return
+    const videoDuration = videoElement.value.duration || duration.value;
+    if (!videoDuration || isNaN(videoDuration)) return;
 
-    const hoverTimeSeconds = hoverPercent * videoDuration
-    timelineHoverPosition.value = hoverPercent * 100
-    timelineHoverTime.value = hoverTimeSeconds
+    const hoverTimeSeconds = hoverPercent * videoDuration;
+    timelineHoverPosition.value = hoverPercent * 100;
+    timelineHoverTime.value = hoverTimeSeconds;
   }
 
   function onTimelineZoomChanged(zoomLevel: number) {
-    timelineZoomLevel.value = zoomLevel
+    timelineZoomLevel.value = zoomLevel;
   }
 
   function updateVolume(newVolume?: number) {
     if (newVolume !== undefined) {
-      volume.value = newVolume
+      volume.value = newVolume;
     }
 
-    if (!videoElement.value) return
+    if (!videoElement.value) return;
 
-    videoElement.value.volume = volume.value
+    videoElement.value.volume = volume.value;
     if (volume.value === 0) {
-      isMuted.value = true
+      isMuted.value = true;
     } else if (isMuted.value) {
-      isMuted.value = false
+      isMuted.value = false;
     }
   }
 
   function toggleMute() {
-    if (!videoElement.value) return
+    if (!videoElement.value) return;
 
     if (isMuted.value) {
-      videoElement.value.muted = false
-      isMuted.value = false
-      volume.value = 1
+      videoElement.value.muted = false;
+      isMuted.value = false;
+      volume.value = 1;
     } else {
-      videoElement.value.muted = true
-      isMuted.value = true
-      volume.value = 0
+      videoElement.value.muted = true;
+      isMuted.value = true;
+      volume.value = 0;
     }
   }
 
   function onTimeUpdate() {
-    if (!videoElement.value) return
+    if (!videoElement.value) return;
 
-    currentTime.value = videoElement.value.currentTime
+    currentTime.value = videoElement.value.currentTime;
 
-    const currentDuration = videoElement.value.duration
+    const currentDuration = videoElement.value.duration;
     if (currentDuration && currentDuration !== duration.value && !isNaN(currentDuration)) {
-      duration.value = currentDuration
+      duration.value = currentDuration;
     }
 
     if (videoElement.value.buffered.length > 0) {
-      buffered.value = videoElement.value.buffered.end(videoElement.value.buffered.length - 1)
+      buffered.value = videoElement.value.buffered.end(videoElement.value.buffered.length - 1);
     }
 
     // Handle segmented playback
     if (isPlayingSegments.value && currentSegments.value.length > 0) {
-      checkSegmentPlayback()
+      checkSegmentPlayback();
     }
   }
 
   function onLoadedMetadata() {
     if (!videoElement.value) {
-      return
+      return;
     }
 
-    videoLoading.value = false
-    duration.value = videoElement.value.duration
+    videoLoading.value = false;
+    duration.value = videoElement.value.duration;
 
-    videoElement.value.volume = volume.value
-    videoElement.value.muted = isMuted.value
+    videoElement.value.volume = volume.value;
+    videoElement.value.muted = isMuted.value;
   }
 
   function onVideoEnded() {
-    isPlaying.value = false
-    currentTime.value = 0
+    isPlaying.value = false;
+    currentTime.value = 0;
 
     // If we were playing segments, the segment playback logic will handle ending
     // But if video ends naturally during segmented playback, stop segment mode
     if (isPlayingSegments.value) {
-      stopSegmentedPlayback()
+      stopSegmentedPlayback();
     }
   }
 
   function onLoadStart() {
-    videoError.value = null
+    videoError.value = null;
   }
 
   function onCanPlay() {
-    videoLoading.value = false
+    videoLoading.value = false;
   }
 
   function onVideoError(event: Event) {
-    videoLoading.value = false
+    videoLoading.value = false;
     videoError.value =
-      'Failed to load video. The file may be corrupted or in an unsupported format.'
-    console.error('Video error:', event)
-    videoSrc.value = null
+      'Failed to load video. The file may be corrupted or in an unsupported format.';
+    console.error('Video error:', event);
+    videoSrc.value = null;
   }
 
   async function loadVideos() {
     try {
-      availableVideos.value = await getAllRawVideos()
+      availableVideos.value = await getAllRawVideos();
     } catch (error) {
-      console.error('Failed to load videos:', error)
+      console.error('Failed to load videos:', error);
     }
   }
 
   async function loadVideoForProject() {
     if (!project.value) {
-      videoSrc.value = null
-      currentVideo.value = null
-      videoError.value = null
-      videoLoading.value = false
-      return
+      videoSrc.value = null;
+      currentVideo.value = null;
+      videoError.value = null;
+      videoLoading.value = false;
+      return;
     }
 
-    videoError.value = null
-    currentTime.value = 0
-    duration.value = 0
-    isPlaying.value = false
+    videoError.value = null;
+    currentTime.value = 0;
+    duration.value = 0;
+    isPlaying.value = false;
 
     try {
-      let videoPath: string | null = null
+      let videoPath: string | null = null;
 
-      const projectData = project.value
+      const projectData = project.value;
 
       // Look for video using project_id relationship
       if (projectData?.id) {
-        const projectVideo = availableVideos.value.find((v) => v.project_id === projectData.id)
+        const projectVideo = availableVideos.value.find((v) => v.project_id === projectData.id);
         if (projectVideo) {
-          videoPath = projectVideo.file_path
-          currentVideo.value = projectVideo
+          videoPath = projectVideo.file_path;
+          currentVideo.value = projectVideo;
         }
       }
 
       if (!videoPath) {
-        videoSrc.value = null
-        videoLoading.value = false
-        return
+        videoSrc.value = null;
+        videoLoading.value = false;
+        return;
       }
 
-      const port = await invoke<number>('get_video_server_port')
-      const encodedPath = btoa(videoPath)
-      videoSrc.value = `http://localhost:${port}/video/${encodedPath}`
-      videoLoading.value = false
+      const port = await invoke<number>('get_video_server_port');
+      const encodedPath = btoa(videoPath);
+      videoSrc.value = `http://localhost:${port}/video/${encodedPath}`;
+      videoLoading.value = false;
     } catch (error) {
-      console.error('[VideoPlayer] Failed to load video for project:', error)
-      videoError.value = 'Failed to connect to video server. Please try again.'
-      videoSrc.value = null
-      videoLoading.value = false
+      console.error('[VideoPlayer] Failed to load video for project:', error);
+      videoError.value = 'Failed to connect to video server. Please try again.';
+      videoSrc.value = null;
+      videoLoading.value = false;
     }
   }
 
   function resetVideoState() {
     if (videoElement.value) {
-      videoElement.value.pause()
-      videoElement.value.currentTime = 0
+      videoElement.value.pause();
+      videoElement.value.currentTime = 0;
     }
-    videoSrc.value = null
-    currentVideo.value = null
-    videoError.value = null
-    isPlaying.value = false
-    currentTime.value = 0
-    duration.value = 0
-    videoLoading.value = false
-    timelineHoverTime.value = null
-    timelineHoverPosition.value = 0
-    stopSegmentedPlayback()
+    videoSrc.value = null;
+    currentVideo.value = null;
+    videoError.value = null;
+    isPlaying.value = false;
+    currentTime.value = 0;
+    duration.value = 0;
+    videoLoading.value = false;
+    timelineHoverTime.value = null;
+    timelineHoverPosition.value = 0;
+    stopSegmentedPlayback();
   }
 
   // Segmented playback functions
   function playClipSegments(segments: ClipSegment[]) {
     if (!segments || segments.length === 0) {
-      console.warn('[useVideoPlayer] No segments provided for playback')
-      return
+      console.warn('[useVideoPlayer] No segments provided for playback');
+      return;
     }
 
     if (!videoElement.value) {
-      console.warn('[useVideoPlayer] Video element not available for segmented playback')
-      return
+      console.warn('[useVideoPlayer] Video element not available for segmented playback');
+      return;
     }
 
     if (!videoSrc.value) {
-      console.warn('[useVideoPlayer] No video source loaded for segmented playback')
-      return
+      console.warn('[useVideoPlayer] No video source loaded for segmented playback');
+      return;
     }
 
     try {
       // Sort segments by start time to ensure proper order
-      currentSegments.value = segments.sort((a, b) => a.start_time - b.start_time)
-      currentSegmentIndex.value = 0
-      isPlayingSegments.value = true
-      segmentPlaybackEnded.value = false
+      currentSegments.value = segments.sort((a, b) => a.start_time - b.start_time);
+      currentSegmentIndex.value = 0;
+      isPlayingSegments.value = true;
+      segmentPlaybackEnded.value = false;
 
       // Seek to first segment and start playback
-      const firstSegment = currentSegments.value[0]
+      const firstSegment = currentSegments.value[0];
       if (firstSegment) {
         // Validate segment times
         if (firstSegment.start_time < 0 || firstSegment.end_time <= firstSegment.start_time) {
-          console.warn('[useVideoPlayer] Invalid segment times:', firstSegment)
-          stopSegmentedPlayback()
-          return
+          console.warn('[useVideoPlayer] Invalid segment times:', firstSegment);
+          stopSegmentedPlayback();
+          return;
         }
 
-        videoElement.value.currentTime = firstSegment.start_time
-        const playPromise = videoElement.value.play()
+        videoElement.value.currentTime = firstSegment.start_time;
+        const playPromise = videoElement.value.play();
 
         if (playPromise !== undefined) {
           playPromise.catch((error) => {
-            console.error('[useVideoPlayer] Failed to start segmented playback:', error)
-            stopSegmentedPlayback()
-          })
+            console.error('[useVideoPlayer] Failed to start segmented playback:', error);
+            stopSegmentedPlayback();
+          });
         }
 
-        isPlaying.value = true
+        isPlaying.value = true;
       }
     } catch (error) {
-      console.error('[useVideoPlayer] Error starting segmented playback:', error)
-      stopSegmentedPlayback()
+      console.error('[useVideoPlayer] Error starting segmented playback:', error);
+      stopSegmentedPlayback();
     }
   }
 
   function checkSegmentPlayback() {
     if (!isPlayingSegments.value || currentSegments.value.length === 0 || !videoElement.value) {
-      return
+      return;
     }
 
     try {
-      const currentSegment = currentSegments.value[currentSegmentIndex.value]
-      if (!currentSegment) return
+      const currentSegment = currentSegments.value[currentSegmentIndex.value];
+      if (!currentSegment) return;
 
-      const currentVideoTime = videoElement.value.currentTime
-      const segmentEndTime = currentSegment.end_time
+      const currentVideoTime = videoElement.value.currentTime;
+      const segmentEndTime = currentSegment.end_time;
 
       // Validate segment end time
       if (segmentEndTime <= currentSegment.start_time) {
-        console.warn('[useVideoPlayer] Invalid segment end time, skipping:', currentSegment)
-        currentSegmentIndex.value++
+        console.warn('[useVideoPlayer] Invalid segment end time, skipping:', currentSegment);
+        currentSegmentIndex.value++;
         if (currentSegmentIndex.value >= currentSegments.value.length) {
-          stopSegmentedPlayback()
+          stopSegmentedPlayback();
         }
-        return
+        return;
       }
 
       // Add a small buffer (0.1s) to account for video frame timing
-      const endTimeBuffer = Math.max(segmentEndTime - 0.1, segmentEndTime * 0.95) // Ensure we don't go too far back
+      const endTimeBuffer = Math.max(segmentEndTime - 0.1, segmentEndTime * 0.95); // Ensure we don't go too far back
 
       if (currentVideoTime >= endTimeBuffer) {
         // Move to next segment
-        currentSegmentIndex.value++
+        currentSegmentIndex.value++;
 
         if (currentSegmentIndex.value >= currentSegments.value.length) {
           // All segments played, stop playback
-          stopSegmentedPlayback()
+          stopSegmentedPlayback();
         } else {
           // Jump to next segment
-          const nextSegment = currentSegments.value[currentSegmentIndex.value]
+          const nextSegment = currentSegments.value[currentSegmentIndex.value];
           if (nextSegment && nextSegment.start_time >= 0) {
-            videoElement.value.currentTime = nextSegment.start_time
+            videoElement.value.currentTime = nextSegment.start_time;
           } else {
-            console.warn('[useVideoPlayer] Invalid next segment, stopping playback:', nextSegment)
-            stopSegmentedPlayback()
+            console.warn('[useVideoPlayer] Invalid next segment, stopping playback:', nextSegment);
+            stopSegmentedPlayback();
           }
         }
       }
     } catch (error) {
-      console.error('[useVideoPlayer] Error in segment playback check:', error)
-      stopSegmentedPlayback()
+      console.error('[useVideoPlayer] Error in segment playback check:', error);
+      stopSegmentedPlayback();
     }
   }
 
   function stopSegmentedPlayback() {
-    isPlayingSegments.value = false
-    currentSegments.value = []
-    currentSegmentIndex.value = 0
-    segmentPlaybackEnded.value = true
+    isPlayingSegments.value = false;
+    currentSegments.value = [];
+    currentSegmentIndex.value = 0;
+    segmentPlaybackEnded.value = true;
 
     // Stop video playback
     if (videoElement.value && !videoElement.value.paused) {
-      videoElement.value.pause()
-      isPlaying.value = false
+      videoElement.value.pause();
+      isPlaying.value = false;
     }
 
     // Reset the ended flag after a short delay
     setTimeout(() => {
-      segmentPlaybackEnded.value = false
-    }, 100)
+      segmentPlaybackEnded.value = false;
+    }, 100);
   }
 
   // Override togglePlayPause to handle segmented playback
   function togglePlayPauseWithSegments() {
     if (isPlayingSegments.value) {
       // If playing segments, stop and return to normal mode
-      stopSegmentedPlayback()
-      return
+      stopSegmentedPlayback();
+      return;
     }
 
     // Normal play/pause behavior
-    togglePlayPause()
+    togglePlayPause();
   }
 
   // Watchers
   watch(videoElement, (newElement) => {
     if (newElement && videoSrc.value && videoLoading.value) {
-      newElement.load()
+      newElement.load();
     }
-  })
+  });
 
   watch(videoSrc, async (newSrc) => {
     if (newSrc) {
-      await nextTick()
-      await nextTick()
+      await nextTick();
+      await nextTick();
 
       if (videoElement.value) {
-        videoElement.value.load()
+        videoElement.value.load();
       } else {
-        let retries = 0
+        let retries = 0;
         const checkInterval = setInterval(() => {
-          retries++
+          retries++;
           if (videoElement.value) {
-            videoElement.value.load()
-            clearInterval(checkInterval)
+            videoElement.value.load();
+            clearInterval(checkInterval);
           } else if (retries >= 10) {
-            clearInterval(checkInterval)
-            videoError.value = 'Failed to initialize video player. Please refresh and try again.'
-            videoLoading.value = false
+            clearInterval(checkInterval);
+            videoError.value = 'Failed to initialize video player. Please refresh and try again.';
+            videoLoading.value = false;
           }
-        }, 50)
+        }, 50);
       }
     }
-  })
+  });
 
   watch(
     project,
     () => {
-      loadVideoForProject()
+      loadVideoForProject();
     },
     { immediate: true }
-  )
+  );
 
   onMounted(() => {
     if (videoSrc.value && !videoElement.value) {
       setTimeout(() => {
         if (videoElement.value) {
-          videoElement.value.load()
+          videoElement.value.load();
         }
-      }, 100)
+      }, 100);
     }
-  })
+  });
 
   return {
     // State
@@ -614,6 +597,6 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     loadVideoForProject,
     resetVideoState,
     playClipSegments,
-    stopSegmentedPlayback
-  }
+    stopSegmentedPlayback,
+  };
 }

@@ -74,15 +74,6 @@ export function useDownloads() {
         // If download was successful, validate the video and thumbnail before creating database record
         if (event.payload.success && event.payload.file_path) {
           try {
-            console.log('[Downloads] Validating downloaded video and thumbnail:', {
-              sourceClipId: download.sourceClipId,
-              segmentNumber: download.segmentNumber,
-              isSegment: download.isSegment,
-              title: download.title,
-              filePath: event.payload.file_path,
-              thumbnailPath: event.payload.thumbnail_path,
-            });
-
             // Validate the downloaded video and thumbnail
             const validationResult = await validateDownloadedVideo(
               event.payload.file_path,
@@ -110,7 +101,6 @@ export function useDownloads() {
                 segmentEndTime: download.segmentEndTime,
               });
 
-              console.log('[Downloads] Database record created successfully with ID:', rawVideoId);
               download.rawVideoId = rawVideoId;
 
               // Notify all listeners about completion
@@ -334,13 +324,8 @@ export function useDownloads() {
     title: string
   ): Promise<{ isValid: boolean; thumbnailPath?: string | null; error?: string }> {
     try {
-      console.log('[Validation] Starting validation for:', title);
-      console.log('[Validation] File path:', filePath);
-      console.log('[Validation] Thumbnail path:', thumbnailPath);
-
       // Check if video file exists and has content
       const videoExists = await invoke<boolean>('check_file_exists', { path: filePath });
-      console.log('[Validation] Video file exists:', videoExists);
 
       if (!videoExists) {
         console.error('[Validation] Video file does not exist');
@@ -348,14 +333,9 @@ export function useDownloads() {
       }
 
       // Validate video file integrity using FFmpeg
-      console.log('[Validation] Calling validate_video_file command...');
       const videoValidation = await invoke<any>('validate_video_file', { filePath });
-      console.log('[Validation] Validation result:', JSON.stringify(videoValidation, null, 2));
 
       if (!videoValidation.is_valid) {
-        console.error('[Validation] Video validation failed. Full result:', videoValidation);
-        console.error('[Validation] Error field:', videoValidation.error);
-        console.error('[Validation] is_valid field:', videoValidation.is_valid);
         return {
           isValid: false,
           error: videoValidation.error || 'Video file is corrupted or invalid',
@@ -366,16 +346,12 @@ export function useDownloads() {
       let finalThumbnailPath = thumbnailPath;
       if (thumbnailPath) {
         const thumbnailExists = await invoke<boolean>('check_file_exists', { path: thumbnailPath });
-        console.log('[Validation] Thumbnail exists:', thumbnailExists);
 
         if (!thumbnailExists) {
-          console.log('[Validation] Thumbnail missing or invalid, regenerating...');
-
           try {
             finalThumbnailPath = await invoke<string>('generate_thumbnail', {
               videoPath: filePath,
             });
-            console.log('[Validation] Successfully regenerated thumbnail:', finalThumbnailPath);
           } catch (thumbnailError) {
             console.warn('[Validation] Failed to regenerate thumbnail:', thumbnailError);
             // Continue without thumbnail - not a critical failure
@@ -385,7 +361,6 @@ export function useDownloads() {
         console.log('[Validation] No thumbnail path provided');
       }
 
-      console.log('[Validation] Video validation successful for:', title);
       return { isValid: true, thumbnailPath: finalThumbnailPath };
     } catch (error) {
       console.error('[Validation] Error during video validation:', error);
@@ -406,8 +381,6 @@ export function useDownloads() {
     rawVideoId: string | undefined
   ): Promise<void> {
     try {
-      console.log('[Cleanup] Starting cleanup for corrupted download');
-
       // Delete video file if it exists
       if (filePath) {
         try {
@@ -415,7 +388,6 @@ export function useDownloads() {
             filePath,
             thumbnailPath: thumbnailPath || undefined,
           });
-          console.log('[Cleanup] Deleted video file:', filePath);
         } catch (error) {
           console.warn('[Cleanup] Failed to delete video file:', error);
         }
@@ -426,13 +398,10 @@ export function useDownloads() {
         try {
           const { deleteRawVideo } = await import('@/services/database');
           await deleteRawVideo(rawVideoId);
-          console.log('[Cleanup] Deleted database record:', rawVideoId);
         } catch (error) {
           console.warn('[Cleanup] Failed to delete database record:', error);
         }
       }
-
-      console.log('[Cleanup] Cleanup completed');
     } catch (error) {
       console.error('[Cleanup] Error during cleanup:', error);
     }

@@ -170,12 +170,6 @@ export function useVideoOperations() {
     } = {}
   ): Promise<{ success: boolean; chunks?: AudioChunk[]; error?: string }> {
     try {
-      console.log('[VideoOperations] Preparing video for chunking:', {
-        videoPath,
-        projectId,
-        options,
-      });
-
       // First check if file exists
       const fileExists = await invoke<boolean>('check_file_exists', { path: videoPath });
       if (!fileExists) {
@@ -185,13 +179,6 @@ export function useVideoOperations() {
       // Use audio chunking composable
       const { extractAndChunkVideo } = useAudioChunking();
       const result = await extractAndChunkVideo(videoPath, projectId, options);
-
-      if (result.success && result.chunks) {
-        console.log('[VideoOperations] Chunking completed successfully:', {
-          chunksCount: result.chunks.length,
-          totalSize: result.chunks.reduce((sum, chunk) => sum + chunk.file_size, 0),
-        });
-      }
 
       return result;
     } catch (err) {

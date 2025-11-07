@@ -912,8 +912,6 @@ export async function createRawVideo(
     segmentEndTime: options?.segmentEndTime || null,
   };
 
-  console.log('[Database] Inserting raw video with data:', insertData);
-
   try {
     await db.execute(
       'INSERT INTO raw_videos (id, project_id, file_path, original_filename, thumbnail_path, duration, width, height, frame_rate, codec, file_size, created_at, updated_at, source_clip_id, source_mint_id, segment_number, is_segment, segment_start_time, segment_end_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -940,7 +938,6 @@ export async function createRawVideo(
       ]
     );
 
-    console.log('[Database] Successfully inserted raw video with ID:', id);
     return id;
   } catch (error) {
     console.error('[Database] Error inserting raw video:', error);
@@ -978,35 +975,12 @@ export async function getNextSegmentNumber(sourceClipId: string): Promise<number
   try {
     const db = await getDatabase();
 
-    // Debug: Check ALL segments in the database to see what's there
-    const allSegments = await db.select<any[]>(
-      'SELECT source_clip_id, segment_number, is_segment, original_filename FROM raw_videos WHERE is_segment = TRUE OR is_segment = "true" OR is_segment = 1 LIMIT 10'
-    );
-    console.log(`[Segment Tracking] ALL segments in database:`, allSegments);
-
-    // Debug: Check if this specific clip exists at all
-    const clipExists = await db.select<any[]>(
-      'SELECT source_clip_id, segment_number, is_segment, original_filename FROM raw_videos WHERE source_clip_id = ?',
-      [sourceClipId]
-    );
-    console.log(`[Segment Tracking] All records for clip ${sourceClipId}:`, clipExists);
-
-    // Debug: Check existing segments for this clip (handle both boolean and string representations)
-    const existingSegments = await db.select<any[]>(
-      'SELECT source_clip_id, segment_number, is_segment, original_filename FROM raw_videos WHERE source_clip_id = ? AND (is_segment = TRUE OR is_segment = "true" OR is_segment = 1)',
-      [sourceClipId]
-    );
-    console.log(`[Segment Tracking] Existing segments for clip ${sourceClipId}:`, existingSegments);
-
     const result = await db.select<{ max_segment: number | null }[]>(
       'SELECT MAX(segment_number) as max_segment FROM raw_videos WHERE source_clip_id = ? AND (is_segment = TRUE OR is_segment = "true" OR is_segment = 1)',
       [sourceClipId]
     );
 
     const maxSegment = result[0]?.max_segment || 0;
-    console.log(
-      `[Segment Tracking] Max segment found: ${maxSegment}, next will be: ${maxSegment + 1}`
-    );
     return maxSegment + 1;
   } catch (error) {
     console.error('Error getting next segment number:', error);
@@ -1461,7 +1435,6 @@ export async function splitClipSegment(
         transcriptData = JSON.parse(segmentToSplit.transcript);
       } catch (parseError) {
         // Transcript is plain text, not JSON - handle as plain text split
-        console.log('[Database] Transcript is plain text, handling as simple split');
 
         // For plain text, we'll use a simple approach: keep original on left, none on right
         // This preserves the transcript content without requiring word-level timing

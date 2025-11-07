@@ -84,22 +84,14 @@
 
   // Filter navigation items based on admin status
   const visibleNavigationItems = computed(() => {
-    console.log('🔍 DashboardSidebar - Computing visible navigation items');
-    console.log('🔍 authStore.user:', authStore.user);
-    console.log('🔍 authStore.user?.is_admin:', authStore.user?.is_admin);
-    console.log('🔍 All navigation items:', navigationItems);
-
     const filtered = navigationItems.filter((item) => {
-      console.log(`🔍 Checking item: ${item.name}, adminOnly: ${item.adminOnly}`);
       if (item.adminOnly) {
         const isAdmin = authStore.user?.is_admin === true;
-        console.log(`🔍 ${item.name} - Admin check: ${isAdmin}`);
         return isAdmin;
       }
       return true;
     });
 
-    console.log('🔍 Filtered navigation items:', filtered);
     return filtered;
   });
 

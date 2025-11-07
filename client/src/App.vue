@@ -11,16 +11,12 @@
 
   // Ensure dark mode is always applied and initialize database
   onMounted(async () => {
-    console.log('🚀 App mounted - initializing...');
-
     document.documentElement.classList.add('dark');
     document.body.classList.add('dark');
 
     // Check authentication status on app start
     try {
-      console.log('🚀 App - Checking authentication status...');
       await authStore.checkAuth();
-      console.log('🚀 App - Auth check completed');
     } catch (error) {
       console.error('[App] Failed to check authentication:', error);
     }
@@ -41,8 +37,6 @@
     } catch (error) {
       console.error('[App] Failed to initialize window close handler:', error);
     }
-
-    console.log('🚀 App initialization completed');
   });
 </script>
 

@@ -20,8 +20,6 @@ export async function validateExistingVideo(
   autoCleanup: boolean = true
 ): Promise<ValidationResult> {
   try {
-    console.log('[VideoValidation] Validating existing video:', videoId);
-
     // Get video record from database
     const videoRecord = await getRawVideo(videoId);
     if (!videoRecord) {
@@ -40,7 +38,6 @@ export async function validateExistingVideo(
       const error = 'Video file is missing from filesystem';
 
       if (autoCleanup) {
-        console.log('[VideoValidation] Cleaning up orphaned database record:', videoId);
         await cleanupOrphanedVideo(videoId, error);
       }
 
@@ -59,7 +56,6 @@ export async function validateExistingVideo(
       const error = videoValidation.error || 'Video file is corrupted or invalid';
 
       if (autoCleanup) {
-        console.log('[VideoValidation] Cleaning up corrupted video:', videoId);
         await cleanupCorruptedVideo(
           videoId,
           videoRecord.file_path,
@@ -82,13 +78,10 @@ export async function validateExistingVideo(
         path: videoRecord.thumbnail_path,
       }))
     ) {
-      console.log('[VideoValidation] Thumbnail missing, regenerating...');
-
       try {
         finalThumbnailPath = await invoke<string>('generate_thumbnail', {
           videoPath: videoRecord.file_path,
         });
-        console.log('[VideoValidation] Successfully regenerated thumbnail:', finalThumbnailPath);
 
         // Update database with new thumbnail path
         const { updateRawVideo } = await import('@/services/database');
@@ -99,7 +92,6 @@ export async function validateExistingVideo(
       }
     }
 
-    console.log('[VideoValidation] Video validation successful for:', videoId);
     return {
       isValid: true,
       thumbnailPath: finalThumbnailPath,
@@ -123,12 +115,8 @@ export async function validateExistingVideo(
  */
 async function cleanupOrphanedVideo(videoId: string, reason: string): Promise<void> {
   try {
-    console.log('[VideoValidation] Cleaning up orphaned video:', { videoId, reason });
-
     // Delete database record
     await deleteRawVideo(videoId);
-
-    console.log('[VideoValidation] Cleaned up orphaned database record:', videoId);
   } catch (error) {
     console.error('[VideoValidation] Error cleaning up orphaned video:', error);
   }
@@ -144,23 +132,18 @@ async function cleanupCorruptedVideo(
   reason: string
 ): Promise<void> {
   try {
-    console.log('[VideoValidation] Cleaning up corrupted video:', { videoId, filePath, reason });
-
     // Delete files if they exist
     try {
       await invoke('delete_video_file', {
         filePath,
         thumbnailPath: thumbnailPath || undefined,
       });
-      console.log('[VideoValidation] Deleted corrupted video file:', filePath);
     } catch (error) {
       console.warn('[VideoValidation] Failed to delete corrupted video file:', error);
     }
 
     // Delete database record
     await deleteRawVideo(videoId);
-
-    console.log('[VideoValidation] Cleaned up corrupted video:', videoId);
   } catch (error) {
     console.error('[VideoValidation] Error cleaning up corrupted video:', error);
   }

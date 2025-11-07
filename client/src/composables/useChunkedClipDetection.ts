@@ -55,13 +55,6 @@ export function useChunkedClipDetection() {
 
       const { chunkDurationMinutes = 30, overlapSeconds = 30, forceReprocess = false } = options;
 
-      console.log('[ChunkedClipDetection] Starting enhanced clip detection:', {
-        projectId,
-        chunkDurationMinutes,
-        overlapSeconds,
-        forceReprocess,
-      });
-
       // Get project video
       const rawVideos = await getRawVideosByProjectId(projectId);
       if (rawVideos.length === 0) {
@@ -69,15 +62,11 @@ export function useChunkedClipDetection() {
       }
 
       const projectVideo = rawVideos[0];
-      console.log('[ChunkedClipDetection] Found project video:', projectVideo.file_path);
 
       // Check for existing regular transcript first
       const existingTranscript = await getTranscriptByRawVideoId(projectVideo.id);
 
       if (existingTranscript && !forceReprocess) {
-        console.log(
-          '[ChunkedClipDetection] Found existing transcript, using traditional detection'
-        );
         return await processWithTraditionalTranscript(projectId, prompt, existingTranscript);
       }
 
@@ -95,16 +84,18 @@ export function useChunkedClipDetection() {
       if (!forceReprocess) {
         const cachedMetadata = await getCachedChunkMetadata(projectVideo.id);
 
-        if (cachedMetadata && cachedMetadata.hasCachedTranscript && cachedMetadata.chunks && cachedMetadata.chunks.length > 0) {
-          console.log(
-            '[ChunkedClipDetection] Found complete cached transcript, using chunked processing',
-            { chunksCount: cachedMetadata.chunks.length }
-          );
+        if (
+          cachedMetadata &&
+          cachedMetadata.hasCachedTranscript &&
+          cachedMetadata.chunks &&
+          cachedMetadata.chunks.length > 0
+        ) {
           return await processWithCachedChunks(projectId, prompt, cachedMetadata, projectVideo);
-        } else if (cachedMetadata && cachedMetadata.hasCachedTranscript && (!cachedMetadata.chunks || cachedMetadata.chunks.length === 0)) {
-          console.warn(
-            '[ChunkedClipDetection] Found chunked transcript record but no actual chunks - falling back to traditional processing'
-          );
+        } else if (
+          cachedMetadata &&
+          cachedMetadata.hasCachedTranscript &&
+          (!cachedMetadata.chunks || cachedMetadata.chunks.length === 0)
+        ) {
           // Fall back to traditional processing if chunks are empty
           const existingTranscript = await getTranscriptByRawVideoId(projectVideo.id);
           if (existingTranscript) {
@@ -130,11 +121,6 @@ export function useChunkedClipDetection() {
       if (!sessionResult.success || !sessionResult.sessionId) {
         throw new Error(sessionResult.error || 'Failed to initialize chunked transcript session');
       }
-
-      console.log(
-        '[ChunkedClipDetection] Chunked transcript session initialized:',
-        sessionResult.sessionId
-      );
 
       // For now, fall back to traditional detection with audio extraction
       // TODO: Implement full chunked processing when server endpoint is ready
@@ -176,11 +162,6 @@ export function useChunkedClipDetection() {
         message: 'Detecting clips using cached transcript...',
       };
 
-      console.log('[ChunkedClipDetection] Processing with cached chunks:', {
-        chunksCount: cachedMetadata.chunks.length,
-        totalDuration: cachedMetadata.totalDuration,
-      });
-
       // Prepare request with cached chunks
       const formData = new FormData();
       formData.append('project_id', projectId.toString());
@@ -213,7 +194,6 @@ export function useChunkedClipDetection() {
       }
 
       const result = await response.json();
-      console.log('[ChunkedClipDetection] Chunked detection result received');
 
       if (!result.success) {
         throw new Error(result.error || 'Clip detection failed');
@@ -257,8 +237,6 @@ export function useChunkedClipDetection() {
         message: 'Detecting clips using existing transcript...',
       };
 
-      console.log('[ChunkedClipDetection] Using traditional cached transcript');
-
       // Prepare request with cached transcript
       const formData = new FormData();
       formData.append('project_id', projectId.toString());
@@ -297,7 +275,6 @@ export function useChunkedClipDetection() {
       }
 
       const result = await response.json();
-      console.log('[ChunkedClipDetection] Traditional detection result received');
 
       if (!result.success) {
         throw new Error(result.error || 'Clip detection failed');
@@ -337,8 +314,6 @@ export function useChunkedClipDetection() {
         progress: 40,
         message: 'Transcribing audio...',
       };
-
-      console.log('[ChunkedClipDetection] Processing with fresh audio extraction');
 
       // Generate audio file using existing FFmpeg function
       const { invoke } = await import('@tauri-apps/api/core');
@@ -385,7 +360,6 @@ export function useChunkedClipDetection() {
       }
 
       const result = await response.json();
-      console.log('[ChunkedClipDetection] Fresh audio detection result received');
 
       if (!result.success) {
         throw new Error(result.error || 'Clip detection failed');
@@ -425,8 +399,6 @@ export function useChunkedClipDetection() {
         progress: 50,
         message: 'Using traditional detection (fallback)...',
       };
-
-      console.log('[ChunkedClipDetection] Falling back to traditional detection');
 
       // Generate audio file
       const { prepareVideoForChunking } = useVideoOperations();
@@ -476,7 +448,6 @@ export function useChunkedClipDetection() {
       }
 
       const result = await response.json();
-      console.log('[ChunkedClipDetection] Traditional detection result received');
 
       if (!result.success) {
         throw new Error(result.error || 'Clip detection failed');

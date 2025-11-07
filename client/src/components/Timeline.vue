@@ -229,16 +229,6 @@
 
     // Apply reasonable bounds
     const finalHeight = Math.max(TIMELINE_BOUNDS.MIN_HEIGHT, Math.min(TIMELINE_BOUNDS.MAX_HEIGHT, adjustedHeight));
-
-    // Debug logging
-    console.log('[Timeline] Height calculation:', {
-      numberOfClips,
-      totalHeight,
-      adjustedHeight,
-      finalHeight,
-      appliedHeight: finalHeight + 'px',
-    });
-
     return finalHeight;
   });
 
@@ -254,15 +244,6 @@
 
     // Available height within tracks container (accounting for header + padding)
     const availableTracksHeight = calculatedHeight.value - 86; // Matches the maxHeight calculation
-
-    // Debug logging for scrollbar
-    console.log('[Timeline] Scrollbar calculation:', {
-      numberOfClips,
-      tracksContentHeight,
-      availableTracksHeight,
-      difference: tracksContentHeight - availableTracksHeight,
-      showScrollbar: tracksContentHeight > availableTracksHeight + 5,
-    });
 
     // Only show scrollbar when tracks content actually exceeds available tracks height
     return tracksContentHeight > availableTracksHeight + 5; // 5px buffer to prevent premature scrollbar
@@ -603,17 +584,12 @@
   // formatDuration is now imported from timelineUtils
 
   function onSeekTimeline(event: MouseEvent) {
-    console.log('[Timeline] onSeekTimeline called, emitting seekTimeline event');
     emit('seekTimeline', event);
   }
 
   function onVideoTrackClick(event: MouseEvent) {
-    console.log('[Timeline] onVideoTrackClick called');
-    console.log('[Timeline] isDragging.value:', isDragging.value);
-
     // Only seek if we're not in the middle of a drag selection
     if (!isDragging.value) {
-      console.log('[Timeline] Calling onSeekTimeline');
       onSeekTimeline(event);
     } else {
       console.log('[Timeline] Not seeking - currently dragging');
@@ -1469,14 +1445,9 @@
 
   // Seek video to specific time (used for continuous seeking)
   function seekVideoToTime(targetTime: number) {
-    console.log('[Timeline] seekVideoToTime called with targetTime:', targetTime);
-
     if (!props.videoSrc || !props.duration) {
-      console.log('[Timeline] Early return from seekVideoToTime - no videoSrc or duration');
       return;
     }
-
-    console.log('[Timeline] Direct seeking to time:', targetTime, '(bypassing synthetic events)');
 
     // Find the video element directly and set its currentTime
     const container = timelineScrollContainer.value;
@@ -1484,11 +1455,8 @@
       // Look for the video element in the page
       const videoElement = document.querySelector('video') as HTMLVideoElement;
       if (videoElement) {
-        console.log('[Timeline] Found video element, setting currentTime to:', targetTime);
         videoElement.currentTime = targetTime;
-        console.log('[Timeline] Video currentTime set to:', videoElement.currentTime);
       } else {
-        console.log('[Timeline] Video element not found, falling back to synthetic event');
         // Fall back to the original synthetic event approach
         const videoTrack = container.querySelector(SELECTORS.VIDEO_TRACK) as HTMLElement;
         if (videoTrack) {
@@ -1503,11 +1471,7 @@
 
   // Start continuous seeking
   function startContinuousSeeking(direction: 'forward' | 'reverse') {
-    console.log('[Timeline] startContinuousSeeking called with direction:', direction);
-    console.log('[Timeline] videoSrc:', props.videoSrc, 'duration:', props.duration);
-
     if (!props.videoSrc || !props.duration) {
-      console.log('[Timeline] Early return - no videoSrc or duration');
       return;
     }
 
@@ -1516,20 +1480,16 @@
 
     // Initialize our seek position from the current video time
     currentSeekTime.value = props.currentTime;
-    console.log('[Timeline] Seeking started, isSeeking:', isSeeking.value, 'direction:', seekDirection.value);
-    console.log('[Timeline] Initial currentSeekTime:', currentSeekTime.value);
 
     // Start continuous seeking at high speed immediately (no initial jump)
     seekInterval.value = setInterval(() => {
       const seekAmount =
         seekDirection.value === 'forward' ? SEEK_CONFIG.SECONDS_PER_INTERVAL : -SEEK_CONFIG.SECONDS_PER_INTERVAL;
-      console.log('[Timeline] Interval tick, seeking by:', seekAmount, 'seconds');
 
       // Update our tracked seek position
       currentSeekTime.value += seekAmount;
       currentSeekTime.value = Math.max(0, Math.min(props.duration, currentSeekTime.value));
 
-      console.log('[Timeline] Updated currentSeekTime:', currentSeekTime.value);
       seekVideoToTime(currentSeekTime.value);
     }, SEEK_CONFIG.INTERVAL_MS);
   }
@@ -1604,10 +1564,6 @@
       // Reset cut tool state
       isCutToolActive.value = false;
       cutHoverInfo.value = null;
-
-      console.log(
-        `[Timeline] Successfully split segment ${segmentIndex} into segments ${result.leftSegmentIndex} and ${result.rightSegmentIndex}`
-      );
     } catch (error) {
       console.error('[Timeline] Failed to split segment:', error);
       // Show error feedback to user (could add a toast/notification here)

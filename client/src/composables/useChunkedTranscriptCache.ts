@@ -54,16 +54,9 @@ export function useChunkedTranscriptCache() {
       isProcessing.value = true;
       error.value = null;
 
-      console.log('[ChunkedTranscriptCache] Initializing chunked transcript session:', {
-        rawVideoId,
-        chunkDurationMinutes,
-        overlapSeconds,
-      });
-
       // Check if chunked transcript already exists
       const existingChunked = await getChunkedTranscriptByRawVideoId(rawVideoId);
       if (existingChunked && existingChunked.is_complete) {
-        console.log('[ChunkedTranscriptCache] Found existing complete chunked transcript');
         showSuccess('Transcript cached', 'Using existing chunked transcript for this video');
         return { success: true, sessionId: existingChunked.id };
       }
@@ -112,12 +105,6 @@ export function useChunkedTranscriptCache() {
         error: null,
       };
 
-      console.log('[ChunkedTranscriptCache] Session initialized:', {
-        sessionId: chunkedTranscriptId,
-        totalChunks: chunks.length,
-        totalDuration,
-      });
-
       return { success: true, sessionId: chunkedTranscriptId, chunks };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -137,13 +124,6 @@ export function useChunkedTranscriptCache() {
     transcriptionResult: any
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      console.log('[ChunkedTranscriptCache] Storing chunk transcription:', {
-        sessionId,
-        chunkIndex,
-        chunkId,
-        hasResult: !!transcriptionResult,
-      });
-
       if (!currentSession.value || currentSession.value.id !== sessionId) {
         throw new Error('No active session or session mismatch');
       }
@@ -194,13 +174,6 @@ export function useChunkedTranscriptCache() {
         );
       }
 
-      console.log('[ChunkedTranscriptCache] Chunk stored successfully:', {
-        chunkIndex,
-        progress: currentSession.value.progress,
-        completed: currentSession.value.completedChunks,
-        total: currentSession.value.totalChunks,
-      });
-
       return { success: true };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -225,12 +198,6 @@ export function useChunkedTranscriptCache() {
       const metadata = await getChunkMetadataForProcessing(rawVideoId);
 
       if (metadata) {
-        console.log('[ChunkedTranscriptCache] Found cached chunk metadata:', {
-          chunksCount: metadata.chunks.length,
-          totalDuration: metadata.totalDuration,
-          language: metadata.language,
-        });
-
         // Map the property name to match expected interface
         return {
           hasCachedTranscript: metadata.hasChunkedTranscript,
@@ -259,11 +226,6 @@ export function useChunkedTranscriptCache() {
       if (chunks.length === 0) {
         return null;
       }
-
-      console.log('[ChunkedTranscriptCache] Reconstructing transcript from chunks:', {
-        chunkCount: chunks.length,
-        totalDuration: chunkedTranscript.total_duration,
-      });
 
       // Sort chunks by index
       chunks.sort((a, b) => a.chunk_index - b.chunk_index);
@@ -300,12 +262,6 @@ export function useChunkedTranscriptCache() {
         },
       };
 
-      console.log('[ChunkedTranscriptCache] Transcript reconstruction completed:', {
-        totalDuration: reconstructedTranscript.duration,
-        totalSegments: allSegments.length,
-        totalWords: allWords.length,
-      });
-
       return reconstructedTranscript;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -320,7 +276,6 @@ export function useChunkedTranscriptCache() {
     try {
       // This would delete the chunked transcript and all its chunks
       // Implementation depends on whether we want to support clearing cache
-      console.log('[ChunkedTranscriptCache] Clear cached transcript not implemented yet');
       return { success: false, error: 'Clear cache not implemented' };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);

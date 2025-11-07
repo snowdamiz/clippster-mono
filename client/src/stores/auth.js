@@ -105,10 +105,6 @@ export const useAuthStore = defineStore('auth', {
         this.user = data.user;
         this.isAuthenticated = true;
 
-        console.log('🔐 Auth Store - Authentication successful');
-        console.log('🔐 Auth Store - user data:', this.user);
-        console.log('🔐 Auth Store - is_admin:', this.user?.is_admin);
-
         // Store in localStorage for persistence
         localStorage.setItem('auth_token', data.token);
         localStorage.setItem('wallet_address', data.wallet_address);
@@ -148,26 +144,17 @@ export const useAuthStore = defineStore('auth', {
       const walletAddress = localStorage.getItem('wallet_address');
       const userJson = localStorage.getItem('user');
 
-      console.log('🔐 Auth Store - checkAuth called');
-      console.log('🔐 Auth Store - token exists:', !!token);
-      console.log('🔐 Auth Store - walletAddress exists:', !!walletAddress);
-      console.log('🔐 Auth Store - userJson exists:', !!userJson);
-
       if (token && walletAddress && userJson) {
         try {
           this.token = token;
           this.walletAddress = walletAddress;
           this.user = JSON.parse(userJson);
           this.isAuthenticated = true;
-          console.log('🔐 Auth Store - checkAuth successful');
-          console.log('🔐 Auth Store - parsed user:', this.user);
-          console.log('🔐 Auth Store - is_admin:', this.user?.is_admin);
           return true;
         } catch (error) {
           console.error('Failed to parse user data:', error);
         }
       }
-      console.log('🔐 Auth Store - checkAuth failed');
       return false;
     },
   },

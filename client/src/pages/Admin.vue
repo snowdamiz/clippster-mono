@@ -392,16 +392,12 @@
     error.value = null;
 
     try {
-      console.log('🔐 Admin - Fetching users...');
-
       const response = await fetch(`${API_BASE}/api/admin/users`, {
         headers: {
           Authorization: `Bearer ${authStore.token}`,
           'Content-Type': 'application/json',
         },
       });
-
-      console.log('🔐 Admin - Response status:', response.status);
 
       if (!response.ok) {
         if (response.status === 403) {
@@ -414,16 +410,13 @@
       }
 
       const data: UsersResponse = await response.json();
-      console.log('🔐 Admin - Users data:', data);
 
       if (data.success) {
         users.value = data.users;
-        console.log(`🔐 Admin - Loaded ${data.users.length} users`);
       } else {
         throw new Error('Failed to load users data');
       }
     } catch (err) {
-      console.error('🔐 Admin - Error fetching users:', err);
       error.value = err instanceof Error ? err.message : 'Unknown error occurred';
     } finally {
       loading.value = false;
@@ -460,7 +453,6 @@
     try {
       await navigator.clipboard.writeText(text);
       // Could add a toast notification here
-      console.log('Copied to clipboard:', text);
     } catch (err) {
       console.error('Failed to copy to clipboard:', err);
     }
@@ -482,8 +474,6 @@
     promotingUserId.value = userToPromote.value.id;
 
     try {
-      console.log(`🔐 Admin - Promoting user ${userToPromote.value.id} to admin...`);
-
       const response = await fetch(`${API_BASE}/api/admin/users/${userToPromote.value.id}/promote`, {
         method: 'POST',
         headers: {
@@ -491,8 +481,6 @@
           'Content-Type': 'application/json',
         },
       });
-
-      console.log('🔐 Admin - Promote response status:', response.status);
 
       if (!response.ok) {
         if (response.status === 403) {
@@ -507,7 +495,6 @@
       }
 
       const data = await response.json();
-      console.log('🔐 Admin - Promote response data:', data);
 
       if (data.success) {
         // Update the user in the local state
@@ -519,7 +506,6 @@
             updated_at: data.user.updated_at,
           };
         }
-        console.log(`🔐 Admin - Successfully promoted user ${userToPromote.value.id} to admin`);
       } else {
         throw new Error(data.error || 'Failed to promote user');
       }
