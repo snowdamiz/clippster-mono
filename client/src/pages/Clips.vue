@@ -435,6 +435,13 @@
         original_project_id: null,
         created_at: clip.created_at,
         updated_at: clip.updated_at,
+        // Segment tracking fields (null for clips)
+        source_clip_id: null,
+        source_mint_id: null,
+        segment_number: null,
+        is_segment: false,
+        segment_start_time: null,
+        segment_end_time: null,
       };
       clipToPlay.value = clipAsVideo;
       showVideoPlayer.value = true;

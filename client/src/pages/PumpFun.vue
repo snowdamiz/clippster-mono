@@ -427,8 +427,8 @@
 
         <div class="space-y-4">
           <p class="text-muted-foreground">
-            Download "
-            <span class="font-semibold text-foreground">{{ clipToDownload?.title }}</span>
+            Downloading
+            <span class="font-semibold text-foreground">{{ downloadTitle }}</span>
           </p>
 
           <!-- Download Type Selection -->
@@ -534,6 +534,7 @@
   import { useToast } from '@/composables/useToast';
   import { useDownloads } from '@/composables/useDownloads';
   import { usePumpFunStore } from '@/stores/pumpfun';
+  import { getNextSegmentNumber } from '@/services/database';
 
   const { success, error: showError } = useToast();
   const { startDownload } = useDownloads();
@@ -570,6 +571,20 @@
   // Time range selection
   const useSegmentDownload = ref(false);
   const selectedTimeRange = ref({ startTime: 0, endTime: 0 });
+  const nextSegmentNumber = ref(1); // Default to 1
+
+  // Reactive computed property for download title
+  const downloadTitle = computed(() => {
+    if (!clipToDownload.value) return '';
+
+    if (useSegmentDownload.value && clipToDownload.value.clipId) {
+      // Show the actual segment number that will be used
+      const baseTitle = clipToDownload.value.title;
+      return `${baseTitle} (will be named "${baseTitle} Part ${nextSegmentNumber.value}")`;
+    }
+
+    return clipToDownload.value.title;
+  });
 
   // Computed properties for dialog
   const formatDuration = (duration?: number) => {
@@ -672,7 +687,22 @@
     // Reset segment download state
     useSegmentDownload.value = false;
     selectedTimeRange.value = { startTime: 0, endTime: clip.duration || 0 };
+
+    // Calculate the next segment number for this clip
+    calculateNextSegmentNumber(clip.clipId);
+
     showDownloadDialog.value = true;
+  }
+
+  // Calculate the next segment number for a given clip
+  async function calculateNextSegmentNumber(clipId: string) {
+    try {
+      nextSegmentNumber.value = await getNextSegmentNumber(clipId);
+    } catch (error) {
+      console.warn('Database migration not yet applied or error calculating segment number:', error);
+      // Fallback to 1 if migration hasn't run or there's an error
+      nextSegmentNumber.value = 1;
+    }
   }
 
   async function downloadClipConfirmed() {
@@ -694,7 +724,7 @@
         : undefined;
 
       // Start the download
-      await startDownload(clip.title, videoUrl, pumpFunStore.currentMintId, segmentRange);
+      await startDownload(clip.title, videoUrl, pumpFunStore.currentMintId, segmentRange, clip.clipId);
 
       // Show success toast
       const downloadType = useSegmentDownload.value ? 'segment' : 'full stream';

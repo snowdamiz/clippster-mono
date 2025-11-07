@@ -1,7 +1,7 @@
 import { ref, reactive } from 'vue';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
-import { createRawVideo } from '@/services/database';
+import { createRawVideo, getNextSegmentNumber } from '@/services/database';
 import { generateId } from '@/services/database';
 
 // Event emitter for download completion notifications
@@ -35,6 +35,12 @@ export interface ActiveDownload {
   progress: DownloadProgress;
   result?: DownloadResult;
   rawVideoId?: string;
+  // Segment tracking information
+  sourceClipId?: string;
+  segmentNumber?: number;
+  isSegment?: boolean;
+  segmentStartTime?: number;
+  segmentEndTime?: number;
 }
 
 const activeDownloads = reactive<Map<string, ActiveDownload>>(new Map());
@@ -68,6 +74,13 @@ export function useDownloads() {
         // If download was successful, create database record
         if (event.payload.success && event.payload.file_path) {
           try {
+            console.log('[Downloads] Creating database record with segment info:', {
+              sourceClipId: download.sourceClipId,
+              segmentNumber: download.segmentNumber,
+              isSegment: download.isSegment,
+              title: download.title,
+            });
+
             const rawVideoId = await createRawVideo(event.payload.file_path, {
               originalFilename: download.title,
               thumbnailPath: event.payload.thumbnail_path,
@@ -77,8 +90,16 @@ export function useDownloads() {
               frameRate: undefined, // We don't have this info from the basic download
               codec: event.payload.codec,
               fileSize: event.payload.file_size,
+              // Segment tracking information
+              sourceClipId: download.sourceClipId,
+              sourceMintId: download.mintId,
+              segmentNumber: download.segmentNumber,
+              isSegment: download.isSegment || false,
+              segmentStartTime: download.segmentStartTime,
+              segmentEndTime: download.segmentEndTime,
             });
 
+            console.log('[Downloads] Database record created successfully with ID:', rawVideoId);
             download.rawVideoId = rawVideoId;
 
             // Notify all listeners about completion
@@ -108,37 +129,61 @@ export function useDownloads() {
     title: string,
     videoUrl: string,
     mintId: string,
-    segmentRange?: { startTime: number; endTime: number }
+    segmentRange?: { startTime: number; endTime: number },
+    sourceClipId?: string
   ): Promise<string> {
     await initialize();
 
     const downloadId = generateId();
 
+    const isSegmentDownload = !!(
+      segmentRange &&
+      sourceClipId &&
+      segmentRange.startTime >= 0 &&
+      segmentRange.endTime > segmentRange.startTime
+    );
+
+    let finalTitle = title;
+    let segmentNumber: number | undefined;
+
+    // Generate segment name if this is a segment download
+    if (isSegmentDownload) {
+      try {
+        segmentNumber = await getNextSegmentNumber(sourceClipId);
+        finalTitle = `${title} Part ${segmentNumber}`;
+      } catch (error) {
+        console.warn('Error generating segment name - database may not be migrated:', error);
+        // Fallback to original title if database isn't migrated
+        finalTitle = title;
+      }
+    }
+
     const download: ActiveDownload = {
       id: downloadId,
-      title,
+      title: finalTitle,
       mintId,
       progress: {
         download_id: downloadId,
         progress: 0,
         status: 'Initializing...',
       },
+      // Add segment tracking information
+      sourceClipId: sourceClipId || (isSegmentDownload ? mintId : undefined),
+      segmentNumber,
+      isSegment: isSegmentDownload,
+      segmentStartTime: segmentRange?.startTime,
+      segmentEndTime: segmentRange?.endTime,
     };
 
     activeDownloads.set(downloadId, download);
 
     try {
       // Determine which download command to use
-      const isSegmentDownload =
-        segmentRange &&
-        segmentRange.startTime >= 0 &&
-        segmentRange.endTime > segmentRange.startTime;
-
       if (isSegmentDownload) {
         // Start the segment download without waiting for it to complete
         invoke('download_pumpfun_vod_segment', {
           downloadId,
-          title,
+          title: finalTitle,
           videoUrl,
           mintId,
           startTime: segmentRange.startTime,
@@ -153,7 +198,7 @@ export function useDownloads() {
         // Start the full download without waiting for it to complete
         invoke('download_pumpfun_vod', {
           downloadId,
-          title,
+          title: finalTitle,
           videoUrl,
           mintId,
         }).catch((error) => {

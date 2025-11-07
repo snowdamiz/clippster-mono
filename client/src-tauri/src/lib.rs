@@ -2001,6 +2001,12 @@ pub fn run() {
                             sql: include_str!("../migrations/021_add_chunked_transcripts.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 22,
+                            description: "add_segment_tracking",
+                            sql: include_str!("../migrations/022_add_segment_tracking.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                           ],
                 )
                 .build(),

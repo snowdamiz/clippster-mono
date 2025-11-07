@@ -176,6 +176,13 @@ export interface RawVideo {
   original_project_id: string | null;
   created_at: number;
   updated_at: number;
+  // Segment tracking fields
+  source_clip_id: string | null;
+  source_mint_id: string | null;
+  segment_number: number | null;
+  is_segment: boolean;
+  segment_start_time: number | null;
+  segment_end_time: number | null;
 }
 
 export interface ClipDetectionSession {
@@ -870,37 +877,141 @@ export async function createRawVideo(
     frameRate?: number;
     codec?: string;
     fileSize?: number;
+    // Segment tracking options
+    sourceClipId?: string;
+    sourceMintId?: string;
+    segmentNumber?: number;
+    isSegment?: boolean;
+    segmentStartTime?: number;
+    segmentEndTime?: number;
   }
 ): Promise<string> {
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
 
-  await db.execute(
-    'INSERT INTO raw_videos (id, project_id, file_path, original_filename, thumbnail_path, duration, width, height, frame_rate, codec, file_size, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [
-      id,
-      options?.projectId || null,
-      filePath,
-      options?.originalFilename || null,
-      options?.thumbnailPath || null,
-      options?.duration || null,
-      options?.width || null,
-      options?.height || null,
-      options?.frameRate || null,
-      options?.codec || null,
-      options?.fileSize || null,
-      now,
-      now,
-    ]
-  );
+  // Log the data being inserted for debugging
+  const insertData = {
+    id,
+    projectId: options?.projectId || null,
+    filePath,
+    originalFilename: options?.originalFilename || null,
+    thumbnailPath: options?.thumbnailPath || null,
+    duration: options?.duration || null,
+    width: options?.width || null,
+    height: options?.height || null,
+    frameRate: options?.frameRate || null,
+    codec: options?.codec || null,
+    fileSize: options?.fileSize || null,
+    now,
+    sourceClipId: options?.sourceClipId || null,
+    sourceMintId: options?.sourceMintId || null,
+    segmentNumber: options?.segmentNumber || null,
+    isSegment: options?.isSegment || false,
+    segmentStartTime: options?.segmentStartTime || null,
+    segmentEndTime: options?.segmentEndTime || null,
+  };
 
-  return id;
+  console.log('[Database] Inserting raw video with data:', insertData);
+
+  try {
+    await db.execute(
+      'INSERT INTO raw_videos (id, project_id, file_path, original_filename, thumbnail_path, duration, width, height, frame_rate, codec, file_size, created_at, updated_at, source_clip_id, source_mint_id, segment_number, is_segment, segment_start_time, segment_end_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        id,
+        options?.projectId || null,
+        filePath,
+        options?.originalFilename || null,
+        options?.thumbnailPath || null,
+        options?.duration || null,
+        options?.width || null,
+        options?.height || null,
+        options?.frameRate || null,
+        options?.codec || null,
+        options?.fileSize || null,
+        now,
+        now,
+        options?.sourceClipId || null,
+        options?.sourceMintId || null,
+        options?.segmentNumber || null,
+        options?.isSegment || false,
+        options?.segmentStartTime || null,
+        options?.segmentEndTime || null,
+      ]
+    );
+
+    console.log('[Database] Successfully inserted raw video with ID:', id);
+    return id;
+  } catch (error) {
+    console.error('[Database] Error inserting raw video:', error);
+    console.error('[Database] Insert data was:', insertData);
+    throw error;
+  }
 }
 
 export async function getAllRawVideos(): Promise<RawVideo[]> {
   const db = await getDatabase();
   return await db.select<RawVideo[]>('SELECT * FROM raw_videos ORDER BY created_at DESC');
+}
+
+// Check if segment tracking columns exist in the database
+async function checkSegmentTrackingExists(): Promise<boolean> {
+  try {
+    const db = await getDatabase();
+    // Try to query one of the new columns - if it fails, the columns don't exist
+    await db.execute('SELECT segment_number FROM raw_videos LIMIT 1');
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Get the next segment number for a given clip
+export async function getNextSegmentNumber(sourceClipId: string): Promise<number> {
+  // First check if the segment tracking columns exist
+  const columnsExist = await checkSegmentTrackingExists();
+  if (!columnsExist) {
+    console.warn('Segment tracking columns not found - database may not be migrated yet');
+    return 1;
+  }
+
+  try {
+    const db = await getDatabase();
+
+    // Debug: Check ALL segments in the database to see what's there
+    const allSegments = await db.select<any[]>(
+      'SELECT source_clip_id, segment_number, is_segment, original_filename FROM raw_videos WHERE is_segment = TRUE OR is_segment = "true" OR is_segment = 1 LIMIT 10'
+    );
+    console.log(`[Segment Tracking] ALL segments in database:`, allSegments);
+
+    // Debug: Check if this specific clip exists at all
+    const clipExists = await db.select<any[]>(
+      'SELECT source_clip_id, segment_number, is_segment, original_filename FROM raw_videos WHERE source_clip_id = ?',
+      [sourceClipId]
+    );
+    console.log(`[Segment Tracking] All records for clip ${sourceClipId}:`, clipExists);
+
+    // Debug: Check existing segments for this clip (handle both boolean and string representations)
+    const existingSegments = await db.select<any[]>(
+      'SELECT source_clip_id, segment_number, is_segment, original_filename FROM raw_videos WHERE source_clip_id = ? AND (is_segment = TRUE OR is_segment = "true" OR is_segment = 1)',
+      [sourceClipId]
+    );
+    console.log(`[Segment Tracking] Existing segments for clip ${sourceClipId}:`, existingSegments);
+
+    const result = await db.select<{ max_segment: number | null }[]>(
+      'SELECT MAX(segment_number) as max_segment FROM raw_videos WHERE source_clip_id = ? AND (is_segment = TRUE OR is_segment = "true" OR is_segment = 1)',
+      [sourceClipId]
+    );
+
+    const maxSegment = result[0]?.max_segment || 0;
+    console.log(
+      `[Segment Tracking] Max segment found: ${maxSegment}, next will be: ${maxSegment + 1}`
+    );
+    return maxSegment + 1;
+  } catch (error) {
+    console.error('Error getting next segment number:', error);
+    return 1;
+  }
 }
 
 export async function getRawVideo(id: string): Promise<RawVideo | null> {
