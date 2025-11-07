@@ -561,10 +561,28 @@
     // Immediately refresh the videos list to show the newly completed download
     loadVideos();
 
-    // Show a success notification if available
+    // Handle download result
     if (download.result?.success && download.rawVideoId) {
+      // Success case
       success('Download Complete', `"${download.title}" has been downloaded and added to your videos`);
+    } else if (download.result?.success === false) {
+      // Failure case - show error notification with details
+      const errorMessage = download.result?.error || 'Unknown download error';
+      error(
+        'Download Failed',
+        `"${download.title}" failed: ${errorMessage}. The corrupted files have been cleaned up.`
+      );
+
+      // Log additional details for debugging
+      console.error('[Videos] Download validation failed:', {
+        title: download.title,
+        error: errorMessage,
+        filePath: download.result?.file_path,
+        thumbnailPath: download.result?.thumbnail_path,
+      });
     }
+    // If download.result is undefined or success is not explicitly true/false,
+    // it might be a download in progress - do nothing
   }
 
   function getThumbnailUrl(video: RawVideo): string | null {

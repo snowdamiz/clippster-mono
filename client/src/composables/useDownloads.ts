@@ -71,47 +71,99 @@ export function useDownloads() {
       if (download) {
         download.result = event.payload;
 
-        // If download was successful, create database record
+        // If download was successful, validate the video and thumbnail before creating database record
         if (event.payload.success && event.payload.file_path) {
           try {
-            console.log('[Downloads] Creating database record with segment info:', {
+            console.log('[Downloads] Validating downloaded video and thumbnail:', {
               sourceClipId: download.sourceClipId,
               segmentNumber: download.segmentNumber,
               isSegment: download.isSegment,
               title: download.title,
-            });
-
-            const rawVideoId = await createRawVideo(event.payload.file_path, {
-              originalFilename: download.title,
+              filePath: event.payload.file_path,
               thumbnailPath: event.payload.thumbnail_path,
-              duration: event.payload.duration,
-              width: event.payload.width,
-              height: event.payload.height,
-              frameRate: undefined, // We don't have this info from the basic download
-              codec: event.payload.codec,
-              fileSize: event.payload.file_size,
-              // Segment tracking information
-              sourceClipId: download.sourceClipId,
-              sourceMintId: download.mintId,
-              segmentNumber: download.segmentNumber,
-              isSegment: download.isSegment || false,
-              segmentStartTime: download.segmentStartTime,
-              segmentEndTime: download.segmentEndTime,
             });
 
-            console.log('[Downloads] Database record created successfully with ID:', rawVideoId);
-            download.rawVideoId = rawVideoId;
+            // Validate the downloaded video and thumbnail
+            const validationResult = await validateDownloadedVideo(
+              event.payload.file_path,
+              event.payload.thumbnail_path,
+              download.title
+            );
 
-            // Notify all listeners about completion
-            completionCallbacks.forEach((callback) => {
-              try {
-                callback(download);
-              } catch (error) {
-                console.error('[Downloads] Error in completion callback:', error);
-              }
-            });
+            if (validationResult.isValid) {
+              // Video is valid, create database record
+              const rawVideoId = await createRawVideo(event.payload.file_path, {
+                originalFilename: download.title,
+                thumbnailPath: validationResult.thumbnailPath || event.payload.thumbnail_path,
+                duration: event.payload.duration,
+                width: event.payload.width,
+                height: event.payload.height,
+                frameRate: undefined, // We don't have this info from the basic download
+                codec: event.payload.codec,
+                fileSize: event.payload.file_size,
+                // Segment tracking information
+                sourceClipId: download.sourceClipId,
+                sourceMintId: download.mintId,
+                segmentNumber: download.segmentNumber,
+                isSegment: download.isSegment || false,
+                segmentStartTime: download.segmentStartTime,
+                segmentEndTime: download.segmentEndTime,
+              });
+
+              console.log('[Downloads] Database record created successfully with ID:', rawVideoId);
+              download.rawVideoId = rawVideoId;
+
+              // Notify all listeners about completion
+              completionCallbacks.forEach((callback) => {
+                try {
+                  callback(download);
+                } catch (error) {
+                  console.error('[Downloads] Error in completion callback:', error);
+                }
+              });
+            } else {
+              // Video validation failed, cleanup and notify error
+              console.error('[Downloads] Video validation failed:', validationResult.error);
+
+              // Cleanup corrupted files
+              await cleanupCorruptedDownload(
+                event.payload.file_path,
+                validationResult.thumbnailPath || event.payload.thumbnail_path,
+                download.rawVideoId
+              );
+
+              // Update download result to show failure
+              download.result = {
+                ...event.payload,
+                success: false,
+                error: validationResult.error || 'Video validation failed',
+              };
+
+              // Notify listeners about validation failure
+              completionCallbacks.forEach((callback) => {
+                try {
+                  callback(download);
+                } catch (error) {
+                  console.error('[Downloads] Error in completion callback:', error);
+                }
+              });
+            }
           } catch (error) {
-            console.error('Failed to create raw video record:', error);
+            console.error('[Downloads] Error during download validation:', error);
+
+            // Cleanup on validation error
+            await cleanupCorruptedDownload(
+              event.payload.file_path,
+              event.payload.thumbnail_path,
+              download.rawVideoId
+            );
+
+            // Update result to show failure
+            download.result = {
+              ...event.payload,
+              success: false,
+              error: `Validation error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            };
           }
         }
       } else {
@@ -150,7 +202,7 @@ export function useDownloads() {
     if (isSegmentDownload) {
       try {
         segmentNumber = await getNextSegmentNumber(sourceClipId);
-        finalTitle = `${title} Part ${segmentNumber}`;
+        finalTitle = `${title} Segment ${segmentNumber}`;
       } catch (error) {
         console.warn('Error generating segment name - database may not be migrated:', error);
         // Fallback to original title if database isn't migrated
@@ -275,6 +327,117 @@ export function useDownloads() {
     };
   }
 
+  // Validation functions
+  async function validateDownloadedVideo(
+    filePath: string,
+    thumbnailPath: string | null,
+    title: string
+  ): Promise<{ isValid: boolean; thumbnailPath?: string | null; error?: string }> {
+    try {
+      console.log('[Validation] Starting validation for:', title);
+      console.log('[Validation] File path:', filePath);
+      console.log('[Validation] Thumbnail path:', thumbnailPath);
+
+      // Check if video file exists and has content
+      const videoExists = await invoke<boolean>('check_file_exists', { path: filePath });
+      console.log('[Validation] Video file exists:', videoExists);
+
+      if (!videoExists) {
+        console.error('[Validation] Video file does not exist');
+        return { isValid: false, error: 'Video file does not exist' };
+      }
+
+      // Validate video file integrity using FFmpeg
+      console.log('[Validation] Calling validate_video_file command...');
+      const videoValidation = await invoke<any>('validate_video_file', { filePath });
+      console.log('[Validation] Validation result:', JSON.stringify(videoValidation, null, 2));
+
+      if (!videoValidation.is_valid) {
+        console.error('[Validation] Video validation failed. Full result:', videoValidation);
+        console.error('[Validation] Error field:', videoValidation.error);
+        console.error('[Validation] is_valid field:', videoValidation.is_valid);
+        return {
+          isValid: false,
+          error: videoValidation.error || 'Video file is corrupted or invalid',
+        };
+      }
+
+      // Check if thumbnail exists, and if not, try to regenerate it
+      let finalThumbnailPath = thumbnailPath;
+      if (thumbnailPath) {
+        const thumbnailExists = await invoke<boolean>('check_file_exists', { path: thumbnailPath });
+        console.log('[Validation] Thumbnail exists:', thumbnailExists);
+
+        if (!thumbnailExists) {
+          console.log('[Validation] Thumbnail missing or invalid, regenerating...');
+
+          try {
+            finalThumbnailPath = await invoke<string>('generate_thumbnail', {
+              videoPath: filePath,
+            });
+            console.log('[Validation] Successfully regenerated thumbnail:', finalThumbnailPath);
+          } catch (thumbnailError) {
+            console.warn('[Validation] Failed to regenerate thumbnail:', thumbnailError);
+            // Continue without thumbnail - not a critical failure
+          }
+        }
+      } else {
+        console.log('[Validation] No thumbnail path provided');
+      }
+
+      console.log('[Validation] Video validation successful for:', title);
+      return { isValid: true, thumbnailPath: finalThumbnailPath };
+    } catch (error) {
+      console.error('[Validation] Error during video validation:', error);
+      console.error('[Validation] Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      return {
+        isValid: false,
+        error: `Validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      };
+    }
+  }
+
+  async function cleanupCorruptedDownload(
+    filePath: string | null,
+    thumbnailPath: string | null,
+    rawVideoId: string | undefined
+  ): Promise<void> {
+    try {
+      console.log('[Cleanup] Starting cleanup for corrupted download');
+
+      // Delete video file if it exists
+      if (filePath) {
+        try {
+          await invoke('delete_video_file', {
+            filePath,
+            thumbnailPath: thumbnailPath || undefined,
+          });
+          console.log('[Cleanup] Deleted video file:', filePath);
+        } catch (error) {
+          console.warn('[Cleanup] Failed to delete video file:', error);
+        }
+      }
+
+      // Delete database record if it was created
+      if (rawVideoId) {
+        try {
+          const { deleteRawVideo } = await import('@/services/database');
+          await deleteRawVideo(rawVideoId);
+          console.log('[Cleanup] Deleted database record:', rawVideoId);
+        } catch (error) {
+          console.warn('[Cleanup] Failed to delete database record:', error);
+        }
+      }
+
+      console.log('[Cleanup] Cleanup completed');
+    } catch (error) {
+      console.error('[Cleanup] Error during cleanup:', error);
+    }
+  }
+
   return {
     activeDownloads,
     isInitialized,
@@ -288,5 +451,7 @@ export function useDownloads() {
     clearCompleted,
     cleanupOldDownloads,
     onDownloadComplete,
+    validateDownloadedVideo,
+    cleanupCorruptedDownload,
   };
 }

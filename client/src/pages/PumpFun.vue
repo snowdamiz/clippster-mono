@@ -580,7 +580,7 @@
     if (useSegmentDownload.value && clipToDownload.value.clipId) {
       // Show the actual segment number that will be used
       const baseTitle = clipToDownload.value.title;
-      return `${baseTitle} (will be named "${baseTitle} Part ${nextSegmentNumber.value}")`;
+      return `${baseTitle} (will be named "${baseTitle} Segment ${nextSegmentNumber.value}")`;
     }
 
     return clipToDownload.value.title;
@@ -728,7 +728,10 @@
 
       // Show success toast
       const downloadType = useSegmentDownload.value ? 'segment' : 'full stream';
-      success('Download Started', `Downloading ${downloadType} of "${clip.title}"`);
+      success(
+        'Download Started',
+        `Downloading ${downloadType} of "${clip.title}". You'll be notified when it completes.`
+      );
 
       // Close dialog immediately
       showDownloadDialog.value = false;
