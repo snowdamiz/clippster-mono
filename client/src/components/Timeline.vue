@@ -1,6 +1,6 @@
 <template>
   <div
-    class="bg-[#0a0a0a]/30 border-t border-border transition-all duration-300 ease-in-out"
+    class="bg-[#0a0a0a]/30 transition-all duration-300 ease-in-out"
     :style="{
       height: calculatedHeight + 'px',
     }"

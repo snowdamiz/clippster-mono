@@ -140,6 +140,13 @@
     @close="handleDeleteDialogClose"
     @confirm="deleteClipConfirmed"
   />
+  <!-- Clip Detection Confirmation Dialog -->
+  <ClipDetectionConfirmDialog
+    :model-value="showDetectConfirmDialog"
+    :video-duration="duration"
+    @update:model-value="showDetectConfirmDialog = $event"
+    @confirm="onDetectClipsConfirmed"
+  />
 </template>
 
 <style scoped>
@@ -170,6 +177,7 @@
   import Timeline from './Timeline.vue';
   import ClipGenerationProgress from './ClipGenerationProgress.vue';
   import ConfirmationModal from './ConfirmationModal.vue';
+  import ClipDetectionConfirmDialog from './ClipDetectionConfirmDialog.vue';
   import { useVideoPlayer } from '@/composables/useVideoPlayer';
   import { useProgressSocket } from '@/composables/useProgressSocket';
   import { useToast } from '@/composables/useToast';
@@ -194,6 +202,9 @@
   // Delete state
   const showDeleteDialog = ref(false);
   const clipToDelete = ref<string | null>(null);
+
+  // Clip detection confirmation state
+  const showDetectConfirmDialog = ref(false);
 
   // Segmented playback tracking
   const currentlyPlayingClipId = ref<string | null>(null);
@@ -271,7 +282,12 @@
     }
   }
 
-  async function onDetectClips(prompt: string) {
+  async function onDetectClips() {
+    // Show confirmation dialog (prompt will be selected within the dialog)
+    showDetectConfirmDialog.value = true;
+  }
+
+  async function onDetectClipsConfirmed(promptId: string, promptContent: string) {
     if (!props.project) {
       console.error('[ProjectWorkspaceDialog] No project available');
       return;
@@ -318,7 +334,7 @@
 
       try {
         // Perform enhanced clip detection
-        const result = await detectClipsWithChunking(props.project.id, prompt, {
+        const result = await detectClipsWithChunking(props.project.id, promptContent, {
           chunkDurationMinutes: 30,
           overlapSeconds: 30,
           forceReprocess: false,

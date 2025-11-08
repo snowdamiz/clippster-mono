@@ -4,17 +4,17 @@
       <h3 class="text-sm font-medium text-foreground">Clips</h3>
 
       <div class="flex items-center gap-1">
-        <!-- Re-run button (only show when not generating and clips exist) -->
+        <!-- Enhanced re-run button (only show when not generating and clips exist) -->
         <button
           v-if="!isGenerating && clips.length > 0"
           @click="handleDetectClips"
-          :disabled="!selectedPrompt"
-          class="p-1 hover:bg-purple-500/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          title="Detect more clips"
+          class="group relative flex items-center gap-2 px-3 py-1.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-md font-medium transition-all duration-200 shadow-lg hover:shadow-xl"
+          title="Run clip detection again to find more clips"
         >
+          <!-- Refresh icon with rotation animation -->
           <svg
             xmlns="http://www.w3.org/2000/svg"
-            class="h-4 w-4 text-purple-400"
+            class="h-3.5 w-3.5 group-hover:rotate-180 transition-transform duration-500"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -26,6 +26,17 @@
               d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
             />
           </svg>
+
+          <span class="text-xs font-medium">Detect More</span>
+
+          <!-- Tooltip hint -->
+          <div
+            class="absolute -bottom-8 right-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10"
+          >
+            <div class="bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap shadow-lg">
+              Find additional clips
+            </div>
+          </div>
         </button>
       </div>
     </div>
@@ -120,7 +131,7 @@
               // Playing clip gets green styling
               props.isPlayingSegments && props.playingClipId === clip.id
                 ? 'ring-2 ring-green-500/50 bg-green-500/10'
-                : ''
+                : '',
             ]"
             :style="{
               // Prioritize playing state over all other states
@@ -134,7 +145,7 @@
                 (props.isPlayingSegments && props.playingClipId === clip.id) ||
                 (!props.isPlayingSegments && (hoveredTimelineClipId === clip.id || hoveredClipId === clip.id))
                   ? '1px'
-                  : undefined
+                  : undefined,
             }"
             @click="onClipClick(clip.id)"
           >
@@ -181,7 +192,7 @@
                   :style="{
                     backgroundColor: hexToDarkerHex(clip.session_run_color || '#8B5CF6', 0.15),
                     borderColor: clip.session_run_color || '#8B5CF6',
-                    color: clip.session_run_color || '#A78BFA'
+                    color: clip.session_run_color || '#A78BFA',
                   }"
                   :title="`Detection run ${clip.run_number} (Color: ${clip.session_run_color || 'default'})`"
                 >
@@ -222,59 +233,36 @@
       <!-- Default State -->
       <div v-else class="h-full flex items-center justify-center">
         <div class="text-center text-muted-foreground">
-          <div class="mb-4 flex flex-col items-center">
-            <label class="block text-xs font-medium text-foreground/70 mb-2 text-center">Detection Prompt</label>
-            <div class="relative">
-              <button
-                @click="togglePromptDropdown"
-                class="flex px-3 py-2 text-xs bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent text-left items-center justify-between min-w-[150px]"
+          <div class="mb-6 flex flex-col items-center">
+            <div class="w-16 h-16 bg-muted/20 rounded-full flex items-center justify-center mb-4">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-8 w-8 text-muted-foreground"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
               >
-                <span class="truncate flex-1 mr-2">
-                  {{
-                    selectedPrompt
-                      ? prompts.find((p) => p.id === selectedPromptId)?.name || 'Select a prompt...'
-                      : 'Select a prompt...'
-                  }}
-                </span>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-4 w-4 text-muted-foreground shrink-0"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              <!-- Dropdown Menu -->
-              <div
-                v-if="showPromptDropdown"
-                class="absolute top-full left-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-[60] max-h-48 overflow-y-auto"
-                @click.stop
-              >
-                <div class="p-1 min-w-[150px]">
-                  <button
-                    v-for="prompt in prompts"
-                    :key="prompt.id"
-                    @click="onPromptChange(prompt.id, prompt.content)"
-                    class="block w-full text-left px-3 py-2 rounded-md hover:bg-muted/80 transition-colors text-xs whitespace-nowrap"
-                    :title="`Use prompt: ${prompt.name}`"
-                  >
-                    {{ prompt.name }}
-                  </button>
-                </div>
-              </div>
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                />
+              </svg>
             </div>
+            <h4 class="text-sm font-medium text-foreground mb-2">No Clips Yet</h4>
+            <p class="text-xs text-muted-foreground mb-4 max-w-xs">
+              Start detecting clips from your video content using AI-powered analysis
+            </p>
           </div>
           <button
             @click="handleDetectClips"
-            :disabled="!selectedPrompt"
-            class="px-4 py-2 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 disabled:from-gray-500/50 disabled:to-gray-600/50 disabled:cursor-not-allowed text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all mx-auto text-xs"
+            class="px-6 py-3 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all mx-auto text-sm"
             title="Detect Clips"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              class="h-4 w-4"
+              class="h-5 w-5"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -295,15 +283,13 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, computed, watch, onUnmounted } from 'vue'
+  import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
   import {
-    getAllPrompts,
     getClipsWithVersionsByProjectId,
     getClipDetectionSessionsByProjectId,
-    type Prompt,
     type ClipWithVersion,
-    type ClipDetectionSession
-  } from '@/services/database'
+    type ClipDetectionSession,
+  } from '@/services/database';
   import {
     PlayIcon,
     BrainIcon,
@@ -312,21 +298,21 @@
     ActivityIcon,
     MicIcon,
     ClockIcon,
-    TrendingUpIcon
-  } from 'lucide-vue-next'
+    TrendingUpIcon,
+  } from 'lucide-vue-next';
 
   interface Props {
-    transcriptCollapsed: boolean
-    clipsCollapsed: boolean
-    isGenerating?: boolean
-    generationProgress?: number
-    generationStage?: string
-    generationMessage?: string
-    generationError?: string
-    projectId?: string
-    hoveredTimelineClipId?: string | null
-    playingClipId?: string | null
-    isPlayingSegments?: boolean
+    transcriptCollapsed: boolean;
+    clipsCollapsed: boolean;
+    isGenerating?: boolean;
+    generationProgress?: number;
+    generationStage?: string;
+    generationMessage?: string;
+    generationError?: string;
+    projectId?: string;
+    hoveredTimelineClipId?: string | null;
+    playingClipId?: string | null;
+    isPlayingSegments?: boolean;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -336,78 +322,58 @@
     generationMessage: '',
     generationError: '',
     playingClipId: null,
-    isPlayingSegments: false
-  })
+    isPlayingSegments: false,
+  });
 
   interface Emits {
-    (e: 'detectClips', prompt: string): void
-    (e: 'clipHover', clipId: string): void
-    (e: 'clipLeave'): void
-    (e: 'scrollToTimeline'): void
-    (e: 'deleteClip', clipId: string): void
-    (e: 'playClip', clip: ClipWithVersion): void
+    (e: 'detectClips', prompt: string): void;
+    (e: 'clipHover', clipId: string): void;
+    (e: 'clipLeave'): void;
+    (e: 'scrollToTimeline'): void;
+    (e: 'deleteClip', clipId: string): void;
+    (e: 'playClip', clip: ClipWithVersion): void;
   }
 
-  const emit = defineEmits<Emits>()
+  const emit = defineEmits<Emits>();
 
-  const prompts = ref<Prompt[]>([])
-  const selectedPromptId = ref<string>('')
-  const selectedPrompt = ref<string>('')
-  const showPromptDropdown = ref(false)
+  // Prompt-related functionality removed - now handled by confirmation dialog
 
   // Clips state
-  const clips = ref<ClipWithVersion[]>([])
-  const detectionSessions = ref<ClipDetectionSession[]>([])
-  const loadingClips = ref(false)
-  const hoveredClipId = ref<string | null>(null)
+  const clips = ref<ClipWithVersion[]>([]);
+  const detectionSessions = ref<ClipDetectionSession[]>([]);
+  const loadingClips = ref(false);
+  const hoveredClipId = ref<string | null>(null);
 
   // Refs for scroll containers
-  const clipsScrollContainer = ref<HTMLElement | null>(null)
+  const clipsScrollContainer = ref<HTMLElement | null>(null);
 
   onMounted(async () => {
-    try {
-      prompts.value = await getAllPrompts()
-      // Select the default prompt if available
-      const defaultPrompt = prompts.value.find((p) => p.name === 'Default Clip Detector')
-      if (defaultPrompt) {
-        selectedPromptId.value = defaultPrompt.id
-        onPromptChange(defaultPrompt.id, defaultPrompt.content)
-      } else if (prompts.value.length > 0) {
-        const firstPrompt = prompts.value[0]
-        selectedPromptId.value = firstPrompt.id
-        onPromptChange(firstPrompt.id, firstPrompt.content)
-      }
-    } catch (error) {
-      console.error('Failed to load prompts:', error)
-    }
-
-    // Add click outside handler to close dropdown
-    document.addEventListener('click', handleClickOutside)
-  })
+    // Initialize - prompt loading is now handled by the confirmation dialog
+  });
 
   // Watch for project changes and load clips
   watch(
     () => props.projectId,
     async (projectId) => {
       if (projectId) {
-        await loadClipsAndHistory(projectId)
+        await loadClipsAndHistory(projectId);
       } else {
-        clips.value = []
-        detectionSessions.value = []
+        clips.value = [];
+        detectionSessions.value = [];
       }
     },
     { immediate: true }
-  )
+  );
 
   // Watch for generation state changes to refresh clips when generation completes
   watch([() => props.isGenerating, () => props.generationProgress], async ([isGenerating, progress]) => {
     if (!isGenerating && progress === 100 && props.projectId) {
       // Add a small delay to ensure database writes are committed
       setTimeout(async () => {
-        await loadClipsAndHistory(props.projectId!)
-      }, 500)
+        await loadClipsAndHistory(props.projectId!);
+      }, 500);
     }
-  })
+  });
 
   // Watch for timeline hover changes to clear internal hover state
   watch(
@@ -415,10 +381,10 @@
     (newTimelineHoverId) => {
       if (newTimelineHoverId) {
         // Clear internal hover state when timeline hover is active
-        hoveredClipId.value = null
+        hoveredClipId.value = null;
       }
     }
-  )
+  );
 
   // Watch for playing clip changes to clear hover state when playback starts
   watch(
@@ -426,50 +392,50 @@
     (newPlayingId) => {
       if (newPlayingId) {
         // Clear all hover states when a clip starts playing
-        hoveredClipId.value = null
+        hoveredClipId.value = null;
       }
     }
-  )
+  );
 
   // Load clips and detection history
   async function loadClipsAndHistory(projectId: string) {
-    if (!projectId) return
+    if (!projectId) return;
 
-    loadingClips.value = true
+    loadingClips.value = true;
     try {
       // Load current clips with versions
-      clips.value = await getClipsWithVersionsByProjectId(projectId)
+      clips.value = await getClipsWithVersionsByProjectId(projectId);
       if (clips.value.length > 0) {
         // Log all unique run colors for debugging
-        const uniqueRuns = new Map<number, string>()
+        const uniqueRuns = new Map<number, string>();
         clips.value.forEach((clip) => {
           if (clip.run_number && clip.session_run_color) {
-            uniqueRuns.set(clip.run_number, clip.session_run_color)
+            uniqueRuns.set(clip.run_number, clip.session_run_color);
           }
-        })
+        });
       }
 
       // Load detection sessions for history
-      detectionSessions.value = await getClipDetectionSessionsByProjectId(projectId)
+      detectionSessions.value = await getClipDetectionSessionsByProjectId(projectId);
     } catch (error) {
-      console.error('[ClipsPanel] Failed to load clips:', error)
+      console.error('[ClipsPanel] Failed to load clips:', error);
     } finally {
-      loadingClips.value = false
+      loadingClips.value = false;
     }
   }
 
   function formatDuration(seconds: number): string {
-    if (!seconds) return '0:00'
-    const mins = Math.floor(seconds / 60)
-    const secs = Math.floor(seconds % 60)
-    return `${mins}:${secs.toString().padStart(2, '0')}`
+    if (!seconds) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
   function formatTime(seconds: number): string {
-    if (!seconds) return '0:00'
-    const mins = Math.floor(seconds / 60)
-    const secs = Math.floor(seconds % 60)
-    return `${mins}:${secs.toString().padStart(2, '0')}`
+    if (!seconds) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
   function formatTimestamp(timestamp: number): string {
@@ -477,79 +443,62 @@
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
-    })
+      minute: '2-digit',
+    });
   }
 
   async function refreshClips() {
     if (props.projectId) {
-      await loadClipsAndHistory(props.projectId)
-    }
-  }
-
-  function handleClickOutside(event: Event) {
-    const target = event.target as HTMLElement
-    if (!target.closest('.relative')) {
-      showPromptDropdown.value = false
+      await loadClipsAndHistory(props.projectId);
     }
   }
 
   function handleDetectClips() {
-    emit('detectClips', selectedPrompt.value)
+    emit('detectClips');
   }
 
   function onDeleteClip(clipId: string) {
-    emit('deleteClip', clipId)
+    emit('deleteClip', clipId);
   }
 
   function onPlayClip(clip: ClipWithVersion) {
-    emit('playClip', clip)
-  }
-
-  function onPromptChange(promptId: string, promptContent: string) {
-    selectedPromptId.value = promptId
-    selectedPrompt.value = promptContent
-    showPromptDropdown.value = false
-  }
-
-  function togglePromptDropdown() {
-    showPromptDropdown.value = !showPromptDropdown.value
+    emit('playClip', clip);
   }
 
   // Clip click event handler
   function onClipClick(clipId: string) {
     // Toggle the hovered state - if clicking the same clip, unhighlight it
-    hoveredClipId.value = hoveredClipId.value === clipId ? null : clipId
-    emit('clipHover', clipId)
-    emit('scrollToTimeline')
+    hoveredClipId.value = hoveredClipId.value === clipId ? null : clipId;
+    emit('clipHover', clipId);
+    emit('scrollToTimeline');
   }
 
   // Ref management for clip elements
-  const clipElements = ref<Map<string, HTMLElement>>(new Map())
+  const clipElements = ref<Map<string, HTMLElement>>(new Map());
 
   function setClipRef(el: any, clipId: string) {
     if (el && el instanceof HTMLElement) {
-      clipElements.value.set(clipId, el)
+      clipElements.value.set(clipId, el);
     } else {
-      clipElements.value.delete(clipId)
+      clipElements.value.delete(clipId);
     }
   }
 
   // Function to scroll clip into view
   function scrollClipIntoView(clipId: string) {
-    const clipElement = clipElements.value.get(clipId)
-    const container = clipsScrollContainer.value
+    const clipElement = clipElements.value.get(clipId);
+    const container = clipsScrollContainer.value;
 
     if (clipElement && container) {
       // Always force scroll to the bottom-most clip for testing
       clipElement.scrollIntoView({
         behavior: 'smooth',
         block: 'nearest',
-        inline: 'nearest'
-      })
-      return
+        inline: 'nearest',
+      });
+      return;
     } else {
-      console.log('[ClipsPanel] Cannot scroll - missing elements')
+      console.log('[ClipsPanel] Cannot scroll - missing elements');
     }
   }
 
@@ -558,138 +507,138 @@
   // Utility function to convert hex color to darker version for dark theme
   function hexToDarkerHex(hex: string, opacity: number = 0.15): string {
     // Remove the # if present
-    const cleanHex = hex.replace('#', '')
+    const cleanHex = hex.replace('#', '');
 
     // Parse the hex values
-    const r = parseInt(cleanHex.substr(0, 2), 16)
-    const g = parseInt(cleanHex.substr(2, 2), 16)
-    const b = parseInt(cleanHex.substr(4, 2), 16)
+    const r = parseInt(cleanHex.substr(0, 2), 16);
+    const g = parseInt(cleanHex.substr(2, 2), 16);
+    const b = parseInt(cleanHex.substr(4, 2), 16);
 
     // Create darker version by reducing brightness (multiply by opacity factor)
-    const darkerR = Math.round(r * opacity)
-    const darkerG = Math.round(g * opacity)
-    const darkerB = Math.round(b * opacity)
+    const darkerR = Math.round(r * opacity);
+    const darkerG = Math.round(g * opacity);
+    const darkerB = Math.round(b * opacity);
 
     // Convert back to hex
-    return `#${darkerR.toString(16).padStart(2, '0')}${darkerG.toString(16).padStart(2, '0')}${darkerB.toString(16).padStart(2, '0')}`
+    return `#${darkerR.toString(16).padStart(2, '0')}${darkerG.toString(16).padStart(2, '0')}${darkerB.toString(16).padStart(2, '0')}`;
   }
 
   // Computed properties for progress display
   const stageIcon = computed(() => {
     switch (props.generationStage) {
       case 'starting':
-        return PlayIcon
+        return PlayIcon;
       case 'transcribing':
-        return MicIcon
+        return MicIcon;
       case 'analyzing':
-        return BrainIcon
+        return BrainIcon;
       case 'validating':
-        return ActivityIcon
+        return ActivityIcon;
       case 'completed':
-        return CheckCircleIcon
+        return CheckCircleIcon;
       case 'error':
-        return XCircleIcon
+        return XCircleIcon;
       default:
-        return PlayIcon
+        return PlayIcon;
     }
-  })
+  });
 
   const stageIconClass = computed(() => {
     switch (props.generationStage) {
       case 'starting':
-        return 'text-blue-500'
+        return 'text-blue-500';
       case 'transcribing':
-        return 'text-yellow-500'
+        return 'text-yellow-500';
       case 'analyzing':
-        return 'text-purple-500'
+        return 'text-purple-500';
       case 'validating':
-        return 'text-orange-500'
+        return 'text-orange-500';
       case 'completed':
-        return 'text-green-500'
+        return 'text-green-500';
       case 'error':
-        return 'text-red-500'
+        return 'text-red-500';
       default:
-        return 'text-blue-500'
+        return 'text-blue-500';
     }
-  })
+  });
 
   const stageTitle = computed(() => {
     switch (props.generationStage) {
       case 'starting':
-        return 'Separating Audio'
+        return 'Separating Audio';
       case 'transcribing':
-        return 'Transcribing Audio'
+        return 'Transcribing Audio';
       case 'analyzing':
-        return 'Detecting Clips'
+        return 'Detecting Clips';
       case 'validating':
-        return 'Validating Results'
+        return 'Validating Results';
       case 'completed':
-        return 'Completed'
+        return 'Completed';
       case 'error':
-        return 'Error'
+        return 'Error';
       default:
-        return 'Separating Audio'
+        return 'Separating Audio';
     }
-  })
+  });
 
   const stageDescription = computed(() => {
     switch (props.generationStage) {
       case 'starting':
-        return 'Separating audio from vidoe...'
+        return 'Separating audio from vidoe...';
       case 'transcribing':
-        return 'Converting audio to text using AI...'
+        return 'Converting audio to text using AI...';
       case 'analyzing':
-        return 'Analyzing transcript for clip-worthy moments...'
+        return 'Analyzing transcript for clip-worthy moments...';
       case 'validating':
-        return 'Validating timestamps and refining clips...'
+        return 'Validating timestamps and refining clips...';
       case 'completed':
-        return 'Clips have been successfully generated!'
+        return 'Clips have been successfully generated!';
       case 'error':
-        return 'An error occurred during processing.'
+        return 'An error occurred during processing.';
       default:
-        return 'Separating audio from vidoe...'
+        return 'Separating audio from vidoe...';
     }
-  })
+  });
 
   const progressBarClass = computed(() => {
     switch (props.generationStage) {
       case 'transcribing':
-        return 'bg-yellow-500'
+        return 'bg-yellow-500';
       case 'analyzing':
-        return 'bg-purple-500'
+        return 'bg-purple-500';
       case 'validating':
-        return 'bg-orange-500'
+        return 'bg-orange-500';
       case 'completed':
-        return 'bg-green-500'
+        return 'bg-green-500';
       case 'error':
-        return 'bg-red-500'
+        return 'bg-red-500';
       default:
-        return 'bg-blue-500'
+        return 'bg-blue-500';
     }
-  })
+  });
 
   // Expose methods for external access
   defineExpose({
     refreshClips,
-    scrollClipIntoView
-  })
+    scrollClipIntoView,
+  });
 
   // Event listener for fallback refresh mechanism
   function handleRefreshEvent(event: CustomEvent) {
     if (event.detail?.projectId === props.projectId) {
-      refreshClips()
+      refreshClips();
     }
   }
 
   onMounted(() => {
     // Add event listener for refresh events
-    document.addEventListener('refresh-clips', handleRefreshEvent as EventListener)
-  })
+    document.addEventListener('refresh-clips', handleRefreshEvent as EventListener);
+  });
 
   onUnmounted(() => {
     // Remove event listener to prevent memory leaks
-    document.removeEventListener('refresh-clips', handleRefreshEvent as EventListener)
-  })
+    document.removeEventListener('refresh-clips', handleRefreshEvent as EventListener);
+  });
 </script>
 
 <style scoped>
