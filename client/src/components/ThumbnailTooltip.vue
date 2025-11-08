@@ -11,8 +11,8 @@
     >
       <div class="bg-black/95 backdrop-blur-sm border border-white/20 rounded-lg shadow-2xl p-2 mb-2">
         <!-- Thumbnail Image -->
-        <div class="relative min-w-[200px] min-h-[112px]">
-          <div v-if="loading" class="w-[200px] h-[112px] bg-muted/50 rounded-md flex items-center justify-center">
+        <div class="relative min-w-[120px] min-h-[68px]">
+          <div v-if="loading" class="w-[120px] h-[68px] bg-muted/50 rounded-md flex items-center justify-center">
             <div class="flex flex-col items-center gap-2">
               <svg
                 class="animate-spin h-6 w-6 text-muted-foreground"
@@ -34,9 +34,9 @@
             v-else-if="thumbnailUrl && !hasError"
             :src="thumbnailUrl"
             alt="Video thumbnail"
-            class="w-[200px] h-[112px] object-cover rounded-md"
+            class="w-[120px] h-[68px] object-cover rounded-md"
           />
-          <div v-else class="w-[200px] h-[112px] bg-muted/50 rounded-md flex items-center justify-center">
+          <div v-else class="w-[120px] h-[68px] bg-muted/50 rounded-md flex items-center justify-center">
             <div class="text-center" :class="hasError ? 'text-red-400/60' : 'text-muted-foreground/40'">
               <svg
                 xmlns="http://www.w3.org/2000/svg"

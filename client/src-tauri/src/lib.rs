@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use tauri::{Emitter, Manager};
 use warp::Filter;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 mod storage;
 
@@ -52,6 +53,17 @@ struct ThumbnailResult {
     data_url: Option<String>,
     error: Option<String>,
 }
+
+#[derive(Debug, Clone)]
+struct CachedThumbnail {
+    data_url: String,
+    timestamp: f64,
+    created_at: u64,
+}
+
+// Global thumbnail cache
+static THUMBNAIL_CACHE: Lazy<Arc<Mutex<HashMap<String, CachedThumbnail>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AudioChunk {
@@ -1748,6 +1760,24 @@ async fn extract_video_frame(video_url: String, timestamp: f64) -> Result<Thumbn
         });
     }
 
+    // Check cache first
+    let cache_key = format!("{}_{:.1}", video_url, timestamp);
+    {
+        let cache = THUMBNAIL_CACHE.lock().unwrap();
+        if let Some(cached) = cache.get(&cache_key) {
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+            // Cache for 5 minutes (300 seconds)
+            if now - cached.created_at < 300 {
+                println!("[Rust] Cache hit for timestamp: {:.3}", timestamp);
+                return Ok(ThumbnailResult {
+                    success: true,
+                    data_url: Some(cached.data_url.clone()),
+                    error: None,
+                });
+            }
+        }
+    }
+
     // Format timestamp for FFmpeg
     let hours = (timestamp / 3600.0) as u32;
     let minutes = ((timestamp % 3600.0) / 60.0) as u32;
@@ -1764,15 +1794,23 @@ async fn extract_video_frame(video_url: String, timestamp: f64) -> Result<Thumbn
             .unwrap()
             .as_secs()));
 
-    // Use FFmpeg to extract a single frame
+    // Use FFmpeg to extract a single frame with maximum speed optimizations
     let output = tokio::process::Command::new("ffmpeg")
         .args([
-            "-ss", &timestamp_str,           // Seek to timestamp
+            "-ss", &timestamp_str,           // Seek to timestamp (fast seeking)
+            "-accurate_seek",                 // More accurate seeking (input option)
             "-i", &video_url,                 // Input video URL
+            "-t", "0.1",                      // Only process 0.1s segment
             "-vframes", "1",                  // Extract only 1 frame
-            "-q:v", "2",                      // High quality JPEG
-            "-vf", "scale=320:-1",            // Scale to 320px width, maintain aspect
+            "-q:v", "10",                     // Very low quality for max speed (1-31)
+            "-vf", "scale=120:-1",            // Even smaller size (120px width)
             "-f", "image2",                   // Output format
+            "-threads", "1",                  // Single thread for faster startup
+            "-avoid_negative_ts", "make_zero", // Better timestamp handling
+            "-fflags", "+genpts+fastseek",    // Fast seeking mode
+            "-nostats",                       // Suppress stats output
+            "-loglevel", "error",             // Minimal logging
+            "-timeout", "10000000",           // 10 second timeout (in microseconds)
             "-y",                             // Overwrite output file
             temp_file.to_str().ok_or("Invalid temp file path")?,
         ])
@@ -1801,6 +1839,26 @@ async fn extract_video_frame(video_url: String, timestamp: f64) -> Result<Thumbn
             let data_url = format!("data:image/jpeg;base64,{}", base64);
 
             println!("[Rust] Successfully extracted frame, data URL length: {}", data_url.len());
+
+            // Store in cache
+            {
+                let mut cache = THUMBNAIL_CACHE.lock().unwrap();
+                let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+                cache.insert(cache_key, CachedThumbnail {
+                    data_url: data_url.clone(),
+                    timestamp,
+                    created_at: now,
+                });
+
+                // Clean old entries (keep only last 50)
+                if cache.len() > 50 {
+                    let mut entries: Vec<_> = cache.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                    entries.sort_by_key(|(_, cached)| cached.created_at);
+                    for key in entries.iter().take(cache.len() - 45).map(|(k, _)| k) {
+                        cache.remove(key);
+                    }
+                }
+            }
 
             Ok(ThumbnailResult {
                 success: true,

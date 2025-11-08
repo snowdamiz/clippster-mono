@@ -82,7 +82,7 @@ export function useVideoThumbnail() {
     }
   }
 
-  // Debounced function to extract thumbnails
+  // Debounced function to extract thumbnails (minimum debounce for instant response)
   const debouncedExtractFrame = debounceAsync(
     async (videoUrl: string, timestamp: number, x: number, y: number) => {
       // Don't extract if video URL is empty
@@ -113,8 +113,37 @@ export function useVideoThumbnail() {
         error: thumbnailDataUrl ? null : 'Failed to extract frame',
       };
     },
-    150
-  ); // 150ms debounce
+    50
+  ); // Reduced to 50ms for near-instant response
+
+  // Pre-fetch nearby frames for smoother experience
+  const prefetchQueue = ref<Array<{ videoUrl: string; timestamp: number; priority: number }>>([]);
+  const isPrefetching = ref(false);
+
+  // Prefetch frames near current position
+  async function prefetchNearbyFrames(videoUrl: string, currentTime: number) {
+    if (isPrefetching.value || !videoUrl) return;
+
+    isPrefetching.value = true;
+
+    // Prefetch frames 0.5s before and after current position
+    const offsets = [-0.5, 0.5];
+
+    for (const offset of offsets) {
+      const targetTime = Math.max(0, currentTime + offset);
+      const cacheKey = `${videoUrl}_${Math.round(targetTime * 10) / 10}`;
+
+      // Check if we already have this frame cached
+      try {
+        await extractFrame(videoUrl, targetTime);
+      } catch (error) {
+        // Silently fail prefetches
+        console.log('[Thumbnail] Prefetch failed for', targetTime);
+      }
+    }
+
+    isPrefetching.value = false;
+  }
 
   /**
    * Show tooltip with thumbnail at specific time
@@ -123,10 +152,30 @@ export function useVideoThumbnail() {
     // Update current video URL if different
     if (currentVideoUrl.value !== videoUrl) {
       currentVideoUrl.value = videoUrl;
+      // Warm cache with a few key positions when video URL changes
+      warmCache(videoUrl);
     }
 
     // Call debounced function
     debouncedExtractFrame(videoUrl, time, x, y);
+
+    // Disable prefetching to prioritize current frame speed
+    // prefetchNearbyFrames(videoUrl, time);
+  }
+
+  // Warm cache with common positions when video first loads
+  async function warmCache(videoUrl: string) {
+    // Extract frames at common positions (start, quarter, half, three-quarters)
+    const warmPositions = [0, 30, 60, 120]; // seconds
+
+    // Don't await these - let them run in background
+    warmPositions.forEach(async (pos) => {
+      try {
+        await extractFrame(videoUrl, pos);
+      } catch (error) {
+        // Silently fail warmup
+      }
+    });
   }
 
   /**
