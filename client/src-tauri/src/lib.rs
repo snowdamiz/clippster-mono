@@ -57,6 +57,7 @@ struct ThumbnailResult {
 #[derive(Debug, Clone)]
 struct CachedThumbnail {
     data_url: String,
+    #[allow(dead_code)]
     timestamp: f64,
     created_at: u64,
 }

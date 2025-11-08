@@ -4,33 +4,104 @@ defmodule ClippsterServerWeb.ClipsController do
   alias ClippsterServer.AI.OpenRouterAPI
   alias ClippsterServer.AI.SystemPrompt
   alias ClippsterServer.ClipValidation
+  alias ClippsterServer.Credits
   alias ClippsterServerWeb.ProgressChannel
 
   def detect_chunked(conn, %{"project_id" => project_id, "prompt" => user_prompt, "chunks" => chunks_json}) do
-    # Parse chunks JSON since FormData sends it as a string
-    chunks_metadata = case Jason.decode(chunks_json) do
-      {:ok, parsed_chunks} when is_list(parsed_chunks) ->
-        parsed_chunks
-      {:ok, _} ->
-        throw {:error, "chunks must be a list"}
-      {:error, _} ->
-        throw {:error, "chunks must be valid JSON"}
+    # Get user ID and admin status from token
+    case get_user_id_from_token(conn) do
+      {:ok, user_id, is_admin} ->
+        IO.puts("[ClipsController] User authenticated: #{user_id}, Admin: #{is_admin}")
+
+        # Parse chunks JSON since FormData sends it as a string
+        chunks_metadata = case Jason.decode(chunks_json) do
+          {:ok, parsed_chunks} when is_list(parsed_chunks) ->
+            parsed_chunks
+          {:ok, _} ->
+            throw {:error, "chunks must be a list"}
+          {:error, _} ->
+            throw {:error, "chunks must be valid JSON"}
+        end
+
+        IO.puts("[ClipsController] Starting chunked clip detection for project #{project_id}")
+        IO.puts("[ClipsController] Processing #{length(chunks_metadata)} chunks")
+        IO.puts("[ClipsController] User prompt: #{String.slice(user_prompt, 0, 100)}...")
+
+        # Check if chunks array is empty
+        if length(chunks_metadata) == 0 do
+          IO.puts("[ClipsController] No chunks provided - this indicates incomplete chunked transcript data")
+          throw {:error, "No chunks available for processing. The chunked transcript may be incomplete or not yet generated."}
+        end
+
+        # Determine processing mode based on chunk content
+        processing_mode = determine_chunk_processing_mode(chunks_metadata)
+        IO.puts("[ClipsController] Using processing mode: #{processing_mode}")
+
+        # Determine if this is a first run (raw audio) or followup run (pre-transcribed)
+        is_first_run = processing_mode == :raw_audio
+        IO.puts("[ClipsController] First run: #{is_first_run}")
+
+        # Calculate audio duration from chunks
+        duration_hours = calculate_duration_from_chunks(chunks_json)
+        IO.puts("[ClipsController] Audio duration: #{Float.round(duration_hours, 3)} hours")
+
+        # Bypass credit deduction for admin users
+        credits_deducted = if is_admin do
+          IO.puts("[ClipsController] Admin user detected - bypassing credit charges")
+          0.0
+        else
+          # Deduct credits before processing for regular users
+          case deduct_credits_for_processing(user_id, duration_hours, is_first_run) do
+            {:ok, credits} ->
+              credits
+            {:error, :insufficient_credits, remaining, needed} ->
+              IO.puts("[ClipsController] Insufficient credits: have #{Float.round(remaining, 3)}, need #{Float.round(needed, 3)}")
+              conn
+              |> put_status(402)
+              |> json(%{
+                success: false,
+                error: "Insufficient credits",
+                details: "You have #{Float.round(remaining, 3)} credits remaining, but #{Float.round(needed, 3)} credits are required for this operation.",
+                credits_required: needed,
+                credits_remaining: remaining
+              })
+              |> then(&{:halt, &1})
+
+            {:error, reason, details} ->
+              IO.puts("[ClipsController] Credit deduction failed: #{inspect(reason)} - #{inspect(details)}")
+              conn
+              |> put_status(500)
+              |> json(%{
+                success: false,
+                error: "Credit deduction failed",
+                details: "Unable to process credits: #{inspect(details)}"
+              })
+              |> then(&{:halt, &1})
+          end
+        end
+
+        # Continue with processing if not halted
+        case credits_deducted do
+          {:halt, response} -> response
+          credits ->
+            IO.puts("[ClipsController] Processing with credits deducted: #{Float.round(credits, 3)}")
+            process_chunked_clip_detection(conn, project_id, user_prompt, chunks_metadata, processing_mode, user_id, credits, is_admin)
+        end
+
+      {:error, reason} ->
+        IO.puts("[ClipsController] Authentication failed: #{inspect(reason)}")
+        conn
+        |> put_status(401)
+        |> json(%{
+          success: false,
+          error: "Authentication required",
+          details: "Please authenticate to use this service"
+        })
     end
+  end
 
-    IO.puts("[ClipsController] Starting chunked clip detection for project #{project_id}")
-    IO.puts("[ClipsController] Processing #{length(chunks_metadata)} chunks")
-    IO.puts("[ClipsController] User prompt: #{String.slice(user_prompt, 0, 100)}...")
-
-    # Check if chunks array is empty
-    if length(chunks_metadata) == 0 do
-      IO.puts("[ClipsController] No chunks provided - this indicates incomplete chunked transcript data")
-      throw {:error, "No chunks available for processing. The chunked transcript may be incomplete or not yet generated."}
-    end
-
-    # Determine processing mode based on chunk content
-    processing_mode = determine_chunk_processing_mode(chunks_metadata)
-    IO.puts("[ClipsController] Using processing mode: #{processing_mode}")
-
+  # Separate function to handle the actual chunked clip detection process
+  defp process_chunked_clip_detection(conn, project_id, user_prompt, chunks_metadata, processing_mode, user_id, credits_deducted, is_admin) do
     try do
       # Broadcast initial progress
       ProgressChannel.broadcast_progress(project_id, "starting", 0, "Initializing chunked clip detection...")
@@ -109,6 +180,20 @@ defmodule ClippsterServerWeb.ClipsController do
               ProgressChannel.broadcast_progress(project_id, "completed", 100,
                 "Chunked clip detection completed! Processed #{length(successful_chunks)}/#{total_processed} chunks successfully.")
 
+              # Get updated user balance after credit deduction (or show unlimited for admins)
+              remaining_credits = if is_admin do
+                %{
+                  hours_remaining: :unlimited,
+                  hours_used: 0.0
+                }
+              else
+                {:ok, updated_balance} = Credits.get_user_balance(user_id)
+                %{
+                  hours_remaining: Decimal.to_float(updated_balance.hours_remaining),
+                  hours_used: Decimal.to_float(updated_balance.hours_used)
+                }
+              end
+
               json(conn, %{
                 success: true,
                 clips: enhanced_response,
@@ -118,7 +203,9 @@ defmodule ClippsterServerWeb.ClipsController do
                   total_chunks: total_processed,
                   successful_chunks: length(successful_chunks),
                   failed_chunks: length(failed_chunks),
-                  completion_message: "Clip detection completed using chunked processing!"
+                  completion_message: "Clip detection completed using chunked processing!",
+                  credits_charged: credits_deducted,
+                  remaining_credits: remaining_credits
                 },
                 validation: %{
                   qualityScore: validation_result.qualityScore,
@@ -135,6 +222,20 @@ defmodule ClippsterServerWeb.ClipsController do
               ProgressChannel.broadcast_progress(project_id, "completed", 100,
                 "Chunked clip detection completed! Processed #{length(successful_chunks)}/#{total_processed} chunks.")
 
+              # Get updated user balance after credit deduction (or show unlimited for admins)
+              remaining_credits = if is_admin do
+                %{
+                  hours_remaining: :unlimited,
+                  hours_used: 0.0
+                }
+              else
+                {:ok, updated_balance} = Credits.get_user_balance(user_id)
+                %{
+                  hours_remaining: Decimal.to_float(updated_balance.hours_remaining),
+                  hours_used: Decimal.to_float(updated_balance.hours_used)
+                }
+              end
+
               json(conn, %{
                 success: true,
                 clips: ai_response,
@@ -144,7 +245,9 @@ defmodule ClippsterServerWeb.ClipsController do
                   total_chunks: total_processed,
                   successful_chunks: length(successful_chunks),
                   failed_chunks: length(failed_chunks),
-                  completion_message: "Clip detection completed using chunked processing!"
+                  completion_message: "Clip detection completed using chunked processing!",
+                  credits_charged: credits_deducted,
+                  remaining_credits: remaining_credits
                 },
                 validation: %{
                   qualityScore: 0.0,
@@ -188,10 +291,81 @@ defmodule ClippsterServerWeb.ClipsController do
     IO.puts("[ClipsController] Starting clip detection for project #{project_id}")
     IO.puts("[ClipsController] User prompt: #{String.slice(user_prompt, 0, 100)}...")
 
-    # Check if we're using a cached transcript or fresh audio
-    using_cached_transcript = Map.get(params, "using_cached_transcript", "false") == "true"
+    # Get user ID and admin status from token
+    case get_user_id_from_token(conn) do
+      {:ok, user_id, is_admin} ->
+        IO.puts("[ClipsController] User authenticated: #{user_id}, Admin: #{is_admin}")
 
-    IO.puts("[ClipsController] Using cached transcript: #{using_cached_transcript}")
+        # Check if we're using a cached transcript or fresh audio
+        using_cached_transcript = Map.get(params, "using_cached_transcript", "false") == "true"
+        is_first_run = not using_cached_transcript and Map.has_key?(params, "audio")
+
+        IO.puts("[ClipsController] Using cached transcript: #{using_cached_transcript}")
+        IO.puts("[ClipsController] First run: #{is_first_run}")
+
+        # Calculate audio duration
+        duration_hours = calculate_audio_duration_hours(params)
+        IO.puts("[ClipsController] Audio duration: #{Float.round(duration_hours, 3)} hours")
+
+        # Bypass credit deduction for admin users
+        credits_deducted = if is_admin do
+          IO.puts("[ClipsController] Admin user detected - bypassing credit charges")
+          0.0
+        else
+          # Deduct credits before processing for regular users
+          case deduct_credits_for_processing(user_id, duration_hours, is_first_run) do
+            {:ok, credits} ->
+              credits
+            {:error, :insufficient_credits, remaining, needed} ->
+              IO.puts("[ClipsController] Insufficient credits: have #{Float.round(remaining, 3)}, need #{Float.round(needed, 3)}")
+              conn
+              |> put_status(402)
+              |> json(%{
+                success: false,
+                error: "Insufficient credits",
+                details: "You have #{Float.round(remaining, 3)} credits remaining, but #{Float.round(needed, 3)} credits are required for this operation.",
+                credits_required: needed,
+                credits_remaining: remaining
+              })
+              |> then(&{:halt, &1})
+
+            {:error, reason, details} ->
+              IO.puts("[ClipsController] Credit deduction failed: #{inspect(reason)} - #{inspect(details)}")
+              conn
+              |> put_status(500)
+              |> json(%{
+                success: false,
+                error: "Credit deduction failed",
+                details: "Unable to process credits: #{inspect(details)}"
+              })
+              |> then(&{:halt, &1})
+          end
+        end
+
+        # Continue with processing if not halted
+        case credits_deducted do
+          {:halt, response} -> response
+          credits ->
+            IO.puts("[ClipsController] Processing with credits deducted: #{Float.round(credits, 3)}")
+            process_clip_detection(conn, params, user_id, credits, is_admin)
+        end
+
+      {:error, reason} ->
+        IO.puts("[ClipsController] Authentication failed: #{inspect(reason)}")
+        conn
+        |> put_status(401)
+        |> json(%{
+          success: false,
+          error: "Authentication required",
+          details: "Please authenticate to use this service"
+        })
+    end
+  end
+
+  # Separate function to handle the actual clip detection process
+  defp process_clip_detection(conn, params, user_id, credits_deducted, is_admin) do
+    %{"project_id" => project_id, "prompt" => user_prompt} = params
+    using_cached_transcript = Map.get(params, "using_cached_transcript", "false") == "true"
 
     try do
       # Broadcast initial progress
@@ -325,6 +499,20 @@ defmodule ClippsterServerWeb.ClipsController do
                         "Clip detection completed successfully!"
                       end
 
+                      # Get updated user balance after credit deduction (or show unlimited for admins)
+                      remaining_credits = if is_admin do
+                        %{
+                          hours_remaining: :unlimited,
+                          hours_used: 0.0
+                        }
+                      else
+                        {:ok, updated_balance} = Credits.get_user_balance(user_id)
+                        %{
+                          hours_remaining: Decimal.to_float(updated_balance.hours_remaining),
+                          hours_used: Decimal.to_float(updated_balance.hours_used)
+                        }
+                      end
+
                       json(conn, %{
                         success: true,
                         clips: enhanced_response,
@@ -332,7 +520,9 @@ defmodule ClippsterServerWeb.ClipsController do
                         processing_info: %{
                           used_cached_transcript: processing_type == "cached",
                           processing_type: processing_type,
-                          completion_message: completion_message
+                          completion_message: completion_message,
+                          credits_charged: credits_deducted,
+                          remaining_credits: remaining_credits
                         },
                         validation: %{
                           qualityScore: validation_result.qualityScore,
@@ -351,6 +541,20 @@ defmodule ClippsterServerWeb.ClipsController do
                         "Clip detection completed successfully!"
                       end
 
+                      # Get updated user balance after credit deduction (or show unlimited for admins)
+                      remaining_credits = if is_admin do
+                        %{
+                          hours_remaining: :unlimited,
+                          hours_used: 0.0
+                        }
+                      else
+                        {:ok, updated_balance} = Credits.get_user_balance(user_id)
+                        %{
+                          hours_remaining: Decimal.to_float(updated_balance.hours_remaining),
+                          hours_used: Decimal.to_float(updated_balance.hours_used)
+                        }
+                      end
+
                       json(conn, %{
                         success: true,
                         clips: ai_response,
@@ -358,7 +562,9 @@ defmodule ClippsterServerWeb.ClipsController do
                         processing_info: %{
                           used_cached_transcript: processing_type == "cached",
                           processing_type: processing_type,
-                          completion_message: completion_message
+                          completion_message: completion_message,
+                          credits_charged: credits_deducted,
+                          remaining_credits: remaining_credits
                         },
                         validation: %{
                           qualityScore: 0.0,
@@ -1105,6 +1311,168 @@ defmodule ClippsterServerWeb.ClipsController do
       "adjusted_duration" => adjusted_duration,
       "adjusted_at" => DateTime.utc_now() |> DateTime.to_iso8601()
     })
+  end
+
+  # Calculate audio duration in hours from various sources
+  defp calculate_audio_duration_hours(source) when is_map(source) do
+    cond do
+      # For audio uploads, extract duration from the filename or use default estimation
+      Map.has_key?(source, "audio") ->
+        audio_upload = source["audio"]
+        estimate_duration_from_audio_upload(audio_upload)
+
+      # For cached transcript, extract duration from transcript data
+      Map.has_key?(source, "transcript") ->
+        transcript_data = Jason.decode!(source["transcript"])
+        get_duration_from_transcript_data(transcript_data)
+
+      # For chunked processing, calculate from chunk metadata
+      Map.has_key?(source, "chunks") ->
+        calculate_duration_from_chunks(source["chunks"])
+
+      true ->
+        IO.puts("[ClipsController] Warning: Could not determine audio source for duration calculation")
+        0.0
+    end
+  end
+
+  # Estimate duration from audio upload (basic estimation based on file size)
+  defp estimate_duration_from_audio_upload(audio_upload) do
+    # For now, we'll use a simple estimation based on typical audio compression
+    # In a production environment, you might want to use a library to get actual duration
+    case audio_upload do
+      %{path: path} when is_binary(path) ->
+        # Basic estimation: assume 1MB = 1 minute of audio (rough approximation)
+        file_size_mb = get_file_size_mb(path)
+        estimated_minutes = file_size_mb * 1.0
+        estimated_hours = estimated_minutes / 60.0
+        IO.puts("[ClipsController] Estimated duration from file size: #{Float.round(estimated_hours, 3)} hours")
+        estimated_hours
+
+      _ ->
+        IO.puts("[ClipsController] Warning: Could not estimate duration from audio upload")
+        0.0
+    end
+  end
+
+  # Get duration from transcript data (most accurate)
+  defp get_duration_from_transcript_data(transcript_data) do
+    case transcript_data do
+      %{"raw_response" => raw_response_str} ->
+        case Jason.decode(raw_response_str) do
+          {:ok, raw_response} ->
+            duration_seconds = Map.get(raw_response, "duration", 0.0)
+            duration_hours = duration_seconds / 3600.0
+            IO.puts("[ClipsController] Duration from transcript: #{Float.round(duration_hours, 3)} hours (#{duration_seconds}s)")
+            duration_hours
+
+          _ ->
+            IO.puts("[ClipsController] Warning: Could not parse raw_response from transcript")
+            0.0
+        end
+
+      %{"duration" => duration_seconds} when is_number(duration_seconds) ->
+        duration_hours = duration_seconds / 3600.0
+        IO.puts("[ClipsController] Duration from transcript: #{Float.round(duration_hours, 3)} hours (#{duration_seconds}s)")
+        duration_hours
+
+      _ ->
+        IO.puts("[ClipsController] Warning: No duration found in transcript data")
+        0.0
+    end
+  end
+
+  # Calculate duration from chunk metadata
+  defp calculate_duration_from_chunks(chunks_json) when is_binary(chunks_json) do
+    case Jason.decode(chunks_json) do
+      {:ok, chunks} when is_list(chunks) ->
+        # Find the maximum end_time across all chunks
+        max_end_time = chunks
+        |> Enum.map(fn chunk -> Map.get(chunk, "end_time", 0.0) end)
+        |> Enum.max()
+        |> Kernel.||(0.0)
+
+        duration_hours = max_end_time / 3600.0
+        IO.puts("[ClipsController] Duration from chunks: #{Float.round(duration_hours, 3)} hours (#{max_end_time}s)")
+        duration_hours
+
+      _ ->
+        IO.puts("[ClipsController] Warning: Could not parse chunks for duration calculation")
+        0.0
+    end
+  end
+
+  defp calculate_duration_from_chunks(_), do: 0.0
+
+  # Get file size in MB (simplified version)
+  defp get_file_size_mb(file_path) do
+    case File.stat(file_path) do
+      {:ok, stat} ->
+        bytes = stat.size
+        mb = bytes / (1024 * 1024)
+        IO.puts("[ClipsController] File size: #{Float.round(mb, 2)} MB")
+        mb
+
+      _ ->
+        IO.puts("[ClipsController] Warning: Could not get file size")
+        0.0
+    end
+  end
+
+  # Deduct credits based on processing type and duration
+  defp deduct_credits_for_processing(user_id, duration_hours, is_first_run) do
+    # Determine credit rate based on processing type
+    credit_rate = if is_first_run, do: 1.0, else: 0.7
+
+    credits_to_deduct = duration_hours * credit_rate
+
+    IO.puts("[ClipsController] Credit deduction calculation:")
+    IO.puts("[ClipsController]   Duration: #{Float.round(duration_hours, 3)} hours")
+    IO.puts("[ClipsController]   Processing type: #{if is_first_run, do: "First run", else: "Followup run"}")
+    IO.puts("[ClipsController]   Credit rate: #{credit_rate}x")
+    IO.puts("[ClipsController]   Credits to deduct: #{Float.round(credits_to_deduct, 3)}")
+
+    # Check if user has enough credits
+    case Credits.get_user_balance(user_id) do
+      {:ok, %{hours_remaining: remaining}} when remaining != :unlimited ->
+        remaining_hours = Decimal.to_float(remaining)
+        if remaining_hours < credits_to_deduct do
+          {:error, :insufficient_credits, remaining_hours, credits_to_deduct}
+        else
+          # Deduct credits
+          case Credits.deduct_credits(user_id, credits_to_deduct) do
+            {:ok, _updated_credit} ->
+              IO.puts("[ClipsController] Successfully deducted #{Float.round(credits_to_deduct, 3)} credits")
+              {:ok, credits_to_deduct}
+
+            {:error, reason} ->
+              IO.puts("[ClipsController] Failed to deduct credits: #{inspect(reason)}")
+              {:error, :deduction_failed, reason}
+          end
+        end
+
+      {:ok, %{hours_remaining: :unlimited}} ->
+        IO.puts("[ClipsController] User has unlimited credits, no deduction needed")
+        {:ok, 0.0}
+    end
+  end
+
+  # Get user ID and admin status from JWT token
+  defp get_user_id_from_token(conn) do
+    case get_req_header(conn, "authorization") do
+      ["Bearer " <> token] ->
+        # Simple JWT decode without verification (for development)
+        # In production, use proper JWT verification
+        case Jason.decode(Base.url_decode64!(String.split(token, ".") |> Enum.at(1), padding: false)) do
+          {:ok, claims} ->
+            {:ok, claims["user_id"], claims["is_admin"] || false}
+          _ ->
+            {:error, :invalid_token}
+        end
+
+      _ ->
+        {:error, :no_token}
+    end
   end
 
   # Reconstruct timeline from multiple chunk transcripts
