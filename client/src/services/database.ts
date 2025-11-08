@@ -32,17 +32,11 @@ export async function initDatabase() {
   initializing = (async () => {
     try {
       await waitForRuntimeReady();
-      const label = getCurrentWindow().label;
-      console.debug('[Frontend] Tauri window label:', label);
-
       const instance = await Database.load('sqlite:clippster_v21.db');
 
       db = instance;
       return instance;
     } catch (error) {
-      console.error('[Frontend] Database load error:', error);
-      console.error('[Frontend] Error details:', JSON.stringify(error, null, 2));
-
       // For now, just rethrow the error so we can see what's happening
       throw error;
     } finally {
@@ -345,7 +339,6 @@ export async function ensureClipVersioningTables(): Promise<void> {
         await db.execute('ALTER TABLE clips ADD COLUMN detection_session_id TEXT');
       }
     } catch (e) {
-      console.error('[Frontend] Error adding columns to clips table:', e);
       // Try the basic ALTER TABLE as fallback
       try {
         await db.execute('ALTER TABLE clips ADD COLUMN current_version_id TEXT');
@@ -374,7 +367,6 @@ export async function ensureClipVersioningTables(): Promise<void> {
       await db.execute(indexSql);
     }
   } catch (error) {
-    console.error('[Frontend] Error ensuring clip versioning tables:', error);
     throw error;
   }
 }
@@ -600,7 +592,6 @@ export async function seedDefaultPrompt(): Promise<void> {
   try {
     await createPrompt('Default Clip Detector', defaultPromptContent);
   } catch (error) {
-    console.error('[Database] Failed to seed default prompt:', error);
     throw error;
   }
 }
@@ -940,8 +931,6 @@ export async function createRawVideo(
 
     return id;
   } catch (error) {
-    console.error('[Database] Error inserting raw video:', error);
-    console.error('[Database] Insert data was:', insertData);
     throw error;
   }
 }
@@ -968,7 +957,6 @@ export async function getNextSegmentNumber(sourceClipId: string): Promise<number
   // First check if the segment tracking columns exist
   const columnsExist = await checkSegmentTrackingExists();
   if (!columnsExist) {
-    console.warn('Segment tracking columns not found - database may not be migrated yet');
     return 1;
   }
 
@@ -983,7 +971,6 @@ export async function getNextSegmentNumber(sourceClipId: string): Promise<number
     const maxSegment = result[0]?.max_segment || 0;
     return maxSegment + 1;
   } catch (error) {
-    console.error('Error getting next segment number:', error);
     return 1;
   }
 }
@@ -1549,7 +1536,6 @@ export async function splitClipSegment(
       rightSegmentIndex: segmentIndex + 1,
     };
   } catch (error) {
-    console.error('[Database] Failed to split segment:', error);
     throw new Error(
       `Failed to split segment: ${error instanceof Error ? error.message : 'Unknown error'}`
     );

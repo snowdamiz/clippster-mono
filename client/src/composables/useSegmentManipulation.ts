@@ -202,7 +202,6 @@ export function useSegmentManipulation(options: SegmentManipulationOptions) {
         maxEndTime,
       };
     } catch (error) {
-      console.error('Error calculating movement constraints:', error);
       movementConstraints.value = {
         minStartTime: 0,
         maxEndTime: duration.value || Infinity,
@@ -541,7 +540,6 @@ export function useSegmentManipulation(options: SegmentManipulationOptions) {
       isCutToolActive.value = false;
       cutHoverInfo.value = null;
     } catch (error) {
-      console.error('[useSegmentManipulation] Failed to split segment:', error);
       // Show error feedback to user (could add a toast/notification here)
       alert(`Failed to split segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }

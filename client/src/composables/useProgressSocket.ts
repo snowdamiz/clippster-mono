@@ -58,7 +58,6 @@ export function useProgressSocket(initialProjectId: string | null) {
           });
 
           channel.onError((err: any) => {
-            console.error('[ProgressSocket] ❌ Channel error:', err);
             error.value = 'Connection error: ' + JSON.stringify(err);
           });
 
@@ -69,12 +68,10 @@ export function useProgressSocket(initialProjectId: string | null) {
               error.value = '';
             })
             .receive('error', (err: any) => {
-              console.error('[ProgressSocket] ❌ Failed to join channel:', err);
               error.value = 'Failed to connect to progress updates: ' + JSON.stringify(err);
               isConnected.value = false;
             })
             .receive('timeout', () => {
-              console.error('[ProgressSocket] ⏰ Channel join timeout');
               error.value = 'Connection timeout';
               isConnected.value = false;
             });
@@ -88,16 +85,13 @@ export function useProgressSocket(initialProjectId: string | null) {
           });
 
           socket.onError((err: any) => {
-            console.error('[ProgressSocket] ❌ Socket error:', err);
             error.value = 'Socket connection error: ' + JSON.stringify(err);
           });
         })
-        .catch((err) => {
-          console.error('[ProgressSocket] Failed to import Phoenix:', err);
+        .catch((_err) => {
           error.value = 'Failed to load WebSocket library';
         });
     } catch (err) {
-      console.error('[ProgressSocket] Failed to initialize socket:', err);
       error.value = 'Failed to initialize connection: ' + String(err);
     }
   };

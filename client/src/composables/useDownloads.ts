@@ -113,7 +113,6 @@ export function useDownloads() {
               });
             } else {
               // Video validation failed, cleanup and notify error
-              console.error('[Downloads] Video validation failed:', validationResult.error);
 
               // Cleanup corrupted files
               await cleanupCorruptedDownload(
@@ -139,8 +138,6 @@ export function useDownloads() {
               });
             }
           } catch (error) {
-            console.error('[Downloads] Error during download validation:', error);
-
             // Cleanup on validation error
             await cleanupCorruptedDownload(
               event.payload.file_path,
@@ -194,7 +191,6 @@ export function useDownloads() {
         segmentNumber = await getNextSegmentNumber(sourceClipId);
         finalTitle = `${title} Segment ${segmentNumber}`;
       } catch (error) {
-        console.warn('Error generating segment name - database may not be migrated:', error);
         // Fallback to original title if database isn't migrated
         finalTitle = title;
       }
@@ -231,7 +227,6 @@ export function useDownloads() {
           startTime: segmentRange.startTime,
           endTime: segmentRange.endTime,
         }).catch((error) => {
-          console.error('[Downloads] Error in segment download command (async):', error);
           // Remove from active downloads if failed to start
           activeDownloads.delete(downloadId);
           // We can't throw here since the async operation has already returned
@@ -243,15 +238,13 @@ export function useDownloads() {
           title: finalTitle,
           videoUrl,
           mintId,
-        }).catch((error) => {
-          console.error('[Downloads] Error in download command (async):', error);
+        }).catch((_error) => {
           // Remove from active downloads if failed to start
           activeDownloads.delete(downloadId);
           // We can't throw here since the async operation has already returned
         });
       }
     } catch (error) {
-      console.error('[Downloads] Error invoking download command:', error);
       // Remove from active downloads if failed to start
       activeDownloads.delete(downloadId);
       throw error;
@@ -328,7 +321,6 @@ export function useDownloads() {
       const videoExists = await invoke<boolean>('check_file_exists', { path: filePath });
 
       if (!videoExists) {
-        console.error('[Validation] Video file does not exist');
         return { isValid: false, error: 'Video file does not exist' };
       }
 
@@ -363,11 +355,6 @@ export function useDownloads() {
 
       return { isValid: true, thumbnailPath: finalThumbnailPath };
     } catch (error) {
-      console.error('[Validation] Error during video validation:', error);
-      console.error('[Validation] Error details:', {
-        message: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-      });
       return {
         isValid: false,
         error: `Validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,

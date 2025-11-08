@@ -476,7 +476,6 @@
         throw new Error(data.error || 'Failed to fetch pricing');
       }
     } catch (error: any) {
-      console.error('Failed to fetch pricing:', error);
       showErrorToast(
         'Failed to load pricing',
         error.message || 'An error occurred while loading credit pack prices. Please try again.'
@@ -499,7 +498,6 @@
         throw new Error(data.error || 'Failed to fetch balance');
       }
     } catch (error: any) {
-      console.error('Failed to fetch balance:', error);
       showErrorToast(
         'Failed to load balance',
         error.message || 'An error occurred while loading your credit balance. Please try again.'
@@ -585,7 +583,6 @@
             throw new Error(confirmData.error || 'Payment confirmation failed');
           }
         } catch (error: any) {
-          console.error('Payment verification error:', error);
           errorMessage.value = error.message || 'Payment verification failed';
           paymentStep.value = 'error';
           processing.value = false;
@@ -610,7 +607,6 @@
 
       paymentStatus.value = 'Complete payment in your browser...';
     } catch (error: any) {
-      console.error('Payment error:', error);
       errorMessage.value = error.message || 'Failed to open payment window';
       paymentStep.value = 'error';
       processing.value = false;

@@ -124,6 +124,10 @@ if (require.main === module) {
         const { tx_signature, from_address, to_address, expected_sol_amount, rpc_url } = data;
         
         if (!tx_signature || !from_address || !to_address || expected_sol_amount === undefined) {
+          console.log(JSON.stringify({ 
+            valid: false,
+            error: 'Missing required fields: tx_signature, from_address, to_address, expected_sol_amount' 
+          }));
           process.exit(1);
         }
         
@@ -135,12 +139,21 @@ if (require.main === module) {
           rpc_url
         );
         
+        console.log(JSON.stringify(result));
         process.exit(result.valid ? 0 : 1);
       } catch (error) {
+        console.log(JSON.stringify({ 
+          valid: false,
+          error: error.message 
+        }));
         process.exit(1);
       }
     })();
   } else {
+    console.log(JSON.stringify({
+      valid: false,
+      error: 'Usage: node payment_verify.js <input_file.json>'
+    }));
     process.exit(1);
   }
 }

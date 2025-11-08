@@ -295,6 +295,8 @@
         console.error('[ProjectWorkspaceDialog] Failed to set backend clip generation state:', error);
       }
 
+      console.log('[ProjectWorkspaceDialog] Starting enhanced clip detection with chunking support');
+
       // Use the new chunked detection system
       const { useChunkedClipDetection } = await import('@/composables/useChunkedClipDetection');
       const { detectClipsWithChunking, progress: chunkedProgress } = useChunkedClipDetection();
@@ -323,6 +325,8 @@
         });
 
         if (result.success) {
+          console.log('[ProjectWorkspaceDialog] Enhanced clip detection successful');
+
           // Trigger UI refresh for successful detection
           if (props.project) {
             setTimeout(() => {

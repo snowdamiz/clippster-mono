@@ -533,7 +533,6 @@
       try {
         hasDetectedOrGeneratedClipsLocked.value = await hasDetectedOrGeneratedClips(props.project.id);
       } catch (error) {
-        console.error('Failed to check project clips:', error);
         hasDetectedOrGeneratedClipsLocked.value = false;
       }
     } else {
@@ -667,7 +666,6 @@
       projectCache.value.set(projectId, projectName);
       return projectName;
     } catch (error) {
-      console.warn('Failed to get project name:', projectId, error);
       const fallbackName = 'Unknown Project';
       projectCache.value.set(projectId, fallbackName);
       return fallbackName;
@@ -708,17 +706,14 @@
                   });
                   thumbnailCache.value.set(video.id, dataUrl);
                 } catch (error) {
-                  console.warn('Failed to load thumbnail for video:', video.id, error);
                   // Use error SVG as fallback
                   thumbnailCache.value.set(video.id, '/download_error.svg');
                 }
               } else {
-                console.warn('Thumbnail file does not exist:', video.thumbnail_path);
                 // Use error SVG as fallback
                 thumbnailCache.value.set(video.id, '/download_error.svg');
               }
             } catch (error) {
-              console.warn('Failed to check thumbnail existence for video:', video.id, error);
               // Use error SVG as fallback
               thumbnailCache.value.set(video.id, '/download_error.svg');
             }

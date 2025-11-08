@@ -6,7 +6,7 @@
     @click="onTimelineClipClick(clip.id)"
   >
     <!-- Track Label -->
-    <div class="w-18 h-8 -ml-2 flex items-center justify-center sticky left-0 z-30 bg-[#101010] backdrop-blur-sm">
+    <div class="w-1 h-8 pr-2 -ml-2 flex items-center justify-center sticky left-0 z-30 bg-[#101010] backdrop-blur-sm">
       <div class="text-xs text-center">
         <div class="font-medium text-foreground/80">Clip {{ index + 1 }}</div>
       </div>

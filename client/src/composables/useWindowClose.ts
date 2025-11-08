@@ -27,7 +27,6 @@ export function useWindowClose() {
 
       return true;
     } catch (error) {
-      console.error('[WindowClose] Failed to cleanup downloads:', error);
       // Still close the window even if cleanup failed
       const window = getCurrentWebviewWindow();
       await window.close();

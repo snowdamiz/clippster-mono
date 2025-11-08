@@ -102,7 +102,6 @@ export async function validateExistingVideo(
       fileSize: videoValidation.file_size,
     };
   } catch (error) {
-    console.error('[VideoValidation] Error during video validation:', error);
     return {
       isValid: false,
       error: `Validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,

@@ -299,7 +299,6 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     videoLoading.value = false;
     videoError.value =
       'Failed to load video. The file may be corrupted or in an unsupported format.';
-    console.error('Video error:', event);
     videoSrc.value = null;
   }
 
@@ -350,7 +349,6 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
       videoSrc.value = `http://localhost:${port}/video/${encodedPath}`;
       videoLoading.value = false;
     } catch (error) {
-      console.error('[VideoPlayer] Failed to load video for project:', error);
       videoError.value = 'Failed to connect to video server. Please try again.';
       videoSrc.value = null;
       videoLoading.value = false;
@@ -377,17 +375,14 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   // Segmented playback functions
   function playClipSegments(segments: ClipSegment[]) {
     if (!segments || segments.length === 0) {
-      console.warn('[useVideoPlayer] No segments provided for playback');
       return;
     }
 
     if (!videoElement.value) {
-      console.warn('[useVideoPlayer] Video element not available for segmented playback');
       return;
     }
 
     if (!videoSrc.value) {
-      console.warn('[useVideoPlayer] No video source loaded for segmented playback');
       return;
     }
 
@@ -403,7 +398,6 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
       if (firstSegment) {
         // Validate segment times
         if (firstSegment.start_time < 0 || firstSegment.end_time <= firstSegment.start_time) {
-          console.warn('[useVideoPlayer] Invalid segment times:', firstSegment);
           stopSegmentedPlayback();
           return;
         }
@@ -412,8 +406,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
         const playPromise = videoElement.value.play();
 
         if (playPromise !== undefined) {
-          playPromise.catch((error) => {
-            console.error('[useVideoPlayer] Failed to start segmented playback:', error);
+          playPromise.catch((_error) => {
             stopSegmentedPlayback();
           });
         }
@@ -421,7 +414,6 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
         isPlaying.value = true;
       }
     } catch (error) {
-      console.error('[useVideoPlayer] Error starting segmented playback:', error);
       stopSegmentedPlayback();
     }
   }
@@ -440,7 +432,6 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
 
       // Validate segment end time
       if (segmentEndTime <= currentSegment.start_time) {
-        console.warn('[useVideoPlayer] Invalid segment end time, skipping:', currentSegment);
         currentSegmentIndex.value++;
         if (currentSegmentIndex.value >= currentSegments.value.length) {
           stopSegmentedPlayback();
@@ -464,13 +455,11 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
           if (nextSegment && nextSegment.start_time >= 0) {
             videoElement.value.currentTime = nextSegment.start_time;
           } else {
-            console.warn('[useVideoPlayer] Invalid next segment, stopping playback:', nextSegment);
             stopSegmentedPlayback();
           }
         }
       }
     } catch (error) {
-      console.error('[useVideoPlayer] Error in segment playback check:', error);
       stopSegmentedPlayback();
     }
   }

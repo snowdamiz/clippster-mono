@@ -109,7 +109,6 @@ export function useChunkedTranscriptCache() {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       error.value = errorMessage;
-      console.error('[ChunkedTranscriptCache] Failed to initialize session:', errorMessage);
       showError('Initialization failed', errorMessage);
       return { success: false, error: errorMessage };
     } finally {
@@ -177,7 +176,6 @@ export function useChunkedTranscriptCache() {
       return { success: true };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      console.error('[ChunkedTranscriptCache] Failed to store chunk:', errorMessage);
       return { success: false, error: errorMessage };
     }
   }
@@ -210,7 +208,6 @@ export function useChunkedTranscriptCache() {
       return metadata;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      console.error('[ChunkedTranscriptCache] Failed to get cached metadata:', errorMessage);
       return null;
     }
   }
@@ -264,8 +261,6 @@ export function useChunkedTranscriptCache() {
 
       return reconstructedTranscript;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      console.error('[ChunkedTranscriptCache] Failed to reconstruct transcript:', errorMessage);
       return null;
     }
   }

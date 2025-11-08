@@ -82,6 +82,7 @@
       endTime: number;
     };
     videoUrl?: string; // Video URL for thumbnail generation
+    videoDuration?: number; // Actual video duration for pre-fetching strategy
   }
 
   interface Emits {
@@ -93,6 +94,7 @@
     totalDuration: 0,
     modelValue: () => ({ startTime: 0, endTime: 0 }),
     videoUrl: '',
+    videoDuration: 0,
   });
 
   const emit = defineEmits<Emits>();
@@ -109,6 +111,8 @@
     isLoading,
     hasError,
     formatTime: formatTooltipTime,
+    smartPreFetch,
+    cleanup,
   } = useVideoThumbnail();
 
   // Range slider values
@@ -235,10 +239,11 @@
     // Hide thumbnail tooltip
     hideTooltip();
 
+    // Remove event listeners
     document.removeEventListener('mousemove', handleDrag);
-    document.removeEventListener('mouseup', endHandler);
+    document.removeEventListener('mouseup', endDragging);
     document.removeEventListener('touchmove', handleDrag);
-    document.removeEventListener('touchend', endHandler);
+    document.removeEventListener('touchend', endDragging);
   }
 
   function emitChange() {
@@ -280,7 +285,21 @@
     }
   );
 
-  // No need to initialize video - thumbnails are extracted on-demand
+  // Trigger smart pre-fetching when video URL and duration are available
+  watch(
+    [() => props.videoUrl, () => props.videoDuration],
+    async ([videoUrl, videoDuration]) => {
+      if (videoUrl && videoDuration && videoDuration > 0) {
+        smartPreFetch(videoUrl, videoDuration);
+      }
+    },
+    { immediate: true }
+  );
+
+  // Expose cleanup method to parent components
+  defineExpose({
+    cleanup,
+  });
 </script>
 
 <style scoped>

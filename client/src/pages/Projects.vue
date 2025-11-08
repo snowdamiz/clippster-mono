@@ -437,7 +437,6 @@
       showDialog.value = false;
       selectedProject.value = null;
     } catch (err) {
-      console.error('Failed to save project:', err);
       error(
         selectedProject.value ? 'Failed to update project' : 'Failed to create project',
         'An error occurred while saving the project. Please try again.'
@@ -454,7 +453,6 @@
       projectHasClips.value = await hasClipsForProject(project.id);
       showDeleteDialog.value = true;
     } catch (err) {
-      console.error('Failed to check project contents:', err);
       // If we can't check, proceed with normal deletion
       projectHasVideos.value = false;
       projectHasClips.value = false;
@@ -479,7 +477,6 @@
       success('Project deleted', `"${deletedProjectName}" has been deleted successfully`);
       await loadProjects();
     } catch (err) {
-      console.error('Failed to delete project:', err);
       error('Failed to delete project', 'An error occurred while deleting the project. Please try again.');
     } finally {
       showDeleteDialog.value = false;

@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@tauri-apps/api/core';
 
 /**
  * Extract mint ID from a PumpFun URL or return the input if it's already a mint ID
@@ -11,39 +11,39 @@ import { invoke } from '@tauri-apps/api/core'
  */
 export function extractMintId(input: string): string | null {
   if (!input || typeof input !== 'string') {
-    return null
+    return null;
   }
 
-  const trimmed = input.trim()
+  const trimmed = input.trim();
 
   // If it looks like a mint ID already (base58-like string), return as-is
   // Mint IDs are typically 43-44 characters and contain specific characters
   if (/^[1-9A-HJ-NP-Za-km-z]{43,44}$/.test(trimmed)) {
-    return trimmed
+    return trimmed;
   }
 
   // Try to parse as URL and extract mint ID
   try {
-    const url = new URL(trimmed)
+    const url = new URL(trimmed);
 
     // Check if it's a pump.fun domain
     if (!url.hostname.includes('pump.fun')) {
-      return null
+      return null;
     }
 
     // Extract path segments and look for mint ID
-    const pathSegments = url.pathname.split('/').filter((segment) => segment.length > 0)
+    const pathSegments = url.pathname.split('/').filter((segment) => segment.length > 0);
 
     // Look for patterns like /coin/{mintId} or /base/{mintId}
     for (let i = 0; i < pathSegments.length - 1; i++) {
-      const segment = pathSegments[i]
-      const nextSegment = pathSegments[i + 1]
+      const segment = pathSegments[i];
+      const nextSegment = pathSegments[i + 1];
 
       // Check if this segment indicates a mint ID follows
       if (segment === 'coin' || segment === 'base' || segment === 'mint') {
-        const potentialMintId = nextSegment
+        const potentialMintId = nextSegment;
         if (/^[1-9A-HJ-NP-Za-km-z]{43,44}$/.test(potentialMintId)) {
-          return potentialMintId
+          return potentialMintId;
         }
       }
     }
@@ -51,37 +51,37 @@ export function extractMintId(input: string): string | null {
     // If no explicit segment found, look for mint-like strings in the path
     for (const segment of pathSegments) {
       if (/^[1-9A-HJ-NP-Za-km-z]{43,44}$/.test(segment)) {
-        return segment
+        return segment;
       }
     }
 
-    return null
+    return null;
   } catch {
     // Invalid URL, check if it might be a mint ID that doesn't match the pattern
-    return /^[1-9A-HJ-NP-Za-km-z]+$/.test(trimmed) ? trimmed : null
+    return /^[1-9A-HJ-NP-Za-km-z]+$/.test(trimmed) ? trimmed : null;
   }
 }
 
 export interface PumpFunClip {
-  clipId: string
-  sessionId?: string
-  title: string
-  duration: number
-  thumbnailUrl?: string
-  playlistUrl?: string
-  mp4Url?: string
-  clipType: 'COMPLETE' | 'HIGHLIGHT'
-  startTime?: string
-  endTime?: string
-  createdAt?: string
+  clipId: string;
+  sessionId?: string;
+  title: string;
+  duration: number;
+  thumbnailUrl?: string;
+  playlistUrl?: string;
+  mp4Url?: string;
+  clipType: 'COMPLETE' | 'HIGHLIGHT';
+  startTime?: string;
+  endTime?: string;
+  createdAt?: string;
 }
 
 export interface PumpFunClipsResponse {
-  success: boolean
-  clips: PumpFunClip[]
-  hasMore: boolean
-  total: number
-  error?: string
+  success: boolean;
+  clips: PumpFunClip[];
+  hasMore: boolean;
+  total: number;
+  error?: string;
 }
 
 /**
@@ -97,30 +97,60 @@ export async function getPumpFunClips(
   try {
     const result = await invoke<string>('get_pumpfun_clips', {
       mintId,
-      limit
-    })
+      limit,
+    });
 
-    const parsed: PumpFunClipsResponse = JSON.parse(result)
-    return parsed
+    // Check if result is valid and not empty
+    if (!result || result.trim() === '') {
+      return {
+        success: false,
+        clips: [],
+        hasMore: false,
+        total: 0,
+        error: 'Empty response from server',
+      };
+    }
+
+    // Try to parse JSON with better error handling
+    let parsed: PumpFunClipsResponse;
+    try {
+      console.log('[PumpFun] Raw result from Tauri:', result);
+      parsed = JSON.parse(result);
+      console.log('[PumpFun] Parsed response:', parsed);
+    } catch (parseError) {
+      console.error('[PumpFun] Failed to parse JSON response:', result);
+      console.error('[PumpFun] Parse error:', parseError);
+      return {
+        success: false,
+        clips: [],
+        hasMore: false,
+        total: 0,
+        error: 'Invalid JSON response from server',
+      };
+    }
+
+    return parsed;
   } catch (error) {
-    console.error('Failed to fetch PumpFun clips:', error)
+    console.error('[PumpFun] Tauri invoke error:', error);
 
     // Try to parse error message if it's JSON
     if (typeof error === 'string') {
       try {
-        return JSON.parse(error)
+        return JSON.parse(error);
       } catch {
         // Not JSON, return generic error
       }
     }
 
-    return {
+    const errorResponse = {
       success: false,
       clips: [],
       hasMore: false,
       total: 0,
-      error: error instanceof Error ? error.message : 'Failed to fetch clips'
-    }
+      error: error instanceof Error ? error.message : 'Failed to fetch clips',
+    };
+    console.error('[PumpFun] Returning error response:', errorResponse);
+    return errorResponse;
   }
 }
 
@@ -128,41 +158,41 @@ export async function getPumpFunClips(
  * Format duration in seconds to readable string (e.g., "1h 23m 45s")
  */
 export function formatDuration(seconds: number): string {
-  if (!seconds || seconds === 0) return '0s'
+  if (!seconds || seconds === 0) return '0s';
 
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const secs = Math.floor(seconds % 60)
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
 
-  const parts: string[] = []
+  const parts: string[] = [];
 
-  if (hours > 0) parts.push(`${hours}h`)
-  if (minutes > 0) parts.push(`${minutes}m`)
-  if (secs > 0 || parts.length === 0) parts.push(`${secs}s`)
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}m`);
+  if (secs > 0 || parts.length === 0) parts.push(`${secs}s`);
 
-  return parts.join(' ')
+  return parts.join(' ');
 }
 
 /**
  * Format date string to relative time (e.g., "2 hours ago")
  */
 export function formatRelativeTime(dateString?: string): string {
-  if (!dateString) return 'Unknown'
+  if (!dateString) return 'Unknown';
 
   try {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffSecs = Math.floor(diffMs / 1000)
-    const diffMins = Math.floor(diffSecs / 60)
-    const diffHours = Math.floor(diffMins / 60)
-    const diffDays = Math.floor(diffHours / 24)
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffSecs = Math.floor(diffMs / 1000);
+    const diffMins = Math.floor(diffSecs / 60);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
 
-    if (diffDays > 0) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
-    if (diffHours > 0) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
-    if (diffMins > 0) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`
-    return 'Just now'
+    if (diffDays > 0) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    if (diffHours > 0) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    if (diffMins > 0) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
+    return 'Just now';
   } catch {
-    return 'Unknown'
+    return 'Unknown';
   }
 }

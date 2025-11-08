@@ -232,7 +232,6 @@
     try {
       prompts.value = await getAllPrompts();
     } catch (err) {
-      console.error('Failed to load prompts:', err);
       error('Failed to load prompts', 'An error occurred while loading prompts. Please try again.');
     } finally {
       loading.value = false;
@@ -272,7 +271,6 @@
       success('Prompt deleted', `"${deletedPromptName}" has been deleted successfully`);
       await loadPrompts();
     } catch (err) {
-      console.error('Failed to delete prompt:', err);
       error('Failed to delete prompt', 'An error occurred while deleting the prompt. Please try again.');
     } finally {
       showDeleteDialog.value = false;

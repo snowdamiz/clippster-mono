@@ -426,17 +426,14 @@
       } else if (timestamp instanceof Date) {
         date = timestamp;
       } else {
-        console.warn('[Videos] Unknown timestamp format:', timestamp);
         return 'Added recently';
       }
 
       // Check if date is valid
       if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
-        console.warn('[Videos] Invalid date created from timestamp:', timestamp, 'Result:', date);
         return 'Added recently';
       }
     } catch (error) {
-      console.error('[Videos] Error creating date from timestamp:', timestamp, error);
       return 'Added recently';
     }
 
@@ -452,16 +449,6 @@
     const minutesAgo = Math.floor(secondsAgo / 60);
     const hoursAgo = Math.floor(minutesAgo / 60);
     const daysAgo = Math.floor(hoursAgo / 24);
-
-    // Debug logging
-    if (daysAgo > 365) {
-      console.warn('[Videos] Very old date detected:', {
-        timestamp,
-        date: date.toISOString(),
-        now: now.toISOString(),
-        daysAgo,
-      });
-    }
 
     if (secondsAgo < 60) return 'Added just now';
     if (minutesAgo < 60) return `Added ${minutesAgo} minute${minutesAgo !== 1 ? 's' : ''} ago`;
@@ -572,14 +559,6 @@
         'Download Failed',
         `"${download.title}" failed: ${errorMessage}. The corrupted files have been cleaned up.`
       );
-
-      // Log additional details for debugging
-      console.error('[Videos] Download validation failed:', {
-        title: download.title,
-        error: errorMessage,
-        filePath: download.result?.file_path,
-        thumbnailPath: download.result?.thumbnail_path,
-      });
     }
     // If download.result is undefined or success is not explicitly true/false,
     // it might be a download in progress - do nothing
@@ -608,7 +587,6 @@
       }
       return project;
     } catch (error) {
-      console.error('Failed to get project info:', error);
       return null;
     }
   }
@@ -648,7 +626,6 @@
       videoHasClips.value = await hasClipsReferencingRawVideo(video.id);
       showDeleteDialog.value = true;
     } catch (err) {
-      console.error('Failed to check if video has clips:', err);
       // If we can't check, proceed with normal deletion
       videoHasClips.value = false;
       showDeleteDialog.value = true;
@@ -693,7 +670,6 @@
         await revealItemInDir(videosPath + '\\dummy.mp4');
       }
     } catch (err) {
-      console.error('Failed to open videos folder:', err);
       error('Failed to open folder', 'Unable to open the videos folder');
     }
   }

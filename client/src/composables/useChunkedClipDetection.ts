@@ -133,7 +133,6 @@ export function useChunkedClipDetection() {
       return await processWithFreshAudio(projectId, prompt, projectVideo);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error('[ChunkedClipDetection] Detection failed:', errorMessage);
 
       progress.value = {
         stage: 'error',
@@ -220,7 +219,6 @@ export function useChunkedClipDetection() {
       return { success: true, sessionId };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error('[ChunkedClipDetection] Cached processing failed:', errorMessage);
       return { success: false, error: errorMessage };
     }
   }
@@ -298,7 +296,6 @@ export function useChunkedClipDetection() {
       return { success: true, sessionId };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error('[ChunkedClipDetection] Traditional processing failed:', errorMessage);
       return { success: false, error: errorMessage };
     }
   }
@@ -383,7 +380,6 @@ export function useChunkedClipDetection() {
       return { success: true, sessionId };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error('[ChunkedClipDetection] Fresh audio processing failed:', errorMessage);
       return { success: false, error: errorMessage };
     }
   }
@@ -471,7 +467,6 @@ export function useChunkedClipDetection() {
       return { success: true, sessionId };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error('[ChunkedClipDetection] Fallback detection failed:', errorMessage);
       return { success: false, error: errorMessage };
     }
   }

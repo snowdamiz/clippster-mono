@@ -49,12 +49,10 @@ export function useVideoOperations() {
             path: thumbnailPath,
           });
           if (!thumbnailExists) {
-            console.warn('Generated thumbnail file does not exist:', thumbnailPath);
             thumbnailPath = undefined;
           }
         }
       } catch (error) {
-        console.warn('Failed to generate thumbnail:', error);
         thumbnailPath = undefined;
       }
 
@@ -76,7 +74,6 @@ export function useVideoOperations() {
         },
       };
     } catch (err) {
-      console.error('Failed to upload video:', err);
       error('Upload failed', `Failed to upload video: ${err}`);
       return { success: false, error: err };
     } finally {
@@ -103,7 +100,6 @@ export function useVideoOperations() {
 
       return { success: true };
     } catch (err) {
-      console.error('Failed to delete video:', err);
       error('Delete failed', `Failed to delete video: ${err}`);
       return { success: false, error: err };
     }
@@ -156,7 +152,6 @@ export function useVideoOperations() {
       const encodedPath = btoa(video.file_path);
       return `http://localhost:${port}/video/${encodedPath}`;
     } catch (err) {
-      console.error('Failed to prepare video:', err);
       throw err;
     }
   }
@@ -183,7 +178,6 @@ export function useVideoOperations() {
       return result;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      console.error('[VideoOperations] Chunk preparation failed:', errorMessage);
       return { success: false, error: errorMessage };
     }
   }

@@ -130,7 +130,6 @@ export function useAudioChunking() {
         message: `Error: ${errorMessage}`,
       };
 
-      console.error('[AudioChunking] Chunking failed:', errorMessage);
       showError('Audio chunking failed', errorMessage);
 
       return { success: false, error: errorMessage };

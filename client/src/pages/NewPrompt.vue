@@ -360,7 +360,6 @@
       // Navigate back to prompts list
       router.push('/prompts');
     } catch (err) {
-      console.error('Failed to create prompt:', err);
       error('Failed to create prompt', 'An error occurred while creating the prompt. Please try again.');
     } finally {
       saving.value = false;

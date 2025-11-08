@@ -13,7 +13,6 @@ export async function generateSegmentName(
     const nextSegmentNumber = await getNextSegmentNumber(sourceClipId);
     return `${originalTitle} Part ${nextSegmentNumber}`;
   } catch (error) {
-    console.error('Error generating segment name:', error);
     // Fallback to original title with "Segment" suffix
     return `${originalTitle} Segment`;
   }

@@ -393,7 +393,6 @@
       }
       return project;
     } catch (error) {
-      console.error('Failed to get project info:', error);
       return null;
     }
   }
@@ -464,7 +463,6 @@
     try {
       // Check if clip has a valid file path
       if (!clip.file_path) {
-        console.warn(`[Clips] Clip ${clip.id} has no file path, cannot play`);
         return;
       }
 

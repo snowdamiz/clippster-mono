@@ -811,7 +811,6 @@
     setTimeout(() => {
       clearInterval(stabilityChecker);
       if (!isTimelineStable.value) {
-        console.warn('[Timeline] Height stability check timed out, proceeding with initialization');
         isTimelineStable.value = true;
         callback();
       }
@@ -1062,7 +1061,6 @@
 
       // Constraints calculated successfully
     } catch (error) {
-      console.error('Error calculating movement constraints:', error);
       movementConstraints.value = {
         minStartTime: 0,
         maxEndTime: props.duration || Infinity,
@@ -1100,7 +1098,6 @@
 
       return constraints;
     } catch (error) {
-      console.error('Error calculating resize constraints:', error);
       return {
         minStartTime: 0,
         maxEndTime: props.duration || Infinity,
@@ -1565,7 +1562,6 @@
       isCutToolActive.value = false;
       cutHoverInfo.value = null;
     } catch (error) {
-      console.error('[Timeline] Failed to split segment:', error);
       // Show error feedback to user (could add a toast/notification here)
       alert(`Failed to split segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }

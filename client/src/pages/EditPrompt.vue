@@ -304,7 +304,6 @@
         setBreadcrumbTitle(data.name);
       }
     } catch (err) {
-      console.error('Failed to load prompt:', err);
       error('Failed to load prompt', 'An error occurred while loading the prompt. Please try again.');
     } finally {
       loading.value = false;
@@ -322,7 +321,6 @@
       success('Prompt updated', `"${formData.name.trim()}" has been updated successfully`);
       router.push('/prompts');
     } catch (err) {
-      console.error('Failed to update prompt:', err);
       error('Failed to update prompt', 'An error occurred while updating the prompt. Please try again.');
     } finally {
       saving.value = false;

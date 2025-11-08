@@ -420,7 +420,7 @@
     <div
       v-if="showDownloadDialog"
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-      @click.self="showDownloadDialog = false"
+      @click.self="closeDownloadDialog()"
     >
       <div
         class="bg-card rounded-2xl p-6 max-w-lg w-full mx-4 border border-border max-h-[90vh] overflow-y-auto shadow-2xl"
@@ -429,7 +429,7 @@
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-xl font-bold text-foreground">Download Stream</h2>
           <button
-            @click="showDownloadDialog = false"
+            @click="closeDownloadDialog()"
             class="p-1.5 hover:bg-muted rounded-lg transition-colors"
             :disabled="downloadStarting"
           >
@@ -614,9 +614,11 @@
             </label>
             <div class="bg-muted/20 rounded-lg p-3 border border-border/50">
               <TimeRangePicker
+                ref="timeRangeRef"
                 v-model="selectedTimeRange"
                 :total-duration="clipToDownload?.duration || 0"
                 :video-url="clipToDownload?.mp4Url || clipToDownload?.playlistUrl"
+                :video-duration="clipToDownload?.duration || 0"
                 @change="handleTimeRangeChange"
               />
             </div>
@@ -685,7 +687,7 @@
 
             <button
               class="w-full py-2.5 px-4 bg-muted/50 text-muted-foreground rounded-lg font-semibold hover:bg-muted transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-border/50 hover:border-border"
-              @click="showDownloadDialog = false"
+              @click="closeDownloadDialog()"
               :disabled="downloadStarting"
             >
               <span class="flex items-center justify-center gap-2">
@@ -744,9 +746,15 @@
     document.addEventListener('click', handleClickOutside);
   });
 
-  // Clean up event listener
+  // Clean up event listener and stop pre-fetching
   onUnmounted(() => {
     document.removeEventListener('click', handleClickOutside);
+
+    // Stop any ongoing pre-fetching operations when component unmounts
+    if (showDownloadDialog.value) {
+      // This will be called when the user navigates away or closes the dialog
+      cleanupThumbnails();
+    }
   });
 
   // Handle click outside to close dropdowns
@@ -764,6 +772,7 @@
   const downloadStarting = ref(false);
   const showRecentDropdown = ref(false);
   const showEmptyRecentDropdown = ref(false);
+  const timeRangeRef = ref<InstanceType<typeof TimeRangePicker> | null>(null);
 
   // Time range selection
   const useSegmentDownload = ref(false);
@@ -881,6 +890,25 @@
     selectedTimeRange.value = range;
   }
 
+  // Cleanup function to stop thumbnail pre-fetching
+  function cleanupThumbnails() {
+    if (timeRangeRef.value) {
+      // Access the cleanup method from the TimeRangePicker component
+      // The TimeRangePicker should expose the useVideoThumbnail cleanup function
+      // Call cleanup through the component's exposed cleanup method
+      if (timeRangeRef.value.cleanup && typeof timeRangeRef.value.cleanup === 'function') {
+        timeRangeRef.value.cleanup();
+      }
+    }
+  }
+
+  // Function to close download dialog and cleanup
+  function closeDownloadDialog() {
+    cleanupThumbnails();
+    showDownloadDialog.value = false;
+    clipToDownload.value = null;
+  }
+
   async function handleSearch() {
     const input = mintId.value.trim();
 
@@ -936,7 +964,6 @@
     try {
       nextSegmentNumber.value = await getNextSegmentNumber(clipId);
     } catch (error) {
-      console.warn('Database migration not yet applied or error calculating segment number:', error);
       // Fallback to 1 if migration hasn't run or there's an error
       nextSegmentNumber.value = 1;
     }
@@ -971,8 +998,7 @@
       );
 
       // Close dialog immediately
-      showDownloadDialog.value = false;
-      clipToDownload.value = null;
+      closeDownloadDialog();
 
       // Small delay to show loading state briefly, then navigate
       setTimeout(() => {
@@ -981,12 +1007,10 @@
         router.push('/videos');
       }, 500);
     } catch (err) {
-      console.error('Failed to download clip:', err);
       showError('Download Failed', `Failed to download "${clip.title}": ${err}`);
       // Reset loading state on error
       downloadStarting.value = false;
-      showDownloadDialog.value = false;
-      clipToDownload.value = null;
+      closeDownloadDialog();
     }
   }
 </script>
