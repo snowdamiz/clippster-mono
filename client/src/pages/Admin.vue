@@ -282,6 +282,48 @@
                       </svg>
                       Admin
                     </span>
+                    <button
+                      v-if="!user.is_admin"
+                      @click="openCreditDialog(user)"
+                      :disabled="updatingCreditsUserId === user.id"
+                      class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-green-500/80 to-emerald-500/80 hover:from-green-500/90 hover:to-emerald-500/90 text-white text-xs font-medium rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <svg
+                        v-if="updatingCreditsUserId === user.id"
+                        xmlns="http://www.w3.org/2000/svg"
+                        class="h-3 w-3 mr-1 animate-spin"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          class="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          stroke-width="4"
+                        ></circle>
+                        <path
+                          class="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        ></path>
+                      </svg>
+                      <svg
+                        v-else
+                        xmlns="http://www.w3.org/2000/svg"
+                        class="h-3 w-3 mr-1"
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
+                      >
+                        <path
+                          fill-rule="evenodd"
+                          d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z"
+                          clip-rule="evenodd"
+                        />
+                      </svg>
+                      Add Credits
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -327,6 +369,106 @@
       @close="handlePromoteDialogClose"
       @confirm="promoteUserConfirmed"
     />
+
+    <!-- Credit Editing Modal -->
+    <div v-if="showCreditDialog" class="fixed inset-0 z-50 overflow-y-auto" @click.self="handleCreditDialogClose">
+      <div class="flex min-h-screen items-center justify-center p-4">
+        <div class="fixed inset-0 bg-black/50 backdrop-blur-sm"></div>
+        <div class="relative bg-card border border-border rounded-lg shadow-xl max-w-md w-full p-6">
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold text-foreground">Add User Credits</h3>
+            <p class="text-sm text-muted-foreground mt-1">
+              Add credits for {{ formatWalletAddress(userToEditCredits?.wallet_address || '') }}
+            </p>
+          </div>
+
+          <form @submit.prevent="updateUserCredits" class="space-y-4">
+            <!-- Hours to Add -->
+            <div>
+              <label for="hours_to_add" class="block text-sm font-medium text-foreground mb-1">Hours to Add</label>
+              <input
+                id="hours_to_add"
+                v-model.number="creditForm.hours_to_add"
+                type="number"
+                step="0.01"
+                min="0.01"
+                required
+                class="w-full px-3 py-2 bg-background border border-input rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                placeholder="Enter hours to add"
+              />
+              <p class="text-xs text-muted-foreground mt-1">Enter the number of hours to add to the user's balance</p>
+            </div>
+
+            <!-- Error Display -->
+            <div
+              v-if="creditError"
+              class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3"
+            >
+              <p class="text-red-600 dark:text-red-400 text-sm">{{ creditError }}</p>
+            </div>
+
+            <!-- Current Credits Display -->
+            <div v-if="userToEditCredits?.credits" class="bg-muted/30 border border-border rounded-lg p-3">
+              <p class="text-sm text-muted-foreground mb-1">Current balance:</p>
+              <div class="flex justify-between text-sm mb-2">
+                <span>Remaining: {{ formatCredits(userToEditCredits.credits.hours_remaining) }} hours</span>
+                <span>Used: {{ formatCredits(userToEditCredits.credits.hours_used) }} hours</span>
+              </div>
+              <div v-if="creditForm.hours_to_add && creditForm.hours_to_add > 0" class="pt-2 border-t border-border">
+                <p class="text-sm text-muted-foreground mb-1">After adding credits:</p>
+                <div class="flex justify-between text-sm font-medium">
+                  <span>
+                    New balance:
+                    {{
+                      formatCredits(
+                        (userToEditCredits.credits.hours_remaining === 'unlimited'
+                          ? 0
+                          : Number(userToEditCredits.credits.hours_remaining)) + creditForm.hours_to_add
+                      )
+                    }}
+                    hours
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex justify-end gap-3 pt-4">
+              <button
+                type="button"
+                @click="handleCreditDialogClose"
+                class="px-4 py-2 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                :disabled="updatingCreditsUserId !== null"
+                class="px-4 py-2 bg-gradient-to-r from-green-500/80 to-emerald-500/80 hover:from-green-500/90 hover:to-emerald-500/90 text-white rounded-md font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span v-if="updatingCreditsUserId !== null" class="flex items-center">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="h-4 w-4 mr-1 animate-spin"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path
+                      class="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                  Updating...
+                </span>
+                <span v-else>Add Credits</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
   </PageLayout>
 </template>
 
@@ -361,6 +503,13 @@
   const promotingUserId = ref<number | null>(null);
   const showPromoteDialog = ref(false);
   const userToPromote = ref<User | null>(null);
+  const showCreditDialog = ref(false);
+  const userToEditCredits = ref<User | null>(null);
+  const updatingCreditsUserId = ref<number | null>(null);
+  const creditForm = ref({
+    hours_to_add: '',
+  });
+  const creditError = ref<string | null>(null);
 
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -507,6 +656,89 @@
       promotingUserId.value = null;
       showPromoteDialog.value = false;
       userToPromote.value = null;
+    }
+  };
+
+  const openCreditDialog = (user: User) => {
+    userToEditCredits.value = user;
+    creditForm.value = {
+      hours_to_add: '',
+    };
+    creditError.value = null;
+    showCreditDialog.value = true;
+  };
+
+  const handleCreditDialogClose = () => {
+    showCreditDialog.value = false;
+    userToEditCredits.value = null;
+    creditForm.value = { hours_to_add: '' };
+    creditError.value = null;
+  };
+
+  const updateUserCredits = async () => {
+    if (!userToEditCredits.value) return;
+
+    updatingCreditsUserId.value = userToEditCredits.value.id;
+    creditError.value = null;
+
+    try {
+      console.log(`🔐 Admin - Updating credits for user ${userToEditCredits.value.id}...`);
+
+      const requestBody = {
+        hours_to_add: creditForm.value.hours_to_add,
+      };
+
+      const response = await fetch(`${API_BASE}/api/admin/users/${userToEditCredits.value.id}/credits`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${authStore.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      console.log('🔐 Admin - Update credits response status:', response.status);
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error('Admin access required');
+        } else if (response.status === 401) {
+          throw new Error('Authentication required');
+        } else if (response.status === 404) {
+          throw new Error('User not found');
+        } else if (response.status === 400) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Invalid credit values');
+        } else {
+          throw new Error(`Failed to update credits: ${response.statusText}`);
+        }
+      }
+
+      const data = await response.json();
+      console.log('🔐 Admin - Update credits response data:', data);
+
+      if (data.success) {
+        // Update the user in the local state
+        const userIndex = users.value.findIndex((u) => u.id === userToEditCredits.value!.id);
+        if (userIndex !== -1) {
+          users.value[userIndex] = {
+            ...users.value[userIndex],
+            credits: data.credits,
+            updated_at: data.updated_at,
+          };
+        }
+        console.log(`🔐 Admin - Successfully updated credits for user ${userToEditCredits.value.id}`);
+
+        // Close the dialog
+        handleCreditDialogClose();
+      } else {
+        throw new Error(data.error || 'Failed to update credits');
+      }
+    } catch (err) {
+      console.error('🔐 Admin - Error updating credits:', err);
+      creditError.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    } finally {
+      updatingCreditsUserId.value = null;
     }
   };
 

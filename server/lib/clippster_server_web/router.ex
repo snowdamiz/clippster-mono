@@ -72,6 +72,7 @@ defmodule ClippsterServerWeb.Router do
 
     get "/admin/users", AdminController, :list_users
     post "/admin/users/:user_id/promote", AdminController, :promote_user
+    put "/admin/users/:user_id/credits", AdminController, :update_user_credits
   end
 
   
