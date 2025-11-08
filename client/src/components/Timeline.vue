@@ -225,7 +225,7 @@
       TIMELINE_HEIGHTS.BASE_BOTTOM_PADDING; // Consistent bottom padding
 
     // Account for layout overflow (padding, margins, borders, sticky positioning)
-    const adjustedHeight = totalHeight - 30; // Subtract 30px to prevent overflow
+    const adjustedHeight = totalHeight - 14; // Subtract 30px to prevent overflow
 
     // Apply reasonable bounds
     const finalHeight = Math.max(TIMELINE_BOUNDS.MIN_HEIGHT, Math.min(TIMELINE_BOUNDS.MAX_HEIGHT, adjustedHeight));
