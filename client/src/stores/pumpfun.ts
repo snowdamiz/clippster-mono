@@ -5,6 +5,7 @@ interface RecentSearch {
   mintId: string;
   displayText: string;
   timestamp: number;
+  label?: string;
 }
 
 interface PumpFunState {
@@ -65,19 +66,29 @@ export const usePumpFunStore = defineStore('pumpfun', {
     },
 
     // Add a search to recent searches
-    addToRecentSearches(mintId: string, displayText: string) {
-      // Remove existing entry if it exists
-      this.recentSearches = this.recentSearches.filter((search) => search.mintId !== mintId);
+    addToRecentSearches(mintId: string, displayText: string, label?: string) {
+      const existingIndex = this.recentSearches.findIndex((search) => search.mintId === mintId);
 
-      // Add new entry at the beginning
-      this.recentSearches.unshift({
-        mintId,
-        displayText,
-        timestamp: Date.now(),
-      });
+      if (existingIndex !== -1) {
+        // Update existing entry without changing order
+        this.recentSearches[existingIndex].timestamp = Date.now();
+        this.recentSearches[existingIndex].displayText = displayText;
+        // Only update label if a new one is provided
+        if (label !== undefined) {
+          this.recentSearches[existingIndex].label = label;
+        }
+      } else {
+        // Add new entry at the beginning
+        this.recentSearches.unshift({
+          mintId,
+          displayText,
+          label,
+          timestamp: Date.now(),
+        });
 
-      // Limit to max recent searches
-      this.recentSearches = this.recentSearches.slice(0, MAX_RECENT_SEARCHES);
+        // Limit to max recent searches
+        this.recentSearches = this.recentSearches.slice(0, MAX_RECENT_SEARCHES);
+      }
 
       // Save to localStorage
       this.saveRecentSearches();
@@ -93,6 +104,15 @@ export const usePumpFunStore = defineStore('pumpfun', {
     removeFromRecentSearches(mintId: string) {
       this.recentSearches = this.recentSearches.filter((search) => search.mintId !== mintId);
       this.saveRecentSearches();
+    },
+
+    // Update label for a recent search
+    updateRecentSearchLabel(mintId: string, label: string) {
+      const searchIndex = this.recentSearches.findIndex((search) => search.mintId === mintId);
+      if (searchIndex !== -1) {
+        this.recentSearches[searchIndex].label = label.trim() || undefined;
+        this.saveRecentSearches();
+      }
     },
 
     async searchClips(mintIdInput: string, limit: number = 20) {
@@ -126,8 +146,8 @@ export const usePumpFunStore = defineStore('pumpfun', {
           this.total = filteredClips.length;
           this.lastSearchTime = Date.now();
 
-          // Save to recent searches on successful search
-          this.addToRecentSearches(extractedMintId, input);
+          // Save to recent searches on successful search, preserving existing label and order
+          this.addToRecentSearches(extractedMintId, input, undefined);
 
           return {
             success: true,

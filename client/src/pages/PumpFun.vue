@@ -48,32 +48,125 @@
           >
             <div class="p-2">
               <div class="text-xs font-medium text-muted-foreground px-2 py-1 mb-1">Recent Searches</div>
-              <button
-                v-for="search in pumpFunStore.getRecentSearches.slice(0, 10)"
-                :key="search.mintId"
-                @click="
-                  handleRecentSearchClick(search);
-                  showRecentDropdown = false;
-                "
-                class="w-full text-left px-3 py-2 rounded-md hover:bg-muted/80 transition-colors flex items-center gap-2 group"
-                :title="`Search: ${search.displayText}`"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-3 w-3 text-muted-foreground group-hover:text-purple-400 flex-shrink-0"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
+              <div v-for="search in pumpFunStore.getRecentSearches.slice(0, 10)" :key="search.mintId" class="group">
+                <div
+                  @click="
+                    handleRecentSearchClick(search);
+                    showRecentDropdown = false;
+                  "
+                  class="w-full text-left px-3 py-2 rounded-md hover:bg-muted/80 transition-colors flex items-center gap-2 cursor-pointer"
+                  :title="`Search: ${search.displayText}${search.label ? ` (${search.label})` : ''}`"
                 >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                <span class="text-sm truncate">{{ search.displayText }}</span>
-              </button>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="h-3 w-3 text-muted-foreground group-hover:text-purple-400 flex-shrink-0"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm truncate">{{ search.displayText }}</div>
+                    <div v-if="search.label" class="text-xs text-purple-400 truncate" :title="`Label: ${search.label}`">
+                      {{ search.label }}
+                    </div>
+                  </div>
+                  <button
+                    @click.stop="startEditingLabel(search.mintId, search.label)"
+                    class="opacity-0 group-hover:opacity-100 p-1 hover:bg-muted/60 rounded transition-all"
+                    title="Edit label"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="h-3 w-3 text-muted-foreground hover:text-foreground"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                      />
+                    </svg>
+                  </button>
+                </div>
+
+                <!-- Label editing row -->
+                <div
+                  v-if="editingLabel === search.mintId"
+                  class="px-2 py-1.5 bg-muted/50 border-t border-border"
+                  @click.stop
+                >
+                  <div class="flex items-center gap-1.5">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="h-3 w-3 text-muted-foreground flex-shrink-0"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+                      />
+                    </svg>
+                    <input
+                      ref="labelInputRef"
+                      v-model="labelInput"
+                      @keydown="handleLabelKeydown($event, search.mintId)"
+                      @blur="saveLabel(search.mintId)"
+                      placeholder="Add label..."
+                      class="flex-1 min-w-0 px-1.5 py-0.5 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+                      maxlength="30"
+                    />
+                    <button
+                      @click="saveLabel(search.mintId)"
+                      class="p-0.5 text-green-400 hover:text-green-300 transition-colors flex-shrink-0"
+                      title="Save"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        class="h-3 w-3"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </button>
+                    <button
+                      @click="cancelEditingLabel"
+                      class="p-0.5 text-red-400 hover:text-red-300 transition-colors flex-shrink-0"
+                      title="Cancel"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        class="h-3 w-3"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
               <button
                 @click="
                   pumpFunStore.clearRecentSearches();
@@ -372,32 +465,129 @@
               >
                 <div class="p-2">
                   <div class="text-xs font-medium text-muted-foreground px-2 py-1 mb-1">Recent Searches</div>
-                  <button
-                    v-for="search in pumpFunStore.getRecentSearches.slice(0, 10)"
-                    :key="search.mintId"
-                    @click="
-                      handleRecentSearchClick(search);
-                      showEmptyRecentDropdown = false;
-                    "
-                    class="w-full text-left px-3 py-2 rounded-md hover:bg-muted/80 transition-colors flex items-center gap-2 group"
-                    :title="`Search: ${search.displayText}`"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      class="h-3 w-3 text-muted-foreground group-hover:text-purple-400 flex-shrink-0"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
+                  <div v-for="search in pumpFunStore.getRecentSearches.slice(0, 10)" :key="search.mintId" class="group">
+                    <div
+                      @click="
+                        handleRecentSearchClick(search);
+                        showEmptyRecentDropdown = false;
+                      "
+                      class="w-full text-left px-3 py-2 rounded-md hover:bg-muted/80 transition-colors flex items-center gap-2 cursor-pointer"
+                      :title="`Search: ${search.displayText}${search.label ? ` (${search.label})` : ''}`"
                     >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                    <span class="text-sm truncate">{{ search.displayText }}</span>
-                  </button>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        class="h-3 w-3 text-muted-foreground group-hover:text-purple-400 flex-shrink-0"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                      <div class="flex-1 min-w-0">
+                        <div class="text-sm truncate">{{ search.displayText }}</div>
+                        <div
+                          v-if="search.label"
+                          class="text-xs text-purple-400 truncate"
+                          :title="`Label: ${search.label}`"
+                        >
+                          {{ search.label }}
+                        </div>
+                      </div>
+                      <button
+                        @click.stop="startEditingLabel(search.mintId, search.label)"
+                        class="opacity-0 group-hover:opacity-100 p-1 hover:bg-muted/60 rounded transition-all"
+                        title="Edit label"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          class="h-3 w-3 text-muted-foreground hover:text-foreground"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+
+                    <!-- Label editing row -->
+                    <div
+                      v-if="editingLabel === search.mintId"
+                      class="px-2 py-1.5 bg-muted/50 border-t border-border"
+                      @click.stop
+                    >
+                      <div class="flex items-center gap-1.5">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          class="h-3 w-3 text-muted-foreground flex-shrink-0"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+                          />
+                        </svg>
+                        <input
+                          ref="labelInputRef"
+                          v-model="labelInput"
+                          @keydown="handleLabelKeydown($event, search.mintId)"
+                          @blur="saveLabel(search.mintId)"
+                          placeholder="Add label..."
+                          class="flex-1 min-w-0 px-1.5 py-0.5 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+                          maxlength="30"
+                        />
+                        <button
+                          @click="saveLabel(search.mintId)"
+                          class="p-0.5 text-green-400 hover:text-green-300 transition-colors flex-shrink-0"
+                          title="Save"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            class="h-3 w-3"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                          </svg>
+                        </button>
+                        <button
+                          @click="cancelEditingLabel"
+                          class="p-0.5 text-red-400 hover:text-red-300 transition-colors flex-shrink-0"
+                          title="Cancel"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            class="h-3 w-3"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M6 18L18 6M6 6l12 12"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                   <button
                     @click="
                       pumpFunStore.clearRecentSearches();
@@ -722,7 +912,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+  import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
   import { useRouter } from 'vue-router';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
@@ -773,6 +963,11 @@
   const showRecentDropdown = ref(false);
   const showEmptyRecentDropdown = ref(false);
   const timeRangeRef = ref<InstanceType<typeof TimeRangePicker> | null>(null);
+
+  // Label editing state
+  const editingLabel = ref<string | null>(null);
+  const labelInput = ref('');
+  const labelInputRef = ref<HTMLInputElement | null>(null);
 
   // Time range selection
   const useSegmentDownload = ref(false);
@@ -881,9 +1076,40 @@
     return `Streamed ${Math.floor(secondsAgo / 604800)} weeks ago`;
   }
 
-  function handleRecentSearchClick(search: { mintId: string; displayText: string }) {
+  function handleRecentSearchClick(search: { mintId: string; displayText: string; label?: string }) {
     mintId.value = search.displayText;
     handleSearch();
+  }
+
+  // Label editing functions
+  function startEditingLabel(mintId: string, currentLabel?: string) {
+    editingLabel.value = mintId;
+    labelInput.value = currentLabel || '';
+
+    // Focus the input field after it's rendered
+    nextTick(() => {
+      labelInputRef.value?.focus();
+      labelInputRef.value?.select();
+    });
+  }
+
+  function saveLabel(mintId: string) {
+    pumpFunStore.updateRecentSearchLabel(mintId, labelInput.value);
+    editingLabel.value = null;
+    labelInput.value = '';
+  }
+
+  function cancelEditingLabel() {
+    editingLabel.value = null;
+    labelInput.value = '';
+  }
+
+  function handleLabelKeydown(event: KeyboardEvent, mintId: string) {
+    if (event.key === 'Enter') {
+      saveLabel(mintId);
+    } else if (event.key === 'Escape') {
+      cancelEditingLabel();
+    }
   }
 
   function handleTimeRangeChange(range: { startTime: number; endTime: number }) {
