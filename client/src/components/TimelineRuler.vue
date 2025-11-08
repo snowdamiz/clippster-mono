@@ -1,6 +1,6 @@
 <template>
   <div
-    class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 px-2 sticky top-0 z-10 backdrop-blur-sm timeline-ruler sticky-ruler"
+    class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 px-2 sticky top-0 z-50 backdrop-blur-sm timeline-ruler sticky-ruler"
     @wheel="onRulerWheel"
     title="Scroll to zoom"
   >
@@ -17,7 +17,7 @@
         class="absolute flex flex-col items-center"
         :style="{
           left: `${timestamp.position}%`,
-          transform: 'translateX(-50%)'
+          transform: 'translateX(-50%)',
         }"
       >
         <!-- Tick mark -->
@@ -35,29 +35,29 @@
 </template>
 
 <script setup lang="ts">
-  import { computed } from 'vue'
-  import { generateTimestamps } from '../utils/timelineUtils'
+  import { computed } from 'vue';
+  import { generateTimestamps } from '../utils/timelineUtils';
 
   interface Props {
-    duration: number
-    zoomLevel: number
+    duration: number;
+    zoomLevel: number;
   }
 
-  const props = defineProps<Props>()
+  const props = defineProps<Props>();
 
   interface Emits {
-    (e: 'rulerWheel', event: WheelEvent): void
+    (e: 'rulerWheel', event: WheelEvent): void;
   }
 
-  const emit = defineEmits<Emits>()
+  const emit = defineEmits<Emits>();
 
   // Intelligent timestamp generation based on video duration and zoom level
   const generatedTimestamps = computed(() => {
-    return generateTimestamps(props.duration, props.zoomLevel)
-  })
+    return generateTimestamps(props.duration, props.zoomLevel);
+  });
 
   function onRulerWheel(event: WheelEvent) {
-    emit('rulerWheel', event)
+    emit('rulerWheel', event);
   }
 </script>
 
@@ -91,6 +91,6 @@
   .sticky-ruler {
     position: sticky;
     top: 0;
-    z-index: 10;
+    z-index: 50;
   }
 </style>

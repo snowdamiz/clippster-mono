@@ -1,12 +1,12 @@
 <template>
   <div
     v-if="showLine && !isPanning && !isDragging"
-    class="fixed bg-white/40 z-30 pointer-events-none transition-opacity duration-150"
+    class="fixed bg-white/40 z-60 pointer-events-none transition-opacity duration-150"
     :style="{
       left: `${position}px`,
       top: `${timelineBoundsTop}px`,
       height: `${timelineBoundsBottom - timelineBoundsTop}px`,
-      width: '1px'
+      width: '1px',
     }"
   >
     <div class="absolute top-0 -left-1 w-2 h-2 bg-white/60 rounded-full"></div>
@@ -16,22 +16,22 @@
 
 <script setup lang="ts">
   interface Props {
-    showLine: boolean
-    position: number
-    timelineBoundsTop: number
-    timelineBoundsBottom: number
-    isPanning: boolean
-    isDragging: boolean
+    showLine: boolean;
+    position: number;
+    timelineBoundsTop: number;
+    timelineBoundsBottom: number;
+    isPanning: boolean;
+    isDragging: boolean;
   }
 
-  defineProps<Props>()
+  defineProps<Props>();
 </script>
 
 <style scoped>
   /* Timeline hover line */
   .bg-white\/40 {
     background: rgba(255, 255, 255, 0.4);
-    z-index: 30;
+    z-index: 60;
     pointer-events: none;
     transition: opacity 0.15s ease;
   }
