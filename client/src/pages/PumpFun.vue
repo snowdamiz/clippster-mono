@@ -616,6 +616,7 @@
               <TimeRangePicker
                 v-model="selectedTimeRange"
                 :total-duration="clipToDownload?.duration || 0"
+                :video-url="clipToDownload?.mp4Url || clipToDownload?.playlistUrl"
                 @change="handleTimeRangeChange"
               />
             </div>

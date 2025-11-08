@@ -47,6 +47,13 @@ struct DownloadResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct ThumbnailResult {
+    success: bool,
+    data_url: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct AudioChunk {
     chunk_id: String,
     file_path: String,
@@ -1723,6 +1730,98 @@ fn parse_duration_from_ffmpeg_output(stderr: &str) -> Result<f64, String> {
     }
 }
 
+/// Extract a single frame from a video URL at a specific timestamp
+#[tauri::command]
+async fn extract_video_frame(video_url: String, timestamp: f64) -> Result<ThumbnailResult, String> {
+    use base64::Engine;
+
+    println!("[Rust] extract_video_frame called with:");
+    println!("[Rust]   video_url: {}", video_url);
+    println!("[Rust]   timestamp: {:.3}", timestamp);
+
+    // Validate timestamp
+    if timestamp < 0.0 {
+        return Ok(ThumbnailResult {
+            success: false,
+            data_url: None,
+            error: Some("Timestamp cannot be negative".to_string()),
+        });
+    }
+
+    // Format timestamp for FFmpeg
+    let hours = (timestamp / 3600.0) as u32;
+    let minutes = ((timestamp % 3600.0) / 60.0) as u32;
+    let seconds = timestamp % 60.0;
+    let timestamp_str = format!("{:02}:{:02}:{:06.3}", hours, minutes, seconds);
+
+    println!("[Rust]   formatted timestamp: {}", timestamp_str);
+
+    // Create temporary file for the thumbnail
+    let temp_dir = std::env::temp_dir();
+    let temp_file = temp_dir.join(format!("thumbnail_{}.jpg",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()));
+
+    // Use FFmpeg to extract a single frame
+    let output = tokio::process::Command::new("ffmpeg")
+        .args([
+            "-ss", &timestamp_str,           // Seek to timestamp
+            "-i", &video_url,                 // Input video URL
+            "-vframes", "1",                  // Extract only 1 frame
+            "-q:v", "2",                      // High quality JPEG
+            "-vf", "scale=320:-1",            // Scale to 320px width, maintain aspect
+            "-f", "image2",                   // Output format
+            "-y",                             // Overwrite output file
+            temp_file.to_str().ok_or("Invalid temp file path")?,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        println!("[Rust] FFmpeg failed: {}", stderr);
+        return Ok(ThumbnailResult {
+            success: false,
+            data_url: None,
+            error: Some(format!("FFmpeg failed: {}", stderr)),
+        });
+    }
+
+    // Read the generated thumbnail and convert to base64 data URL
+    match std::fs::read(&temp_file) {
+        Ok(image_data) => {
+            // Clean up temp file
+            let _ = std::fs::remove_file(&temp_file);
+
+            // Encode to base64
+            let base64 = base64::engine::general_purpose::STANDARD.encode(&image_data);
+            let data_url = format!("data:image/jpeg;base64,{}", base64);
+
+            println!("[Rust] Successfully extracted frame, data URL length: {}", data_url.len());
+
+            Ok(ThumbnailResult {
+                success: true,
+                data_url: Some(data_url),
+                error: None,
+            })
+        }
+        Err(e) => {
+            // Clean up temp file even if read failed
+            let _ = std::fs::remove_file(&temp_file);
+
+            println!("[Rust] Failed to read generated thumbnail: {}", e);
+            Ok(ThumbnailResult {
+                success: false,
+                data_url: None,
+                error: Some(format!("Failed to read thumbnail: {}", e)),
+            })
+        }
+    }
+}
+
 #[tauri::command]
 async fn get_pumpfun_clips(mint_id: String, limit: Option<u32>) -> Result<String, String> {
     use std::process::Command;
@@ -2279,6 +2378,7 @@ pub fn run() {
             is_clip_generation_in_progress,
             extract_audio_from_video,
             extract_and_chunk_audio,
+            extract_video_frame,
             storage::get_storage_paths,
             storage::copy_video_to_storage,
             storage::generate_thumbnail,

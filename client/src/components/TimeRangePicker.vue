@@ -57,11 +57,23 @@
         {{ selectionError }}
       </div>
     </div>
+
+    <!-- Thumbnail Tooltip -->
+    <ThumbnailTooltip
+      :show="showTooltip"
+      :position="tooltipPosition"
+      :thumbnail-url="thumbnailUrl"
+      :time="tooltipTime"
+      :loading="isLoading"
+      :has-error="hasError"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
+  import { useVideoThumbnail } from '@/composables/useVideoThumbnail';
+  import ThumbnailTooltip from '@/components/ThumbnailTooltip.vue';
 
   interface Props {
     totalDuration: number; // in seconds
@@ -69,6 +81,7 @@
       startTime: number;
       endTime: number;
     };
+    videoUrl?: string; // Video URL for thumbnail generation
   }
 
   interface Emits {
@@ -79,9 +92,24 @@
   const props = withDefaults(defineProps<Props>(), {
     totalDuration: 0,
     modelValue: () => ({ startTime: 0, endTime: 0 }),
+    videoUrl: '',
   });
 
   const emit = defineEmits<Emits>();
+
+  // Initialize video thumbnail
+  const {
+    showTooltipAtTime,
+    hideTooltip,
+    updatePosition,
+    tooltipPosition,
+    thumbnailUrl,
+    tooltipTime,
+    showTooltip,
+    isLoading,
+    hasError,
+    formatTime: formatTooltipTime,
+  } = useVideoThumbnail();
 
   // Range slider values
   const startRangeValue = ref(0);
@@ -178,14 +206,23 @@
     const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     const value = Math.round(percentage * props.totalDuration);
 
+    let currentTime = 0;
     if (dragType.value === 'start') {
       // Ensure start doesn't go beyond end
       const newValue = Math.min(value, endRangeValue.value - 1);
       startRangeValue.value = Math.max(0, newValue);
+      currentTime = startTime.value;
     } else {
       // Ensure end doesn't go before start
       const newValue = Math.max(value, startRangeValue.value + 1);
       endRangeValue.value = Math.min(props.totalDuration, newValue);
+      currentTime = endTime.value;
+    }
+
+    // Update thumbnail tooltip position and content
+    if (props.videoUrl) {
+      const tooltipY = rect.top - 20; // Position above the slider
+      showTooltipAtTime(props.videoUrl, clientX, tooltipY, currentTime);
     }
 
     emitChange();
@@ -194,10 +231,14 @@
   function endDragging() {
     isDragging.value = false;
     dragType.value = null;
+
+    // Hide thumbnail tooltip
+    hideTooltip();
+
     document.removeEventListener('mousemove', handleDrag);
-    document.removeEventListener('mouseup', endDragging);
+    document.removeEventListener('mouseup', endHandler);
     document.removeEventListener('touchmove', handleDrag);
-    document.removeEventListener('touchend', endDragging);
+    document.removeEventListener('touchend', endHandler);
   }
 
   function emitChange() {
@@ -238,6 +279,8 @@
       }
     }
   );
+
+  // No need to initialize video - thumbnails are extracted on-demand
 </script>
 
 <style scoped>
