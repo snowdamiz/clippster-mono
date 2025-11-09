@@ -1519,6 +1519,55 @@ export async function splitClipSegment(
   }
 }
 
+// Delete a clip segment
+export async function deleteClipSegment(clipId: string, segmentIndex: number): Promise<void> {
+  const db = await getDatabase();
+
+  try {
+    // Get the current clip version to find the segment
+    const clip = await db.select<{ current_version_id: string }[]>(
+      'SELECT current_version_id FROM clips WHERE id = ?',
+      [clipId]
+    );
+
+    if (clip.length === 0) {
+      throw new Error('Clip not found');
+    }
+
+    const versionId = clip[0].current_version_id;
+
+    // Get all segments to determine segment count
+    const segments = await db.select<{ id: string; segment_index: number }[]>(
+      'SELECT id, segment_index FROM clip_segments WHERE clip_version_id = ? ORDER BY segment_index',
+      [versionId]
+    );
+
+    if (segmentIndex < 0 || segmentIndex >= segments.length) {
+      throw new Error('Invalid segment index');
+    }
+
+    // Don't allow deletion if it's the only segment
+    if (segments.length <= 1) {
+      throw new Error('Cannot delete the last segment of a clip');
+    }
+
+    const segmentToDelete = segments[segmentIndex];
+
+    // Delete the segment
+    await db.execute('DELETE FROM clip_segments WHERE id = ?', [segmentToDelete.id]);
+
+    // Update segment indices for segments after the deleted one
+    await db.execute(
+      'UPDATE clip_segments SET segment_index = segment_index - 1 WHERE clip_version_id = ? AND segment_index > ?',
+      [versionId, segmentIndex]
+    );
+  } catch (error) {
+    throw new Error(
+      `Failed to delete segment: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
 // Realign transcript words within a moved clip segment
 export async function realignClipSegment(
   clipId: string,

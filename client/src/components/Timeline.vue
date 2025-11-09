@@ -150,6 +150,29 @@
         :resizeTooltipCenterWordIndex="resizeTooltipCenterWordIndex"
       />
     </div>
+
+    <!-- Delete Segment Confirmation Modal -->
+    <ConfirmationModal
+      :show="showDeleteSegmentDialog"
+      title="Delete Segment"
+      :message="`Are you sure you want to delete this segment from ${segmentToDelete?.clipTitle || ''}?`"
+      suffix="This action cannot be undone."
+      confirm-text="Delete"
+      @close="handleDeleteSegmentDialogClose"
+      @confirm="deleteSegmentConfirmed"
+    />
+
+    <!-- Warning Modal -->
+    <ConfirmationModal
+      :show="showWarningDialog"
+      title="Cannot Delete Segment"
+      :message="warningMessage"
+      :suffix="''"
+      :show-only-close-button="true"
+      :show-cannot-undone-text="false"
+      close-text="Close"
+      @close="handleWarningDialogClose"
+    />
   </div>
 </template>
 
@@ -165,11 +188,13 @@
   import TimelineDragSelection from './TimelineDragSelection.vue';
   import TimelinePlayhead from './TimelinePlayhead.vue';
   import TimelineHoverLine from './TimelineHoverLine.vue';
+  import ConfirmationModal from './ConfirmationModal.vue';
   import {
     updateClipSegment,
     getAdjacentClipSegments,
     realignClipSegment,
     splitClipSegment,
+    deleteClipSegment,
   } from '../services/database';
   import { debounce, throttle, type ClipSegment } from '../utils/timelineUtils';
   import { createSeekEvent } from '../utils/videoSeekUtils';
@@ -397,6 +422,14 @@
 
   // Segment selection state
   const selectedSegmentKey = ref<string | null>(null); // Track which specific segment is selected (format: clipId_segmentIndex)
+
+  // Delete segment confirmation dialog state
+  const showDeleteSegmentDialog = ref(false);
+  const segmentToDelete = ref<{ clipId: string; segmentIndex: number; clipTitle: string } | null>(null);
+
+  // Warning dialog for last segment protection
+  const showWarningDialog = ref(false);
+  const warningMessage = ref('');
 
   // Segment dragging state
   const isDraggingSegment = ref(false);
@@ -995,6 +1028,12 @@
           startContinuousSeeking('forward');
         }
       }
+    }
+
+    // Handle backspace key to delete selected segment
+    if (event.key === 'Backspace' && selectedSegmentKey.value && !isCutToolActive.value) {
+      event.preventDefault();
+      deleteSelectedSegment();
     }
   }
 
@@ -1675,6 +1714,78 @@
 
     isMovingSegment.value = false;
     segmentMoveDirection.value = null;
+  }
+
+  // Delete selected segment
+  function deleteSelectedSegment() {
+    if (!selectedSegmentKey.value) return;
+
+    const parsed = parseSelectedSegmentKey(selectedSegmentKey.value);
+    if (!parsed) return;
+
+    const { clipId, segmentIndex } = parsed;
+
+    // Find the clip and verify it has segments
+    const clip = localClips.value.find((c) => c.id === clipId);
+    if (!clip || !clip.segments || clip.segments.length <= 1) {
+      showWarning('Cannot delete the last segment of a clip. Each clip must have at least one segment.');
+      return;
+    }
+
+    // Store the segment info for the dialog
+    segmentToDelete.value = {
+      clipId,
+      segmentIndex,
+      clipTitle: clip.title,
+    };
+
+    // Show the confirmation dialog
+    showDeleteSegmentDialog.value = true;
+  }
+
+  // Handle segment deletion confirmation
+  async function deleteSegmentConfirmed() {
+    if (!segmentToDelete.value) return;
+
+    const { clipId, segmentIndex } = segmentToDelete.value;
+
+    try {
+      // Delete the segment from database
+      await deleteClipSegment(clipId, segmentIndex);
+
+      // Clear the selection since the segment is being deleted
+      selectedSegmentKey.value = null;
+
+      // Refresh clips data to show updated segments
+      emit('refreshClipsData');
+
+      console.log(`Deleted segment ${segmentIndex} from clip ${clipId}`);
+    } catch (error) {
+      console.error('Error deleting segment:', error);
+      showWarning(`Failed to delete segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      // Close the dialog and clear the stored info
+      showDeleteSegmentDialog.value = false;
+      segmentToDelete.value = null;
+    }
+  }
+
+  // Handle segment deletion dialog close
+  function handleDeleteSegmentDialogClose() {
+    showDeleteSegmentDialog.value = false;
+    segmentToDelete.value = null;
+  }
+
+  // Handle warning dialog close
+  function handleWarningDialogClose() {
+    showWarningDialog.value = false;
+    warningMessage.value = '';
+  }
+
+  // Show warning dialog
+  function showWarning(message: string) {
+    warningMessage.value = message;
+    showWarningDialog.value = true;
   }
 
   // Cut tool functions

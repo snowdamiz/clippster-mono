@@ -11,20 +11,34 @@
         <p class="text-muted-foreground">
           {{ message }}
           <span v-if="itemName" class="font-semibold text-foreground">"{{ itemName }}"</span>
-          {{ suffix }} This action cannot be undone.
+          {{ suffix }}
+          <span v-if="showCannotUndoneText">This action cannot be undone.</span>
         </p>
+
+        <!-- Single button mode (for warnings/errors) -->
         <button
+          v-if="showOnlyCloseButton"
           class="w-full py-3 bg-gradient-to-r from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg font-semibold transition-all"
-          @click="$emit('confirm')"
-        >
-          {{ confirmText }}
-        </button>
-        <button
-          class="w-full py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 transition-all"
           @click="$emit('close')"
         >
-          Cancel
+          {{ closeText }}
         </button>
+
+        <!-- Two button mode (for confirmations) -->
+        <template v-else>
+          <button
+            class="w-full py-3 bg-gradient-to-r from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg font-semibold transition-all"
+            @click="$emit('confirm')"
+          >
+            {{ confirmText }}
+          </button>
+          <button
+            class="w-full py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 transition-all"
+            @click="$emit('close')"
+          >
+            {{ closeText }}
+          </button>
+        </template>
       </div>
     </div>
   </div>
@@ -38,6 +52,9 @@
     itemName?: string;
     suffix?: string;
     confirmText?: string;
+    closeText?: string;
+    showOnlyCloseButton?: boolean;
+    showCannotUndoneText?: boolean;
   }
 
   interface Emits {
@@ -50,6 +67,9 @@
     message: 'Are you sure you want to',
     suffix: '?',
     confirmText: 'Confirm',
+    closeText: 'Cancel',
+    showOnlyCloseButton: false,
+    showCannotUndoneText: true,
   });
 
   defineEmits<Emits>();
