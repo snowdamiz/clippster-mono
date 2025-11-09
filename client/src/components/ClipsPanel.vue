@@ -55,31 +55,28 @@
           <!-- Stage Title -->
           <h4 class="font-semibold text-foreground mb-2 text-base">{{ stageTitle }}</h4>
 
-          <p class="text-sm text-foreground/60 mb-6 leading-relaxed">{{ stageDescription }}</p>
-          <!-- Progress Bar -->
+          <p class="text-sm text-foreground/60 mb-12 leading-relaxed">{{ stageDescription }}</p>
+          <!-- Loading Spinner with Time Estimate -->
           <div class="mb-5">
-            <div class="flex justify-between items-center mb-2.5">
-              <span class="text-xs text-foreground/50 font-medium">Progress</span>
-              <span class="text-xs font-semibold text-foreground/70">{{ generationProgress }}%</span>
+            <div class="flex justify-center mb-4">
+              <!-- Large spinner -->
+              <div class="relative w-12 h-12">
+                <div class="absolute inset-0 border-4 border-muted/30 rounded-full"></div>
+                <div
+                  class="absolute inset-0 border-4 border-transparent border-t-primary rounded-full animate-spin"
+                  :class="stageIconClass.replace('text-', 'border-t-')"
+                ></div>
+              </div>
             </div>
 
-            <div class="relative">
-              <div class="w-full bg-muted/50 rounded-full h-2 overflow-hidden border border-muted">
-                <div
-                  class="h-full rounded-full transition-all duration-500 ease-out"
-                  :class="progressBarClass"
-                  :style="{ width: `${generationProgress}%` }"
-                />
-              </div>
-              <!-- Animated shine effect -->
-              <div
-                v-if="generationProgress > 0 && generationProgress < 100"
-                class="absolute inset-0 h-full overflow-hidden rounded-full"
-              >
-                <div
-                  class="h-full w-20 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12 animate-shine"
-                />
-              </div>
+            <!-- Time estimate -->
+            <div class="text-center mb-4">
+              <p class="text-sm font-medium text-foreground mb-1">
+                {{ getLoadingMessage() }}
+              </p>
+              <p class="text-xs text-foreground/50">
+                {{ getTimeEstimate() }}
+              </p>
             </div>
           </div>
           <!-- Status Message -->
@@ -343,6 +340,7 @@
     hoveredTimelineClipId?: string | null;
     playingClipId?: string | null;
     isPlayingSegments?: boolean;
+    videoDuration?: number; // Duration in seconds
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -353,6 +351,7 @@
     generationError: '',
     playingClipId: null,
     isPlayingSegments: false,
+    videoDuration: 0,
   });
 
   interface Emits {
@@ -629,6 +628,67 @@
         return 'Separating audio from vidoe...';
     }
   });
+
+  // Functions for the new spinner UI
+  function getLoadingMessage(): string {
+    switch (props.generationStage) {
+      case 'starting':
+        return 'Initializing detection...';
+      case 'transcribing':
+        return 'Transcribing audio...';
+      case 'analyzing':
+        return 'Analyzing for clips...';
+      case 'validating':
+        return 'Validating results...';
+      case 'completed':
+        return 'Finalizing results...';
+      case 'error':
+        return 'Something went wrong';
+      default:
+        return 'Processing...';
+    }
+  }
+
+  function getTimeEstimate(): string {
+    // Base time estimates in minutes for different video lengths
+    // These are rough estimates to set user expectations
+    const estimates = {
+      starting: 'This usually takes about 30 seconds',
+      transcribing: getTranscriptionEstimate(),
+      analyzing: 'This typically takes 1-2 minutes',
+      validating: 'Almost done... 30 seconds remaining',
+      completed: 'Finishing up...',
+      error: 'Please try again',
+      default: 'This may take a few minutes depending on video length',
+    };
+
+    return estimates[props.generationStage as keyof typeof estimates] || estimates.default;
+  }
+
+  function getTranscriptionEstimate(): string {
+    if (!props.videoDuration || props.videoDuration === 0) {
+      return 'This typically takes 2-10 minutes depending on video length';
+    }
+
+    // Convert video duration from seconds to minutes
+    const durationInMinutes = Math.round(props.videoDuration / 60);
+
+    // Estimate transcription time based on typical processing rates
+    // Usually about 1/4 to 1/3 of real-time duration for AI transcription
+    const estimatedMinutes = Math.ceil(durationInMinutes * 0.3); // 30% of video length
+
+    if (durationInMinutes <= 5) {
+      return 'less than 2 minutes';
+    } else if (durationInMinutes <= 15) {
+      return '2-5 minutes';
+    } else if (durationInMinutes <= 30) {
+      return '5-10 minutes';
+    } else if (durationInMinutes <= 60) {
+      return '10-20 minutes';
+    } else {
+      return '15-30 minutes';
+    }
+  }
 
   const progressBarClass = computed(() => {
     switch (props.generationStage) {

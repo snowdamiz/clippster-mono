@@ -86,6 +86,7 @@
                 :hovered-timeline-clip-id="hoveredTimelineClipId"
                 :is-playing-segments="isPlayingSegments"
                 :playing-clip-id="getCurrentPlayingClipId()"
+                :video-duration="duration"
                 @detectClips="onDetectClips"
                 @clipHover="onClipHover"
                 @scrollToTimeline="onScrollToTimeline"
