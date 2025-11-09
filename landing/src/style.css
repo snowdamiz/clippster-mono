@@ -141,6 +141,7 @@
   }
   html {
     scroll-behavior: smooth;
+    scroll-padding-top: 80px; /* Account for sticky header */
   }
 }
 
@@ -157,4 +158,34 @@
 /* Better focus states */
 .focus-ring {
   @apply focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-background;
+}
+
+/* Smooth animations */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Selection color */
+::selection {
+  background-color: rgba(168, 85, 247, 0.3);
+  color: #fff;
+}
+
+/* Scrollbar styling for webkit browsers */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: oklch(0.145 0 0);
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(0.269 0 0);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.35 0 0);
 }
