@@ -110,6 +110,7 @@
             @timelineTrackHover="onTimelineTrackHover"
             @timelineMouseLeave="onTimelineMouseLeave"
             @timelineClipHover="onTimelineClipHover"
+            @timelineSegmentClick="onTimelineSegmentClick"
             @scrollToClipsPanel="onScrollToClipsPanel"
             @zoomChanged="handleTimelineZoomChanged"
             @segmentUpdated="onSegmentUpdated"
@@ -522,6 +523,19 @@
 
     // Then set the new state
     hoveredTimelineClipId.value = clipId;
+  }
+
+  // Timeline segment click event handler
+  function onTimelineSegmentClick(clipId: string, segmentIndex: number) {
+    // Optional: You can add specific handling for segment selection here
+    // For now, we'll just log it for debugging
+    console.log(`Segment clicked: Clip ${clipId}, Segment ${segmentIndex}`);
+
+    // You could also:
+    // - Update a selected segment state
+    // - Show segment-specific details
+    // - Start playback from that specific segment
+    // etc.
   }
 
   // Scroll event handlers

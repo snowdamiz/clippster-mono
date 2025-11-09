@@ -39,24 +39,33 @@
               : hoveredClipId === clip.id || (hoveredTimelineClipId === clip.id && !currentlyPlayingClipId)
                 ? 'shadow-lg z-20'
                 : '',
+            selectedSegmentKey === `${clip.id}_${segIndex}`
+              ? 'ring-2 ring-blue-400 ring-offset-1 ring-offset-transparent selected-segment'
+              : '',
           ]"
           :style="{
             left: `${duration ? (getSegmentDisplayTime(segment, 'start') / duration) * 100 : 0}%`,
             width: `${duration ? ((getSegmentDisplayTime(segment, 'end') - getSegmentDisplayTime(segment, 'start')) / duration) * 100 : 0}%`,
             ...generateClipGradient(clip.run_color),
-            ...(currentlyPlayingClipId === clip.id
+            ...(selectedSegmentKey === `${clip.id}_${segIndex}`
               ? {
-                  borderColor: '#10b981',
+                  borderColor: '#3b82f6',
                   borderWidth: '2px',
                   borderStyle: 'solid',
                 }
-              : hoveredClipId === clip.id || (hoveredTimelineClipId === clip.id && !currentlyPlayingClipId)
+              : currentlyPlayingClipId === clip.id
                 ? {
-                    borderColor: '#ffffff',
+                    borderColor: '#10b981',
                     borderWidth: '2px',
                     borderStyle: 'solid',
                   }
-                : {}),
+                : hoveredClipId === clip.id || (hoveredTimelineClipId === clip.id && !currentlyPlayingClipId)
+                  ? {
+                      borderColor: '#ffffff',
+                      borderWidth: '2px',
+                      borderStyle: 'solid',
+                    }
+                  : {}),
           }"
           :data-run-color="clip.run_color"
           :title="`${clip.title} - ${formatDuration(getSegmentDisplayTime(segment, 'start'))} to ${formatDuration(getSegmentDisplayTime(segment, 'end'))}${clip.run_number ? ` (Run ${clip.run_number})` : ''}`"
@@ -67,6 +76,9 @@
           "
           @mousemove="isCutToolActive && onSegmentHoverForCut($event, clip.id, segIndex, segment)"
           @mouseleave="!isCutToolActive ? (hoveredSegmentKey = null) : emit('update:cutHoverInfo', null)"
+          @click="
+            !isCutToolActive && !isDraggingSegment && !isResizingSegment && onTimelineSegmentClick(clip.id, segIndex)
+          "
           @mousedown="
             !isResizingSegment &&
             (isCutToolActive
@@ -175,6 +187,7 @@
     currentlyPlayingClipId?: string | null;
     hoveredClipId?: string | null;
     hoveredTimelineClipId?: string | null;
+    selectedSegmentKey?: string | null;
     isDraggingSegment: boolean;
     draggedSegmentInfo?: {
       clipId: string;
@@ -230,6 +243,7 @@
 
   interface Emits {
     (e: 'timelineClipClick', clipId: string): void;
+    (e: 'timelineSegmentClick', clipId: string, segmentIndex: number): void;
     (e: 'clipTrackClick', event: MouseEvent): void;
     (e: 'update:cutHoverInfo', value: null): void;
   }
@@ -245,6 +259,10 @@
 
   function onClipTrackClick(event: MouseEvent) {
     emit('clipTrackClick', event);
+  }
+
+  function onTimelineSegmentClick(clipId: string, segmentIndex: number) {
+    emit('timelineSegmentClick', clipId, segmentIndex);
   }
 </script>
 
@@ -285,6 +303,28 @@
   .clip-segment:not(.dragging):hover {
     transform: translateY(-1px);
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+  }
+
+  /* Selected segment styling */
+  .clip-segment.selected-segment {
+    z-index: 15;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);
+    border-color: #3b82f6 !important;
+  }
+
+  .clip-segment.selected-segment:not(.dragging):not(.resizing) {
+    animation: selection-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes selection-pulse {
+    0%,
+    100% {
+      box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);
+    }
+    50% {
+      box-shadow: 0 8px 25px rgba(59, 130, 246, 0.5);
+    }
   }
 
   /* Active resize handle styling */

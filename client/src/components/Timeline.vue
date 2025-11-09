@@ -66,6 +66,7 @@
             :currentlyPlayingClipId="props.currentlyPlayingClipId"
             :hoveredClipId="hoveredClipId"
             :hoveredTimelineClipId="props.hoveredTimelineClipId"
+            :selectedSegmentKey="selectedSegmentKey"
             :isDraggingSegment="isDraggingSegment"
             :draggedSegmentInfo="draggedSegmentInfo"
             :isResizingSegment="isResizingSegment"
@@ -79,6 +80,7 @@
             :onSegmentMouseDown="onSegmentMouseDown"
             :onResizeMouseDown="onResizeMouseDown"
             @timelineClipClick="onTimelineClipClick"
+            @timelineSegmentClick="onTimelineSegmentClick"
             @clipTrackClick="onClipTrackClick"
           />
         </div>
@@ -254,6 +256,7 @@
     (e: 'timelineTrackHover', event: MouseEvent): void;
     (e: 'timelineMouseLeave'): void;
     (e: 'timelineClipHover', clipId: string): void;
+    (e: 'timelineSegmentClick', clipId: string, segmentIndex: number): void;
     (e: 'scrollToClipsPanel', clipId: string): void;
     (e: 'zoomChanged', zoomLevel: number): void;
     (e: 'segmentUpdated', clipId: string, segmentIndex: number, newStartTime: number, newEndTime: number): void;
@@ -389,6 +392,9 @@
 
   // Segment hover state
   const hoveredSegmentKey = ref<string | null>(null); // Track which specific segment is hovered
+
+  // Segment selection state
+  const selectedSegmentKey = ref<string | null>(null); // Track which specific segment is selected (format: clipId_segmentIndex)
 
   // Segment dragging state
   const isDraggingSegment = ref(false);
@@ -615,6 +621,22 @@
   function onTimelineClipClick(clipId: string) {
     emit('timelineClipHover', clipId);
     emit('scrollToClipsPanel', clipId);
+  }
+
+  // Timeline segment click event handler
+  function onTimelineSegmentClick(clipId: string, segmentIndex: number) {
+    // Update selected segment state
+    const segmentKey = `${clipId}_${segmentIndex}`;
+
+    // Toggle selection if clicking the same segment, otherwise select the new segment
+    if (selectedSegmentKey.value === segmentKey) {
+      selectedSegmentKey.value = null;
+    } else {
+      selectedSegmentKey.value = segmentKey;
+    }
+
+    // Emit to parent for any additional handling
+    emit('timelineSegmentClick', clipId, segmentIndex);
   }
 
   // Zoom, pan, and drag selection functions are now managed by useTimelineInteraction composable
