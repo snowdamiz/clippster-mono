@@ -2,35 +2,35 @@
  * Composable for managing timeline interactions: zoom, pan, and drag selection
  * Handles user interactions with the timeline content area
  */
-import { ref, nextTick, type Ref } from 'vue'
+import { ref, nextTick, type Ref } from 'vue';
 
 export interface DragSelectionState {
-  isDragging: boolean
-  dragStartX: number
-  dragEndX: number
-  dragStartPercent: number
-  dragEndPercent: number
+  isDragging: boolean;
+  dragStartX: number;
+  dragEndX: number;
+  dragStartPercent: number;
+  dragEndPercent: number;
 }
 
 export interface PanState {
-  isPanning: boolean
-  panStartX: number
-  panScrollLeft: number
+  isPanning: boolean;
+  panStartX: number;
+  panScrollLeft: number;
 }
 
 export interface ZoomState {
-  zoomLevel: number
-  minZoom: number
-  maxZoom: number
-  zoomStep: number
+  zoomLevel: number;
+  minZoom: number;
+  maxZoom: number;
+  zoomStep: number;
 }
 
 export interface TimelineInteractionOptions {
-  minZoom?: number
-  maxZoom?: number
-  zoomStep?: number
-  onZoomChange?: (zoomLevel: number) => void
-  onDragSelection?: (startPercent: number, endPercent: number) => void
+  minZoom?: number;
+  maxZoom?: number;
+  zoomStep?: number;
+  onZoomChange?: (zoomLevel: number) => void;
+  onDragSelection?: (startPercent: number, endPercent: number) => void;
 }
 
 export function useTimelineInteraction(
@@ -38,22 +38,22 @@ export function useTimelineInteraction(
   duration: Ref<number>,
   options: TimelineInteractionOptions = {}
 ) {
-  const { minZoom = 1.0, maxZoom = 10.0, zoomStep = 0.1, onZoomChange, onDragSelection } = options
+  const { minZoom = 1.0, maxZoom = 10.0, zoomStep = 0.1, onZoomChange, onDragSelection } = options;
 
   // Zoom state
   const zoomState = ref<ZoomState>({
     zoomLevel: 1.0,
     minZoom,
     maxZoom,
-    zoomStep
-  })
+    zoomStep,
+  });
 
   // Pan state
   const panState = ref<PanState>({
     isPanning: false,
     panStartX: 0,
-    panScrollLeft: 0
-  })
+    panScrollLeft: 0,
+  });
 
   // Drag selection state
   const dragSelectionState = ref<DragSelectionState>({
@@ -61,111 +61,111 @@ export function useTimelineInteraction(
     dragStartX: 0,
     dragEndX: 0,
     dragStartPercent: 0,
-    dragEndPercent: 0
-  })
+    dragEndPercent: 0,
+  });
 
   // Timeline bounds for constraining interactions
-  const timelineBounds = ref({ top: 0, bottom: 0 })
+  const timelineBounds = ref({ top: 0, bottom: 0 });
 
   // Zoom functions
   function setZoomLevel(newZoom: number) {
-    const clampedZoom = Math.max(minZoom, Math.min(maxZoom, newZoom))
-    zoomState.value.zoomLevel = clampedZoom
-    onZoomChange?.(clampedZoom)
+    const clampedZoom = Math.max(minZoom, Math.min(maxZoom, newZoom));
+    zoomState.value.zoomLevel = clampedZoom;
+    onZoomChange?.(clampedZoom);
   }
 
   // Zoom handler for timeline ruler wheel
   function handleRulerWheel(event: WheelEvent) {
-    event.preventDefault()
+    event.preventDefault();
 
-    if (!timelineContainer.value) return
+    if (!timelineContainer.value) return;
 
     // Determine zoom direction
-    const delta = event.deltaY > 0 ? -zoomStep : zoomStep
-    const newZoom = Math.max(minZoom, Math.min(maxZoom, zoomState.value.zoomLevel + delta))
+    const delta = event.deltaY > 0 ? -zoomStep : zoomStep;
+    const newZoom = Math.max(minZoom, Math.min(maxZoom, zoomState.value.zoomLevel + delta));
 
     // Get current hover position as a percentage of the visible timeline
-    const container = timelineContainer.value
-    const timelineContent = container?.querySelector('.timeline-content-wrapper')
+    const container = timelineContainer.value;
+    const timelineContent = container?.querySelector('.timeline-content-wrapper');
     if (container && timelineContent) {
-      const contentRect = timelineContent.getBoundingClientRect()
-      const containerRect = container.getBoundingClientRect()
-      const relativeX = event.clientX - containerRect.left
+      const contentRect = timelineContent.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      const relativeX = event.clientX - containerRect.left;
 
       // Calculate the timeline position being hovered over
-      const currentScrollLeft = container.scrollLeft
-      const currentContentWidth = contentRect.width
-      const hoveredTimelinePosition = currentScrollLeft + relativeX
+      const currentScrollLeft = container.scrollLeft;
+      const currentContentWidth = contentRect.width;
+      const hoveredTimelinePosition = currentScrollLeft + relativeX;
       const hoveredPercentOfContent = Math.max(
         0,
         Math.min(1, hoveredTimelinePosition / currentContentWidth)
-      )
+      );
 
       // Update zoom level
-      setZoomLevel(newZoom)
+      setZoomLevel(newZoom);
 
       // Wait for DOM to update, then calculate new scroll position
       nextTick(() => {
         if (container && timelineContent) {
-          const newContentRect = timelineContent.getBoundingClientRect()
-          const newContentWidth = newContentRect.width
+          const newContentRect = timelineContent.getBoundingClientRect();
+          const newContentWidth = newContentRect.width;
 
           // Calculate new scroll position to keep the same content position under cursor
-          const newScrollLeft = hoveredPercentOfContent * newContentWidth - relativeX
+          const newScrollLeft = hoveredPercentOfContent * newContentWidth - relativeX;
 
           // Apply smooth scrolling to new position
-          container.scrollLeft = Math.max(0, newScrollLeft)
+          container.scrollLeft = Math.max(0, newScrollLeft);
         }
-      })
+      });
     } else {
       // Fallback: just update zoom level
-      setZoomLevel(newZoom)
+      setZoomLevel(newZoom);
     }
   }
 
   // Update slider progress background (for zoom slider)
   function updateSliderProgress(sliderElement: HTMLInputElement | null) {
     if (sliderElement) {
-      const percentage = ((zoomState.value.zoomLevel - minZoom) / (maxZoom - minZoom)) * 100
+      const percentage = ((zoomState.value.zoomLevel - minZoom) / (maxZoom - minZoom)) * 100;
       const background = `linear-gradient(to right,
         rgba(255, 255, 255, 0.6) 0%,
         rgba(255, 255, 255, 0.6) ${percentage}%,
         rgba(255, 255, 255, 0.2) ${percentage}%,
-        rgba(255, 255, 255, 0.2) 100%)`
-      sliderElement.style.background = background
+        rgba(255, 255, 255, 0.2) 100%)`;
+      sliderElement.style.background = background;
     }
   }
 
   // Pan handlers
   function startPan(event: MouseEvent) {
     // Only pan with left mouse button
-    if (event.button !== 0) return
+    if (event.button !== 0) return;
 
-    panState.value.isPanning = true
-    panState.value.panStartX = event.clientX
-    panState.value.panScrollLeft = timelineContainer.value?.scrollLeft || 0
+    panState.value.isPanning = true;
+    panState.value.panStartX = event.clientX;
+    panState.value.panScrollLeft = timelineContainer.value?.scrollLeft || 0;
 
     // Change cursor to indicate panning
-    document.body.style.cursor = 'grabbing'
-    event.preventDefault()
+    document.body.style.cursor = 'grabbing';
+    event.preventDefault();
   }
 
   function movePan(event: MouseEvent) {
-    if (!panState.value.isPanning || !timelineContainer.value) return
+    if (!panState.value.isPanning || !timelineContainer.value) return;
 
-    event.preventDefault()
+    event.preventDefault();
 
-    const deltaX = event.clientX - panState.value.panStartX
-    const newScrollLeft = panState.value.panScrollLeft - deltaX
+    const deltaX = event.clientX - panState.value.panStartX;
+    const newScrollLeft = panState.value.panScrollLeft - deltaX;
 
-    timelineContainer.value.scrollLeft = newScrollLeft
+    timelineContainer.value.scrollLeft = newScrollLeft;
   }
 
   function endPan() {
     if (panState.value.isPanning) {
-      panState.value.isPanning = false
+      panState.value.isPanning = false;
       // Reset cursor
-      document.body.style.cursor = ''
+      document.body.style.cursor = '';
     }
   }
 
@@ -176,151 +176,193 @@ export function useTimelineInteraction(
       event.button !== 0 ||
       (event.target instanceof HTMLElement && event.target.closest('.clip-segment'))
     ) {
-      return
+      return;
     }
 
-    const container = timelineContainer.value
-    if (!container) return
+    const container = timelineContainer.value;
+    if (!container) return;
 
-    const rect = container.getBoundingClientRect()
-    const relativeX = event.clientX - rect.left
+    const rect = container.getBoundingClientRect();
+    const relativeX = event.clientX - rect.left;
 
     // Only allow drag selection in timeline content area (after track labels)
-    const trackLabelWidth = 64 // 4rem = 64px (w-16)
-    if (relativeX < trackLabelWidth) return
+    const trackLabelWidth = 72; // Slightly wider to match actual visual width
+    if (relativeX < trackLabelWidth) return;
 
     // Initialize drag selection
-    dragSelectionState.value.isDragging = true
-    dragSelectionState.value.dragStartX = event.clientX
-    dragSelectionState.value.dragEndX = event.clientX
+    dragSelectionState.value.isDragging = true;
+    dragSelectionState.value.dragStartX = event.clientX;
+    dragSelectionState.value.dragEndX = event.clientX;
 
     // Calculate percentages relative to the zoomed timeline content
-    const timelineContent = container.querySelector('.timeline-content-wrapper')
+    const timelineContent = container.querySelector('.timeline-content-wrapper');
     if (timelineContent) {
-      const contentRect = timelineContent.getBoundingClientRect()
-      const contentRelativeX = event.clientX - contentRect.left
+      const contentRect = timelineContent.getBoundingClientRect();
+      const contentRelativeX = event.clientX - contentRect.left;
+
+      // Account for track label width in percentage calculation
+      const trackLabelWidth = 72; // Slightly wider to match actual visual width
+      const timelineContentAreaWidth = contentRect.width - trackLabelWidth;
+      const timelineRelativeX = Math.max(0, contentRelativeX - trackLabelWidth);
+
       dragSelectionState.value.dragStartPercent = Math.max(
         0,
-        Math.min(1, contentRelativeX / contentRect.width)
-      )
-      dragSelectionState.value.dragEndPercent = dragSelectionState.value.dragStartPercent
+        Math.min(1, timelineRelativeX / timelineContentAreaWidth)
+      );
+      dragSelectionState.value.dragEndPercent = dragSelectionState.value.dragStartPercent;
     }
 
     // Update timeline bounds for selection area
     timelineBounds.value = {
       top: rect.top,
-      bottom: rect.bottom
-    }
+      bottom: rect.bottom,
+    };
 
-    event.preventDefault()
+    event.preventDefault();
   }
 
   function moveDragSelection(event: MouseEvent) {
-    if (!dragSelectionState.value.isDragging || !timelineContainer.value) return
+    if (!dragSelectionState.value.isDragging || !timelineContainer.value) return;
 
-    dragSelectionState.value.dragEndX = event.clientX
+    dragSelectionState.value.dragEndX = event.clientX;
 
-    const container = timelineContainer.value
-    if (!container) return
+    const container = timelineContainer.value;
+    if (!container) return;
 
-    // Update end percentage based on current mouse position
-    const timelineContent = container.querySelector('.timeline-content-wrapper')
+    // Update end position and percentage based on current mouse position
+    const timelineContent = container.querySelector('.timeline-content-wrapper');
     if (timelineContent) {
-      const contentRect = timelineContent.getBoundingClientRect()
-      const contentRelativeX = event.clientX - contentRect.left
+      const contentRect = timelineContent.getBoundingClientRect();
+      const contentRelativeX = event.clientX - contentRect.left;
+
+      // Account for track label width - don't allow dragging into track label area
+      const trackLabelWidth = 72; // Slightly wider to match actual visual width
+      const minAllowedX = contentRect.left + trackLabelWidth;
+
+      // Constrain the visual drag position so it doesn't go into track labels
+      dragSelectionState.value.dragEndX = Math.max(minAllowedX, event.clientX);
+
+      // For the percentage, we need to account for the track label width in the calculation
+      // Use the same logic that was working in the previous zoom fix
+      const timelineContentAreaWidth = contentRect.width - trackLabelWidth;
+      const timelineRelativeX = Math.max(0, contentRelativeX - trackLabelWidth);
+
       dragSelectionState.value.dragEndPercent = Math.max(
         0,
-        Math.min(1, contentRelativeX / contentRect.width)
-      )
+        Math.min(1, timelineRelativeX / timelineContentAreaWidth)
+      );
     }
 
-    event.preventDefault()
+    event.preventDefault();
   }
 
   function endDragSelection() {
-    if (!dragSelectionState.value.isDragging) return
+    if (!dragSelectionState.value.isDragging) return;
 
     // Calculate the selected time range
     const startPercent = Math.min(
       dragSelectionState.value.dragStartPercent,
       dragSelectionState.value.dragEndPercent
-    )
+    );
     const endPercent = Math.max(
       dragSelectionState.value.dragStartPercent,
       dragSelectionState.value.dragEndPercent
-    )
-    const selectionDuration = endPercent - startPercent
+    );
+    const selectionDuration = endPercent - startPercent;
 
     // Only zoom if the selection is meaningful (at least 5% of timeline)
     if (selectionDuration >= 0.05 && duration.value > 0) {
       // Calculate new zoom level to fit the selection
-      const targetZoom = Math.min(maxZoom, Math.max(minZoom, 1.0 / selectionDuration))
+      const targetZoom = Math.min(maxZoom, Math.max(minZoom, 1.0 / selectionDuration));
 
       // Update zoom level first
-      setZoomLevel(targetZoom)
+      setZoomLevel(targetZoom);
 
       // Wait for the zoom to be applied and DOM to update, then set scroll position
       nextTick(() => {
         if (timelineContainer.value) {
-          const container = timelineContainer.value
-          const timelineContent = container.querySelector('.timeline-content-wrapper')
+          const container = timelineContainer.value;
+          const timelineContent = container.querySelector('.timeline-content-wrapper');
           if (timelineContent) {
-            const contentWidth = container.scrollWidth // This will be updated after zoom
-            const containerWidth = container.clientWidth
-            const maxScrollLeft = contentWidth - containerWidth
+            const contentWidth = container.scrollWidth; // This will be updated after zoom
+            const containerWidth = container.clientWidth;
+            const maxScrollLeft = contentWidth - containerWidth;
+
+            // Account for track label width in calculations
+            const trackLabelWidth = 72; // Slightly wider to match actual visual width
+            const timelineContentAreaWidth = contentWidth - trackLabelWidth;
 
             // Calculate the position of the selection in the zoomed content
-            const selectionStartPositionInContent = startPercent * contentWidth
-            const selectionWidthInContent = selectionDuration * contentWidth
+            // Since percentages are already calculated relative to timeline content area,
+            // we need to add trackLabelWidth to get the absolute position in the full content
+            const selectionStartPositionInContent =
+              trackLabelWidth + startPercent * timelineContentAreaWidth;
+            const selectionWidthInContent = selectionDuration * timelineContentAreaWidth;
+
+            // Debug logging
+            console.log('[DragSelection] Debug:', {
+              startPercent: startPercent.toFixed(4),
+              selectionDuration: selectionDuration.toFixed(4),
+              trackLabelWidth,
+              timelineContentAreaWidth,
+              selectionStartPositionInContent,
+              contentWidth,
+              containerWidth,
+            });
 
             // Calculate the target scroll position to show the selection
-            let targetScrollLeft: number
+            let targetScrollLeft: number;
             if (selectionWidthInContent >= containerWidth) {
               // Selection is wider than container, show it starting from left
+              // When dragging to the very left (startPercent ≈ 0), show the beginning of timeline content
+              const minScrollPosition = trackLabelWidth;
               targetScrollLeft = Math.max(
-                0,
+                minScrollPosition,
                 Math.min(maxScrollLeft, selectionStartPositionInContent - 20)
-              ) // 20px padding
+              ); // 20px padding
             } else {
               // Center the selection in the viewport
               const centerOfSelection =
-                selectionStartPositionInContent + selectionWidthInContent / 2
+                selectionStartPositionInContent + selectionWidthInContent / 2;
+
+              // When dragging to the very left, ensure we don't scroll past the track labels
+              const minScrollPosition = trackLabelWidth;
               targetScrollLeft = Math.max(
-                0,
+                minScrollPosition,
                 Math.min(maxScrollLeft, centerOfSelection - containerWidth / 2)
-              )
+              );
             }
 
-            container.scrollLeft = targetScrollLeft
+            container.scrollLeft = targetScrollLeft;
           }
         }
-      })
+      });
 
-      onDragSelection?.(startPercent, endPercent)
+      onDragSelection?.(startPercent, endPercent);
     }
 
     // Reset drag state
-    dragSelectionState.value.isDragging = false
-    dragSelectionState.value.dragStartX = 0
-    dragSelectionState.value.dragEndX = 0
-    dragSelectionState.value.dragStartPercent = 0
-    dragSelectionState.value.dragEndPercent = 0
+    dragSelectionState.value.isDragging = false;
+    dragSelectionState.value.dragStartX = 0;
+    dragSelectionState.value.dragEndX = 0;
+    dragSelectionState.value.dragStartPercent = 0;
+    dragSelectionState.value.dragEndPercent = 0;
   }
 
   // Update timeline bounds
   function updateTimelineBounds() {
     if (timelineContainer.value) {
-      const rect = timelineContainer.value.getBoundingClientRect()
+      const rect = timelineContainer.value.getBoundingClientRect();
       timelineBounds.value = {
         top: rect.top,
-        bottom: rect.bottom
-      }
+        bottom: rect.bottom,
+      };
     }
   }
 
   // Set timeline bounds only when timeline is stable (to be called from parent)
   function setTimelineBoundsWhenStable(top: number, bottom: number) {
-    timelineBounds.value = { top, bottom }
+    timelineBounds.value = { top, bottom };
   }
 
   return {
@@ -347,6 +389,6 @@ export function useTimelineInteraction(
 
     // Utility functions
     updateTimelineBounds,
-    setTimelineBoundsWhenStable
-  }
+    setTimelineBoundsWhenStable,
+  };
 }
