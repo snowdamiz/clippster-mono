@@ -66,7 +66,7 @@
             :currentlyPlayingClipId="props.currentlyPlayingClipId"
             :hoveredClipId="hoveredClipId"
             :hoveredTimelineClipId="props.hoveredTimelineClipId"
-            :selectedSegmentKey="selectedSegmentKey"
+            :selectedSegmentKeys="selectedSegmentKeys"
             :isMovingSegment="isMovingSegment"
             :segmentMoveDirection="segmentMoveDirection"
             :isDraggingSegment="isDraggingSegment"
@@ -84,6 +84,7 @@
             @timelineClipClick="onTimelineClipClick"
             @timelineSegmentClick="onTimelineSegmentClick"
             @clipTrackClick="onClipTrackClick"
+            @deselectAllSegments="deselectAllSegments"
           />
         </div>
         <!-- End Timeline Content Wrapper -->
@@ -154,8 +155,8 @@
     <!-- Delete Segment Confirmation Modal -->
     <ConfirmationModal
       :show="showDeleteSegmentDialog"
-      title="Delete Segment"
-      :message="`Are you sure you want to delete this segment from ${segmentToDelete?.clipTitle || ''}?`"
+      title="Delete Segments"
+      :message="`Are you sure you want to delete ${segmentToDelete?.clipTitle || ''}?`"
       suffix="This action cannot be undone."
       confirm-text="Delete"
       @close="handleDeleteSegmentDialogClose"
@@ -283,7 +284,7 @@
     (e: 'timelineTrackHover', event: MouseEvent): void;
     (e: 'timelineMouseLeave'): void;
     (e: 'timelineClipHover', clipId: string): void;
-    (e: 'timelineSegmentClick', clipId: string, segmentIndex: number): void;
+    (e: 'timelineSegmentClick', clipId: string, segmentIndex: number, event?: MouseEvent): void;
     (e: 'scrollToClipsPanel', clipId: string): void;
     (e: 'zoomChanged', zoomLevel: number): void;
     (e: 'segmentUpdated', clipId: string, segmentIndex: number, newStartTime: number, newEndTime: number): void;
@@ -421,7 +422,7 @@
   const hoveredSegmentKey = ref<string | null>(null); // Track which specific segment is hovered
 
   // Segment selection state
-  const selectedSegmentKey = ref<string | null>(null); // Track which specific segment is selected (format: clipId_segmentIndex)
+  const selectedSegmentKeys = ref<Set<string>>(new Set()); // Track multiple selected segments (format: clipId_segmentIndex)
 
   // Delete segment confirmation dialog state
   const showDeleteSegmentDialog = ref(false);
@@ -666,19 +667,41 @@
   }
 
   // Timeline segment click event handler
-  function onTimelineSegmentClick(clipId: string, segmentIndex: number) {
-    // Update selected segment state
+  function onTimelineSegmentClick(clipId: string, segmentIndex: number, event?: MouseEvent) {
     const segmentKey = `${clipId}_${segmentIndex}`;
 
-    // Toggle selection if clicking the same segment, otherwise select the new segment
-    if (selectedSegmentKey.value === segmentKey) {
-      selectedSegmentKey.value = null;
+    // Check if Ctrl/Cmd is pressed for multi-selection
+    const isMultiSelect = event && (event.ctrlKey || event.metaKey);
+
+    if (isMultiSelect) {
+      // Multi-selection mode: toggle the segment if it's from the same clip, otherwise replace selection
+      const currentClipTracks = new Set(Array.from(selectedSegmentKeys.value).map((key) => key.split('_')[0]));
+
+      if (currentClipTracks.has(clipId)) {
+        // Same clip: toggle selection
+        if (selectedSegmentKeys.value.has(segmentKey)) {
+          selectedSegmentKeys.value.delete(segmentKey);
+        } else {
+          selectedSegmentKeys.value.add(segmentKey);
+        }
+      } else {
+        // Different clip: replace selection with just this segment
+        selectedSegmentKeys.value.clear();
+        selectedSegmentKeys.value.add(segmentKey);
+      }
     } else {
-      selectedSegmentKey.value = segmentKey;
+      // Single selection mode: clear all and select only this segment
+      selectedSegmentKeys.value.clear();
+      selectedSegmentKeys.value.add(segmentKey);
     }
 
     // Emit to parent for any additional handling
     emit('timelineSegmentClick', clipId, segmentIndex);
+  }
+
+  // Deselect all segments
+  function deselectAllSegments() {
+    selectedSegmentKeys.value.clear();
   }
 
   // Zoom, pan, and drag selection functions are now managed by useTimelineInteraction composable
@@ -1009,8 +1032,8 @@
 
     // Handle arrow keys - prioritize segment movement over playhead seeking
     if (!isCutToolActive.value && props.videoSrc && props.duration) {
-      // If a segment is selected, move the segment instead of seeking
-      if (selectedSegmentKey.value) {
+      // If segments are selected, move them instead of seeking
+      if (selectedSegmentKeys.value.size > 0) {
         if (event.key === 'ArrowLeft' && !isMovingSegment.value) {
           event.preventDefault();
           startContinuousSegmentMove('left');
@@ -1019,7 +1042,7 @@
           startContinuousSegmentMove('right');
         }
       } else {
-        // No segment selected, use regular playhead seeking
+        // No segments selected, use regular playhead seeking
         if (event.key === 'ArrowLeft' && !isSeeking.value) {
           event.preventDefault();
           startContinuousSeeking('reverse');
@@ -1030,10 +1053,10 @@
       }
     }
 
-    // Handle backspace key to delete selected segment
-    if (event.key === 'Backspace' && selectedSegmentKey.value && !isCutToolActive.value) {
+    // Handle backspace key to delete selected segments
+    if (event.key === 'Backspace' && selectedSegmentKeys.value.size > 0 && !isCutToolActive.value) {
       event.preventDefault();
-      deleteSelectedSegment();
+      deleteSelectedSegments();
     }
   }
 
@@ -1610,98 +1633,132 @@
     return { clipId, segmentIndex };
   }
 
-  // Move selected segment by keyboard
-  async function moveSelectedSegment(direction: 'left' | 'right') {
-    if (!selectedSegmentKey.value) return;
+  // Get all selected segments grouped by clip
+  function getSelectedSegmentsByClip(): Map<string, number[]> {
+    const segmentsByClip = new Map<string, number[]>();
 
-    const parsed = parseSelectedSegmentKey(selectedSegmentKey.value);
-    if (!parsed) return;
+    selectedSegmentKeys.value.forEach((segmentKey) => {
+      const parsed = parseSelectedSegmentKey(segmentKey);
+      if (parsed) {
+        const { clipId, segmentIndex } = parsed;
+        if (!segmentsByClip.has(clipId)) {
+          segmentsByClip.set(clipId, []);
+        }
+        segmentsByClip.get(clipId)!.push(segmentIndex);
+      }
+    });
 
-    const { clipId, segmentIndex } = parsed;
+    // Sort segment indices for each clip
+    segmentsByClip.forEach((indices) => indices.sort((a, b) => a - b));
 
-    // Find the clip and segment
-    const clip = localClips.value.find((c) => c.id === clipId);
-    if (!clip || !clip.segments[segmentIndex]) return;
+    return segmentsByClip;
+  }
 
-    const segment = clip.segments[segmentIndex];
-    const originalStartTime = segment.start_time;
-    const originalEndTime = segment.end_time;
+  // Check if multiple segments from the same clip are selected
+  function hasMultipleSegmentsFromSameClip(): boolean {
+    const segmentsByClip = getSelectedSegmentsByClip();
+    for (const indices of segmentsByClip.values()) {
+      if (indices.length > 1) return true;
+    }
+    return false;
+  }
+
+  // Check if segments from different clips are selected
+  function hasMultipleSegmentsFromDifferentClips(): boolean {
+    const segmentsByClip = getSelectedSegmentsByClip();
+    return segmentsByClip.size > 1;
+  }
+
+  // Move multiple selected segments by keyboard
+  async function moveSelectedSegments(direction: 'left' | 'right') {
+    if (selectedSegmentKeys.value.size === 0) return;
+
+    const segmentsByClip = getSelectedSegmentsByClip();
     const moveAmount = direction === 'left' ? -SEGMENT_MOVE_AMOUNT : SEGMENT_MOVE_AMOUNT;
 
-    // Calculate new times
-    let newStartTime = segment.start_time + moveAmount;
-    let newEndTime = segment.end_time + moveAmount;
-
-    // Apply boundaries
-    newStartTime = Math.max(0, newStartTime);
-    newEndTime = Math.min(props.duration || Infinity, newEndTime);
-
-    // Ensure minimum duration
-    const minDuration = 0.5; // minimum 0.5 seconds
-    if (newEndTime - newStartTime < minDuration) {
-      if (direction === 'left') {
-        newStartTime = newEndTime - minDuration;
-      } else {
-        newEndTime = newStartTime + minDuration;
-      }
-    }
-
-    // Update the segment immediately for visual feedback
-    const clipIndex = localClips.value.findIndex((c) => c.id === clipId);
-    if (clipIndex !== -1) {
-      const updatedClips = [...localClips.value];
-      updatedClips[clipIndex] = {
-        ...updatedClips[clipIndex],
-        segments: [...updatedClips[clipIndex].segments],
-      };
-      updatedClips[clipIndex].segments[segmentIndex] = {
-        ...updatedClips[clipIndex].segments[segmentIndex],
-        start_time: newStartTime,
-        end_time: newEndTime,
-        duration: newEndTime - newStartTime,
-      };
-      localClips.value = updatedClips;
-    }
-
     try {
-      // Update database
-      await updateClipSegment(clipId, segmentIndex, newStartTime, newEndTime);
+      // Process each clip's selected segments
+      for (const [clipId, segmentIndices] of segmentsByClip.entries()) {
+        // Find the clip
+        const clip = localClips.value.find((c) => c.id === clipId);
+        if (!clip || !clip.segments) continue;
 
-      // Realign transcript if there's significant movement
-      if (Math.abs(newStartTime - originalStartTime) > 0.1 || Math.abs(newEndTime - originalEndTime) > 0.1) {
-        await realignClipSegment(clipId, segmentIndex, originalStartTime, originalEndTime, newStartTime, newEndTime);
+        // Sort segment indices in descending order when moving left to avoid index conflicts
+        const sortedIndices =
+          direction === 'left' ? [...segmentIndices].sort((a, b) => b - a) : [...segmentIndices].sort((a, b) => a - b);
+
+        // Move each segment
+        for (const segmentIndex of sortedIndices) {
+          if (!clip.segments[segmentIndex]) continue;
+
+          const segment = clip.segments[segmentIndex];
+          let newStartTime = segment.start_time + moveAmount;
+          let newEndTime = segment.end_time + moveAmount;
+
+          // Apply boundaries
+          newStartTime = Math.max(0, newStartTime);
+          newEndTime = Math.min(props.duration || Infinity, newEndTime);
+
+          // Ensure minimum duration
+          const minDuration = 0.5;
+          if (newEndTime - newStartTime < minDuration) {
+            if (direction === 'left') {
+              newStartTime = newEndTime - minDuration;
+            } else {
+              newEndTime = newStartTime + minDuration;
+            }
+          }
+
+          // Update database
+          await updateClipSegment(clipId, segmentIndex, newStartTime, newEndTime);
+
+          // Update local state for visual feedback
+          const clipIndex = localClips.value.findIndex((c) => c.id === clipId);
+          if (clipIndex !== -1) {
+            const updatedClips = [...localClips.value];
+            updatedClips[clipIndex] = {
+              ...updatedClips[clipIndex],
+              segments: [...updatedClips[clipIndex].segments],
+            };
+            updatedClips[clipIndex].segments[segmentIndex] = {
+              ...updatedClips[clipIndex].segments[segmentIndex],
+              start_time: newStartTime,
+              end_time: newEndTime,
+              duration: newEndTime - newStartTime,
+            };
+            localClips.value = updatedClips;
+          }
+        }
       }
-
-      // Emit update to parent
-      emit('segmentUpdated', clipId, segmentIndex, newStartTime, newEndTime);
     } catch (error) {
-      console.error('Error updating segment position:', error);
-      // Revert on error
-      if (clipIndex !== -1) {
-        const revertedClips = [...localClips.value];
-        revertedClips[clipIndex] = {
-          ...revertedClips[clipIndex],
-          segments: [...revertedClips[clipIndex].segments],
-        };
-        revertedClips[clipIndex].segments[segmentIndex] = segment;
-        localClips.value = revertedClips;
-      }
+      console.error('Error moving segments:', error);
+      showWarning(`Failed to move segments: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // Refresh clips data to revert to correct state
+      emit('refreshClipsData');
     }
   }
 
   // Start continuous segment movement
   function startContinuousSegmentMove(direction: 'left' | 'right') {
-    if (!selectedSegmentKey.value || isMovingSegment.value) return;
+    if (selectedSegmentKeys.value.size === 0 || isMovingSegment.value) return;
+
+    // Prevent moving multiple segments from different clips
+    if (hasMultipleSegmentsFromDifferentClips()) {
+      showWarning(
+        'Cannot move segments from different clips simultaneously. Please select segments from only one clip.'
+      );
+      return;
+    }
 
     isMovingSegment.value = true;
     segmentMoveDirection.value = direction;
 
     // Initial move (fire and forget for continuous movement)
-    moveSelectedSegment(direction).catch(console.error);
+    moveSelectedSegments(direction).catch(console.error);
 
     // Start continuous movement
     segmentMoveInterval.value = setInterval(() => {
-      moveSelectedSegment(direction).catch(console.error);
+      moveSelectedSegments(direction).catch(console.error);
     }, SEGMENT_MOVE_DELAY);
   }
 
@@ -1716,27 +1773,27 @@
     segmentMoveDirection.value = null;
   }
 
-  // Delete selected segment
-  function deleteSelectedSegment() {
-    if (!selectedSegmentKey.value) return;
+  // Delete selected segments
+  function deleteSelectedSegments() {
+    if (selectedSegmentKeys.value.size === 0) return;
 
-    const parsed = parseSelectedSegmentKey(selectedSegmentKey.value);
-    if (!parsed) return;
+    const segmentsByClip = getSelectedSegmentsByClip();
+    const totalSegments = selectedSegmentKeys.value.size;
 
-    const { clipId, segmentIndex } = parsed;
-
-    // Find the clip and verify it has segments
-    const clip = localClips.value.find((c) => c.id === clipId);
-    if (!clip || !clip.segments || clip.segments.length <= 1) {
-      showWarning('Cannot delete the last segment of a clip. Each clip must have at least one segment.');
-      return;
+    // Check if deleting would leave any clips with no segments
+    for (const [clipId, segmentIndices] of segmentsByClip.entries()) {
+      const clip = localClips.value.find((c) => c.id === clipId);
+      if (clip && clip.segments && segmentIndices.length >= clip.segments.length) {
+        showWarning('Cannot delete all segments from a clip. Each clip must have at least one segment.');
+        return;
+      }
     }
 
-    // Store the segment info for the dialog
+    // Store the deletion info for the dialog
     segmentToDelete.value = {
-      clipId,
-      segmentIndex,
-      clipTitle: clip.title,
+      clipId: '', // Not used for multi-delete
+      segmentIndex: totalSegments, // Store count instead
+      clipTitle: totalSegments === 1 ? '1 segment' : `${totalSegments} segments`,
     };
 
     // Show the confirmation dialog
@@ -1747,22 +1804,30 @@
   async function deleteSegmentConfirmed() {
     if (!segmentToDelete.value) return;
 
-    const { clipId, segmentIndex } = segmentToDelete.value;
+    const segmentsByClip = getSelectedSegmentsByClip();
 
     try {
-      // Delete the segment from database
-      await deleteClipSegment(clipId, segmentIndex);
+      // Delete segments from database, process in reverse order to avoid index conflicts
+      const sortedEntries = Array.from(segmentsByClip.entries()).sort(([, a], [, b]) => b[0].localeCompare(a[0]));
 
-      // Clear the selection since the segment is being deleted
-      selectedSegmentKey.value = null;
+      for (const [clipId, segmentIndices] of sortedEntries) {
+        // Sort segment indices in descending order
+        const sortedIndices = [...segmentIndices].sort((a, b) => b - a);
+
+        for (const segmentIndex of sortedIndices) {
+          await deleteClipSegment(clipId, segmentIndex);
+          console.log(`Deleted segment ${segmentIndex} from clip ${clipId}`);
+        }
+      }
+
+      // Clear the selection since segments are being deleted
+      selectedSegmentKeys.value.clear();
 
       // Refresh clips data to show updated segments
       emit('refreshClipsData');
-
-      console.log(`Deleted segment ${segmentIndex} from clip ${clipId}`);
     } catch (error) {
-      console.error('Error deleting segment:', error);
-      showWarning(`Failed to delete segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Error deleting segments:', error);
+      showWarning(`Failed to delete segments: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       // Close the dialog and clear the stored info
       showDeleteSegmentDialog.value = false;
@@ -1774,6 +1839,7 @@
   function handleDeleteSegmentDialogClose() {
     showDeleteSegmentDialog.value = false;
     segmentToDelete.value = null;
+    // Don't clear selection here - user might cancel the deletion
   }
 
   // Handle warning dialog close

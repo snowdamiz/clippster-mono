@@ -39,16 +39,16 @@
               : hoveredClipId === clip.id || (hoveredTimelineClipId === clip.id && !currentlyPlayingClipId)
                 ? 'shadow-lg z-20'
                 : '',
-            selectedSegmentKey === `${clip.id}_${segIndex}`
+            selectedSegmentKeys?.has(`${clip.id}_${segIndex}`)
               ? 'ring-2 ring-blue-400 ring-offset-1 ring-offset-transparent selected-segment'
               : '',
-            isMovingSegment && selectedSegmentKey === `${clip.id}_${segIndex}` ? 'keyboard-moving-segment' : '',
+            isMovingSegment && selectedSegmentKeys?.has(`${clip.id}_${segIndex}`) ? 'keyboard-moving-segment' : '',
           ]"
           :style="{
             left: `${duration ? (getSegmentDisplayTime(segment, 'start') / duration) * 100 : 0}%`,
             width: `${duration ? ((getSegmentDisplayTime(segment, 'end') - getSegmentDisplayTime(segment, 'start')) / duration) * 100 : 0}%`,
             ...generateClipGradient(clip.run_color),
-            ...(selectedSegmentKey === `${clip.id}_${segIndex}`
+            ...(selectedSegmentKeys?.has(`${clip.id}_${segIndex}`)
               ? {
                   borderColor: '#3b82f6',
                   borderWidth: '2px',
@@ -78,7 +78,10 @@
           @mousemove="isCutToolActive && onSegmentHoverForCut($event, clip.id, segIndex, segment)"
           @mouseleave="!isCutToolActive ? (hoveredSegmentKey = null) : emit('update:cutHoverInfo', null)"
           @click="
-            !isCutToolActive && !isDraggingSegment && !isResizingSegment && onTimelineSegmentClick(clip.id, segIndex)
+            !isCutToolActive &&
+            !isDraggingSegment &&
+            !isResizingSegment &&
+            onTimelineSegmentClick(clip.id, segIndex, $event)
           "
           @mousedown="
             !isResizingSegment &&
@@ -188,7 +191,7 @@
     currentlyPlayingClipId?: string | null;
     hoveredClipId?: string | null;
     hoveredTimelineClipId?: string | null;
-    selectedSegmentKey?: string | null;
+    selectedSegmentKeys?: Set<string>;
     isMovingSegment?: boolean;
     segmentMoveDirection?: 'left' | 'right' | null;
     isDraggingSegment: boolean;
@@ -246,8 +249,9 @@
 
   interface Emits {
     (e: 'timelineClipClick', clipId: string): void;
-    (e: 'timelineSegmentClick', clipId: string, segmentIndex: number): void;
+    (e: 'timelineSegmentClick', clipId: string, segmentIndex: number, event?: MouseEvent): void;
     (e: 'clipTrackClick', event: MouseEvent): void;
+    (e: 'deselectAllSegments'): void;
     (e: 'update:cutHoverInfo', value: null): void;
   }
 
@@ -261,11 +265,13 @@
   }
 
   function onClipTrackClick(event: MouseEvent) {
+    // Emit deselect event when clicking on empty parts of the track
+    emit('deselectAllSegments');
     emit('clipTrackClick', event);
   }
 
-  function onTimelineSegmentClick(clipId: string, segmentIndex: number) {
-    emit('timelineSegmentClick', clipId, segmentIndex);
+  function onTimelineSegmentClick(clipId: string, segmentIndex: number, event?: MouseEvent) {
+    emit('timelineSegmentClick', clipId, segmentIndex, event);
   }
 </script>
 
