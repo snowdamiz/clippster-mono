@@ -124,14 +124,16 @@
             :key="clip.id"
             :ref="(el) => setClipRef(el, clip.id)"
             :class="[
-              'p-3 bg-muted/15 border rounded-lg cursor-pointer',
+              'group p-4 bg-card border rounded-xl cursor-pointer shadow-sm hover:shadow-md',
               index === clips.length - 1 ? 'mb-4' : '',
               // Only apply transition if not the currently playing clip
-              !(props.isPlayingSegments && props.playingClipId === clip.id) ? 'transition-all duration-200' : '',
+              !(props.isPlayingSegments && props.playingClipId === clip.id)
+                ? 'transition-all duration-200 ease-out'
+                : '',
               // Playing clip gets green styling
               props.isPlayingSegments && props.playingClipId === clip.id
-                ? 'ring-2 ring-green-500/50 bg-green-500/10'
-                : '',
+                ? 'ring-2 ring-green-500/50 bg-green-500/10 shadow-green-500/20'
+                : 'hover:border-border/80 hover:bg-muted/20',
             ]"
             :style="{
               // Prioritize playing state over all other states
@@ -149,46 +151,59 @@
             }"
             @click="onClipClick(clip.id)"
           >
-            <div class="flex items-start justify-between">
+            <div class="flex items-start justify-between gap-3">
               <div class="flex-1 min-w-0">
-                <h5 class="text-xs font-medium text-foreground/90 truncate mb-1">
+                <!-- Clip Title -->
+                <h5
+                  class="text-sm font-semibold text-foreground/95 truncate mb-2 group-hover:text-foreground transition-colors"
+                >
                   #{{ index + 1 }}: {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
                 </h5>
-                <!-- Clip Info -->
-                <div class="flex items-center gap-2 text-xs text-foreground/60">
-                  <span>
+
+                <!-- Primary Info Row -->
+                <div class="flex items-center gap-3 text-xs text-foreground/70 mb-1">
+                  <span class="font-medium">
                     {{
                       formatDuration((clip.current_version?.end_time || 0) - (clip.current_version?.start_time || 0))
                     }}
                   </span>
-                  <span>•</span>
-                  <span>
+                  <span class="text-foreground/40">•</span>
+                  <span class="font-mono">
                     {{ formatTime(clip.current_version?.start_time || 0) }} -
                     {{ formatTime(clip.current_version?.end_time || 0) }}
                   </span>
-                  <span v-if="clip.current_version?.confidence_score" class="flex items-center gap-1">
-                    <TrendingUpIcon class="h-2 w-2" />
-                    {{ Math.round((clip.current_version.confidence_score || 0) * 100) }}%
+                </div>
+
+                <!-- Secondary Info Row -->
+                <div class="flex items-center gap-3 text-xs text-foreground/50">
+                  <span
+                    v-if="clip.current_version?.confidence_score"
+                    class="flex items-center gap-1 bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full"
+                  >
+                    <TrendingUpIcon class="h-2.5 w-2.5" />
+                    <span class="font-medium">
+                      {{ Math.round((clip.current_version.confidence_score || 0) * 100) }}%
+                    </span>
                   </span>
                   <span v-if="clip.session_created_at" class="flex items-center gap-1">
-                    <ClockIcon class="h-2 w-2" />
+                    <ClockIcon class="h-2.5 w-2.5" />
                     {{ formatTimestamp(clip.session_created_at) }}
                   </span>
                   <span
                     v-if="props.isPlayingSegments && props.playingClipId === clip.id"
-                    class="flex items-center gap-1 text-green-400"
+                    class="flex items-center gap-1.5 text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full font-medium"
                   >
-                    <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                    Playing segments
+                    <div class="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></div>
+                    Playing
                   </span>
                 </div>
               </div>
               <!-- Clip Actions -->
-              <div class="flex items-center gap-1 ml-2">
+              <div class="flex flex-col items-end gap-2 ml-2">
                 <!-- Run Number Badge -->
                 <span
                   v-if="clip.run_number"
-                  class="text-[10px] px-1.5 py-0.5 mr-0.5 rounded-full font-medium border"
+                  class="text-[10px] px-2 py-1 rounded-full font-medium border"
                   :style="{
                     backgroundColor: hexToDarkerHex(clip.session_run_color || '#8B5CF6', 0.15),
                     borderColor: clip.session_run_color || '#8B5CF6',
@@ -198,33 +213,37 @@
                 >
                   Run {{ clip.run_number }}
                 </span>
-                <button
-                  class="p-1 hover:bg-red-500/20 rounded transition-colors text-red-400"
-                  title="Delete clip"
-                  @click.stop="onDeleteClip(clip.id)"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="h-3 w-3"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
+
+                <!-- Action Buttons -->
+                <div class="flex items-center gap-1">
+                  <button
+                    class="p-1.5 hover:bg-red-500/20 rounded-lg transition-all duration-200 text-red-400 hover:text-red-300 hover:scale-105"
+                    title="Delete clip"
+                    @click.stop="onDeleteClip(clip.id)"
                   >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                    />
-                  </svg>
-                </button>
-                <button
-                  class="p-1 hover:bg-muted/50 rounded transition-colors"
-                  title="Play clip"
-                  @click.stop="onPlayClip(clip)"
-                >
-                  <PlayIcon class="h-3 w-3 text-foreground/60" />
-                </button>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="h-3.5 w-3.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    class="p-1.5 hover:bg-blue-500/20 rounded-lg transition-all duration-200 text-blue-400 hover:text-blue-300 hover:scale-105"
+                    title="Play clip"
+                    @click.stop="onPlayClip(clip)"
+                  >
+                    <PlayIcon class="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
