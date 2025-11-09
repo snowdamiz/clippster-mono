@@ -226,7 +226,7 @@ export function useDownloads() {
           mintId,
           startTime: segmentRange.startTime,
           endTime: segmentRange.endTime,
-        }).catch((error) => {
+        }).catch((_error) => {
           // Remove from active downloads if failed to start
           activeDownloads.delete(downloadId);
           // We can't throw here since the async operation has already returned

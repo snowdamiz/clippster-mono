@@ -507,7 +507,7 @@
   const userToEditCredits = ref<User | null>(null);
   const updatingCreditsUserId = ref<number | null>(null);
   const creditForm = ref({
-    hours_to_add: '',
+    hours_to_add: 0,
   });
   const creditError = ref<string | null>(null);
 
@@ -662,7 +662,7 @@
   const openCreditDialog = (user: User) => {
     userToEditCredits.value = user;
     creditForm.value = {
-      hours_to_add: '',
+      hours_to_add: 0,
     };
     creditError.value = null;
     showCreditDialog.value = true;
@@ -671,7 +671,7 @@
   const handleCreditDialogClose = () => {
     showCreditDialog.value = false;
     userToEditCredits.value = null;
-    creditForm.value = { hours_to_add: '' };
+    creditForm.value = { hours_to_add: 0 };
     creditError.value = null;
   };
 

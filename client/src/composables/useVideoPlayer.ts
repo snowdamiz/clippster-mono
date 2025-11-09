@@ -295,7 +295,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     videoLoading.value = false;
   }
 
-  function onVideoError(event: Event) {
+  function onVideoError(_event: Event) {
     videoLoading.value = false;
     videoError.value =
       'Failed to load video. The file may be corrupted or in an unsupported format.';

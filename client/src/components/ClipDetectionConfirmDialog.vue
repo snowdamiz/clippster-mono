@@ -198,6 +198,10 @@
       return `No credits remaining. This operation requires ${creditsToCharge.toFixed(2)} credits.`;
     }
 
+    if (hoursRemaining.value === 'unlimited') {
+      return `This operation will charge ${creditsToCharge.toFixed(2)} credits. You have unlimited credits remaining.`;
+    }
+
     if (hoursRemaining.value < creditsToCharge) {
       return `Insufficient credits. You have ${hoursRemaining.value.toFixed(2)} credits, but this operation requires ${creditsToCharge.toFixed(2)} credits.`;
     }
@@ -252,7 +256,7 @@
       const hoursToCharge = props.videoDuration / 3600;
       const creditsToCharge = hoursToCharge;
 
-      if (hoursRemaining.value < creditsToCharge) {
+      if (hoursRemaining.value !== 'unlimited' && hoursRemaining.value < creditsToCharge) {
         error.value = 'Insufficient credits for this operation';
         return;
       }

@@ -326,9 +326,9 @@
   });
 
   interface Emits {
-    (e: 'detectClips', prompt: string): void;
     (e: 'clipHover', clipId: string): void;
     (e: 'clipLeave'): void;
+    (e: 'detectClips'): void;
     (e: 'scrollToTimeline'): void;
     (e: 'deleteClip', clipId: string): void;
     (e: 'playClip', clip: ClipWithVersion): void;

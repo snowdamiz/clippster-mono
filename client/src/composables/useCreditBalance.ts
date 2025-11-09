@@ -5,8 +5,8 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 export function useCreditBalance() {
   const loading = ref(false);
-  const error = ref(null);
-  const hoursRemaining = ref(null);
+  const error = ref<string | null>(null);
+  const hoursRemaining = ref<number | 'unlimited' | null>(null);
   const isAdmin = ref(false);
 
   async function fetchBalance() {
@@ -41,7 +41,7 @@ export function useCreditBalance() {
       } else {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-    } catch (err) {
+    } catch (err: any) {
       error.value = err.message;
       console.error('Failed to fetch credit balance:', err);
       return null;

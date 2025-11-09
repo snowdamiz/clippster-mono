@@ -1,6 +1,5 @@
 import Database from '@tauri-apps/plugin-sql';
 import { invoke } from '@tauri-apps/api/core';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 
 let db: Database | null = null;
 let initializing: Promise<Database> | null = null;
@@ -880,28 +879,6 @@ export async function createRawVideo(
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
-
-  // Log the data being inserted for debugging
-  const insertData = {
-    id,
-    projectId: options?.projectId || null,
-    filePath,
-    originalFilename: options?.originalFilename || null,
-    thumbnailPath: options?.thumbnailPath || null,
-    duration: options?.duration || null,
-    width: options?.width || null,
-    height: options?.height || null,
-    frameRate: options?.frameRate || null,
-    codec: options?.codec || null,
-    fileSize: options?.fileSize || null,
-    now,
-    sourceClipId: options?.sourceClipId || null,
-    sourceMintId: options?.sourceMintId || null,
-    segmentNumber: options?.segmentNumber || null,
-    isSegment: options?.isSegment || false,
-    segmentStartTime: options?.segmentStartTime || null,
-    segmentEndTime: options?.segmentEndTime || null,
-  };
 
   try {
     await db.execute(

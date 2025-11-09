@@ -207,7 +207,6 @@ export function useChunkedTranscriptCache() {
 
       return metadata;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
       return null;
     }
   }

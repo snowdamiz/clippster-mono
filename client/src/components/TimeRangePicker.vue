@@ -103,14 +103,14 @@
   const {
     showTooltipAtTime,
     hideTooltip,
-    updatePosition,
+    updatePosition: _updatePosition,
     tooltipPosition,
     thumbnailUrl,
     tooltipTime,
     showTooltip,
     isLoading,
     hasError,
-    formatTime: formatTooltipTime,
+    formatTime: _formatTooltipTime,
     smartPreFetch,
     cleanup,
   } = useVideoThumbnail();

@@ -287,7 +287,7 @@
     showDetectConfirmDialog.value = true;
   }
 
-  async function onDetectClipsConfirmed(promptId: string, promptContent: string) {
+  async function onDetectClipsConfirmed(_promptId: string, promptContent: string) {
     if (!props.project) {
       console.error('[ProjectWorkspaceDialog] No project available');
       return;
