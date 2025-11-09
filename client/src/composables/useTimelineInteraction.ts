@@ -299,25 +299,14 @@ export function useTimelineInteraction(
               trackLabelWidth + startPercent * timelineContentAreaWidth;
             const selectionWidthInContent = selectionDuration * timelineContentAreaWidth;
 
-            // Debug logging
-            console.log('[DragSelection] Debug:', {
-              startPercent: startPercent.toFixed(4),
-              selectionDuration: selectionDuration.toFixed(4),
-              trackLabelWidth,
-              timelineContentAreaWidth,
-              selectionStartPositionInContent,
-              contentWidth,
-              containerWidth,
-            });
-
             // Calculate the target scroll position to show the selection
             let targetScrollLeft: number;
             if (selectionWidthInContent >= containerWidth) {
               // Selection is wider than container, show it starting from left
               // When dragging to the very left (startPercent ≈ 0), show the beginning of timeline content
-              const minScrollPosition = trackLabelWidth;
+              // The scroll position should be 0 to show from the very beginning (including track labels)
               targetScrollLeft = Math.max(
-                minScrollPosition,
+                0,
                 Math.min(maxScrollLeft, selectionStartPositionInContent - 20)
               ); // 20px padding
             } else {
@@ -325,10 +314,9 @@ export function useTimelineInteraction(
               const centerOfSelection =
                 selectionStartPositionInContent + selectionWidthInContent / 2;
 
-              // When dragging to the very left, ensure we don't scroll past the track labels
-              const minScrollPosition = trackLabelWidth;
+              // When dragging to the very left, we want to show the beginning including track labels
               targetScrollLeft = Math.max(
-                minScrollPosition,
+                0,
                 Math.min(maxScrollLeft, centerOfSelection - containerWidth / 2)
               );
             }
