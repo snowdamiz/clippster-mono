@@ -67,6 +67,8 @@
             :hoveredClipId="hoveredClipId"
             :hoveredTimelineClipId="props.hoveredTimelineClipId"
             :selectedSegmentKey="selectedSegmentKey"
+            :isMovingSegment="isMovingSegment"
+            :segmentMoveDirection="segmentMoveDirection"
             :isDraggingSegment="isDraggingSegment"
             :draggedSegmentInfo="draggedSegmentInfo"
             :isResizingSegment="isResizingSegment"
@@ -444,6 +446,13 @@
   const seekDirection = ref<'forward' | 'reverse' | null>(null);
   const seekInterval = ref<NodeJS.Timeout | null>(null);
   const currentSeekTime = ref(0); // Track our current seek position for continuous seeking
+
+  // Segment keyboard movement state
+  const isMovingSegment = ref(false);
+  const segmentMoveDirection = ref<'left' | 'right' | null>(null);
+  const segmentMoveInterval = ref<NodeJS.Timeout | null>(null);
+  const SEGMENT_MOVE_AMOUNT = 0.25; // 0.25 seconds per key press
+  const SEGMENT_MOVE_DELAY = 100; // ms between moves when key is held down
 
   // Movement constraints
   const movementConstraints = ref<{
@@ -965,14 +974,26 @@
       toggleCutTool();
     }
 
-    // Video navigation with arrow keys (continuous seeking)
+    // Handle arrow keys - prioritize segment movement over playhead seeking
     if (!isCutToolActive.value && props.videoSrc && props.duration) {
-      if (event.key === 'ArrowLeft' && !isSeeking.value) {
-        event.preventDefault();
-        startContinuousSeeking('reverse');
-      } else if (event.key === 'ArrowRight' && !isSeeking.value) {
-        event.preventDefault();
-        startContinuousSeeking('forward');
+      // If a segment is selected, move the segment instead of seeking
+      if (selectedSegmentKey.value) {
+        if (event.key === 'ArrowLeft' && !isMovingSegment.value) {
+          event.preventDefault();
+          startContinuousSegmentMove('left');
+        } else if (event.key === 'ArrowRight' && !isMovingSegment.value) {
+          event.preventDefault();
+          startContinuousSegmentMove('right');
+        }
+      } else {
+        // No segment selected, use regular playhead seeking
+        if (event.key === 'ArrowLeft' && !isSeeking.value) {
+          event.preventDefault();
+          startContinuousSeeking('reverse');
+        } else if (event.key === 'ArrowRight' && !isSeeking.value) {
+          event.preventDefault();
+          startContinuousSeeking('forward');
+        }
       }
     }
   }
@@ -988,6 +1009,12 @@
     if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && isSeeking.value) {
       event.preventDefault();
       stopContinuousSeeking();
+    }
+
+    // Stop continuous segment movement when arrow keys are released
+    if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && isMovingSegment.value) {
+      event.preventDefault();
+      stopContinuousSegmentMove();
     }
   }
 
@@ -1041,6 +1068,9 @@
 
     // Clean up continuous seeking
     stopContinuousSeeking();
+
+    // Clean up continuous segment movement
+    stopContinuousSegmentMove();
 
     // Clean up event listeners and observers
     const container = timelineScrollContainer.value;
@@ -1522,6 +1552,129 @@
 
     isSeeking.value = false;
     seekDirection.value = null;
+  }
+
+  // Segment keyboard movement functions
+
+  // Parse selected segment key to get clip ID and segment index
+  function parseSelectedSegmentKey(key: string | null): { clipId: string; segmentIndex: number } | null {
+    if (!key) return null;
+
+    const parts = key.split('_');
+    if (parts.length !== 2) return null;
+
+    const clipId = parts[0];
+    const segmentIndex = parseInt(parts[1], 10);
+
+    if (isNaN(segmentIndex)) return null;
+
+    return { clipId, segmentIndex };
+  }
+
+  // Move selected segment by keyboard
+  async function moveSelectedSegment(direction: 'left' | 'right') {
+    if (!selectedSegmentKey.value) return;
+
+    const parsed = parseSelectedSegmentKey(selectedSegmentKey.value);
+    if (!parsed) return;
+
+    const { clipId, segmentIndex } = parsed;
+
+    // Find the clip and segment
+    const clip = localClips.value.find((c) => c.id === clipId);
+    if (!clip || !clip.segments[segmentIndex]) return;
+
+    const segment = clip.segments[segmentIndex];
+    const originalStartTime = segment.start_time;
+    const originalEndTime = segment.end_time;
+    const moveAmount = direction === 'left' ? -SEGMENT_MOVE_AMOUNT : SEGMENT_MOVE_AMOUNT;
+
+    // Calculate new times
+    let newStartTime = segment.start_time + moveAmount;
+    let newEndTime = segment.end_time + moveAmount;
+
+    // Apply boundaries
+    newStartTime = Math.max(0, newStartTime);
+    newEndTime = Math.min(props.duration || Infinity, newEndTime);
+
+    // Ensure minimum duration
+    const minDuration = 0.5; // minimum 0.5 seconds
+    if (newEndTime - newStartTime < minDuration) {
+      if (direction === 'left') {
+        newStartTime = newEndTime - minDuration;
+      } else {
+        newEndTime = newStartTime + minDuration;
+      }
+    }
+
+    // Update the segment immediately for visual feedback
+    const clipIndex = localClips.value.findIndex((c) => c.id === clipId);
+    if (clipIndex !== -1) {
+      const updatedClips = [...localClips.value];
+      updatedClips[clipIndex] = {
+        ...updatedClips[clipIndex],
+        segments: [...updatedClips[clipIndex].segments],
+      };
+      updatedClips[clipIndex].segments[segmentIndex] = {
+        ...updatedClips[clipIndex].segments[segmentIndex],
+        start_time: newStartTime,
+        end_time: newEndTime,
+        duration: newEndTime - newStartTime,
+      };
+      localClips.value = updatedClips;
+    }
+
+    try {
+      // Update database
+      await updateClipSegment(clipId, segmentIndex, newStartTime, newEndTime);
+
+      // Realign transcript if there's significant movement
+      if (Math.abs(newStartTime - originalStartTime) > 0.1 || Math.abs(newEndTime - originalEndTime) > 0.1) {
+        await realignClipSegment(clipId, segmentIndex, originalStartTime, originalEndTime, newStartTime, newEndTime);
+      }
+
+      // Emit update to parent
+      emit('segmentUpdated', clipId, segmentIndex, newStartTime, newEndTime);
+    } catch (error) {
+      console.error('Error updating segment position:', error);
+      // Revert on error
+      if (clipIndex !== -1) {
+        const revertedClips = [...localClips.value];
+        revertedClips[clipIndex] = {
+          ...revertedClips[clipIndex],
+          segments: [...revertedClips[clipIndex].segments],
+        };
+        revertedClips[clipIndex].segments[segmentIndex] = segment;
+        localClips.value = revertedClips;
+      }
+    }
+  }
+
+  // Start continuous segment movement
+  function startContinuousSegmentMove(direction: 'left' | 'right') {
+    if (!selectedSegmentKey.value || isMovingSegment.value) return;
+
+    isMovingSegment.value = true;
+    segmentMoveDirection.value = direction;
+
+    // Initial move (fire and forget for continuous movement)
+    moveSelectedSegment(direction).catch(console.error);
+
+    // Start continuous movement
+    segmentMoveInterval.value = setInterval(() => {
+      moveSelectedSegment(direction).catch(console.error);
+    }, SEGMENT_MOVE_DELAY);
+  }
+
+  // Stop continuous segment movement
+  function stopContinuousSegmentMove() {
+    if (segmentMoveInterval.value) {
+      clearInterval(segmentMoveInterval.value);
+      segmentMoveInterval.value = null;
+    }
+
+    isMovingSegment.value = false;
+    segmentMoveDirection.value = null;
   }
 
   // Cut tool functions

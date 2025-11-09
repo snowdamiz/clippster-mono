@@ -42,6 +42,7 @@
             selectedSegmentKey === `${clip.id}_${segIndex}`
               ? 'ring-2 ring-blue-400 ring-offset-1 ring-offset-transparent selected-segment'
               : '',
+            isMovingSegment && selectedSegmentKey === `${clip.id}_${segIndex}` ? 'keyboard-moving-segment' : '',
           ]"
           :style="{
             left: `${duration ? (getSegmentDisplayTime(segment, 'start') / duration) * 100 : 0}%`,
@@ -188,6 +189,8 @@
     hoveredClipId?: string | null;
     hoveredTimelineClipId?: string | null;
     selectedSegmentKey?: string | null;
+    isMovingSegment?: boolean;
+    segmentMoveDirection?: 'left' | 'right' | null;
     isDraggingSegment: boolean;
     draggedSegmentInfo?: {
       clipId: string;
@@ -324,6 +327,42 @@
     }
     50% {
       box-shadow: 0 8px 25px rgba(59, 130, 246, 0.5);
+    }
+  }
+
+  /* Keyboard movement styling */
+  .clip-segment.keyboard-moving-segment {
+    z-index: 35;
+    transform: translateY(-2px) scale(1.01);
+    box-shadow:
+      0 12px 30px rgba(59, 130, 246, 0.4),
+      0 0 0 3px rgba(59, 130, 246, 0.2);
+    border-color: #3b82f6 !important;
+    transition: all 0.15s ease-out;
+  }
+
+  .clip-segment.keyboard-moving-segment::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    background: linear-gradient(45deg, rgba(59, 130, 246, 0.3), rgba(59, 130, 246, 0.1));
+    border-radius: 6px;
+    z-index: -1;
+    animation: keyboard-move-pulse 0.8s ease-in-out infinite;
+  }
+
+  @keyframes keyboard-move-pulse {
+    0%,
+    100% {
+      opacity: 0.6;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.02);
     }
   }
 
