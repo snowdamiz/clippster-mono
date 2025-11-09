@@ -10,7 +10,7 @@
             'p-1.5 rounded transition-all duration-150',
             isCutToolActive
               ? 'text-blue-600 bg-blue-100/20 hover:bg-blue-100/30'
-              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
           ]"
           :title="isCutToolActive ? 'Cut tool active (click to deactivate)' : 'Cut tool (click to activate)'"
         >
@@ -20,6 +20,27 @@
               stroke-linejoin="round"
               stroke-width="2"
               d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 1 0 4.243 4.243 3 3 0 0 0-4.243-4.243zm0-5.758a3 3 0 1 0 4.243-4.243 3 3 0 0 0-4.243 4.243z"
+            />
+          </svg>
+        </button>
+        <!-- Merge Segments Button -->
+        <button
+          @click="$emit('mergeSegments')"
+          :disabled="!canMergeSegments"
+          :class="[
+            'p-1.5 rounded transition-all duration-150',
+            canMergeSegments
+              ? 'text-green-600 hover:text-green-700 hover:bg-green-100/20'
+              : 'text-muted-foreground opacity-50 cursor-not-allowed',
+          ]"
+          :title="canMergeSegments ? 'Merge selected segments (J key)' : 'Select multiple segments to merge'"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
             />
           </svg>
         </button>
@@ -34,7 +55,7 @@
             'p-1.5 rounded transition-colors duration-150',
             isSeeking && seekDirection === 'reverse'
               ? 'text-blue-600 bg-blue-100/20 hover:bg-blue-100/30'
-              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
           ]"
           :title="
             isSeeking && seekDirection === 'reverse'
@@ -62,7 +83,7 @@
             'p-1.5 rounded transition-colors duration-150',
             isSeeking && seekDirection === 'forward'
               ? 'text-blue-600 bg-blue-100/20 hover:bg-blue-100/30'
-              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
           ]"
           :title="
             isSeeking && seekDirection === 'forward'
@@ -117,46 +138,48 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch } from 'vue'
+  import { ref, watch } from 'vue';
 
   interface Props {
-    isCutToolActive: boolean
-    isSeeking: boolean
-    seekDirection: 'forward' | 'reverse' | null
-    zoomLevel: number
-    minZoom: number
-    maxZoom: number
-    zoomStep: number
-    clipCount: number
+    isCutToolActive: boolean;
+    isSeeking: boolean;
+    seekDirection: 'forward' | 'reverse' | null;
+    zoomLevel: number;
+    minZoom: number;
+    maxZoom: number;
+    zoomStep: number;
+    clipCount: number;
+    canMergeSegments: boolean;
   }
 
-  const props = defineProps<Props>()
+  const props = defineProps<Props>();
 
   const emit = defineEmits<{
-    toggleCutTool: []
-    startContinuousSeeking: [direction: 'forward' | 'reverse']
-    stopContinuousSeeking: []
-    zoomChanged: [zoomLevel: number]
-  }>()
+    toggleCutTool: [];
+    startContinuousSeeking: [direction: 'forward' | 'reverse'];
+    stopContinuousSeeking: [];
+    zoomChanged: [zoomLevel: number];
+    mergeSegments: [];
+  }>();
 
-  const zoomSlider = ref<HTMLInputElement | null>(null)
-  const localZoomLevel = ref(props.zoomLevel)
+  const zoomSlider = ref<HTMLInputElement | null>(null);
+  const localZoomLevel = ref(props.zoomLevel);
 
   // Keep local zoom level in sync with props
   watch(
     () => props.zoomLevel,
     (newZoomLevel) => {
-      localZoomLevel.value = newZoomLevel
+      localZoomLevel.value = newZoomLevel;
     }
-  )
+  );
 
   const handleZoomChange = () => {
-    emit('zoomChanged', localZoomLevel.value)
-  }
+    emit('zoomChanged', localZoomLevel.value);
+  };
 
   defineExpose({
-    zoomSlider
-  })
+    zoomSlider,
+  });
 </script>
 
 <style scoped>

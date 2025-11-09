@@ -16,10 +16,12 @@
         :maxZoom="maxZoom"
         :zoomStep="zoomStep"
         :clipCount="displayClips.length"
+        :canMergeSegments="canMergeSegments"
         @toggleCutTool="toggleCutTool"
         @startContinuousSeeking="startContinuousSeeking"
         @stopContinuousSeeking="stopContinuousSeeking"
         @zoomChanged="onZoomSliderChange"
+        @mergeSegments="mergeSelectedSegments"
         ref="timelineHeaderRef"
       />
       <!-- Timeline Tracks Container -->
@@ -174,6 +176,18 @@
       close-text="Close"
       @close="handleWarningDialogClose"
     />
+
+    <!-- Merge Segments Confirmation Dialog -->
+    <ConfirmationModal
+      :show="showMergeSegmentsDialog"
+      title="Merge Segments"
+      message="Are you sure you want to merge the selected"
+      suffix="segments?"
+      confirm-text="Merge"
+      close-text="Cancel"
+      @confirm="mergeSegmentsConfirmed"
+      @close="cancelMergeSegments"
+    />
   </div>
 </template>
 
@@ -278,6 +292,9 @@
     // Only show scrollbar when tracks content actually exceeds available tracks height
     return tracksContentHeight > availableTracksHeight + 5; // 5px buffer to prevent premature scrollbar
   });
+
+  // Computed property to check if merge is possible
+  const canMergeSegments = computed(() => canMergeSelectedSegments());
 
   interface Emits {
     (e: 'seekTimeline', event: MouseEvent): void;
@@ -427,6 +444,10 @@
   // Delete segment confirmation dialog state
   const showDeleteSegmentDialog = ref(false);
   const segmentToDelete = ref<{ clipId: string; segmentIndex: number; clipTitle: string } | null>(null);
+
+  // Merge segments confirmation dialog state
+  const showMergeSegmentsDialog = ref(false);
+  const segmentsToMerge = ref<{ clipId: string; segmentIndices: number[]; clipTitle: string } | null>(null);
 
   // Warning dialog for last segment protection
   const showWarningDialog = ref(false);
@@ -1028,6 +1049,12 @@
     if (event.key === 'Escape' && isCutToolActive.value) {
       event.preventDefault();
       toggleCutTool();
+    }
+
+    // Handle merge segments when 'j' key is pressed
+    if (event.key === 'j' || event.key === 'J') {
+      event.preventDefault();
+      mergeSelectedSegments();
     }
 
     // Handle arrow keys - prioritize segment movement over playhead seeking
@@ -1669,6 +1696,40 @@
     return segmentsByClip.size > 1;
   }
 
+  // Check if selected segments can be merged (touching or within 2 seconds)
+  function canMergeSelectedSegments(): boolean {
+    if (selectedSegmentKeys.value.size < 2) return false;
+
+    const segmentsByClip = getSelectedSegmentsByClip();
+
+    // Only allow merging segments from the same clip
+    if (segmentsByClip.size !== 1) return false;
+
+    const [[clipId, segmentIndices]] = segmentsByClip.entries();
+    const clip = localClips.value.find((c) => c.id === clipId);
+    if (!clip || !clip.segments) return false;
+
+    // Sort indices to check adjacency
+    const sortedIndices = [...segmentIndices].sort((a, b) => a - b);
+
+    // Check if all segments are touching or within 2 seconds of each other
+    for (let i = 0; i < sortedIndices.length - 1; i++) {
+      const currentIndex = sortedIndices[i];
+      const nextIndex = sortedIndices[i + 1];
+
+      const currentSegment = clip.segments[currentIndex];
+      const nextSegment = clip.segments[nextIndex];
+
+      if (!currentSegment || !nextSegment) return false;
+
+      // Check if segments are touching or have a gap <= 2 seconds
+      const gap = nextSegment.start_time - currentSegment.end_time;
+      if (gap > 2.0) return false;
+    }
+
+    return true;
+  }
+
   // Move multiple selected segments by keyboard
   async function moveSelectedSegments(direction: 'left' | 'right') {
     if (selectedSegmentKeys.value.size === 0) return;
@@ -1842,6 +1903,86 @@
     // Don't clear selection here - user might cancel the deletion
   }
 
+  // Handle segment merge confirmation
+  async function mergeSegmentsConfirmed() {
+    if (!segmentsToMerge.value) return;
+
+    const { clipId, segmentIndices, clipTitle } = segmentsToMerge.value;
+
+    try {
+      // We need to create a mergeSegments function in the database
+      // For now, we'll use the existing database structure by deleting intermediate segments
+      // and updating the first and last segments to cover the merged range
+
+      const clip = localClips.value.find((c) => c.id === clipId);
+      if (!clip || !clip.segments) throw new Error('Clip not found');
+
+      // Sort indices in descending order for deletion to avoid index conflicts
+      const sortedIndices = [...segmentIndices].sort((a, b) => b - a);
+
+      // Get the first and last segments that will remain
+      const firstIndex = sortedIndices[sortedIndices.length - 1];
+      const lastIndex = sortedIndices[0];
+
+      const firstSegment = clip.segments[firstIndex];
+      const lastSegment = clip.segments[lastIndex];
+
+      // Calculate the merged segment times
+      const mergedStartTime = firstSegment.start_time;
+      const mergedEndTime = lastSegment.end_time;
+
+      // Update the first segment to cover the merged range
+      await updateClipSegment(clipId, firstIndex, mergedStartTime, mergedEndTime);
+
+      // Realign transcript for the merged segment if needed
+      await realignClipSegment(
+        clipId,
+        firstIndex,
+        firstSegment.start_time,
+        firstSegment.end_time,
+        mergedStartTime,
+        mergedEndTime
+      );
+
+      // Delete all intermediate segments (except the first one which we updated)
+      for (let i = 0; i < sortedIndices.length - 1; i++) {
+        const indexToDelete = sortedIndices[i];
+        if (indexToDelete !== firstIndex) {
+          await deleteClipSegment(clipId, indexToDelete);
+        }
+      }
+
+      // Clear the selection
+      selectedSegmentKeys.value.clear();
+
+      // Refresh clips data to show updated segments
+      emit('refreshClipsData');
+
+      console.log(`Merged ${segmentIndices.length} segments from ${clipTitle}`);
+    } catch (error) {
+      console.error('Error merging segments:', error);
+      showWarning(`Failed to merge segments: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      // Close the dialog and clear the stored info
+      showMergeSegmentsDialog.value = false;
+      segmentsToMerge.value = null;
+    }
+  }
+
+  // Handle segment merge dialog close
+  function handleMergeSegmentsDialogClose() {
+    showMergeSegmentsDialog.value = false;
+    segmentsToMerge.value = null;
+    // Don't clear selection here - user might cancel the merge
+  }
+
+  // Cancel merge segments
+  function cancelMergeSegments() {
+    showMergeSegmentsDialog.value = false;
+    segmentsToMerge.value = null;
+    // Don't clear selection here - user might cancel the merge
+  }
+
   // Handle warning dialog close
   function handleWarningDialogClose() {
     showWarningDialog.value = false;
@@ -1852,6 +1993,31 @@
   function showWarning(message: string) {
     warningMessage.value = message;
     showWarningDialog.value = true;
+  }
+
+  // Merge selected segments
+  function mergeSelectedSegments() {
+    if (!canMergeSelectedSegments()) {
+      showWarning(
+        'Cannot merge segments: Please select at least 2 segments from the same clip that are touching or within 2 seconds of each other.'
+      );
+      return;
+    }
+
+    const segmentsByClip = getSelectedSegmentsByClip();
+    const [[clipId, segmentIndices]] = segmentsByClip.entries();
+    const clip = localClips.value.find((c) => c.id === clipId);
+    const totalSegments = segmentIndices.length;
+
+    // Store merge info for the dialog
+    segmentsToMerge.value = {
+      clipId,
+      segmentIndices: [...segmentIndices].sort((a, b) => a - b), // Sort indices
+      clipTitle: clip?.title || 'Unknown clip',
+    };
+
+    // Show the confirmation dialog
+    showMergeSegmentsDialog.value = true;
   }
 
   // Cut tool functions
