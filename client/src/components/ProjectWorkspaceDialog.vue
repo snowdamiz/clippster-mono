@@ -67,6 +67,7 @@
                 @togglePlayPause="togglePlayPause"
                 @toggleMute="toggleMute"
                 @updateVolume="updateVolume"
+                @goToBeginning="goToBeginning"
               />
             </div>
             <!-- Right Side: Clips Section -->
@@ -256,6 +257,7 @@
     onTimelineZoomChanged,
     updateVolume,
     toggleMute,
+    goToBeginning,
     onTimeUpdate,
     onLoadedMetadata,
     onVideoEnded,

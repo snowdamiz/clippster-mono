@@ -4,6 +4,23 @@
     <div class="flex items-center justify-between">
       <!-- Left Controls -->
       <div class="flex items-center gap-2">
+        <!-- Go to Beginning Button -->
+        <button
+          @click="goToBeginning"
+          class="p-1.5 bg-white/5 hover:bg-white/10 rounded-md transition-all duration-200 backdrop-blur-sm"
+          title="Go to Beginning"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-6 w-6 text-white"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.5 14.5l-3-3 3-3" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.5 14.5l-3-3 3-3" />
+          </svg>
+        </button>
         <!-- Play/Pause Button -->
         <button
           @click="togglePlayPause"
@@ -110,68 +127,73 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch } from 'vue'
+  import { ref, watch } from 'vue';
 
   interface Props {
-    videoSrc: string | null
-    videoLoading: boolean
-    isPlaying: boolean
-    currentTime: number
-    duration: number
-    volume: number
-    isMuted: boolean
+    videoSrc: string | null;
+    videoLoading: boolean;
+    isPlaying: boolean;
+    currentTime: number;
+    duration: number;
+    volume: number;
+    isMuted: boolean;
   }
 
-  const props = defineProps<Props>()
+  const props = defineProps<Props>();
 
   interface Emits {
-    (e: 'togglePlayPause'): void
-    (e: 'toggleMute'): void
-    (e: 'updateVolume', value: number): void
+    (e: 'togglePlayPause'): void;
+    (e: 'toggleMute'): void;
+    (e: 'updateVolume', value: number): void;
+    (e: 'goToBeginning'): void;
   }
 
-  const emit = defineEmits<Emits>()
+  const emit = defineEmits<Emits>();
 
   // Local volume state for the slider
-  const localVolume = ref(props.volume)
+  const localVolume = ref(props.volume);
 
   // Sync local volume with prop changes
   watch(
     () => props.volume,
     (newVolume) => {
-      localVolume.value = newVolume
+      localVolume.value = newVolume;
     }
-  )
+  );
 
   function formatDuration(seconds: number): string {
-    if (isNaN(seconds) || !isFinite(seconds)) return '0:00'
+    if (isNaN(seconds) || !isFinite(seconds)) return '0:00';
 
-    const totalSeconds = Math.floor(seconds)
+    const totalSeconds = Math.floor(seconds);
 
     if (totalSeconds < 60) {
-      return `0:${totalSeconds.toString().padStart(2, '0')}`
+      return `0:${totalSeconds.toString().padStart(2, '0')}`;
     } else if (totalSeconds < 3600) {
-      const minutes = Math.floor(totalSeconds / 60)
-      const remainingSeconds = totalSeconds % 60
-      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+      const minutes = Math.floor(totalSeconds / 60);
+      const remainingSeconds = totalSeconds % 60;
+      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
     } else {
-      const hours = Math.floor(totalSeconds / 3600)
-      const minutes = Math.floor((totalSeconds % 3600) / 60)
-      const remainingSeconds = totalSeconds % 60
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const remainingSeconds = totalSeconds % 60;
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
     }
   }
 
   function togglePlayPause() {
-    emit('togglePlayPause')
+    emit('togglePlayPause');
   }
 
   function toggleMute() {
-    emit('toggleMute')
+    emit('toggleMute');
   }
 
   function updateVolume() {
-    emit('updateVolume', Number(localVolume.value))
+    emit('updateVolume', Number(localVolume.value));
+  }
+
+  function goToBeginning() {
+    emit('goToBeginning');
   }
 </script>
 

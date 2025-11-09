@@ -244,6 +244,19 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     }
   }
 
+  function goToBeginning() {
+    if (!videoElement.value) return;
+
+    // If we're playing segments, stop segmented playback when user seeks to beginning
+    if (isPlayingSegments.value) {
+      stopSegmentedPlayback();
+    }
+
+    // Seek to the beginning
+    videoElement.value.currentTime = 0;
+    currentTime.value = 0;
+  }
+
   function onTimeUpdate() {
     if (!videoElement.value) return;
 
@@ -576,6 +589,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     onTimelineZoomChanged,
     updateVolume,
     toggleMute,
+    goToBeginning,
     onTimeUpdate,
     onLoadedMetadata,
     onVideoEnded,
