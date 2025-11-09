@@ -208,7 +208,7 @@
                     }}
                   </span>
                   <span class="text-foreground/30">•</span>
-                  <span class="font-mono text-foreground/60 text-[11px]">
+                  <span class="font-mono text-foreground/60 text-[11px] pt-0.5">
                     {{ formatTime(clip.current_version?.start_time || 0) }} -
                     {{ formatTime(clip.current_version?.end_time || 0) }}
                   </span>
