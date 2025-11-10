@@ -1,14 +1,17 @@
 <script setup lang="ts">
-  import { onMounted } from 'vue';
+  import { onMounted, ref } from 'vue';
   import Toast from '@/components/Toast.vue';
   import AppCloseDialog from '@/components/AppCloseDialog.vue';
   import TitleBar from '@/components/TitleBar.vue';
+  import LoadingScreen from '@/components/LoadingScreen.vue';
   import { initDatabase, seedDefaultPrompt } from '@/services/database';
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
+  import { invoke } from '@tauri-apps/api/core';
 
   const { initializeWindowCloseHandler } = useWindowClose();
   const authStore = useAuthStore();
+  const isLoading = ref(true);
 
   // Ensure dark mode is always applied and initialize database
   onMounted(async () => {
@@ -38,11 +41,25 @@
     } catch (error) {
       console.error('[App] Failed to initialize window close handler:', error);
     }
+
+    // Hide loading screen after initialization and show main window
+    isLoading.value = false;
+
+    // Show the main window now that everything is loaded
+    try {
+      await invoke('show_main_window');
+    } catch (error) {
+      console.error('[App] Failed to show main window:', error);
+    }
   });
 </script>
 
 <template>
-  <div class="app-container">
+  <!-- Loading screen -->
+  <LoadingScreen v-if="isLoading" />
+
+  <!-- Main app (hidden while loading) -->
+  <div v-else class="app-container">
     <!-- Custom titlebar -->
     <TitleBar :dark-mode="true" />
 

@@ -2572,7 +2572,8 @@ pub fn run() {
             storage::read_file_as_data_url,
             storage::delete_video_file,
             setup_macos_titlebar,
-            get_platform
+            get_platform,
+            show_main_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -2582,6 +2583,12 @@ pub fn run() {
 #[tauri::command]
 fn get_platform() -> String {
     std::env::consts::OS.to_string()
+}
+
+// Show the main window (used to hide window during loading)
+#[tauri::command]
+async fn show_main_window(window: tauri::Window) -> Result<(), String> {
+    window.show().map_err(|e| e.to_string())
 }
 
 // Setup macOS titlebar with transparent background
