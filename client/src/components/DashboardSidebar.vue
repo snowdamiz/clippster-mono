@@ -104,41 +104,76 @@
     <!-- User info and logout at bottom -->
     <div class="absolute bottom-0 w-64 border-t border-border">
       <!-- Credit Balance -->
-      <div class="px-4 pb-2 pt-2">
-        <router-link
-          to="/pricing"
-          class="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
-          title="View Pricing & Purchase Credits"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-4 w-4 text-primary"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
-          </svg>
-          <div class="flex-1">
-            <div v-if="!loadingBalance" class="text-xs">
-              <span v-if="typeof hoursRemaining === 'string'" class="text-primary font-medium">Credits: Unlimited</span>
-              <span v-else class="text-primary font-medium">
-                Credits: {{ hoursRemaining }} {{ hoursRemaining === 1 ? 'hr' : 'hrs' }}
-              </span>
+      <div class="px-2 pb-2 pt-2">
+        <router-link to="/pricing" class="credit-balance-card" title="View Pricing & Purchase Credits">
+          <div class="credit-balance-header">
+            <div class="credit-left">
+              <div class="credit-icon-wrapper">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="credit-icon"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+              </div>
+              <span class="credit-label">Credits</span>
             </div>
-            <div v-else class="text-xs">
-              <span class="text-muted-foreground animate-pulse">Loading credits...</span>
+
+            <div v-if="!loadingBalance" class="credit-right">
+              <div v-if="typeof hoursRemaining === 'string'" class="credit-value-wrapper">
+                <span class="credit-value unlimited">∞</span>
+              </div>
+              <div v-else class="credit-value-wrapper">
+                <span class="credit-value" :class="getCreditStatusClass()">
+                  {{ hoursRemaining }}
+                </span>
+                <span class="credit-unit">{{ hoursRemaining === 1 ? 'hr' : 'hrs' }}</span>
+              </div>
+            </div>
+
+            <div v-else class="credit-right">
+              <div class="credit-loading">
+                <div class="loading-spinner"></div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="!loadingBalance">
+            <!-- Progress Bar for limited credits -->
+            <div v-if="typeof hoursRemaining === 'number'" class="credit-progress-bar">
+              <div
+                class="credit-progress-fill"
+                :class="getCreditStatusClass()"
+                :style="{ width: getProgressWidth() }"
+              ></div>
+            </div>
+
+            <!-- Status indicator (only for limited credits with low balance) -->
+            <div v-if="typeof hoursRemaining === 'number' && hoursRemaining <= 2" class="credit-status">
+              <span class="status-text status-low">
+                <svg xmlns="http://www.w3.org/2000/svg" class="status-icon" viewBox="0 0 20 20" fill="currentColor">
+                  <path
+                    fill-rule="evenodd"
+                    d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+                Low Balance
+              </span>
             </div>
           </div>
         </router-link>
       </div>
       <!-- Wallet info -->
-      <div class="px-4 pb-2 pt-2 border-t border-border">
+      <div class="px-4 pb-4 pt-4 border-t border-border">
         <div class="flex items-center justify-between">
           <span class="font-mono text-xs text-primary">{{ formattedAddress }}</span>
           <button @click="handleDisconnect" class="disconnect-btn">Disconnect</button>
@@ -219,6 +254,26 @@
     // Could add a toast notification here if needed
   };
 
+  // Credit balance helpers
+  const getCreditStatusClass = () => {
+    if (typeof hoursRemaining.value === 'string') {
+      return 'status-unlimited';
+    }
+    const hours = hoursRemaining.value;
+    if (hours <= 2) return 'status-low';
+    if (hours <= 10) return 'status-medium';
+    return 'status-high';
+  };
+
+  const getProgressWidth = () => {
+    if (typeof hoursRemaining.value === 'string') return '100%';
+    const hours = hoursRemaining.value;
+    // Assume max display of 50 hours for progress bar
+    const maxHours = 50;
+    const percentage = Math.min((hours / maxHours) * 100, 100);
+    return `${percentage}%`;
+  };
+
   async function fetchBalance() {
     if (!authStore.token) return;
 
@@ -283,12 +338,9 @@
   }
 
   .disconnect-btn {
-    padding: 0.375rem 0.625rem;
     font-size: 0.75rem;
     line-height: 1rem;
     color: rgb(239 68 68);
-    border: 1px solid transparent;
-    border-radius: 0.25rem;
     cursor: pointer;
   }
 
@@ -296,5 +348,176 @@
     color: rgb(248 113 113);
     border-color: rgb(248 113 113 / 0.3);
     background-color: rgb(248 113 113 / 0.05);
+  }
+
+  /* Credit Balance Card Styles */
+  .credit-balance-card {
+    display: block;
+    padding: 0.625rem;
+    border-radius: 0.375rem;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+
+  .credit-balance-card:hover {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(139, 92, 246, 0.12) 100%);
+    border-color: rgba(99, 102, 241, 0.3);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.15);
+  }
+
+  .credit-balance-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    /* margin-bottom: 0.5rem; */
+  }
+
+  .credit-left {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .credit-right {
+    display: flex;
+    align-items: center;
+  }
+
+  .credit-icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 0.25rem;
+    background: rgba(99, 102, 241, 0.15);
+  }
+
+  .credit-icon {
+    width: 1rem;
+    height: 1rem;
+    color: rgb(99, 102, 241);
+  }
+
+  .credit-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  .credit-value-wrapper {
+    display: flex;
+    align-items: baseline;
+    gap: 0.375rem;
+  }
+
+  .credit-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1;
+    color: white;
+  }
+
+  .credit-value.unlimited {
+    background: linear-gradient(135deg, rgb(99, 102, 241) 0%, rgb(139, 92, 246) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .credit-value.status-low {
+    color: rgb(239, 68, 68);
+  }
+
+  .credit-value.status-medium {
+    color: rgb(251, 191, 36);
+  }
+
+  .credit-value.status-high {
+    color: rgb(34, 197, 94);
+  }
+
+  .credit-unit {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  .credit-progress-bar {
+    height: 0.25rem;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 0.125rem;
+    overflow: hidden;
+    margin-bottom: 0.375rem;
+  }
+
+  .credit-progress-fill {
+    height: 100%;
+    border-radius: 0.125rem;
+    transition:
+      width 0.3s ease,
+      background-color 0.3s ease;
+  }
+
+  .credit-progress-fill.status-low {
+    background: linear-gradient(90deg, rgb(239, 68, 68) 0%, rgb(220, 38, 38) 100%);
+  }
+
+  .credit-progress-fill.status-medium {
+    background: linear-gradient(90deg, rgb(251, 191, 36) 0%, rgb(245, 158, 11) 100%);
+  }
+
+  .credit-progress-fill.status-high {
+    background: linear-gradient(90deg, rgb(34, 197, 94) 0%, rgb(22, 163, 74) 100%);
+  }
+
+  .credit-status {
+    display: flex;
+    align-items: center;
+  }
+
+  .status-text {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    padding: 0.1875rem 0.375rem;
+    border-radius: 0.25rem;
+  }
+
+  .status-icon {
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+
+  .status-text.status-low {
+    color: rgb(239, 68, 68);
+    background: rgba(239, 68, 68, 0.1);
+  }
+
+  .credit-loading {
+    display: flex;
+    align-items: center;
+  }
+
+  .loading-spinner {
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid rgba(99, 102, 241, 0.2);
+    border-top-color: rgb(99, 102, 241);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 </style>
