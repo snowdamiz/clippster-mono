@@ -64,6 +64,12 @@ defmodule ClippsterServerWeb.Router do
 
     post "/clips/detect", ClipsController, :detect
     post "/clips/detect-chunked", ClipsController, :detect_chunked
+
+    # Handle OPTIONS for bug reports
+    options "/bug-reports", BugReportsController, :options
+
+    # Bug report creation (requires authentication)
+    post "/bug-reports", BugReportsController, :create
   end
 
   # Admin-only routes
@@ -73,6 +79,11 @@ defmodule ClippsterServerWeb.Router do
     get "/admin/users", AdminController, :list_users
     post "/admin/users/:user_id/promote", AdminController, :promote_user
     put "/admin/users/:user_id/credits", AdminController, :update_user_credits
+
+    # Admin bug report management
+    get "/admin/bug-reports", BugReportsController, :index
+    put "/admin/bug-reports/:id", BugReportsController, :update
+    delete "/admin/bug-reports/:id", BugReportsController, :delete
   end
 
   

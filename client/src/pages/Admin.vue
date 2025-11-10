@@ -333,30 +333,268 @@
       </div>
     </div>
 
-    <!-- Empty State -->
-    <div v-else class="text-center py-12">
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        class="h-12 w-12 text-muted-foreground mx-auto mb-4"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"
-        />
-      </svg>
-      <p class="text-muted-foreground mb-4">No users found</p>
-      <button
-        @click="fetchUsers"
-        class="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium transition-all"
-      >
-        Load Users
-      </button>
+    <!-- Bug Reports Section -->
+    <div v-if="users.length > 0" class="mt-8 space-y-4">
+      <div class="bg-card">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-foreground">Bug Reports</h2>
+          <div class="flex items-center gap-4">
+            <select
+              v-model="bugReportFilters.status"
+              @change="fetchBugReports"
+              class="px-3 py-1 text-sm bg-background border border-input rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            >
+              <option value="">All Status</option>
+              <option value="open">Open</option>
+              <option value="in_progress">In Progress</option>
+              <option value="resolved">Resolved</option>
+              <option value="closed">Closed</option>
+            </select>
+            <select
+              v-model="bugReportFilters.severity"
+              @change="fetchBugReports"
+              class="px-3 py-1 text-sm bg-background border border-input rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            >
+              <option value="">All Severity</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+            <span class="text-sm text-muted-foreground">
+              {{ bugReports.length }} report{{ bugReports.length !== 1 ? 's' : '' }} total
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bug Reports Table -->
+      <div v-if="bugReports.length > 0" class="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full">
+            <thead class="bg-muted/30">
+              <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  ID
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Title
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Severity
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Status
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  User
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Created
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody class="bg-card divide-y divide-border">
+              <tr v-for="bugReport in bugReports" :key="bugReport.id" class="hover:bg-muted/20 transition-colors">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-foreground">#{{ bugReport.id }}</td>
+                <td class="px-6 py-4">
+                  <div class="max-w-xs">
+                    <p class="text-sm font-medium text-foreground truncate" :title="bugReport.title">
+                      {{ bugReport.title }}
+                    </p>
+                    <p class="text-xs text-muted-foreground mt-1 line-clamp-2" :title="bugReport.description">
+                      {{ bugReport.description }}
+                    </p>
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span
+                    :class="getSeverityClass(bugReport.severity)"
+                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                  >
+                    {{ bugReport.severity.toUpperCase() }}
+                  </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span
+                    :class="getStatusClass(bugReport.status)"
+                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                  >
+                    {{ bugReport.status.replace('_', ' ').toUpperCase() }}
+                  </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <code class="text-xs bg-muted px-2 py-1 rounded font-mono text-primary">
+                    {{ formatWalletAddress(bugReport.user_wallet_address) }}
+                  </code>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
+                  {{ formatDate(bugReport.inserted_at) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                  <div class="flex items-center gap-2">
+                    <button
+                      v-if="bugReport.status !== 'resolved'"
+                      @click="updateBugReportStatus(bugReport.id, 'resolved')"
+                      :disabled="updatingBugReportId === bugReport.id"
+                      class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-green-500/80 to-emerald-500/80 hover:from-green-500/90 hover:to-emerald-500/90 text-white text-xs font-medium rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <svg
+                        v-if="updatingBugReportId === bugReport.id"
+                        xmlns="http://www.w3.org/2000/svg"
+                        class="h-3 w-3 mr-1 animate-spin"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          class="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          stroke-width="4"
+                        ></circle>
+                        <path
+                          class="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        ></path>
+                      </svg>
+                      <svg
+                        v-else
+                        xmlns="http://www.w3.org/2000/svg"
+                        class="h-3 w-3 mr-1"
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
+                      >
+                        <path
+                          fill-rule="evenodd"
+                          d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                          clip-rule="evenodd"
+                        />
+                      </svg>
+                      Resolve
+                    </button>
+                    <button
+                      v-else
+                      @click="updateBugReportStatus(bugReport.id, 'in_progress')"
+                      :disabled="updatingBugReportId === bugReport.id"
+                      class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-yellow-500/80 to-orange-500/80 hover:from-yellow-500/90 hover:to-orange-500/90 text-white text-xs font-medium rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <svg
+                        v-if="updatingBugReportId === bugReport.id"
+                        xmlns="http://www.w3.org/2000/svg"
+                        class="h-3 w-3 mr-1 animate-spin"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          class="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          stroke-width="4"
+                        ></circle>
+                        <path
+                          class="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        ></path>
+                      </svg>
+                      <span v-else>Reopen</span>
+                    </button>
+                    <button
+                      @click="confirmDeleteBugReport(bugReport)"
+                      :disabled="deletingBugReportId === bugReport.id"
+                      class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-red-500/80 to-pink-500/80 hover:from-red-500/90 hover:to-pink-500/90 text-white text-xs font-medium rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <svg
+                        v-if="deletingBugReportId === bugReport.id"
+                        xmlns="http://www.w3.org/2000/svg"
+                        class="h-3 w-3 mr-1 animate-spin"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          class="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          stroke-width="4"
+                        ></circle>
+                        <path
+                          class="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        ></path>
+                      </svg>
+                      <svg
+                        v-else
+                        xmlns="http://www.w3.org/2000/svg"
+                        class="h-3 w-3 mr-1"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
+                      </svg>
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Bug Reports Empty State -->
+      <div v-else class="text-center py-12 bg-card border border-border rounded-lg">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          class="h-12 w-12 text-muted-foreground mx-auto mb-4"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+          />
+        </svg>
+        <p class="text-muted-foreground mb-4">No bug reports found</p>
+        <button
+          @click="fetchBugReports"
+          class="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium transition-all"
+        >
+          Refresh Bug Reports
+        </button>
+      </div>
     </div>
+
+    <!-- Bug Report Delete Confirmation Modal -->
+    <ConfirmationModal
+      :show="showDeleteBugReportDialog"
+      title="Delete Bug Report"
+      :message="'Are you sure you want to delete the bug report'"
+      :item-name="bugReportToDelete?.title || ''"
+      suffix="?"
+      confirm-text="Delete"
+      @close="handleDeleteBugReportDialogClose"
+      @confirm="deleteBugReportConfirmed"
+    />
 
     <!-- Promotion Confirmation Modal -->
     <ConfirmationModal
@@ -496,6 +734,25 @@
     count: number;
   }
 
+  interface BugReport {
+    id: number;
+    title: string;
+    description: string;
+    severity: string;
+    expected_behavior: string | null;
+    actual_behavior: string | null;
+    user_wallet_address: string;
+    status: string;
+    inserted_at: string;
+    updated_at: string;
+  }
+
+  interface BugReportsResponse {
+    success: boolean;
+    bug_reports: BugReport[];
+    count: number;
+  }
+
   const authStore = useAuthStore();
   const users = ref<User[]>([]);
   const loading = ref(false);
@@ -510,6 +767,17 @@
     hours_to_add: 0,
   });
   const creditError = ref<string | null>(null);
+
+  // Bug reports state
+  const bugReports = ref<BugReport[]>([]);
+  const bugReportFilters = ref({
+    status: '',
+    severity: '',
+  });
+  const updatingBugReportId = ref<number | null>(null);
+  const deletingBugReportId = ref<number | null>(null);
+  const showDeleteBugReportDialog = ref(false);
+  const bugReportToDelete = ref<BugReport | null>(null);
 
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -742,8 +1010,200 @@
     }
   };
 
+  const fetchBugReports = async () => {
+    try {
+      console.log('🔐 Admin - Fetching bug reports...');
+
+      // Build query string from filters
+      const queryParams = new URLSearchParams();
+      if (bugReportFilters.value.status) {
+        queryParams.append('status', bugReportFilters.value.status);
+      }
+      if (bugReportFilters.value.severity) {
+        queryParams.append('severity', bugReportFilters.value.severity);
+      }
+
+      const response = await fetch(`${API_BASE}/api/admin/bug-reports?${queryParams}`, {
+        headers: {
+          Authorization: `Bearer ${authStore.token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('🔐 Admin - Bug reports response status:', response.status);
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error('Admin access required');
+        } else if (response.status === 401) {
+          throw new Error('Authentication required');
+        } else {
+          throw new Error(`Failed to fetch bug reports: ${response.statusText}`);
+        }
+      }
+
+      const data: BugReportsResponse = await response.json();
+      console.log('🔐 Admin - Bug reports data:', data);
+
+      if (data.success) {
+        bugReports.value = data.bug_reports;
+        console.log(`🔐 Admin - Loaded ${data.bug_reports.length} bug reports`);
+      } else {
+        throw new Error('Failed to load bug reports data');
+      }
+    } catch (err) {
+      console.error('🔐 Admin - Error fetching bug reports:', err);
+      error.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    }
+  };
+
+  const updateBugReportStatus = async (bugReportId: number, status: string) => {
+    updatingBugReportId.value = bugReportId;
+
+    try {
+      console.log(`🔐 Admin - Updating bug report ${bugReportId} status to ${status}...`);
+
+      const response = await fetch(`${API_BASE}/api/admin/bug-reports/${bugReportId}`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${authStore.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status }),
+      });
+
+      console.log('🔐 Admin - Update bug report response status:', response.status);
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error('Admin access required');
+        } else if (response.status === 401) {
+          throw new Error('Authentication required');
+        } else if (response.status === 404) {
+          throw new Error('Bug report not found');
+        } else {
+          throw new Error(`Failed to update bug report: ${response.statusText}`);
+        }
+      }
+
+      const data = await response.json();
+      console.log('🔐 Admin - Update bug report response data:', data);
+
+      if (data.success) {
+        // Update the bug report in the local state
+        const bugReportIndex = bugReports.value.findIndex((br) => br.id === bugReportId);
+        if (bugReportIndex !== -1) {
+          bugReports.value[bugReportIndex] = {
+            ...bugReports.value[bugReportIndex],
+            status: data.bug_report.status,
+            updated_at: data.bug_report.updated_at,
+          };
+        }
+        console.log(`🔐 Admin - Successfully updated bug report ${bugReportId} status`);
+      } else {
+        throw new Error(data.error || 'Failed to update bug report');
+      }
+    } catch (err) {
+      console.error('🔐 Admin - Error updating bug report:', err);
+      error.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    } finally {
+      updatingBugReportId.value = null;
+    }
+  };
+
+  const confirmDeleteBugReport = (bugReport: BugReport) => {
+    bugReportToDelete.value = bugReport;
+    showDeleteBugReportDialog.value = true;
+  };
+
+  const handleDeleteBugReportDialogClose = () => {
+    showDeleteBugReportDialog.value = false;
+    bugReportToDelete.value = null;
+  };
+
+  const deleteBugReportConfirmed = async () => {
+    if (!bugReportToDelete.value) return;
+
+    deletingBugReportId.value = bugReportToDelete.value.id;
+
+    try {
+      console.log(`🔐 Admin - Deleting bug report ${bugReportToDelete.value.id}...`);
+
+      const response = await fetch(`${API_BASE}/api/admin/bug-reports/${bugReportToDelete.value.id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${authStore.token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('🔐 Admin - Delete bug report response status:', response.status);
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error('Admin access required');
+        } else if (response.status === 401) {
+          throw new Error('Authentication required');
+        } else if (response.status === 404) {
+          throw new Error('Bug report not found');
+        } else {
+          throw new Error(`Failed to delete bug report: ${response.statusText}`);
+        }
+      }
+
+      const data = await response.json();
+      console.log('🔐 Admin - Delete bug report response data:', data);
+
+      if (data.success) {
+        // Remove the bug report from the local state
+        bugReports.value = bugReports.value.filter((br) => br.id !== bugReportToDelete.value!.id);
+        console.log(`🔐 Admin - Successfully deleted bug report ${bugReportToDelete.value.id}`);
+      } else {
+        throw new Error(data.error || 'Failed to delete bug report');
+      }
+    } catch (err) {
+      console.error('🔐 Admin - Error deleting bug report:', err);
+      error.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    } finally {
+      deletingBugReportId.value = null;
+      showDeleteBugReportDialog.value = false;
+      bugReportToDelete.value = null;
+    }
+  };
+
+  const getSeverityClass = (severity: string) => {
+    switch (severity) {
+      case 'low':
+        return 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800';
+      case 'medium':
+        return 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800';
+      case 'high':
+        return 'bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800';
+      case 'critical':
+        return 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800';
+      default:
+        return 'bg-gray-50 dark:bg-gray-900/20 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-800';
+    }
+  };
+
+  const getStatusClass = (status: string) => {
+    switch (status) {
+      case 'open':
+        return 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800';
+      case 'in_progress':
+        return 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800';
+      case 'resolved':
+        return 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800';
+      case 'closed':
+        return 'bg-gray-50 dark:bg-gray-900/20 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-800';
+      default:
+        return 'bg-gray-50 dark:bg-gray-900/20 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-800';
+    }
+  };
+
   onMounted(() => {
     fetchUsers();
+    fetchBugReports();
   });
 </script>
 

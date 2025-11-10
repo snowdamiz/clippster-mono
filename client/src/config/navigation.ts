@@ -7,6 +7,7 @@ export interface NavigationItem {
   badge?: string;
   useImage?: boolean;
   adminOnly?: boolean;
+  action?: 'dialog'; // New property to handle dialog actions instead of routing
 }
 
 export const navigationItems: NavigationItem[] = [
