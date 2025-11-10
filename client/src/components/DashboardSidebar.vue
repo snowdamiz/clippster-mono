@@ -6,8 +6,8 @@
       @close="showBugReportDialog = false"
       @submitted="handleBugReportSubmitted"
     />
-    <!-- Logo/Brand -->
-    <div class="h-16 px-6 flex items-center border-b border-border">
+    <!-- Logo/Brand - only show in web environment, not in native app -->
+    <div v-if="!isNativeEnvironment" class="h-16 px-6 flex items-center border-b border-border">
       <img src="/logo.svg" alt="Clippster" class="h-7 w-auto" />
     </div>
     <!-- Navigation -->
@@ -103,6 +103,40 @@
     </nav>
     <!-- User info and logout at bottom -->
     <div class="absolute bottom-0 w-64 border-t border-border">
+      <!-- Credit Balance -->
+      <div class="px-4 pb-2 pt-2">
+        <router-link
+          to="/pricing"
+          class="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+          title="View Pricing & Purchase Credits"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-4 w-4 text-primary"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          <div class="flex-1">
+            <div v-if="!loadingBalance" class="text-xs">
+              <span v-if="typeof hoursRemaining === 'string'" class="text-primary font-medium">Credits: Unlimited</span>
+              <span v-else class="text-primary font-medium">
+                Credits: {{ hoursRemaining }} {{ hoursRemaining === 1 ? 'hr' : 'hrs' }}
+              </span>
+            </div>
+            <div v-else class="text-xs">
+              <span class="text-muted-foreground animate-pulse">Loading credits...</span>
+            </div>
+          </div>
+        </router-link>
+      </div>
       <!-- Wallet info -->
       <div class="px-4 pb-2 pt-2 border-t border-border">
         <div class="flex items-center justify-between">
@@ -115,7 +149,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed } from 'vue';
+  import { ref, computed, onMounted } from 'vue';
   import { useRoute, useRouter } from 'vue-router';
   import { useAuthStore } from '@/stores/auth';
   import { useWallet } from '@/composables/useWallet';
@@ -126,6 +160,11 @@
   const router = useRouter();
   const authStore = useAuthStore();
   const { formatAddress } = useWallet();
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
+  const hoursRemaining = ref<number | 'unlimited'>(0);
+  const loadingBalance = ref(false);
+  const isNativeEnvironment = ref(false);
 
   // Filter navigation items based on admin status
   const visibleNavigationItems = computed(() => {
@@ -179,6 +218,43 @@
     console.log('Bug report submitted successfully');
     // Could add a toast notification here if needed
   };
+
+  async function fetchBalance() {
+    if (!authStore.token) return;
+
+    loadingBalance.value = true;
+    try {
+      const response = await fetch(`${API_BASE}/api/credits/balance`, {
+        headers: {
+          Authorization: `Bearer ${authStore.token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          hoursRemaining.value =
+            data.balance.hours_remaining === 'unlimited'
+              ? 'unlimited'
+              : parseFloat(data.balance.hours_remaining.toFixed(1));
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch balance:', error);
+    } finally {
+      loadingBalance.value = false;
+    }
+  }
+
+  onMounted(() => {
+    // Check if running in native Tauri environment
+    isNativeEnvironment.value = typeof window !== 'undefined' && '__TAURI__' in window;
+
+    fetchBalance();
+    // Refresh balance every 30 seconds
+    setInterval(fetchBalance, 30000);
+  });
 </script>
 
 <style scoped>

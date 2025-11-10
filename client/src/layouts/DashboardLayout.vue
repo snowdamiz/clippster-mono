@@ -3,9 +3,9 @@
     <DashboardSidebar />
     <!-- Main content area with left margin to account for fixed sidebar -->
     <main class="flex-1 ml-64">
-      <DashboardHeader />
+      <!-- <DashboardHeader /> -->
       <!-- Page content with top margin to account for fixed header -->
-      <div class="px-6 pb-8 pt-24">
+      <div class="px-6 pb-8 pt-8">
         <div class="max-w-7xl mx-auto">
           <router-view v-slot="{ Component }">
             <transition name="fade" mode="out-in"><component :is="Component" /></transition>
@@ -17,8 +17,8 @@
 </template>
 
 <script setup lang="ts">
-  import DashboardSidebar from '@/components/DashboardSidebar.vue'
-  import DashboardHeader from '@/components/DashboardHeader.vue'
+  import DashboardSidebar from '@/components/DashboardSidebar.vue';
+  import DashboardHeader from '@/components/DashboardHeader.vue';
 </script>
 
 <style scoped>
