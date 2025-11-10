@@ -231,6 +231,29 @@
                     Run {{ clip.run_number }}
                   </span>
 
+                  <!-- Prompt Name -->
+                  <span
+                    v-if="clip.session_prompt"
+                    class="flex items-center gap-1 bg-purple-500/15 text-purple-400 px-2 py-0.5 rounded-md font-medium"
+                    :title="`Used prompt: ${getPromptName(clip.session_prompt)}`"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="h-3 w-3"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                      />
+                    </svg>
+                    <span class="truncate max-w-20">{{ getPromptName(clip.session_prompt) }}</span>
+                  </span>
+
                   <span
                     v-if="clip.current_version?.confidence_score"
                     class="flex items-center gap-1 bg-blue-500/15 text-blue-400 px-2 py-0.5 rounded-md font-medium"
@@ -314,8 +337,10 @@
   import {
     getClipsWithVersionsByProjectId,
     getClipDetectionSessionsByProjectId,
+    getAllPrompts,
     type ClipWithVersion,
     type ClipDetectionSession,
+    type Prompt,
   } from '@/services/database';
   import {
     PlayIcon,
@@ -365,7 +390,8 @@
 
   const emit = defineEmits<Emits>();
 
-  // Prompt-related functionality removed - now handled by confirmation dialog
+  // Prompts state for matching prompt names to session prompts
+  const prompts = ref<Prompt[]>([]);
 
   // Clips state
   const clips = ref<ClipWithVersion[]>([]);
@@ -377,7 +403,8 @@
   const clipsScrollContainer = ref<HTMLElement | null>(null);
 
   onMounted(async () => {
-    // Initialize - prompt loading is now handled by the confirmation dialog
+    // Load prompts for name matching
+    await loadPrompts();
   });
 
   // Watch for project changes and load clips
@@ -425,6 +452,15 @@
       }
     }
   );
+
+  // Load prompts for name matching
+  async function loadPrompts() {
+    try {
+      prompts.value = await getAllPrompts();
+    } catch (error) {
+      console.error('[ClipsPanel] Failed to load prompts:', error);
+    }
+  }
 
   // Load clips and detection history
   async function loadClipsAndHistory(projectId: string) {
@@ -550,6 +586,21 @@
 
     // Convert back to hex
     return `#${darkerR.toString(16).padStart(2, '0')}${darkerG.toString(16).padStart(2, '0')}${darkerB.toString(16).padStart(2, '0')}`;
+  }
+
+  // Computed property to match session prompt content to prompt names
+  const promptNameMap = computed(() => {
+    const map = new Map<string, string>();
+    prompts.value.forEach((prompt) => {
+      map.set(prompt.content, prompt.name);
+    });
+    return map;
+  });
+
+  // Function to get prompt name from session prompt content
+  function getPromptName(sessionPrompt?: string): string {
+    if (!sessionPrompt) return 'Unknown Prompt';
+    return promptNameMap.value.get(sessionPrompt) || 'Custom Prompt';
   }
 
   // Computed properties for progress display

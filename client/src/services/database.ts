@@ -227,6 +227,7 @@ export interface ClipWithVersion extends Clip {
   detection_session_id: string | null;
   session_created_at?: number;
   session_run_color?: string;
+  session_prompt?: string;
   run_number?: number;
   // Additional fields from JOIN
   current_version_name?: string;
@@ -1797,6 +1798,7 @@ export async function getClipsWithVersionsByProjectId(
       s.id as detection_session_id,
       s.created_at as session_created_at,
       s.run_color as session_run_color,
+      s.prompt as session_prompt,
       -- Calculate run number based on session creation order
       (SELECT COUNT(*) + 1 FROM clip_detection_sessions s2
        WHERE s2.project_id = ? AND s2.created_at < s.created_at) as run_number
