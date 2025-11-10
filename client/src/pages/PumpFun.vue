@@ -1214,14 +1214,21 @@
         : undefined;
 
       // Start the download
-      await startDownload(clip.title, videoUrl, pumpFunStore.currentMintId, segmentRange, clip.clipId);
+      await startDownload(clip.title, videoUrl, pumpFunStore.currentMintId, segmentRange, clip.clipId, clip.duration);
 
       // Show success toast
-      const downloadType = useSegmentDownload.value ? 'segment' : 'full stream';
-      success(
-        'Download Started',
-        `Downloading ${downloadType} of "${clip.title}". You'll be notified when it completes.`
-      );
+      let downloadType = useSegmentDownload.value ? 'segment' : 'full stream';
+      let downloadMessage = `Downloading ${downloadType} of "${clip.title}". You'll be notified when it completes.`;
+
+      // Check if auto-segmentation will be applied
+      if (!useSegmentDownload.value && clip.duration && clip.duration > 3600) {
+        const numberOfSegments = Math.ceil(clip.duration / 3600);
+        const segmentDuration = Math.round(clip.duration / numberOfSegments / 60);
+        downloadType = 'auto-segmented stream';
+        downloadMessage = `Splitting "${clip.title}" into ${numberOfSegments} equal parts (~${segmentDuration} min each). Downloads will process one at a time.`;
+      }
+
+      success('Download Started', downloadMessage);
 
       // Close dialog immediately
       closeDownloadDialog();

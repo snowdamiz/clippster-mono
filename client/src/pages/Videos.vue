@@ -62,8 +62,12 @@
           class="flex items-center justify-between mb-4"
         >
           <p class="text-sm text-muted-foreground">
-            <span v-if="activeDownloads.length > 0">
-              {{ activeDownloads.length }} download{{ activeDownloads.length !== 1 ? 's' : '' }} in progress
+            <span v-if="activeDownloads.length > 0 || queuedDownloads.length > 0">
+              <span v-if="activeDownloads.length > 0">
+                {{ activeDownloads.length }} download{{ activeDownloads.length !== 1 ? 's' : '' }} in progress (max 1)
+              </span>
+              <span v-if="activeDownloads.length > 0 && queuedDownloads.length > 0">•</span>
+              <span v-if="queuedDownloads.length > 0">{{ queuedDownloads.length }} queued</span>
               <span v-if="videos.length > 0">• {{ videos.length }} video{{ videos.length !== 1 ? 's' : '' }}</span>
             </span>
             <span v-else-if="videos.length > 0">{{ videos.length }} video{{ videos.length !== 1 ? 's' : '' }}</span>
@@ -71,7 +75,7 @@
         </div>
         <!-- Videos Grid -->
         <div
-          v-if="videos.length > 0 || uploading || activeDownloads.length > 0"
+          v-if="videos.length > 0 || uploading || activeDownloads.length > 0 || queuedDownloads.length > 0"
           class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
         >
           <!-- Skeleton loader card for uploading -->
@@ -154,9 +158,75 @@
                     {{ formatDuration(download.progress.total_time) }}
                   </span>
                   <span v-else-if="download.result?.file_size">{{ formatFileSize(download.result.file_size) }}</span>
-                  <span v-else>Downloading...</span>
+                  <span v-else>{{ download.progress?.status || 'Downloading...' }}</span>
                 </div>
               </div>
+            </div>
+            <!-- Cancel button overlay -->
+            <div class="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              <button
+                @click.stop="handleCancelDownload(download.id, download.title)"
+                class="p-2 bg-red-500/80 hover:bg-red-500 text-white rounded-full transition-all transform hover:scale-110 shadow-lg"
+                title="Cancel Download"
+              >
+                <svg
+                  class="h-4 w-4"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Queued download cards -->
+          <div
+            v-for="download in queuedDownloads"
+            :key="download.id"
+            class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer group aspect-video opacity-75"
+          >
+            <!-- Queued overlay -->
+            <div class="absolute inset-0 bg-black/40 z-10 flex items-center justify-center">
+              <div class="text-center text-white p-3">
+                <svg
+                  class="h-6 w-6 mx-auto mb-2 opacity-60"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <h3 class="font-semibold text-base mb-2 line-clamp-2 px-2">{{ download.title }}</h3>
+                <div class="text-sm mb-2">Queued</div>
+                <div class="text-xs opacity-80">Waiting to download...</div>
+              </div>
+            </div>
+            <!-- Cancel button overlay -->
+            <div class="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              <button
+                @click.stop="handleCancelDownload(download.id, download.title)"
+                class="p-2 bg-red-500/80 hover:bg-red-500 text-white rounded-full transition-all transform hover:scale-110 shadow-lg"
+                title="Cancel Download"
+              >
+                <svg
+                  class="h-4 w-4"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
           </div>
           <!-- Existing video cards -->
@@ -293,7 +363,7 @@
         </div>
         <!-- Empty State -->
         <EmptyState
-          v-if="videos.length === 0 && !uploading && activeDownloads.length === 0"
+          v-if="videos.length === 0 && !uploading && activeDownloads.length === 0 && queuedDownloads.length === 0"
           title="No videos yet"
           description="Upload your first raw video or download directly from Pump.fun to get started"
           button-text="Upload Video"
@@ -393,11 +463,14 @@
   const {
     initialize: initializeDownloads,
     getActiveDownloads,
+    getQueuedDownloads,
+    cancelDownload,
     cleanupOldDownloads,
     onDownloadComplete,
   } = useDownloads();
 
   const activeDownloads = computed(() => getActiveDownloads());
+  const queuedDownloads = computed(() => getQueuedDownloads());
 
   // Format file size utility
   function formatFileSize(bytes?: number): string {
@@ -671,6 +744,19 @@
       }
     } catch (err) {
       error('Failed to open folder', 'Unable to open the videos folder');
+    }
+  }
+
+  async function handleCancelDownload(downloadId: string, downloadTitle: string) {
+    try {
+      const cancelled = await cancelDownload(downloadId);
+      if (cancelled) {
+        success('Download Cancelled', `"${downloadTitle}" has been cancelled.`);
+      } else {
+        error('Failed to Cancel', 'Unable to cancel the download. It may have already completed.');
+      }
+    } catch (err) {
+      error('Cancel Failed', `Failed to cancel download: ${err}`);
     }
   }
 

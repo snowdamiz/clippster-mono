@@ -81,6 +81,18 @@ struct AudioChunk {
 static AUTH_RESULT: Lazy<Arc<Mutex<Option<AuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 static PAYMENT_RESULT: Lazy<Arc<Mutex<Option<PaymentResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 static ACTIVE_DOWNLOADS: Lazy<Arc<Mutex<HashMap<String, bool>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+
+#[derive(Debug, Clone)]
+struct DownloadMetadata {
+    output_path: Option<String>,
+    thumbnail_path: Option<String>,
+    #[allow(dead_code)]
+    started_at: std::time::SystemTime,
+    #[allow(dead_code)]
+    process_id: Option<u32>,
+}
+
+static DOWNLOAD_METADATA: Lazy<Arc<Mutex<HashMap<String, DownloadMetadata>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 static CLIP_GENERATION_IN_PROGRESS: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
 static AUTH_SERVER_PORT: u16 = 48274;
 static PAYMENT_SERVER_PORT: u16 = 48275;
@@ -308,6 +320,17 @@ async fn download_pumpfun_vod_segment(
     println!("[Rust] Generated filename: {}", filename);
     println!("[Rust] Full video path: {}", video_path.display());
 
+    // Store download metadata for cleanup
+    {
+        let mut metadata_map = DOWNLOAD_METADATA.lock().unwrap();
+        metadata_map.insert(download_id.clone(), DownloadMetadata {
+            output_path: Some(video_path.to_string_lossy().to_string()),
+            thumbnail_path: None, // We'll set this when/if it's generated
+            started_at: std::time::SystemTime::now(),
+            process_id: None,
+        });
+    }
+
     // Send initial progress
     println!("[Rust] Sending initial progress event...");
     let progress_result = app.emit("download-progress", DownloadProgress {
@@ -367,11 +390,11 @@ async fn download_pumpfun_vod_segment(
                 .stderr(Stdio::piped())
                 .spawn()
                 .map_err(|e| format!("Failed to spawn ffmpeg for segment: {}", e))?;
+            let total_duration = total_segment_duration;
 
             // Clone for progress tracking
             let app_progress = app_clone_for_progress.clone();
             let download_id_progress = download_id_for_progress.clone();
-            let total_duration = total_segment_duration;
 
             // Spawn a task to read stderr and parse progress
             let stderr = child.stderr.take().unwrap();
@@ -722,6 +745,17 @@ async fn download_pumpfun_vod(
 
     println!("[Rust] Generated filename: {}", filename);
     println!("[Rust] Full video path: {}", video_path.display());
+
+    // Store download metadata for cleanup
+    {
+        let mut metadata_map = DOWNLOAD_METADATA.lock().unwrap();
+        metadata_map.insert(download_id.clone(), DownloadMetadata {
+            output_path: Some(video_path.to_string_lossy().to_string()),
+            thumbnail_path: None, // We'll set this when/if it's generated
+            started_at: std::time::SystemTime::now(),
+            process_id: None,
+        });
+    }
 
     // Send initial progress
     println!("[Rust] Sending initial progress event...");
@@ -1271,6 +1305,126 @@ async fn cancel_all_downloads() -> Result<Vec<String>, String> {
     println!("[Rust] Cancelled {} downloads and cleaned up {} files", download_ids.len(), cleaned_files.len());
 
     Ok(download_ids)
+}
+
+#[tauri::command]
+async fn cancel_download(download_id: String) -> Result<bool, String> {
+    println!("[Rust] Canceling download: {}", download_id);
+
+    // Since we only allow 1 concurrent download, we can safely kill all FFmpeg processes
+    // This is much more reliable than trying to track individual processes
+    #[allow(unused_assignments)]
+    let mut ffmpeg_killed = false;
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+
+        println!("[Rust] Terminating FFmpeg processes (1 concurrent download limit)");
+
+        match Command::new("taskkill")
+            .args(["/F", "/IM", "ffmpeg.exe"])
+            .output()
+        {
+            Ok(output) => {
+                if output.status.success() {
+                    println!("[Rust] Successfully terminated FFmpeg processes");
+                    ffmpeg_killed = true;
+                } else {
+                    println!("[Rust] No FFmpeg processes were running");
+                    ffmpeg_killed = false;
+                }
+            }
+            Err(e) => {
+                println!("[Rust] Failed to terminate FFmpeg processes: {}", e);
+                ffmpeg_killed = false;
+            },
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        use std::process::Command;
+
+        match Command::new("pkill")
+            .args(["-f", "ffmpeg"])
+            .output()
+        {
+            Ok(output) => {
+                if output.status.success() {
+                    println!("[Rust] Successfully terminated FFmpeg processes");
+                    ffmpeg_killed = true;
+                } else {
+                    println!("[Rust] No FFmpeg processes were running");
+                    ffmpeg_killed = false;
+                }
+            }
+            Err(e) => {
+                println!("[Rust] Failed to terminate FFmpeg processes: {}", e);
+                ffmpeg_killed = false;
+            },
+        }
+    }
+
+    // Give processes a moment to terminate and release file handles
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+    // Get metadata for cleanup
+    let metadata = {
+        let mut metadata_map = DOWNLOAD_METADATA.lock().unwrap();
+        metadata_map.remove(&download_id)
+    };
+
+    // Clean up files if we have metadata
+    if let Some(meta) = metadata {
+        println!("[Rust] Cleaning up files for cancelled download: {}", download_id);
+
+        // Remove video file if it exists
+        if let Some(video_path) = meta.output_path {
+            match std::fs::remove_file(&video_path) {
+                Ok(()) => println!("[Rust] Removed partial video file: {}", video_path),
+                Err(e) => println!("[Rust] Failed to remove partial video file {}: {}", video_path, e),
+            }
+        }
+
+        // Remove thumbnail file if it exists
+        if let Some(thumbnail_path) = meta.thumbnail_path {
+            match std::fs::remove_file(&thumbnail_path) {
+                Ok(()) => println!("[Rust] Removed partial thumbnail file: {}", thumbnail_path),
+                Err(e) => println!("[Rust] Failed to remove partial thumbnail file {}: {}", thumbnail_path, e),
+            }
+        }
+    }
+
+    // Remove from active downloads
+    let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
+    let was_active = downloads.remove(&download_id).is_some();
+    drop(downloads);
+
+    // Consider cancellation successful if:
+    // 1. The download was active in our tracking, OR
+    // 2. We successfully killed FFmpeg processes (indicates cancellation worked)
+    let cancellation_successful = was_active || ffmpeg_killed;
+
+    if was_active {
+        println!("[Rust] Successfully cancelled download: {}", download_id);
+    } else if ffmpeg_killed {
+        println!("[Rust] Download was not active in tracking, but FFmpeg was killed - cancellation successful: {}", download_id);
+    } else {
+        println!("[Rust] Cancellation attempt failed - download not active and no FFmpeg processes killed: {}", download_id);
+    }
+
+    Ok(cancellation_successful)
+}
+
+#[tauri::command]
+async fn cleanup_completed_download(download_id: String) -> Result<(), String> {
+    println!("[Rust] Cleaning up metadata for completed download: {}", download_id);
+
+    // Remove metadata for completed downloads (keep the files)
+    let mut metadata_map = DOWNLOAD_METADATA.lock().unwrap();
+    metadata_map.remove(&download_id);
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -2558,6 +2712,8 @@ pub fn run() {
             download_pumpfun_vod_segment,
             get_active_downloads_count,
             cancel_all_downloads,
+            cancel_download,
+            cleanup_completed_download,
             check_file_exists,
             validate_video_file,
             set_clip_generation_in_progress,

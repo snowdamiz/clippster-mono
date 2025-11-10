@@ -10,7 +10,8 @@
       "Bash(taskkill:*)",
       "Bash(nul:*)",
       "Bash(tasklist:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(cargo check:*)"
     ],
     "deny": [],
     "ask": []
