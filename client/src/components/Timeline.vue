@@ -250,6 +250,7 @@
     hoveredTimelineClipId?: string | null;
     currentlyPlayingClipId?: string | null;
     projectId?: string | null;
+    dialogHeight?: number | null;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -271,8 +272,11 @@
     // Account for layout overflow (padding, margins, borders, sticky positioning)
     const adjustedHeight = totalHeight - 14; // Subtract 30px to prevent overflow
 
+    // Calculate max height based on dialog height (45% of dialog height) or use default
+    const dynamicMaxHeight = props.dialogHeight ? Math.floor(props.dialogHeight * 0.45) : TIMELINE_BOUNDS.MAX_HEIGHT;
+
     // Apply reasonable bounds
-    const finalHeight = Math.max(TIMELINE_BOUNDS.MIN_HEIGHT, Math.min(TIMELINE_BOUNDS.MAX_HEIGHT, adjustedHeight));
+    const finalHeight = Math.max(TIMELINE_BOUNDS.MIN_HEIGHT, Math.min(dynamicMaxHeight, adjustedHeight));
     return finalHeight;
   });
 

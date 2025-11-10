@@ -6,6 +6,7 @@
       @click.self="close"
     >
       <div
+        ref="dialogElementRef"
         class="bg-card rounded-t-lg rounded-b-lg w-full h-full border border-border shadow-2xl"
         style="margin: 30px; max-height: calc(100vh - 60px); max-width: calc(100vw - 60px)"
       >
@@ -109,6 +110,7 @@
             :hovered-timeline-clip-id="hoveredTimelineClipId"
             :currently-playing-clip-id="currentlyPlayingClipId"
             :project-id="project?.id"
+            :dialog-height="dialogHeight"
             @seekTimeline="seekTimeline"
             @timelineTrackHover="onTimelineTrackHover"
             @timelineMouseLeave="onTimelineMouseLeave"
@@ -228,8 +230,19 @@
   const clipsPanelRef = ref<InstanceType<typeof ClipsPanel> | null>(null);
   const timelineRef = ref<InstanceType<typeof Timeline> | null>(null);
 
+  // Dialog element ref for height tracking
+  const dialogElementRef = ref<HTMLElement | null>(null);
+
   // Use video player composable
   const projectRef = computed(() => props.project);
+
+  // Computed property for dialog height
+  const dialogHeight = computed(() => {
+    if (!dialogElementRef.value || !props.modelValue) return null;
+
+    const rect = dialogElementRef.value.getBoundingClientRect();
+    return rect.height;
+  });
 
   // Initialize progress socket
   const {

@@ -6,7 +6,11 @@
       "WebFetch(domain:tauri.app)",
       "WebFetch(domain:docs.rs)",
       "WebFetch(domain:research.google)",
-      "Bash(npx vue-tsc:*)"
+      "Bash(npx vue-tsc:*)",
+      "Bash(taskkill:*)",
+      "Bash(nul:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []
