@@ -386,6 +386,7 @@
     (e: 'scrollToTimeline'): void;
     (e: 'deleteClip', clipId: string): void;
     (e: 'playClip', clip: ClipWithVersion): void;
+    (e: 'seekVideo', time: number): void;
   }
 
   const emit = defineEmits<Emits>();
@@ -532,6 +533,18 @@
 
   // Clip click event handler
   function onClipClick(clipId: string) {
+    // Find the clip from our clips array
+    const clip = clips.value.find((c) => c.id === clipId);
+
+    if (clip && clip.current_version_segments && clip.current_version_segments.length > 0) {
+      // Sort segments by start_time to find the first one
+      const sortedSegments = [...clip.current_version_segments].sort((a, b) => a.start_time - b.start_time);
+      const firstSegment = sortedSegments[0];
+
+      // Emit seek event to move video to the start of the first segment
+      emit('seekVideo', firstSegment.start_time);
+    }
+
     // Toggle the hovered state - if clicking the same clip, unhighlight it
     hoveredClipId.value = hoveredClipId.value === clipId ? null : clipId;
     emit('clipHover', clipId);

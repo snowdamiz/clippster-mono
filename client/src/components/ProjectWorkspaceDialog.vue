@@ -92,6 +92,7 @@
                 @scrollToTimeline="onScrollToTimeline"
                 @deleteClip="onDeleteClip"
                 @playClip="onPlayClip"
+                @seekVideo="onSeekVideo"
               />
             </div>
           </div>
@@ -755,6 +756,20 @@
     } else {
       console.warn('[ProjectWorkspaceDialog] No segments found for clip:', clip.id);
       currentlyPlayingClipId.value = null;
+    }
+  }
+
+  // Function to handle video seeking from clip clicks
+  function onSeekVideo(time: number) {
+    if (videoElement.value) {
+      // Stop any existing segment playback
+      stopSegmentedPlayback();
+
+      // Clear currently playing clip
+      currentlyPlayingClipId.value = null;
+
+      // Seek to the specified time
+      videoElement.value.currentTime = time;
     }
   }
 
