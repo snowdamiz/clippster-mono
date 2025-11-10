@@ -12,9 +12,7 @@
     <!-- Window controls -->
     <div class="titlebar-controls">
       <button class="titlebar-button titlebar-minimize" @click="minimizeWindow" :title="isDark ? 'Minimize' : ''">
-        <svg width="10" height="1" viewBox="0 0 10 1" fill="none">
-          <line x1="0" y1="0.5" x2="10" y2="0.5" stroke="currentColor" stroke-width="1" />
-        </svg>
+        <img src="/minimize.svg" alt="Minimize" class="titlebar-icon" />
       </button>
 
       <button
@@ -23,21 +21,13 @@
         :title="isDark ? (isMaximized ? 'Restore' : 'Maximize') : ''"
       >
         <!-- Maximize icon (square) -->
-        <svg v-if="!isMaximized" width="10" height="10" viewBox="0 0 10 10" fill="none">
-          <rect x="1" y="1" width="8" height="8" stroke="currentColor" stroke-width="1" fill="none" />
-        </svg>
+        <img v-if="!isMaximized" src="/maximize.svg" alt="Maximize" class="titlebar-icon" />
         <!-- Restore icon (overlapping squares) -->
-        <svg v-else width="10" height="10" viewBox="0 0 10 10" fill="none">
-          <rect x="1" y="1" width="6" height="6" stroke="currentColor" stroke-width="1" fill="none" />
-          <rect x="3" y="3" width="6" height="6" stroke="currentColor" stroke-width="1" fill="none" />
-        </svg>
+        <img v-else src="/shrink.svg" alt="Restore" class="titlebar-icon" />
       </button>
 
       <button class="titlebar-button titlebar-close" @click="closeWindow" :title="isDark ? 'Close' : ''">
-        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-          <line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" stroke-width="1" />
-          <line x1="0" y1="10" x2="10" y2="0" stroke="currentColor" stroke-width="1" />
-        </svg>
+        <img src="/close.svg" alt="Close" class="titlebar-icon" />
       </button>
     </div>
   </div>
@@ -132,7 +122,7 @@
 <style scoped>
   .titlebar {
     height: 32px;
-    background: #1a1a1a;
+    background: #070707;
     color: #ffffff;
     display: flex;
     align-items: center;
@@ -180,7 +170,7 @@
   }
 
   .titlebar-button {
-    width: 46px;
+    width: 40px;
     height: 100%;
     border: none;
     background: transparent;
@@ -208,6 +198,18 @@
 
   .titlebar-maximize:hover {
     background: rgba(255, 255, 255, 0.15);
+  }
+
+  .titlebar-icon {
+    width: 10px;
+    height: 10px;
+    filter: brightness(0) invert(1);
+    opacity: 0.7;
+    transition: all 0.1s ease;
+  }
+
+  .titlebar-button:hover .titlebar-icon {
+    opacity: 1;
   }
 
   /* Windows-specific styling */

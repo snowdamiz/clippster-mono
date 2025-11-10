@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { Sparkles, Zap, DollarSign, Scissors, Shield, Coins, Check, Calendar, MapPin, Plus, Edit2, Trash2, Save, X, ChevronDown } from 'lucide-vue-next'
+import { Sparkles, Zap, DollarSign, Scissors, Shield, Coins, Check, Calendar, MapPin, ChevronDown } from 'lucide-vue-next'
 
 const platform = ref<'windows' | 'macos' | 'unknown'>('unknown')
 const otherPlatform = ref<'windows' | 'macos' | null>(null)
@@ -15,16 +15,46 @@ interface Milestone {
   status: 'completed' | 'in-progress' | 'planned'
 }
 
-const milestones = ref<Milestone[]>([])
-const isAddingMilestone = ref(false)
-const editingMilestone = ref<string | null>(null)
 const isRoadmapExpanded = ref(false)
-const newMilestone = ref({
-  title: '',
-  description: '',
-  date: '',
-  status: 'planned' as Milestone['status']
-})
+
+// Static milestones - no editing functionality
+const milestones = ref<Milestone[]>([
+  {
+    id: '1',
+    title: 'Core AI Clip Generation',
+    description: 'Advanced AI algorithms to automatically identify and extract the best moments from long videos.',
+    date: '2025-10-31',
+    status: 'completed'
+  },
+  {
+    id: '2',
+    title: 'Advanced Video Editing',
+    description: 'Professional editing tools including transitions, effects, and text overlays.',
+    date: '2025-11-07',
+    status: 'completed'
+  },
+  {
+    id: '3',
+    title: 'Multi-Platform Export',
+    description: 'Optimized export presets for TikTok, YouTube Shorts, Instagram Reels, and Twitter.',
+    date: '2025-11-14',
+    status: 'in-progress'
+  },
+  {
+    id: '4',
+    title: 'Traditional Payment Processing',
+    description: 'Support for traditional payment methods.',
+    date: '2025-11-25',
+    status: 'planned'
+  },
+  {
+    id: '5',
+    title: 'Mobile App Companion',
+    description: 'iOS and Android apps for quick clip preview and social media sharing.',
+    date: '2026-01-15',
+    status: 'planned'
+  }
+])
 
 // Computed property for displayed milestones
 const displayedMilestones = computed(() => {
@@ -34,7 +64,7 @@ const displayedMilestones = computed(() => {
   return milestones.value.slice(0, 3)
 })
 
-// Load milestones from localStorage
+// Detect platform on mount
 onMounted(() => {
   const userAgent = navigator.userAgent.toLowerCase()
   if (userAgent.includes('win')) {
@@ -48,87 +78,7 @@ onMounted(() => {
     platform.value = 'windows'
     otherPlatform.value = 'macos'
   }
-
-  // Load milestones from localStorage
-  const savedMilestones = localStorage.getItem('clippster-roadmap')
-  if (savedMilestones) {
-    milestones.value = JSON.parse(savedMilestones)
-  } else {
-    // Default milestones for demo
-    milestones.value = [
-      {
-        id: '1',
-        title: 'Core AI Clip Generation',
-        description: 'Advanced AI algorithms to automatically identify and extract the best moments from long videos.',
-        date: '2025-01-15',
-        status: 'completed'
-      },
-      {
-        id: '2',
-        title: 'Multi-Platform Export',
-        description: 'Optimized export presets for TikTok, YouTube Shorts, Instagram Reels, and Twitter.',
-        date: '2025-02-01',
-        status: 'completed'
-      },
-      {
-        id: '3',
-        title: 'Advanced Video Editing',
-        description: 'Professional editing tools including transitions, effects, and text overlays.',
-        date: '2025-03-15',
-        status: 'in-progress'
-      },
-      {
-        id: '4',
-        title: 'Cloud Processing Option',
-        description: 'Optional cloud-based processing for faster rendering on large projects.',
-        date: '2025-04-30',
-        status: 'planned'
-      },
-      {
-        id: '5',
-        title: 'Mobile App Companion',
-        description: 'iOS and Android apps for quick clip preview and social media sharing.',
-        date: '2025-06-15',
-        status: 'planned'
-      }
-    ]
-  }
 })
-
-// Roadmap management functions
-const saveMilestones = () => {
-  localStorage.setItem('clippster-roadmap', JSON.stringify(milestones.value))
-}
-
-const addMilestone = () => {
-  if (!newMilestone.value.title.trim()) return
-
-  const milestone: Milestone = {
-    id: Date.now().toString(),
-    title: newMilestone.value.title.trim(),
-    description: newMilestone.value.description.trim(),
-    date: newMilestone.value.date,
-    status: newMilestone.value.status
-  }
-
-  milestones.value.push(milestone)
-  milestones.value.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-  saveMilestones()
-
-  // Reset form
-  newMilestone.value = {
-    title: '',
-    description: '',
-    date: '',
-    status: 'planned'
-  }
-  isAddingMilestone.value = false
-}
-
-const deleteMilestone = (id: string) => {
-  milestones.value = milestones.value.filter(m => m.id !== id)
-  saveMilestones()
-}
 
 const getStatusColor = (status: Milestone['status']) => {
   switch (status) {
@@ -267,9 +217,8 @@ const closeMobileMenu = () => {
               </h1>
 
               <!-- Description -->
-              <p class="mt-6 text-lg sm:text-xl text-muted-foreground/90 max-w-3xl mx-auto leading-relaxed">
-                AI finds your best moments and turns them into viral clips for TikTok, YouTube Shorts, and Instagram Reels.
-                <span class="block mt-2 text-foreground/80 font-medium">Save 72-81% compared to subscription-based alternatives</span> while keeping your videos private on your computer.
+              <p class="mt-6 text-lg sm:text-xl text-muted-foreground/90 max-w-2xl mx-auto leading-relaxed">
+                AI finds your best moments and turns them into viral clips for X, TikTok, YouTube, and Instagram.
               </p>
 
                <!-- CTA Buttons -->
@@ -318,10 +267,6 @@ const closeMobileMenu = () => {
       <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 z-10">
         <!-- Section Header -->
         <div class="text-center mb-20">
-          <div class="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border border-purple-500/20 rounded-full text-sm font-medium mb-6">
-            <Sparkles class="w-4 h-4 text-purple-400" />
-            <span class="text-foreground/90">Why Creators Choose Clippster</span>
-          </div>
           <h2 class="text-4xl sm:text-5xl font-bold mb-6 leading-tight">
             Built for <span class="bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">modern creators</span>
           </h2>
@@ -429,9 +374,9 @@ const closeMobileMenu = () => {
               1
             </div>
             <div class="flex-1 bg-card/30 backdrop-blur-sm border border-border/50 rounded-xl p-6 group-hover:border-purple-500/50 transition-all duration-200 group-hover:shadow-lg group-hover:shadow-purple-500/10">
-              <h3 class="text-xl sm:text-2xl font-bold mb-3">Upload Your Stream</h3>
+              <h3 class="text-xl sm:text-2xl font-bold mb-3">Choose Your Base Video</h3>
               <p class="text-base text-muted-foreground/90 leading-relaxed">
-                Drop your VOD, stream recording, or long-form video. We support all major formats including MP4, MOV, AVI, and more.
+                Drop your VOD, stream recording, or long-form video. We also support direct download from Pump.fun with other streaming services coming soon.
               </p>
             </div>
           </div>
@@ -468,15 +413,14 @@ const closeMobileMenu = () => {
      <!-- Roadmap Section -->
      <section id="roadmap" class="relative py-24 sm:py-32 overflow-hidden">
        <!-- Background decoration -->
-       <div class="absolute inset-0 bg-gradient-to-br from-slate-900 via-background to-slate-900"></div>
+       <div class="absolute inset-0 overflow-hidden pointer-events-none">
+         <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl"></div>
+         <div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl"></div>
+       </div>
 
       <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 z-10">
         <!-- Section Header -->
-        <div class="text-center mb-20">
-          <div class="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border border-purple-500/20 rounded-full text-sm font-medium mb-6">
-            <MapPin class="w-4 h-4 text-purple-400" />
-            <span class="text-foreground/90">Product Roadmap</span>
-          </div>
+        <div class="text-center mb-16">
           <h2 class="text-4xl sm:text-5xl font-bold mb-6 leading-tight">
             What's <span class="bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">coming next</span>
           </h2>
@@ -485,140 +429,94 @@ const closeMobileMenu = () => {
           </p>
         </div>
 
-        <!-- Add Milestone Button (Admin) -->
-        <div class="mb-12 text-center">
-          <button
-            @click="isAddingMilestone = true"
-            class="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold rounded-lg transition-all duration-200 shadow-lg shadow-purple-500/30 hover:shadow-purple-500/50"
-          >
-            <Plus class="w-5 h-5" />
-            Add Milestone
-          </button>
-        </div>
-
-        <!-- Add Milestone Form -->
-        <div v-if="isAddingMilestone" class="mb-12 max-w-2xl mx-auto">
-          <div class="bg-card/50 backdrop-blur-sm border border-border/50 rounded-2xl p-8">
-            <div class="flex justify-between items-center mb-6">
-              <h3 class="text-2xl font-bold">Add New Milestone</h3>
-              <button
-                @click="isAddingMilestone = false"
-                class="p-2 hover:bg-muted/50 rounded-lg transition-colors"
-              >
-                <X class="w-5 h-5" />
-              </button>
+        <!-- Progress Overview -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-16 max-w-4xl mx-auto">
+          <div class="bg-gradient-to-br from-green-500/10 to-green-600/10 border border-green-500/20 rounded-xl p-6 text-center backdrop-blur-sm hover:border-green-500/40 transition-all duration-300 hover:scale-105">
+            <div class="text-3xl sm:text-4xl font-bold text-green-400 mb-2">
+              {{ milestones.filter(m => m.status === 'completed').length }}
             </div>
-
-            <div class="space-y-6">
-              <div>
-                <label class="block text-sm font-medium mb-2">Title</label>
-                <input
-                  v-model="newMilestone.title"
-                  type="text"
-                  placeholder="Enter milestone title"
-                  class="w-full px-4 py-3 bg-background border border-border/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                />
-              </div>
-
-              <div>
-                <label class="block text-sm font-medium mb-2">Description</label>
-                <textarea
-                  v-model="newMilestone.description"
-                  placeholder="Describe the milestone"
-                  rows="3"
-                  class="w-full px-4 py-3 bg-background border border-border/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
-                ></textarea>
-              </div>
-
-              <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <label class="block text-sm font-medium mb-2">Target Date</label>
-                  <input
-                    v-model="newMilestone.date"
-                    type="date"
-                    class="w-full px-4 py-3 bg-background border border-border/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label class="block text-sm font-medium mb-2">Status</label>
-                  <select
-                    v-model="newMilestone.status"
-                    class="w-full px-4 py-3 bg-background border border-border/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  >
-                    <option value="planned">Planned</option>
-                    <option value="in-progress">In Progress</option>
-                    <option value="completed">Completed</option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="flex gap-3">
-                <button
-                  @click="addMilestone"
-                  :disabled="!newMilestone.title.trim()"
-                  class="flex-1 px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-all duration-200 shadow-lg shadow-purple-500/30"
-                >
-                  <Save class="w-4 h-4 inline mr-2" />
-                  Save Milestone
-                </button>
-                <button
-                  @click="isAddingMilestone = false"
-                  class="px-6 py-3 bg-muted/50 hover:bg-muted text-foreground font-semibold rounded-lg transition-all duration-200"
-                >
-                  Cancel
-                </button>
-              </div>
+            <div class="text-sm text-muted-foreground/90 font-medium">Completed</div>
+          </div>
+          <div class="bg-gradient-to-br from-blue-500/10 to-blue-600/10 border border-blue-500/20 rounded-xl p-6 text-center backdrop-blur-sm hover:border-blue-500/40 transition-all duration-300 hover:scale-105">
+            <div class="text-3xl sm:text-4xl font-bold text-blue-400 mb-2">
+              {{ milestones.filter(m => m.status === 'in-progress').length }}
             </div>
+            <div class="text-sm text-muted-foreground/90 font-medium">In Progress</div>
+          </div>
+          <div class="bg-gradient-to-br from-purple-500/10 to-purple-600/10 border border-purple-500/20 rounded-xl p-6 text-center backdrop-blur-sm hover:border-purple-500/40 transition-all duration-300 hover:scale-105">
+            <div class="text-3xl sm:text-4xl font-bold text-purple-400 mb-2">
+              {{ milestones.filter(m => m.status === 'planned').length }}
+            </div>
+            <div class="text-sm text-muted-foreground/90 font-medium">Planned</div>
           </div>
         </div>
 
         <!-- Roadmap Timeline -->
-        <div class="relative max-w-4xl mx-auto">
-          <!-- Timeline line -->
-          <div class="absolute left-8 top-0 bottom-0 w-0.5 bg-gradient-to-b from-purple-500/50 via-indigo-500/50 to-purple-500/50 hidden md:block"></div>
+        <div class="relative max-w-5xl mx-auto">
+          <!-- Timeline line - More prominent on desktop -->
+          <div class="absolute left-[2.3rem] sm:left-10 top-0 bottom-0 w-1 bg-gradient-to-b from-purple-500/40 via-indigo-500/40 to-purple-500/40 rounded-full"></div>
 
           <!-- Milestones -->
-          <div class="space-y-8">
+          <div class="space-y-6 sm:space-y-8">
             <div
-              v-for="milestone in displayedMilestones"
+              v-for="(milestone, index) in displayedMilestones"
               :key="milestone.id"
-              class="relative flex gap-6 items-start group"
+              :style="{ animationDelay: `${index * 100}ms` }"
+              class="relative flex flex-col sm:flex-row gap-4 sm:gap-8 items-start group animate-fade-in opacity-0"
+              style="animation: fadeInUp 0.6s ease-out forwards;"
             >
-              <!-- Timeline dot -->
-              <div class="relative z-10 w-16 h-16 rounded-full bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-purple-500/50 group-hover:scale-110 transition-transform duration-200">
-                <component :is="getStatusIcon(milestone.status)" class="w-6 h-6 text-white" />
+              <!-- Timeline dot with status-based colors -->
+              <div 
+                :class="[
+                  'relative z-10 w-[2.875rem] h-[2.875rem] sm:w-20 sm:h-20 rounded-full flex items-center justify-center flex-shrink-0 shadow-xl transition-all duration-300',
+                  milestone.status === 'completed' ? 'bg-gradient-to-br from-green-500 to-emerald-600 shadow-green-500/50' :
+                  milestone.status === 'in-progress' ? 'bg-gradient-to-br from-blue-500 to-cyan-600 shadow-blue-500/50' :
+                  'bg-gradient-to-br from-purple-500 to-indigo-600 shadow-purple-500/50',
+                  'group-hover:scale-110 group-hover:rotate-6'
+                ]"
+              >
+                <component :is="getStatusIcon(milestone.status)" class="w-5 h-5 sm:w-7 sm:h-7 text-white" />
               </div>
 
-              <!-- Milestone card -->
-              <div class="flex-1 bg-card/50 backdrop-blur-sm border border-border/50 rounded-2xl p-8 group-hover:border-purple-500/50 transition-all duration-300 group-hover:shadow-2xl group-hover:shadow-purple-500/10 relative">
-                <!-- Status badge -->
-                <div class="absolute top-4 right-4">
-                  <span :class="`px-3 py-1 rounded-full text-xs font-semibold border ${getStatusColor(milestone.status)}`">
-                    {{ milestone.status === 'completed' ? 'Completed' : milestone.status === 'in-progress' ? 'In Progress' : 'Planned' }}
-                  </span>
-                </div>
+              <!-- Milestone card - Enhanced design -->
+              <div 
+                :class="[
+                  'flex-1 backdrop-blur-sm border rounded-2xl p-6 sm:p-8 transition-all duration-300 relative overflow-hidden',
+                  milestone.status === 'completed' ? 'bg-card/60 border-green-500/30 hover:border-green-500/60' :
+                  milestone.status === 'in-progress' ? 'bg-card/60 border-blue-500/30 hover:border-blue-500/60' :
+                  'bg-card/50 border-border/50 hover:border-purple-500/50',
+                  'group-hover:shadow-2xl group-hover:-translate-y-1',
+                  milestone.status === 'completed' ? 'group-hover:shadow-green-500/20' :
+                  milestone.status === 'in-progress' ? 'group-hover:shadow-blue-500/20' :
+                  'group-hover:shadow-purple-500/20'
+                ]"
+              >
+                <!-- Gradient overlay on hover -->
+                <div 
+                  :class="[
+                    'absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none',
+                    milestone.status === 'completed' ? 'bg-gradient-to-br from-green-500/5 to-emerald-500/5' :
+                    milestone.status === 'in-progress' ? 'bg-gradient-to-br from-blue-500/5 to-cyan-500/5' :
+                    'bg-gradient-to-br from-purple-500/5 to-indigo-500/5'
+                  ]"
+                ></div>
 
-                <!-- Milestone content -->
-                <div class="pr-24">
-                  <h3 class="text-2xl font-bold mb-3">{{ milestone.title }}</h3>
-                  <p class="text-muted-foreground/90 leading-relaxed mb-4">{{ milestone.description }}</p>
+                <div class="relative">
+                  <!-- Header with status badge -->
+                  <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+                    <h3 class="text-xl sm:text-2xl font-bold flex-1 min-w-0">{{ milestone.title }}</h3>
+                    <span :class="`px-3 py-1.5 rounded-full text-xs font-bold border whitespace-nowrap ${getStatusColor(milestone.status)} shadow-sm`">
+                      {{ milestone.status === 'completed' ? '✓ Completed' : milestone.status === 'in-progress' ? '⚡ In Progress' : '📅 Planned' }}
+                    </span>
+                  </div>
 
-                  <!-- Date and actions -->
-                  <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Calendar class="w-4 h-4" />
-                      <span>{{ new Date(milestone.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) }}</span>
-                    </div>
+                  <!-- Description -->
+                  <p class="text-base text-muted-foreground/90 leading-relaxed mb-6">{{ milestone.description }}</p>
 
-                    <!-- Delete button -->
-                    <button
-                      @click="deleteMilestone(milestone.id)"
-                      class="p-2 hover:bg-red-500/10 text-red-400 hover:text-red-300 rounded-lg transition-all duration-200"
-                      title="Delete milestone"
-                    >
-                      <Trash2 class="w-4 h-4" />
-                    </button>
+                  <!-- Footer with date -->
+                  <div class="flex items-center gap-2 text-sm text-muted-foreground/80 pt-4 border-t border-border/30">
+                    <Calendar class="w-4 h-4 flex-shrink-0" />
+                    <span class="font-medium">{{ new Date(milestone.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) }}</span>
                   </div>
                 </div>
               </div>
@@ -626,23 +524,17 @@ const closeMobileMenu = () => {
           </div>
 
           <!-- Expand/Collapse Button -->
-          <div v-if="milestones.length > 3" class="text-center mt-12">
+          <div v-if="milestones.length > 3" class="text-center mt-16">
             <button
               @click="isRoadmapExpanded = !isRoadmapExpanded"
-              class="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold rounded-lg transition-all duration-200 shadow-lg shadow-purple-500/30 hover:shadow-purple-500/50"
+              class="group inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold rounded-xl transition-all duration-200 shadow-xl shadow-purple-500/30 hover:shadow-purple-500/50 hover:scale-105"
             >
-              <span>{{ isRoadmapExpanded ? 'Show Less' : `Show All (${milestones.length})` }}</span>
-              <ChevronDown :class="`w-5 h-5 transition-transform duration-200 ${isRoadmapExpanded ? 'rotate-180' : ''}`" />
+              <span class="text-base">{{ isRoadmapExpanded ? 'Show Less' : `Show All ${milestones.length} Milestones` }}</span>
+              <ChevronDown :class="`w-5 h-5 transition-transform duration-300 ${isRoadmapExpanded ? 'rotate-180' : ''} group-hover:translate-y-0.5`" />
             </button>
           </div>
         </div>
 
-        <!-- Empty state -->
-        <div v-if="milestones.length === 0" class="text-center py-16">
-          <MapPin class="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
-          <h3 class="text-2xl font-bold mb-2">No milestones yet</h3>
-          <p class="text-muted-foreground/90">Start by adding your first milestone to the roadmap.</p>
-        </div>
       </div>
     </section>
 
@@ -821,12 +713,6 @@ const closeMobileMenu = () => {
 
       <div class="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 z-10">
         <div class="text-center">
-          <!-- Badge -->
-          <div class="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border border-purple-500/20 rounded-full text-sm font-medium mb-8">
-            <Zap class="w-4 h-4 text-purple-400" />
-            <span class="text-foreground/90">Available Now</span>
-          </div>
-
           <h2 class="text-4xl sm:text-6xl font-bold mb-6 leading-tight">
             Ready to <span class="bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">create?</span>
           </h2>
