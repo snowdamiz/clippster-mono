@@ -1,5 +1,5 @@
 <template>
-  <aside class="fixed left-0 top-0 h-full w-64 bg-muted/12 border-r border-border">
+  <aside class="fixed pt-8 left-0 top-0 h-full w-64 bg-muted/12 border-r border-border">
     <!-- Bug Report Dialog -->
     <BugReportDialog
       :show="showBugReportDialog"

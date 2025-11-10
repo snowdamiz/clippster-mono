@@ -188,10 +188,15 @@
   body {
     @apply bg-background text-foreground;
   }
-  /* Overlay scrollbar to prevent layout shift */
+  /* For custom titlebar, remove html scrollbar and let content handle scrolling */
   html {
-    overflow-y: scroll;
-    scrollbar-gutter: stable;
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  body {
+    height: 100vh;
+    overflow: hidden;
   }
   /* Cursor pointer for interactive elements */
   button,

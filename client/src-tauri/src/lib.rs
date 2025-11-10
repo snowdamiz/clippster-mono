@@ -2570,8 +2570,61 @@ pub fn run() {
             storage::copy_video_to_storage,
             storage::generate_thumbnail,
             storage::read_file_as_data_url,
-            storage::delete_video_file
+            storage::delete_video_file,
+            setup_macos_titlebar,
+            get_platform
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+// Get platform information
+#[tauri::command]
+fn get_platform() -> String {
+    std::env::consts::OS.to_string()
+}
+
+// Setup macOS titlebar with transparent background
+#[tauri::command]
+async fn setup_macos_titlebar(window: tauri::Window) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use cocoa::appkit::{NSColor, NSWindow};
+        use cocoa::foundation::NSAutoreleasePool;
+        use objc::msg_send;
+        use objc::runtime::Sel;
+
+        // Get the native window handle
+        let ns_window = window.ns_window().map_err(|e| format!("Failed to get NSWindow: {}", e))?;
+
+        // Create an autorelease pool for memory management
+        unsafe {
+            let pool = NSAutoreleasePool::new(std::ptr::null_mut());
+
+            // Set the background color to match the app's dark theme
+            let bg_color = NSColor::colorWithRed_green_blue_alpha_(
+                std::ptr::null_mut(),
+                15.0 / 255.0,    // R - dark background
+                15.0 / 255.0,    // G - dark background
+                15.0 / 255.0,    // B - dark background
+                1.0,             // Alpha - fully opaque
+            );
+
+            // Apply the background color to the window
+            let _: () = msg_send![ns_window, setBackgroundColor_: bg_color];
+
+            // Make sure the window is opaque for better performance
+            let _: () = msg_send![ns_window, setOpaque_: cocoa::foundation::NO];
+
+            // Clean up the autorelease pool
+            let _: () = msg_send![pool, release];
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        // On non-macOS platforms, this function does nothing
+    }
+
+    Ok(())
 }
