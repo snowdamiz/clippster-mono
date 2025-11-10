@@ -108,7 +108,7 @@
           <div
             v-for="download in activeDownloads"
             :key="download.id"
-            class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer group aspect-video"
+            class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 group aspect-video"
           >
             <!-- Thumbnail background with vignette -->
             <div
@@ -124,49 +124,69 @@
               <!-- Dark vignette overlay -->
               <div class="absolute inset-0 bg-gradient-to-br from-black/80 via-black/60 to-black/90"></div>
             </div>
+
             <!-- Download progress overlay -->
             <div class="absolute inset-0 bg-black/60 z-10 flex items-center justify-center">
-              <div class="text-center text-white p-3">
-                <svg
-                  class="animate-spin h-6 w-6 mx-auto mb-2"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
+              <div class="text-center text-white p-4 w-full max-w-sm">
+                <!-- Download icon -->
+                <div
+                  class="inline-flex items-center justify-center w-12 h-12 mb-3 bg-white/10 rounded-full backdrop-blur-sm"
                 >
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-
-                  <path
-                    class="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  ></path>
-                </svg>
-                <h3 class="font-semibold text-base mb-2 line-clamp-2 px-2">{{ download.title }}</h3>
-
-                <div class="text-sm mb-2">{{ Math.round(download.progress?.progress || 0) }}%</div>
-
-                <div class="bg-white/20 align-center w-full justify-center rounded-full h-2 mb-2">
-                  <div
-                    class="bg-white h-2 rounded-full transition-all duration-300"
-                    :style="{ width: `${download.progress?.progress || 0}%` }"
-                  ></div>
+                  <svg
+                    class="h-6 w-6"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3 3m0 0l-3-3m3 3V4"
+                    />
+                  </svg>
                 </div>
 
-                <div class="text-xs opacity-80">
+                <!-- Title -->
+                <h3 class="font-semibold text-base mb-3 line-clamp-2 px-2">
+                  {{ download.title }}
+                </h3>
+
+                <!-- Progress percentage -->
+                <div class="text-lg font-semibold mb-2">{{ Math.round(download.progress?.progress || 0) }}%</div>
+
+                <!-- Progress bar -->
+                <div class="w-[200px] mx-auto mb-3">
+                  <div class="bg-white/20 rounded-full h-2 overflow-hidden">
+                    <div
+                      class="bg-white h-2 rounded-full transition-all duration-300 ease-out"
+                      :style="{ width: `${download.progress?.progress || 0}%` }"
+                    ></div>
+                  </div>
+                </div>
+
+                <!-- Time/Status info -->
+                <div class="text-xs text-white/80">
                   <span v-if="download.progress?.current_time && download.progress?.total_time">
                     {{ formatDuration(download.progress.current_time) }} /
                     {{ formatDuration(download.progress.total_time) }}
                   </span>
-                  <span v-else-if="download.result?.file_size">{{ formatFileSize(download.result.file_size) }}</span>
-                  <span v-else>{{ download.progress?.status || 'Downloading...' }}</span>
+                  <span v-else-if="download.result?.file_size">
+                    {{ formatFileSize(download.result.file_size) }}
+                  </span>
+                  <span v-else>
+                    {{ download.progress?.status || 'Downloading...' }}
+                  </span>
                 </div>
               </div>
             </div>
+
             <!-- Cancel button overlay -->
             <div class="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
               <button
                 @click.stop="handleCancelDownload(download.id, download.title)"
-                class="p-2 bg-red-500/80 hover:bg-red-500 text-white rounded-full transition-all transform hover:scale-110 shadow-lg"
+                class="p-2 bg-red-500/90 hover:bg-red-500 text-white rounded-full transition-all transform hover:scale-110 shadow-lg"
                 title="Cancel Download"
               >
                 <svg
@@ -186,35 +206,47 @@
           <div
             v-for="download in queuedDownloads"
             :key="download.id"
-            class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer group aspect-video opacity-75"
+            class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 group aspect-video opacity-70"
           >
             <!-- Queued overlay -->
             <div class="absolute inset-0 bg-black/40 z-10 flex items-center justify-center">
-              <div class="text-center text-white p-3">
-                <svg
-                  class="h-6 w-6 mx-auto mb-2 opacity-60"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
+              <div class="text-center text-white p-4">
+                <!-- Clock icon -->
+                <div
+                  class="inline-flex items-center justify-center w-12 h-12 mb-3 bg-white/10 rounded-full backdrop-blur-sm"
                 >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                <h3 class="font-semibold text-base mb-2 line-clamp-2 px-2">{{ download.title }}</h3>
-                <div class="text-sm mb-2">Queued</div>
-                <div class="text-xs opacity-80">Waiting to download...</div>
+                  <svg
+                    class="h-6 w-6"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                </div>
+
+                <!-- Title -->
+                <h3 class="font-semibold text-base mb-2 line-clamp-2 px-2">
+                  {{ download.title }}
+                </h3>
+
+                <!-- Status -->
+                <div class="text-sm mb-1">Queued</div>
+                <div class="text-xs text-white/70">Waiting to download...</div>
               </div>
             </div>
+
             <!-- Cancel button overlay -->
             <div class="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
               <button
                 @click.stop="handleCancelDownload(download.id, download.title)"
-                class="p-2 bg-red-500/80 hover:bg-red-500 text-white rounded-full transition-all transform hover:scale-110 shadow-lg"
+                class="p-2 bg-red-500/90 hover:bg-red-500 text-white rounded-full transition-all transform hover:scale-110 shadow-lg"
                 title="Cancel Download"
               >
                 <svg
@@ -406,6 +438,18 @@
       @close="handleDeleteDialogClose"
       @confirm="deleteVideoConfirmed"
     />
+    <!-- Cancel Download Confirmation Modal -->
+    <ConfirmationModal
+      :show="showCancelDownloadDialog"
+      title="Cancel Download"
+      message="Are you sure you want to cancel the download"
+      :item-name="downloadToCancel?.title"
+      suffix="?"
+      confirm-text="Cancel Download"
+      :show-cannot-undone-text="false"
+      @close="handleCancelDownloadDialogClose"
+      @confirm="confirmCancelDownload"
+    />
     <!-- Pagination Footer -->
     <PaginationFooter
       v-if="!loading && videos.length > 0"
@@ -448,6 +492,8 @@
   const videoHasClips = ref(false); // True if clips reference this video
   const showVideoPlayer = ref(false);
   const videoToPlay = ref<RawVideo | null>(null);
+  const showCancelDownloadDialog = ref(false);
+  const downloadToCancel = ref<{ id: string; title: string } | null>(null);
   const thumbnailCache = ref<Map<string, string>>(new Map());
   const projectCache = ref<Map<string, Project>>(new Map());
   const { success, error } = useToast();
@@ -730,6 +776,31 @@
     videoToDelete.value = null;
   }
 
+  function handleCancelDownloadDialogClose() {
+    showCancelDownloadDialog.value = false;
+    downloadToCancel.value = null;
+  }
+
+  async function confirmCancelDownload() {
+    if (!downloadToCancel.value) return;
+
+    // Store download info and close dialog immediately (optimistic update)
+    const downloadInfo = { ...downloadToCancel.value };
+    showCancelDownloadDialog.value = false;
+    downloadToCancel.value = null;
+
+    try {
+      const cancelled = await cancelDownload(downloadInfo.id);
+      if (cancelled) {
+        success('Download Cancelled', `"${downloadInfo.title}" has been cancelled.`);
+      } else {
+        error('Failed to Cancel', 'Unable to cancel the download. It may have already completed.');
+      }
+    } catch (err) {
+      error('Cancel Failed', `Failed to cancel download: ${err}`);
+    }
+  }
+
   async function openVideosFolder() {
     try {
       const videosPath = await getStoragePath('videos');
@@ -747,17 +818,9 @@
     }
   }
 
-  async function handleCancelDownload(downloadId: string, downloadTitle: string) {
-    try {
-      const cancelled = await cancelDownload(downloadId);
-      if (cancelled) {
-        success('Download Cancelled', `"${downloadTitle}" has been cancelled.`);
-      } else {
-        error('Failed to Cancel', 'Unable to cancel the download. It may have already completed.');
-      }
-    } catch (err) {
-      error('Cancel Failed', `Failed to cancel download: ${err}`);
-    }
+  function handleCancelDownload(downloadId: string, downloadTitle: string) {
+    downloadToCancel.value = { id: downloadId, title: downloadTitle };
+    showCancelDownloadDialog.value = true;
   }
 
   onMounted(async () => {
