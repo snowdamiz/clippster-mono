@@ -119,13 +119,13 @@
         ref="clipsScrollContainer"
       >
         <!-- Clips Grid -->
-        <div class="space-y-2.5">
+        <div class="space-y-1.5">
           <div
             v-for="(clip, index) in clips"
             :key="clip.id"
             :ref="(el) => setClipRef(el, clip.id)"
             :class="[
-              'group p-3.5 bg-card border rounded-lg cursor-pointer',
+              'group p-2 bg-card border rounded-lg cursor-pointer',
               index === clips.length - 1 ? 'mb-4' : '',
               // Only apply transition if not the currently playing clip
               !(props.isPlayingSegments && props.playingClipId === clip.id)
@@ -151,10 +151,10 @@
             }"
             @click="onClipClick(clip.id)"
           >
-            <div class="flex flex-col gap-3">
+            <div class="flex flex-col gap-2">
               <!-- Header with title and actions -->
-              <div class="flex items-start justify-between gap-3">
-                <div class="flex items-start gap-2 flex-1 min-w-0">
+              <div class="flex items-start justify-between gap-2">
+                <div class="flex items-start gap-1.5 flex-1 min-w-0">
                   <span class="text-xs font-bold text-foreground/40 mt-0.5 flex-shrink-0">#{{ index + 1 }}</span>
                   <h5
                     class="text-sm font-semibold text-foreground leading-snug flex-1 group-hover:text-foreground transition-colors"
@@ -166,20 +166,20 @@
                 <!-- Action Buttons (always visible, more subtle) -->
                 <div class="flex items-center gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
                   <button
-                    class="p-1.5 hover:bg-muted rounded-md transition-colors text-foreground/60 hover:text-blue-500"
+                    class="p-1 hover:bg-muted rounded-md transition-colors text-foreground/60 hover:text-blue-500"
                     title="Play clip"
                     @click.stop="onPlayClip(clip)"
                   >
-                    <PlayIcon class="h-3.5 w-3.5" />
+                    <PlayIcon class="h-3 w-3" />
                   </button>
                   <button
-                    class="p-1.5 hover:bg-muted rounded-md transition-colors text-foreground/60 hover:text-red-500"
+                    class="p-1 hover:bg-muted rounded-md transition-colors text-foreground/60 hover:text-red-500"
                     title="Delete clip"
                     @click.stop="onDeleteClip(clip.id)"
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
-                      class="h-3.5 w-3.5"
+                      class="h-3 w-3"
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
@@ -196,9 +196,9 @@
               </div>
 
               <!-- Info Section -->
-              <div class="flex-1 min-w-0 pl-6">
+              <div class="flex-1 min-w-0 pl-5">
                 <!-- Primary Info Row -->
-                <div class="flex items-center gap-2.5 text-xs mb-2">
+                <div class="flex items-center gap-2 text-xs mb-1.5">
                   <span class="font-semibold text-foreground/80 bg-muted/50 px-2 py-0.5 rounded">
                     {{
                       formatDuration((clip.current_version?.end_time || 0) - (clip.current_version?.start_time || 0))
@@ -212,7 +212,7 @@
                 </div>
 
                 <!-- Secondary Info Row -->
-                <div class="flex items-center gap-2 text-xs flex-wrap">
+                <div class="flex items-center gap-1.5 text-xs flex-wrap">
                   <!-- Run Number (more subtle, inline) -->
                   <span
                     v-if="clip.run_number"
@@ -234,12 +234,12 @@
                   <!-- Prompt Name -->
                   <span
                     v-if="clip.session_prompt"
-                    class="flex items-center gap-1 bg-purple-500/15 text-purple-400 px-2 py-0.5 rounded-md font-medium"
+                    class="flex items-center gap-1 bg-purple-500/15 text-purple-400 px-1.5 py-0.5 rounded-md font-medium text-[10px]"
                     :title="`Used prompt: ${getPromptName(clip.session_prompt)}`"
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
-                      class="h-3 w-3"
+                      class="h-2.5 w-2.5"
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
@@ -256,9 +256,9 @@
 
                   <span
                     v-if="clip.current_version?.confidence_score"
-                    class="flex items-center gap-1 bg-blue-500/15 text-blue-400 px-2 py-0.5 rounded-md font-medium"
+                    class="flex items-center gap-1 bg-blue-500/15 text-blue-400 px-1.5 py-0.5 rounded-md font-medium text-[10px]"
                   >
-                    <TrendingUpIcon class="h-3 w-3" />
+                    <TrendingUpIcon class="h-2.5 w-2.5" />
                     <span>{{ Math.round((clip.current_version.confidence_score || 0) * 100) }}%</span>
                   </span>
                   <span v-if="clip.session_created_at" class="flex items-center gap-1 text-foreground/50">
@@ -267,7 +267,7 @@
                   </span>
                   <span
                     v-if="props.isPlayingSegments && props.playingClipId === clip.id"
-                    class="flex items-center gap-1.5 text-green-500 bg-green-500/15 px-2 py-0.5 rounded-md font-semibold"
+                    class="flex items-center gap-1 text-green-500 bg-green-500/15 px-1.5 py-0.5 rounded-md font-semibold text-[10px]"
                   >
                     <div class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
                     Playing

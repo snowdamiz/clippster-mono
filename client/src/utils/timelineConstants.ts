@@ -15,7 +15,7 @@ export const TIMELINE_HEIGHTS = {
 // Timeline height bounds
 export const TIMELINE_BOUNDS = {
   MIN_HEIGHT: 200, // Minimum height when no clips (more comfortable space)
-  MAX_HEIGHT: 500, // Maximum height to allow more clips before scrollbar
+  MAX_HEIGHT: 350, // Maximum height to allow more clips before scrollbar (reduced for more compact UI)
 } as const;
 
 // Zoom configuration

@@ -1681,15 +1681,6 @@
     return segmentsByClip;
   }
 
-  // Check if multiple segments from the same clip are selected
-  function hasMultipleSegmentsFromSameClip(): boolean {
-    const segmentsByClip = getSelectedSegmentsByClip();
-    for (const indices of segmentsByClip.values()) {
-      if (indices.length > 1) return true;
-    }
-    return false;
-  }
-
   // Check if segments from different clips are selected
   function hasMultipleSegmentsFromDifferentClips(): boolean {
     const segmentsByClip = getSelectedSegmentsByClip();
@@ -1969,13 +1960,6 @@
     }
   }
 
-  // Handle segment merge dialog close
-  function handleMergeSegmentsDialogClose() {
-    showMergeSegmentsDialog.value = false;
-    segmentsToMerge.value = null;
-    // Don't clear selection here - user might cancel the merge
-  }
-
   // Cancel merge segments
   function cancelMergeSegments() {
     showMergeSegmentsDialog.value = false;
@@ -2007,7 +1991,6 @@
     const segmentsByClip = getSelectedSegmentsByClip();
     const [[clipId, segmentIndices]] = segmentsByClip.entries();
     const clip = localClips.value.find((c) => c.id === clipId);
-    const totalSegments = segmentIndices.length;
 
     // Store merge info for the dialog
     segmentsToMerge.value = {
