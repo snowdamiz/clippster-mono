@@ -2586,16 +2586,17 @@ fn get_platform() -> String {
 
 // Setup macOS titlebar with transparent background
 #[tauri::command]
-async fn setup_macos_titlebar(window: tauri::Window) -> Result<(), String> {
+async fn setup_macos_titlebar(_window: tauri::Window) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
+        // On macOS, we use the window parameter to access the native NSWindow
         use cocoa::appkit::{NSColor, NSWindow};
         use cocoa::foundation::NSAutoreleasePool;
         use objc::msg_send;
         use objc::runtime::Sel;
 
         // Get the native window handle
-        let ns_window = window.ns_window().map_err(|e| format!("Failed to get NSWindow: {}", e))?;
+        let ns_window = _window.ns_window().map_err(|e| format!("Failed to get NSWindow: {}", e))?;
 
         // Create an autorelease pool for memory management
         unsafe {

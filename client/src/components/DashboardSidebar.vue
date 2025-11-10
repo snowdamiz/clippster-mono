@@ -103,31 +103,8 @@
     </nav>
     <!-- User info and logout at bottom -->
     <div class="absolute bottom-0 w-64 border-t border-border">
-      <!-- Bug Report Link -->
-      <div>
-        <button
-          @click="showBugReportDialog = true"
-          class="px-4 py-3 gap-2 flex items-center gap-0.75rem p-0.625rem text-muted-foreground hover:text-foreground hover:bg-accent transition-all w-full text-left"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-3.5 w-3.5"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
-            />
-          </svg>
-          <span class="-mt-0.5 text-sm">Bug Report</span>
-        </button>
-      </div>
       <!-- Wallet info -->
-      <div class="px-4 pb-4 pt-2 border-t border-border">
+      <div class="px-4 pb-2 pt-2 border-t border-border">
         <div class="flex items-center justify-between">
           <span class="font-mono text-xs text-primary">{{ formattedAddress }}</span>
           <button @click="handleDisconnect" class="disconnect-btn">Disconnect</button>
@@ -191,6 +168,12 @@
 
   // Dialog handling
   const showBugReportDialog = ref(false);
+
+  const handleDialogAction = (item: any) => {
+    if (item.action === 'dialog' && item.name === 'Bug Report') {
+      showBugReportDialog.value = true;
+    }
+  };
 
   const handleBugReportSubmitted = () => {
     console.log('Bug report submitted successfully');

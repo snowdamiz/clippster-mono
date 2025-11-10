@@ -167,7 +167,7 @@
   }
 
   .titlebar-logo {
-    height: 16px;
+    height: 14px;
     width: auto;
     filter: brightness(0) invert(1); /* Make logo white for dark titlebar */
     opacity: 0.9;
