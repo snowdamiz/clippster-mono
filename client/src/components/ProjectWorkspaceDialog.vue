@@ -8,7 +8,7 @@
       <div
         ref="dialogElementRef"
         class="bg-card rounded-t-lg rounded-b-lg w-full h-full border border-border shadow-2xl"
-        style="margin: 30px; max-height: calc(100vh - 60px); max-width: calc(100vw - 60px)"
+        style="margin: 30px; margin-top: 60px; max-height: calc(100vh - 80px); max-width: calc(100vw - 60px)"
       >
         <!-- Header -->
         <div
