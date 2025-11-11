@@ -22,6 +22,11 @@ export const navigationItems: NavigationItem[] = [
     icon: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z',
   },
   {
+    name: 'Assets',
+    path: '/assets',
+    icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
+  },
+  {
     name: 'Clips',
     path: '/clips',
     icon: 'M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4',

@@ -65,6 +65,19 @@ const router = createRouter({
       ],
     },
     {
+      path: '/assets',
+      name: 'assets',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'assets-home',
+          component: () => import('@/pages/Assets.vue'),
+        },
+      ],
+    },
+    {
       path: '/prompts',
       name: 'prompts',
       component: () => import('@/layouts/DashboardLayout.vue'),

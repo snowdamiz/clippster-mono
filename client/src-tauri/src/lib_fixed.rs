@@ -2793,12 +2793,10 @@ async fn upload_asset_async(
     let actual_upload_id = upload_id.split(':').next().unwrap_or(&upload_id).to_string();
 
     let app_clone = app.clone();
-    let upload_id_for_task = actual_upload_id.clone();
-    let upload_id_for_result = upload_id.clone();
+    let upload_id_clone = actual_upload_id.clone();
 
     let result = tokio::spawn(async move {
-        let upload_id_for_event = upload_id_for_result.clone();
-        println!("[Rust] Async asset upload task started for: {}", upload_id_for_task);
+        println!("[Rust] Async asset upload task started for: {}", upload_id_clone);
 
         // Copy asset to storage
         let copy_result = storage::copy_asset_to_storage(source_path, asset_type.clone(), app_clone.clone()).await;
@@ -2810,20 +2808,20 @@ async fn upload_asset_async(
             Err(e) => {
                 println!("[Rust] Failed to copy asset: {}", e);
                 let error_result = AssetUploadResult {
-                    upload_id: upload_id_for_event.clone(),
+                    upload_id: upload_id_clone.clone(),
                     success: false,
                     file_path: None,
                     thumbnail_path: None,
                     duration: None,
                     error: Some(format!("Failed to copy asset: {}", e)),
                 };
-                let _ = app_clone.emit("asset-upload-complete", error_result);
+                let _ = app.emit("asset-upload-complete", error_result);
                 return Err(e);
             }
         };
 
         // Get video duration
-        let duration = match storage::get_video_duration(destination_path.clone()) {
+        let duration = match storage::get_video_duration(destination_path.clone()).await {
             Ok(d) => {
                 println!("[Rust] Asset duration: {:?}", d);
                 Some(d)
@@ -2853,7 +2851,7 @@ async fn upload_asset_async(
 
         // Send success completion event with the original upload_id (containing metadata)
         let success_result = AssetUploadResult {
-            upload_id: upload_id_for_event, // Use the original full upload_id with metadata
+            upload_id: upload_id, // Use original upload_id with metadata
             success: true,
             file_path: Some(destination_path),
             thumbnail_path: final_thumbnail_path,
@@ -2862,7 +2860,7 @@ async fn upload_asset_async(
         };
 
         println!("[Rust] Sending asset upload completion event...");
-        let _ = app_clone.emit("asset-upload-complete", success_result);
+        let _ = app.emit("asset-upload-complete", success_result);
         println!("[Rust] Asset upload completion event sent successfully");
 
         Ok(())
@@ -2876,7 +2874,7 @@ async fn upload_asset_async(
         Err(e) => {
             println!("[Rust] Async asset upload task failed: {}", e);
             let error_result = AssetUploadResult {
-                upload_id: upload_id,
+                upload_id,
                 success: false,
                 file_path: None,
                 thumbnail_path: None,
@@ -2888,7 +2886,8 @@ async fn upload_asset_async(
         }
     }
 }
-
+    println!("[Rust]   upload_id: {}", upload_id);
+    println!("[Rust]   asset_type: {}", asset_type);
 // Setup macOS titlebar with transparent background
 #[tauri::command]
 async fn setup_macos_titlebar(_window: tauri::Window) -> Result<(), String> {

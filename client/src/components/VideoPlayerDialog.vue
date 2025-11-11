@@ -12,7 +12,7 @@
         <!-- Video Title Header -->
         <div class="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-black/60 to-transparent p-6 pt-8">
           <h3 class="text-white text-lg font-semibold truncate pr-12">
-            {{ video?.original_filename || video?.file_path.split(/[\\\/]/).pop() || 'Untitled Video' }}
+            {{ getVideoTitle(video) }}
           </h3>
         </div>
         <!-- Close Button (Top Right) -->
@@ -124,7 +124,7 @@
               class="absolute top-1/2 w-4 h-4 bg-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-all duration-200 border-2 border-purple-500"
               :style="{
                 left: `${duration ? (currentTime / duration) * 100 : 0}%`,
-                transform: 'translate(-50%, -50%)'
+                transform: 'translate(-50%, -50%)',
               }"
             ></div>
             <!-- Hover time preview -->
@@ -252,194 +252,209 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch, onMounted, onUnmounted } from 'vue'
-  import { invoke } from '@tauri-apps/api/core'
-  import type { RawVideo } from '@/services/database'
+  import { ref, watch, onMounted, onUnmounted } from 'vue';
+  import { invoke } from '@tauri-apps/api/core';
+  import type { RawVideo, IntroOutro } from '@/services/database';
+
+  type VideoLike = RawVideo | IntroOutro;
 
   interface Props {
-    video: RawVideo | null
-    showVideoPlayer: boolean
+    video: VideoLike | null;
+    showVideoPlayer: boolean;
   }
 
   interface Emits {
-    (e: 'close'): void
+    (e: 'close'): void;
   }
 
-  const props = defineProps<Props>()
-  const emit = defineEmits<Emits>()
+  const props = defineProps<Props>();
+  const emit = defineEmits<Emits>();
 
   // Video player state
-  const videoElement = ref<HTMLVideoElement | null>(null)
-  const isPlaying = ref(false)
-  const currentTime = ref(0)
-  const duration = ref(0)
-  const volume = ref(1)
-  const isMuted = ref(false)
-  const isVideoLoading = ref(true)
-  const buffered = ref(0)
-  const hoverTime = ref<number | null>(null)
-  const hoverPosition = ref(0)
-  const videoSrc = ref<string | null>(null)
+  const videoElement = ref<HTMLVideoElement | null>(null);
+  const isPlaying = ref(false);
+  const currentTime = ref(0);
+  const duration = ref(0);
+  const volume = ref(1);
+  const isMuted = ref(false);
+  const isVideoLoading = ref(true);
+  const buffered = ref(0);
+  const hoverTime = ref<number | null>(null);
+  const hoverPosition = ref(0);
+  const videoSrc = ref<string | null>(null);
+
+  // Helper function to get video title for both RawVideo and IntroOutro types
+  function getVideoTitle(video: VideoLike | null): string {
+    if (!video) return 'Untitled Video';
+
+    // Check if it's an IntroOutro (has 'type' property)
+    if ('type' in video) {
+      return video.name || video.file_path.split(/[\\\/]/).pop() || 'Untitled Asset';
+    }
+
+    // It's a RawVideo
+    return (video as RawVideo).original_filename || video.file_path.split(/[\\\/]/).pop() || 'Untitled Video';
+  }
 
   // Helper function to format duration in seconds to human readable format
   function formatDuration(seconds: number): string {
-    if (isNaN(seconds) || !isFinite(seconds)) return '0:00'
+    if (isNaN(seconds) || !isFinite(seconds)) return '0:00';
 
     if (seconds < 60) {
-      return `0:${Math.round(seconds).toString().padStart(2, '0')}`
+      return `0:${Math.round(seconds).toString().padStart(2, '0')}`;
     } else if (seconds < 3600) {
-      const minutes = Math.floor(seconds / 60)
-      const remainingSeconds = Math.round(seconds % 60)
-      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+      const minutes = Math.floor(seconds / 60);
+      const remainingSeconds = Math.round(seconds % 60);
+      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
     } else {
-      const hours = Math.floor(seconds / 3600)
-      const minutes = Math.floor((seconds % 3600) / 60)
-      const remainingSeconds = Math.round(seconds % 60)
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const remainingSeconds = Math.round(seconds % 60);
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
     }
   }
 
   // Video player methods
   function togglePlayPause() {
-    if (!videoElement.value) return
+    if (!videoElement.value) return;
 
     if (videoElement.value.paused) {
-      videoElement.value.play()
-      isPlaying.value = true
+      videoElement.value.play();
+      isPlaying.value = true;
     } else {
-      videoElement.value.pause()
-      isPlaying.value = false
+      videoElement.value.pause();
+      isPlaying.value = false;
     }
   }
 
   function seekTo(event: MouseEvent) {
-    if (!videoElement.value) return
+    if (!videoElement.value) return;
 
-    const timeline = event.currentTarget as HTMLElement
-    const rect = timeline.getBoundingClientRect()
-    const clickX = event.clientX - rect.left
-    const clickPercent = Math.max(0, Math.min(1, clickX / rect.width))
+    const timeline = event.currentTarget as HTMLElement;
+    const rect = timeline.getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    const clickPercent = Math.max(0, Math.min(1, clickX / rect.width));
 
-    const videoDuration = videoElement.value.duration || duration.value
-    if (!videoDuration || isNaN(videoDuration)) return
+    const videoDuration = videoElement.value.duration || duration.value;
+    if (!videoDuration || isNaN(videoDuration)) return;
 
-    const seekTime = clickPercent * videoDuration
-    videoElement.value.currentTime = seekTime
-    currentTime.value = seekTime
+    const seekTime = clickPercent * videoDuration;
+    videoElement.value.currentTime = seekTime;
+    currentTime.value = seekTime;
   }
 
   function onTimelineHover(event: MouseEvent) {
-    if (!videoElement.value) return
+    if (!videoElement.value) return;
 
-    const timeline = event.currentTarget as HTMLElement
-    const rect = timeline.getBoundingClientRect()
-    const hoverX = event.clientX - rect.left
-    const hoverPercent = Math.max(0, Math.min(1, hoverX / rect.width))
+    const timeline = event.currentTarget as HTMLElement;
+    const rect = timeline.getBoundingClientRect();
+    const hoverX = event.clientX - rect.left;
+    const hoverPercent = Math.max(0, Math.min(1, hoverX / rect.width));
 
-    const videoDuration = videoElement.value.duration || duration.value
-    if (!videoDuration || isNaN(videoDuration)) return
+    const videoDuration = videoElement.value.duration || duration.value;
+    if (!videoDuration || isNaN(videoDuration)) return;
 
-    const hoverTimeSeconds = hoverPercent * videoDuration
+    const hoverTimeSeconds = hoverPercent * videoDuration;
 
-    hoverPosition.value = hoverPercent * 100
-    hoverTime.value = hoverTimeSeconds
+    hoverPosition.value = hoverPercent * 100;
+    hoverTime.value = hoverTimeSeconds;
   }
 
   function updateVolume() {
-    if (!videoElement.value) return
+    if (!videoElement.value) return;
 
-    videoElement.value.volume = volume.value
+    videoElement.value.volume = volume.value;
     if (volume.value === 0) {
-      isMuted.value = true
+      isMuted.value = true;
     } else if (isMuted.value) {
-      isMuted.value = false
+      isMuted.value = false;
     }
   }
 
   function toggleMute() {
-    if (!videoElement.value) return
+    if (!videoElement.value) return;
 
     if (isMuted.value) {
-      videoElement.value.muted = false
-      isMuted.value = false
-      volume.value = 1
+      videoElement.value.muted = false;
+      isMuted.value = false;
+      volume.value = 1;
     } else {
-      videoElement.value.muted = true
-      isMuted.value = true
-      volume.value = 0
+      videoElement.value.muted = true;
+      isMuted.value = true;
+      volume.value = 0;
     }
   }
 
   function onTimeUpdate() {
-    if (!videoElement.value) return
+    if (!videoElement.value) return;
 
-    currentTime.value = videoElement.value.currentTime
+    currentTime.value = videoElement.value.currentTime;
 
-    const currentDuration = videoElement.value.duration
+    const currentDuration = videoElement.value.duration;
     if (currentDuration && currentDuration !== duration.value && !isNaN(currentDuration)) {
-      duration.value = currentDuration
+      duration.value = currentDuration;
     }
 
     if (videoElement.value.buffered.length > 0) {
-      buffered.value = videoElement.value.buffered.end(videoElement.value.buffered.length - 1)
+      buffered.value = videoElement.value.buffered.end(videoElement.value.buffered.length - 1);
     }
   }
 
   function onLoadedMetadata() {
-    if (!videoElement.value) return
+    if (!videoElement.value) return;
 
-    isVideoLoading.value = false
-    duration.value = videoElement.value.duration
+    isVideoLoading.value = false;
+    duration.value = videoElement.value.duration;
 
-    videoElement.value.volume = volume.value
-    videoElement.value.muted = isMuted.value
+    videoElement.value.volume = volume.value;
+    videoElement.value.muted = isMuted.value;
 
-    videoElement.value.play()
-    isPlaying.value = true
+    videoElement.value.play();
+    isPlaying.value = true;
   }
 
   function onVideoEnded() {
-    isPlaying.value = false
-    currentTime.value = 0
+    isPlaying.value = false;
+    currentTime.value = 0;
   }
 
   // Initialize video source when video changes
   async function initializeVideo() {
     if (!props.video) {
-      videoSrc.value = null
-      return
+      videoSrc.value = null;
+      return;
     }
 
     try {
-      resetVideoState()
+      resetVideoState();
 
-      const port = await invoke<number>('get_video_server_port')
-      const encodedPath = btoa(props.video.file_path)
+      const port = await invoke<number>('get_video_server_port');
+      const encodedPath = btoa(props.video.file_path);
       // Add a timestamp to prevent caching issues
-      const timestamp = Date.now()
-      videoSrc.value = `http://localhost:${port}/video/${encodedPath}?t=${timestamp}`
+      const timestamp = Date.now();
+      videoSrc.value = `http://localhost:${port}/video/${encodedPath}?t=${timestamp}`;
     } catch (err) {
-      console.error('Failed to prepare video:', err)
+      console.error('Failed to prepare video:', err);
     }
   }
 
   // Add a unique timestamp to force video recreation
-  const videoKey = ref<string>('empty')
+  const videoKey = ref<string>('empty');
 
   function resetVideoState() {
-    isPlaying.value = false
-    currentTime.value = 0
-    duration.value = 0
-    isVideoLoading.value = true
-    hoverTime.value = null
-    hoverPosition.value = 0
-    videoSrc.value = null
+    isPlaying.value = false;
+    currentTime.value = 0;
+    duration.value = 0;
+    isVideoLoading.value = true;
+    hoverTime.value = null;
+    hoverPosition.value = 0;
+    videoSrc.value = null;
     // Generate a new key to force video element recreation
-    videoKey.value = `video-${Date.now()}`
+    videoKey.value = `video-${Date.now()}`;
   }
 
   // Watch for video changes
-  watch(() => props.video, initializeVideo, { immediate: true })
+  watch(() => props.video, initializeVideo, { immediate: true });
 
   // Watch for dialog open/close to properly handle video state
   watch(
@@ -448,42 +463,42 @@
       if (!newVal) {
         // Dialog is closing
         if (videoElement.value) {
-          videoElement.value.pause()
-          videoElement.value.currentTime = 0
+          videoElement.value.pause();
+          videoElement.value.currentTime = 0;
           // Clear the video source to ensure proper reload when reopened
-          videoElement.value.src = ''
-          videoElement.value.load()
+          videoElement.value.src = '';
+          videoElement.value.load();
         }
-        resetVideoState()
+        resetVideoState();
       } else if (newVal && !oldVal && props.video) {
         // Dialog is opening, ensure video is initialized
-        initializeVideo()
+        initializeVideo();
       }
     }
-  )
+  );
 
   // Keyboard shortcuts
   function handleKeydown(event: KeyboardEvent) {
-    if (!props.showVideoPlayer) return
+    if (!props.showVideoPlayer) return;
 
     switch (event.key) {
       case 'Escape':
-        emit('close')
-        break
+        emit('close');
+        break;
       case ' ':
-        event.preventDefault()
-        togglePlayPause()
-        break
+        event.preventDefault();
+        togglePlayPause();
+        break;
     }
   }
 
   onMounted(() => {
-    document.addEventListener('keydown', handleKeydown)
-  })
+    document.addEventListener('keydown', handleKeydown);
+  });
 
   onUnmounted(() => {
-    document.removeEventListener('keydown', handleKeydown)
-  })
+    document.removeEventListener('keydown', handleKeydown);
+  });
 </script>
 
 <style scoped>
