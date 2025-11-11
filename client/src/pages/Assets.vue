@@ -3,7 +3,7 @@
     <PageLayout
       title="Assets"
       description="Manage your intros and outros"
-      :show-header="!loading && assets.length > 0"
+      :show-header="assets.length > 0"
       icon="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
     >
       <template #actions>
@@ -53,7 +53,9 @@
       </template>
 
       <!-- Loading State -->
-      <LoadingState v-if="loading" message="Loading assets..." />
+      <div v-if="loading" class="space-y-6">
+        <SkeletonGrid />
+      </div>
 
       <!-- Content when not loading -->
       <div v-else>
@@ -322,8 +324,8 @@
   import { getStoragePath } from '@/services/storage';
   import { invoke } from '@tauri-apps/api/core';
   import PageLayout from '@/components/PageLayout.vue';
-  import LoadingState from '@/components/LoadingState.vue';
   import EmptyState from '@/components/EmptyState.vue';
+  import SkeletonGrid from '@/components/SkeletonGrid.vue';
   import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import PaginationFooter from '@/components/PaginationFooter.vue';

@@ -2,7 +2,7 @@
   <PageLayout
     title="Projects"
     description="Manage and organize your video projects"
-    :show-header="!loading && projects.length > 0"
+    :show-header="projects.length > 0"
     icon="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
   >
     <template #actions>
@@ -17,7 +17,9 @@
       </button>
     </template>
     <!-- Loading State -->
-    <LoadingState v-if="loading" message="Loading projects..." />
+    <div v-if="loading" class="space-y-6">
+      <SkeletonGrid />
+    </div>
     <!-- Projects Grid -->
 
     <div v-else-if="projects.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -257,8 +259,8 @@
   import { useFormatters } from '@/composables/useFormatters';
   import { useToast } from '@/composables/useToast';
   import PageLayout from '@/components/PageLayout.vue';
-  import LoadingState from '@/components/LoadingState.vue';
   import EmptyState from '@/components/EmptyState.vue';
+  import SkeletonGrid from '@/components/SkeletonGrid.vue';
   import ProjectDialog, { type ProjectFormData } from '@/components/ProjectDialog.vue';
   import ProjectWorkspaceDialog from '@/components/ProjectWorkspaceDialog.vue';
   import PaginationFooter from '@/components/PaginationFooter.vue';

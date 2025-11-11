@@ -3,7 +3,7 @@
     <PageLayout
       title="Raw Videos"
       description="Browse and manage your raw video files"
-      :show-header="!loading && videos.length > 0"
+      :show-header="videos.length > 0"
       icon="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
     >
       <template #actions>
@@ -52,7 +52,9 @@
         </div>
       </template>
       <!-- Loading State -->
-      <LoadingState v-if="loading" message="Loading videos..." />
+      <div v-if="loading" class="space-y-6">
+        <SkeletonGrid />
+      </div>
       <!-- Content when not loading -->
 
       <div v-else>
@@ -479,8 +481,8 @@
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
   import { getStoragePath } from '@/services/storage';
   import PageLayout from '@/components/PageLayout.vue';
-  import LoadingState from '@/components/LoadingState.vue';
   import EmptyState from '@/components/EmptyState.vue';
+  import SkeletonGrid from '@/components/SkeletonGrid.vue';
   import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import PaginationFooter from '@/components/PaginationFooter.vue';

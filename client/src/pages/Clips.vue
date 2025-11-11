@@ -3,7 +3,7 @@
     <PageLayout
       title="Clips"
       description="Browse and manage all your video clips"
-      :show-header="!loading && clips.length > 0"
+      :show-header="clips.length > 0"
       icon="M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4"
     >
       <template #actions>
@@ -24,7 +24,9 @@
         </button>
       </template>
       <!-- Loading State -->
-      <LoadingState v-if="loading" message="Loading clips..." />
+      <div v-if="loading" class="space-y-6">
+        <SkeletonGrid />
+      </div>
       <!-- Content when not loading -->
 
       <div v-else>
@@ -229,8 +231,8 @@
   import { getStoragePath } from '@/services/storage';
   import { useFormatters } from '@/composables/useFormatters';
   import PageLayout from '@/components/PageLayout.vue';
-  import LoadingState from '@/components/LoadingState.vue';
   import EmptyState from '@/components/EmptyState.vue';
+  import SkeletonGrid from '@/components/SkeletonGrid.vue';
   import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import PaginationFooter from '@/components/PaginationFooter.vue';
