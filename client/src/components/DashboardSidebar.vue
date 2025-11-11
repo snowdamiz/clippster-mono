@@ -132,7 +132,7 @@
                 <span class="credit-value unlimited">∞</span>
               </div>
               <div v-else class="credit-value-wrapper">
-                <span class="credit-value" :class="getCreditStatusClass()">
+                <span class="credit-value">
                   {{ hoursRemaining }}
                 </span>
                 <span class="credit-unit">{{ hoursRemaining === 1 ? 'hr' : 'hrs' }}</span>
@@ -143,31 +143,6 @@
               <div class="credit-loading">
                 <div class="loading-spinner"></div>
               </div>
-            </div>
-          </div>
-
-          <div v-if="!loadingBalance">
-            <!-- Progress Bar for limited credits -->
-            <div v-if="typeof hoursRemaining === 'number'" class="credit-progress-bar">
-              <div
-                class="credit-progress-fill"
-                :class="getCreditStatusClass()"
-                :style="{ width: getProgressWidth() }"
-              ></div>
-            </div>
-
-            <!-- Status indicator (only for limited credits with low balance) -->
-            <div v-if="typeof hoursRemaining === 'number' && hoursRemaining <= 2" class="credit-status">
-              <span class="status-text status-low">
-                <svg xmlns="http://www.w3.org/2000/svg" class="status-icon" viewBox="0 0 20 20" fill="currentColor">
-                  <path
-                    fill-rule="evenodd"
-                    d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
-                Low Balance
-              </span>
             </div>
           </div>
         </router-link>
@@ -254,26 +229,7 @@
     // Could add a toast notification here if needed
   };
 
-  // Credit balance helpers
-  const getCreditStatusClass = () => {
-    if (typeof hoursRemaining.value === 'string') {
-      return 'status-unlimited';
-    }
-    const hours = hoursRemaining.value;
-    if (hours <= 2) return 'status-low';
-    if (hours <= 10) return 'status-medium';
-    return 'status-high';
-  };
-
-  const getProgressWidth = () => {
-    if (typeof hoursRemaining.value === 'string') return '100%';
-    const hours = hoursRemaining.value;
-    // Assume max display of 50 hours for progress bar
-    const maxHours = 50;
-    const percentage = Math.min((hours / maxHours) * 100, 100);
-    return `${percentage}%`;
-  };
-
+  
   async function fetchBalance() {
     if (!authStore.token) return;
 
@@ -430,75 +386,11 @@
     background-clip: text;
   }
 
-  .credit-value.status-low {
-    color: rgb(239, 68, 68);
-  }
-
-  .credit-value.status-medium {
-    color: rgb(251, 191, 36);
-  }
-
-  .credit-value.status-high {
-    color: rgb(34, 197, 94);
-  }
-
+  
   .credit-unit {
     font-size: 0.75rem;
     font-weight: 500;
     color: rgba(255, 255, 255, 0.6);
-  }
-
-  .credit-progress-bar {
-    height: 0.25rem;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 0.125rem;
-    overflow: hidden;
-    margin-bottom: 0.375rem;
-  }
-
-  .credit-progress-fill {
-    height: 100%;
-    border-radius: 0.125rem;
-    transition:
-      width 0.3s ease,
-      background-color 0.3s ease;
-  }
-
-  .credit-progress-fill.status-low {
-    background: linear-gradient(90deg, rgb(239, 68, 68) 0%, rgb(220, 38, 38) 100%);
-  }
-
-  .credit-progress-fill.status-medium {
-    background: linear-gradient(90deg, rgb(251, 191, 36) 0%, rgb(245, 158, 11) 100%);
-  }
-
-  .credit-progress-fill.status-high {
-    background: linear-gradient(90deg, rgb(34, 197, 94) 0%, rgb(22, 163, 74) 100%);
-  }
-
-  .credit-status {
-    display: flex;
-    align-items: center;
-  }
-
-  .status-text {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    padding: 0.1875rem 0.375rem;
-    border-radius: 0.25rem;
-  }
-
-  .status-icon {
-    width: 0.75rem;
-    height: 0.75rem;
-  }
-
-  .status-text.status-low {
-    color: rgb(239, 68, 68);
-    background: rgba(239, 68, 68, 0.1);
   }
 
   .credit-loading {
