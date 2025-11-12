@@ -58,7 +58,7 @@
       <!-- Transcript Toolbar -->
       <div class="flex items-center justify-between px-4 mt-5 mb-3">
         <!-- Search Bar -->
-        <div class="flex-1 max-w-xs">
+        <div class="flex-1 max-w-full">
           <div class="relative">
             <div class="absolute left-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
               <svg
@@ -173,6 +173,9 @@
   const searchQuery = ref('');
   const searchInputRef = ref<HTMLInputElement>();
 
+  // Flag to prevent autoscroll when user manually clicks words
+  const preventAutoscroll = ref(false);
+
   // Use transcript data composable
   const { transcriptData, loadTranscriptData } = useTranscriptData(computed(() => props.projectId || null));
 
@@ -264,40 +267,42 @@
   function getWordClasses(word: any, index: number): string {
     let baseClasses = '';
 
-    // Check for search match first (highest priority)
-    if (isWordMatched(word, index)) {
-      baseClasses += 'bg-yellow-500/20 text-yellow-300 font-semibold border border-yellow-500/30 rounded-md ';
-    } else if (currentWordIndex.value === -1 || props.currentTime === undefined || props.duration === 0) {
-      baseClasses += 'text-muted-foreground/80 ';
+    // Determine the basic state (current, spoken, future) first
+    let stateClasses = '';
+    if (currentWordIndex.value === -1 || props.currentTime === undefined || props.duration === 0) {
+      stateClasses = 'text-muted-foreground/80 ';
     } else {
       const currentWord = transcriptData.value?.words[currentWordIndex.value];
-      if (!currentWord) {
-        baseClasses += 'text-muted-foreground/80 ';
-      } else {
+      if (currentWord) {
         const currentStart = getWordStart(currentWord);
         const currentEnd = getWordEnd(currentWord);
         const wordStart = getWordStart(word);
         const wordEnd = getWordEnd(word);
 
-        // Current word (being spoken)
+        // Current word (being spoken) - highest priority
         if (currentStart === wordStart && currentEnd === wordEnd) {
-          return (
-            baseClasses +
-            'bg-primary text-primary-foreground font-semibold shadow-lg ring-2 ring-primary/50 ring-offset-1 current-word'
-          );
+          return 'bg-primary text-primary-foreground font-semibold shadow-lg ring-2 ring-primary/50 ring-offset-1 current-word';
         }
 
         // Already spoken words
         if (wordEnd < props.currentTime) {
-          baseClasses += 'text-foreground font-medium ';
+          stateClasses = 'text-foreground font-medium ';
+        } else {
+          // Future words
+          stateClasses = 'text-muted-foreground/70 ';
         }
-
-        // Future words
-        baseClasses += 'text-muted-foreground/70 ';
+      } else {
+        stateClasses = 'text-muted-foreground/80 ';
       }
     }
 
-    return baseClasses.trim();
+    // Check for search match and overlay on top of state
+    if (isWordMatched(word, index)) {
+      // Search match takes precedence but we maintain font weight from state
+      return 'bg-yellow-500/20 text-yellow-300 font-semibold border border-yellow-500/30 rounded-md';
+    } else {
+      return stateClasses.trim();
+    }
   }
 
   function seekToTime(time: number) {
@@ -308,11 +313,31 @@
   function onWordClick(word: any, index: number) {
     // Only seek if not currently editing
     if (editingWordIndex.value === -1) {
+      // Prevent autoscroll for a longer period after manual click
+      preventAutoscroll.value = true;
+
+      // Clear any existing timeout
+      if (window.autoscrollTimeout) {
+        clearTimeout(window.autoscrollTimeout);
+      }
+
+      // Set new timeout
+      window.autoscrollTimeout = setTimeout(() => {
+        preventAutoscroll.value = false;
+        window.autoscrollTimeout = null;
+      }, 3000); // Prevent autoscroll for 3 seconds after manual click
+
       seekToTime(getWordMiddle(word));
     }
   }
 
   function onWordDoubleClick(word: any, index: number) {
+    // Prevent autoscroll when starting to edit
+    preventAutoscroll.value = true;
+    setTimeout(() => {
+      preventAutoscroll.value = false;
+    }, 2000); // Prevent autoscroll for 2 seconds during editing
+
     // Start editing this word
     startWordEdit(word, index);
   }
@@ -335,6 +360,9 @@
   function cancelWordEdit() {
     editingWordIndex.value = -1;
     editingWordText.value = '';
+
+    // Reset autoscroll prevention when editing is cancelled
+    preventAutoscroll.value = false;
   }
 
   async function saveWordEdit() {
@@ -387,6 +415,9 @@
 
         editingWordIndex.value = -1;
         editingWordText.value = '';
+
+        // Reset autoscroll prevention when editing is completed successfully
+        preventAutoscroll.value = false;
       } else {
         console.error('[TranscriptPanel] Failed to update word:', result.error);
         // Show error feedback to user
@@ -493,6 +524,9 @@
   // Scroll to keep the current word visible
   function scrollToCurrentWord(forceScroll = false) {
     if (currentWordIndex.value === -1 || !transcriptContent.value) return;
+
+    // Don't scroll if user recently interacted with words (force scroll can only override for very significant seeks)
+    if (preventAutoscroll.value && !forceScroll) return;
 
     const wordElement = wordElements.value.get(currentWordIndex.value);
     if (!wordElement) return;
@@ -615,6 +649,12 @@
       transcriptContent.value.removeEventListener('scroll', handleScroll);
     }
     wordElements.value.clear();
+
+    // Clear autoscroll timeout
+    if (window.autoscrollTimeout) {
+      clearTimeout(window.autoscrollTimeout);
+      window.autoscrollTimeout = null;
+    }
   });
 </script>
 
