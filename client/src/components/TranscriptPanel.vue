@@ -55,17 +55,31 @@
 
     <!-- Transcript content -->
     <div v-else ref="transcriptContent" class="flex-1 overflow-y-auto transcript-scrollbar relative">
-      <div class="text-base text-foreground leading-loose break-words px-4 py-6 min-h-full select-text">
+      <div
+        class="text-base text-foreground leading-loose break-words px-4 py-6 min-h-full select-text transcript-content"
+      >
         <span
           v-for="(word, index) in transcriptData.words"
           :key="`word-${index}`"
           :ref="(el) => setWordRef(el, index)"
           :class="getWordClasses(word)"
           class="inline-block px-1 py-0.5 mx-0.5 rounded-md transition-all duration-300 ease-out cursor-pointer hover:bg-primary/10 hover:scale-105 whitespace-normal word-interactive"
-          @click="seekToTime(getWordMiddle(word))"
-          :title="`Jump to ${formatTime(getWordMiddle(word))}`"
+          @click="onWordClick(word, index)"
+          @dblclick="onWordDoubleClick(word, index)"
+          :title="getWordTitle(word, index)"
         >
-          {{ getWordText(word) }}{{ index < transcriptData.words.length - 1 ? ' ' : '' }}
+          <!-- Show input field when editing this word -->
+          <input
+            v-if="editingWordIndex === index"
+            :data-word-index="index"
+            v-model="editingWordText"
+            @blur="saveWordEdit()"
+            @keydown="onWordKeydown($event)"
+            class="bg-transparent border-b border-primary outline-none text-inherit min-w-[20px] px-0"
+            style="font: inherit"
+          />
+          <!-- Show normal word text when not editing -->
+          <span v-else>{{ getWordText(word) }}{{ index < transcriptData.words.length - 1 ? ' ' : '' }}</span>
         </span>
       </div>
 
@@ -119,6 +133,10 @@
   const wordElements = ref<Map<number, HTMLElement>>(new Map());
   const showScrollIndicator = ref(true);
   const userHasScrolled = ref(false);
+
+  // Word editing state
+  const editingWordIndex = ref(-1);
+  const editingWordText = ref('');
 
   // Use transcript data composable
   const { transcriptData, loadTranscriptData } = useTranscriptData(computed(() => props.projectId || null));
@@ -190,6 +208,133 @@
 
   function seekToTime(time: number) {
     emit('seekVideo', time);
+  }
+
+  // Word editing functions
+  function onWordClick(word: any, index: number) {
+    // Only seek if not currently editing
+    if (editingWordIndex.value === -1) {
+      seekToTime(getWordMiddle(word));
+    }
+  }
+
+  function onWordDoubleClick(word: any, index: number) {
+    // Start editing this word
+    startWordEdit(word, index);
+  }
+
+  function startWordEdit(word: any, index: number) {
+    editingWordIndex.value = index;
+    editingWordText.value = getWordText(word);
+
+    // Focus the input field after DOM update
+    nextTick(() => {
+      // Use querySelector to find the input element since we're in a v-for loop
+      const inputElement = document.querySelector(`input[data-word-index="${index}"]`) as HTMLInputElement;
+      if (inputElement) {
+        inputElement.focus();
+        inputElement.select();
+      }
+    });
+  }
+
+  function cancelWordEdit() {
+    editingWordIndex.value = -1;
+    editingWordText.value = '';
+  }
+
+  async function saveWordEdit() {
+    if (editingWordIndex.value === -1 || !props.projectId) {
+      return;
+    }
+
+    const index = editingWordIndex.value;
+    const newText = editingWordText.value.trim();
+
+    if (!newText) {
+      cancelWordEdit();
+      return;
+    }
+
+    const word = transcriptData.value?.words[index];
+    if (!word) {
+      cancelWordEdit();
+      return;
+    }
+
+    const oldText = getWordText(word);
+    if (oldText === newText) {
+      cancelWordEdit();
+      return;
+    }
+
+    try {
+      // Import database function dynamically to avoid circular imports
+      const { updateTranscriptWord } = await import('@/services/database');
+
+      const result = await updateTranscriptWord(props.projectId, index, newText);
+
+      if (result.success) {
+        console.log(`[TranscriptPanel] Successfully updated word ${index}: "${oldText}" -> "${newText}"`);
+
+        // Update local data immediately for responsive UI
+        if (transcriptData.value?.words[index]) {
+          // Update the word in different possible formats
+          if (transcriptData.value.words[index].word !== undefined) {
+            transcriptData.value.words[index].word = newText;
+          }
+          if (transcriptData.value.words[index].text !== undefined) {
+            transcriptData.value.words[index].text = newText;
+          }
+          if (transcriptData.value.words[index].content !== undefined) {
+            transcriptData.value.words[index].content = newText;
+          }
+        }
+
+        editingWordIndex.value = -1;
+        editingWordText.value = '';
+      } else {
+        console.error('[TranscriptPanel] Failed to update word:', result.error);
+        // Show error feedback to user
+        alert(`Failed to update word: ${result.error}`);
+        cancelWordEdit();
+      }
+    } catch (error) {
+      console.error('[TranscriptPanel] Error updating word:', error);
+      alert('An error occurred while updating the word');
+      cancelWordEdit();
+    }
+  }
+
+  function onWordKeydown(event: KeyboardEvent) {
+    switch (event.key) {
+      case 'Enter':
+        event.preventDefault();
+        saveWordEdit();
+        break;
+      case 'Escape':
+        event.preventDefault();
+        cancelWordEdit();
+        break;
+      case 'Tab':
+        event.preventDefault();
+        // Save and move to next word
+        saveWordEdit();
+        // Move to next word after save
+        if (editingWordIndex.value < (transcriptData.value?.words.length || 0) - 1) {
+          setTimeout(() => {
+            startWordEdit(transcriptData.value?.words[editingWordIndex.value + 1], editingWordIndex.value + 1);
+          }, 100);
+        }
+        break;
+    }
+  }
+
+  function getWordTitle(word: any, index: number): string {
+    if (editingWordIndex.value === index) {
+      return 'Editing... Press Enter to save, Escape to cancel, Tab to edit next word';
+    }
+    return `Jump to ${formatTime(getWordMiddle(word))}. Double-click to edit this word`;
   }
 
   // Track the previous word index to detect backward seeks
@@ -490,5 +635,80 @@
     user-select: text;
     -webkit-user-select: text;
     -moz-user-select: text;
+  }
+
+  /* Word editing input styles - use maximum specificity */
+  div.transcript-content .word-interactive input[type='text'],
+  .word-interactive input[type='text'] {
+    all: initial !important;
+    font-family: inherit !important;
+    font-size: inherit !important;
+    font-weight: inherit !important;
+    line-height: inherit !important;
+
+    background: #0f172a !important;
+    border: none !important;
+    border-bottom: 2px solid #3b82f6 !important;
+    outline: none !important;
+    color: #ffffff !important;
+    padding: 2px 4px !important;
+    margin: 0 !important;
+    min-width: 1ch !important;
+    border-radius: 4px !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+
+    /* Force text color with multiple approaches */
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    text-shadow: none !important;
+  }
+
+  .word-interactive input[type='text']:focus {
+    background: #020617 !important;
+    border-bottom-color: #60a5fa !important;
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    box-shadow:
+      0 0 0 2px rgba(59, 130, 246, 0.3),
+      0 1px 3px rgba(0, 0, 0, 0.3) !important;
+  }
+
+  /* Override any inherited color from parent elements */
+  .word-interactive:has(input[type='text']) {
+    color: inherit !important;
+  }
+
+  .word-interactive:has(input[type='text']) * {
+    color: #ffffff !important;
+  }
+
+  .word-interactive input[type='text']::selection {
+    background: hsl(var(--primary) / 0.3);
+    color: hsl(var(--primary-foreground));
+  }
+
+  /* Visual feedback for words being edited */
+  .word-interactive:has(input:focus) {
+    background: hsl(var(--muted));
+    border-radius: 0.375rem;
+    padding: 2px;
+  }
+
+  /* Fix hover effect for already selected/highlighted words */
+  .word-interactive.current-word:hover {
+    background: hsl(var(--primary) / 0.8) !important;
+    color: hsl(var(--primary-foreground)) !important;
+    box-shadow: 0 2px 8px hsl(var(--primary) / 0.3) !important;
+  }
+
+  .word-interactive.text-foreground.font-medium:hover {
+    background: hsl(var(--muted) / 0.8) !important;
+    color: hsl(var(--foreground)) !important;
+  }
+
+  .word-interactive.text-muted-foreground\:\/70:hover {
+    background: hsl(var(--muted) / 0.6) !important;
+    color: hsl(var(--foreground)) !important;
   }
 </style>
