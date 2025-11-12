@@ -47,12 +47,12 @@
           <canvas
             ref="waveformCanvas"
             class="absolute inset-0 w-full h-full rounded-md pointer-events-none"
-            :style="{ opacity: waveformOpacity }"
+            style="mix-blend-mode: normal; z-index: 30"
           ></canvas>
 
           <!-- Played progress overlay -->
           <div
-            class="absolute inset-y-0 left-0 bg-gradient-to-r from-purple-500/40 to-indigo-500/40 rounded-l-md transition-all duration-100 pointer-events-none"
+            class="absolute inset-y-0 left-0 bg-gradient-to-r from-purple-500/40 to-indigo-500/40 rounded-l-md transition-all duration-100 pointer-events-none z-20"
             :style="{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }"
           ></div>
 
@@ -125,11 +125,11 @@
     loadWaveformFromVideo,
   } = useAudioWaveform();
 
-  // Waveform rendering state
+  // Waveform rendering state (not used for canvas anymore since we control opacity in render)
   const waveformOpacity = computed(() => {
     if (isWaveformLoading.value) return 0.1; // Very subtle loading state
     if (!isWaveformLoaded.value) return 0;
-    return 1; // Full opacity since we control it in render options
+    return 1; // Always full opacity for canvas
   });
 
   // Resize observer for canvas updates
@@ -160,21 +160,92 @@
       // Calculate optimal waveform parameters
       const params = calculateWaveformParameters(props.duration, rect.width, props.zoomLevel);
 
-      // Render the waveform
-      renderWaveformOnCanvas(canvas, {
+      // Render dual-color waveform (white before playhead, purple after)
+      renderDualColorWaveform(canvas, {
         width: rect.width,
         height: rect.height,
         peaks: waveformData.value.peaks,
+        duration: props.duration,
+        currentTime: props.currentTime,
         barWidth: params.barWidth,
         barSpacing: params.barSpacing,
-        color: '#a855f7', // purple-400 (lighter shade)
-        opacity: 1.0, // 100% opacity
-        style: 'bars',
         amplitude: 0.8,
       });
     } catch (error) {
       console.error('[TimelineVideoTrack] Error rendering waveform:', error);
     }
+  }
+
+  // Render dual-color waveform (white before playhead, purple after)
+  function renderDualColorWaveform(
+    canvas: HTMLCanvasElement,
+    options: {
+      width: number;
+      height: number;
+      peaks: any[];
+      duration: number;
+      currentTime: number;
+      barWidth: number;
+      barSpacing: number;
+      amplitude: number;
+    }
+  ): void {
+    const ctx = canvas.getContext('2d');
+    if (!ctx || options.peaks.length === 0) return;
+
+    const { width, height, peaks, duration, currentTime, barWidth, barSpacing, amplitude } = options;
+    const totalBarWidth = barWidth + barSpacing;
+    const centerY = height / 2;
+    const maxBarHeight = height * amplitude;
+
+    // Calculate playhead position (0-1 ratio)
+    const playheadRatio = Math.max(0, Math.min(1, currentTime / duration));
+    const playheadPixel = playheadRatio * width;
+
+    // Ensure canvas size is correct
+    canvas.width = width;
+    canvas.height = height;
+
+    // Clear canvas completely
+    ctx.clearRect(0, 0, width, height);
+
+    // Disable any global compositing that might interfere
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1.0;
+
+    // Render each peak with appropriate color
+    peaks.forEach((peak, index) => {
+      const x = index * totalBarWidth;
+
+      // Skip if bar would be outside canvas bounds
+      if (x + barWidth > width) return;
+
+      // Determine color based on position relative to playhead
+      const barCenter = x + barWidth / 2;
+      const isBeforePlayhead = barCenter < playheadPixel;
+      const color = isBeforePlayhead ? '#ffffff' : '#a855f7'; // white before, purple after
+
+      // Set color with full opacity
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 1.0;
+
+      // Calculate bar heights from peak values
+      const positiveHeight = Math.abs(peak.max) * maxBarHeight;
+      const negativeHeight = Math.abs(peak.min) * maxBarHeight;
+
+      // Draw upper bar (positive values)
+      if (positiveHeight > 0) {
+        ctx.fillRect(x, centerY - positiveHeight, barWidth, positiveHeight);
+      }
+
+      // Draw lower bar (negative values)
+      if (negativeHeight > 0) {
+        ctx.fillRect(x, centerY, barWidth, negativeHeight);
+      }
+    });
+
+    // Reset global alpha
+    ctx.globalAlpha = 1.0;
   }
 
   // Throttled renderer for performance
@@ -212,7 +283,7 @@
 
   // Watch for waveform data changes and render
   watch(
-    [waveformData, isWaveformLoaded, () => props.zoomLevel],
+    [waveformData, isWaveformLoaded, () => props.zoomLevel, () => props.currentTime],
     () => {
       if (isWaveformLoaded.value && waveformData.value) {
         nextTick(() => {
