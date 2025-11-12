@@ -56,6 +56,7 @@
             :duration="duration"
             :timelineHoverTime="timelineHoverTime"
             :timelineHoverPosition="timelineHoverPosition"
+            :zoomLevel="zoomLevel"
             @videoTrackClick="onVideoTrackClick"
             @timelineTrackHover="onTimelineTrackHover"
             @timelineMouseLeave="onTimelineMouseLeave"

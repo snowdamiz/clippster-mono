@@ -13,7 +13,7 @@
     <div class="flex-1 h-10 relative flex items-center">
       <div
         data-video-track="true"
-        class="flex-1 h-8 bg-[#0a0a0a]/50 rounded-md relative cursor-pointer group"
+        class="flex-1 h-8 bg-[#0a0a0a]/50 rounded-md relative cursor-pointer group overflow-hidden"
         @click="onVideoTrackClick"
         @mousemove="onTimelineTrackHover"
         @mouseleave="onTimelineMouseLeave"
@@ -38,19 +38,28 @@
             <p class="text-xs">No video</p>
           </div>
         </div>
-        <!-- Video Track Progress -->
-        <div v-else>
+        <!-- Video Track with Waveform -->
+        <div v-else class="relative w-full h-full">
           <!-- Full video duration background -->
-          <div class="absolute inset-0 bg-gradient-to-r from-purple-600/30 to-indigo-600/30 rounded-md"></div>
-          <!-- Played progress -->
+          <div class="absolute inset-0 bg-gradient-to-r from-purple-600/20 to-indigo-600/20 rounded-md"></div>
+
+          <!-- Audio Waveform Canvas -->
+          <canvas
+            ref="waveformCanvas"
+            class="absolute inset-0 w-full h-full rounded-md pointer-events-none"
+            :style="{ opacity: waveformOpacity }"
+          ></canvas>
+
+          <!-- Played progress overlay -->
           <div
-            class="absolute inset-y-0 left-0 bg-gradient-to-r from-purple-500/60 to-indigo-500/60 rounded-l-md transition-all duration-100"
+            class="absolute inset-y-0 left-0 bg-gradient-to-r from-purple-500/40 to-indigo-500/40 rounded-l-md transition-all duration-100 pointer-events-none"
             :style="{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }"
           ></div>
+
           <!-- Hover time indicator -->
           <div
             v-if="timelineHoverTime !== null"
-            class="absolute -top-2 transform -translate-x-1/2 z-20"
+            class="absolute -top-2 transform -translate-x-1/2 z-20 pointer-events-none"
             :style="{ left: `${timelineHoverPosition}%` }"
           >
             <div class="bg-black/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-md font-medium mb-1">
@@ -60,6 +69,14 @@
               ></div>
             </div>
           </div>
+
+          <!-- Loading indicator for waveform -->
+          <div
+            v-if="isWaveformLoading"
+            class="absolute inset-0 flex items-center justify-center bg-black/20 rounded-md"
+          >
+            <div class="text-xs text-muted-foreground/60">Loading waveform...</div>
+          </div>
         </div>
       </div>
     </div>
@@ -67,7 +84,14 @@
 </template>
 
 <script setup lang="ts">
+  import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
   import { formatDuration } from '../utils/timelineUtils';
+  import { useAudioWaveform } from '@/composables/useAudioWaveform';
+  import {
+    renderWaveformOnCanvas,
+    calculateWaveformParameters,
+    createThrottledRenderer,
+  } from '@/utils/audioWaveformUtils';
 
   interface Props {
     videoSrc: string | null;
@@ -75,9 +99,12 @@
     duration: number;
     timelineHoverTime: number | null;
     timelineHoverPosition: number;
+    zoomLevel?: number; // Added zoom level support
   }
 
-  defineProps<Props>();
+  const props = withDefaults(defineProps<Props>(), {
+    zoomLevel: 1,
+  });
 
   interface Emits {
     (e: 'videoTrackClick', event: MouseEvent): void;
@@ -87,6 +114,116 @@
 
   const emit = defineEmits<Emits>();
 
+  // Canvas ref for waveform rendering
+  const waveformCanvas = ref<HTMLCanvasElement | null>(null);
+
+  // Audio waveform composable
+  const {
+    waveformData,
+    isLoading: isWaveformLoading,
+    isLoaded: isWaveformLoaded,
+    loadWaveformFromVideo,
+  } = useAudioWaveform();
+
+  // Waveform rendering state
+  const waveformOpacity = computed(() => {
+    if (isWaveformLoading.value) return 0.1; // Very subtle loading state
+    if (!isWaveformLoaded.value) return 0;
+    return 1; // Full opacity since we control it in render options
+  });
+
+  // Resize observer for canvas updates
+  let resizeObserver: ResizeObserver | null = null;
+  let renderScheduled = false;
+
+  // Render waveform on canvas
+  function renderWaveform(): void {
+    if (!waveformCanvas.value || !waveformData.value || !isWaveformLoaded.value) {
+      return;
+    }
+
+    try {
+      const canvas = waveformCanvas.value;
+      const rect = canvas.getBoundingClientRect();
+
+      // Set canvas actual size (account for device pixel ratio)
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+
+      // Scale context for device pixel ratio
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.scale(dpr, dpr);
+      }
+
+      // Calculate optimal waveform parameters
+      const params = calculateWaveformParameters(props.duration, rect.width, props.zoomLevel);
+
+      // Render the waveform
+      renderWaveformOnCanvas(canvas, {
+        width: rect.width,
+        height: rect.height,
+        peaks: waveformData.value.peaks,
+        barWidth: params.barWidth,
+        barSpacing: params.barSpacing,
+        color: '#a855f7', // purple-400 (lighter shade)
+        opacity: 1.0, // 100% opacity
+        style: 'bars',
+        amplitude: 0.8,
+      });
+    } catch (error) {
+      console.error('[TimelineVideoTrack] Error rendering waveform:', error);
+    }
+  }
+
+  // Throttled renderer for performance
+  const throttledRender = createThrottledRenderer(renderWaveform, 16); // ~60fps
+
+  // Setup resize observer
+  function setupResizeObserver(): void {
+    if (!waveformCanvas.value) return;
+
+    resizeObserver = new ResizeObserver(() => {
+      throttledRender();
+    });
+
+    resizeObserver.observe(waveformCanvas.value);
+  }
+
+  // Cleanup resize observer
+  function cleanupResizeObserver(): void {
+    if (resizeObserver) {
+      resizeObserver.disconnect();
+      resizeObserver = null;
+    }
+  }
+
+  // Watch for video source changes
+  watch(
+    () => props.videoSrc,
+    async (newVideoSrc) => {
+      if (newVideoSrc) {
+        await loadWaveformFromVideo(newVideoSrc);
+      }
+    },
+    { immediate: true }
+  );
+
+  // Watch for waveform data changes and render
+  watch(
+    [waveformData, isWaveformLoaded, () => props.zoomLevel],
+    () => {
+      if (isWaveformLoaded.value && waveformData.value) {
+        nextTick(() => {
+          throttledRender();
+        });
+      }
+    },
+    { immediate: true }
+  );
+
+  // Event handlers
   function onVideoTrackClick(event: MouseEvent) {
     emit('videoTrackClick', event);
   }
@@ -98,6 +235,20 @@
   function onTimelineMouseLeave() {
     emit('timelineMouseLeave');
   }
+
+  // Lifecycle hooks
+  onMounted(() => {
+    nextTick(() => {
+      setupResizeObserver();
+      if (props.videoSrc) {
+        loadWaveformFromVideo(props.videoSrc);
+      }
+    });
+  });
+
+  onUnmounted(() => {
+    cleanupResizeObserver();
+  });
 </script>
 
 <style scoped>

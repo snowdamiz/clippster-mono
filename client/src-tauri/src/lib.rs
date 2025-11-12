@@ -1888,6 +1888,214 @@ fn parse_duration_from_ffmpeg_output(stderr: &str) -> Result<f64, String> {
     }
 }
 
+// Waveform peak data structure
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct WaveformPeak {
+    min: f64,
+    max: f64,
+}
+
+// Waveform data structure
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct WaveformData {
+    peaks: Vec<WaveformPeak>,
+    sample_rate: u32,
+    duration: f64,
+    samples_per_pixel: u32,
+}
+
+#[tauri::command]
+async fn extract_audio_waveform(
+    app: tauri::AppHandle,
+    video_path: String,
+    target_samples: Option<u32>
+) -> Result<WaveformData, String> {
+    use tauri_plugin_shell::ShellExt;
+
+    println!("[Rust] extract_audio_waveform called with:");
+    println!("[Rust]   video_path: {}", video_path);
+    println!("[Rust]   target_samples: {:?}", target_samples);
+
+    let target_samples = target_samples.unwrap_or(2000); // Default to 2000 samples
+    if target_samples < 100 || target_samples > 10000 {
+        return Err("target_samples must be between 100 and 10000".to_string());
+    }
+
+    // Get storage paths for temporary files
+    let paths = storage::init_storage_dirs()
+        .map_err(|e| {
+            println!("[Rust] Failed to get storage paths: {}", e);
+            format!("Failed to get storage paths: {}", e)
+        })?;
+
+    // Create unique temporary audio file
+    let temp_audio_path = paths.videos.join(format!("temp_waveform_{}.wav",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| format!("Failed to get timestamp: {}", e))?
+            .as_secs()
+    ));
+
+    println!("[Rust] Temporary audio path: {}", temp_audio_path.display());
+
+    let shell = app.shell();
+
+    // First, get video duration using FFmpeg
+    println!("[Rust] Getting video duration...");
+    let duration_output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args([
+            "-i", &video_path,
+            "-f", "null",
+            "-"
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg for duration: {}", e))?;
+
+    // Parse duration from FFmpeg output
+    let stderr = String::from_utf8_lossy(&duration_output.stderr);
+    let video_duration = parse_duration_from_ffmpeg_output(&stderr)
+        .map_err(|e| format!("Failed to parse video duration: {}", e))?;
+
+    println!("[Rust] Video duration: {:.2} seconds", video_duration);
+
+    if video_duration <= 0.0 {
+        return Err("Invalid video duration".to_string());
+    }
+
+    // Extract audio as WAV for processing (16-bit PCM, mono)
+    println!("[Rust] Extracting audio as WAV...");
+    let extract_output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args([
+            "-i", &video_path,
+            "-vn",                    // No video
+            "-acodec", "pcm_s16le",   // 16-bit PCM
+            "-ar", "44100",           // 44.1kHz sample rate
+            "-ac", "1",               // Mono
+            "-y",                     // Overwrite output
+            temp_audio_path.to_str().ok_or("Invalid temporary audio path")?,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to extract audio: {}", e))?;
+
+    if !extract_output.status.success() {
+        let stderr = String::from_utf8_lossy(&extract_output.stderr);
+        return Err(format!("FFmpeg audio extraction failed: {}", stderr));
+    }
+
+    println!("[Rust] Audio extracted successfully");
+
+    // Process the WAV file to extract waveform data
+    let waveform_data = process_wav_file(&temp_audio_path, target_samples, video_duration)
+        .map_err(|e| format!("Failed to process WAV file: {}", e))?;
+
+    // Clean up temporary file
+    if let Err(e) = std::fs::remove_file(&temp_audio_path) {
+        eprintln!("[Rust] Warning: Failed to remove temporary audio file {}: {}", temp_audio_path.display(), e);
+    } else {
+        println!("[Rust] Cleaned up temporary audio file");
+    }
+
+    println!("[Rust] Waveform extraction completed. Generated {} peaks.", waveform_data.peaks.len());
+    Ok(waveform_data)
+}
+
+// Process WAV file to extract waveform peaks
+fn process_wav_file(wav_path: &std::path::Path, target_samples: u32, duration: f64) -> Result<WaveformData, String> {
+    use std::fs::File;
+    use std::io::Read;
+
+    println!("[Rust] Processing WAV file: {}", wav_path.display());
+
+    // Open and read WAV file
+    let mut file = File::open(wav_path)
+        .map_err(|e| format!("Failed to open WAV file: {}", e))?;
+
+    // Read WAV header (44 bytes for standard WAV)
+    let mut header = [0u8; 44];
+    file.read_exact(&mut header)
+        .map_err(|e| format!("Failed to read WAV header: {}", e))?;
+
+    // Verify WAV format
+    if &header[0..4] != b"RIFF" || &header[8..12] != b"WAVE" {
+        return Err("Invalid WAV file format".to_string());
+    }
+
+    // Get sample rate from header (bytes 24-27)
+    let sample_rate = u32::from_le_bytes([header[24], header[25], header[26], header[27]]);
+    println!("[Rust] Sample rate: {} Hz", sample_rate);
+
+    // Skip to audio data
+    let mut data_pos = 12; // After RIFF header
+    while data_pos < header.len() - 8 {
+        if &header[data_pos..data_pos + 4] == b"data" {
+            data_pos += 8; // Skip "data" chunk header
+            break;
+        }
+        data_pos += 8;
+    }
+
+    // Read remaining file as audio data
+    let mut audio_data = Vec::new();
+    file.read_to_end(&mut audio_data)
+        .map_err(|e| format!("Failed to read audio data: {}", e))?;
+
+    println!("[Rust] Read {} bytes of audio data", audio_data.len());
+
+    // Convert bytes to 16-bit samples (little-endian)
+    let mut samples = Vec::new();
+    for chunk in audio_data.chunks_exact(2) {
+        if chunk.len() == 2 {
+            let sample = i16::from_le_bytes([chunk[0], chunk[1]]) as f64 / i16::MAX as f64;
+            samples.push(sample);
+        }
+    }
+
+    println!("[Rust] Converted to {} audio samples", samples.len());
+
+    if samples.is_empty() {
+        return Err("No audio samples found".to_string());
+    }
+
+    // Calculate samples per peak
+    let samples_per_peak = (samples.len() as f64 / target_samples as f64).ceil() as usize;
+    println!("[Rust] Samples per peak: {}", samples_per_peak);
+
+    // Generate peaks
+    let mut peaks = Vec::new();
+    for i in 0..target_samples {
+        let start_idx = (i as usize * samples_per_peak).min(samples.len());
+        let end_idx = ((i as usize + 1) * samples_per_peak).min(samples.len());
+
+        if start_idx >= samples.len() {
+            break;
+        }
+
+        let mut min = 0.0;
+        let mut max = 0.0;
+
+        // Find min and max in this chunk
+        for &sample in &samples[start_idx..end_idx] {
+            if sample < min { min = sample; }
+            if sample > max { max = sample; }
+        }
+
+        peaks.push(WaveformPeak { min, max });
+    }
+
+    println!("[Rust] Generated {} waveform peaks", peaks.len());
+
+    Ok(WaveformData {
+        peaks,
+        sample_rate,
+        duration,
+        samples_per_pixel: samples_per_peak as u32,
+    })
+}
+
 
 
 
@@ -2462,6 +2670,7 @@ pub fn run() {
             is_clip_generation_in_progress,
             extract_audio_from_video,
             extract_and_chunk_audio,
+            extract_audio_waveform,
                         storage::get_storage_paths,
             storage::copy_video_to_storage,
             storage::copy_asset_to_storage,
