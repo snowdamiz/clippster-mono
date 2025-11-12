@@ -62,8 +62,8 @@
           :ref="(el) => setWordRef(el, index)"
           :class="getWordClasses(word)"
           class="inline-block px-1 py-0.5 mx-0.5 rounded-md transition-all duration-300 ease-out cursor-pointer hover:bg-primary/10 hover:scale-105 whitespace-normal word-interactive"
-          @click="seekToTime(getWordStart(word))"
-          :title="`Jump to ${formatTime(getWordStart(word))}`"
+          @click="seekToTime(getWordMiddle(word))"
+          :title="`Jump to ${formatTime(getWordMiddle(word))}`"
         >
           {{ getWordText(word) }}{{ index < transcriptData.words.length - 1 ? ' ' : '' }}
         </span>
@@ -153,6 +153,13 @@
     return word.end || word.finish || word.endTime || getWordStart(word) + 1;
   }
 
+  // Helper function to get the middle time of a word for more accurate seeking
+  function getWordMiddle(word: any): number {
+    const start = getWordStart(word);
+    const end = getWordEnd(word);
+    return start + (end - start) / 2;
+  }
+
   // Get CSS classes for a word based on its state relative to currentTime
   function getWordClasses(word: any): string {
     if (currentWordIndex.value === -1 || props.currentTime === undefined || props.duration === 0) {
@@ -210,9 +217,19 @@
         newIndex = i;
         break;
       }
-      // If we've passed the word, track the most recent one
-      if (currentTime > wordEnd) {
-        newIndex = i;
+    }
+
+    // If no exact match found, find the closest word by start time (same approach as Timeline)
+    if (newIndex === -1) {
+      let closestDistance = Infinity;
+      for (let i = 0; i < words.length; i++) {
+        const word = words[i];
+        const wordStart = getWordStart(word);
+        const distance = Math.abs(wordStart - currentTime);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          newIndex = i;
+        }
       }
     }
 
