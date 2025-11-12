@@ -44,13 +44,13 @@
 
     <!-- Transcript content -->
     <div v-else ref="transcriptContent" class="flex-1 overflow-y-auto pr-2">
-      <div class="text-sm text-foreground leading-relaxed break-words py-2">
+      <div class="text-sm text-foreground leading-relaxed break-words py-2 min-h-full">
         <span
           v-for="(word, index) in transcriptData.words"
           :key="`word-${index}`"
           :ref="(el) => setWordRef(el, index)"
           :class="getWordClasses(word)"
-          class="inline px-0.5 py-0.5 rounded transition-all duration-200 cursor-pointer hover:bg-muted/50 whitespace-normal"
+          class="inline-block px-0.5 py-0.5 rounded transition-all duration-200 cursor-pointer hover:bg-muted/50 whitespace-normal"
           @click="seekToTime(getWordStart(word))"
         >
           {{ getWordText(word) }}{{ index < transcriptData.words.length - 1 ? ' ' : '' }}
@@ -151,10 +151,14 @@
     emit('seekVideo', time);
   }
 
+  // Track the previous word index to detect backward seeks
+  const previousWordIndex = ref(-1);
+
   // Find the current word index based on currentTime
   function updateCurrentWordIndex() {
     if (!transcriptData.value || !transcriptData.value.words.length || props.currentTime === undefined) {
       currentWordIndex.value = -1;
+      previousWordIndex.value = -1;
       return;
     }
 
@@ -179,14 +183,25 @@
     }
 
     if (newIndex !== currentWordIndex.value) {
+      const oldIndex = currentWordIndex.value;
       currentWordIndex.value = newIndex;
-      // Auto-scroll to keep current word visible
-      scrollToCurrentWord();
+
+      // Check if this is a significant backward seek or any seek to different area
+      const isBackwardSeek = newIndex < oldIndex && oldIndex - newIndex > 5;
+      const isAnySeek = Math.abs(newIndex - oldIndex) > 20; // Any seek of 20+ words
+      const isSeekingToBeginning = newIndex <= 10; // First 10 words (beginning of transcript)
+
+      // Auto-scroll to keep current word visible (force scroll on any significant seek)
+      const shouldForceScroll = isBackwardSeek || isAnySeek || isSeekingToBeginning;
+
+      scrollToCurrentWord(shouldForceScroll);
+
+      previousWordIndex.value = newIndex;
     }
   }
 
   // Scroll to keep the current word visible
-  function scrollToCurrentWord() {
+  function scrollToCurrentWord(forceScroll = false) {
     if (currentWordIndex.value === -1 || !transcriptContent.value) return;
 
     const wordElement = wordElements.value.get(currentWordIndex.value);
@@ -203,19 +218,8 @@
       const wordOffsetTop = wordElement.offsetTop;
       const wordHeight = wordElement.offsetHeight;
 
-      // Debug logging
-      console.log('[TranscriptPanel] Scroll debug:', {
-        containerScrollHeight,
-        containerClientHeight: containerHeight,
-        containerScrollTop,
-        wordOffsetTop,
-        wordHeight,
-        needsScroll: containerScrollHeight > containerHeight,
-      });
-
       // Check if scrolling is possible
       if (containerScrollHeight <= containerHeight) {
-        console.log('[TranscriptPanel] No scrolling possible - content fits container');
         return;
       }
 
@@ -223,16 +227,20 @@
       const safeTop = containerScrollTop + 40; // 40px from top
       const safeBottom = containerScrollTop + containerHeight - 40; // 40px from bottom
 
-      // Check if word is outside safe viewing area
-      if (wordOffsetTop >= safeTop && wordOffsetTop + wordHeight <= safeBottom) {
-        console.log('[TranscriptPanel] Word already in safe view');
+      // Check if word is outside safe viewing area (only for normal scrolling)
+      if (!forceScroll && wordOffsetTop >= safeTop && wordOffsetTop + wordHeight <= safeBottom) {
         return; // Word is already in safe view, no scrolling needed
       }
 
       // Calculate minimal scroll needed
       let targetScrollTop = containerScrollTop;
 
-      if (wordOffsetTop < safeTop) {
+      if (forceScroll) {
+        // Force scroll - position word right at the very top
+        // Calculate target based on word's actual position within the content
+        const contentTop = Math.min(wordOffsetTop, containerScrollHeight - containerHeight);
+        targetScrollTop = Math.max(0, contentTop - 10);
+      } else if (wordOffsetTop < safeTop) {
         // Word is too high, scroll up just enough to bring it into view
         targetScrollTop = Math.max(0, wordOffsetTop - 60); // 60px from top
       } else if (wordOffsetTop + wordHeight > safeBottom) {
@@ -240,15 +248,12 @@
         targetScrollTop = wordOffsetTop + wordHeight - containerHeight + 60; // 60px from top
       }
 
-      // Clamp to valid bounds
-      const maxScrollTop = containerScrollHeight - containerHeight;
-      targetScrollTop = Math.max(0, Math.min(targetScrollTop, maxScrollTop));
-
-      console.log('[TranscriptPanel] Will scroll:', {
-        from: containerScrollTop,
-        to: targetScrollTop,
-        diff: Math.abs(containerScrollTop - targetScrollTop),
-      });
+      // Don't clamp for force scroll - allow it to position correctly
+      if (!forceScroll) {
+        const maxScrollTop = containerScrollHeight - containerHeight;
+        targetScrollTop = Math.max(0, Math.min(targetScrollTop, maxScrollTop));
+      }
+      // For force scroll, skip clamping entirely to allow proper positioning
 
       // Only scroll if we actually need to move
       if (Math.abs(containerScrollTop - targetScrollTop) > 5) {
