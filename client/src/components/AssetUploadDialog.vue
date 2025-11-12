@@ -143,7 +143,6 @@
 
 <script setup lang="ts">
   import { ref } from 'vue';
-  import { open } from '@tauri-apps/plugin-dialog';
   import { useAssetOperations } from '@/composables/useAssetOperations';
 
   const emit = defineEmits<{

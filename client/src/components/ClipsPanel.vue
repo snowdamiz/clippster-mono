@@ -582,25 +582,6 @@
 
   // Expose function to parent (will be merged with existing defineExpose)
 
-  // Utility function to convert hex color to darker version for dark theme
-  function hexToDarkerHex(hex: string, opacity: number = 0.15): string {
-    // Remove the # if present
-    const cleanHex = hex.replace('#', '');
-
-    // Parse the hex values
-    const r = parseInt(cleanHex.substr(0, 2), 16);
-    const g = parseInt(cleanHex.substr(2, 2), 16);
-    const b = parseInt(cleanHex.substr(4, 2), 16);
-
-    // Create darker version by reducing brightness (multiply by opacity factor)
-    const darkerR = Math.round(r * opacity);
-    const darkerG = Math.round(g * opacity);
-    const darkerB = Math.round(b * opacity);
-
-    // Convert back to hex
-    return `#${darkerR.toString(16).padStart(2, '0')}${darkerG.toString(16).padStart(2, '0')}${darkerB.toString(16).padStart(2, '0')}`;
-  }
-
   // Computed property to match session prompt content to prompt names
   const promptNameMap = computed(() => {
     const map = new Map<string, string>();
@@ -737,10 +718,6 @@
     // Convert video duration from seconds to minutes
     const durationInMinutes = Math.round(props.videoDuration / 60);
 
-    // Estimate transcription time based on typical processing rates
-    // Usually about 1/4 to 1/3 of real-time duration for AI transcription
-    const estimatedMinutes = Math.ceil(durationInMinutes * 0.3); // 30% of video length
-
     if (durationInMinutes <= 5) {
       return 'less than 2 minutes';
     } else if (durationInMinutes <= 15) {
@@ -753,23 +730,6 @@
       return '15-30 minutes';
     }
   }
-
-  const progressBarClass = computed(() => {
-    switch (props.generationStage) {
-      case 'transcribing':
-        return 'bg-yellow-500';
-      case 'analyzing':
-        return 'bg-purple-500';
-      case 'validating':
-        return 'bg-orange-500';
-      case 'completed':
-        return 'bg-green-500';
-      case 'error':
-        return 'bg-red-500';
-      default:
-        return 'bg-blue-500';
-    }
-  });
 
   // Expose methods for external access
   defineExpose({

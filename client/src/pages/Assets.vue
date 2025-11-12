@@ -260,7 +260,7 @@
           title="No assets yet"
           description="Upload your first intro or outro to get started"
           button-text="Upload Asset"
-          @action="handleUpload('intro')"
+          @action="handleUpload()"
         >
           <template #icon>
             <svg
@@ -344,8 +344,7 @@
   let unregisterUploadCallback: (() => void) | null = null;
 
   // Asset operations composable
-  const { uploading, hasActiveUploads, showSkeletonCard, uploadAsset, deleteAsset, onUploadComplete } =
-    useAssetOperations();
+  const { uploading, showSkeletonCard, deleteAsset, onUploadComplete } = useAssetOperations();
 
   // Pagination state
   const currentPage = ref(1);
@@ -595,7 +594,7 @@
   async function openIntrosFolder() {
     try {
       // Get the base storage directory and construct assets path
-      const basePath = await getStoragePath('');
+      const basePath = await getStoragePath('base');
       const assetsPath = basePath + '\\assets';
 
       // Use the first asset file if available, otherwise use a dummy path

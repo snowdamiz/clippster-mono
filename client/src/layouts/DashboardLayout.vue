@@ -18,7 +18,6 @@
 
 <script setup lang="ts">
   import DashboardSidebar from '@/components/DashboardSidebar.vue';
-  import DashboardHeader from '@/components/DashboardHeader.vue';
 </script>
 
 <style scoped>

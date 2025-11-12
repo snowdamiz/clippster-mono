@@ -37,7 +37,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, onUnmounted } from 'vue';
+  import { ref, onMounted } from 'vue';
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { invoke } from '@tauri-apps/api/core';
 
@@ -100,7 +100,7 @@
       if (isMacOS.value) {
         await invoke('setup_macos_titlebar');
         // Update main content padding for macOS titlebar height
-        const mainContent = document.querySelector('.main-content');
+        const mainContent = document.querySelector('.main-content') as HTMLElement;
         if (mainContent) {
           mainContent.style.paddingTop = '28px'; // macOS titlebar is typically 28px
         }

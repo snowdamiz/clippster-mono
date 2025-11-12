@@ -1,11 +1,5 @@
 import { ref, computed } from 'vue';
-import {
-  createIntroOutro,
-  deleteIntroOutro,
-  updateIntroOutroThumbnailStatus,
-  updateIntroOutroCompletion,
-  type IntroOutro,
-} from '@/services/database';
+import { createIntroOutro, deleteIntroOutro, type IntroOutro } from '@/services/database';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { generateId } from '@/services/database';
