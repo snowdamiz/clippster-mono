@@ -71,11 +71,11 @@
                 @goToBeginning="goToBeginning"
               />
             </div>
-            <!-- Right Side: Clips Section -->
+            <!-- Right Side: Media Section -->
             <div class="w-2/5 min-w-0 flex flex-col flex-1">
-              <!-- Clips Section -->
-              <ClipsPanel
-                ref="clipsPanelRef"
+              <!-- Media Section -->
+              <MediaPanel
+                ref="mediaPanelRef"
                 :transcript-collapsed="transcriptCollapsed"
                 :clips-collapsed="clipsCollapsed"
                 :is-generating="clipGenerationInProgress"
@@ -116,7 +116,7 @@
             @timelineMouseLeave="onTimelineMouseLeave"
             @timelineClipHover="onTimelineClipHover"
             @timelineSegmentClick="onTimelineSegmentClick"
-            @scrollToClipsPanel="onScrollToClipsPanel"
+            @scrollToMediaPanel="onScrollToMediaPanel"
             @zoomChanged="handleTimelineZoomChanged"
             @segmentUpdated="onSegmentUpdated"
             @refreshClipsData="onRefreshClipsData"
@@ -179,7 +179,7 @@
   import { type Project, type ClipWithVersion, getClipsWithVersionsByProjectId, deleteClip } from '@/services/database';
   import VideoPlayer from './VideoPlayer.vue';
   import VideoControls from './VideoControls.vue';
-  import ClipsPanel from './ClipsPanel.vue';
+  import MediaPanel from './MediaPanel.vue';
   import Timeline from './Timeline.vue';
   import ClipGenerationProgress from './ClipGenerationProgress.vue';
   import ConfirmationModal from './ConfirmationModal.vue';
@@ -227,7 +227,7 @@
   const hoveredTimelineClipId = ref<string | null>(null);
 
   // Component refs for scrolling
-  const clipsPanelRef = ref<InstanceType<typeof ClipsPanel> | null>(null);
+  const mediaPanelRef = ref<InstanceType<typeof MediaPanel> | null>(null);
   const timelineRef = ref<InstanceType<typeof Timeline> | null>(null);
 
   // Dialog element ref for height tracking
@@ -449,13 +449,13 @@
 
   // Handle segment updates from Timeline
   function onSegmentUpdated(_clipId: string, _segmentIndex: number, _newStartTime: number, _newEndTime: number) {
-    // Refresh the ClipsPanel data to get the updated segment positions
+    // Refresh the MediaPanel data to get the updated segment positions
     if (props.project) {
       // Use both methods to ensure refresh happens reliably
       setTimeout(async () => {
-        // Method 1: Direct refresh if ClipsPanel ref is available
-        if (clipsPanelRef.value) {
-          clipsPanelRef.value.refreshClips();
+        // Method 1: Direct refresh if MediaPanel ref is available
+        if (mediaPanelRef.value) {
+          mediaPanelRef.value.refreshClips();
         }
 
         // Method 2: Event-based refresh as fallback
@@ -474,9 +474,9 @@
   function onRefreshClipsData() {
     if (props.project) {
       setTimeout(async () => {
-        // Method 1: Direct refresh if ClipsPanel ref is available
-        if (clipsPanelRef.value) {
-          clipsPanelRef.value.refreshClips();
+        // Method 1: Direct refresh if MediaPanel ref is available
+        if (mediaPanelRef.value) {
+          mediaPanelRef.value.refreshClips();
         }
 
         // Method 2: Event-based refresh as fallback
@@ -569,10 +569,10 @@
     }
   }
 
-  function onScrollToClipsPanel(clipId: string) {
+  function onScrollToMediaPanel(clipId: string) {
     // Scroll to the specific clip
-    if (clipId && clipsPanelRef.value) {
-      clipsPanelRef.value.scrollClipIntoView(clipId);
+    if (clipId && mediaPanelRef.value) {
+      mediaPanelRef.value.scrollClipIntoView(clipId);
     } else {
       console.log('[ProjectWorkspaceDialog] Cannot scroll - missing clipId or ref');
     }

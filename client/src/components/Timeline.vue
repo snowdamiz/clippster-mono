@@ -309,7 +309,7 @@
     (e: 'timelineMouseLeave'): void;
     (e: 'timelineClipHover', clipId: string): void;
     (e: 'timelineSegmentClick', clipId: string, segmentIndex: number, event?: MouseEvent): void;
-    (e: 'scrollToClipsPanel', clipId: string): void;
+    (e: 'scrollToMediaPanel', clipId: string): void;
     (e: 'zoomChanged', zoomLevel: number): void;
     (e: 'segmentUpdated', clipId: string, segmentIndex: number, newStartTime: number, newEndTime: number): void;
     (e: 'refreshClipsData'): void;
@@ -697,7 +697,7 @@
   // Timeline clip click event handler
   function onTimelineClipClick(clipId: string) {
     emit('timelineClipHover', clipId);
-    emit('scrollToClipsPanel', clipId);
+    emit('scrollToMediaPanel', clipId);
   }
 
   // Timeline segment click event handler
