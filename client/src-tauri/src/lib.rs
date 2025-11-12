@@ -1912,6 +1912,7 @@ pub struct WaveformData {
 }
 
 // Helper function to determine optimal resolution for zoom level
+#[allow(dead_code)]
 fn get_optimal_resolution(effective_width: f64, duration: f64) -> String {
     // Calculate desired samples per pixel at current zoom
     let samples_per_pixel = (duration * 44100.0) / effective_width;
@@ -1950,7 +1951,8 @@ fn extract_local_path_from_url(video_url: &str) -> Result<String, String> {
             .ok_or("Invalid video URL format")?;
 
         // The path is base64 encoded, decode it
-        let decoded_bytes = base64::decode(encoded_path)
+        use base64::{Engine as _, engine::general_purpose};
+        let decoded_bytes = general_purpose::STANDARD.decode(encoded_path)
             .map_err(|e| format!("Failed to decode base64 video path: {}", e))?;
 
         let decoded_path = String::from_utf8(decoded_bytes)
@@ -1986,7 +1988,6 @@ fn get_video_file_metadata(video_path: &str) -> Result<(u64, u64), String> {
 
 // Get cache file path for waveform data
 fn get_waveform_cache_file_path(video_path_hash: &str) -> Result<std::path::PathBuf, String> {
-    use std::path::PathBuf;
 
     let paths = storage::init_storage_dirs()
         .map_err(|e| format!("Failed to get storage paths: {}", e))?;
@@ -2247,7 +2248,7 @@ fn process_wav_file_multi_resolution(
     let mut data_pos = 12; // After RIFF header
     while data_pos < header.len() - 8 {
         if &header[data_pos..data_pos + 4] == b"data" {
-            data_pos += 8; // Skip "data" chunk header
+            // Found data chunk, break without using data_pos since we read from current position
             break;
         }
         data_pos += 8;
