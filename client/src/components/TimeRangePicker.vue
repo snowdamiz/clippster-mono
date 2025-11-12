@@ -57,23 +57,11 @@
         {{ selectionError }}
       </div>
     </div>
-
-    <!-- Thumbnail Tooltip -->
-    <ThumbnailTooltip
-      :show="showTooltip"
-      :position="tooltipPosition"
-      :thumbnail-url="thumbnailUrl"
-      :time="tooltipTime"
-      :loading="isLoading"
-      :has-error="hasError"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
-  import { useVideoThumbnail } from '@/composables/useVideoThumbnail';
-  import ThumbnailTooltip from '@/components/ThumbnailTooltip.vue';
 
   interface Props {
     totalDuration: number; // in seconds
@@ -81,8 +69,6 @@
       startTime: number;
       endTime: number;
     };
-    videoUrl?: string; // Video URL for thumbnail generation
-    videoDuration?: number; // Actual video duration for pre-fetching strategy
   }
 
   interface Emits {
@@ -93,27 +79,9 @@
   const props = withDefaults(defineProps<Props>(), {
     totalDuration: 0,
     modelValue: () => ({ startTime: 0, endTime: 0 }),
-    videoUrl: '',
-    videoDuration: 0,
   });
 
   const emit = defineEmits<Emits>();
-
-  // Initialize video thumbnail
-  const {
-    showTooltipAtTime,
-    hideTooltip,
-    updatePosition: _updatePosition,
-    tooltipPosition,
-    thumbnailUrl,
-    tooltipTime,
-    showTooltip,
-    isLoading,
-    hasError,
-    formatTime: _formatTooltipTime,
-    smartPreFetch,
-    cleanup,
-  } = useVideoThumbnail();
 
   // Range slider values
   const startRangeValue = ref(0);
@@ -210,23 +178,14 @@
     const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     const value = Math.round(percentage * props.totalDuration);
 
-    let currentTime = 0;
     if (dragType.value === 'start') {
       // Ensure start doesn't go beyond end
       const newValue = Math.min(value, endRangeValue.value - 1);
       startRangeValue.value = Math.max(0, newValue);
-      currentTime = startTime.value;
     } else {
       // Ensure end doesn't go before start
       const newValue = Math.max(value, startRangeValue.value + 1);
       endRangeValue.value = Math.min(props.totalDuration, newValue);
-      currentTime = endTime.value;
-    }
-
-    // Update thumbnail tooltip position and content
-    if (props.videoUrl) {
-      const tooltipY = rect.top - 20; // Position above the slider
-      showTooltipAtTime(props.videoUrl, clientX, tooltipY, currentTime);
     }
 
     emitChange();
@@ -235,9 +194,6 @@
   function endDragging() {
     isDragging.value = false;
     dragType.value = null;
-
-    // Hide thumbnail tooltip
-    hideTooltip();
 
     // Remove event listeners
     document.removeEventListener('mousemove', handleDrag);
@@ -285,20 +241,9 @@
     }
   );
 
-  // Trigger smart pre-fetching when video URL and duration are available
-  watch(
-    [() => props.videoUrl, () => props.videoDuration],
-    async ([videoUrl, videoDuration]) => {
-      if (videoUrl && videoDuration && videoDuration > 0) {
-        smartPreFetch(videoUrl, videoDuration);
-      }
-    },
-    { immediate: true }
-  );
-
-  // Expose cleanup method to parent components
+  // Expose empty cleanup method to parent components for compatibility
   defineExpose({
-    cleanup,
+    cleanup: async () => {},
   });
 </script>
 

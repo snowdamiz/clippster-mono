@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use tauri::{Emitter, Manager};
 use warp::Filter;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 mod storage;
 
@@ -57,24 +56,6 @@ struct AssetUploadResult {
     error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct ThumbnailResult {
-    success: bool,
-    data_url: Option<String>,
-    error: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-struct CachedThumbnail {
-    data_url: String,
-    #[allow(dead_code)]
-    timestamp: f64,
-    created_at: u64,
-}
-
-// Global thumbnail cache
-static THUMBNAIL_CACHE: Lazy<Arc<Mutex<HashMap<String, CachedThumbnail>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AudioChunk {
@@ -1907,270 +1888,9 @@ fn parse_duration_from_ffmpeg_output(stderr: &str) -> Result<f64, String> {
     }
 }
 
-/// Extract multiple frames from a video URL at specified timestamps
-#[tauri::command]
-async fn extract_video_frames_batch(video_url: String, timestamps: Vec<f64>) -> Result<Vec<ThumbnailResult>, String> {
 
-    println!("[Rust] extract_video_frames_batch called with:");
-    println!("[Rust]   video_url: {}", video_url);
-    println!("[Rust]   timestamps count: {}", timestamps.len());
 
-    if timestamps.is_empty() {
-        return Ok(vec![]);
-    }
 
-    // Check cache for all timestamps first
-    let mut results = Vec::new();
-    let mut timestamps_to_extract = Vec::new();
-
-    for (index, &timestamp) in timestamps.iter().enumerate() {
-        let cache_key = format!("{}_{:.1}", video_url, timestamp);
-
-        if let Some(cached) = {
-            let cache = THUMBNAIL_CACHE.lock().unwrap();
-            cache.get(&cache_key).cloned()
-        } {
-            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-            if now - cached.created_at < 300 {
-                println!("[Rust] Cache hit for timestamp: {:.3}", timestamp);
-                results.push(ThumbnailResult {
-                    success: true,
-                    data_url: Some(cached.data_url.clone()),
-                    error: None,
-                });
-                continue;
-            }
-        }
-
-        timestamps_to_extract.push((index, timestamp));
-    }
-
-    // Extract missing frames in batches to reduce overhead
-    for (original_index, timestamp) in timestamps_to_extract {
-        let result = extract_single_frame(&video_url, timestamp).await;
-
-        // Pad the results array to match original order
-        while results.len() <= original_index {
-            results.push(ThumbnailResult {
-                success: false,
-                data_url: None,
-                error: Some("Placeholder".to_string()),
-            });
-        }
-        results[original_index] = result;
-    }
-
-    Ok(results)
-}
-
-/// Helper function to extract a single frame (shared between batch and single commands)
-async fn extract_single_frame(video_url: &str, timestamp: f64) -> ThumbnailResult {
-    use base64::Engine;
-
-    println!("[Rust] extract_single_frame called with:");
-    println!("[Rust]   video_url: {}", video_url);
-    println!("[Rust]   timestamp: {:.3}", timestamp);
-
-    // Validate timestamp
-    if timestamp < 0.0 {
-        return ThumbnailResult {
-            success: false,
-            data_url: None,
-            error: Some("Timestamp cannot be negative".to_string()),
-        };
-    }
-
-    // Check cache first
-    let cache_key = format!("{}_{:.1}", video_url, timestamp);
-    {
-        let cache = THUMBNAIL_CACHE.lock().unwrap();
-        if let Some(cached) = cache.get(&cache_key) {
-            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-            // Cache for 5 minutes (300 seconds)
-            if now - cached.created_at < 300 {
-                println!("[Rust] Cache hit for timestamp: {:.3}", timestamp);
-                return ThumbnailResult {
-                    success: true,
-                    data_url: Some(cached.data_url.clone()),
-                    error: None,
-                };
-            }
-        }
-    }
-
-    // Format timestamp for FFmpeg
-    let hours = (timestamp / 3600.0) as u32;
-    let minutes = ((timestamp % 3600.0) / 60.0) as u32;
-    let seconds = timestamp % 60.0;
-    let timestamp_str = format!("{:02}:{:02}:{:06.3}", hours, minutes, seconds);
-
-    println!("[Rust]   formatted timestamp: {}", timestamp_str);
-
-    // Create temporary file for the thumbnail with more unique naming
-    let temp_dir = std::env::temp_dir();
-    let temp_file = temp_dir.join(format!("thumbnail_{:.3}_{}.jpg",
-        timestamp,
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()));
-
-    // Use FFmpeg to extract a single frame with maximum speed optimizations
-    let temp_file_path = match temp_file.to_str() {
-        Some(path) => path,
-        None => {
-            return ThumbnailResult {
-                success: false,
-                data_url: None,
-                error: Some("Invalid temp file path".to_string()),
-            };
-        }
-    };
-
-    let output = tokio::process::Command::new("ffmpeg")
-        .args([
-            "-ss", &timestamp_str,           // Seek to timestamp (fast seeking)
-            "-accurate_seek",                 // More accurate seeking (input option)
-            "-i", video_url,                 // Input video URL
-            "-t", "0.1",                      // Only process 0.1s segment
-            "-vframes", "1",                  // Extract only 1 frame
-            "-q:v", "10",                     // Very low quality for max speed (1-31)
-            "-vf", "scale=120:-1",            // Even smaller size (120px width)
-            "-f", "image2",                   // Output format
-            "-threads", "1",                  // Single thread for faster startup
-            "-avoid_negative_ts", "make_zero", // Better timestamp handling
-            "-fflags", "+genpts+fastseek",    // Fast seeking mode
-            "-nostats",                       // Suppress stats output
-            "-loglevel", "error",             // Minimal logging
-            "-timeout", "10000000",           // 10 second timeout (in microseconds)
-            "-y",                             // Overwrite output file
-            temp_file_path,
-        ])
-        .output()
-        .await;
-
-    let output = match output {
-        Ok(output) => output,
-        Err(e) => {
-            return ThumbnailResult {
-                success: false,
-                data_url: None,
-                error: Some(format!("Failed to run ffmpeg: {}", e)),
-            };
-        }
-    };
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        println!("[Rust] FFmpeg failed: {}", stderr);
-        return ThumbnailResult {
-            success: false,
-            data_url: None,
-            error: Some(format!("FFmpeg failed: {}", stderr)),
-        };
-    }
-
-    // Small delay to allow file system operations to complete (especially on Windows)
-    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-
-    // Check if the temp file was actually created
-    if !temp_file.exists() {
-        return ThumbnailResult {
-            success: false,
-            data_url: None,
-            error: Some("FFmpeg completed but no thumbnail file was created".to_string()),
-        };
-    }
-
-    // Check if the file has content (not empty)
-    match std::fs::metadata(&temp_file) {
-        Ok(metadata) => {
-            if metadata.len() == 0 {
-                return ThumbnailResult {
-                    success: false,
-                    data_url: None,
-                    error: Some("FFmpeg created an empty thumbnail file".to_string()),
-                };
-            }
-        }
-        Err(e) => {
-            return ThumbnailResult {
-                success: false,
-                data_url: None,
-                error: Some(format!("Failed to check thumbnail file metadata: {}", e)),
-            };
-        }
-    }
-
-    // Read the generated thumbnail and convert to base64 data URL
-    match std::fs::read(&temp_file) {
-        Ok(image_data) => {
-            // Clean up temp file
-            let _ = std::fs::remove_file(&temp_file);
-
-            // Encode to base64
-            let base64 = base64::engine::general_purpose::STANDARD.encode(&image_data);
-            let data_url = format!("data:image/jpeg;base64,{}", base64);
-
-            println!("[Rust] Successfully extracted frame, data URL length: {}", data_url.len());
-
-            // Store in cache
-            {
-                let mut cache = THUMBNAIL_CACHE.lock().unwrap();
-                let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-                cache.insert(cache_key, CachedThumbnail {
-                    data_url: data_url.clone(),
-                    timestamp,
-                    created_at: now,
-                });
-
-                // Enhanced cache management for smart pre-fetching
-                if cache.len() > 500 { // Increased limit for pre-fetching
-                    let mut entries: Vec<_> = cache.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-                    entries.sort_by_key(|(_, cached)| cached.created_at);
-
-                    // Keep most recent 200 + most accessed 300
-                    let mut to_remove = Vec::new();
-                    for (key, _) in entries.iter().take(cache.len() - 450) {
-                        to_remove.push(key.clone());
-                    }
-
-                    for key in to_remove {
-                        cache.remove(&key);
-                    }
-                }
-            }
-
-            ThumbnailResult {
-                success: true,
-                data_url: Some(data_url),
-                error: None,
-            }
-        }
-        Err(e) => {
-            // Clean up temp file even if read failed
-            let _ = std::fs::remove_file(&temp_file);
-
-            println!("[Rust] Failed to read generated thumbnail: {}", e);
-            ThumbnailResult {
-                success: false,
-                data_url: None,
-                error: Some(format!("Failed to read thumbnail: {}", e)),
-            }
-        }
-    }
-}
-
-/// Extract a single frame from a video URL at a specific timestamp
-#[tauri::command]
-async fn extract_video_frame(video_url: String, timestamp: f64) -> Result<ThumbnailResult, String> {
-    println!("[Rust] extract_video_frame called with:");
-    println!("[Rust]   video_url: {}", video_url);
-    println!("[Rust]   timestamp: {:.3}", timestamp);
-
-    let result = extract_single_frame(&video_url, timestamp).await;
-    Ok(result)
-}
 
 #[tauri::command]
 async fn get_pumpfun_clips(mint_id: String, limit: Option<u32>) -> Result<String, String> {
@@ -2742,9 +2462,7 @@ pub fn run() {
             is_clip_generation_in_progress,
             extract_audio_from_video,
             extract_and_chunk_audio,
-            extract_video_frame,
-            extract_video_frames_batch,
-            storage::get_storage_paths,
+                        storage::get_storage_paths,
             storage::copy_video_to_storage,
             storage::copy_asset_to_storage,
             storage::delete_asset_file,

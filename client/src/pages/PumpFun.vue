@@ -804,11 +804,8 @@
             </label>
             <div class="bg-muted/20 rounded-lg p-3 border border-border/50">
               <TimeRangePicker
-                ref="timeRangeRef"
                 v-model="selectedTimeRange"
                 :total-duration="clipToDownload?.duration || 0"
-                :video-url="clipToDownload?.mp4Url || clipToDownload?.playlistUrl"
-                :video-duration="clipToDownload?.duration || 0"
                 @change="handleTimeRangeChange"
               />
             </div>
@@ -936,15 +933,9 @@
     document.addEventListener('click', handleClickOutside);
   });
 
-  // Clean up event listener and stop pre-fetching
+  // Clean up event listener
   onUnmounted(() => {
     document.removeEventListener('click', handleClickOutside);
-
-    // Stop any ongoing pre-fetching operations when component unmounts
-    if (showDownloadDialog.value) {
-      // This will be called when the user navigates away or closes the dialog
-      cleanupThumbnails();
-    }
   });
 
   // Handle click outside to close dropdowns
@@ -962,7 +953,6 @@
   const downloadStarting = ref(false);
   const showRecentDropdown = ref(false);
   const showEmptyRecentDropdown = ref(false);
-  const timeRangeRef = ref<InstanceType<typeof TimeRangePicker> | null>(null);
 
   // Label editing state
   const editingLabel = ref<string | null>(null);
@@ -1116,21 +1106,8 @@
     selectedTimeRange.value = range;
   }
 
-  // Cleanup function to stop thumbnail pre-fetching
-  function cleanupThumbnails() {
-    if (timeRangeRef.value) {
-      // Access the cleanup method from the TimeRangePicker component
-      // The TimeRangePicker should expose the useVideoThumbnail cleanup function
-      // Call cleanup through the component's exposed cleanup method
-      if (timeRangeRef.value.cleanup && typeof timeRangeRef.value.cleanup === 'function') {
-        timeRangeRef.value.cleanup();
-      }
-    }
-  }
-
-  // Function to close download dialog and cleanup
-  function closeDownloadDialog() {
-    cleanupThumbnails();
+  // Function to close download dialog
+  async function closeDownloadDialog() {
     showDownloadDialog.value = false;
     clipToDownload.value = null;
   }
@@ -1231,7 +1208,7 @@
       success('Download Started', downloadMessage);
 
       // Close dialog immediately
-      closeDownloadDialog();
+      await closeDownloadDialog();
 
       // Small delay to show loading state briefly, then navigate
       setTimeout(() => {
@@ -1243,7 +1220,7 @@
       showError('Download Failed', `Failed to download "${clip.title}": ${err}`);
       // Reset loading state on error
       downloadStarting.value = false;
-      closeDownloadDialog();
+      await closeDownloadDialog();
     }
   }
 </script>
