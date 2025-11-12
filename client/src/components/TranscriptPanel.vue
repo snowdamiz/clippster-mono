@@ -53,49 +53,80 @@
       </div>
     </div>
 
-    <!-- Transcript content -->
-    <div v-else ref="transcriptContent" class="flex-1 overflow-y-auto transcript-scrollbar relative">
-      <div
-        class="text-base text-foreground leading-loose break-words px-4 py-6 min-h-full select-text transcript-content"
-      >
-        <span
-          v-for="(word, index) in transcriptData.words"
-          :key="`word-${index}`"
-          :ref="(el) => setWordRef(el, index)"
-          :class="getWordClasses(word)"
-          class="inline-block px-1 py-0.5 mx-0.5 rounded-md transition-all duration-300 ease-out cursor-pointer hover:bg-primary/10 hover:scale-105 whitespace-normal word-interactive"
-          @click="onWordClick(word, index)"
-          @dblclick="onWordDoubleClick(word, index)"
-          :title="getWordTitle(word, index)"
-        >
-          <!-- Show input field when editing this word -->
-          <input
-            v-if="editingWordIndex === index"
-            :data-word-index="index"
-            v-model="editingWordText"
-            @blur="saveWordEdit()"
-            @keydown="onWordKeydown($event)"
-            class="bg-transparent border-b border-primary outline-none text-inherit min-w-[20px] px-0"
-            style="font: inherit"
-          />
-          <!-- Show normal word text when not editing -->
-          <span v-else>{{ getWordText(word) }}{{ index < transcriptData.words.length - 1 ? ' ' : '' }}</span>
-        </span>
-      </div>
-
-      <!-- Scroll indicator -->
-      <div
-        v-if="showScrollIndicator"
-        class="absolute bottom-8 left-1/2 transform -translate-x-1/2 pointer-events-none animate-bounce z-10"
-      >
-        <div class="bg-primary/90 text-primary-foreground px-3 py-1.5 rounded-full text-xs font-medium shadow-lg">
-          Scroll to explore
-          <svg class="inline-block ml-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
+    <!-- Transcript with Toolbar -->
+    <template v-else>
+      <!-- Transcript Toolbar -->
+      <div class="flex items-center justify-between px-4 mt-5 mb-3">
+        <!-- Search Bar -->
+        <div class="flex-1 max-w-xs">
+          <div class="relative">
+            <div class="absolute left-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-4 w-4 text-muted-foreground/50"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+            <input
+              ref="searchInputRef"
+              v-model="searchQuery"
+              type="text"
+              placeholder="Search transcript..."
+              class="w-full pl-10 pr-3 py-1.5 text-sm bg-muted/40 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all duration-200 placeholder:text-muted-foreground/60"
+            />
+          </div>
         </div>
       </div>
-    </div>
+
+      <!-- Transcript content -->
+      <div ref="transcriptContent" class="flex-1 overflow-y-auto transcript-scrollbar relative">
+        <div
+          class="text-base text-foreground leading-loose break-words px-4 pb-6 min-h-full select-text transcript-content"
+        >
+          <span
+            v-for="(word, index) in transcriptData.words"
+            :key="`word-${index}`"
+            :ref="(el) => setWordRef(el, index)"
+            :class="getWordClasses(word, index)"
+            class="inline-block px-1 py-0.5 mx-0.5 rounded-md transition-all duration-300 ease-out cursor-pointer hover:bg-primary/10 hover:scale-105 whitespace-normal word-interactive"
+            @click="onWordClick(word, index)"
+            @dblclick="onWordDoubleClick(word, index)"
+            :title="getWordTitle(word, index)"
+          >
+            <!-- Show input field when editing this word -->
+            <input
+              v-if="editingWordIndex === index"
+              :data-word-index="index"
+              v-model="editingWordText"
+              @blur="saveWordEdit()"
+              @keydown="onWordKeydown($event)"
+              class="bg-transparent border-b border-primary outline-none text-inherit min-w-[20px] px-0"
+              style="font: inherit"
+            />
+            <!-- Show normal word text when not editing -->
+            <span v-else>{{ getWordText(word) }}{{ index < transcriptData.words.length - 1 ? ' ' : '' }}</span>
+          </span>
+        </div>
+
+        <!-- Scroll indicator -->
+        <div
+          v-if="showScrollIndicator"
+          class="absolute bottom-8 left-1/2 transform -translate-x-1/2 pointer-events-none animate-bounce z-10"
+        >
+          <div class="bg-primary/90 text-primary-foreground px-3 py-1.5 rounded-full text-xs font-medium shadow-lg">
+            Scroll to explore
+            <svg class="inline-block ml-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </div>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -138,6 +169,10 @@
   const editingWordIndex = ref(-1);
   const editingWordText = ref('');
 
+  // Search state
+  const searchQuery = ref('');
+  const searchInputRef = ref<HTMLInputElement>();
+
   // Use transcript data composable
   const { transcriptData, loadTranscriptData } = useTranscriptData(computed(() => props.projectId || null));
 
@@ -178,32 +213,91 @@
     return start + (end - start) / 2;
   }
 
+  // Search functionality
+  function getMatchedPhraseIndices(): number[] {
+    if (!searchQuery.value.trim() || !transcriptData.value?.words.length) return [];
+
+    const query = searchQuery.value.toLowerCase().trim();
+    const queryWords = query.split(/\s+/).filter((word) => word.length > 0);
+
+    if (queryWords.length === 0) return [];
+
+    const words = transcriptData.value.words;
+    const matchedIndices: number[] = [];
+
+    // Search for the phrase in the transcript
+    for (let i = 0; i <= words.length - queryWords.length; i++) {
+      let isMatch = true;
+
+      // Check if the sequence of words matches the query
+      for (let j = 0; j < queryWords.length; j++) {
+        const wordText = getWordText(words[i + j]).toLowerCase();
+        // Remove punctuation for comparison
+        const cleanWordText = wordText.replace(/[^\w\s]/g, '');
+        const cleanQueryWord = queryWords[j].replace(/[^\w\s]/g, '');
+
+        if (!cleanWordText.includes(cleanQueryWord)) {
+          isMatch = false;
+          break;
+        }
+      }
+
+      if (isMatch) {
+        // Add all indices for the matched phrase
+        for (let j = 0; j < queryWords.length; j++) {
+          matchedIndices.push(i + j);
+        }
+      }
+    }
+
+    return matchedIndices;
+  }
+
+  function isWordMatched(word: any, index: number): boolean {
+    if (!searchQuery.value.trim()) return false;
+
+    const matchedIndices = getMatchedPhraseIndices();
+    return matchedIndices.includes(index);
+  }
+
   // Get CSS classes for a word based on its state relative to currentTime
-  function getWordClasses(word: any): string {
-    if (currentWordIndex.value === -1 || props.currentTime === undefined || props.duration === 0) {
-      return 'text-muted-foreground/80';
+  function getWordClasses(word: any, index: number): string {
+    let baseClasses = '';
+
+    // Check for search match first (highest priority)
+    if (isWordMatched(word, index)) {
+      baseClasses += 'bg-yellow-500/20 text-yellow-300 font-semibold border border-yellow-500/30 rounded-md ';
+    } else if (currentWordIndex.value === -1 || props.currentTime === undefined || props.duration === 0) {
+      baseClasses += 'text-muted-foreground/80 ';
+    } else {
+      const currentWord = transcriptData.value?.words[currentWordIndex.value];
+      if (!currentWord) {
+        baseClasses += 'text-muted-foreground/80 ';
+      } else {
+        const currentStart = getWordStart(currentWord);
+        const currentEnd = getWordEnd(currentWord);
+        const wordStart = getWordStart(word);
+        const wordEnd = getWordEnd(word);
+
+        // Current word (being spoken)
+        if (currentStart === wordStart && currentEnd === wordEnd) {
+          return (
+            baseClasses +
+            'bg-primary text-primary-foreground font-semibold shadow-lg ring-2 ring-primary/50 ring-offset-1 current-word'
+          );
+        }
+
+        // Already spoken words
+        if (wordEnd < props.currentTime) {
+          baseClasses += 'text-foreground font-medium ';
+        }
+
+        // Future words
+        baseClasses += 'text-muted-foreground/70 ';
+      }
     }
 
-    const currentWord = transcriptData.value?.words[currentWordIndex.value];
-    if (!currentWord) return 'text-muted-foreground/80';
-
-    const currentStart = getWordStart(currentWord);
-    const currentEnd = getWordEnd(currentWord);
-    const wordStart = getWordStart(word);
-    const wordEnd = getWordEnd(word);
-
-    // Current word (being spoken)
-    if (currentStart === wordStart && currentEnd === wordEnd) {
-      return 'bg-primary text-primary-foreground font-semibold shadow-lg ring-2 ring-primary/50 ring-offset-1 current-word';
-    }
-
-    // Already spoken words
-    if (wordEnd < props.currentTime) {
-      return 'text-foreground font-medium';
-    }
-
-    // Future words
-    return 'text-muted-foreground/70';
+    return baseClasses.trim();
   }
 
   function seekToTime(time: number) {
