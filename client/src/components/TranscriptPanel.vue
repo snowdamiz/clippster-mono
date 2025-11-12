@@ -56,7 +56,7 @@
     <!-- Transcript with Toolbar -->
     <template v-else>
       <!-- Transcript Toolbar -->
-      <div class="flex items-center justify-between px-4 mt-5 mb-3">
+      <div class="flex items-center justify-between mt-4 mb-3">
         <!-- Search Bar -->
         <div class="flex-1 max-w-full">
           <div class="relative">
@@ -77,7 +77,7 @@
               v-model="searchQuery"
               type="text"
               placeholder="Search transcript..."
-              class="w-full pl-10 pr-3 py-1.5 text-sm bg-muted/40 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all duration-200 placeholder:text-muted-foreground/60"
+              class="w-full pl-10 pr-3 py-1.5 text-sm bg-muted/40 border border-border rounded-md focus:outline-none focus:ring-primary/50 focus:border-primary/50 transition-all duration-200 placeholder:text-muted-foreground/60"
             />
           </div>
         </div>
@@ -85,9 +85,7 @@
 
       <!-- Transcript content -->
       <div ref="transcriptContent" class="flex-1 overflow-y-auto transcript-scrollbar relative">
-        <div
-          class="text-base text-foreground leading-loose break-words px-4 pb-6 min-h-full select-text transcript-content"
-        >
+        <div class="text-base text-foreground leading-loose break-words pb-6 min-h-full select-text transcript-content">
           <span
             v-for="(word, index) in transcriptData.words"
             :key="`word-${index}`"

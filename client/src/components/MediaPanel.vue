@@ -1,7 +1,7 @@
 <template>
   <div class="px-3 pt-1 flex flex-col flex-1 h-full" data-media-panel>
     <!-- Tabs Header -->
-    <div class="flex items-center border-b border-border">
+    <div class="flex items-center border-b border-border -mx-3 px-3">
       <button
         @click="activeTab = 'clips'"
         :class="[
@@ -36,7 +36,7 @@
 
     <!-- Clips Tab Content -->
     <div v-if="activeTab === 'clips'" class="flex-1 flex flex-col overflow-hidden mt-3">
-      <div class="flex items-center justify-end mb-3">
+      <div class="flex items-center mb-3">
         <!-- Redesigned detect more button (only show when not generating and clips exist) -->
         <button
           v-if="!isGenerating && clips.length > 0"
@@ -149,21 +149,21 @@
           ref="clipsScrollContainer"
         >
           <!-- Clips Grid -->
-          <div class="space-y-1.5">
+          <div class="space-y-2.5">
             <div
               v-for="(clip, index) in clips"
               :key="clip.id"
               :ref="(el) => setClipRef(el, clip.id)"
               :class="[
-                'group p-2 bg-card border rounded-lg cursor-pointer',
+                'group p-2 bg-muted/20 border rounded-lg cursor-pointer',
                 index === clips.length - 1 ? 'mb-4' : '',
                 // Only apply transition if not the currently playing clip
-                !(props.isPlayingSegments && props.playingClipId === clip.id)
-                  ? 'transition-all duration-200 ease-out'
-                  : '',
+                // !(props.isPlayingSegments && props.playingClipId === clip.id)
+                //   ? 'transition-all duration-200 ease-out'
+                //   : '',
                 // Playing clip gets green styling
                 props.isPlayingSegments && props.playingClipId === clip.id
-                  ? 'ring-2 ring-green-500/60 bg-green-500/5 border-green-500/50 shadow-sm'
+                  ? 'ring-1 ring-green-500/60 bg-green-500/5 border-green-500/50 shadow-sm'
                   : 'hover:border-border/80 hover:bg-muted/30 hover:shadow-sm',
               ]"
               :style="{
