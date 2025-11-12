@@ -393,34 +393,15 @@
 
     <!-- Transcript Tab Content -->
     <div v-if="activeTab === 'transcript'" class="flex-1 flex flex-col overflow-hidden">
-      <div class="h-full flex items-center justify-center px-4">
-        <div class="text-center text-muted-foreground max-w-xs">
-          <div class="mb-6 flex flex-col items-center">
-            <div
-              class="w-20 h-20 bg-gradient-to-br from-green-500/10 to-emerald-500/10 rounded-2xl flex items-center justify-center mb-5 border border-green-500/20"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-9 w-9 text-green-400/70"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                />
-              </svg>
-            </div>
-            <h4 class="text-base font-semibold text-foreground mb-2">Transcript Tab</h4>
-            <p class="text-sm text-muted-foreground leading-relaxed">
-              Transcript functionality will be implemented here
-            </p>
-          </div>
-        </div>
-      </div>
+      <TranscriptPanel
+        :transcript-collapsed="transcriptCollapsed"
+        :clips-collapsed="clipsCollapsed"
+        :project-id="projectId"
+        :current-time="currentTime"
+        :duration="videoDuration"
+        @toggleTranscript="handleToggleTranscript"
+        @seekVideo="onSeekVideo"
+      />
     </div>
   </div>
 </template>
@@ -445,6 +426,7 @@
     ClockIcon,
     TrendingUpIcon,
   } from 'lucide-vue-next';
+  import TranscriptPanel from './TranscriptPanel.vue';
 
   interface Props {
     transcriptCollapsed: boolean;
@@ -459,6 +441,7 @@
     playingClipId?: string | null;
     isPlayingSegments?: boolean;
     videoDuration?: number; // Duration in seconds
+    currentTime?: number; // Current video playback time in seconds
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -470,6 +453,7 @@
     playingClipId: null,
     isPlayingSegments: false,
     videoDuration: 0,
+    currentTime: 0,
   });
 
   interface Emits {
@@ -480,6 +464,7 @@
     (e: 'deleteClip', clipId: string): void;
     (e: 'playClip', clip: ClipWithVersion): void;
     (e: 'seekVideo', time: number): void;
+    (e: 'toggleTranscript'): void;
   }
 
   const emit = defineEmits<Emits>();
@@ -645,6 +630,14 @@
     hoveredClipId.value = hoveredClipId.value === clipId ? null : clipId;
     emit('clipHover', clipId);
     emit('scrollToTimeline');
+  }
+
+  function handleToggleTranscript() {
+    emit('toggleTranscript');
+  }
+
+  function onSeekVideo(time: number) {
+    emit('seekVideo', time);
   }
 
   // Ref management for clip elements

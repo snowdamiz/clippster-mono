@@ -88,12 +88,14 @@
                 :is-playing-segments="isPlayingSegments"
                 :playing-clip-id="getCurrentPlayingClipId()"
                 :video-duration="duration"
+                :current-time="currentTime"
                 @detectClips="onDetectClips"
                 @clipHover="onClipHover"
                 @scrollToTimeline="onScrollToTimeline"
                 @deleteClip="onDeleteClip"
                 @playClip="onPlayClip"
                 @seekVideo="onSeekVideo"
+                @toggleTranscript="onToggleTranscript"
               />
             </div>
           </div>
@@ -784,6 +786,10 @@
       // Seek to the specified time
       videoElement.value.currentTime = time;
     }
+  }
+
+  function onToggleTranscript() {
+    transcriptCollapsed.value = !transcriptCollapsed.value;
   }
 
   // Watch for dialog open/close
