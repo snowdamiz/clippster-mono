@@ -1,67 +1,92 @@
 <template>
-  <div class="border-b border-border flex flex-col h-full">
+  <div class="border-b border-border flex flex-col h-full bg-gradient-to-b from-background to-muted/5">
     <!-- Loading state -->
     <div v-if="loadingTranscript" class="flex-1 flex items-center justify-center">
-      <div class="text-center text-muted-foreground px-6">
-        <svg
-          class="animate-spin h-6 w-6 mx-auto mb-3"
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-        >
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path
-            class="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-          ></path>
-        </svg>
-        <p class="text-xs">Loading transcript...</p>
+      <div class="text-center text-muted-foreground px-6 animate-fade-in">
+        <div class="relative">
+          <svg
+            class="animate-spin h-10 w-10 mx-auto mb-4 text-primary"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
+            <path
+              class="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+            ></path>
+          </svg>
+          <div class="absolute inset-0 flex items-center justify-center">
+            <div class="h-4 w-4 rounded-full bg-primary/20 animate-pulse"></div>
+          </div>
+        </div>
+        <p class="text-sm font-medium">Loading transcript...</p>
+        <p class="text-xs text-muted-foreground/70 mt-1">Processing audio</p>
       </div>
     </div>
 
     <!-- No transcript state -->
     <div v-else-if="!transcriptData || !transcriptData.words.length" class="flex-1 flex items-center justify-center">
-      <div class="text-center text-muted-foreground px-6">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="h-8 w-8 mx-auto mb-3"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="1.5"
-            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-          />
-        </svg>
-        <p class="text-xs mb-2">No transcript available</p>
-        <p class="text-xs text-foreground/60">Audio is automatically transcribed when clips are detected</p>
+      <div class="text-center text-muted-foreground px-6 animate-fade-in">
+        <div class="relative inline-block mb-4">
+          <div class="absolute inset-0 bg-primary/10 rounded-full blur-xl"></div>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-12 w-12 mx-auto relative text-primary/70"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.5"
+              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+            />
+          </svg>
+        </div>
+        <p class="text-sm font-medium mb-2">No transcript available</p>
+        <p class="text-xs text-muted-foreground/60 max-w-[200px] mx-auto leading-relaxed">
+          Audio is automatically transcribed when clips are detected
+        </p>
       </div>
     </div>
 
     <!-- Transcript content -->
-    <div v-else ref="transcriptContent" class="flex-1 overflow-y-auto pr-2">
-      <div class="text-sm text-foreground leading-relaxed break-words py-2 min-h-full">
+    <div v-else ref="transcriptContent" class="flex-1 overflow-y-auto transcript-scrollbar relative">
+      <div class="text-base text-foreground leading-loose break-words px-4 py-6 min-h-full select-text">
         <span
           v-for="(word, index) in transcriptData.words"
           :key="`word-${index}`"
           :ref="(el) => setWordRef(el, index)"
           :class="getWordClasses(word)"
-          class="inline-block px-0.5 py-0.5 rounded transition-all duration-200 cursor-pointer hover:bg-muted/50 whitespace-normal"
+          class="inline-block px-1 py-0.5 mx-0.5 rounded-md transition-all duration-300 ease-out cursor-pointer hover:bg-primary/10 hover:scale-105 whitespace-normal word-interactive"
           @click="seekToTime(getWordStart(word))"
+          :title="`Jump to ${formatTime(getWordStart(word))}`"
         >
           {{ getWordText(word) }}{{ index < transcriptData.words.length - 1 ? ' ' : '' }}
         </span>
+      </div>
+
+      <!-- Scroll indicator -->
+      <div
+        v-if="showScrollIndicator"
+        class="absolute bottom-8 left-1/2 transform -translate-x-1/2 pointer-events-none animate-bounce z-10"
+      >
+        <div class="bg-primary/90 text-primary-foreground px-3 py-1.5 rounded-full text-xs font-medium shadow-lg">
+          Scroll to explore
+          <svg class="inline-block ml-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+  import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
   import { useTranscriptData } from '../composables/useTranscriptData';
 
   interface WordInfo {
@@ -92,9 +117,18 @@
   const loadingTranscript = ref(false);
   const currentWordIndex = ref(-1);
   const wordElements = ref<Map<number, HTMLElement>>(new Map());
+  const showScrollIndicator = ref(true);
+  const userHasScrolled = ref(false);
 
   // Use transcript data composable
   const { transcriptData, loadTranscriptData } = useTranscriptData(computed(() => props.projectId || null));
+
+  // Format time in MM:SS format
+  function formatTime(seconds: number): string {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
 
   function setWordRef(el: any, index: number) {
     if (el && el instanceof HTMLElement) {
@@ -122,11 +156,11 @@
   // Get CSS classes for a word based on its state relative to currentTime
   function getWordClasses(word: any): string {
     if (currentWordIndex.value === -1 || props.currentTime === undefined || props.duration === 0) {
-      return 'text-muted-foreground';
+      return 'text-muted-foreground/80';
     }
 
     const currentWord = transcriptData.value?.words[currentWordIndex.value];
-    if (!currentWord) return 'text-muted-foreground';
+    if (!currentWord) return 'text-muted-foreground/80';
 
     const currentStart = getWordStart(currentWord);
     const currentEnd = getWordEnd(currentWord);
@@ -135,16 +169,16 @@
 
     // Current word (being spoken)
     if (currentStart === wordStart && currentEnd === wordEnd) {
-      return 'bg-primary text-primary-foreground font-semibold scale-105 shadow-sm';
+      return 'bg-primary text-primary-foreground font-semibold shadow-lg ring-2 ring-primary/50 ring-offset-1 current-word';
     }
 
     // Already spoken words
     if (wordEnd < props.currentTime) {
-      return 'text-foreground/70';
+      return 'text-foreground font-medium';
     }
 
     // Future words
-    return 'text-muted-foreground';
+    return 'text-muted-foreground/70';
   }
 
   function seekToTime(time: number) {
@@ -265,6 +299,14 @@
     });
   }
 
+  // Handle scroll indicator
+  function handleScroll() {
+    if (!userHasScrolled.value) {
+      userHasScrolled.value = true;
+      showScrollIndicator.value = false;
+    }
+  }
+
   // Load transcript data when projectId changes
   watch(
     () => props.projectId,
@@ -272,7 +314,26 @@
       if (newProjectId) {
         loadingTranscript.value = true;
         try {
+          // Remove old scroll listener if it exists
+          if (transcriptContent.value) {
+            transcriptContent.value.removeEventListener('scroll', handleScroll);
+          }
+
           await loadTranscriptData(newProjectId);
+          // Show scroll indicator for new transcripts
+          await nextTick();
+          if (transcriptData.value?.words.length) {
+            showScrollIndicator.value = true;
+            userHasScrolled.value = false;
+            // Attach scroll listener when transcript becomes available
+            if (transcriptContent.value) {
+              transcriptContent.value.addEventListener('scroll', handleScroll, { passive: true });
+            }
+            // Auto-hide after 3 seconds
+            setTimeout(() => {
+              showScrollIndicator.value = false;
+            }, 3000);
+          }
         } catch (error) {
           console.error('[TranscriptPanel] Failed to load transcript:', error);
         } finally {
@@ -294,11 +355,88 @@
 
   // Cleanup refs on unmount
   onUnmounted(() => {
+    if (transcriptContent.value) {
+      transcriptContent.value.removeEventListener('scroll', handleScroll);
+    }
     wordElements.value.clear();
   });
 </script>
 
 <style scoped>
+  /* Custom scrollbar */
+  .transcript-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--primary) / 0.3) transparent;
+  }
+
+  .transcript-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .transcript-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .transcript-scrollbar::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--primary) / 0.3);
+    border-radius: 3px;
+    transition: background-color 0.2s;
+  }
+
+  .transcript-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--primary) / 0.5);
+  }
+
+  /* Fade in animation */
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.5s ease-out;
+  }
+
+  /* Current word pulse animation */
+  .current-word {
+    animation: pulse-glow 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 10px hsl(var(--primary) / 0.3);
+    }
+    50% {
+      box-shadow: 0 0 20px hsl(var(--primary) / 0.5);
+    }
+  }
+
+  /* Interactive word effects */
+  .word-interactive {
+    position: relative;
+  }
+
+  .word-interactive::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    background: hsl(var(--primary) / 0.1);
+    border-radius: 0.375rem;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .word-interactive:hover::before {
+    opacity: 1;
+  }
+
   /* Smooth transitions */
   .transition-colors {
     transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
@@ -316,6 +454,10 @@
     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   }
 
+  .ease-out {
+    transition-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  }
+
   .rotate-180 {
     transform: rotate(180deg);
   }
@@ -324,5 +466,12 @@
     transition-property: all;
     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
     transition-duration: 200ms;
+  }
+
+  /* User select for copy functionality */
+  .select-text {
+    user-select: text;
+    -webkit-user-select: text;
+    -moz-user-select: text;
   }
 </style>
