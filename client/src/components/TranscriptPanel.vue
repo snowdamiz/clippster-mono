@@ -27,29 +27,35 @@
     </div>
 
     <!-- No transcript state -->
-    <div v-else-if="!transcriptData || !transcriptData.words.length" class="flex-1 flex items-center justify-center">
-      <div class="text-center text-muted-foreground px-6 animate-fade-in">
-        <div class="relative inline-block mb-4">
-          <div class="absolute inset-0 bg-primary/10 rounded-full blur-xl"></div>
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-12 w-12 mx-auto relative text-primary/70"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
+    <div
+      v-else-if="!transcriptData || !transcriptData.words.length"
+      class="flex-1 flex items-center justify-center px-4"
+    >
+      <div class="text-center text-muted-foreground max-w-xs">
+        <div class="mb-6 flex flex-col items-center">
+          <div
+            class="w-20 h-20 bg-gradient-to-br from-green-500/10 to-emerald-500/10 rounded-2xl flex items-center justify-center mb-5 border border-green-500/20"
           >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="1.5"
-              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-            />
-          </svg>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-9 w-9 text-green-400/70"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+          </div>
+          <h4 class="text-base font-semibold text-foreground mb-2">No Transcript Yet</h4>
+          <p class="text-sm text-muted-foreground leading-relaxed">
+            Generate clips first to automatically transcribe audio from your video
+          </p>
         </div>
-        <p class="text-sm font-medium mb-2">No transcript available</p>
-        <p class="text-xs text-muted-foreground/60 max-w-[200px] mx-auto leading-relaxed">
-          Audio is automatically transcribed when clips are detected
-        </p>
       </div>
     </div>
 

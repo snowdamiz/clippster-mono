@@ -877,9 +877,11 @@
         // Update transcript words for enhanced tooltip
         if (transcriptData.value && transcriptData.value.words.length > 0) {
           debouncedUpdateTooltipWords(hoverTime);
+          showTimelineTooltip.value = true;
         } else {
           tooltipTranscriptWords.value = [];
           centerWordIndex.value = 0;
+          showTimelineTooltip.value = false;
         }
       }
     } else {
