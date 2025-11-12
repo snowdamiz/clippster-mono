@@ -36,15 +36,29 @@
     transition: opacity 0.15s ease;
   }
 
-  .bg-white\/40::before,
+  .bg-white\/40::before {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: -4px;
+    width: 8px;
+    height: 8px;
+    background: white;
+    border-radius: 50%;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    transition: transform 0.2s ease;
+  }
+
   .bg-white\/40::after {
     content: '';
     position: absolute;
+    bottom: -4px;
+    left: -4px;
     width: 8px;
     height: 8px;
-    background: rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.8);
     border-radius: 50%;
-    left: -3.5px;
+    transition: transform 0.2s ease;
   }
 
   .bg-white\/40::before {

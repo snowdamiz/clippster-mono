@@ -104,11 +104,13 @@
 
       <!-- Global Playhead Line - positioned like hover line but follows video time -->
       <TimelinePlayhead
+        ref="timelinePlayheadRef"
         :videoSrc="videoSrc"
         :duration="duration"
         :position="globalPlayheadPosition"
         :timelineBoundsTop="timelineBounds.top"
         :timelineBoundsBottom="timelineBounds.bottom"
+        @playheadDragStart="onPlayheadDragStart"
       />
 
       <!-- Drag Selection Area -->
@@ -318,6 +320,7 @@
   const timelineScrollContainer = ref<HTMLElement | null>(null);
   const timelineClipElements = ref<Map<string, HTMLElement>>(new Map());
   const timelineHeaderRef = ref<{ zoomSlider: HTMLInputElement | null } | null>(null);
+  const timelinePlayheadRef = ref<{ setDraggingState: (dragging: boolean) => void } | null>(null);
   const zoomSlider = computed(() => timelineHeaderRef.value?.zoomSlider || null);
 
   // Use timeline interaction composable
@@ -489,6 +492,11 @@
     tooltipX?: number;
     tooltipY?: number;
   } | null>(null);
+
+  // Playhead dragging state
+  const isDraggingPlayhead = ref(false);
+  const playheadDragStartTime = ref(0);
+  const originalPlayheadTime = ref(0);
 
   // Cut tool state
   const isCutToolActive = ref(false);
@@ -1001,6 +1009,8 @@
       onSegmentMouseMove(event);
     } else if (isResizingSegment.value) {
       onResizeMouseMove(event);
+    } else if (isDraggingPlayhead.value) {
+      onPlayheadMouseMove(event);
     } else {
       // Check if we're still over the timeline area
       const container = timelineScrollContainer.value;
@@ -1029,6 +1039,8 @@
       onSegmentMouseUp();
     } else if (isResizingSegment.value) {
       onResizeMouseUp();
+    } else if (isDraggingPlayhead.value) {
+      onPlayheadMouseUp();
     } else {
       endPan();
     }
@@ -1583,6 +1595,97 @@
     }
   }
 
+  // Playhead dragging functions
+
+  // Handle playhead drag start
+  function onPlayheadDragStart(event: MouseEvent) {
+    // Prevent collision with other drag operations
+    if (isDragging.value || isDraggingSegment.value || isResizingSegment.value || isCutToolActive.value) {
+      return;
+    }
+
+    // Prevent text selection during drag
+    event.preventDefault();
+    event.stopPropagation();
+
+    // Initialize drag state
+    isDraggingPlayhead.value = true;
+    playheadDragStartTime.value = Date.now();
+    originalPlayheadTime.value = props.currentTime;
+
+    // Change cursor globally
+    document.body.style.cursor = 'grabbing';
+
+    // Hide tooltip during drag
+    showTimelineTooltip.value = false;
+    clearTooltipData();
+    showTimelineHoverLine.value = false;
+
+    // Update playhead component drag state
+    if (timelinePlayheadRef.value) {
+      timelinePlayheadRef.value.setDraggingState(true);
+    }
+
+    // Immediately seek to the initial drag position
+    seekVideoFromMousePosition(event);
+  }
+
+  // Handle mouse move during playhead drag
+  function onPlayheadMouseMove(event: MouseEvent) {
+    if (!isDraggingPlayhead.value || !props.duration) return;
+
+    // Update video time based on mouse position
+    seekVideoFromMousePosition(event);
+  }
+
+  // Handle mouse up to finish playhead drag
+  function onPlayheadMouseUp() {
+    if (!isDraggingPlayhead.value) return;
+
+    // Reset drag state
+    isDraggingPlayhead.value = false;
+    playheadDragStartTime.value = 0;
+    originalPlayheadTime.value = 0;
+    document.body.style.cursor = '';
+
+    // Update playhead component drag state
+    if (timelinePlayheadRef.value) {
+      timelinePlayheadRef.value.setDraggingState(false);
+    }
+  }
+
+  // Seek video based on current mouse position
+  function seekVideoFromMousePosition(event: MouseEvent) {
+    if (!props.videoSrc || !props.duration || !timelineScrollContainer.value) {
+      return;
+    }
+
+    const container = timelineScrollContainer.value;
+
+    // Get the video track element for accurate positioning
+    const videoTrack = container.querySelector(SELECTORS.VIDEO_TRACK) as HTMLElement;
+    if (!videoTrack) {
+      return;
+    }
+
+    const videoTrackRect = videoTrack.getBoundingClientRect();
+
+    // Calculate relative position within the video track
+    const relativeX = Math.max(0, Math.min(videoTrackRect.width, event.clientX - videoTrackRect.left));
+    const timePercent = relativeX / videoTrackRect.width;
+    const targetTime = timePercent * props.duration;
+
+    // Constrain to video bounds
+    const constrainedTime = Math.max(0, Math.min(props.duration, targetTime));
+
+    // Update playhead visual position immediately during drag
+    const targetX = videoTrackRect.left + relativeX;
+    globalPlayheadPosition.value = targetX;
+
+    // Seek video to the calculated time
+    seekVideoToTime(constrainedTime);
+  }
+
   // Video seek functions
 
   // Seek video to specific time (used for continuous seeking)
@@ -1864,7 +1967,7 @@
 
     try {
       // Delete segments from database, process in reverse order to avoid index conflicts
-      const sortedEntries = Array.from(segmentsByClip.entries()).sort(([, a], [, b]) => b[0].localeCompare(a[0]));
+      const sortedEntries = Array.from(segmentsByClip.entries());
 
       for (const [clipId, segmentIndices] of sortedEntries) {
         // Sort segment indices in descending order
