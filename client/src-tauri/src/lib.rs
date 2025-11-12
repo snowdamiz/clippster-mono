@@ -1904,7 +1904,7 @@ pub struct WaveformResolution {
 }
 
 // Multi-resolution waveform data structure
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct WaveformData {
     sample_rate: u32,
     duration: f64,
@@ -1930,6 +1930,162 @@ fn get_optimal_resolution(effective_width: f64, duration: f64) -> String {
     }
 }
 
+// Database caching functions for waveform data
+
+// Generate a hash for the video path for consistent lookup
+fn generate_video_path_hash(video_path: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    use std::collections::hash_map::DefaultHasher;
+
+    let mut hasher = DefaultHasher::new();
+    video_path.hash(&mut hasher);
+    format!("{:x}", hasher.finish())
+}
+
+// Extract local file path from video URL
+fn extract_local_path_from_url(video_url: &str) -> Result<String, String> {
+    // Handle localhost video URLs
+    if video_url.starts_with("http://localhost:48276/video/") {
+        let encoded_path = video_url.strip_prefix("http://localhost:48276/video/")
+            .ok_or("Invalid video URL format")?;
+
+        // The path is base64 encoded, decode it
+        let decoded_bytes = base64::decode(encoded_path)
+            .map_err(|e| format!("Failed to decode base64 video path: {}", e))?;
+
+        let decoded_path = String::from_utf8(decoded_bytes)
+            .map_err(|e| format!("Failed to convert decoded path to string: {}", e))?;
+
+        Ok(decoded_path)
+    } else if video_url.starts_with("http://") {
+        // For other HTTP URLs, we can't get file metadata
+        Err("Cannot get file metadata for remote URLs".to_string())
+    } else {
+        // Assume it's already a local path
+        Ok(video_url.to_string())
+    }
+}
+
+// Get file metadata for cache validation
+fn get_video_file_metadata(video_path: &str) -> Result<(u64, u64), String> {
+    // Extract local file path if it's a URL
+    let local_path = extract_local_path_from_url(video_path)?;
+
+    let metadata = std::fs::metadata(&local_path)
+        .map_err(|e| format!("Failed to get video file metadata for {}: {}", local_path, e))?;
+
+    let file_size = metadata.len();
+    let modified_time = metadata.modified()
+        .map_err(|e| format!("Failed to get file modification time: {}", e))?
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to convert modification time: {}", e))?
+        .as_secs();
+
+    Ok((file_size, modified_time))
+}
+
+// Get cache file path for waveform data
+fn get_waveform_cache_file_path(video_path_hash: &str) -> Result<std::path::PathBuf, String> {
+    use std::path::PathBuf;
+
+    let paths = storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+
+    Ok(paths.temp.join(format!("waveform_cache_{}.json", video_path_hash)))
+}
+
+// Save waveform data to file cache
+async fn save_waveform_to_file_cache(video_path_hash: &str, waveform_data: &WaveformData) -> Result<(), String> {
+    use std::fs::File;
+    use std::io::Write;
+
+    let cache_file_path = get_waveform_cache_file_path(video_path_hash)?;
+
+    let json_data = serde_json::to_string(waveform_data)
+        .map_err(|e| format!("Failed to serialize waveform data: {}", e))?;
+
+    let mut file = File::create(&cache_file_path)
+        .map_err(|e| format!("Failed to create cache file: {}", e))?;
+
+    file.write_all(json_data.as_bytes())
+        .map_err(|e| format!("Failed to write cache file: {}", e))?;
+
+    println!("[Rust] Waveform cached to file: {:?}", cache_file_path);
+    Ok(())
+}
+
+// Load waveform data from file cache
+async fn load_waveform_from_file_cache(video_path_hash: &str) -> Result<Option<WaveformData>, String> {
+    use std::fs::File;
+    use std::io::Read;
+
+    let cache_file_path = get_waveform_cache_file_path(video_path_hash)?;
+
+    if !cache_file_path.exists() {
+        return Ok(None);
+    }
+
+    let mut file = File::open(&cache_file_path)
+        .map_err(|e| format!("Failed to open cache file: {}", e))?;
+
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)
+        .map_err(|e| format!("Failed to read cache file: {}", e))?;
+
+    let waveform_data: WaveformData = serde_json::from_str(&contents)
+        .map_err(|e| format!("Failed to deserialize waveform data: {}", e))?;
+
+    println!("[Rust] Waveform loaded from cache: {:?}", cache_file_path);
+    Ok(Some(waveform_data))
+}
+
+#[tauri::command]
+async fn get_cached_waveform(
+    video_path: String,
+) -> Result<Option<WaveformData>, String> {
+    println!("[Rust] Checking for cached waveform for: {}", video_path);
+
+    // Generate hash for video path
+    let video_path_hash = generate_video_path_hash(&video_path);
+
+    // Try to load from file cache
+    match load_waveform_from_file_cache(&video_path_hash).await {
+        Ok(Some(waveform_data)) => {
+            println!("[Rust] Found cached waveform, returning it");
+            return Ok(Some(waveform_data));
+        }
+        Ok(None) => {
+            println!("[Rust] No cached waveform found in file cache");
+        }
+        Err(e) => {
+            println!("[Rust] Error checking file cache: {}, proceeding with generation", e);
+        }
+    }
+
+    Ok(None)
+}
+
+#[tauri::command]
+async fn save_waveform_to_cache(
+    video_path: String,
+    _raw_video_id: String,
+    waveform_data: WaveformData,
+) -> Result<(), String> {
+    println!("[Rust] Saving waveform data to cache for: {}", video_path);
+
+    // Generate hash
+    let video_path_hash = generate_video_path_hash(&video_path);
+    let (file_size, _modified_time) = get_video_file_metadata(&video_path)?;
+
+    println!("[Rust] Waveform data being saved:");
+    println!("[Rust]   Hash: {}", video_path_hash);
+    println!("[Rust]   File size: {}", file_size);
+    println!("[Rust]   Resolution count: {}", waveform_data.resolutions.len());
+
+    // Save to file cache
+    save_waveform_to_file_cache(&video_path_hash, &waveform_data).await
+}
+
 #[tauri::command]
 async fn extract_audio_waveform(
     app: tauri::AppHandle,
@@ -1941,6 +2097,20 @@ async fn extract_audio_waveform(
     println!("[Rust] extract_audio_waveform called with:");
     println!("[Rust]   video_path: {}", video_path);
     println!("[Rust]   target_samples: {:?}", target_samples);
+
+    // Check cache first
+    match get_cached_waveform(video_path.clone()).await {
+        Ok(Some(cached_waveform)) => {
+            println!("[Rust] Returning cached waveform data");
+            return Ok(cached_waveform);
+        }
+        Ok(None) => {
+            println!("[Rust] No cached waveform found, proceeding with generation");
+        }
+        Err(e) => {
+            println!("[Rust] Error checking cache: {}, proceeding with generation", e);
+        }
+    }
 
     // Define multiple resolution levels for adaptive rendering
     let resolution_levels = vec![
@@ -2034,6 +2204,13 @@ async fn extract_audio_waveform(
         .sum();
     println!("[Rust] Multi-resolution waveform extraction completed. Generated {} peaks across {} resolution levels.",
              total_peaks, waveform_data.resolutions.len());
+
+    // Save to cache for future use
+    let raw_video_id = format!("waveform_{}", generate_video_path_hash(&video_path));
+    if let Err(e) = save_waveform_to_cache(video_path.clone(), raw_video_id, waveform_data.clone()).await {
+        eprintln!("[Rust] Warning: Failed to cache waveform data: {}", e);
+    }
+
     Ok(waveform_data)
 }
 
@@ -2636,6 +2813,12 @@ pub fn run() {
                             sql: include_str!("../migrations/024_add_intro_outro_thumbnail_status.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 25,
+                            description: "add_waveform_caching",
+                            sql: include_str!("../migrations/025_add_waveform_caching.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                           ],
                 )
                 .build(),
@@ -2721,6 +2904,8 @@ pub fn run() {
             extract_audio_from_video,
             extract_and_chunk_audio,
             extract_audio_waveform,
+            get_cached_waveform,
+            save_waveform_to_cache,
                         storage::get_storage_paths,
             storage::copy_video_to_storage,
             storage::copy_asset_to_storage,

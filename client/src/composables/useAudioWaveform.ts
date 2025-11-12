@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { getDatabase, getRawVideoByPath, createRawVideo } from '@/services/database';
 
 export interface WaveformPeak {
   min: number;
@@ -18,21 +19,10 @@ export interface WaveformData {
   resolutions: Record<string, WaveformResolution>;
 }
 
-export interface WaveformCache {
-  [videoId: string]: {
-    data: WaveformData;
-    timestamp: number;
-  };
-}
-
 export function useAudioWaveform() {
   const waveformData = ref<WaveformData | null>(null);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
-
-  // Cache waveforms to avoid reprocessing
-  const waveformCache = ref<WaveformCache>({});
-  const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
   // Computed properties
   const hasWaveform = computed(() => waveformData.value !== null);
@@ -42,40 +32,127 @@ export function useAudioWaveform() {
   function getCacheKey(videoSrc: string | null): string | null {
     if (!videoSrc) return null;
 
-    // Extract video ID from path or use full URL as fallback
-    if (videoSrc.startsWith('http')) {
-      // For URLs, create a simple hash
-      return videoSrc.split('/').pop() || videoSrc;
-    } else {
-      // For local paths, use the filename
-      return videoSrc.split(/[/\\]/).pop() || videoSrc;
+    // Create a simple hash of the full path for unique identification
+    let hash = 0;
+    const str = videoSrc;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash; // Convert to 32-bit integer
     }
+    return Math.abs(hash).toString();
   }
 
-  // Check if cached data is still valid
-  function isCacheValid(cacheKey: string): boolean {
-    const cached = waveformCache.value[cacheKey];
-    if (!cached) return false;
+  // Get cached waveform data from database
+  async function getCachedWaveform(cacheKey: string): Promise<WaveformData | null> {
+    try {
+      console.log('[useAudioWaveform] Checking cache for key:', cacheKey);
+      const db = await getDatabase();
 
-    return Date.now() - cached.timestamp < CACHE_DURATION;
-  }
+      // Try to get from cache first
+      const result = await db.select<
+        {
+          id: string;
+          sample_rate: number;
+          duration: number;
+          resolutions: string;
+          file_size: number;
+          file_modified_time: number;
+        }[]
+      >(
+        `SELECT id, sample_rate, duration, resolutions, file_size, file_modified_time
+         FROM waveform_data
+         WHERE video_path_hash = ?1`,
+        [cacheKey]
+      );
 
-  // Get cached waveform data
-  function getCachedWaveform(cacheKey: string): WaveformData | null {
-    if (!isCacheValid(cacheKey)) {
-      delete waveformCache.value[cacheKey];
+      console.log('[useAudioWaveform] Cache query result count:', result.length);
+
+      if (result.length === 0) {
+        console.log('[useAudioWaveform] No cached waveform found for key:', cacheKey);
+        return null;
+      }
+
+      const cached = result[0];
+      console.log(
+        '[useAudioWaveform] Found cached waveform:',
+        cached.id,
+        'duration:',
+        cached.duration
+      );
+
+      // Parse resolutions JSON
+      const resolutions = JSON.parse(cached.resolutions);
+
+      const waveformData: WaveformData = {
+        sample_rate: cached.sample_rate,
+        duration: cached.duration,
+        resolutions,
+      };
+
+      console.log('[useAudioWaveform] Successfully loaded waveform from database cache');
+      return waveformData;
+    } catch (err) {
+      console.error('[useAudioWaveform] Error loading from cache:', err);
       return null;
     }
-
-    return waveformCache.value[cacheKey].data;
   }
 
-  // Cache waveform data
-  function setCachedWaveform(cacheKey: string, data: WaveformData): void {
-    waveformCache.value[cacheKey] = {
-      data,
-      timestamp: Date.now(),
-    };
+  // Save waveform data to database
+  async function setCachedWaveform(videoSrc: string, data: WaveformData): Promise<void> {
+    try {
+      const db = await getDatabase();
+
+      // Generate metadata
+      const videoPathHash = getCacheKey(videoSrc);
+      if (!videoPathHash) return;
+
+      // For file size and modified time, we'll use the current timestamp
+      const now = Date.now();
+
+      // Find or create the raw video record
+      let rawVideoId: string;
+      const existingRawVideo = await getRawVideoByPath(videoSrc);
+
+      if (existingRawVideo) {
+        console.log('[useAudioWaveform] Found existing raw video:', existingRawVideo.id);
+        rawVideoId = existingRawVideo.id;
+      } else {
+        console.log('[useAudioWaveform] Creating new raw video record for:', videoSrc);
+        // Create a minimal raw video record for the waveform
+        rawVideoId = await createRawVideo(videoSrc, {
+          duration: data.duration,
+        });
+        console.log('[useAudioWaveform] Created raw video with ID:', rawVideoId);
+      }
+
+      // Save to database
+      await db.execute(
+        `INSERT OR REPLACE INTO waveform_data (
+          id, raw_video_id, video_path_hash, sample_rate, duration,
+          resolutions, file_size, file_modified_time, created_at, accessed_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
+        [
+          `waveform_${videoPathHash}`,
+          rawVideoId, // raw_video_id - now properly associated
+          videoPathHash,
+          data.sample_rate,
+          data.duration,
+          JSON.stringify(data.resolutions),
+          0, // file_size - will be updated later
+          now, // file_modified_time
+          now,
+          now,
+        ]
+      );
+
+      console.log(
+        '[useAudioWaveform] Saved waveform to database cache with raw_video_id:',
+        rawVideoId
+      );
+    } catch (err) {
+      console.error('[useAudioWaveform] Error saving to cache:', err);
+    }
   }
 
   // Load and process audio from video file
@@ -86,15 +163,9 @@ export function useAudioWaveform() {
     }
 
     const cacheKey = getCacheKey(videoSrc);
+    console.log('[useAudioWaveform] Generated cache key for video:', videoSrc, '=>', cacheKey);
     if (!cacheKey) {
       error.value = 'Invalid video source';
-      return;
-    }
-
-    // Check cache first
-    const cached = getCachedWaveform(cacheKey);
-    if (cached) {
-      waveformData.value = cached;
       return;
     }
 
@@ -102,7 +173,18 @@ export function useAudioWaveform() {
     error.value = null;
 
     try {
-      // Try Rust backend first for real audio analysis
+      // Check database cache first
+      console.log('[useAudioWaveform] Checking database cache...');
+      const cached = await getCachedWaveform(cacheKey);
+      if (cached) {
+        console.log('[useAudioWaveform] Found cached waveform, using it');
+        waveformData.value = cached;
+        return;
+      }
+
+      console.log('[useAudioWaveform] No cached waveform found, generating...');
+
+      // Try Rust backend for real audio analysis
       await loadWaveformWithRust(videoSrc, cacheKey);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load waveform';
@@ -153,11 +235,11 @@ export function useAudioWaveform() {
         resolutions,
       };
 
-      // Cache the result
-      setCachedWaveform(cacheKey, data);
+      // Cache the result to database
+      await setCachedWaveform(videoSrc, data);
       waveformData.value = data;
 
-      console.log('[useAudioWaveform] Real waveform loaded successfully');
+      console.log('[useAudioWaveform] Real waveform loaded and cached successfully');
     } catch (err) {
       console.warn('[useAudioWaveform] Rust backend failed, using Web Audio API fallback:', err);
       // Fallback to Web Audio API simulation if Rust fails
@@ -387,11 +469,6 @@ export function useAudioWaveform() {
     };
   }
 
-  // Clear cache and reset state
-  function clearCache(): void {
-    waveformCache.value = {};
-  }
-
   // Reset the composable state
   function reset(): void {
     waveformData.value = null;
@@ -412,7 +489,6 @@ export function useAudioWaveform() {
     getWaveformForTimeRange,
     getNormalizedWaveform,
     getOptimalResolution,
-    clearCache,
     reset,
   };
 }
