@@ -1,5 +1,5 @@
 <template>
-  <div class="border-b border-border flex flex-col h-full bg-gradient-to-b from-background to-muted/5">
+  <div class="border-b border-border flex flex-col h-full">
     <!-- Loading state -->
     <div v-if="loadingTranscript" class="flex-1 flex items-center justify-center">
       <div class="text-center text-muted-foreground px-6 animate-fade-in">
@@ -311,7 +311,7 @@
   function onWordClick(word: any, index: number) {
     // Only seek if not currently editing
     if (editingWordIndex.value === -1) {
-      // Prevent autoscroll for a longer period after manual click
+      // Prevent autoscroll completely after manual click
       preventAutoscroll.value = true;
 
       // Clear any existing timeout
@@ -319,11 +319,11 @@
         clearTimeout(window.autoscrollTimeout);
       }
 
-      // Set new timeout
+      // Set new timeout - longer duration for better UX
       window.autoscrollTimeout = setTimeout(() => {
         preventAutoscroll.value = false;
         window.autoscrollTimeout = null;
-      }, 3000); // Prevent autoscroll for 3 seconds after manual click
+      }, 5000); // Prevent autoscroll for 5 seconds after manual click
 
       seekToTime(getWordMiddle(word));
     }
@@ -332,9 +332,17 @@
   function onWordDoubleClick(word: any, index: number) {
     // Prevent autoscroll when starting to edit
     preventAutoscroll.value = true;
-    setTimeout(() => {
+
+    // Clear any existing timeout
+    if (window.autoscrollTimeout) {
+      clearTimeout(window.autoscrollTimeout);
+    }
+
+    // Set new timeout for editing
+    window.autoscrollTimeout = setTimeout(() => {
       preventAutoscroll.value = false;
-    }, 2000); // Prevent autoscroll for 2 seconds during editing
+      window.autoscrollTimeout = null;
+    }, 5000); // Prevent autoscroll for 5 seconds during editing
 
     // Start editing this word
     startWordEdit(word, index);
@@ -523,8 +531,8 @@
   function scrollToCurrentWord(forceScroll = false) {
     if (currentWordIndex.value === -1 || !transcriptContent.value) return;
 
-    // Don't scroll if user recently interacted with words (force scroll can only override for very significant seeks)
-    if (preventAutoscroll.value && !forceScroll) return;
+    // Don't scroll at all if user recently interacted with words (ignore even force scrolls)
+    if (preventAutoscroll.value) return;
 
     const wordElement = wordElements.value.get(currentWordIndex.value);
     if (!wordElement) return;
