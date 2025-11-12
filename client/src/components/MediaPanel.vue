@@ -1,7 +1,7 @@
 <template>
   <div class="px-3 pt-1 flex flex-col flex-1 h-full" data-media-panel>
     <!-- Tabs Header -->
-    <div class="flex items-center border-b border-border mb-4">
+    <div class="flex items-center border-b border-border">
       <button
         @click="activeTab = 'clips'"
         :class="[
@@ -35,7 +35,7 @@
     </div>
 
     <!-- Clips Tab Content -->
-    <div v-if="activeTab === 'clips'" class="flex-1 flex flex-col overflow-hidden">
+    <div v-if="activeTab === 'clips'" class="flex-1 flex flex-col overflow-hidden mt-3">
       <div class="flex items-center justify-end mb-3">
         <!-- Redesigned detect more button (only show when not generating and clips exist) -->
         <button
@@ -394,12 +394,9 @@
     <!-- Transcript Tab Content -->
     <div v-if="activeTab === 'transcript'" class="flex-1 flex flex-col overflow-hidden">
       <TranscriptPanel
-        :transcript-collapsed="transcriptCollapsed"
-        :clips-collapsed="clipsCollapsed"
         :project-id="projectId"
         :current-time="currentTime"
         :duration="videoDuration"
-        @toggleTranscript="handleToggleTranscript"
         @seekVideo="onSeekVideo"
       />
     </div>
@@ -464,7 +461,6 @@
     (e: 'deleteClip', clipId: string): void;
     (e: 'playClip', clip: ClipWithVersion): void;
     (e: 'seekVideo', time: number): void;
-    (e: 'toggleTranscript'): void;
   }
 
   const emit = defineEmits<Emits>();
@@ -630,10 +626,6 @@
     hoveredClipId.value = hoveredClipId.value === clipId ? null : clipId;
     emit('clipHover', clipId);
     emit('scrollToTimeline');
-  }
-
-  function handleToggleTranscript() {
-    emit('toggleTranscript');
   }
 
   function onSeekVideo(time: number) {

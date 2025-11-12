@@ -95,7 +95,6 @@
                 @deleteClip="onDeleteClip"
                 @playClip="onPlayClip"
                 @seekVideo="onSeekVideo"
-                @toggleTranscript="onToggleTranscript"
               />
             </div>
           </div>
@@ -786,10 +785,6 @@
       // Seek to the specified time
       videoElement.value.currentTime = time;
     }
-  }
-
-  function onToggleTranscript() {
-    transcriptCollapsed.value = !transcriptCollapsed.value;
   }
 
   // Watch for dialog open/close

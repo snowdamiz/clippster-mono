@@ -1,90 +1,60 @@
 <template>
-  <div
-    :class="clipsCollapsed ? 'flex-1' : transcriptCollapsed ? 'h-auto' : 'flex-1'"
-    class="p-4 border-b border-border flex flex-col"
-  >
-    <div class="flex items-center justify-between">
-      <h3 class="text-sm font-medium text-foreground">Transcript</h3>
-      <button
-        @click="toggleTranscript"
-        class="p-1 hover:bg-muted rounded transition-colors"
-        :title="transcriptCollapsed ? 'Expand transcript' : 'Collapse transcript'"
-      >
+  <div class="border-b border-border flex flex-col h-full">
+    <!-- Loading state -->
+    <div v-if="loadingTranscript" class="flex-1 flex items-center justify-center">
+      <div class="text-center text-muted-foreground px-6">
+        <svg
+          class="animate-spin h-6 w-6 mx-auto mb-3"
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path
+            class="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+          ></path>
+        </svg>
+        <p class="text-xs">Loading transcript...</p>
+      </div>
+    </div>
+
+    <!-- No transcript state -->
+    <div v-else-if="!transcriptData || !transcriptData.words.length" class="flex-1 flex items-center justify-center">
+      <div class="text-center text-muted-foreground px-6">
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          class="h-4 w-4 text-muted-foreground transition-transform duration-300 ease-in-out"
-          :class="{ 'rotate-180': transcriptCollapsed }"
+          class="h-8 w-8 mx-auto mb-3"
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
         >
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.5"
+            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+          />
         </svg>
-      </button>
+        <p class="text-xs mb-2">No transcript available</p>
+        <p class="text-xs text-foreground/60">Audio is automatically transcribed when clips are detected</p>
+      </div>
     </div>
 
-    <div :class="transcriptCollapsed ? 'h-0' : 'flex-1'" class="overflow-hidden">
-      <div v-if="!transcriptCollapsed" class="h-full flex flex-col">
-        <!-- Loading state -->
-        <div v-if="loadingTranscript" class="flex-1 flex items-center justify-center min-h-[120px]">
-          <div class="text-center text-muted-foreground px-6">
-            <svg
-              class="animate-spin h-6 w-6 mx-auto mb-3"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-            <p class="text-xs">Loading transcript...</p>
-          </div>
-        </div>
-
-        <!-- No transcript state -->
-        <div
-          v-else-if="!transcriptData || !transcriptData.words.length"
-          class="flex-1 flex items-center justify-center min-h-[120px]"
+    <!-- Transcript content -->
+    <div v-else ref="transcriptContent" class="flex-1 overflow-y-auto pr-2">
+      <div class="text-sm text-foreground leading-relaxed break-words py-2">
+        <span
+          v-for="(word, index) in transcriptData.words"
+          :key="`word-${index}`"
+          :ref="(el) => setWordRef(el, index)"
+          :class="getWordClasses(word)"
+          class="inline px-0.5 py-0.5 rounded transition-all duration-200 cursor-pointer hover:bg-muted/50 whitespace-normal"
+          @click="seekToTime(getWordStart(word))"
         >
-          <div class="text-center text-muted-foreground px-6">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-8 w-8 mx-auto mb-3"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="1.5"
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-              />
-            </svg>
-            <p class="text-xs mb-2">No transcript available</p>
-            <p class="text-xs text-foreground/60">Audio is automatically transcribed when clips are detected</p>
-          </div>
-        </div>
-
-        <!-- Transcript content -->
-        <div v-else ref="transcriptContent" class="flex-1 overflow-y-auto pr-2">
-          <div class="text-sm text-foreground leading-relaxed break-words">
-            <span
-              v-for="(word, index) in transcriptData.words"
-              :key="`word-${index}`"
-              :ref="(el) => setWordRef(el, index)"
-              :class="getWordClasses(word)"
-              class="inline px-0.5 py-0.5 rounded transition-all duration-200 cursor-pointer hover:bg-muted/50 whitespace-normal"
-              @click="seekToTime(getWordStart(word))"
-            >
-              {{ getWordText(word) }}{{ index < transcriptData.words.length - 1 ? ' ' : '' }}
-            </span>
-          </div>
-        </div>
+          {{ getWordText(word) }}{{ index < transcriptData.words.length - 1 ? ' ' : '' }}
+        </span>
       </div>
     </div>
   </div>
@@ -102,8 +72,6 @@
   }
 
   interface Props {
-    transcriptCollapsed: boolean;
-    clipsCollapsed: boolean;
     projectId?: string | null;
     currentTime?: number;
     duration?: number;
@@ -115,7 +83,6 @@
   });
 
   interface Emits {
-    (e: 'toggleTranscript'): void;
     (e: 'seekVideo', time: number): void;
   }
 
@@ -128,10 +95,6 @@
 
   // Use transcript data composable
   const { transcriptData, loadTranscriptData } = useTranscriptData(computed(() => props.projectId || null));
-
-  function toggleTranscript() {
-    emit('toggleTranscript');
-  }
 
   function setWordRef(el: any, index: number) {
     if (el && el instanceof HTMLElement) {
@@ -233,23 +196,63 @@
     nextTick(() => {
       if (!transcriptContent.value || !wordElement) return;
 
-      const containerRect = transcriptContent.value.getBoundingClientRect();
-      const wordRect = wordElement.getBoundingClientRect();
+      const container = transcriptContent.value;
+      const containerScrollTop = container.scrollTop;
+      const containerHeight = container.clientHeight;
+      const containerScrollHeight = container.scrollHeight;
+      const wordOffsetTop = wordElement.offsetTop;
+      const wordHeight = wordElement.offsetHeight;
 
-      // Check if word is outside the visible area
-      const isVisible = wordRect.top >= containerRect.top && wordRect.bottom <= containerRect.bottom;
+      // Debug logging
+      console.log('[TranscriptPanel] Scroll debug:', {
+        containerScrollHeight,
+        containerClientHeight: containerHeight,
+        containerScrollTop,
+        wordOffsetTop,
+        wordHeight,
+        needsScroll: containerScrollHeight > containerHeight,
+      });
 
-      if (!isVisible) {
-        // Scroll to center the word in the container
-        const scrollTop = transcriptContent.value.scrollTop;
-        const containerHeight = containerRect.height;
-        const wordOffsetTop = wordElement.offsetTop;
-        const wordHeight = wordElement.offsetHeight;
+      // Check if scrolling is possible
+      if (containerScrollHeight <= containerHeight) {
+        console.log('[TranscriptPanel] No scrolling possible - content fits container');
+        return;
+      }
 
-        // Calculate scroll position to center the word
-        const targetScrollTop = wordOffsetTop - containerHeight / 2 + wordHeight / 2;
+      // Define safe viewing boundaries (very conservative)
+      const safeTop = containerScrollTop + 40; // 40px from top
+      const safeBottom = containerScrollTop + containerHeight - 40; // 40px from bottom
 
-        transcriptContent.value.scrollTo({
+      // Check if word is outside safe viewing area
+      if (wordOffsetTop >= safeTop && wordOffsetTop + wordHeight <= safeBottom) {
+        console.log('[TranscriptPanel] Word already in safe view');
+        return; // Word is already in safe view, no scrolling needed
+      }
+
+      // Calculate minimal scroll needed
+      let targetScrollTop = containerScrollTop;
+
+      if (wordOffsetTop < safeTop) {
+        // Word is too high, scroll up just enough to bring it into view
+        targetScrollTop = Math.max(0, wordOffsetTop - 60); // 60px from top
+      } else if (wordOffsetTop + wordHeight > safeBottom) {
+        // Word is too low, scroll down just enough to bring it into view
+        targetScrollTop = wordOffsetTop + wordHeight - containerHeight + 60; // 60px from top
+      }
+
+      // Clamp to valid bounds
+      const maxScrollTop = containerScrollHeight - containerHeight;
+      targetScrollTop = Math.max(0, Math.min(targetScrollTop, maxScrollTop));
+
+      console.log('[TranscriptPanel] Will scroll:', {
+        from: containerScrollTop,
+        to: targetScrollTop,
+        diff: Math.abs(containerScrollTop - targetScrollTop),
+      });
+
+      // Only scroll if we actually need to move
+      if (Math.abs(containerScrollTop - targetScrollTop) > 5) {
+        container.scrollTo({
           top: targetScrollTop,
           behavior: 'smooth',
         });
