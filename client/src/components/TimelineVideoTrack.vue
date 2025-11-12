@@ -2,7 +2,7 @@
   <div class="flex items-center h-14 px-2 border-b border-border/20 relative">
     <!-- Track Label -->
     <div
-      class="w-18 h-10 -ml-2 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-0 z-30 bg-[#101010] backdrop-blur-sm"
+      class="w-18 h-10 -ml-2 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-0 z-40 bg-[#101010] backdrop-blur-sm"
     >
       <div>
         <div class="font-medium">Main</div>
@@ -47,12 +47,12 @@
           <canvas
             ref="waveformCanvas"
             class="absolute inset-0 w-full h-full rounded-md pointer-events-none"
-            style="mix-blend-mode: normal; z-index: 30"
+            style="mix-blend-mode: normal; z-index: 25"
           ></canvas>
 
           <!-- Played progress overlay -->
           <div
-            class="absolute inset-y-0 left-0 bg-gradient-to-r from-purple-500/40 to-indigo-500/40 rounded-l-md transition-all duration-100 pointer-events-none z-20"
+            class="absolute inset-y-0 left-0 bg-gradient-to-r from-purple-500/40 to-indigo-500/40 rounded-l-md transition-all duration-100 pointer-events-none z-15"
             :style="{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }"
           ></div>
 
