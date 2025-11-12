@@ -1889,19 +1889,45 @@ fn parse_duration_from_ffmpeg_output(stderr: &str) -> Result<f64, String> {
 }
 
 // Waveform peak data structure
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct WaveformPeak {
     min: f64,
     max: f64,
 }
 
-// Waveform data structure
+// Single resolution level data
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct WaveformResolution {
+    peaks: Vec<WaveformPeak>,
+    peak_count: u32,
+    samples_per_peak: u32,
+}
+
+// Multi-resolution waveform data structure
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct WaveformData {
-    peaks: Vec<WaveformPeak>,
     sample_rate: u32,
     duration: f64,
-    samples_per_pixel: u32,
+    resolutions: std::collections::HashMap<String, WaveformResolution>,
+}
+
+// Helper function to determine optimal resolution for zoom level
+fn get_optimal_resolution(effective_width: f64, duration: f64) -> String {
+    // Calculate desired samples per pixel at current zoom
+    let samples_per_pixel = (duration * 44100.0) / effective_width;
+
+    // Select resolution based on zoom level
+    if samples_per_pixel > 5000.0 {
+        "low".to_string()      // 500 peaks - very zoomed out
+    } else if samples_per_pixel > 2000.0 {
+        "medium".to_string()   // 1000 peaks - zoomed out
+    } else if samples_per_pixel > 800.0 {
+        "high".to_string()     // 2000 peaks - normal
+    } else if samples_per_pixel > 300.0 {
+        "ultra".to_string()    // 4000 peaks - zoomed in
+    } else {
+        "extreme".to_string()  // 8000 peaks - very zoomed in
+    }
 }
 
 #[tauri::command]
@@ -1916,10 +1942,14 @@ async fn extract_audio_waveform(
     println!("[Rust]   video_path: {}", video_path);
     println!("[Rust]   target_samples: {:?}", target_samples);
 
-    let target_samples = target_samples.unwrap_or(2000); // Default to 2000 samples
-    if target_samples < 100 || target_samples > 10000 {
-        return Err("target_samples must be between 100 and 10000".to_string());
-    }
+    // Define multiple resolution levels for adaptive rendering
+    let resolution_levels = vec![
+        ("low", 500),      // 500 peaks - very zoomed out
+        ("medium", 1000),  // 1000 peaks - zoomed out
+        ("high", 2000),    // 2000 peaks - normal view
+        ("ultra", 4000),   // 4000 peaks - zoomed in
+        ("extreme", 8000), // 8000 peaks - very zoomed in
+    ];
 
     // Get storage paths for temporary files
     let paths = storage::init_storage_dirs()
@@ -1988,8 +2018,8 @@ async fn extract_audio_waveform(
 
     println!("[Rust] Audio extracted successfully");
 
-    // Process the WAV file to extract waveform data
-    let waveform_data = process_wav_file(&temp_audio_path, target_samples, video_duration)
+    // Process the WAV file to extract multi-resolution waveform data
+    let waveform_data = process_wav_file_multi_resolution(&temp_audio_path, &resolution_levels, video_duration)
         .map_err(|e| format!("Failed to process WAV file: {}", e))?;
 
     // Clean up temporary file
@@ -1999,16 +2029,24 @@ async fn extract_audio_waveform(
         println!("[Rust] Cleaned up temporary audio file");
     }
 
-    println!("[Rust] Waveform extraction completed. Generated {} peaks.", waveform_data.peaks.len());
+    let total_peaks: u32 = waveform_data.resolutions.values()
+        .map(|r| r.peak_count)
+        .sum();
+    println!("[Rust] Multi-resolution waveform extraction completed. Generated {} peaks across {} resolution levels.",
+             total_peaks, waveform_data.resolutions.len());
     Ok(waveform_data)
 }
 
-// Process WAV file to extract waveform peaks
-fn process_wav_file(wav_path: &std::path::Path, target_samples: u32, duration: f64) -> Result<WaveformData, String> {
+// Process WAV file to extract multi-resolution waveform peaks
+fn process_wav_file_multi_resolution(
+    wav_path: &std::path::Path,
+    resolution_levels: &[(&str, u32)],
+    duration: f64
+) -> Result<WaveformData, String> {
     use std::fs::File;
     use std::io::Read;
 
-    println!("[Rust] Processing WAV file: {}", wav_path.display());
+    println!("[Rust] Processing WAV file for multi-resolution: {}", wav_path.display());
 
     // Open and read WAV file
     let mut file = File::open(wav_path)
@@ -2060,39 +2098,51 @@ fn process_wav_file(wav_path: &std::path::Path, target_samples: u32, duration: f
         return Err("No audio samples found".to_string());
     }
 
-    // Calculate samples per peak
-    let samples_per_peak = (samples.len() as f64 / target_samples as f64).ceil() as usize;
-    println!("[Rust] Samples per peak: {}", samples_per_peak);
+    // Generate multi-resolution peaks
+    let mut resolutions = std::collections::HashMap::new();
 
-    // Generate peaks
-    let mut peaks = Vec::new();
-    for i in 0..target_samples {
-        let start_idx = (i as usize * samples_per_peak).min(samples.len());
-        let end_idx = ((i as usize + 1) * samples_per_peak).min(samples.len());
+    for &(level_name, target_peaks) in resolution_levels {
+        println!("[Rust] Generating {} resolution with {} peaks", level_name, target_peaks);
 
-        if start_idx >= samples.len() {
-            break;
+        let samples_per_peak = (samples.len() as f64 / target_peaks as f64).ceil() as usize;
+        let mut peaks = Vec::new();
+
+        for i in 0..target_peaks {
+            let start_idx = (i as usize * samples_per_peak).min(samples.len());
+            let end_idx = ((i as usize + 1) * samples_per_peak).min(samples.len());
+
+            if start_idx >= samples.len() {
+                break;
+            }
+
+            let mut min = 0.0;
+            let mut max = 0.0;
+
+            // Find min and max in this chunk
+            for &sample in &samples[start_idx..end_idx] {
+                if sample < min { min = sample; }
+                if sample > max { max = sample; }
+            }
+
+            peaks.push(WaveformPeak { min, max });
         }
 
-        let mut min = 0.0;
-        let mut max = 0.0;
+        let resolution = WaveformResolution {
+            peak_count: peaks.len() as u32,
+            samples_per_peak: samples_per_peak as u32,
+            peaks: peaks.clone(),
+        };
 
-        // Find min and max in this chunk
-        for &sample in &samples[start_idx..end_idx] {
-            if sample < min { min = sample; }
-            if sample > max { max = sample; }
-        }
-
-        peaks.push(WaveformPeak { min, max });
+        resolutions.insert(level_name.to_string(), resolution);
+        println!("[Rust] Generated {} peaks for {} resolution", peaks.len(), level_name);
     }
 
-    println!("[Rust] Generated {} waveform peaks", peaks.len());
+    println!("[Rust] Multi-resolution waveform generation completed");
 
     Ok(WaveformData {
-        peaks,
         sample_rate,
         duration,
-        samples_per_pixel: samples_per_peak as u32,
+        resolutions,
     })
 }
 

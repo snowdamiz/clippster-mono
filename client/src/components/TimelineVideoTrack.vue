@@ -84,14 +84,10 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+  import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
   import { formatDuration } from '../utils/timelineUtils';
   import { useAudioWaveform } from '@/composables/useAudioWaveform';
-  import {
-    renderWaveformOnCanvas,
-    calculateWaveformParameters,
-    createThrottledRenderer,
-  } from '@/utils/audioWaveformUtils';
+  import { calculateWaveformParameters, createThrottledRenderer } from '@/utils/audioWaveformUtils';
 
   interface Props {
     videoSrc: string | null;
@@ -123,20 +119,13 @@
     isLoading: isWaveformLoading,
     isLoaded: isWaveformLoaded,
     loadWaveformFromVideo,
+    getNormalizedWaveform,
   } = useAudioWaveform();
-
-  // Waveform rendering state (not used for canvas anymore since we control opacity in render)
-  const waveformOpacity = computed(() => {
-    if (isWaveformLoading.value) return 0.1; // Very subtle loading state
-    if (!isWaveformLoaded.value) return 0;
-    return 1; // Always full opacity for canvas
-  });
 
   // Resize observer for canvas updates
   let resizeObserver: ResizeObserver | null = null;
-  let renderScheduled = false;
 
-  // Render waveform on canvas
+  // Render waveform on canvas with adaptive resolution
   function renderWaveform(): void {
     if (!waveformCanvas.value || !waveformData.value || !isWaveformLoaded.value) {
       return;
@@ -157,14 +146,28 @@
         ctx.scale(dpr, dpr);
       }
 
-      // Calculate optimal waveform parameters
-      const params = calculateWaveformParameters(props.duration, rect.width, props.zoomLevel);
+      // Get optimal resolution data for current zoom level
+      const normalizedData = getNormalizedWaveform(rect.width, rect.height, props.zoomLevel);
+
+      if (!normalizedData.peaks || normalizedData.peaks.length === 0) {
+        console.warn('[TimelineVideoTrack] No waveform peaks available for rendering');
+        return;
+      }
+
+      // Calculate optimal waveform parameters with the selected resolution
+      const params = calculateWaveformParameters(
+        props.duration,
+        rect.width,
+        props.zoomLevel,
+        normalizedData.resolution,
+        normalizedData.peaks.length
+      );
 
       // Render dual-color waveform (white before playhead, purple after)
       renderDualColorWaveform(canvas, {
         width: rect.width,
         height: rect.height,
-        peaks: waveformData.value.peaks,
+        peaks: normalizedData.peaks,
         duration: props.duration,
         currentTime: props.currentTime,
         barWidth: params.barWidth,
@@ -217,8 +220,8 @@
     peaks.forEach((peak, index) => {
       const x = index * totalBarWidth;
 
-      // Skip if bar would be outside canvas bounds
-      if (x + barWidth > width) return;
+      // Ensure bar stays within canvas bounds (clip instead of skip)
+      if (x >= width) return; // Only skip if starting position is beyond canvas
 
       // Determine color based on position relative to playhead
       const barCenter = x + barWidth / 2;
@@ -233,14 +236,17 @@
       const positiveHeight = Math.abs(peak.max) * maxBarHeight;
       const negativeHeight = Math.abs(peak.min) * maxBarHeight;
 
+      // Calculate actual bar width to stay within canvas bounds
+      const actualBarWidth = Math.min(barWidth, width - x);
+
       // Draw upper bar (positive values)
-      if (positiveHeight > 0) {
-        ctx.fillRect(x, centerY - positiveHeight, barWidth, positiveHeight);
+      if (positiveHeight > 0 && actualBarWidth > 0) {
+        ctx.fillRect(x, centerY - positiveHeight, actualBarWidth, positiveHeight);
       }
 
       // Draw lower bar (negative values)
-      if (negativeHeight > 0) {
-        ctx.fillRect(x, centerY, barWidth, negativeHeight);
+      if (negativeHeight > 0 && actualBarWidth > 0) {
+        ctx.fillRect(x, centerY, actualBarWidth, negativeHeight);
       }
     });
 

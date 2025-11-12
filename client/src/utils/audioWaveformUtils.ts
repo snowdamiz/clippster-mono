@@ -110,7 +110,6 @@ export function renderWaveformLine(
   options: WaveformRenderOptions
 ): void {
   const {
-    width,
     height,
     peaks,
     barSpacing = 1,
@@ -162,7 +161,6 @@ export function renderWaveformFilled(
   options: WaveformRenderOptions
 ): void {
   const {
-    width,
     height,
     peaks,
     barSpacing = 1,
@@ -259,7 +257,7 @@ export function createWaveformGradient(
 }
 
 // Throttled rendering function for performance
-export function createThrottledRenderer(renderFn: () => void, delay: number = 16): () => void {
+export function createThrottledRenderer(renderFn: () => void, _delay: number = 16): () => void {
   let isScheduled = false;
 
   return () => {
@@ -277,31 +275,84 @@ export function createThrottledRenderer(renderFn: () => void, delay: number = 16
 export function calculateWaveformParameters(
   duration: number,
   width: number,
-  zoomLevel: number
+  zoomLevel: number,
+  resolution?: string,
+  peakCount?: number
 ): {
-  targetPeaks: number;
   barWidth: number;
   barSpacing: number;
   samplesPerPixel: number;
+  resolution: string;
 } {
   const effectiveWidth = width * zoomLevel;
 
-  // Target approximately 1 peak per 2 pixels at current zoom level
-  let targetPeaks = Math.floor(effectiveWidth / 2);
-  targetPeaks = Math.max(100, Math.min(2000, targetPeaks)); // Clamp between 100 and 2000 peaks
+  // Determine optimal resolution if not provided
+  const selectedResolution = resolution || determineOptimalResolution(duration, effectiveWidth);
 
-  // Calculate bar dimensions
-  const barWidth = Math.max(1, Math.floor(effectiveWidth / targetPeaks));
-  const barSpacing = Math.max(0, barWidth - 1); // Allow touching bars
+  // Use provided peak count or get default for resolution
+  const selectedPeakCount = peakCount || getDefaultPeakCountForResolution(selectedResolution);
+
+  // Calculate bar dimensions to use the ENTIRE canvas width
+  const availableWidth = width; // Use 100% of canvas width
+
+  // Calculate optimal bar width and spacing to use ALL available width
+  const targetTotalWidth = availableWidth;
+  const maxBarWidth = 4; // Cap at 4px for visual clarity
+  const minBarWidth = 1; // Minimum 1px for visibility
+
+  // Calculate ideal bar width that would use all available width
+  let idealBarWidth = Math.floor(targetTotalWidth / selectedPeakCount);
+  let barWidth = Math.min(maxBarWidth, Math.max(minBarWidth, idealBarWidth));
+
+  // Calculate spacing to ensure we use the FULL available width
+  const totalBarArea = barWidth * selectedPeakCount;
+  const remainingWidth = targetTotalWidth - totalBarArea;
+  const barSpacing = selectedPeakCount > 1 ? remainingWidth / (selectedPeakCount - 1) : 0;
 
   const samplesPerPixel = (duration * 44100) / effectiveWidth; // Assuming 44.1kHz sample rate
 
   return {
-    targetPeaks,
     barWidth,
     barSpacing,
     samplesPerPixel,
+    resolution: selectedResolution,
   };
+}
+
+// Helper function to determine optimal resolution
+function determineOptimalResolution(duration: number, effectiveWidth: number): string {
+  const samplesPerPixel = (duration * 44100) / effectiveWidth;
+
+  // Select resolution based on zoom level (matching Rust logic)
+  if (samplesPerPixel > 5000) {
+    return 'low'; // 500 peaks - very zoomed out
+  } else if (samplesPerPixel > 2000) {
+    return 'medium'; // 1000 peaks - zoomed out
+  } else if (samplesPerPixel > 800) {
+    return 'high'; // 2000 peaks - normal
+  } else if (samplesPerPixel > 300) {
+    return 'ultra'; // 4000 peaks - zoomed in
+  } else {
+    return 'extreme'; // 8000 peaks - very zoomed in
+  }
+}
+
+// Helper function to get default peak count for resolution
+function getDefaultPeakCountForResolution(resolution: string): number {
+  switch (resolution) {
+    case 'low':
+      return 500;
+    case 'medium':
+      return 1000;
+    case 'high':
+      return 2000;
+    case 'ultra':
+      return 4000;
+    case 'extreme':
+      return 8000;
+    default:
+      return 2000;
+  }
 }
 
 // Utility to interpolate waveform data for smooth zooming
