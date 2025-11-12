@@ -26,9 +26,7 @@
         </div>
       </div>
       <!-- Fallback when no transcript or in dead space -->
-      <div v-else class="text-center text-white/50 text-xs">
-        {{ transcriptWords.length === 0 ? 'No transcript available' : 'Dead Space' }}
-      </div>
+      <div v-else class="text-center text-white/50 text-xs">Dead Space</div>
 
       <div
         class="absolute top-full left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-45 w-1.5 h-1.5 bg-black/90 border-r border-b border-white/20"

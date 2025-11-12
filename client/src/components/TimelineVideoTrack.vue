@@ -56,20 +56,6 @@
             :style="{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }"
           ></div>
 
-          <!-- Hover time indicator -->
-          <div
-            v-if="timelineHoverTime !== null"
-            class="absolute -top-2 transform -translate-x-1/2 z-20 pointer-events-none"
-            :style="{ left: `${timelineHoverPosition}%` }"
-          >
-            <div class="bg-black/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-md font-medium mb-1">
-              {{ formatDuration(timelineHoverTime) }}
-              <div
-                class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-1.5 h-1.5 bg-black/90"
-              ></div>
-            </div>
-          </div>
-
           <!-- Loading indicator for waveform -->
           <div
             v-if="isWaveformLoading"
@@ -93,8 +79,6 @@
     videoSrc: string | null;
     currentTime: number;
     duration: number;
-    timelineHoverTime: number | null;
-    timelineHoverPosition: number;
     zoomLevel?: number; // Added zoom level support
   }
 
