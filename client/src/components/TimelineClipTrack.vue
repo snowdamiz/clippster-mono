@@ -88,12 +88,12 @@
               }
             }
           "
-          @mousemove="{
-            if(isCutToolActive) {
+          @mousemove="
+            if (isCutToolActive) {
               console.log(`[CUTTING] Mousemove segment ${clip.id}_${segIndex}`);
               onSegmentHoverForCut($event, clip.id, segIndex, segment);
-            },
-          }"
+            }
+          "
           @mouseleave="
             {
               if (isCutToolActive) {

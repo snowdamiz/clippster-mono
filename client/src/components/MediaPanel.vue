@@ -149,7 +149,7 @@
           ref="clipsScrollContainer"
         >
           <!-- Clips Grid -->
-          <div class="space-y-2.5">
+          <div class="space-y-3">
             <div
               v-for="(clip, index) in clips"
               :key="clip.id"
