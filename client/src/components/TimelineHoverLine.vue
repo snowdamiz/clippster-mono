@@ -1,7 +1,7 @@
 <template>
   <div
-    v-if="showLine && !isPanning && !isDragging"
-    class="fixed bg-white/40 z-60 pointer-events-none transition-opacity duration-150"
+    v-if="showLine && !isPanning && !isDragging && !isCutToolActive"
+    class="fixed bg-white/40 z-50 pointer-events-none transition-opacity duration-150"
     :style="{
       left: `${position}px`,
       top: `${timelineBoundsTop}px`,
@@ -22,6 +22,7 @@
     timelineBoundsBottom: number;
     isPanning: boolean;
     isDragging: boolean;
+    isCutToolActive: boolean;
   }
 
   defineProps<Props>();
@@ -31,7 +32,7 @@
   /* Timeline hover line */
   .bg-white\/40 {
     background: rgba(255, 255, 255, 0.4);
-    z-index: 60;
+    z-index: 50;
     pointer-events: none;
     transition: opacity 0.15s ease;
   }

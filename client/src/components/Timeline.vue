@@ -99,6 +99,7 @@
         :timelineBoundsBottom="timelineBounds.bottom"
         :isPanning="isPanning"
         :isDragging="isDragging"
+        :isCutToolActive="isCutToolActive"
       />
 
       <!-- Global Playhead Line - positioned like hover line but follows video time -->
@@ -109,6 +110,7 @@
         :position="globalPlayheadPosition"
         :timelineBoundsTop="timelineBounds.top"
         :timelineBoundsBottom="timelineBounds.bottom"
+        :isCutToolActive="isCutToolActive"
         @playheadDragStart="onPlayheadDragStart"
       />
 
@@ -828,7 +830,7 @@
 
   // Timeline hover line handlers
   function onTimelineMouseMove(event: MouseEvent) {
-    if (isPanning.value || isDragging.value) return;
+    if (isPanning.value || isDragging.value || isCutToolActive.value) return;
 
     const container = timelineScrollContainer.value;
     if (!container) return;
@@ -890,9 +892,12 @@
   }
 
   function onTimelineMouseLeaveGlobal() {
-    showTimelineHoverLine.value = false;
-    showTimelineTooltip.value = false;
-    clearTooltipData();
+    // Don't clear hover states if cutting tool is active
+    if (!isCutToolActive.value) {
+      showTimelineHoverLine.value = false;
+      showTimelineTooltip.value = false;
+      clearTooltipData();
+    }
     // Cancel drag if mouse leaves timeline
     if (isDragging.value) {
       endDragSelection();
@@ -1601,7 +1606,7 @@
   // Handle playhead drag start
   function onPlayheadDragStart(event: MouseEvent) {
     // Prevent collision with other drag operations
-    if (isDragging.value || isDraggingSegment.value || isResizingSegment.value || isCutToolActive.value) {
+    if (isDragging.value || isDraggingSegment.value || isResizingSegment.value) {
       return;
     }
 
@@ -2116,6 +2121,7 @@
   // Toggle cut tool on/off
   function toggleCutTool() {
     isCutToolActive.value = !isCutToolActive.value;
+    console.log(`[CUTTING] toggleCutTool - isCutToolActive: ${isCutToolActive.value}`);
 
     // Reset cut hover state when deactivating
     if (!isCutToolActive.value) {
@@ -2123,8 +2129,13 @@
       hoveredSegmentKey.value = null;
     }
 
-    // Disable other interactions when cut tool is active
+    // Clear timeline hover states when activating
     if (isCutToolActive.value) {
+      showTimelineHoverLine.value = false;
+      showTimelineTooltip.value = false;
+      clearTooltipData();
+      // Clear parent hover state
+      emit('timelineMouseLeave');
       // Clear any existing drag/resize states
       isDraggingSegment.value = false;
       isResizingSegment.value = false;
@@ -2135,6 +2146,9 @@
 
   // Handle segment hover for cut preview
   function onSegmentHoverForCut(event: MouseEvent, clipId: string, segmentIndex: number, segment: ClipSegment) {
+    console.log(
+      `[CUTTING] onSegmentHoverForCut called for ${clipId}_${segmentIndex}, isCutToolActive: ${isCutToolActive.value}`
+    );
     if (!isCutToolActive.value || !props.duration) return;
 
     // Find the actual segment element, not a child element
@@ -2149,8 +2163,10 @@
 
     // Use the extracted utility function
     const cutInfo = createCutHoverInfo(event, segmentElement, segment, props.duration, clipId, segmentIndex);
+    console.log(`[CUTTING] createCutHoverInfo returned:`, cutInfo);
 
     cutHoverInfo.value = cutInfo;
+    console.log(`[CUTTING] cutHoverInfo.value set to:`, cutHoverInfo.value);
   }
 
   // Handle segment click for cut operation

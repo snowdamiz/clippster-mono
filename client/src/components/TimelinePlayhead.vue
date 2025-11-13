@@ -3,34 +3,45 @@
     v-if="videoSrc && duration > 0"
     class="fixed z-60 transition-all duration-100"
     :style="{
-      left: `${position - 8}px`,
+      left: `${position - 1}px`,
       top: `${timelineBoundsTop}px`,
       height: `${timelineBoundsBottom - timelineBoundsTop}px`,
-      width: '16px',
+      width: '2px',
       cursor: isDragging ? 'grabbing' : 'col-resize',
-      pointerEvents: 'auto',
+      'pointer-events': 'auto',
     }"
     @mouseenter="onMouseEnter"
     @mouseleave="onMouseLeave"
     @mousedown="onMouseDown"
   >
-    <!-- Invisible hitbox for mouse interaction -->
-    <div class="absolute inset-0 hover:bg-white/5"></div>
-
-    <!-- Visible thin playhead line -->
+    <!-- Visible playhead line -->
     <div
-      class="absolute top-0 bottom-0 bg-white/70 shadow-lg playhead-line transition-all duration-100"
+      class="absolute top-0 bottom-0 bg-white/70 shadow-lg transition-all duration-100"
       :class="{
         'bg-white/90': isHovered || isDragging,
         'shadow-xl': isHovered || isDragging,
       }"
       :style="{
-        left: '50%',
-        width: isDragging ? '2px' : '1px',
-        transform: 'translateX(-50%)',
-        pointerEvents: 'none',
+        left: '0',
+        width: '2px',
+        'pointer-events': 'none',
       }"
-    ></div>
+    >
+      <!-- Top circle -->
+      <div
+        class="absolute top-1 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-white rounded-full shadow-md"
+        :class="{
+          'w-2.5 h-2.5': isHovered || isDragging,
+        }"
+      ></div>
+      <!-- Bottom circle -->
+      <div
+        class="absolute bottom-1 left-1/2 -translate-x-1/2 translate-y-1/2 w-2 h-2 bg-white/80 rounded-full shadow-md"
+        :class="{
+          'w-2.5 h-2.5': isHovered || isDragging,
+        }"
+      ></div>
+    </div>
   </div>
 </template>
 
@@ -43,6 +54,7 @@
     position: number;
     timelineBoundsTop: number;
     timelineBoundsBottom: number;
+    isCutToolActive?: boolean;
   }
 
   interface Emits {

@@ -31,12 +31,15 @@
               : isResizingSegment && resizeHandleInfo?.clipId === clip.id && resizeHandleInfo?.segmentIndex === segIndex
                 ? 'cursor-ew-resize z-30 shadow-2xl border-2 border-green-400 resizing'
                 : isCutToolActive && cutHoverInfo?.clipId === clip.id && cutHoverInfo?.segmentIndex === segIndex
-                  ? 'cursor-crosshair z-25 shadow-xl border-2 border-orange-400 ring-2 ring-orange-400/50 ring-offset-1 ring-offset-transparent'
-                  : 'cursor-grab hover:cursor-grab transition-all duration-200 ease-out',
+                  ? 'cursor-crosshair z-65 shadow-xl border-2 border-orange-400 ring-2 ring-orange-400/50 ring-offset-1 ring-offset-transparent'
+                  : isCutToolActive
+                    ? 'cursor-crosshair z-62 transition-all duration-200 ease-out'
+                    : 'cursor-grab hover:cursor-grab transition-all duration-200 ease-out',
             clip.run_number ? `run-${clip.run_number}` : '',
-            currentlyPlayingClipId === clip.id
+            !isCutToolActive && currentlyPlayingClipId === clip.id
               ? 'shadow-lg z-20'
-              : hoveredClipId === clip.id || (hoveredTimelineClipId === clip.id && !currentlyPlayingClipId)
+              : !isCutToolActive &&
+                  (hoveredClipId === clip.id || (hoveredTimelineClipId === clip.id && !currentlyPlayingClipId))
                 ? 'shadow-lg z-20'
                 : '',
             selectedSegmentKeys?.has(`${clip.id}_${segIndex}`)
@@ -54,13 +57,14 @@
                   borderWidth: '2px',
                   borderStyle: 'solid',
                 }
-              : currentlyPlayingClipId === clip.id
+              : !isCutToolActive && currentlyPlayingClipId === clip.id
                 ? {
                     borderColor: '#10b981',
                     borderWidth: '2px',
                     borderStyle: 'solid',
                   }
-                : hoveredClipId === clip.id || (hoveredTimelineClipId === clip.id && !currentlyPlayingClipId)
+                : !isCutToolActive &&
+                    (hoveredClipId === clip.id || (hoveredTimelineClipId === clip.id && !currentlyPlayingClipId))
                   ? {
                       borderColor: '#ffffff',
                       borderWidth: '2px',
@@ -70,13 +74,36 @@
           }"
           :data-run-color="clip.run_color"
           :title="`${clip.title} - ${formatDuration(getSegmentDisplayTime(segment, 'start'))} to ${formatDuration(getSegmentDisplayTime(segment, 'end'))}${clip.run_number ? ` (Run ${clip.run_number})` : ''}`"
-          @mouseenter="
-            !isCutToolActive
-              ? (hoveredSegmentKey = `${clip.id}_${segIndex}`)
-              : onSegmentHoverForCut($event, clip.id, segIndex, segment)
+          :data-cut-tool-active="isCutToolActive"
+          :data-cut-hover="
+            isCutToolActive && cutHoverInfo?.clipId === clip.id && cutHoverInfo?.segmentIndex === segIndex
           "
-          @mousemove="isCutToolActive && onSegmentHoverForCut($event, clip.id, segIndex, segment)"
-          @mouseleave="!isCutToolActive ? (hoveredSegmentKey = null) : emit('update:cutHoverInfo', null)"
+          @mouseenter="
+            {
+              if (isCutToolActive) {
+                console.log(`[CUTTING] Mouseenter segment ${clip.id}_${segIndex}`);
+                onSegmentHoverForCut($event, clip.id, segIndex, segment);
+              } else {
+                hoveredSegmentKey = `${clip.id}_${segIndex}`;
+              }
+            }
+          "
+          @mousemove="{
+            if(isCutToolActive) {
+              console.log(`[CUTTING] Mousemove segment ${clip.id}_${segIndex}`);
+              onSegmentHoverForCut($event, clip.id, segIndex, segment);
+            },
+          }"
+          @mouseleave="
+            {
+              if (isCutToolActive) {
+                console.log(`[CUTTING] Mouseleave segment ${clip.id}_${segIndex}`);
+                emit('update:cutHoverInfo', null);
+              } else {
+                hoveredSegmentKey = null;
+              }
+            }
+          "
           @click="
             !isCutToolActive &&
             !isDraggingSegment &&
@@ -99,6 +126,7 @@
               left: `${cutHoverInfo.cutPosition}%`,
               transform: 'translateX(-50%)',
             }"
+            @vue:mounted="console.log(`[CUTTING] Cut preview indicator mounted for ${clip.id}_${segIndex}`)"
           >
             <!-- Vertical cut line -->
             <div
@@ -138,7 +166,7 @@
             v-if="!getSegmentAdjacency(clip.id, segIndex).hasPrevious"
             class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 hover:w-2 group-hover:opacity-100 group-hover:pointer-events-auto"
             :class="{
-              'opacity-100 pointer-events-auto': hoveredSegmentKey === `${clip.id}_${segIndex}`,
+              'opacity-100 pointer-events-auto': !isCutToolActive && hoveredSegmentKey === `${clip.id}_${segIndex}`,
             }"
             @mousedown="onResizeMouseDown($event, clip.id, segIndex, segment, 'left')"
           >
@@ -149,7 +177,7 @@
             v-if="!getSegmentAdjacency(clip.id, segIndex).hasNext"
             class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 hover:w-2 group-hover:opacity-100 group-hover:pointer-events-auto"
             :class="{
-              'opacity-100 pointer-events-auto': hoveredSegmentKey === `${clip.id}_${segIndex}`,
+              'opacity-100 pointer-events-auto': !isCutToolActive && hoveredSegmentKey === `${clip.id}_${segIndex}`,
             }"
             @mousedown="onResizeMouseDown($event, clip.id, segIndex, segment, 'right')"
           >
