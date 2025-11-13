@@ -411,7 +411,7 @@ export function useAudioWaveform() {
       return { peaks: [], barWidth: 1, resolution: 'high' };
     }
 
-    const { duration, resolutions } = waveformData.value;
+    const { resolutions } = waveformData.value;
     const resolution = getOptimalResolution(zoomLevel, width);
     const resolutionData = resolutions[resolution];
 
