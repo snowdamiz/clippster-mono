@@ -97,7 +97,7 @@
             :key="`word-${index}`"
             :ref="(el) => setWordRef(el, index)"
             :class="getWordClasses(word, index)"
-            class="inline-block px-1 py-0.5 mx-0.5 rounded-md transition-all duration-300 ease-out cursor-pointer hover:bg-primary/10 hover:scale-105 whitespace-normal word-interactive"
+            class="inline-block px-1 py-0.5 mx-0.5 rounded-md cursor-pointer whitespace-normal word-interactive"
             @click="onWordClick(word, index)"
             @dblclick="onWordDoubleClick(word, index)"
             :title="getWordTitle(word, index)"
@@ -285,7 +285,7 @@
 
         // Current word (being spoken) - highest priority
         if (currentStart === wordStart && currentEnd === wordEnd) {
-          return 'bg-primary text-primary-foreground font-semibold shadow-lg ring-2 ring-primary/50 ring-offset-1 current-word';
+          return 'bg-primary text-primary-foreground current-word';
         }
 
         // Already spoken words
@@ -303,7 +303,7 @@
     // Check for search match and overlay on top of state
     if (isWordMatched(word, index)) {
       // Search match takes precedence but we maintain font weight from state
-      return 'bg-yellow-500/20 text-yellow-300 font-semibold border border-yellow-500/30 rounded-md';
+      return 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30';
     } else {
       return stateClasses.trim();
     }
@@ -331,6 +331,27 @@
         window.autoscrollTimeout = null;
       }, 5000); // Prevent autoscroll for 5 seconds after manual click
 
+      // DIRECT DOM MANIPULATION for instant feedback
+      const wordElement = wordElements.value.get(index);
+      if (wordElement) {
+        // Apply instant visual feedback directly to DOM
+        wordElement.style.background = 'hsl(var(--blue-500) / 0.9)';
+        wordElement.style.color = 'white';
+        wordElement.style.zIndex = '10';
+        wordElement.style.position = 'relative';
+
+        // Clear the direct styling after a short delay
+        setTimeout(() => {
+          if (wordElement) {
+            wordElement.style.background = '';
+            wordElement.style.color = '';
+            wordElement.style.zIndex = '';
+            wordElement.style.position = '';
+          }
+        }, 150);
+      }
+
+      // Now perform the actual seek
       seekToTime(getWordMiddle(word));
     }
   }
@@ -713,16 +734,37 @@
 
   /* Current word pulse animation */
   .current-word {
-    animation: pulse-glow 1.5s ease-in-out infinite;
+    animation: pulse-glow 1.2s ease-in-out infinite;
+    position: relative;
+  }
+
+  .current-word::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    background: hsl(var(--primary) / 0.1);
+    border-radius: 0.375rem;
+    pointer-events: none;
+    animation: pulse-border 1.2s ease-in-out infinite;
   }
 
   @keyframes pulse-glow {
     0%,
     100% {
-      box-shadow: 0 0 10px hsl(var(--primary) / 0.3);
+      box-shadow: 0 0 8px hsl(var(--primary) / 0.2);
     }
     50% {
-      box-shadow: 0 0 20px hsl(var(--primary) / 0.5);
+      box-shadow: 0 0 12px hsl(var(--primary) / 0.3);
+    }
+  }
+
+  @keyframes pulse-border {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    50% {
+      opacity: 0.5;
     }
   }
 
@@ -735,13 +777,18 @@
     content: '';
     position: absolute;
     inset: -2px;
-    background: hsl(var(--primary) / 0.1);
+    background: hsl(var(--primary) / 0.15);
     border-radius: 0.375rem;
     opacity: 0;
-    transition: opacity 0.2s;
+    pointer-events: none;
   }
 
   .word-interactive:hover::before {
+    opacity: 1;
+  }
+
+  .word-interactive:active::before {
+    background: hsl(var(--primary) / 0.25);
     opacity: 1;
   }
 
@@ -843,18 +890,27 @@
 
   /* Fix hover effect for already selected/highlighted words */
   .word-interactive.current-word:hover {
-    background: hsl(var(--primary) / 0.8) !important;
+    background: hsl(var(--primary) / 0.9) !important;
     color: hsl(var(--primary-foreground)) !important;
-    box-shadow: 0 2px 8px hsl(var(--primary) / 0.3) !important;
+  }
+
+  .word-interactive.current-word:hover::before {
+    opacity: 0; /* Hide the default hover effect on current word */
   }
 
   .word-interactive.text-foreground.font-medium:hover {
-    background: hsl(var(--muted) / 0.8) !important;
+    background: hsl(var(--muted) / 0.7) !important;
     color: hsl(var(--foreground)) !important;
   }
 
   .word-interactive.text-muted-foreground\:\/70:hover {
-    background: hsl(var(--muted) / 0.6) !important;
+    background: hsl(var(--muted) / 0.5) !important;
     color: hsl(var(--foreground)) !important;
+  }
+
+  /* Add hover effect for search matches */
+  .word-interactive[class*='bg-yellow-500']:hover {
+    background: hsl(var(--yellow-500) / 0.3) !important;
+    color: hsl(var(--yellow-300)) !important;
   }
 </style>
