@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import { getDatabase, getRawVideoByPath, createRawVideo } from '@/services/database';
+import { getDatabase, getRawVideoByPath } from '@/services/database';
 
 export interface WaveformPeak {
   min: number;
@@ -85,7 +85,7 @@ export function useAudioWaveform() {
       const resolutions = JSON.parse(cached.resolutions);
 
       const waveformData: WaveformData = {
-        sample_rate: cached.sample_rate,
+        sampleRate: cached.sample_rate,
         duration: cached.duration,
         resolutions,
       };
@@ -110,21 +110,20 @@ export function useAudioWaveform() {
       // For file size and modified time, we'll use the current timestamp
       const now = Date.now();
 
-      // Find or create the raw video record
-      let rawVideoId: string;
+      // Find existing raw video record - DO NOT create new ones
       const existingRawVideo = await getRawVideoByPath(videoSrc);
 
-      if (existingRawVideo) {
-        console.log('[useAudioWaveform] Found existing raw video:', existingRawVideo.id);
-        rawVideoId = existingRawVideo.id;
-      } else {
-        console.log('[useAudioWaveform] Creating new raw video record for:', videoSrc);
-        // Create a minimal raw video record for the waveform
-        rawVideoId = await createRawVideo(videoSrc, {
-          duration: data.duration,
-        });
-        console.log('[useAudioWaveform] Created raw video with ID:', rawVideoId);
+      if (!existingRawVideo) {
+        console.warn('[useAudioWaveform] No raw video found for waveform cache:', videoSrc);
+        // Do not create raw video records from waveform processing
+        return;
       }
+
+      console.log(
+        '[useAudioWaveform] Found existing raw video for waveform cache:',
+        existingRawVideo.id
+      );
+      const rawVideoId = existingRawVideo.id;
 
       // Save to database
       await db.execute(
@@ -136,7 +135,7 @@ export function useAudioWaveform() {
           `waveform_${videoPathHash}`,
           rawVideoId, // raw_video_id - now properly associated
           videoPathHash,
-          data.sample_rate,
+          data.sampleRate,
           data.duration,
           JSON.stringify(data.resolutions),
           0, // file_size - will be updated later

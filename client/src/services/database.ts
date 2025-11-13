@@ -1026,10 +1026,52 @@ export async function getRawVideosByProjectId(projectId: string): Promise<RawVid
 
 export async function getRawVideoByPath(filePath: string): Promise<RawVideo | null> {
   const db = await getDatabase();
-  const result = await db.select<RawVideo[]>('SELECT * FROM raw_videos WHERE file_path = ?', [
+
+  // Try exact match first
+  let result = await db.select<RawVideo[]>('SELECT * FROM raw_videos WHERE file_path = ?', [
     filePath,
   ]);
-  return result[0] || null;
+  if (result.length > 0) {
+    return result[0];
+  }
+
+  // If no exact match, try normalized paths for different formats
+  const normalizedInput = filePath.replace(/\\/g, '/').replace(/^file:\/\//, '');
+
+  // Try finding with different path formats
+  const queries = [
+    'SELECT * FROM raw_videos WHERE file_path = ?',
+    'SELECT * FROM raw_videos WHERE REPLACE(file_path, "\\", "/") = ?',
+    'SELECT * FROM raw_videos WHERE REPLACE(REPLACE(file_path, "\\", "/"), "file://", "") = ?',
+    'SELECT * FROM raw_videos WHERE REPLACE(file_path, "/", "\\") = ?',
+  ];
+
+  for (const query of queries) {
+    try {
+      result = await db.select<RawVideo[]>(query, [normalizedInput]);
+      if (result.length > 0) {
+        console.log(`[getRawVideoByPath] Found match using query: ${query}`);
+        return result[0];
+      }
+    } catch (error) {
+      console.warn(`[getRawVideoByPath] Query failed: ${query}`, error);
+    }
+  }
+
+  // Final fallback: try finding videos where the basename matches
+  const inputBasename = filePath.split(/[\\/]/).pop();
+  if (inputBasename) {
+    result = await db.select<RawVideo[]>(
+      'SELECT * FROM raw_videos WHERE original_filename = ? OR file_path LIKE ?',
+      [inputBasename, `%/${inputBasename}`]
+    );
+    if (result.length > 0) {
+      console.log(`[getRawVideoByPath] Found match using basename: ${inputBasename}`);
+      return result[0];
+    }
+  }
+
+  return null;
 }
 
 export async function updateRawVideo(
