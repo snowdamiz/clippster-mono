@@ -73,25 +73,13 @@
   import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
   import { useAudioWaveform } from '@/composables/useAudioWaveform';
   import { calculateWaveformParameters, createThrottledRenderer } from '@/utils/audioWaveformUtils';
+  import type { TimelineVideoTrackProps, TimelineVideoTrackEmits } from '../types';
 
-  interface Props {
-    videoSrc: string | null;
-    currentTime: number;
-    duration: number;
-    zoomLevel?: number; // Added zoom level support
-  }
-
-  const props = withDefaults(defineProps<Props>(), {
+  const props = withDefaults(defineProps<TimelineVideoTrackProps>(), {
     zoomLevel: 1,
   });
 
-  interface Emits {
-    (e: 'videoTrackClick', event: MouseEvent): void;
-    (e: 'timelineTrackHover', event: MouseEvent): void;
-    (e: 'timelineMouseLeave'): void;
-  }
-
-  const emit = defineEmits<Emits>();
+  const emit = defineEmits<TimelineVideoTrackEmits>();
 
   // Canvas ref for waveform rendering
   const waveformCanvas = ref<HTMLCanvasElement | null>(null);

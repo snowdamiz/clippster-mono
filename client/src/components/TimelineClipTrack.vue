@@ -191,89 +191,10 @@
 
 <script setup lang="ts">
   import { ref } from 'vue';
-  import {
-    formatDuration,
-    generateClipGradient,
-    getSegmentDisplayTime,
-    type ClipSegment,
-  } from '../utils/timelineUtils';
+  import { formatDuration, generateClipGradient, getSegmentDisplayTime } from '../utils/timelineUtils';
+  import type { TimelineClipTrackProps } from '../types';
 
-  interface Clip {
-    id: string;
-    title: string;
-    filename: string;
-    type: 'continuous' | 'spliced';
-    segments: ClipSegment[];
-    total_duration: number;
-    combined_transcript: string;
-    virality_score: number;
-    reason: string;
-    socialMediaPost: string;
-    run_number?: number;
-    run_color?: string;
-  }
-
-  interface Props {
-    clips: Clip[];
-    duration: number;
-    currentlyPlayingClipId?: string | null;
-    hoveredClipId?: string | null;
-    hoveredTimelineClipId?: string | null;
-    selectedSegmentKeys?: Set<string>;
-    isMovingSegment?: boolean;
-    segmentMoveDirection?: 'left' | 'right' | null;
-    isDraggingSegment: boolean;
-    draggedSegmentInfo?: {
-      clipId: string;
-      segmentIndex: number;
-      originalStartTime: number;
-      originalEndTime: number;
-      originalMouseX: number;
-      dragStartTime: number;
-      currentStartTime: number;
-      currentEndTime: number;
-      tooltipX?: number;
-      tooltipY?: number;
-    } | null;
-    isResizingSegment: boolean;
-    resizeHandleInfo?: {
-      clipId: string;
-      segmentIndex: number;
-      handleType: 'left' | 'right';
-      originalStartTime: number;
-      originalEndTime: number;
-      originalMouseX: number;
-      resizeStartTime: number;
-      currentStartTime: number;
-      currentEndTime: number;
-      minStartTime: number;
-      maxEndTime: number;
-      tooltipX?: number;
-      tooltipY?: number;
-    } | null;
-    isCutToolActive: boolean;
-    cutHoverInfo?: {
-      clipId: string;
-      segmentIndex: number;
-      cutTime: number;
-      cutPosition: number;
-      cursorPosition: number;
-    } | null;
-    getSegmentAdjacency: (clipId: string, segmentIndex: number) => { hasPrevious: boolean; hasNext: boolean };
-    setTimelineClipRef: (el: any, clipId: string) => void;
-    onSegmentHoverForCut: (event: MouseEvent, clipId: string, segmentIndex: number, segment: ClipSegment) => void;
-    onSegmentClickForCut: (event: MouseEvent, clipId: string, segmentIndex: number, segment: ClipSegment) => void;
-    onSegmentMouseDown: (event: MouseEvent, clipId: string, segmentIndex: number, segment: ClipSegment) => void;
-    onResizeMouseDown: (
-      event: MouseEvent,
-      clipId: string,
-      segmentIndex: number,
-      segment: ClipSegment,
-      handleType: 'left' | 'right'
-    ) => void;
-  }
-
-  defineProps<Props>();
+  defineProps<TimelineClipTrackProps>();
 
   interface Emits {
     (e: 'timelineClipClick', clipId: string): void;

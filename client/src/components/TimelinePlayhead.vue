@@ -47,22 +47,10 @@
 
 <script setup lang="ts">
   import { ref } from 'vue';
+  import type { TimelinePlayheadProps, TimelinePlayheadEmits } from '../types';
 
-  interface Props {
-    videoSrc: string | null;
-    duration: number;
-    position: number;
-    timelineBoundsTop: number;
-    timelineBoundsBottom: number;
-    isCutToolActive?: boolean;
-  }
-
-  interface Emits {
-    (e: 'playheadDragStart', event: MouseEvent): void;
-  }
-
-  defineProps<Props>();
-  const emit = defineEmits<Emits>();
+  defineProps<TimelinePlayheadProps>();
+  const emit = defineEmits<TimelinePlayheadEmits>();
 
   // Local state for hover and drag
   const isHovered = ref(false);

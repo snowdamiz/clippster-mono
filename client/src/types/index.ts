@@ -95,6 +95,117 @@ export interface TimelineEmits {
   (e: 'refreshClipsData'): void;
 }
 
+export interface TimelineClipTrackProps {
+  clips: Clip[];
+  duration: number;
+  currentlyPlayingClipId?: string | null;
+  hoveredClipId?: string | null;
+  hoveredTimelineClipId?: string | null;
+  selectedSegmentKeys?: Set<string>;
+  isMovingSegment?: boolean;
+  segmentMoveDirection?: 'left' | 'right' | null;
+  isDraggingSegment: boolean;
+  draggedSegmentInfo?: DraggedSegmentInfo | null;
+  isResizingSegment: boolean;
+  resizeHandleInfo?: ResizeHandleInfo | null;
+  isCutToolActive: boolean;
+  cutHoverInfo?: CutHoverInfo | null;
+  getSegmentAdjacency: (
+    clipId: string,
+    segmentIndex: number
+  ) => { hasPrevious: boolean; hasNext: boolean };
+  setTimelineClipRef: (el: any, clipId: string) => void;
+  onSegmentHoverForCut: (
+    event: MouseEvent,
+    clipId: string,
+    segmentIndex: number,
+    segment: ClipSegment
+  ) => void;
+  onSegmentClickForCut: (
+    event: MouseEvent,
+    clipId: string,
+    segmentIndex: number,
+    segment: ClipSegment
+  ) => void;
+  onSegmentMouseDown: (
+    event: MouseEvent,
+    clipId: string,
+    segmentIndex: number,
+    segment: ClipSegment
+  ) => void;
+  onResizeMouseDown: (
+    event: MouseEvent,
+    clipId: string,
+    segmentIndex: number,
+    segment: ClipSegment,
+    handleType: 'left' | 'right'
+  ) => void;
+}
+
+export interface TimelineVideoTrackProps {
+  videoSrc: string | null;
+  currentTime: number;
+  duration: number;
+  zoomLevel?: number;
+}
+
+export interface TimelineVideoTrackEmits {
+  (e: 'videoTrackClick', event: MouseEvent): void;
+  (e: 'timelineTrackHover', event: MouseEvent): void;
+  (e: 'timelineMouseLeave'): void;
+}
+
+export interface MediaPanelProps {
+  transcriptCollapsed: boolean;
+  clipsCollapsed: boolean;
+  isGenerating?: boolean;
+  generationProgress?: number;
+  generationStage?: string;
+  generationMessage?: string;
+  generationError?: string;
+  projectId?: string;
+  hoveredTimelineClipId?: string | null;
+  playingClipId?: string | null;
+  isPlayingSegments?: boolean;
+  videoDuration?: number; // Duration in seconds
+  currentTime?: number; // Current video playback time in seconds
+}
+
+export interface MediaPanelEmits {
+  (e: 'clipHover', clipId: string): void;
+  (e: 'clipLeave'): void;
+  (e: 'detectClips'): void;
+  (e: 'scrollToTimeline'): void;
+  (e: 'deleteClip', clipId: string): void;
+  (e: 'playClip', clip: any): void; // Using any for ClipWithVersion for now
+  (e: 'seekVideo', time: number): void;
+}
+
+export interface TimelinePlayheadProps {
+  videoSrc: string | null;
+  duration: number;
+  position: number;
+  timelineBoundsTop: number;
+  timelineBoundsBottom: number;
+  isCutToolActive?: boolean;
+}
+
+export interface TimelinePlayheadEmits {
+  (e: 'playheadDragStart', event: MouseEvent): void;
+}
+
+export interface TimelineTooltipProps {
+  showTooltip: boolean;
+  position: TooltipPosition;
+  time: number;
+  transcriptWords: WordInfo[];
+  centerWordIndex: number;
+  isPanning: boolean;
+  isDragging: boolean;
+  isDraggingSegment: boolean;
+  isResizingSegment: boolean;
+}
+
 // Timeline State Types
 export interface DraggedSegmentInfo {
   clipId: string;

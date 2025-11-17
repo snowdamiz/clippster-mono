@@ -495,6 +495,7 @@
     type ClipDetectionSession,
     type Prompt,
   } from '@/services/database';
+  import type { MediaPanelProps, MediaPanelEmits } from '../types';
   import {
     PlayIcon,
     BrainIcon,
@@ -512,23 +513,7 @@
   } from 'lucide-vue-next';
   import TranscriptPanel from './TranscriptPanel.vue';
 
-  interface Props {
-    transcriptCollapsed: boolean;
-    clipsCollapsed: boolean;
-    isGenerating?: boolean;
-    generationProgress?: number;
-    generationStage?: string;
-    generationMessage?: string;
-    generationError?: string;
-    projectId?: string;
-    hoveredTimelineClipId?: string | null;
-    playingClipId?: string | null;
-    isPlayingSegments?: boolean;
-    videoDuration?: number; // Duration in seconds
-    currentTime?: number; // Current video playback time in seconds
-  }
-
-  const props = withDefaults(defineProps<Props>(), {
+  const props = withDefaults(defineProps<MediaPanelProps>(), {
     isGenerating: false,
     generationProgress: 0,
     generationStage: '',
@@ -540,17 +525,7 @@
     currentTime: 0,
   });
 
-  interface Emits {
-    (e: 'clipHover', clipId: string): void;
-    (e: 'clipLeave'): void;
-    (e: 'detectClips'): void;
-    (e: 'scrollToTimeline'): void;
-    (e: 'deleteClip', clipId: string): void;
-    (e: 'playClip', clip: ClipWithVersion): void;
-    (e: 'seekVideo', time: number): void;
-  }
-
-  const emit = defineEmits<Emits>();
+  const emit = defineEmits<MediaPanelEmits>();
 
   // Tab state
   const activeTab = ref('clips');

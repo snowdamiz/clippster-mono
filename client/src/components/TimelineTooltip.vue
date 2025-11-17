@@ -37,20 +37,9 @@
 
 <script setup lang="ts">
   import { formatDuration } from '../utils/timelineUtils';
+  import type { TimelineTooltipProps } from '../types';
 
-  interface Props {
-    showTooltip: boolean;
-    position: { x: number; y: number };
-    time: number;
-    transcriptWords: Array<{ word: string; start: number; end: number }>;
-    centerWordIndex: number;
-    isPanning: boolean;
-    isDragging: boolean;
-    isDraggingSegment: boolean;
-    isResizingSegment: boolean;
-  }
-
-  defineProps<Props>();
+  defineProps<TimelineTooltipProps>();
 </script>
 
 <style scoped>
