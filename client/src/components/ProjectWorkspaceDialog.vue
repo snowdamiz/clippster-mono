@@ -39,13 +39,19 @@
             style="flex: 1; overflow: hidden; max-height: calc(100% - 170px)"
           >
             <!-- Video Player Section -->
-            <div class="w-3/5 min-w-0 p-8 border-r border-border flex flex-col">
+            <div class="w-3/5 min-w-0 p-6 border-r border-border flex flex-col">
+              <!-- Aspect Ratio Selector -->
+              <div class="mb-3">
+                <AspectRatioSelector @ratio-changed="handleRatioChanged" />
+              </div>
               <!-- Video Player Container -->
               <VideoPlayer
                 :video-src="videoSrc"
                 :video-loading="videoLoading"
                 :video-error="videoError"
                 :is-playing="isPlaying"
+                :aspect-ratio="selectedAspectRatio"
+                :focal-point="{ x: 0.5, y: 0.5 }"
                 @togglePlayPause="togglePlayPause"
                 @timeUpdate="onTimeUpdate"
                 @loadedMetadata="onLoadedMetadata"
@@ -185,6 +191,7 @@
   import ClipGenerationProgress from './ClipGenerationProgress.vue';
   import ConfirmationModal from './ConfirmationModal.vue';
   import ClipDetectionConfirmDialog from './ClipDetectionConfirmDialog.vue';
+  import AspectRatioSelector from './AspectRatioSelector.vue';
   import { useVideoPlayer } from '@/composables/useVideoPlayer';
   import { useProgressSocket } from '@/composables/useProgressSocket';
   import { useToast } from '@/composables/useToast';
@@ -233,6 +240,9 @@
 
   // Dialog element ref for height tracking
   const dialogElementRef = ref<HTMLElement | null>(null);
+
+  // Aspect ratio state
+  const selectedAspectRatio = ref({ width: 16, height: 9 });
 
   // Use video player composable
   const projectRef = computed(() => props.project);
@@ -713,6 +723,11 @@
 
   function getCurrentPlayingClipId(): string | null {
     return currentlyPlayingClipId.value;
+  }
+
+  // Handle aspect ratio change
+  function handleRatioChanged(ratio: { width: number; height: number }) {
+    selectedAspectRatio.value = { width: ratio.width, height: ratio.height };
   }
 
   // Function to handle clip playback
