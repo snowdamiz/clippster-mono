@@ -216,7 +216,7 @@
 <style scoped>
   .titlebar {
     height: 32px;
-    background: #070707;
+    background: #202020;
     color: #ffffff;
     display: flex;
     align-items: center;
@@ -227,38 +227,37 @@
     left: 0;
     right: 0;
     z-index: 9999;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid #3c3c3c;
     box-sizing: border-box;
   }
 
   .titlebar-dark {
-    background: #0f0f0f;
-    border-bottom-color: #2a2a2a;
+    background: #070707;
+    border-bottom-color: #333;
   }
 
   /* Linux-specific styling */
   .titlebar-linux {
-    background: #2c2c2c;
-    border-bottom: 1px solid #404040;
-    height: 34px; /* Slightly taller for GNOME standards */
+    background: #202020;
+    border-bottom: 1px solid #3c3c3c;
+    height: 32px;
   }
 
   .titlebar-linux.titlebar-dark {
-    background: #1a1a1a;
+    background: #070707;
     border-bottom-color: #333;
   }
 
   /* macOS-specific styling */
   .titlebar-macos {
-    background: rgba(246, 246, 246, 0.8);
-    backdrop-filter: blur(20px);
-    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    background: #202020;
+    border-bottom: 1px solid #3c3c3c;
     height: 32px;
   }
 
   .titlebar-macos.titlebar-dark {
-    background: rgba(28, 28, 30, 0.8);
-    border-bottom-color: rgba(255, 255, 255, 0.1);
+    background: #070707;
+    border-bottom-color: #333;
   }
 
   .titlebar-drag-region {
@@ -341,17 +340,18 @@
 
   /* Linux window controls styling */
   .titlebar-controls-linux {
-    gap: 2px;
-    padding-right: 8px;
+    gap: 6px;
+    padding-right: 12px;
+    align-items: center;
   }
 
   .linux-minimize {
-    width: 24px;
-    height: 24px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     background: #efbf5c;
     border: none;
-    margin: 0 2px;
+    position: relative;
   }
 
   .linux-minimize:hover {
@@ -359,12 +359,12 @@
   }
 
   .linux-maximize {
-    width: 24px;
-    height: 24px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     background: #57c255;
     border: none;
-    margin: 0 2px;
+    position: relative;
   }
 
   .linux-maximize:hover {
@@ -372,12 +372,12 @@
   }
 
   .linux-close {
-    width: 24px;
-    height: 24px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     background: #ff5f56;
     border: none;
-    margin: 0 2px;
+    position: relative;
   }
 
   .linux-close:hover {
@@ -389,42 +389,6 @@
   .linux-maximize .titlebar-icon,
   .linux-close .titlebar-icon {
     display: none;
-  }
-
-  /* Use CSS pseudo-elements for Linux window control icons */
-  .linux-minimize::after {
-    content: '';
-    position: absolute;
-    width: 8px;
-    height: 2px;
-    background: #7a5c00;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    border-radius: 1px;
-  }
-
-  .linux-maximize::after {
-    content: '';
-    position: absolute;
-    width: 8px;
-    height: 8px;
-    border: 2px solid #2a5020;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    border-radius: 1px;
-  }
-
-  .linux-close::after {
-    content: '×';
-    position: absolute;
-    color: #8b0000;
-    font-size: 14px;
-    font-weight: bold;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
   }
 
   /* Windows-specific styling */
@@ -452,19 +416,21 @@
     gap: 8px;
     padding: 0;
     -webkit-app-region: no-drag;
+    height: auto;
   }
 
   /* macOS traffic light buttons */
   .macos-close,
   .macos-minimize,
   .macos-maximize {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     border: none;
     cursor: pointer;
     position: relative;
     transition: all 0.2s ease;
+    flex-shrink: 0;
   }
 
   .macos-close {
@@ -497,40 +463,6 @@
     border-color: #2bc245;
   }
 
-  /* macOS button icons using CSS */
-  .macos-close::after {
-    content: '×';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 10px;
-    color: rgba(0, 0, 0, 0.5);
-    font-weight: bold;
-  }
-
-  .macos-minimize::after {
-    content: '−';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 12px;
-    color: rgba(0, 0, 0, 0.5);
-    font-weight: bold;
-  }
-
-  .macos-maximize::after {
-    content: '+';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 10px;
-    color: rgba(0, 0, 0, 0.5);
-    font-weight: bold;
-  }
-
   @media (any-hover: none) {
     .titlebar-button {
       width: 46px;
@@ -540,8 +472,8 @@
   /* macOS-specific adjustments for better theme integration */
   @media (prefers-color-scheme: dark) {
     .titlebar-macos:not(.titlebar-dark) {
-      background: rgba(28, 28, 30, 0.9);
-      border-bottom-color: rgba(255, 255, 255, 0.15);
+      background: #070707;
+      border-bottom-color: #333;
     }
   }
 
