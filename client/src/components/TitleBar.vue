@@ -1,11 +1,14 @@
 <template>
   <!-- Custom titlebar for all platforms with OS-specific styling -->
-  <div class="titlebar" :class="{
-    'titlebar-dark': isDark,
-    'titlebar-linux': isLinux,
-    'titlebar-windows': isWindows,
-    'titlebar-macos': isMacOS
-  }">
+  <div
+    class="titlebar"
+    :class="{
+      'titlebar-dark': isDark,
+      'titlebar-linux': isLinux,
+      'titlebar-windows': isWindows,
+      'titlebar-macos': isMacOS,
+    }"
+  >
     <!-- Drag region -->
     <div class="titlebar-drag-region" data-tauri-drag-region>
       <!-- App logo -->
@@ -15,23 +18,27 @@
     </div>
 
     <!-- Window controls -->
-    <div class="titlebar-controls" :class="{
-      'titlebar-controls-linux': isLinux,
-      'titlebar-controls-windows': isWindows,
-      'titlebar-controls-macos': isMacOS
-    }">
+    <div
+      class="titlebar-controls"
+      :class="{
+        'titlebar-controls-linux': isLinux,
+        'titlebar-controls-windows': isWindows,
+        'titlebar-controls-macos': isMacOS,
+      }"
+    >
       <!-- macOS controls (left side) -->
       <template v-if="isMacOS">
-        <button class="titlebar-button titlebar-close macos-close" @click="closeWindow" title="Close">
-        </button>
-        <button class="titlebar-button titlebar-minimize macos-minimize" @click="minimizeWindow" title="Minimize">
-        </button>
+        <button class="titlebar-button titlebar-close macos-close" @click="closeWindow" title="Close"></button>
+        <button
+          class="titlebar-button titlebar-minimize macos-minimize"
+          @click="minimizeWindow"
+          title="Minimize"
+        ></button>
         <button
           class="titlebar-button titlebar-maximize macos-maximize"
           @click="toggleMaximize"
           :title="isMaximized ? 'Restore' : 'Maximize'"
-        >
-        </button>
+        ></button>
       </template>
 
       <!-- Linux controls (right side) -->
@@ -65,9 +72,7 @@
           @click="toggleMaximize"
           :title="isDark ? (isMaximized ? 'Restore' : 'Maximize') : ''"
         >
-          <!-- Maximize icon (square) -->
           <img v-if="!isMaximized" src="/maximize.svg" alt="Maximize" class="titlebar-icon" />
-          <!-- Restore icon (overlapping squares) -->
           <img v-else src="/shrink.svg" alt="Restore" class="titlebar-icon" />
         </button>
 

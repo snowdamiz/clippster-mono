@@ -2716,6 +2716,7 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
       LEFT JOIN clip_versions cv ON c.id = cv.clip_id
       LEFT JOIN clip_detection_sessions cds ON cv.session_id = cds.id
       WHERE c.project_id = ?
+      ORDER BY cds.created_at DESC, c.created_at DESC
     `,
       [projectId, projectId]
     );
