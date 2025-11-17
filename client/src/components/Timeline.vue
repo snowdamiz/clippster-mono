@@ -214,7 +214,7 @@
     splitClipSegment,
     deleteClipSegment,
   } from '../services/database';
-  import { debounce, throttle, type ClipSegment } from '../utils/timelineUtils';
+  import { debounce, throttle } from '../utils/timelineUtils';
   import { createSeekEvent } from '../utils/videoSeekUtils';
   import { TIMELINE_HEIGHTS, TIMELINE_BOUNDS, TRACK_DIMENSIONS, SELECTORS } from '../utils/timelineConstants';
   import { TIMELINE_CONSTANTS, SEEK_CONFIG } from '../constants/timelineConstants';
@@ -226,37 +226,21 @@
     calculateResizeConstraints as calcResizeConstraints,
   } from '../utils/timelineConstraints';
   import { createCutHoverInfo } from '../utils/timelineCut';
+  import type {
+    Clip,
+    ClipSegment,
+    TimelineProps,
+    TimelineEmits,
+    DraggedSegmentInfo,
+    ResizeHandleInfo,
+    CutHoverInfo,
+    MovementConstraints,
+    SegmentToDelete,
+    SegmentsToMerge,
+    TooltipPosition,
+  } from '../types';
 
-  interface Clip {
-    id: string;
-    title: string;
-    filename: string;
-    type: 'continuous' | 'spliced';
-    segments: ClipSegment[];
-    total_duration: number;
-    combined_transcript: string;
-    virality_score: number;
-    reason: string;
-    socialMediaPost: string;
-    run_number?: number;
-    run_color?: string;
-  }
-
-  interface Props {
-    videoSrc: string | null;
-    currentTime: number;
-    duration: number;
-    timelineHoverTime: number | null;
-    timelineHoverPosition: number;
-    clips?: Clip[];
-    hoveredClipId?: string | null;
-    hoveredTimelineClipId?: string | null;
-    currentlyPlayingClipId?: string | null;
-    projectId?: string | null;
-    dialogHeight?: number | null;
-  }
-
-  const props = withDefaults(defineProps<Props>(), {
+  const props = withDefaults(defineProps<TimelineProps>(), {
     clips: () => [],
   });
 
@@ -303,19 +287,7 @@
   // Computed property to check if merge is possible
   const canMergeSegments = computed(() => canMergeSelectedSegments());
 
-  interface Emits {
-    (e: 'seekTimeline', event: MouseEvent): void;
-    (e: 'timelineTrackHover', event: MouseEvent): void;
-    (e: 'timelineMouseLeave'): void;
-    (e: 'timelineClipHover', clipId: string): void;
-    (e: 'timelineSegmentClick', clipId: string, segmentIndex: number, event?: MouseEvent): void;
-    (e: 'scrollToMediaPanel', clipId: string): void;
-    (e: 'zoomChanged', zoomLevel: number): void;
-    (e: 'segmentUpdated', clipId: string, segmentIndex: number, newStartTime: number, newEndTime: number): void;
-    (e: 'refreshClipsData'): void;
-  }
-
-  const emit = defineEmits<Emits>();
+  const emit = defineEmits<TimelineEmits>();
 
   // Refs for scroll containers
   const timelineScrollContainer = ref<HTMLElement | null>(null);
@@ -440,7 +412,7 @@
 
   // Custom tooltip state
   const showTimelineTooltip = ref(false);
-  const tooltipPosition = ref({ x: 0, y: 0 });
+  const tooltipPosition = ref<TooltipPosition>({ x: 0, y: 0 });
   const tooltipTime = ref(0);
 
   // Segment hover state
@@ -451,11 +423,11 @@
 
   // Delete segment confirmation dialog state
   const showDeleteSegmentDialog = ref(false);
-  const segmentToDelete = ref<{ clipId: string; segmentIndex: number; clipTitle: string } | null>(null);
+  const segmentToDelete = ref<SegmentToDelete | null>(null);
 
   // Merge segments confirmation dialog state
   const showMergeSegmentsDialog = ref(false);
-  const segmentsToMerge = ref<{ clipId: string; segmentIndices: number[]; clipTitle: string } | null>(null);
+  const segmentsToMerge = ref<SegmentsToMerge | null>(null);
 
   // Warning dialog for last segment protection
   const showWarningDialog = ref(false);
@@ -463,36 +435,11 @@
 
   // Segment dragging state
   const isDraggingSegment = ref(false);
-  const draggedSegmentInfo = ref<{
-    clipId: string;
-    segmentIndex: number;
-    originalStartTime: number;
-    originalEndTime: number;
-    originalMouseX: number;
-    dragStartTime: number;
-    currentStartTime: number;
-    currentEndTime: number;
-    tooltipX?: number;
-    tooltipY?: number;
-  } | null>(null);
+  const draggedSegmentInfo = ref<DraggedSegmentInfo | null>(null);
 
   // Segment resizing state
   const isResizingSegment = ref(false);
-  const resizeHandleInfo = ref<{
-    clipId: string;
-    segmentIndex: number;
-    handleType: 'left' | 'right';
-    originalStartTime: number;
-    originalEndTime: number;
-    originalMouseX: number;
-    resizeStartTime: number;
-    currentStartTime: number;
-    currentEndTime: number;
-    minStartTime: number;
-    maxEndTime: number;
-    tooltipX?: number;
-    tooltipY?: number;
-  } | null>(null);
+  const resizeHandleInfo = ref<ResizeHandleInfo | null>(null);
 
   // Playhead dragging state
   const isDraggingPlayhead = ref(false);
@@ -501,13 +448,7 @@
 
   // Cut tool state
   const isCutToolActive = ref(false);
-  const cutHoverInfo = ref<{
-    clipId: string;
-    segmentIndex: number;
-    cutTime: number;
-    cutPosition: number; // percentage (0-100)
-    cursorPosition: number; // percentage (0-100) for custom cursor position
-  } | null>(null);
+  const cutHoverInfo = ref<CutHoverInfo | null>(null);
 
   // Continuous seeking state
   const isSeeking = ref(false);
@@ -523,10 +464,7 @@
   const SEGMENT_MOVE_DELAY = 100; // ms between moves when key is held down
 
   // Movement constraints
-  const movementConstraints = ref<{
-    minStartTime: number;
-    maxEndTime: number;
-  }>({
+  const movementConstraints = ref<MovementConstraints>({
     minStartTime: 0,
     maxEndTime: Infinity,
   });
@@ -2018,7 +1956,7 @@
       // For now, we'll use the existing database structure by deleting intermediate segments
       // and updating the first and last segments to cover the merged range
 
-      const clip = localClips.value.find((c) => c.id === clipId);
+      const clip: Clip | undefined = localClips.value.find((c) => c.id === clipId);
       if (!clip || !clip.segments) throw new Error('Clip not found');
 
       // Sort indices in descending order for deletion to avoid index conflicts
