@@ -15,17 +15,9 @@
 </template>
 
 <script setup lang="ts">
-  interface Props {
-    showLine: boolean;
-    position: number;
-    timelineBoundsTop: number;
-    timelineBoundsBottom: number;
-    isPanning: boolean;
-    isDragging: boolean;
-    isCutToolActive: boolean;
-  }
+  import type { TimelineHoverLineProps } from '../types';
 
-  defineProps<Props>();
+  defineProps<TimelineHoverLineProps>();
 </script>
 
 <style scoped>

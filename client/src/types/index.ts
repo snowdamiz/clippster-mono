@@ -206,6 +206,16 @@ export interface TimelineTooltipProps {
   isResizingSegment: boolean;
 }
 
+export interface TimelineHoverLineProps {
+  showLine: boolean;
+  position: number;
+  timelineBoundsTop: number;
+  timelineBoundsBottom: number;
+  isPanning: boolean;
+  isDragging: boolean;
+  isCutToolActive: boolean;
+}
+
 // Timeline State Types
 export interface DraggedSegmentInfo {
   clipId: string;
@@ -270,6 +280,156 @@ export interface TimelineBounds {
 export interface TooltipPosition {
   x: number;
   y: number;
+}
+
+// Timeline Interaction Types
+export interface DragSelectionState {
+  isDragging: boolean;
+  dragStartX: number;
+  dragEndX: number;
+  dragStartPercent: number;
+  dragEndPercent: number;
+}
+
+export interface PanState {
+  isPanning: boolean;
+  panStartX: number;
+  panScrollLeft: number;
+}
+
+export interface ZoomState {
+  zoomLevel: number;
+  minZoom: number;
+  maxZoom: number;
+  zoomStep: number;
+}
+
+// Audio Waveform Types
+export interface WaveformPeak {
+  min: number;
+  max: number;
+}
+
+export interface WaveformResolution {
+  peaks: WaveformPeak[];
+  peakCount: number;
+  samplesPerPeak: number;
+}
+
+export interface WaveformData {
+  sampleRate: number;
+  duration: number;
+  resolutions: Record<string, WaveformResolution>;
+}
+
+export interface WaveformRenderOptions {
+  width: number;
+  height: number;
+  peaks: WaveformPeak[];
+  barWidth?: number;
+  barSpacing?: number;
+  color?: string;
+  backgroundColor?: string;
+  opacity?: number;
+  style?: 'bars' | 'line' | 'filled';
+  amplitude?: number; // 0-1, multiplier for peak height
+}
+
+export interface WaveformRenderContext {
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+}
+
+// Additional database types that are commonly used
+export interface RawVideo {
+  id: string;
+  project_id: string;
+  file_path: string;
+  filename: string;
+  file_size: number;
+  duration: number | null;
+  width: number | null;
+  height: number | null;
+  fps: number | null;
+  codec: string | null;
+  bitrate: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface IntroOutro {
+  id: string;
+  type: 'intro' | 'outro';
+  name: string;
+  file_path: string;
+  duration: number | null;
+  thumbnail_path: string | null;
+  thumbnail_generation_status: 'pending' | 'processing' | 'completed' | 'failed' | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export type VideoLike = RawVideo | IntroOutro;
+
+// Video Player Dialog Types
+export interface VideoPlayerDialogProps {
+  video: VideoLike | null;
+  showVideoPlayer: boolean;
+}
+
+export interface VideoPlayerDialogEmits {
+  (e: 'close'): void;
+}
+
+// Time Range Picker Types
+export interface TimeRangePickerProps {
+  totalDuration: number; // in seconds
+  modelValue?: {
+    startTime: number;
+    endTime: number;
+  };
+}
+
+export interface TimeRangePickerEmits {
+  (e: 'update:modelValue', value: { startTime: number; endTime: number }): void;
+  (e: 'change', value: { startTime: number; endTime: number }): void;
+}
+
+// Download Types
+export interface DownloadProgress {
+  download_id: string;
+  progress: number;
+  current_time?: number;
+  total_time?: number;
+  status: string;
+}
+
+export interface DownloadResult {
+  download_id: string;
+  success: boolean;
+  file_path?: string;
+  thumbnail_path?: string;
+  duration?: number;
+  width?: number;
+  height?: number;
+  codec?: string;
+}
+
+export interface ActiveDownload {
+  id: string;
+  title: string;
+  mintId: string;
+  progress: DownloadProgress;
+  result?: DownloadResult;
+  rawVideoId?: string;
+  // Segment tracking information
+  sourceClipId?: string;
+  segmentNumber?: number;
+  isSegment?: boolean;
+  segmentStartTime?: number;
+  segmentEndTime?: number;
+  // Queue and video info
+  videoUrl?: string;
 }
 
 // Phoenix types are defined in phoenix.d.ts
