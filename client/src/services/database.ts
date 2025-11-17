@@ -2658,6 +2658,17 @@ export async function updateClipBuildStatus(
 
     await db.execute(query, params);
 
+    // If build is completed and we have a thumbnail path, also create a thumbnail record
+    if (buildStatus === 'completed' && additionalFields?.builtThumbnailPath) {
+      try {
+        await createThumbnail(clipId, additionalFields.builtThumbnailPath);
+        console.log(`[Database] Created thumbnail record for clip ${clipId}: ${additionalFields.builtThumbnailPath}`);
+      } catch (thumbnailError) {
+        console.warn(`[Database] Failed to create thumbnail record for clip ${clipId}:`, thumbnailError);
+        // Don't fail the whole operation if thumbnail creation fails
+      }
+    }
+
     console.log(`[Database] Updated clip build status for ${clipId}: ${buildStatus}`);
   } catch (error) {
     console.error('[Database] Failed to update clip build status:', error);

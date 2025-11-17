@@ -2731,8 +2731,7 @@ async fn generate_clip_thumbnail(
             "-i", clip_path.to_str().ok_or("Invalid clip path")?,
             "-ss", "00:00:01",  // Seek to 1 second
             "-vframes", "1",
-            "-vf", "scale=320:240:force_original_aspect_ratio=decrease",
-            "-q:v", "2",
+            "-vf", "scale=320:-1",
             "-y",
             thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
         ])
@@ -2954,8 +2953,7 @@ async fn generate_clip_thumbnail_simple(
             "-i", clip_path.to_str().ok_or("Invalid clip path")?,
             "-ss", "00:00:01",  // Seek to 1 second
             "-vframes", "1",
-            "-vf", "scale=320:240:force_original_aspect_ratio=decrease",
-            "-q:v", "2",
+            "-vf", "scale=320:-1",
             "-y",
             thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
         ])
