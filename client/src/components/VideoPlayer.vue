@@ -8,8 +8,6 @@
       class="video-crop-container"
       :style="{
         aspectRatio: `${aspectRatio.width}/${aspectRatio.height}`,
-        width: aspectRatio.width / aspectRatio.height > 1 ? '100%' : 'auto',
-        height: aspectRatio.width / aspectRatio.height <= 1 ? '100%' : 'auto',
         maxWidth: '100%',
         maxHeight: '100%',
         position: 'relative',
