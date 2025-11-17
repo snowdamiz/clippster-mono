@@ -1,269 +1,63 @@
-import Database from '@tauri-apps/plugin-sql';
-import { invoke } from '@tauri-apps/api/core';
+// Re-export core functionality
+export { initDatabase, getDatabase, timestamp, generateId } from './database/core';
 
-let db: Database | null = null;
-let initializing: Promise<Database> | null = null;
+// Re-export types
+export type {
+  Project,
+  Prompt,
+  Transcript,
+  ChunkedTranscript,
+  TranscriptChunk,
+  TranscriptSegment,
+  IntroOutro,
+  Clip,
+  Thumbnail,
+  RawVideo,
+  ClipDetectionSession,
+  ClipVersion,
+  ClipSegment,
+  ClipWithVersion,
+} from './database/types';
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+// Re-export project functions
+export {
+  createProject,
+  getProject,
+  getAllProjects,
+  updateProject,
+  deleteProject,
+  hasRawVideosForProject,
+  hasClipsForProject,
+  hasDetectedOrGeneratedClips,
+} from './database/projects';
 
-async function waitForRuntimeReady(timeoutMs = 7000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      // Any simple invoke ensures the runtime is ready for this window
-      await invoke<string>('greet', { name: 'db-init' });
-      return;
-    } catch {
-      // Not ready yet
-    }
-    await sleep(100);
-  }
-  throw new Error('Tauri runtime not ready');
-}
+// Re-export prompt functions
+export {
+  createPrompt,
+  getPrompt,
+  getAllPrompts,
+  updatePrompt,
+  deletePrompt,
+  seedDefaultPrompt,
+} from './database/prompts';
 
-// Initialize database connection
-export async function initDatabase() {
-  if (db) return db;
-  if (initializing) return initializing;
-
-  initializing = (async () => {
-    try {
-      await waitForRuntimeReady();
-      const instance = await Database.load('sqlite:clippster_v21.db');
-
-      db = instance;
-      return instance;
-    } catch (error) {
-      // For now, just rethrow the error so we can see what's happening
-      throw error;
-    } finally {
-      initializing = null;
-    }
-  })();
-
-  return initializing;
-}
-
-// Get database instance
-export async function getDatabase() {
-  return await initDatabase();
-}
-
-// Types
-export interface Project {
-  id: string;
-  name: string;
-  description: string | null;
-  thumbnail_path: string | null;
-  created_at: number;
-  updated_at: number;
-}
-
-export interface Prompt {
-  id: string;
-  name: string;
-  content: string;
-  created_at: number;
-  updated_at: number;
-}
-
-export interface Transcript {
-  id: string;
-  raw_video_id: string;
-  raw_json: string;
-  text: string;
-  language: string | null;
-  duration: number | null;
-  created_at: number;
-  updated_at: number;
-}
-
-export interface ChunkedTranscript {
-  id: string;
-  raw_video_id: string;
-  total_chunks: number;
-  chunk_duration_minutes: number;
-  overlap_seconds: number;
-  total_duration: number;
-  language: string | null;
-  is_complete: boolean;
-  created_at: number;
-  updated_at: number;
-}
-
-export interface TranscriptChunk {
-  id: string;
-  chunked_transcript_id: string;
-  chunk_index: number;
-  chunk_id: string;
-  start_time: number;
-  end_time: number;
-  duration: number;
-  raw_json: string;
-  text: string;
-  language: string | null;
-  file_size: number;
-  created_at: number;
-}
-
-export interface TranscriptSegment {
-  id: string;
-  transcript_id: string;
-  clip_id: string | null;
-  start_time: number;
-  end_time: number;
-  text: string;
-  segment_index: number;
-  created_at: number;
-}
-
-export interface IntroOutro {
-  id: string;
-  type: 'intro' | 'outro';
-  name: string;
-  file_path: string;
-  duration: number | null;
-  thumbnail_path: string | null;
-  thumbnail_generation_status: 'pending' | 'processing' | 'completed' | 'failed' | null;
-  created_at: number;
-  updated_at: number;
-}
-
-export interface Clip {
-  id: string;
-  project_id: string;
-  name: string | null;
-  file_path: string;
-  duration: number | null;
-  start_time: number | null;
-  end_time: number | null;
-  order_index: number | null;
-  intro_id: string | null;
-  outro_id: string | null;
-  status: 'detected' | 'generated' | 'processing' | null;
-  // Build status fields
-  build_status: 'pending' | 'building' | 'completed' | 'failed' | null;
-  built_file_path: string | null;
-  built_thumbnail_path: string | null;
-  build_progress: number | null;
-  build_error: string | null;
-  built_at: number | null;
-  built_file_size: number | null;
-  built_duration: number | null;
-  created_at: number;
-  updated_at: number;
-}
-
-export interface Thumbnail {
-  id: string;
-  clip_id: string;
-  file_path: string;
-  width: number | null;
-  height: number | null;
-  created_at: number;
-}
-
-export interface RawVideo {
-  id: string;
-  project_id: string | null;
-  file_path: string;
-  original_filename: string | null;
-  thumbnail_path: string | null;
-  duration: number | null;
-  width: number | null;
-  height: number | null;
-  frame_rate: number | null;
-  codec: string | null;
-  file_size: number | null;
-  original_project_id: string | null;
-  created_at: number;
-  updated_at: number;
-  // Segment tracking fields
-  source_clip_id: string | null;
-  source_mint_id: string | null;
-  segment_number: number | null;
-  is_segment: boolean;
-  segment_start_time: number | null;
-  segment_end_time: number | null;
-}
-
-export interface ClipDetectionSession {
-  id: string;
-  project_id: string;
-  prompt: string;
-  detection_model: string;
-  server_response_id: string | null;
-  quality_score: number | null;
-  total_clips_detected: number;
-  processing_time_ms: number | null;
-  validation_data: string | null;
-  run_color: string;
-  created_at: number;
-}
-
-export interface ClipVersion {
-  id: string;
-  clip_id: string;
-  session_id: string;
-  version_number: number;
-  parent_version_id: string | null;
-  name: string;
-  description: string | null;
-  start_time: number;
-  end_time: number;
-  confidence_score: number | null;
-  relevance_score: number | null;
-  detection_reason: string | null;
-  tags: string | null;
-  change_type: 'detected' | 'modified' | 'deleted';
-  change_description: string | null;
-  created_at: number;
-}
-
-export interface ClipSegment {
-  id: string;
-  clip_version_id: string;
-  segment_index: number;
-  start_time: number;
-  end_time: number;
-  duration: number;
-  transcript: string | null;
-  created_at: number;
-}
-
-export interface ClipWithVersion extends Clip {
-  current_version_id: string | null;
-  detection_session_id: string | null;
-  session_created_at?: number;
-  session_run_color?: string;
-  session_prompt?: string;
-  run_number?: number;
-  // Additional fields from JOIN
-  current_version_name?: string;
-  current_version_description?: string;
-  current_version_start_time?: number;
-  current_version_end_time?: number;
-  current_version_confidence_score?: number;
-  current_version_relevance_score?: number;
-  current_version_detection_reason?: string;
-  current_version_tags?: string;
-  current_version_change_type?: string;
-  current_version_created_at?: number;
-  current_version?: ClipVersion;
-  current_version_segments?: ClipSegment[];
-}
-
-// Helper to generate timestamps
-export function timestamp(): number {
-  return Math.floor(Date.now() / 1000);
-}
-
-// Helper to generate UUIDs (simple version)
-export function generateId(): string {
-  return crypto.randomUUID();
-}
+// Keep the remaining imports for functionality not yet extracted
+import { getDatabase, timestamp, generateId } from './database/core';
+import type {
+  Project,
+  Transcript,
+  TranscriptSegment,
+  IntroOutro,
+  Clip,
+  Thumbnail,
+  RawVideo,
+  ClipDetectionSession,
+  ClipVersion,
+  ClipSegment,
+  ClipWithVersion,
+  ChunkedTranscript,
+  TranscriptChunk,
+} from './database/types';
 
 // Manual migration fallback function
 export async function ensureClipVersioningTables(): Promise<void> {
@@ -377,231 +171,6 @@ export async function ensureClipVersioningTables(): Promise<void> {
     for (const indexSql of indexes) {
       await db.execute(indexSql);
     }
-  } catch (error) {
-    throw error;
-  }
-}
-
-// Project queries
-export async function createProject(name: string, description?: string): Promise<string> {
-  const db = await getDatabase();
-  const id = generateId();
-  const now = timestamp();
-
-  await db.execute(
-    'INSERT INTO projects (id, name, description, thumbnail_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-    [id, name, description || null, null, now, now]
-  );
-
-  return id;
-}
-
-export async function getProject(id: string): Promise<Project | null> {
-  const db = await getDatabase();
-  const result = await db.select<Project[]>('SELECT * FROM projects WHERE id = ?', [id]);
-  return result[0] || null;
-}
-
-export async function getAllProjects(): Promise<Project[]> {
-  const db = await getDatabase();
-  return await db.select<Project[]>('SELECT * FROM projects ORDER BY updated_at DESC');
-}
-
-export async function updateProject(
-  id: string,
-  name?: string,
-  description?: string,
-  thumbnailPath?: string
-): Promise<void> {
-  const db = await getDatabase();
-  const now = timestamp();
-
-  const updates: string[] = [];
-  const values: any[] = [];
-
-  if (name !== undefined) {
-    updates.push('name = ?');
-    values.push(name);
-  }
-  if (description !== undefined) {
-    updates.push('description = ?');
-    values.push(description);
-  }
-  if (thumbnailPath !== undefined) {
-    updates.push('thumbnail_path = ?');
-    values.push(thumbnailPath);
-  }
-
-  updates.push('updated_at = ?');
-  values.push(now);
-  values.push(id);
-
-  await db.execute(`UPDATE projects SET ${updates.join(', ')} WHERE id = ?`, values);
-}
-
-export async function deleteProject(id: string): Promise<void> {
-  const db = await getDatabase();
-
-  // First, disassociate all associated content by setting project_id to NULL
-  // This preserves the content while removing the project association
-
-  try {
-    // Disassociate raw videos from this project (has project_id)
-    await db.execute('UPDATE raw_videos SET project_id = NULL WHERE project_id = ?', [id]);
-  } catch (error) {
-    console.warn('[Database] raw_videos project_id column update failed:', error);
-  }
-
-  try {
-    // Disassociate clips from this project (has project_id)
-    await db.execute('UPDATE clips SET project_id = NULL WHERE project_id = ?', [id]);
-  } catch (error) {
-    console.warn('[Database] clips project_id column update failed:', error);
-  }
-
-  try {
-    // Disassociate clip detection sessions from this project (has project_id)
-    await db.execute('UPDATE clip_detection_sessions SET project_id = NULL WHERE project_id = ?', [
-      id,
-    ]);
-  } catch (error) {
-    console.warn('[Database] clip_detection_sessions project_id column update failed:', error);
-  }
-
-  // Note: transcripts table was changed in migration 4 to use raw_video_id instead of project_id
-  // So we don't need to update transcripts here
-
-  // Now safely delete the project
-  await db.execute('DELETE FROM projects WHERE id = ?', [id]);
-}
-
-export async function hasRawVideosForProject(projectId: string): Promise<boolean> {
-  const db = await getDatabase();
-  const result = await db.select<{ count: number }[]>(
-    'SELECT COUNT(*) as count FROM raw_videos WHERE project_id = ?',
-    [projectId]
-  );
-  return (result[0]?.count || 0) > 0;
-}
-
-export async function hasClipsForProject(projectId: string): Promise<boolean> {
-  const db = await getDatabase();
-  const result = await db.select<{ count: number }[]>(
-    'SELECT COUNT(*) as count FROM clips WHERE project_id = ?',
-    [projectId]
-  );
-  return (result[0]?.count || 0) > 0;
-}
-
-export async function hasDetectedOrGeneratedClips(projectId: string): Promise<boolean> {
-  const db = await getDatabase();
-  const result = await db.select<{ count: number }[]>(
-    'SELECT COUNT(*) as count FROM clips WHERE project_id = ? AND status IN ("detected", "generated")',
-    [projectId]
-  );
-  return (result[0]?.count || 0) > 0;
-}
-
-// Prompt queries
-export async function createPrompt(name: string, content: string): Promise<string> {
-  const db = await getDatabase();
-  const id = generateId();
-  const now = timestamp();
-
-  await db.execute(
-    'INSERT INTO prompts (id, name, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-    [id, name, content, now, now]
-  );
-
-  return id;
-}
-
-export async function getPrompt(id: string): Promise<Prompt | null> {
-  const db = await getDatabase();
-  const result = await db.select<Prompt[]>('SELECT * FROM prompts WHERE id = ?', [id]);
-  return result[0] || null;
-}
-
-export async function getAllPrompts(): Promise<Prompt[]> {
-  const db = await getDatabase();
-  return await db.select<Prompt[]>('SELECT * FROM prompts ORDER BY name');
-}
-
-export async function updatePrompt(id: string, name?: string, content?: string): Promise<void> {
-  const db = await getDatabase();
-  const now = timestamp();
-
-  const updates: string[] = [];
-  const values: any[] = [];
-
-  if (name !== undefined) {
-    updates.push('name = ?');
-    values.push(name);
-  }
-  if (content !== undefined) {
-    updates.push('content = ?');
-    values.push(content);
-  }
-
-  updates.push('updated_at = ?');
-  values.push(now);
-  values.push(id);
-
-  await db.execute(`UPDATE prompts SET ${updates.join(', ')} WHERE id = ?`, values);
-}
-
-export async function deletePrompt(id: string): Promise<void> {
-  const db = await getDatabase();
-  await db.execute('DELETE FROM prompts WHERE id = ?', [id]);
-}
-
-// Seed default prompt
-export async function seedDefaultPrompt(): Promise<void> {
-  const db = await getDatabase();
-
-  // Check if the default prompt already exists
-  const existing = await db.select<Prompt[]>('SELECT * FROM prompts WHERE name = ?', [
-    'Default Clip Detector',
-  ]);
-
-  if (existing.length > 0) {
-    return;
-  }
-
-  // Create the default prompt
-  const defaultPromptContent = `Analyze this stream transcript and identify ALL clip-worthy moments for TikTok/Shorts/X.
-
-**DETECTION PHILOSOPHY:**
-- BIAS TOWARDS FINDING CLIPS — when in doubt, include it, BUT NEVER at the cost of coherence.
-- Prioritize moments that stand alone: a clear setup → development → payoff.
-- Extract moments at different stages: setup, peak, aftermath, reactions.
-- Lower your threshold — if something stands out from normal conversation, it's likely clip-worthy.
-
-**CLIP QUALITY & BOUNDARY RULES:**
-1) Start of clip MUST be a natural beginning of a sentence or thought.
-   - Avoid starting mid-sentence or on connective fillers ("and", "so", "but", "because", "like") unless they naturally begin a new bit.
-   - If the hook begins mid-thought, scan backward within the chunk to the prior sentence boundary, speaker turn, or a pause ≥ 0.35s.
-   - Add a pre-roll pad of 0.15–0.30s before the first spoken word (if available in the chunk).
-2) End of clip MUST complete the thought.
-   - Extend to the end of the sentence or the natural resolution/punchline.
-   - Do NOT end at the first word of a new sentence. Stop just before the next sentence begins, then add a post-roll pad of 0.30–0.60s.
-   - Prefer ending at ., ?, !, or at a pause ≥ 0.45s.
-3) Consistency & coherence.
-   - The clip should make sense without external context. Include the smallest necessary setup for clarity.
-   - If a complete coherent thought cannot fit within duration limits, SKIP it.
-4) Spliced clips.
-   - Each segment must independently follow the same start/end rules (sentence boundary + pads).
-   - Segments must be chronological, non-overlapping, and thematically unified.
-   - Only splice to remove dull filler between high-value moments or to tighten a single topic.
-5) Hard constraints.
-   - Minimum 15s, maximum 120s total per clip.
-   - Prefer 20–75s when possible for short-form platforms.
-
-**WHAT TO LOOK FOR:**
-- Strong emotions or shifts; humor/awkwardness; drama/tension/conflict; surprises/reveals; bold claims; unusual behavior; struggle/vulnerability; high energy; relatable/resonant lines; quotable statements; notable reactions or audience moments.`;
-
-  try {
-    await createPrompt('Default Clip Detector', defaultPromptContent);
   } catch (error) {
     throw error;
   }
