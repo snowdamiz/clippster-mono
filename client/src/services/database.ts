@@ -41,22 +41,58 @@ export {
   seedDefaultPrompt,
 } from './database/prompts';
 
+// Re-export transcript functions
+export {
+  createTranscript,
+  getTranscriptByRawVideoId,
+  getTranscriptByProjectId,
+  createTranscriptSegment,
+  getTranscriptSegments,
+  getTranscriptWithSegmentsByProjectId,
+  searchTranscripts,
+  searchSegments,
+} from './database/transcripts';
+
+// Re-export chunked transcript functions
+export {
+  createChunkedTranscript,
+  storeTranscriptChunk,
+  getChunkedTranscriptByRawVideoId,
+  getTranscriptChunks,
+  updateChunkedTranscriptCompleteness,
+  getChunkMetadataForProcessing,
+} from './database/chunked-transcripts';
+
+// Re-export raw video functions
+export {
+  createRawVideo,
+  getAllRawVideos,
+  getNextSegmentNumber,
+  getRawVideo,
+  getRawVideosByProjectId,
+  getRawVideoByPath,
+  updateRawVideo,
+  deleteRawVideo,
+  hasClipsReferencingRawVideo,
+} from './database/raw-videos';
+
 // Keep the remaining imports for functionality not yet extracted
 import { getDatabase, timestamp, generateId } from './database/core';
+import {
+  getTranscriptByRawVideoId,
+  createTranscript,
+  createTranscriptSegment,
+  getTranscriptByProjectId,
+} from './database/transcripts';
+import { getRawVideosByProjectId } from './database/raw-videos';
 import type {
-  Project,
-  Transcript,
-  TranscriptSegment,
   IntroOutro,
   Clip,
   Thumbnail,
-  RawVideo,
   ClipDetectionSession,
   ClipVersion,
   ClipSegment,
   ClipWithVersion,
-  ChunkedTranscript,
-  TranscriptChunk,
 } from './database/types';
 
 // Manual migration fallback function
@@ -174,108 +210,6 @@ export async function ensureClipVersioningTables(): Promise<void> {
   } catch (error) {
     throw error;
   }
-}
-
-// Transcript queries
-export async function createTranscript(
-  rawVideoId: string,
-  rawJson: string,
-  text: string,
-  language?: string,
-  duration?: number
-): Promise<string> {
-  const db = await getDatabase();
-  const id = generateId();
-  const now = timestamp();
-
-  await db.execute(
-    'INSERT INTO transcripts (id, raw_video_id, raw_json, text, language, duration, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, rawVideoId, rawJson, text, language || null, duration || null, now, now]
-  );
-
-  return id;
-}
-
-export async function getTranscriptByRawVideoId(rawVideoId: string): Promise<Transcript | null> {
-  const db = await getDatabase();
-  const result = await db.select<Transcript[]>('SELECT * FROM transcripts WHERE raw_video_id = ?', [
-    rawVideoId,
-  ]);
-  return result[0] || null;
-}
-
-export async function getTranscriptByProjectId(projectId: string): Promise<Transcript | null> {
-  const db = await getDatabase();
-  const result = await db.select<Transcript[]>(
-    `SELECT t.* FROM transcripts t
-     JOIN raw_videos rv ON t.raw_video_id = rv.id
-     WHERE rv.project_id = ?`,
-    [projectId]
-  );
-  return result[0] || null;
-}
-
-// Transcript segment queries
-export async function createTranscriptSegment(
-  transcriptId: string,
-  startTime: number,
-  endTime: number,
-  text: string,
-  segmentIndex: number,
-  clipId?: string
-): Promise<string> {
-  const db = await getDatabase();
-  const id = generateId();
-  const now = timestamp();
-
-  await db.execute(
-    'INSERT INTO transcript_segments (id, transcript_id, clip_id, start_time, end_time, text, segment_index, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, transcriptId, clipId || null, startTime, endTime, text, segmentIndex, now]
-  );
-
-  return id;
-}
-
-export async function getTranscriptSegments(transcriptId: string): Promise<TranscriptSegment[]> {
-  const db = await getDatabase();
-  return await db.select<TranscriptSegment[]>(
-    'SELECT * FROM transcript_segments WHERE transcript_id = ? ORDER BY segment_index',
-    [transcriptId]
-  );
-}
-
-export async function getTranscriptWithSegmentsByProjectId(
-  projectId: string
-): Promise<{ transcript: Transcript | null; segments: TranscriptSegment[] }> {
-  const transcript = await getTranscriptByProjectId(projectId);
-  const segments = transcript ? await getTranscriptSegments(transcript.id) : [];
-  return { transcript, segments };
-}
-
-// Search queries
-export async function searchTranscripts(query: string): Promise<Project[]> {
-  const db = await getDatabase();
-  return await db.select<Project[]>(
-    `SELECT DISTINCT p.* 
-     FROM projects p
-     JOIN transcripts t ON t.project_id = p.id
-     JOIN transcripts_fts fts ON fts.rowid = t.rowid
-     WHERE transcripts_fts MATCH ?
-     ORDER BY p.updated_at DESC`,
-    [query]
-  );
-}
-
-export async function searchSegments(query: string): Promise<TranscriptSegment[]> {
-  const db = await getDatabase();
-  return await db.select<TranscriptSegment[]>(
-    `SELECT ts.*
-     FROM transcript_segments ts
-     JOIN transcript_segments_fts fts ON fts.rowid = ts.rowid
-     WHERE transcript_segments_fts MATCH ?
-     ORDER BY ts.start_time`,
-    [query]
-  );
 }
 
 // Clip queries
@@ -490,69 +424,6 @@ export async function getThumbnailByClipId(clipId: string): Promise<Thumbnail | 
   return result[0] || null;
 }
 
-// RawVideo queries
-export async function createRawVideo(
-  filePath: string,
-  options?: {
-    projectId?: string;
-    originalFilename?: string;
-    thumbnailPath?: string;
-    duration?: number;
-    width?: number;
-    height?: number;
-    frameRate?: number;
-    codec?: string;
-    fileSize?: number;
-    // Segment tracking options
-    sourceClipId?: string;
-    sourceMintId?: string;
-    segmentNumber?: number;
-    isSegment?: boolean;
-    segmentStartTime?: number;
-    segmentEndTime?: number;
-  }
-): Promise<string> {
-  const db = await getDatabase();
-  const id = generateId();
-  const now = timestamp();
-
-  try {
-    await db.execute(
-      'INSERT INTO raw_videos (id, project_id, file_path, original_filename, thumbnail_path, duration, width, height, frame_rate, codec, file_size, created_at, updated_at, source_clip_id, source_mint_id, segment_number, is_segment, segment_start_time, segment_end_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [
-        id,
-        options?.projectId || null,
-        filePath,
-        options?.originalFilename || null,
-        options?.thumbnailPath || null,
-        options?.duration || null,
-        options?.width || null,
-        options?.height || null,
-        options?.frameRate || null,
-        options?.codec || null,
-        options?.fileSize || null,
-        now,
-        now,
-        options?.sourceClipId || null,
-        options?.sourceMintId || null,
-        options?.segmentNumber || null,
-        options?.isSegment || false,
-        options?.segmentStartTime || null,
-        options?.segmentEndTime || null,
-      ]
-    );
-
-    return id;
-  } catch (error) {
-    throw error;
-  }
-}
-
-export async function getAllRawVideos(): Promise<RawVideo[]> {
-  const db = await getDatabase();
-  return await db.select<RawVideo[]>('SELECT * FROM raw_videos ORDER BY created_at DESC');
-}
-
 // Check if segment tracking columns exist in the database
 async function checkSegmentTrackingExists(): Promise<boolean> {
   try {
@@ -563,197 +434,6 @@ async function checkSegmentTrackingExists(): Promise<boolean> {
   } catch (error) {
     return false;
   }
-}
-
-// Get the next segment number for a given clip
-export async function getNextSegmentNumber(sourceClipId: string): Promise<number> {
-  // First check if the segment tracking columns exist
-  const columnsExist = await checkSegmentTrackingExists();
-  if (!columnsExist) {
-    return 1;
-  }
-
-  try {
-    const db = await getDatabase();
-
-    const result = await db.select<{ max_segment: number | null }[]>(
-      'SELECT MAX(segment_number) as max_segment FROM raw_videos WHERE source_clip_id = ? AND (is_segment = TRUE OR is_segment = "true" OR is_segment = 1)',
-      [sourceClipId]
-    );
-
-    const maxSegment = result[0]?.max_segment || 0;
-    return maxSegment + 1;
-  } catch (error) {
-    return 1;
-  }
-}
-
-export async function getRawVideo(id: string): Promise<RawVideo | null> {
-  const db = await getDatabase();
-  const result = await db.select<RawVideo[]>('SELECT * FROM raw_videos WHERE id = ?', [id]);
-  return result[0] || null;
-}
-
-export async function getRawVideosByProjectId(projectId: string): Promise<RawVideo[]> {
-  const db = await getDatabase();
-  return await db.select<RawVideo[]>(
-    'SELECT * FROM raw_videos WHERE project_id = ? ORDER BY created_at DESC',
-    [projectId]
-  );
-}
-
-export async function getRawVideoByPath(filePath: string): Promise<RawVideo | null> {
-  const db = await getDatabase();
-
-  // Try exact match first
-  let result = await db.select<RawVideo[]>('SELECT * FROM raw_videos WHERE file_path = ?', [
-    filePath,
-  ]);
-  if (result.length > 0) {
-    return result[0];
-  }
-
-  // If no exact match, try normalized paths for different formats
-  const normalizedInput = filePath.replace(/\\/g, '/').replace(/^file:\/\//, '');
-
-  // Try finding with different path formats
-  const queries = [
-    'SELECT * FROM raw_videos WHERE file_path = ?',
-    'SELECT * FROM raw_videos WHERE REPLACE(file_path, "\\", "/") = ?',
-    'SELECT * FROM raw_videos WHERE REPLACE(REPLACE(file_path, "\\", "/"), "file://", "") = ?',
-    'SELECT * FROM raw_videos WHERE REPLACE(file_path, "/", "\\") = ?',
-  ];
-
-  for (const query of queries) {
-    try {
-      result = await db.select<RawVideo[]>(query, [normalizedInput]);
-      if (result.length > 0) {
-        console.log(`[getRawVideoByPath] Found match using query: ${query}`);
-        return result[0];
-      }
-    } catch (error) {
-      console.warn(`[getRawVideoByPath] Query failed: ${query}`, error);
-    }
-  }
-
-  // Final fallback: try finding videos where the basename matches
-  const inputBasename = filePath.split(/[\\/]/).pop();
-  if (inputBasename) {
-    result = await db.select<RawVideo[]>(
-      'SELECT * FROM raw_videos WHERE original_filename = ? OR file_path LIKE ?',
-      [inputBasename, `%/${inputBasename}`]
-    );
-    if (result.length > 0) {
-      console.log(`[getRawVideoByPath] Found match using basename: ${inputBasename}`);
-      return result[0];
-    }
-  }
-
-  return null;
-}
-
-export async function updateRawVideo(
-  id: string,
-  updates: Partial<{
-    project_id?: string | null;
-    file_path?: string;
-    original_filename?: string;
-    thumbnail_path?: string;
-    duration?: number;
-    width?: number;
-    height?: number;
-    frame_rate?: number;
-    codec?: string;
-    file_size?: number;
-    original_project_id?: string | null;
-  }>
-): Promise<void> {
-  const db = await getDatabase();
-  const dbUpdates: string[] = [];
-  const values: any[] = [];
-
-  if (updates.project_id !== undefined) {
-    dbUpdates.push('project_id = ?');
-    values.push(updates.project_id);
-  }
-
-  if (updates.file_path !== undefined) {
-    dbUpdates.push('file_path = ?');
-    values.push(updates.file_path);
-  }
-
-  if (updates.original_filename !== undefined) {
-    dbUpdates.push('original_filename = ?');
-    values.push(updates.original_filename);
-  }
-
-  if (updates.thumbnail_path !== undefined) {
-    dbUpdates.push('thumbnail_path = ?');
-    values.push(updates.thumbnail_path);
-  }
-
-  if (updates.duration !== undefined) {
-    dbUpdates.push('duration = ?');
-    values.push(updates.duration);
-  }
-
-  if (updates.width !== undefined) {
-    dbUpdates.push('width = ?');
-    values.push(updates.width);
-  }
-
-  if (updates.height !== undefined) {
-    dbUpdates.push('height = ?');
-    values.push(updates.height);
-  }
-
-  if (updates.frame_rate !== undefined) {
-    dbUpdates.push('frame_rate = ?');
-    values.push(updates.frame_rate);
-  }
-
-  if (updates.codec !== undefined) {
-    dbUpdates.push('codec = ?');
-    values.push(updates.codec);
-  }
-
-  if (updates.file_size !== undefined) {
-    dbUpdates.push('file_size = ?');
-    values.push(updates.file_size);
-  }
-
-  if (updates.original_project_id !== undefined) {
-    dbUpdates.push('original_project_id = ?');
-    values.push(updates.original_project_id);
-  }
-
-  if (dbUpdates.length === 0) return;
-
-  dbUpdates.push('updated_at = ?');
-  values.push(timestamp());
-  values.push(id);
-
-  await db.execute(`UPDATE raw_videos SET ${dbUpdates.join(', ')} WHERE id = ?`, values);
-}
-
-export async function deleteRawVideo(id: string): Promise<void> {
-  const db = await getDatabase();
-  await db.execute('DELETE FROM raw_videos WHERE id = ?', [id]);
-}
-
-export async function hasClipsReferencingRawVideo(rawVideoId: string): Promise<boolean> {
-  // Check if any clips reference this raw video through their project relationship
-  // Note: Deleting a raw video does NOT delete the clips - it just sets their raw_video_id to NULL
-  const db = await getDatabase();
-  const result = await db.select<{ count: number }[]>(
-    `SELECT COUNT(*) as count
-     FROM clips c
-     JOIN projects p ON c.project_id = p.id
-     JOIN raw_videos rv ON p.id = rv.project_id
-     WHERE rv.id = ?`,
-    [rawVideoId]
-  );
-  return (result[0]?.count || 0) > 0;
 }
 
 // Generate a random color for clip detection runs
@@ -1798,169 +1478,6 @@ async function getNextVersionNumber(clipId: string): Promise<number> {
     [clipId]
   );
   return (result[0]?.max_version || 0) + 1;
-}
-
-// === CHUNKED TRANSCRIPT FUNCTIONS ===
-
-// Tables are created via Tauri migrations (021_add_chunked_transcripts.sql)
-// No need for inline table creation
-
-// Create a new chunked transcript record
-export async function createChunkedTranscript(
-  rawVideoId: string,
-  totalChunks: number,
-  chunkDurationMinutes: number,
-  overlapSeconds: number,
-  totalDuration: number,
-  language?: string
-): Promise<string> {
-  const db = await getDatabase();
-
-  const id = generateId();
-  const now = timestamp();
-
-  await db.execute(
-    `INSERT INTO chunked_transcripts (
-      id, raw_video_id, total_chunks, chunk_duration_minutes, overlap_seconds,
-      total_duration, language, is_complete, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      id,
-      rawVideoId,
-      totalChunks,
-      chunkDurationMinutes,
-      overlapSeconds,
-      totalDuration,
-      language || null,
-      false,
-      now,
-      now,
-    ]
-  );
-
-  return id;
-}
-
-// Store a transcript chunk
-export async function storeTranscriptChunk(
-  chunkedTranscriptId: string,
-  chunkIndex: number,
-  chunkId: string,
-  startTime: number,
-  endTime: number,
-  rawJson: string,
-  text: string,
-  fileSize: number,
-  language?: string
-): Promise<string> {
-  const db = await getDatabase();
-  const id = generateId();
-  const now = timestamp();
-  const duration = endTime - startTime;
-
-  await db.execute(
-    `INSERT INTO transcript_chunks (
-      id, chunked_transcript_id, chunk_index, chunk_id, start_time, end_time,
-      duration, raw_json, text, language, file_size, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      id,
-      chunkedTranscriptId,
-      chunkIndex,
-      chunkId,
-      startTime,
-      endTime,
-      duration,
-      rawJson,
-      text,
-      language || null,
-      fileSize,
-      now,
-    ]
-  );
-
-  return id;
-}
-
-// Get chunked transcript by raw video ID
-export async function getChunkedTranscriptByRawVideoId(
-  rawVideoId: string
-): Promise<ChunkedTranscript | null> {
-  const db = await getDatabase();
-  const result = await db.select<ChunkedTranscript[]>(
-    'SELECT * FROM chunked_transcripts WHERE raw_video_id = ? ORDER BY created_at DESC',
-    [rawVideoId]
-  );
-  return result[0] || null;
-}
-
-// Get all chunks for a chunked transcript
-export async function getTranscriptChunks(chunkedTranscriptId: string): Promise<TranscriptChunk[]> {
-  const db = await getDatabase();
-  return await db.select<TranscriptChunk[]>(
-    'SELECT * FROM transcript_chunks WHERE chunked_transcript_id = ? ORDER BY chunk_index',
-    [chunkedTranscriptId]
-  );
-}
-
-// Check if all chunks are complete
-export async function updateChunkedTranscriptCompleteness(
-  chunkedTranscriptId: string
-): Promise<void> {
-  const db = await getDatabase();
-
-  const chunks = await getTranscriptChunks(chunkedTranscriptId);
-  const chunkedTranscript = await db.select<ChunkedTranscript[]>(
-    'SELECT * FROM chunked_transcripts WHERE id = ?',
-    [chunkedTranscriptId]
-  );
-
-  if (chunkedTranscript.length === 0) {
-    throw new Error('Chunked transcript not found');
-  }
-
-  const isComplete = chunks.length >= chunkedTranscript[0].total_chunks;
-  const now = timestamp();
-
-  await db.execute('UPDATE chunked_transcripts SET is_complete = ?, updated_at = ? WHERE id = ?', [
-    isComplete,
-    now,
-    chunkedTranscriptId,
-  ]);
-}
-
-// Get chunk metadata for sending to server (instead of full transcript)
-export async function getChunkMetadataForProcessing(rawVideoId: string): Promise<{
-  hasChunkedTranscript: boolean;
-  chunks: Array<{
-    chunk_id: string;
-    chunk_index: number;
-    start_time: number;
-    end_time: number;
-    raw_json: string;
-  }>;
-  totalDuration: number;
-  language: string | null;
-} | null> {
-  const chunkedTranscript = await getChunkedTranscriptByRawVideoId(rawVideoId);
-  if (!chunkedTranscript || !chunkedTranscript.is_complete) {
-    return null;
-  }
-
-  const chunks = await getTranscriptChunks(chunkedTranscript.id);
-
-  return {
-    hasChunkedTranscript: true,
-    chunks: chunks.map((chunk) => ({
-      chunk_id: chunk.chunk_id,
-      chunk_index: chunk.chunk_index,
-      start_time: chunk.start_time,
-      end_time: chunk.end_time,
-      raw_json: chunk.raw_json,
-    })),
-    totalDuration: chunkedTranscript.total_duration,
-    language: chunkedTranscript.language,
-  };
 }
 
 // Update a word in the transcript and all related segments
