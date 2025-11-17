@@ -14,6 +14,7 @@
   const authStore = useAuthStore();
   const router = useRouter();
   const isLoading = ref(true);
+  const titleBarPlatformOverride = ref('auto');
 
   // Auth event listener function
   const handleAuthRequired = () => {
@@ -21,10 +22,26 @@
     router.push('/login');
   };
 
+  // Platform override functions
+  const loadPlatformOverride = () => {
+    const saved = localStorage.getItem('titlebar-platform-override');
+    if (saved) {
+      titleBarPlatformOverride.value = saved;
+    }
+  };
+
+  const handlePlatformOverride = (event: CustomEvent) => {
+    const { platform } = event.detail;
+    titleBarPlatformOverride.value = platform;
+  };
+
   // Ensure dark mode is always applied and initialize database
   onMounted(async () => {
     document.documentElement.classList.add('dark');
     document.body.classList.add('dark');
+
+    // Load platform override from localStorage
+    loadPlatformOverride();
 
     // Check authentication status on app start
     try {
@@ -35,6 +52,9 @@
 
     // Listen for auth-required events (e.g., when token expires)
     window.addEventListener('auth-required', handleAuthRequired);
+
+    // Listen for platform override events from Admin panel
+    window.addEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
 
     // Initialize database connection
     try {
@@ -67,6 +87,7 @@
   // Cleanup auth event listener on unmount
   onUnmounted(() => {
     window.removeEventListener('auth-required', handleAuthRequired);
+    window.removeEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
   });
 </script>
 
@@ -77,7 +98,7 @@
   <!-- Main app (hidden while loading) -->
   <div v-else class="app-container">
     <!-- Custom titlebar -->
-    <TitleBar :dark-mode="true" />
+    <TitleBar :dark-mode="true" :platform-override="titleBarPlatformOverride" />
 
     <!-- Main content area with scrolling -->
     <div class="main-content">

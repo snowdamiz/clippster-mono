@@ -584,6 +584,74 @@
       </div>
     </div>
 
+    <!-- UI Overrides Section -->
+    <div v-if="users.length > 0" class="mt-8 space-y-4">
+      <div class="bg-card">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-foreground">UI Overrides</h2>
+          <span class="text-sm text-muted-foreground">Test UI behavior across different platforms</span>
+        </div>
+      </div>
+
+      <!-- Platform Override Controls -->
+      <div class="bg-card border border-border rounded-lg shadow-sm p-6">
+        <div class="space-y-4">
+          <div>
+            <h3 class="text-md font-medium text-foreground mb-3">TitleBar Platform Override</h3>
+            <p class="text-sm text-muted-foreground mb-4">
+              Force the TitleBar component to render as if running on a specific operating system. This allows testing
+              platform-specific styling without switching environments.
+            </p>
+
+            <div class="flex flex-wrap gap-3">
+              <button
+                v-for="platform in ['auto', 'windows', 'macos', 'linux']"
+                :key="platform"
+                @click="setTitleBarOverride(platform)"
+                :class="{
+                  'bg-gradient-to-r from-blue-500/80 to-indigo-500/80 hover:from-blue-500/90 hover:to-indigo-500/90 text-white':
+                    titleBarPlatformOverride === platform,
+                  'bg-muted text-muted-foreground hover:bg-muted/80': titleBarPlatformOverride !== platform,
+                }"
+                class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all"
+              >
+                <svg
+                  v-if="titleBarPlatformOverride === platform"
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="h-3 w-3 mr-2"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+                {{ getPlatformDisplayName(platform) }}
+              </button>
+            </div>
+
+            <div
+              v-if="titleBarPlatformOverride !== 'auto'"
+              class="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg"
+            >
+              <p class="text-sm text-blue-700 dark:text-blue-300">
+                <strong>Active Override:</strong>
+                TitleBar is rendering as {{ getPlatformDisplayName(titleBarPlatformOverride) }} style.
+                <button
+                  @click="setTitleBarOverride('auto')"
+                  class="ml-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 underline"
+                >
+                  Reset to auto
+                </button>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Bug Report Delete Confirmation Modal -->
     <ConfirmationModal
       :show="showDeleteBugReportDialog"
@@ -778,6 +846,9 @@
   const deletingBugReportId = ref<number | null>(null);
   const showDeleteBugReportDialog = ref(false);
   const bugReportToDelete = ref<BugReport | null>(null);
+
+  // UI Override state
+  const titleBarPlatformOverride = ref<string>('auto');
 
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -1201,9 +1272,56 @@
     }
   };
 
+  // UI Override functions
+  const setTitleBarOverride = (platform: string) => {
+    titleBarPlatformOverride.value = platform;
+
+    // Store in localStorage for persistence
+    localStorage.setItem('titlebar-platform-override', platform);
+
+    // Dispatch a custom event to notify the TitleBar component
+    window.dispatchEvent(
+      new CustomEvent('titlebar-platform-override', {
+        detail: { platform },
+      })
+    );
+
+    console.log(`🎨 UI Override - TitleBar platform set to: ${platform}`);
+  };
+
+  const getPlatformDisplayName = (platform: string) => {
+    switch (platform) {
+      case 'auto':
+        return 'Auto Detect';
+      case 'windows':
+        return 'Windows';
+      case 'macos':
+        return 'macOS';
+      case 'linux':
+        return 'Linux';
+      default:
+        return platform;
+    }
+  };
+
+  // Load platform override from localStorage on mount
+  const loadPlatformOverride = () => {
+    const saved = localStorage.getItem('titlebar-platform-override');
+    if (saved) {
+      titleBarPlatformOverride.value = saved;
+      // Dispatch to apply immediately
+      window.dispatchEvent(
+        new CustomEvent('titlebar-platform-override', {
+          detail: { platform: saved },
+        })
+      );
+    }
+  };
+
   onMounted(() => {
     fetchUsers();
     fetchBugReports();
+    loadPlatformOverride();
   });
 </script>
 

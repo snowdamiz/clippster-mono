@@ -85,17 +85,19 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted } from 'vue';
+  import { ref, onMounted, onUnmounted } from 'vue';
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { invoke } from '@tauri-apps/api/core';
 
   // Props
   interface Props {
     darkMode?: boolean;
+    platformOverride?: string;
   }
 
   const props = withDefaults(defineProps<Props>(), {
     darkMode: true,
+    platformOverride: 'auto',
   });
 
   // Reactive state
@@ -104,6 +106,7 @@
   const isMacOS = ref(false);
   const isLinux = ref(false);
   const isWindows = ref(false);
+  const platformOverride = ref(props.platformOverride);
   const appWindow = getCurrentWebviewWindow();
 
   // Window control functions
@@ -139,14 +142,58 @@
     }
   }
 
+  // Function to update platform flags based on current override or detected platform
+  const updatePlatformFlags = (overridePlatform: string) => {
+    if (overridePlatform === 'auto') {
+      // Use auto-detection (will be set asynchronously)
+      return;
+    }
+
+    console.log(`🎨 TitleBar - Using platform override: ${overridePlatform}`);
+
+    // Reset all platform flags first
+    isMacOS.value = false;
+    isLinux.value = false;
+    isWindows.value = false;
+
+    // Set the override platform
+    switch (overridePlatform) {
+      case 'macos':
+        isMacOS.value = true;
+        break;
+      case 'linux':
+        isLinux.value = true;
+        break;
+      case 'windows':
+        isWindows.value = true;
+        break;
+      default:
+        console.warn(`Unknown platform override: ${overridePlatform}`);
+    }
+  };
+
   // Initialize window state
+  const handlePlatformOverride = (event: CustomEvent) => {
+    const { platform } = event.detail;
+    platformOverride.value = platform;
+    updatePlatformFlags(platform);
+  };
+
   onMounted(async () => {
     try {
-      // Detect platform
-      const platform = (await invoke('get_platform')) as string;
-      isMacOS.value = platform === 'darwin';
-      isLinux.value = platform === 'linux';
-      isWindows.value = platform === 'windows';
+      // Add event listener for platform override
+      window.addEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
+
+      // Apply initial platform override if set
+      if (platformOverride.value !== 'auto') {
+        updatePlatformFlags(platformOverride.value);
+      } else {
+        // Detect platform only if no override is set
+        const platform = (await invoke('get_platform')) as string;
+        isMacOS.value = platform === 'darwin';
+        isLinux.value = platform === 'linux';
+        isWindows.value = platform === 'windows';
+      }
 
       // Check if window is maximized on mount
       isMaximized.value = await appWindow.isMaximized();
@@ -158,6 +205,11 @@
     } catch (error) {
       console.error('Failed to initialize titlebar:', error);
     }
+  });
+
+  // Cleanup event listener on unmount
+  onUnmounted(() => {
+    window.removeEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
   });
 </script>
 
