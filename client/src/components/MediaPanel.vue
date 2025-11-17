@@ -369,9 +369,7 @@
                     >
                       <CheckIcon class="h-2.5 w-2.5" />
                       Built
-                      <span v-if="clip.built_file_size" class="ml-1">
-                        ({{ formatFileSize(clip.built_file_size) }})
-                      </span>
+                      <span v-if="clip.built_file_size" class="ml-1">({{ formatFileSize(clip.built_file_size) }})</span>
                     </span>
 
                     <!-- Build Failed Status -->
@@ -486,9 +484,8 @@
 
 <script setup lang="ts">
   import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
-import { listen } from '@tauri-apps/api/event';
+  import { listen } from '@tauri-apps/api/event';
   import {
-    getClipsWithVersionsByProjectId,
     getClipDetectionSessionsByProjectId,
     getAllPrompts,
     getClipsWithBuildStatus,
@@ -512,7 +509,6 @@ import { listen } from '@tauri-apps/api/event';
     AlertCircleIcon,
     LoaderIcon,
     CheckIcon,
-    XIcon,
   } from 'lucide-vue-next';
   import TranscriptPanel from './TranscriptPanel.vue';
 
@@ -941,7 +937,7 @@ import { listen } from '@tauri-apps/api/event';
       const projectVideo = rawVideos[0];
 
       // Prepare segments for the Rust backend
-      const segments = clip.current_version_segments.map(segment => ({
+      const segments = clip.current_version_segments.map((segment) => ({
         id: segment.id,
         start_time: segment.start_time,
         end_time: segment.end_time,
@@ -962,13 +958,12 @@ import { listen } from '@tauri-apps/api/event';
 
       // Refresh clips to show building status
       await refreshClips();
-
     } catch (error) {
       console.error('[MediaPanel] Failed to start clip build:', error);
 
       // Update database status to failed
       await updateClipBuildStatus(clip.id, 'failed', {
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
 
       // Refresh clips to show failed status
@@ -976,7 +971,10 @@ import { listen } from '@tauri-apps/api/event';
 
       // Show user-friendly error message
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      showErrorMessage('Build Failed', `Failed to build clip "${clip.current_version?.name || clip.name || 'Untitled'}": ${errorMessage}`);
+      showErrorMessage(
+        'Build Failed',
+        `Failed to build clip "${clip.current_version?.name || clip.name || 'Untitled'}": ${errorMessage}`
+      );
     }
   }
 
@@ -1001,7 +999,8 @@ import { listen } from '@tauri-apps/api/event';
   async function showErrorMessage(title: string, message: string) {
     try {
       // Import and use toast composable
-      const { error: showError } = await import('@/composables/useToast');
+      const toastComposable = await import('@/composables/useToast');
+      const { error: showError } = toastComposable.useToast();
       showError(title, message, 8000);
     } catch (error) {
       console.error('[MediaPanel] Failed to show error message:', error);
@@ -1032,7 +1031,7 @@ import { listen } from '@tauri-apps/api/event';
     console.log(`[MediaPanel] Received clip build progress event for: ${clip_id}`);
 
     // Only process if this clip belongs to our project
-    const clip = clips.value.find(c => c.id === clip_id);
+    const clip = clips.value.find((c) => c.id === clip_id);
     if (!clip) {
       console.log(`[MediaPanel] Clip ${clip_id} not found in current clips array, updating database anyway`);
       // Still update database even if not in current array
@@ -1040,15 +1039,15 @@ import { listen } from '@tauri-apps/api/event';
       console.log(`[MediaPanel] Clip build progress: ${clip_id} - ${progress}% - ${stage}`);
 
       // Update local state immediately
-      clip.buildStatus = 'building';
-      clip.buildProgress = progress;
+      clip.build_status = 'building';
+      clip.build_progress = progress;
     }
 
     // Update the clip's progress in the database
     updateClipBuildStatus(clip_id, 'building', {
       progress,
-      error: stage === 'error' ? message : undefined
-    }).catch(error => {
+      error: stage === 'error' ? message : undefined,
+    }).catch((error) => {
       console.error('[MediaPanel] Failed to update clip build progress:', error);
     });
 
@@ -1075,53 +1074,54 @@ import { listen } from '@tauri-apps/api/event';
         builtThumbnailPath: thumbnail_path,
         builtDuration: duration,
         builtFileSize: file_size,
-        error: undefined
-      }).then(() => {
-        console.log(`[MediaPanel] Database updated successfully for clip: ${clip_id}`);
-        // Find the clip for showing success message
-        const clip = clips.value.find(c => c.id === clip_id);
-        if (clip) {
-          showSuccessMessage(
-            'Clip Built Successfully',
-            `Clip "${clip.current_version?.name || clip.name || 'Untitled'}" has been built successfully! (${formatFileSize(file_size || 0)})`
-          );
-        } else {
-          showSuccessMessage(
-            'Clip Built Successfully',
-            `Clip has been built successfully! (${formatFileSize(file_size || 0)})`
-          );
-        }
-        // Refresh clips to get updated status
-        refreshClips();
-      }).catch(dbError => {
-        console.error('[MediaPanel] Failed to update clip build completion:', dbError);
-      });
+        error: undefined,
+      })
+        .then(() => {
+          console.log(`[MediaPanel] Database updated successfully for clip: ${clip_id}`);
+          // Find the clip for showing success message
+          const clip = clips.value.find((c) => c.id === clip_id);
+          if (clip) {
+            showSuccessMessage(
+              'Clip Built Successfully',
+              `Clip "${clip.current_version?.name || clip.name || 'Untitled'}" has been built successfully! (${formatFileSize(file_size || 0)})`
+            );
+          } else {
+            showSuccessMessage(
+              'Clip Built Successfully',
+              `Clip has been built successfully! (${formatFileSize(file_size || 0)})`
+            );
+          }
+          // Refresh clips to get updated status
+          refreshClips();
+        })
+        .catch((dbError) => {
+          console.error('[MediaPanel] Failed to update clip build completion:', dbError);
+        });
     } else {
       console.log(`[MediaPanel] Clip build FAILED: ${clip_id} - ${error}`);
 
       // Update database with failure status
       updateClipBuildStatus(clip_id, 'failed', {
         progress: 0,
-        error: error || 'Unknown build error'
-      }).then(() => {
-        // Find the clip for showing error message
-        const clip = clips.value.find(c => c.id === clip_id);
-        if (clip) {
-          showErrorMessage(
-            'Build Failed',
-            `Failed to build clip "${clip.current_version?.name || clip.name || 'Untitled'}": ${error || 'Unknown error'}`
-          );
-        } else {
-          showErrorMessage(
-            'Build Failed',
-            `Failed to build clip: ${error || 'Unknown error'}`
-          );
-        }
-        // Refresh clips to get updated status
-        refreshClips();
-      }).catch(dbError => {
-        console.error('[MediaPanel] Failed to update clip build failure:', dbError);
-      });
+        error: error || 'Unknown build error',
+      })
+        .then(() => {
+          // Find the clip for showing error message
+          const clip = clips.value.find((c) => c.id === clip_id);
+          if (clip) {
+            showErrorMessage(
+              'Build Failed',
+              `Failed to build clip "${clip.current_version?.name || clip.name || 'Untitled'}": ${error || 'Unknown error'}`
+            );
+          } else {
+            showErrorMessage('Build Failed', `Failed to build clip: ${error || 'Unknown error'}`);
+          }
+          // Refresh clips to get updated status
+          refreshClips();
+        })
+        .catch((dbError) => {
+          console.error('[MediaPanel] Failed to update clip build failure:', dbError);
+        });
     }
   }
 
@@ -1129,7 +1129,8 @@ import { listen } from '@tauri-apps/api/event';
   async function showSuccessMessage(title: string, message: string) {
     try {
       // Import and use toast composable
-      const { success: showSuccess } = await import('@/composables/useToast');
+      const toastComposable = await import('@/composables/useToast');
+      const { success: showSuccess } = toastComposable.useToast();
       showSuccess(title, message, 6000);
     } catch (error) {
       console.error('[MediaPanel] Failed to show success message:', error);

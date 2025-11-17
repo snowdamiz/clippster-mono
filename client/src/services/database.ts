@@ -1889,7 +1889,7 @@ export async function getClipsWithVersionsByProjectId(
 ): Promise<ClipWithVersion[]> {
   const db = await getDatabase();
 
-  const clips = await db.select<ClipWithVersion[]>(
+  const clips = await db.select<any[]>(
     `SELECT
       c.*,
       cv.id as current_version_id,
@@ -1907,7 +1907,6 @@ export async function getClipsWithVersionsByProjectId(
       s.created_at as session_created_at,
       s.run_color as session_run_color,
       s.prompt as session_prompt,
-      -- Calculate run number based on session creation order
       (SELECT COUNT(*) + 1 FROM clip_detection_sessions s2
        WHERE s2.project_id = ? AND s2.created_at < s.created_at) as run_number
      FROM clips c
@@ -2458,11 +2457,11 @@ export async function updateTranscriptWord(
     // Update the main text field by reconstructing from words
     let fullText = '';
     if (transcriptData.words && Array.isArray(transcriptData.words)) {
-      fullText = transcriptData.words.map((w) => w.word).join(' ');
+      fullText = transcriptData.words.map((w: any) => w.word).join(' ');
     } else if (transcriptData.segments && Array.isArray(transcriptData.segments)) {
       fullText = transcriptData.segments
-        .flatMap((seg) => seg.words || [])
-        .map((w) => w.word)
+        .flatMap((seg: any) => seg.words || [])
+        .map((w: any) => w.word)
         .join(' ');
     }
 
@@ -2527,7 +2526,7 @@ async function updateClipSegmentsWithWordChange(
     if (transcriptData.words && Array.isArray(transcriptData.words)) {
       allWords = transcriptData.words;
     } else if (transcriptData.segments && Array.isArray(transcriptData.segments)) {
-      allWords = transcriptData.segments.flatMap((seg) => seg.words || []);
+      allWords = transcriptData.segments.flatMap((seg: any) => seg.words || []);
     }
 
     if (wordIndex >= allWords.length) return;
@@ -2537,7 +2536,7 @@ async function updateClipSegmentsWithWordChange(
     const wordEndTime = changedWord.end;
 
     // Update each segment that contains this word
-    for (const row of clips) {
+    for (const row of clips as unknown as any[]) {
       if (!row.transcript) continue;
 
       // Check if this segment's time range contains the changed word
@@ -2662,9 +2661,14 @@ export async function updateClipBuildStatus(
     if (buildStatus === 'completed' && additionalFields?.builtThumbnailPath) {
       try {
         await createThumbnail(clipId, additionalFields.builtThumbnailPath);
-        console.log(`[Database] Created thumbnail record for clip ${clipId}: ${additionalFields.builtThumbnailPath}`);
+        console.log(
+          `[Database] Created thumbnail record for clip ${clipId}: ${additionalFields.builtThumbnailPath}`
+        );
       } catch (thumbnailError) {
-        console.warn(`[Database] Failed to create thumbnail record for clip ${clipId}:`, thumbnailError);
+        console.warn(
+          `[Database] Failed to create thumbnail record for clip ${clipId}:`,
+          thumbnailError
+        );
         // Don't fail the whole operation if thumbnail creation fails
       }
     }
@@ -2681,7 +2685,8 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
   try {
     const db = await getDatabase();
 
-    const clips = await db.select(`
+    const clips = await db.select<any[]>(
+      `
       SELECT
         c.*,
         cv.id as current_version_id,
@@ -2699,26 +2704,26 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
         cds.created_at as session_created_at,
         cds.run_color as session_run_color,
         cds.prompt as session_prompt,
+        CASE
+          WHEN cds.id IS NOT NULL THEN (
+            SELECT COUNT(*) + 1 FROM clip_detection_sessions s2
+            WHERE s2.project_id = ? AND s2.created_at < cds.created_at
+          )
+          ELSE NULL
+        END as run_number,
         ROW_NUMBER() OVER (PARTITION BY c.id ORDER BY cv.version_number DESC) as rn
       FROM clips c
       LEFT JOIN clip_versions cv ON c.id = cv.clip_id
       LEFT JOIN clip_detection_sessions cds ON cv.session_id = cds.id
       WHERE c.project_id = ?
-    `, [projectId]);
+    `,
+      [projectId, projectId]
+    );
 
     // Filter to only include current versions (rn = 1) and convert to ClipWithVersion
     const clipsWithVersion: ClipWithVersion[] = clips
       .filter((row: any) => row.rn === 1)
       .map((row: any) => {
-        // Get segments for this clip version
-        const segmentsQuery = `
-          SELECT id, clip_version_id, segment_index, start_time, end_time,
-                 duration, transcript, created_at
-          FROM clip_segments
-          WHERE clip_version_id = ?
-          ORDER BY segment_index
-        `;
-
         return {
           id: row.id,
           project_id: row.project_id,
@@ -2746,7 +2751,7 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
           session_created_at: row.session_created_at,
           session_run_color: row.session_run_color,
           session_prompt: row.session_prompt,
-          run_number: null, // This would need to be calculated separately
+          run_number: row.run_number, // Calculated in SQL query
           current_version_name: row.current_version_name,
           current_version_description: row.current_version_description,
           current_version_start_time: row.current_version_start_time,
@@ -2764,13 +2769,16 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
     // Load segments for each clip
     for (const clip of clipsWithVersion) {
       if (clip.current_version_id) {
-        const segments = await db.select(`
+        const segments = await db.select<any[]>(
+          `
           SELECT id, clip_version_id, segment_index, start_time, end_time,
                  duration, transcript, created_at
           FROM clip_segments
           WHERE clip_version_id = ?
           ORDER BY segment_index
-        `, [clip.current_version_id]);
+        `,
+          [clip.current_version_id]
+        );
 
         clip.current_version_segments = segments.map((seg: any) => ({
           id: seg.id,
@@ -2797,7 +2805,8 @@ export async function getClipWithBuildStatus(clipId: string): Promise<Clip | nul
   try {
     const db = await getDatabase();
 
-    const clips = await db.select(`
+    const clips = await db.select<any[]>(
+      `
       SELECT
         c.*,
         cv.id as current_version_id,
@@ -2810,7 +2819,9 @@ export async function getClipWithBuildStatus(clipId: string): Promise<Clip | nul
       WHERE c.id = ?
       ORDER BY cv.version_number DESC
       LIMIT 1
-    `, [clipId]);
+    `,
+      [clipId]
+    );
 
     if (clips.length === 0) {
       return null;
@@ -2852,13 +2863,13 @@ export async function getClipsCurrentlyBuilding(): Promise<Clip[]> {
   try {
     const db = await getDatabase();
 
-    const clips = await db.select(`
+    const clips = await db.select<Clip[]>(`
       SELECT * FROM clips
       WHERE build_status = 'building'
       ORDER BY updated_at DESC
     `);
 
-    return clips as Clip[];
+    return clips;
   } catch (error) {
     console.error('[Database] Failed to get building clips:', error);
     throw error;
@@ -2869,7 +2880,7 @@ export async function getClipsCurrentlyBuilding(): Promise<Clip[]> {
 export async function cancelClipBuild(clipId: string): Promise<void> {
   try {
     await updateClipBuildStatus(clipId, 'pending', {
-      error: null,
+      error: undefined,
       progress: 0,
     });
 

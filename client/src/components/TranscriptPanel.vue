@@ -138,13 +138,6 @@
   import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
   import { useTranscriptData } from '../composables/useTranscriptData';
 
-  interface WordInfo {
-    text: string;
-    start: number;
-    end: number;
-    confidence?: number;
-  }
-
   interface Props {
     projectId?: string | null;
     currentTime?: number;
@@ -260,7 +253,7 @@
     return matchedIndices;
   }
 
-  function isWordMatched(word: any, index: number): boolean {
+  function isWordMatched(_word: any, index: number): boolean {
     if (!searchQuery.value.trim()) return false;
 
     const matchedIndices = getMatchedPhraseIndices();
@@ -269,8 +262,6 @@
 
   // Get CSS classes for a word based on its state relative to currentTime
   function getWordClasses(word: any, index: number): string {
-    let baseClasses = '';
-
     // Determine the basic state (current, spoken, future) first
     let stateClasses = '';
     if (currentWordIndex.value === -1 || props.currentTime === undefined || props.duration === 0) {
@@ -435,14 +426,15 @@
         // Update local data immediately for responsive UI
         if (transcriptData.value?.words[index]) {
           // Update the word in different possible formats
-          if (transcriptData.value.words[index].word !== undefined) {
-            transcriptData.value.words[index].word = newText;
+          const word = transcriptData.value.words[index] as any;
+          if (word.word !== undefined) {
+            word.word = newText;
           }
-          if (transcriptData.value.words[index].text !== undefined) {
-            transcriptData.value.words[index].text = newText;
+          if (word.text !== undefined) {
+            word.text = newText;
           }
-          if (transcriptData.value.words[index].content !== undefined) {
-            transcriptData.value.words[index].content = newText;
+          if (word.content !== undefined) {
+            word.content = newText;
           }
         }
 

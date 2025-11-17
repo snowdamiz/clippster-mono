@@ -71,7 +71,6 @@
 
 <script setup lang="ts">
   import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
-  import { formatDuration } from '../utils/timelineUtils';
   import { useAudioWaveform } from '@/composables/useAudioWaveform';
   import { calculateWaveformParameters, createThrottledRenderer } from '@/utils/audioWaveformUtils';
 
