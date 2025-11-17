@@ -202,6 +202,55 @@
                     >
                       <PlayIcon class="h-3 w-3" />
                     </button>
+
+                    <!-- Build Clip Button -->
+                    <button
+                      v-if="!clip.build_status || clip.build_status === 'pending' || clip.build_status === 'failed'"
+                      class="p-1 hover:bg-muted rounded-md transition-colors text-foreground/60 hover:text-green-500"
+                      title="Build clip"
+                      @click.stop="onBuildClip(clip)"
+                    >
+                      <WrenchIcon class="h-3 w-3" />
+                    </button>
+
+                    <!-- View Built Clip Button (when completed) -->
+                    <button
+                      v-else-if="clip.build_status === 'completed' && clip.built_file_path"
+                      class="p-1 hover:bg-muted rounded-md transition-colors text-green-500 hover:text-green-600"
+                      title="Open built clip"
+                      @click.stop="onOpenBuiltClip(clip)"
+                    >
+                      <DownloadIcon class="h-3 w-3" />
+                    </button>
+
+                    <!-- Building Status -->
+                    <div
+                      v-else-if="clip.build_status === 'building'"
+                      class="p-1 text-green-500 animate-pulse"
+                      title="Building clip..."
+                    >
+                      <LoaderIcon class="h-3 w-3 animate-spin" />
+                    </div>
+
+                    <!-- Completed Status -->
+                    <div
+                      v-else-if="clip.build_status === 'completed'"
+                      class="p-1 text-green-500"
+                      title="Clip built successfully"
+                    >
+                      <CheckIcon class="h-3 w-3" />
+                    </div>
+
+                    <!-- Failed Status -->
+                    <button
+                      v-else-if="clip.build_status === 'failed'"
+                      class="p-1 hover:bg-muted rounded-md transition-colors text-red-500 hover:text-red-600"
+                      title="Build failed - click to retry"
+                      @click.stop="onBuildClip(clip)"
+                    >
+                      <AlertCircleIcon class="h-3 w-3" />
+                    </button>
+
                     <button
                       class="p-1 hover:bg-muted rounded-md transition-colors text-foreground/60 hover:text-red-500"
                       title="Delete clip"
@@ -301,6 +350,38 @@
                     >
                       <div class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
                       Playing
+                    </span>
+
+                    <!-- Build Progress Indicator -->
+                    <span
+                      v-if="clip.build_status === 'building'"
+                      class="flex items-center gap-1 text-blue-500 bg-blue-500/15 px-1.5 py-0.5 rounded-md font-medium text-[10px]"
+                    >
+                      <div class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
+                      Building {{ Math.round(clip.build_progress || 0) }}%
+                    </span>
+
+                    <!-- Build Completed Status -->
+                    <span
+                      v-else-if="clip.build_status === 'completed'"
+                      class="flex items-center gap-1 text-green-500 bg-green-500/15 px-1.5 py-0.5 rounded-md font-medium text-[10px]"
+                      title="Clip built successfully"
+                    >
+                      <CheckIcon class="h-2.5 w-2.5" />
+                      Built
+                      <span v-if="clip.built_file_size" class="ml-1">
+                        ({{ formatFileSize(clip.built_file_size) }})
+                      </span>
+                    </span>
+
+                    <!-- Build Failed Status -->
+                    <span
+                      v-else-if="clip.build_status === 'failed'"
+                      class="flex items-center gap-1 text-red-500 bg-red-500/15 px-1.5 py-0.5 rounded-md font-medium text-[10px]"
+                      :title="clip.build_error || 'Build failed'"
+                    >
+                      <AlertCircleIcon class="h-2.5 w-2.5" />
+                      Failed
                     </span>
                   </div>
                 </div>
@@ -405,10 +486,14 @@
 
 <script setup lang="ts">
   import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
+import { listen } from '@tauri-apps/api/event';
   import {
     getClipsWithVersionsByProjectId,
     getClipDetectionSessionsByProjectId,
     getAllPrompts,
+    getClipsWithBuildStatus,
+    updateClipBuildStatus,
+    getRawVideosByProjectId,
     type ClipWithVersion,
     type ClipDetectionSession,
     type Prompt,
@@ -422,6 +507,12 @@
     MicIcon,
     ClockIcon,
     TrendingUpIcon,
+    WrenchIcon,
+    DownloadIcon,
+    AlertCircleIcon,
+    LoaderIcon,
+    CheckIcon,
+    XIcon,
   } from 'lucide-vue-next';
   import TranscriptPanel from './TranscriptPanel.vue';
 
@@ -546,8 +637,8 @@
 
     loadingClips.value = true;
     try {
-      // Load current clips with versions
-      clips.value = await getClipsWithVersionsByProjectId(projectId);
+      // Load current clips with versions and build status
+      clips.value = await getClipsWithBuildStatus(projectId);
       if (clips.value.length > 0) {
         // Log all unique run colors for debugging
         const uniqueRuns = new Map<number, string>();
@@ -812,6 +903,113 @@
     }
   }
 
+  // ===== CLIP BUILDING FUNCTIONS =====
+
+  // Format file size for display
+  function formatFileSize(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  // Handle clip build request
+  async function onBuildClip(clip: ClipWithVersion) {
+    if (!props.projectId) {
+      console.error('[MediaPanel] No project ID available for clip build');
+      return;
+    }
+
+    if (!clip.current_version_segments || clip.current_version_segments.length === 0) {
+      console.error('[MediaPanel] No segments found for clip build');
+      return;
+    }
+
+    try {
+      console.log('[MediaPanel] Starting clip build for:', clip.id);
+
+      // Update database status to building
+      await updateClipBuildStatus(clip.id, 'building', { progress: 0 });
+
+      // Get the project video file path
+      const rawVideos = await getRawVideosByProjectId(props.projectId);
+      if (rawVideos.length === 0) {
+        throw new Error('No project video found');
+      }
+
+      const projectVideo = rawVideos[0];
+
+      // Prepare segments for the Rust backend
+      const segments = clip.current_version_segments.map(segment => ({
+        id: segment.id,
+        start_time: segment.start_time,
+        end_time: segment.end_time,
+        duration: segment.duration,
+        transcript: segment.transcript,
+      }));
+
+      // Call the Tauri clip building command
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('build_clip_from_segments', {
+        projectId: props.projectId,
+        clipId: clip.id,
+        videoPath: projectVideo.file_path,
+        segments: segments,
+      });
+
+      console.log('[MediaPanel] Clip build started successfully');
+
+      // Refresh clips to show building status
+      await refreshClips();
+
+    } catch (error) {
+      console.error('[MediaPanel] Failed to start clip build:', error);
+
+      // Update database status to failed
+      await updateClipBuildStatus(clip.id, 'failed', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+
+      // Refresh clips to show failed status
+      await refreshClips();
+
+      // Show user-friendly error message
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      showErrorMessage('Build Failed', `Failed to build clip "${clip.current_version?.name || clip.name || 'Untitled'}": ${errorMessage}`);
+    }
+  }
+
+  // Open/view built clip
+  async function onOpenBuiltClip(clip: ClipWithVersion) {
+    if (!clip.built_file_path) {
+      console.error('[MediaPanel] No built file path available');
+      return;
+    }
+
+    try {
+      const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+      await revealItemInDir(clip.built_file_path);
+      console.log('[MediaPanel] Opened built clip:', clip.built_file_path);
+    } catch (error) {
+      console.error('[MediaPanel] Failed to open built clip:', error);
+      showErrorMessage('Failed to Open', 'Could not open the built clip file. Please check if the file still exists.');
+    }
+  }
+
+  // Show error message to user (using toast)
+  async function showErrorMessage(title: string, message: string) {
+    try {
+      // Import and use toast composable
+      const { error: showError } = await import('@/composables/useToast');
+      showError(title, message, 8000);
+    } catch (error) {
+      console.error('[MediaPanel] Failed to show error message:', error);
+      // Fallback to alert if toast is not available
+      alert(`${title}: ${message}`);
+    }
+  }
+
   // Expose methods for external access
   defineExpose({
     refreshClips,
@@ -825,14 +1023,142 @@
     }
   }
 
-  onMounted(() => {
+  // Handle clip build progress events
+  function handleClipBuildProgress(event: any) {
+    // Tauri events provide payload in event.payload, not event.detail
+    const payload = event.payload || event.detail;
+    const { clip_id, progress, stage, message } = payload;
+
+    console.log(`[MediaPanel] Received clip build progress event for: ${clip_id}`);
+
+    // Only process if this clip belongs to our project
+    const clip = clips.value.find(c => c.id === clip_id);
+    if (!clip) {
+      console.log(`[MediaPanel] Clip ${clip_id} not found in current clips array, updating database anyway`);
+      // Still update database even if not in current array
+    } else {
+      console.log(`[MediaPanel] Clip build progress: ${clip_id} - ${progress}% - ${stage}`);
+
+      // Update local state immediately
+      clip.buildStatus = 'building';
+      clip.buildProgress = progress;
+    }
+
+    // Update the clip's progress in the database
+    updateClipBuildStatus(clip_id, 'building', {
+      progress,
+      error: stage === 'error' ? message : undefined
+    }).catch(error => {
+      console.error('[MediaPanel] Failed to update clip build progress:', error);
+    });
+
+    // Refresh clips to show updated progress
+    refreshClips();
+  }
+
+  // Handle clip build completion events
+  function handleClipBuildComplete(event: any) {
+    // Tauri events provide payload in event.payload, not event.detail
+    const payload = event.payload || event.detail;
+    const { clip_id, success, output_path, thumbnail_path, duration, file_size, error } = payload;
+
+    console.log(`[MediaPanel] Received clip build complete event for: ${clip_id}`);
+
+    // Process regardless of whether clip is in current array - update database directly
+    if (success) {
+      console.log(`[MediaPanel] Clip build SUCCEEDED: ${clip_id}`);
+
+      // Update database with success status and file info
+      updateClipBuildStatus(clip_id, 'completed', {
+        progress: 100,
+        builtFilePath: output_path,
+        builtThumbnailPath: thumbnail_path,
+        builtDuration: duration,
+        builtFileSize: file_size,
+        error: undefined
+      }).then(() => {
+        console.log(`[MediaPanel] Database updated successfully for clip: ${clip_id}`);
+        // Find the clip for showing success message
+        const clip = clips.value.find(c => c.id === clip_id);
+        if (clip) {
+          showSuccessMessage(
+            'Clip Built Successfully',
+            `Clip "${clip.current_version?.name || clip.name || 'Untitled'}" has been built successfully! (${formatFileSize(file_size || 0)})`
+          );
+        } else {
+          showSuccessMessage(
+            'Clip Built Successfully',
+            `Clip has been built successfully! (${formatFileSize(file_size || 0)})`
+          );
+        }
+        // Refresh clips to get updated status
+        refreshClips();
+      }).catch(dbError => {
+        console.error('[MediaPanel] Failed to update clip build completion:', dbError);
+      });
+    } else {
+      console.log(`[MediaPanel] Clip build FAILED: ${clip_id} - ${error}`);
+
+      // Update database with failure status
+      updateClipBuildStatus(clip_id, 'failed', {
+        progress: 0,
+        error: error || 'Unknown build error'
+      }).then(() => {
+        // Find the clip for showing error message
+        const clip = clips.value.find(c => c.id === clip_id);
+        if (clip) {
+          showErrorMessage(
+            'Build Failed',
+            `Failed to build clip "${clip.current_version?.name || clip.name || 'Untitled'}": ${error || 'Unknown error'}`
+          );
+        } else {
+          showErrorMessage(
+            'Build Failed',
+            `Failed to build clip: ${error || 'Unknown error'}`
+          );
+        }
+        // Refresh clips to get updated status
+        refreshClips();
+      }).catch(dbError => {
+        console.error('[MediaPanel] Failed to update clip build failure:', dbError);
+      });
+    }
+  }
+
+  // Show success message to user (using toast)
+  async function showSuccessMessage(title: string, message: string) {
+    try {
+      // Import and use toast composable
+      const { success: showSuccess } = await import('@/composables/useToast');
+      showSuccess(title, message, 6000);
+    } catch (error) {
+      console.error('[MediaPanel] Failed to show success message:', error);
+      // Fallback to console if toast is not available
+      console.log(`✅ ${title}: ${message}`);
+    }
+  }
+
+  onMounted(async () => {
     // Add event listener for refresh events
     document.addEventListener('refresh-clips', handleRefreshEvent as EventListener);
+
+    // Add event listeners for clip build events using Tauri API
+    try {
+      await listen('clip-build-progress', handleClipBuildProgress);
+      await listen('clip-build-complete', handleClipBuildComplete);
+      console.log('[MediaPanel] Tauri event listeners for clip build events set up successfully');
+    } catch (error) {
+      console.error('[MediaPanel] Failed to set up Tauri event listeners:', error);
+    }
   });
 
   onUnmounted(() => {
     // Remove event listener to prevent memory leaks
     document.removeEventListener('refresh-clips', handleRefreshEvent as EventListener);
+
+    // Note: Tauri event listeners are automatically cleaned up when the component is unmounted
+    // so we don't need to manually remove them
+    console.log('[MediaPanel] Component unmounted, event listeners cleaned up');
   });
 </script>
 

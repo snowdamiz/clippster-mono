@@ -2658,7 +2658,19 @@ pub fn run() {
                             sql: include_str!("../migrations/024_add_intro_outro_thumbnail_status.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
-                          ],
+                        tauri_plugin_sql::Migration {
+                            version: 25,
+                            description: "add_waveform_caching",
+                            sql: include_str!("../migrations/025_add_waveform_caching.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 26,
+                            description: "add_clip_build_fields",
+                            sql: include_str!("../migrations/026_add_clip_build_fields.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                    ],
                 )
                 .build(),
         )

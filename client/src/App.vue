@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { onMounted, ref } from 'vue';
+  import { onMounted, onUnmounted, ref } from 'vue';
   import Toast from '@/components/Toast.vue';
   import AppCloseDialog from '@/components/AppCloseDialog.vue';
   import TitleBar from '@/components/TitleBar.vue';
@@ -8,10 +8,18 @@
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
   import { invoke } from '@tauri-apps/api/core';
+  import { useRouter } from 'vue-router';
 
   const { initializeWindowCloseHandler } = useWindowClose();
   const authStore = useAuthStore();
+  const router = useRouter();
   const isLoading = ref(true);
+
+  // Auth event listener function
+  const handleAuthRequired = () => {
+    console.log('[App] Auth required, redirecting to login');
+    router.push('/login');
+  };
 
   // Ensure dark mode is always applied and initialize database
   onMounted(async () => {
@@ -24,6 +32,9 @@
     } catch (error) {
       console.error('[App] Failed to check authentication:', error);
     }
+
+    // Listen for auth-required events (e.g., when token expires)
+    window.addEventListener('auth-required', handleAuthRequired);
 
     // Initialize database connection
     try {
@@ -51,6 +62,11 @@
     } catch (error) {
       console.error('[App] Failed to show main window:', error);
     }
+  });
+
+  // Cleanup auth event listener on unmount
+  onUnmounted(() => {
+    window.removeEventListener('auth-required', handleAuthRequired);
   });
 </script>
 
