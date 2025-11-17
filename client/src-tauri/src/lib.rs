@@ -1,5 +1,3 @@
-use once_cell::sync::Lazy;
-use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
 
 // Modules
@@ -14,428 +12,23 @@ mod assets;
 mod ui_utils;
 mod pumpfun;
 mod waveform;
+mod commands;
 
 // Import items from modules
-use ffmpeg_utils::{
-    extract_duration_from_ffmpeg_output,
-    parse_video_info_from_ffmpeg_output,
-    VideoValidationResult
-};
+use downloads::ACTIVE_DOWNLOADS;
 
-use downloads::{ACTIVE_DOWNLOADS, DOWNLOAD_METADATA};
-use video_server::VIDEO_SERVER_PORT;
+// Import all command functions
+use commands::*;
+use once_cell::sync::Lazy;
+use std::sync::{Arc, Mutex};
 
-// Static variables
 static CLIP_GENERATION_IN_PROGRESS: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
-
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
-#[tauri::command]
-fn get_video_server_port() -> u16 {
-    VIDEO_SERVER_PORT
-}
-
-#[tauri::command]
-async fn test_download_command(message: String) -> Result<String, String> {
-    println!("[Rust] Test command called with message: {}", message);
-    Ok(format!("Test command received: {}", message))
-}
-
-#[tauri::command]
-async fn get_active_downloads_count() -> Result<usize, String> {
-    let downloads = ACTIVE_DOWNLOADS.lock().unwrap();
-    Ok(downloads.len())
-}
-
-#[tauri::command]
-async fn cancel_all_downloads() -> Result<Vec<String>, String> {
-    use std::fs;
-
-    let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
-    let download_ids: Vec<String> = downloads.keys().cloned().collect();
-
-    // Get storage paths to clean up partial files
-    let paths = match storage::init_storage_dirs() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("[Rust] Failed to get storage paths for cleanup: {}", e);
-            return Err(format!("Failed to get storage paths: {}", e));
-        }
-    };
-
-    // Remove partial download files
-    let mut cleaned_files = Vec::new();
-    for download_id in &download_ids {
-        // Look for partial files matching the download ID pattern
-        if let Ok(entries) = fs::read_dir(&paths.videos) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                    if filename.contains(download_id) || filename.starts_with("pumpfun_") {
-                        if let Err(e) = fs::remove_file(&path) {
-                            eprintln!("[Rust] Failed to remove partial file {}: {}", path.display(), e);
-                        } else {
-                            cleaned_files.push(path.to_string_lossy().to_string());
-                            println!("[Rust] Removed partial file: {}", path.display());
-                        }
-                    }
-                }
-            }
-        }
-
-        // Also clean up partial thumbnails
-        if let Ok(entries) = fs::read_dir(&paths.thumbnails) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                    if filename.contains(download_id) {
-                        if let Err(e) = fs::remove_file(&path) {
-                            eprintln!("[Rust] Failed to remove partial thumbnail {}: {}", path.display(), e);
-                        } else {
-                            cleaned_files.push(path.to_string_lossy().to_string());
-                            println!("[Rust] Removed partial thumbnail: {}", path.display());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Clear all active downloads
-    downloads.clear();
-    println!("[Rust] Cancelled {} downloads and cleaned up {} files", download_ids.len(), cleaned_files.len());
-
-    Ok(download_ids)
-}
-
-#[tauri::command]
-async fn cancel_download(download_id: String) -> Result<bool, String> {
-    println!("[Rust] Canceling download: {}", download_id);
-
-    // Since we only allow 1 concurrent download, we can safely kill all FFmpeg processes
-    // This is much more reliable than trying to track individual processes
-    #[allow(unused_assignments)]
-    let mut ffmpeg_killed = false;
-    #[cfg(target_os = "windows")]
-    {
-        use std::process::Command;
-
-        println!("[Rust] Terminating FFmpeg processes (1 concurrent download limit)");
-
-        match Command::new("taskkill")
-            .args(["/F", "/IM", "ffmpeg.exe"])
-            .output()
-        {
-            Ok(output) => {
-                if output.status.success() {
-                    println!("[Rust] Successfully terminated FFmpeg processes");
-                    ffmpeg_killed = true;
-                } else {
-                    println!("[Rust] No FFmpeg processes were running");
-                    ffmpeg_killed = false;
-                }
-            }
-            Err(e) => {
-                println!("[Rust] Failed to terminate FFmpeg processes: {}", e);
-                ffmpeg_killed = false;
-            },
-        }
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        use std::process::Command;
-
-        match Command::new("pkill")
-            .args(["-f", "ffmpeg"])
-            .output()
-        {
-            Ok(output) => {
-                if output.status.success() {
-                    println!("[Rust] Successfully terminated FFmpeg processes");
-                    ffmpeg_killed = true;
-                } else {
-                    println!("[Rust] No FFmpeg processes were running");
-                    ffmpeg_killed = false;
-                }
-            }
-            Err(e) => {
-                println!("[Rust] Failed to terminate FFmpeg processes: {}", e);
-                ffmpeg_killed = false;
-            },
-        }
-    }
-
-    // Give processes a moment to terminate and release file handles
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-    // Get metadata for cleanup
-    let metadata = {
-        let mut metadata_map = DOWNLOAD_METADATA.lock().unwrap();
-        metadata_map.remove(&download_id)
-    };
-
-    // Clean up files if we have metadata
-    if let Some(meta) = metadata {
-        println!("[Rust] Cleaning up files for cancelled download: {}", download_id);
-
-        // Remove video file if it exists
-        if let Some(video_path) = meta.output_path {
-            match std::fs::remove_file(&video_path) {
-                Ok(()) => println!("[Rust] Removed partial video file: {}", video_path),
-                Err(e) => println!("[Rust] Failed to remove partial video file {}: {}", video_path, e),
-            }
-        }
-
-        // Remove thumbnail file if it exists
-        if let Some(thumbnail_path) = meta.thumbnail_path {
-            match std::fs::remove_file(&thumbnail_path) {
-                Ok(()) => println!("[Rust] Removed partial thumbnail file: {}", thumbnail_path),
-                Err(e) => println!("[Rust] Failed to remove partial thumbnail file {}: {}", thumbnail_path, e),
-            }
-        }
-    }
-
-    // Remove from active downloads
-    let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
-    let was_active = downloads.remove(&download_id).is_some();
-    drop(downloads);
-
-    // Consider cancellation successful if:
-    // 1. The download was active in our tracking, OR
-    // 2. We successfully killed FFmpeg processes (indicates cancellation worked)
-    let cancellation_successful = was_active || ffmpeg_killed;
-
-    if was_active {
-        println!("[Rust] Successfully cancelled download: {}", download_id);
-    } else if ffmpeg_killed {
-        println!("[Rust] Download was not active in tracking, but FFmpeg was killed - cancellation successful: {}", download_id);
-    } else {
-        println!("[Rust] Cancellation attempt failed - download not active and no FFmpeg processes killed: {}", download_id);
-    }
-
-    Ok(cancellation_successful)
-}
-
-#[tauri::command]
-async fn cleanup_completed_download(download_id: String) -> Result<(), String> {
-    println!("[Rust] Cleaning up metadata for completed download: {}", download_id);
-
-    // Remove metadata for completed downloads (keep the files)
-    let mut metadata_map = DOWNLOAD_METADATA.lock().unwrap();
-    metadata_map.remove(&download_id);
-
-    Ok(())
-}
-
-#[tauri::command]
-async fn check_file_exists(path: String) -> Result<bool, String> {
-    use std::path::Path;
-    Ok(Path::new(&path).exists())
-}
-
-#[tauri::command]
-async fn validate_video_file(app: tauri::AppHandle, file_path: String) -> Result<VideoValidationResult, String> {
-    use std::path::Path;
-    use tauri_plugin_shell::ShellExt;
-
-    println!("[Rust Validation] validate_video_file called with path: {}", file_path);
-
-    let video_path = Path::new(&file_path);
-
-    // Check if file exists
-    if !video_path.exists() {
-        return Ok(VideoValidationResult {
-            is_valid: false,
-            error: Some("Video file does not exist".to_string()),
-            duration: None,
-            width: None,
-            height: None,
-            codec: None,
-            file_size: None,
-        });
-    }
-
-    // Check file size (should be greater than 0)
-    let metadata = match std::fs::metadata(video_path) {
-        Ok(meta) => meta,
-        Err(e) => {
-            return Ok(VideoValidationResult {
-                is_valid: false,
-                error: Some(format!("Failed to read file metadata: {}", e)),
-                duration: None,
-                width: None,
-                height: None,
-                codec: None,
-                file_size: None,
-            });
-        }
-    };
-
-    let file_size = metadata.len();
-    if file_size == 0 {
-        return Ok(VideoValidationResult {
-            is_valid: false,
-            error: Some("Video file is empty".to_string()),
-            duration: None,
-            width: None,
-            height: None,
-            codec: None,
-            file_size: Some(0),
-        });
-    }
-
-    // Use FFmpeg to validate video file integrity
-    let shell = app.shell();
-
-    let output = match shell.sidecar("ffmpeg") {
-        Ok(ffmpeg) => {
-            match ffmpeg.args([
-                "-i", &file_path,
-                "-f", "null",
-                "-t", "1",  // Only validate first second to be fast
-                "-"
-            ]).output().await {
-                Ok(output) => output,
-                Err(e) => {
-                    return Ok(VideoValidationResult {
-                        is_valid: false,
-                        error: Some(format!("Failed to run FFmpeg validation: {}", e)),
-                        duration: None,
-                        width: None,
-                        height: None,
-                        codec: None,
-                        file_size: Some(file_size),
-                    });
-                }
-            }
-        }
-        Err(e) => {
-            return Ok(VideoValidationResult {
-                is_valid: false,
-                error: Some(format!("Failed to access FFmpeg: {}", e)),
-                duration: None,
-                width: None,
-                height: None,
-                codec: None,
-                file_size: Some(file_size),
-            });
-        }
-    };
-
-    // Parse FFmpeg output for analysis
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    // Check if FFmpeg successfully processed the file
-    if !output.status.success() {
-        let error_msg = if stderr.contains("Invalid data found") {
-            "Video file contains invalid data or corruption"
-        } else if stderr.contains("moov atom not found") {
-            "Video file is incomplete or corrupted - missing movie atom"
-        } else if stderr.contains("Invalid argument") {
-            "Video file format is not supported"
-        } else if stderr.contains("No such file or directory") {
-            "Video file not found"
-        } else if stderr.contains("Permission denied") {
-            "Permission denied accessing video file"
-        } else {
-            &format!("FFmpeg validation failed: {}", stderr)
-        };
-
-        return Ok(VideoValidationResult {
-            is_valid: false,
-            error: Some(error_msg.to_string()),
-            duration: None,
-            width: None,
-            height: None,
-            codec: None,
-            file_size: Some(file_size),
-        });
-    }
-
-    // Check for critical errors even when exit code is 0
-    if stderr.contains("Invalid data found") && stderr.contains("corrupt") {
-        return Ok(VideoValidationResult {
-            is_valid: false,
-            error: Some("Video file contains corruption".to_string()),
-            duration: None,
-            width: None,
-            height: None,
-            codec: None,
-            file_size: Some(file_size),
-        });
-    }
-
-    // Try to parse video information (optional - don't fail if we can't parse)
-    let duration = extract_duration_from_ffmpeg_output(&stderr);
-    let video_info = parse_video_info_from_ffmpeg_output(&stderr);
-
-    match video_info {
-        Ok(info) => {
-            // Check for reasonable video dimensions
-            if info.width == 0 || info.height == 0 {
-                return Ok(VideoValidationResult {
-                    is_valid: false,
-                    error: Some("Invalid video dimensions (0x0)".to_string()),
-                    duration,
-                    width: Some(info.width),
-                    height: Some(info.height),
-                    codec: Some(info.codec),
-                    file_size: Some(file_size),
-                });
-            }
-
-            // Video is valid with parsed info
-            Ok(VideoValidationResult {
-                is_valid: true,
-                error: None,
-                duration,
-                width: Some(info.width),
-                height: Some(info.height),
-                codec: Some(info.codec),
-                file_size: Some(file_size),
-            })
-        }
-        Err(_) => {
-            // If we can't parse video info but FFmpeg succeeded, consider it valid
-            // This can happen for some video formats or with minimal validation
-            println!("[Validation] Could not parse detailed video info, but FFmpeg validation passed");
-            Ok(VideoValidationResult {
-                is_valid: true,
-                error: None,
-                duration,
-                width: None,
-                height: None,
-                codec: None,
-                file_size: Some(file_size),
-            })
-        }
-    }
-}
-
-#[tauri::command]
-async fn set_clip_generation_in_progress(in_progress: bool) -> Result<(), String> {
-    let mut clip_gen = CLIP_GENERATION_IN_PROGRESS.lock().unwrap();
-    *clip_gen = in_progress;
-    println!("[Rust] Clip generation in progress set to: {}", in_progress);
-    Ok(())
-}
-
-#[tauri::command]
-async fn is_clip_generation_in_progress() -> Result<bool, String> {
-    let clip_gen = CLIP_GENERATION_IN_PROGRESS.lock().unwrap();
-    Ok(*clip_gen)
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     println!("[Rust] Starting Tauri application");
     println!("[Rust] Registering SQL plugin...");
-    
+
     tauri::Builder::default()
         .plugin(
             tauri_plugin_sql::Builder::default()
@@ -649,43 +242,66 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // System commands
             greet,
+            get_video_server_port,
+            test_download_command,
+            get_active_downloads_count,
+            set_clip_generation_in_progress,
+            is_clip_generation_in_progress,
+
+            // Download management commands
+            cancel_all_downloads,
+            cancel_download,
+            cleanup_completed_download,
+
+            // File operations commands
+            check_file_exists,
+            validate_video_file,
+
+            // Auth commands
             auth::open_wallet_auth_window,
             auth::open_wallet_payment_window,
             auth::close_auth_window,
             auth::poll_auth_result,
             auth::poll_payment_result,
-            get_video_server_port,
+
+            // PumpFun commands
             pumpfun::get_pumpfun_clips,
-            test_download_command,
+
+            // Download commands
             downloads::download_pumpfun_vod,
             downloads::download_pumpfun_vod_segment,
-            get_active_downloads_count,
-            cancel_all_downloads,
-            cancel_download,
-            cleanup_completed_download,
-            check_file_exists,
-            validate_video_file,
-            set_clip_generation_in_progress,
-            is_clip_generation_in_progress,
+
+            // Audio commands
             audio::extract_audio_from_video,
             audio::extract_and_chunk_audio,
+
+            // Waveform commands
             waveform::extract_audio_waveform,
             waveform::get_cached_waveform,
             waveform::save_waveform_to_cache,
+
+            // Storage commands
             storage::get_storage_paths,
             storage::copy_video_to_storage,
             storage::copy_asset_to_storage,
             storage::delete_asset_file,
-            assets::upload_asset_async,
             storage::generate_thumbnail,
             storage::save_temp_file,
             storage::read_file_as_data_url,
             storage::delete_video_file,
             storage::get_video_duration,
+
+            // Assets commands
+            assets::upload_asset_async,
+
+            // Clips commands
             clips::build_clip_from_segments,
             clips::cancel_clip_build,
             clips::is_clip_build_active,
+
+            // UI Utils commands
             ui_utils::setup_macos_titlebar,
             ui_utils::get_platform,
             ui_utils::show_main_window
