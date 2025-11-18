@@ -168,13 +168,25 @@
 
   // Search state
   const searchQuery = ref('');
+  const debouncedSearchQuery = ref('');
   const searchInputRef = ref<HTMLInputElement>();
+  let searchDebounceTimeout: ReturnType<typeof setTimeout> | null = null;
 
   // Flag to prevent autoscroll when user manually clicks words
   const preventAutoscroll = ref(false);
 
   // Use transcript data composable
   const { transcriptData, loadTranscriptData } = useTranscriptData(computed(() => props.projectId || null));
+
+  // Watch searchQuery and debounce it
+  watch(searchQuery, (newValue) => {
+    if (searchDebounceTimeout) {
+      clearTimeout(searchDebounceTimeout);
+    }
+    searchDebounceTimeout = setTimeout(() => {
+      debouncedSearchQuery.value = newValue;
+    }, 300); // 300ms debounce
+  });
 
   // Format time in MM:SS format
   function formatTime(seconds: number): string {
@@ -213,11 +225,11 @@
     return start + (end - start) / 2;
   }
 
-  // Search functionality
-  function getMatchedPhraseIndices(): number[] {
-    if (!searchQuery.value.trim() || !transcriptData.value?.words.length) return [];
+  // Search functionality - computed property to cache matched indices
+  const matchedPhraseIndices = computed((): number[] => {
+    if (!debouncedSearchQuery.value.trim() || !transcriptData.value?.words.length) return [];
 
-    const query = searchQuery.value.toLowerCase().trim();
+    const query = debouncedSearchQuery.value.toLowerCase().trim();
     const queryWords = query.split(/\s+/).filter((word) => word.length > 0);
 
     if (queryWords.length === 0) return [];
@@ -251,13 +263,11 @@
     }
 
     return matchedIndices;
-  }
+  });
 
   function isWordMatched(_word: any, index: number): boolean {
-    if (!searchQuery.value.trim()) return false;
-
-    const matchedIndices = getMatchedPhraseIndices();
-    return matchedIndices.includes(index);
+    if (!debouncedSearchQuery.value.trim()) return false;
+    return matchedPhraseIndices.value.includes(index);
   }
 
   // Get CSS classes for a word based on its state relative to currentTime
@@ -674,6 +684,12 @@
       transcriptContent.value.removeEventListener('scroll', handleScroll);
     }
     wordElements.value.clear();
+
+    // Clear debounce timeout
+    if (searchDebounceTimeout) {
+      clearTimeout(searchDebounceTimeout);
+      searchDebounceTimeout = null;
+    }
 
     // Clear autoscroll timeout
     if (window.autoscrollTimeout) {
