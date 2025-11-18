@@ -8,7 +8,7 @@
     <template #actions>
       <button
         @click="openCreateDialog"
-        class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all"
+        class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all"
       >
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -26,7 +26,7 @@
       <div
         v-for="project in paginatedProjects"
         :key="project.id"
-        class="relative bg-card rounded-lg overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
+        class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
         @click="openWorkspace(project)"
       >
         <!-- Thumbnail background with vignette -->
@@ -198,7 +198,7 @@
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
       @click.self="handleDeleteDialogClose"
     >
-      <div class="bg-card rounded-2xl p-8 max-w-md w-full mx-4 border border-border">
+      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
         <h2 class="text-2xl font-bold mb-4">
           {{ projectHasVideos || projectHasClips ? 'Delete Project with Content' : 'Delete Project' }}
         </h2>
@@ -223,13 +223,13 @@
             "? This action cannot be undone.
           </p>
           <button
-            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg font-semibold hover:from-red-700 hover:to-red-800 transition-all"
+            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
             @click="deleteProjectConfirmed"
           >
             Delete Project
           </button>
           <button
-            class="w-full py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 transition-all"
+            class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
             @click="handleDeleteDialogClose"
           >
             Cancel

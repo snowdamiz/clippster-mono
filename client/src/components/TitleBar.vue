@@ -123,12 +123,12 @@
         @click.self="showKeyboardShortcuts = false"
       >
         <div
-          class="bg-card rounded-2xl p-6 max-w-3xl w-full mx-4 border border-border max-h-[85vh] flex flex-col relative"
+          class="bg-card rounded-lg p-6 max-w-3xl w-full mx-4 border border-border max-h-[85vh] flex flex-col relative"
         >
           <!-- Close Button (Top Right) -->
           <button
             @click="showKeyboardShortcuts = false"
-            class="absolute top-4 right-4 p-2 hover:bg-muted rounded-lg transition-colors z-10"
+            class="absolute top-4 right-4 p-2 hover:bg-muted rounded-md transition-colors z-10"
             title="Close"
           >
             <svg
@@ -241,7 +241,7 @@
             <!-- Playback Tab -->
             <div v-if="activeShortcutTab === 'playback'" class="space-y-4">
               <div class="space-y-2">
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                   <span class="text-foreground">Play / Pause Video</span>
                   <kbd
                     class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
@@ -249,7 +249,7 @@
                     Space
                   </kbd>
                 </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                   <span class="text-foreground">Play / Pause (Alternative)</span>
                   <span
                     class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
@@ -257,7 +257,7 @@
                     Click Video
                   </span>
                 </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                   <span class="text-foreground">Seek Playhead (No Selection)</span>
                   <div class="flex items-center gap-2">
                     <kbd
@@ -268,7 +268,7 @@
                     <span class="text-xs text-muted-foreground">(Hold for 2x)</span>
                   </div>
                 </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                   <span class="text-foreground">Seek to Time Position</span>
                   <span
                     class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
@@ -276,7 +276,7 @@
                     Click Video Track
                   </span>
                 </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                   <span class="text-foreground">Scrub Through Video</span>
                   <span
                     class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
@@ -290,7 +290,7 @@
             <!-- Timeline Tab -->
             <div v-else-if="activeShortcutTab === 'timeline'" class="space-y-4">
               <div class="space-y-2">
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                   <span class="text-foreground">Zoom In / Out</span>
                   <div class="flex items-center gap-2">
                     <span
@@ -300,7 +300,7 @@
                     </span>
                   </div>
                 </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                   <span class="text-foreground">Zoom to Time Range</span>
                   <div class="flex items-center gap-2">
                     <span
@@ -310,7 +310,7 @@
                     </span>
                   </div>
                 </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                   <span class="text-foreground">Zoom Level Slider</span>
                   <span
                     class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
@@ -318,7 +318,7 @@
                     Drag Slider
                   </span>
                 </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                   <span class="text-foreground">Pan Horizontally</span>
                   <div class="flex items-center gap-2">
                     <kbd
@@ -334,7 +334,7 @@
                     </span>
                   </div>
                 </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                   <span class="text-foreground">Pan Vertically (Through Clips)</span>
                   <div class="flex items-center gap-2">
                     <kbd
@@ -356,7 +356,7 @@
             <!-- Selection Tab -->
             <div v-else-if="activeShortcutTab === 'selection'" class="space-y-4">
               <div class="space-y-2">
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                   <span class="text-foreground">Select Single Segment</span>
                   <span
                     class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
@@ -364,7 +364,7 @@
                     Click Segment
                   </span>
                 </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                   <span class="text-foreground">Multi-Select Segments</span>
                   <div class="flex items-center gap-2">
                     <kbd
@@ -380,7 +380,7 @@
                     </span>
                   </div>
                 </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                   <span class="text-foreground">Deselect All Segments</span>
                   <span
                     class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
@@ -399,7 +399,7 @@
                   Keyboard Editing
                 </h3>
                 <div class="space-y-2">
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                     <span class="text-foreground">Move Selected Segments</span>
                     <div class="flex items-center gap-2">
                       <kbd
@@ -410,7 +410,7 @@
                       <span class="text-xs text-muted-foreground">(Hold for 2x)</span>
                     </div>
                   </div>
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                     <span class="text-foreground">Delete Selected Segments</span>
                     <kbd
                       class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
@@ -418,7 +418,7 @@
                       Backspace
                     </kbd>
                   </div>
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                     <span class="text-foreground">Merge Selected Segments</span>
                     <kbd
                       class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
@@ -435,7 +435,7 @@
                   Mouse Manipulation
                 </h3>
                 <div class="space-y-2">
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                     <span class="text-foreground">Reorder Segment Position</span>
                     <span
                       class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
@@ -443,7 +443,7 @@
                       Drag Segment
                     </span>
                   </div>
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                     <span class="text-foreground">Trim Segment Start/End</span>
                     <span
                       class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
@@ -458,7 +458,7 @@
             <!-- Cut Tool Tab -->
             <div v-else-if="activeShortcutTab === 'cut'" class="space-y-4">
               <div class="space-y-2">
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                   <span class="text-foreground">Toggle Cut Tool On/Off</span>
                   <kbd
                     class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
@@ -466,7 +466,7 @@
                     X
                   </kbd>
                 </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                   <span class="text-foreground">Split Segment at Cursor</span>
                   <span
                     class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
@@ -474,7 +474,7 @@
                     Click Segment
                   </span>
                 </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                   <span class="text-foreground">Cancel Cut Tool</span>
                   <kbd
                     class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
@@ -491,7 +491,7 @@
               <div>
                 <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">General</h3>
                 <div class="space-y-2">
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                     <span class="text-foreground">Exit Cut Tool / Close Dialogs</span>
                     <kbd
                       class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
@@ -508,7 +508,7 @@
                   Timeline Toolbar
                 </h3>
                 <div class="space-y-2">
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                     <span class="text-foreground">Reverse 10 Seconds</span>
                     <span
                       class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
@@ -516,7 +516,7 @@
                       Hold Button
                     </span>
                   </div>
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                     <span class="text-foreground">Forward 10 Seconds</span>
                     <span
                       class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
@@ -524,7 +524,7 @@
                       Hold Button
                     </span>
                   </div>
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                     <span class="text-foreground">Cut Tool Button</span>
                     <span
                       class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
@@ -532,7 +532,7 @@
                       Click to Toggle
                     </span>
                   </div>
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
                     <span class="text-foreground">Merge Segments Button</span>
                     <span
                       class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
@@ -545,7 +545,7 @@
 
               <!-- Legend -->
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div class="p-3 bg-muted/30 rounded-lg border border-border">
+                <div class="p-3 bg-muted/30 rounded-md border border-border">
                   <div class="flex items-center gap-2 mb-1">
                     <kbd class="px-2 py-1 bg-background border border-border rounded text-xs font-mono shadow-sm">
                       Key
@@ -554,7 +554,7 @@
                   </div>
                   <p class="text-xs text-muted-foreground">Keys shown in monospace font</p>
                 </div>
-                <div class="p-3 bg-muted/30 rounded-lg border border-border">
+                <div class="p-3 bg-muted/30 rounded-md border border-border">
                   <div class="flex items-center gap-2 mb-1">
                     <span class="px-2 py-1 bg-background border border-border rounded text-xs shadow-sm">Action</span>
                     <span class="text-xs font-medium text-foreground">Mouse Action</span>
@@ -564,7 +564,7 @@
               </div>
 
               <!-- Platform Note -->
-              <div class="p-4 bg-muted/30 rounded-lg border border-border">
+              <div class="p-4 bg-muted/30 rounded-md border border-border">
                 <p class="text-sm text-muted-foreground">
                   <strong class="text-foreground">Platform Note:</strong>
                   <kbd

@@ -10,7 +10,7 @@
     >
       <!-- Icon -->
       <div class="flex-shrink-0 mt-0.5">
-        <div v-if="toast.type === 'success'" class="p-1.5 bg-green-500/10 rounded-lg">
+        <div v-if="toast.type === 'success'" class="p-1.5 bg-green-500/10 rounded-md">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             class="h-5 w-5 text-green-500"
@@ -25,7 +25,7 @@
           </svg>
         </div>
 
-        <div v-else-if="toast.type === 'error'" class="p-1.5 bg-red-500/10 rounded-lg">
+        <div v-else-if="toast.type === 'error'" class="p-1.5 bg-red-500/10 rounded-md">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
             <path
               fill-rule="evenodd"
@@ -35,7 +35,7 @@
           </svg>
         </div>
 
-        <div v-else-if="toast.type === 'warning'" class="p-1.5 bg-yellow-500/10 rounded-lg">
+        <div v-else-if="toast.type === 'warning'" class="p-1.5 bg-yellow-500/10 rounded-md">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             class="h-5 w-5 text-yellow-500"
@@ -50,7 +50,7 @@
           </svg>
         </div>
 
-        <div v-else class="p-1.5 bg-primary/10 rounded-lg">
+        <div v-else class="p-1.5 bg-primary/10 rounded-md">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
             <path
               fill-rule="evenodd"
@@ -90,10 +90,10 @@
 </template>
 
 <script setup lang="ts">
-  import { ToastProvider, ToastRoot, ToastTitle, ToastDescription, ToastClose, ToastViewport } from 'radix-vue'
-  import { useToastStore } from '@/composables/useToast'
+  import { ToastProvider, ToastRoot, ToastTitle, ToastDescription, ToastClose, ToastViewport } from 'radix-vue';
+  import { useToastStore } from '@/composables/useToast';
 
-  const { toasts, removeToast } = useToastStore()
+  const { toasts, removeToast } = useToastStore();
 </script>
 
 <style>

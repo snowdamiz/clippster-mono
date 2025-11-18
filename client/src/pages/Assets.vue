@@ -11,7 +11,7 @@
           <button
             @click="openIntrosFolder"
             title="Open assets folder"
-            class="p-3 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-all"
+            class="p-3 bg-muted hover:bg-muted/80 text-foreground rounded-md transition-all"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -31,7 +31,7 @@
           <button
             @click="handleUpload"
             :disabled="uploading"
-            class="px-5 py-2.5 bg-gradient-to-r from-blue-500/80 via-purple-500/80 to-pink-500/80 hover:from-blue-500/90 hover:via-purple-500/90 hover:to-pink-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            class="px-5 py-2.5 bg-gradient-to-r from-blue-500/80 via-purple-500/80 to-pink-500/80 hover:from-blue-500/90 hover:via-purple-500/90 hover:to-pink-500/90 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -75,7 +75,7 @@
           <!-- Upload progress card -->
           <div
             v-if="showSkeletonCard"
-            class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 group aspect-video"
+            class="relative bg-card border border-border rounded-md overflow-hidden hover:border-foreground/20 group aspect-video"
           >
             <!-- Upload overlay -->
             <div class="absolute inset-0 bg-black/40 z-10 flex items-center justify-center">
@@ -114,7 +114,7 @@
           <div
             v-for="asset in paginatedAssets"
             :key="asset.id"
-            class="relative bg-card rounded-lg overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
+            class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
             @click="playAsset(asset)"
           >
             <!-- Thumbnail background with vignette -->

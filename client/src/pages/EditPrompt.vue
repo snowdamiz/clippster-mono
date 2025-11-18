@@ -32,7 +32,7 @@
       <p class="text-muted-foreground mb-6">The prompt you're looking for doesn't exist.</p>
       <button
         @click="router.push('/prompts')"
-        class="px-5 py-2.5 bg-gradient-to-br from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white rounded-lg font-medium shadow-sm transition-all"
+        class="px-5 py-2.5 bg-gradient-to-br from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white rounded-md font-medium shadow-sm transition-all"
       >
         Back to Prompts
       </button>
@@ -42,7 +42,7 @@
       <!-- Main Form -->
       <div>
         <!-- Form Card -->
-        <div class="bg-card border border-border rounded-lg p-6 shadow-sm">
+        <div class="bg-card border border-border rounded-md p-6 shadow-sm">
           <form @submit.prevent="handleSubmit" class="space-y-6">
             <!-- Name Field -->
             <div class="space-y-1.5">
@@ -60,7 +60,7 @@
                 type="text"
                 maxlength="100"
                 placeholder="e.g., Viral Shorts Creator, Tutorial Intro Template"
-                class="w-full px-3.5 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/10 text-foreground placeholder:text-muted-foreground transition-all"
+                class="w-full px-3.5 py-2.5 bg-background border border-border rounded-md focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/10 text-foreground placeholder:text-muted-foreground transition-all"
                 required
               />
             </div>
@@ -75,7 +75,7 @@
                 v-model="formData.content"
                 rows="20"
                 placeholder="Write your AI prompt here... Be specific about the task and desired output."
-                class="w-full px-3.5 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/10 text-foreground placeholder:text-muted-foreground transition-all resize-vertical"
+                class="w-full px-3.5 py-2.5 bg-background border border-border rounded-md focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/10 text-foreground placeholder:text-muted-foreground transition-all resize-vertical"
                 required
               ></textarea>
             </div>
@@ -100,7 +100,7 @@
                   v-if="hasChanges"
                   type="button"
                   @click="resetForm"
-                  class="px-4 py-2 bg-muted hover:bg-muted/80 text-foreground rounded-lg font-medium transition-all flex items-center gap-2"
+                  class="px-4 py-2 bg-muted hover:bg-muted/80 text-foreground rounded-md font-medium transition-all flex items-center gap-2"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                     <path
@@ -114,7 +114,7 @@
                 <button
                   type="submit"
                   :disabled="saving || !isFormValid || !hasChanges"
-                  class="px-5 py-2.5 bg-gradient-to-br from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white rounded-lg font-medium shadow-lg shadow-purple-500/20 hover:shadow-xl hover:shadow-purple-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none flex items-center gap-2"
+                  class="px-5 py-2.5 bg-gradient-to-br from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white rounded-md font-medium shadow-lg shadow-purple-500/20 hover:shadow-xl hover:shadow-purple-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none flex items-center gap-2"
                 >
                   <svg
                     v-if="!saving"
@@ -152,10 +152,10 @@
         <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
           <!-- Quick Tips Card -->
           <div
-            class="bg-gradient-to-br from-purple-500/5 to-indigo-500/5 border border-purple-500/20 rounded-lg p-5 space-y-3"
+            class="bg-gradient-to-br from-purple-500/5 to-indigo-500/5 border border-purple-500/20 rounded-md p-5 space-y-3"
           >
             <div class="flex items-center gap-2.5">
-              <div class="p-1.5 bg-purple-500/10 rounded-lg">
+              <div class="p-1.5 bg-purple-500/10 rounded-md">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   class="h-4 w-4 text-purple-500"

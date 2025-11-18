@@ -5,7 +5,7 @@
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]"
       @click.self="$emit('close')"
     >
-      <div class="bg-card rounded-2xl p-6 max-w-lg w-full mx-4 border border-border max-h-[90vh] overflow-y-auto">
+      <div class="bg-card rounded-lg p-6 max-w-lg w-full mx-4 border border-border max-h-[90vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-4">Report a Bug</h2>
 
         <form @submit.prevent="handleSubmit" class="space-y-4">
@@ -77,7 +77,7 @@
           <!-- Error Display -->
           <div
             v-if="error"
-            class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3"
+            class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3"
           >
             <p class="text-red-600 dark:text-red-400 text-sm">{{ error }}</p>
           </div>
@@ -85,7 +85,7 @@
           <!-- Success Display -->
           <div
             v-if="success"
-            class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3"
+            class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md p-3"
           >
             <p class="text-green-600 dark:text-green-400 text-sm">{{ success }}</p>
           </div>

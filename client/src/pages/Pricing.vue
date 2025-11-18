@@ -3,7 +3,7 @@
     <!-- Header -->
     <div class="text-center mb-12">
       <div class="flex justify-center items-center gap-3 mb-4">
-        <div class="p-2 bg-muted rounded-lg">
+        <div class="p-2 bg-muted rounded-md">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             class="h-6 w-6 text-foreground"
@@ -25,7 +25,7 @@
 
       <p class="text-muted-foreground text-lg">Pay once, use forever. No subscriptions, no expiration dates.</p>
 
-      <div class="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-muted rounded-lg">
+      <div class="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-muted rounded-md">
         <span class="text-sm text-muted-foreground">Current Balance:</span>
         <span v-if="typeof balance.hours_remaining === 'string'" class="text-lg font-bold text-purple-600">
           Unlimited Credits
@@ -64,7 +64,7 @@
           You have unlimited credits as an administrator. Enjoy unrestricted access to all features!
         </p>
         <div
-          class="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500/20 to-indigo-500/20 rounded-lg border border-purple-500/30"
+          class="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500/20 to-indigo-500/20 rounded-md border border-purple-500/30"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -95,7 +95,7 @@
       <p class="text-muted-foreground mb-4">Please check your connection and try again</p>
       <button
         @click="retryLoad"
-        class="px-6 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all"
+        class="px-6 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-md hover:from-purple-700 hover:to-indigo-700 transition-all"
       >
         Retry
       </button>
@@ -106,7 +106,7 @@
         v-for="packKey in packOrder"
         :key="packKey"
         class="relative group"
-        :class="{ 'ring-2 ring-purple-500 rounded-2xl': packKey === 'creator' }"
+        :class="{ 'ring-2 ring-purple-500 rounded-lg': packKey === 'creator' }"
       >
         <!-- Popular Badge -->
         <div
@@ -117,7 +117,7 @@
         </div>
         <!-- Card -->
         <div
-          class="relative overflow-hidden rounded-2xl border bg-card hover:border-purple-500 transition-all cursor-pointer h-full flex flex-col"
+          class="relative overflow-hidden rounded-lg border bg-card hover:border-purple-500 transition-all cursor-pointer h-full flex flex-col"
           :class="packKey === 'creator' ? 'border-purple-500 shadow-lg shadow-purple-500/20' : 'border-border'"
           @click="selectPack(packKey, packs[packKey])"
         >
@@ -159,7 +159,7 @@
             </ul>
             <!-- Button -->
             <button
-              class="w-full py-3 rounded-lg font-semibold transition-all shadow-sm"
+              class="w-full py-3 rounded-md font-semibold transition-all shadow-sm"
               :class="
                 packKey === 'creator'
                   ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700 hover:shadow-md'
@@ -178,11 +178,11 @@
     <div class="mt-20 relative">
       <!-- Background decoration -->
       <div
-        class="absolute inset-0 bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-purple-500/10 rounded-3xl blur-3xl"
+        class="absolute inset-0 bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-purple-500/10 rounded-xl blur-3xl"
       ></div>
 
       <div
-        class="relative bg-gradient-to-br from-card via-card to-muted/30 rounded-3xl border border-border/50 overflow-hidden"
+        class="relative bg-gradient-to-br from-card via-card to-muted/30 rounded-xl border border-border/50 overflow-hidden"
       >
         <!-- Top gradient bar -->
         <div class="h-1 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600"></div>
@@ -204,14 +204,14 @@
             <!-- Card 1 -->
             <div class="group relative">
               <div
-                class="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-transparent rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity"
+                class="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-transparent rounded-lg blur-xl opacity-0 group-hover:opacity-100 transition-opacity"
               ></div>
 
               <div
-                class="relative p-6 rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm hover:border-purple-500/50 transition-all"
+                class="relative p-6 rounded-lg border border-border/50 bg-card/50 backdrop-blur-sm hover:border-purple-500/50 transition-all"
               >
                 <div
-                  class="flex items-center justify-center w-16 h-16 mb-4 rounded-2xl bg-gradient-to-br from-purple-500/20 to-indigo-500/20 mx-auto"
+                  class="flex items-center justify-center w-16 h-16 mb-4 rounded-lg bg-gradient-to-br from-purple-500/20 to-indigo-500/20 mx-auto"
                 >
                   <svg class="w-8 h-8 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
@@ -235,14 +235,14 @@
             <!-- Card 2 -->
             <div class="group relative">
               <div
-                class="absolute inset-0 bg-gradient-to-br from-indigo-500/20 to-transparent rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity"
+                class="absolute inset-0 bg-gradient-to-br from-indigo-500/20 to-transparent rounded-lg blur-xl opacity-0 group-hover:opacity-100 transition-opacity"
               ></div>
 
               <div
-                class="relative p-6 rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm hover:border-indigo-500/50 transition-all"
+                class="relative p-6 rounded-lg border border-border/50 bg-card/50 backdrop-blur-sm hover:border-indigo-500/50 transition-all"
               >
                 <div
-                  class="flex items-center justify-center w-16 h-16 mb-4 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 mx-auto"
+                  class="flex items-center justify-center w-16 h-16 mb-4 rounded-lg bg-gradient-to-br from-indigo-500/20 to-purple-500/20 mx-auto"
                 >
                   <svg class="w-8 h-8 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
@@ -266,14 +266,14 @@
             <!-- Card 3 -->
             <div class="group relative">
               <div
-                class="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-transparent rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity"
+                class="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-transparent rounded-lg blur-xl opacity-0 group-hover:opacity-100 transition-opacity"
               ></div>
 
               <div
-                class="relative p-6 rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm hover:border-purple-500/50 transition-all"
+                class="relative p-6 rounded-lg border border-border/50 bg-card/50 backdrop-blur-sm hover:border-purple-500/50 transition-all"
               >
                 <div
-                  class="flex items-center justify-center w-16 h-16 mb-4 rounded-2xl bg-gradient-to-br from-purple-500/20 to-indigo-500/20 mx-auto"
+                  class="flex items-center justify-center w-16 h-16 mb-4 rounded-lg bg-gradient-to-br from-purple-500/20 to-indigo-500/20 mx-auto"
                 >
                   <svg class="w-8 h-8 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
@@ -319,11 +319,11 @@
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
       @click.self="closePaymentModal"
     >
-      <div class="bg-card rounded-2xl p-8 max-w-md w-full mx-4 border border-border">
+      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
         <h2 class="text-2xl font-bold mb-4">Complete Payment</h2>
 
         <div v-if="paymentStep === 'confirm'" class="space-y-4">
-          <div class="p-4 bg-muted rounded-lg">
+          <div class="p-4 bg-muted rounded-md">
             <div class="flex justify-between mb-2">
               <span class="text-muted-foreground">Pack:</span>
               <span class="font-semibold capitalize">{{ selectedPack?.key }}</span>
@@ -348,7 +348,7 @@
           <div class="grid grid-cols-2 gap-3 mt-7">
             <!-- Crypto Payment Button -->
             <button
-              class="py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all"
+              class="py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-md font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all"
               @click="initiatePayment"
               :disabled="processing"
             >
@@ -363,7 +363,7 @@
                 Coming Soon
               </div>
               <button
-                class="w-full py-3 bg-gradient-to-r from-[#635bff] to-[#4e44cb] text-white rounded-lg font-semibold opacity-60 cursor-not-allowed transition-all"
+                class="w-full py-3 bg-gradient-to-r from-[#635bff] to-[#4e44cb] text-white rounded-md font-semibold opacity-60 cursor-not-allowed transition-all"
                 disabled
                 title="Stripe payments coming soon"
               >
@@ -380,7 +380,7 @@
           </div>
           <!-- Cancel Button -->
           <button
-            class="w-full py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 transition-all"
+            class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
             @click="closePaymentModal"
             :disabled="processing"
           >
@@ -402,7 +402,7 @@
 
           <p class="text-muted-foreground mb-4">{{ selectedPack?.hours }} hours added to your balance</p>
           <button
-            class="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all"
+            class="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-md font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all"
             @click="closePaymentModal"
           >
             Done
@@ -417,7 +417,7 @@
 
           <p class="text-muted-foreground mb-4">{{ errorMessage }}</p>
           <button
-            class="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all"
+            class="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-md font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all"
             @click="paymentStep = 'confirm'"
           >
             Try Again

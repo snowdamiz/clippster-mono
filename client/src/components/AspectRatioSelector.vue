@@ -1,6 +1,6 @@
 <template>
   <div class="aspect-ratio-selector">
-    <div class="flex gap-1 bg-muted/20 p-1 rounded-lg w-fit">
+    <div class="flex gap-1 bg-muted/20 p-1 rounded-md w-fit">
       <button
         v-for="ratio in aspectRatios"
         :key="ratio.id"

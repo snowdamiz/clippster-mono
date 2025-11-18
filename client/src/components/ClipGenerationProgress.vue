@@ -1,6 +1,6 @@
 <template>
   <div v-if="visible" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-    <div class="bg-card rounded-2xl p-6 max-w-md w-full mx-4 border border-border shadow-2xl">
+    <div class="bg-card rounded-lg p-6 max-w-md w-full mx-4 border border-border shadow-2xl">
       <!-- Header -->
       <div class="flex items-center justify-between mb-6">
         <h3 class="text-lg font-semibold text-foreground">Generating Clips</h3>
@@ -59,11 +59,11 @@
           </div>
         </div>
         <!-- Status Message -->
-        <div v-if="message" class="text-sm text-foreground/60 bg-muted/30 rounded-lg p-3">
+        <div v-if="message" class="text-sm text-foreground/60 bg-muted/30 rounded-md p-3">
           {{ message }}
         </div>
         <!-- Error State -->
-        <div v-if="error" class="bg-destructive/10 border border-destructive/20 rounded-lg p-3">
+        <div v-if="error" class="bg-destructive/10 border border-destructive/20 rounded-md p-3">
           <div class="flex items-start gap-2">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -97,123 +97,123 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, watch } from 'vue'
-  import { PlayIcon, Loader2Icon, BrainIcon, CheckCircleIcon, XCircleIcon, ActivityIcon } from 'lucide-vue-next'
+  import { computed, watch } from 'vue';
+  import { PlayIcon, Loader2Icon, BrainIcon, CheckCircleIcon, XCircleIcon, ActivityIcon } from 'lucide-vue-next';
 
   interface Props {
-    visible: boolean
-    progress: number
-    stage: string
-    message: string
-    error: string
-    isConnected: boolean
-    canClose?: boolean
+    visible: boolean;
+    progress: number;
+    stage: string;
+    message: string;
+    error: string;
+    isConnected: boolean;
+    canClose?: boolean;
   }
 
   const props = withDefaults(defineProps<Props>(), {
-    canClose: false
-  })
+    canClose: false,
+  });
 
   const emit = defineEmits<{
-    close: []
-  }>()
+    close: [];
+  }>();
 
   const stageIcon = computed(() => {
     switch (props.stage) {
       case 'starting':
-        return PlayIcon
+        return PlayIcon;
       case 'transcribing':
-        return Loader2Icon
+        return Loader2Icon;
       case 'analyzing':
-        return BrainIcon
+        return BrainIcon;
       case 'validating':
-        return ActivityIcon
+        return ActivityIcon;
       case 'completed':
-        return CheckCircleIcon
+        return CheckCircleIcon;
       case 'error':
-        return XCircleIcon
+        return XCircleIcon;
       default:
-        return Loader2Icon
+        return Loader2Icon;
     }
-  })
+  });
 
   const stageIconClass = computed(() => {
     switch (props.stage) {
       case 'starting':
-        return 'text-blue-500'
+        return 'text-blue-500';
       case 'transcribing':
-        return 'text-yellow-500 animate-spin'
+        return 'text-yellow-500 animate-spin';
       case 'analyzing':
-        return 'text-purple-500'
+        return 'text-purple-500';
       case 'validating':
-        return 'text-orange-500'
+        return 'text-orange-500';
       case 'completed':
-        return 'text-green-500'
+        return 'text-green-500';
       case 'error':
-        return 'text-red-500'
+        return 'text-red-500';
       default:
-        return 'text-gray-500'
+        return 'text-gray-500';
     }
-  })
+  });
 
   const stageTitle = computed(() => {
     switch (props.stage) {
       case 'starting':
-        return 'Initializing'
+        return 'Initializing';
       case 'transcribing':
-        return 'Transcribing Audio'
+        return 'Transcribing Audio';
       case 'analyzing':
-        return 'Detecting Clips'
+        return 'Detecting Clips';
       case 'validating':
-        return 'Validating Results'
+        return 'Validating Results';
       case 'completed':
-        return 'Completed'
+        return 'Completed';
       case 'error':
-        return 'Error'
+        return 'Error';
       default:
-        return 'Processing'
+        return 'Processing';
     }
-  })
+  });
 
   const stageDescription = computed(() => {
     switch (props.stage) {
       case 'starting':
-        return 'Preparing to process your video...'
+        return 'Preparing to process your video...';
       case 'transcribing':
-        return 'Converting audio to text using AI...'
+        return 'Converting audio to text using AI...';
       case 'analyzing':
-        return 'Analyzing transcript for clip-worthy moments...'
+        return 'Analyzing transcript for clip-worthy moments...';
       case 'validating':
-        return 'Validating timestamps and refining clips...'
+        return 'Validating timestamps and refining clips...';
       case 'completed':
-        return 'Clips have been successfully generated!'
+        return 'Clips have been successfully generated!';
       case 'error':
-        return 'An error occurred during processing.'
+        return 'An error occurred during processing.';
       default:
-        return 'Processing your request...'
+        return 'Processing your request...';
     }
-  })
+  });
 
   const progressBarClass = computed(() => {
     switch (props.stage) {
       case 'transcribing':
-        return 'bg-yellow-500'
+        return 'bg-yellow-500';
       case 'analyzing':
-        return 'bg-purple-500'
+        return 'bg-purple-500';
       case 'validating':
-        return 'bg-orange-500'
+        return 'bg-orange-500';
       case 'completed':
-        return 'bg-green-500'
+        return 'bg-green-500';
       case 'error':
-        return 'bg-red-500'
+        return 'bg-red-500';
       default:
-        return 'bg-blue-500'
+        return 'bg-blue-500';
     }
-  })
+  });
 
   function handleClose() {
     if (props.canClose) {
-      emit('close')
+      emit('close');
     }
   }
 
@@ -221,10 +221,10 @@
   watch([() => props.stage, () => props.visible], ([stage, visible]) => {
     if (visible && stage === 'completed') {
       setTimeout(() => {
-        emit('close')
-      }, 3000) // Close after 3 seconds
+        emit('close');
+      }, 3000); // Close after 3 seconds
     }
-  })
+  });
 </script>
 
 <style scoped>

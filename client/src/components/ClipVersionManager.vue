@@ -31,10 +31,10 @@
         <div
           v-for="version in versions"
           :key="version.id"
-          class="border border-border rounded-lg p-3 transition-colors"
+          class="border border-border rounded-md p-3 transition-colors"
           :class="{
             'border-blue-500/50 bg-blue-500/5': version.id === currentVersionId,
-            'hover:border-border/80': version.id !== currentVersionId
+            'hover:border-border/80': version.id !== currentVersionId,
           }"
         >
           <div class="flex items-start justify-between">
@@ -164,56 +164,56 @@
 </template>
 
 <script setup lang="ts">
-  import { ref } from 'vue'
+  import { ref } from 'vue';
   import {
     getClipVersionsByClipId,
     getCurrentClipVersion,
     restoreClipVersion,
-    type ClipVersion
-  } from '@/services/database'
-  import { HistoryIcon, TrendingUpIcon, RotateCcwIcon, GitCompareIcon } from 'lucide-vue-next'
+    type ClipVersion,
+  } from '@/services/database';
+  import { HistoryIcon, TrendingUpIcon, RotateCcwIcon, GitCompareIcon } from 'lucide-vue-next';
 
   interface Props {
-    clipId: string
-    showVersions: boolean
+    clipId: string;
+    showVersions: boolean;
   }
 
-  const props = defineProps<Props>()
+  const props = defineProps<Props>();
 
   const emit = defineEmits<{
-    'update:showVersions': [value: boolean]
-    versionRestored: [clipId: string]
-  }>()
+    'update:showVersions': [value: boolean];
+    versionRestored: [clipId: string];
+  }>();
 
-  const versions = ref<ClipVersion[]>([])
-  const currentVersion = ref<ClipVersion | null>(null)
-  const currentVersionId = ref<string>('')
-  const loading = ref(false)
-  const showComparison = ref(false)
-  const comparingVersion = ref<ClipVersion | null>(null)
+  const versions = ref<ClipVersion[]>([]);
+  const currentVersion = ref<ClipVersion | null>(null);
+  const currentVersionId = ref<string>('');
+  const loading = ref(false);
+  const showComparison = ref(false);
+  const comparingVersion = ref<ClipVersion | null>(null);
 
   async function loadVersions() {
-    if (!props.clipId) return
+    if (!props.clipId) return;
 
-    loading.value = true
+    loading.value = true;
     try {
       // Load all versions
-      versions.value = await getClipVersionsByClipId(props.clipId)
+      versions.value = await getClipVersionsByClipId(props.clipId);
 
       // Load current version
-      currentVersion.value = await getCurrentClipVersion(props.clipId)
-      currentVersionId.value = currentVersion.value?.id || ''
+      currentVersion.value = await getCurrentClipVersion(props.clipId);
+      currentVersionId.value = currentVersion.value?.id || '';
     } catch (error) {
-      console.error('[ClipVersionManager] Failed to load versions:', error)
+      console.error('[ClipVersionManager] Failed to load versions:', error);
     } finally {
-      loading.value = false
+      loading.value = false;
     }
   }
 
   function closeVersions() {
-    emit('update:showVersions', false)
-    showComparison.value = false
-    comparingVersion.value = null
+    emit('update:showVersions', false);
+    showComparison.value = false;
+    comparingVersion.value = null;
   }
 
   function formatTimestamp(timestamp: number): string {
@@ -221,83 +221,83 @@
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
-    })
+      minute: '2-digit',
+    });
   }
 
   function formatDuration(seconds: number): string {
-    if (!seconds) return '0:00'
-    const mins = Math.floor(seconds / 60)
-    const secs = Math.floor(seconds % 60)
-    return `${mins}:${secs.toString().padStart(2, '0')}`
+    if (!seconds) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
   function getTags(tagsString?: string): string[] {
-    if (!tagsString) return []
+    if (!tagsString) return [];
     try {
-      return JSON.parse(tagsString)
+      return JSON.parse(tagsString);
     } catch {
-      return []
+      return [];
     }
   }
 
   function getChangeTypeClass(changeType: string): string {
     switch (changeType) {
       case 'detected':
-        return 'bg-blue-500/20 text-blue-400'
+        return 'bg-blue-500/20 text-blue-400';
       case 'modified':
-        return 'bg-yellow-500/20 text-yellow-400'
+        return 'bg-yellow-500/20 text-yellow-400';
       case 'deleted':
-        return 'bg-red-500/20 text-red-400'
+        return 'bg-red-500/20 text-red-400';
       default:
-        return 'bg-gray-500/20 text-gray-400'
+        return 'bg-gray-500/20 text-gray-400';
     }
   }
 
   function getChangeTypeLabel(changeType: string): string {
     switch (changeType) {
       case 'detected':
-        return 'Detected'
+        return 'Detected';
       case 'modified':
-        return 'Modified'
+        return 'Modified';
       case 'deleted':
-        return 'Deleted'
+        return 'Deleted';
       default:
-        return 'Unknown'
+        return 'Unknown';
     }
   }
 
   async function restoreVersion(version: ClipVersion) {
-    if (!props.clipId) return
+    if (!props.clipId) return;
 
     try {
-      await restoreClipVersion(props.clipId, version.id)
+      await restoreClipVersion(props.clipId, version.id);
 
       // Reload versions to get the new current version
-      await loadVersions()
+      await loadVersions();
 
       // Notify parent that version was restored
-      emit('versionRestored', props.clipId)
+      emit('versionRestored', props.clipId);
     } catch (error) {
-      console.error('[ClipVersionManager] Failed to restore version:', error)
+      console.error('[ClipVersionManager] Failed to restore version:', error);
     }
   }
 
   function compareWithCurrent(version: ClipVersion) {
-    comparingVersion.value = version
-    showComparison.value = true
+    comparingVersion.value = version;
+    showComparison.value = true;
   }
 
   // Watch for showVersions prop changes
-  import { watch } from 'vue'
+  import { watch } from 'vue';
   watch(
     () => props.showVersions,
     async (show) => {
       if (show) {
-        await loadVersions()
+        await loadVersions();
       }
     }
-  )
+  );
 </script>
 
 <style scoped>

@@ -7,12 +7,12 @@
     >
       <div
         ref="dialogElementRef"
-        class="bg-card rounded-t-lg rounded-b-lg w-full h-full border border-border shadow-2xl"
+        class="bg-card rounded-md w-full h-full border border-border shadow-2xl"
         style="margin: 30px; margin-top: 60px; max-height: calc(100vh - 80px); max-width: calc(100vw - 60px)"
       >
         <!-- Header -->
         <div
-          class="flex items-center justify-between pl-3 pr-1.5 py-1.5 border-b border-border bg-[#070707] rounded-t-xl"
+          class="flex items-center justify-between pl-3 pr-1.5 py-1.5 border-b border-border bg-[#070707] rounded-t-lg"
         >
           <div class="flex-1 min-w-0">
             <h2 class="text-sm font-medium text-foreground/90 truncate">

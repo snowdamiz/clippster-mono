@@ -11,7 +11,7 @@
         <div class="relative" v-if="pumpFunStore.getRecentSearches.length > 0">
           <button
             @click="showRecentDropdown = !showRecentDropdown"
-            class="px-3 py-2.5 bg-muted border border-border rounded-lg text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all flex items-center gap-2"
+            class="px-3 py-2.5 bg-muted border border-border rounded-md text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all flex items-center gap-2"
             title="Recent searches"
           >
             <svg
@@ -43,7 +43,7 @@
           <!-- Dropdown Menu -->
           <div
             v-if="showRecentDropdown"
-            class="absolute top-full left-0 mt-1 w-64 bg-card border border-border rounded-lg shadow-lg z-20 max-h-64 overflow-y-auto"
+            class="absolute top-full left-0 mt-1 w-64 bg-card border border-border rounded-md shadow-lg z-20 max-h-64 overflow-y-auto"
             @click.stop
           >
             <div class="p-2">
@@ -207,7 +207,7 @@
         <div
           v-for="i in 6"
           :key="i"
-          class="relative bg-card border border-border rounded-lg overflow-hidden animate-pulse"
+          class="relative bg-card border border-border rounded-md overflow-hidden animate-pulse"
         >
           <!-- Thumbnail skeleton -->
           <div class="aspect-video bg-muted/50 relative">
@@ -243,7 +243,7 @@
       </div>
     </div>
     <!-- Error State -->
-    <div v-else-if="pumpFunStore.error" class="bg-red-500/10 border border-red-500/50 rounded-lg p-6 text-center">
+    <div v-else-if="pumpFunStore.error" class="bg-red-500/10 border border-red-500/50 rounded-md p-6 text-center">
       <svg
         xmlns="http://www.w3.org/2000/svg"
         class="h-12 w-12 text-red-500 mx-auto mb-3"
@@ -263,7 +263,7 @@
       <p class="text-muted-foreground">{{ pumpFunStore.error }}</p>
       <button
         @click="handleSearch"
-        class="mt-4 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-all"
+        class="mt-4 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-md transition-all"
       >
         Try Again
       </button>
@@ -271,7 +271,7 @@
     <!-- VODs Grid -->
     <div v-else-if="pumpFunStore.clips.length > 0" class="space-y-6">
       <!-- Filter Notice -->
-      <div class="bg-blue-500/10 border border-blue-500/50 rounded-lg p-4 flex items-center gap-3">
+      <div class="bg-blue-500/10 border border-blue-500/50 rounded-md p-4 flex items-center gap-3">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           class="h-5 w-5 text-blue-400 flex-shrink-0"
@@ -299,7 +299,7 @@
         <div
           v-for="clip in paginatedClips"
           :key="clip.clipId"
-          class="relative bg-card rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer group aspect-video hover:scale-102 transition-all"
+          class="relative bg-card rounded-md overflow-hidden hover:border-foreground/20 cursor-pointer group aspect-video hover:scale-102 transition-all"
           @click="handleClipClick(clip)"
         >
           <!-- Thumbnail background with vignette -->
@@ -428,7 +428,7 @@
             <div v-if="pumpFunStore.getRecentSearches.length > 0" class="relative">
               <button
                 @click="showEmptyRecentDropdown = !showEmptyRecentDropdown"
-                class="h-12 px-3 bg-muted border border-border rounded-lg text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all flex items-center gap-2"
+                class="h-12 px-3 bg-muted border border-border rounded-md text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all flex items-center gap-2"
                 title="Recent searches"
               >
                 <svg
@@ -460,7 +460,7 @@
               <!-- Dropdown Menu -->
               <div
                 v-if="showEmptyRecentDropdown"
-                class="absolute top-full left-0 mt-1 w-64 bg-card border border-border rounded-lg shadow-lg z-20 max-h-64 overflow-y-auto"
+                class="absolute top-full left-0 mt-1 w-64 bg-card border border-border rounded-md shadow-lg z-20 max-h-64 overflow-y-auto"
                 @click.stop
               >
                 <div class="p-2">
@@ -613,14 +613,14 @@
       @click.self="closeDownloadDialog()"
     >
       <div
-        class="bg-card rounded-2xl p-6 max-w-lg w-full mx-4 border border-border max-h-[90vh] overflow-y-auto shadow-2xl"
+        class="bg-card rounded-lg p-6 max-w-lg w-full mx-4 border border-border max-h-[90vh] overflow-y-auto shadow-2xl"
       >
         <!-- Header -->
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-xl font-bold text-foreground">Download Stream</h2>
           <button
             @click="closeDownloadDialog()"
-            class="p-1.5 hover:bg-muted rounded-lg transition-colors"
+            class="p-1.5 hover:bg-muted rounded-md transition-colors"
             :disabled="downloadStarting"
           >
             <svg
@@ -638,10 +638,10 @@
         <!-- Content -->
         <div class="space-y-4">
           <!-- Selected Video Info -->
-          <div class="bg-muted/30 rounded-lg p-3 border border-border/50">
+          <div class="bg-muted/30 rounded-md p-3 border border-border/50">
             <div class="flex items-center gap-2">
               <div
-                class="w-8 h-8 bg-gradient-to-br from-purple-500/20 to-indigo-500/20 rounded-lg flex items-center justify-center flex-shrink-0"
+                class="w-8 h-8 bg-gradient-to-br from-purple-500/20 to-indigo-500/20 rounded-md flex items-center justify-center flex-shrink-0"
               >
                 <svg
                   class="h-4 w-4 text-purple-500"
@@ -672,7 +672,7 @@
               <button
                 @click="useSegmentDownload = false"
                 :class="[
-                  'relative p-3 rounded-lg border-2 transition-all text-left',
+                  'relative p-3 rounded-md border-2 transition-all text-left',
                   !useSegmentDownload
                     ? 'border-purple-500 bg-purple-500/10'
                     : 'border-border bg-card hover:bg-muted/50',
@@ -729,7 +729,7 @@
               <button
                 @click="useSegmentDownload = true"
                 :class="[
-                  'relative p-3 rounded-lg border-2 transition-all text-left',
+                  'relative p-3 rounded-md border-2 transition-all text-left',
                   useSegmentDownload ? 'border-purple-500 bg-purple-500/10' : 'border-border bg-card hover:bg-muted/50',
                 ]"
               >
@@ -802,7 +802,7 @@
               </svg>
               Select Time Range:
             </label>
-            <div class="bg-muted/20 rounded-lg p-3 border border-border/50">
+            <div class="bg-muted/20 rounded-md p-3 border border-border/50">
               <TimeRangePicker
                 v-model="selectedTimeRange"
                 :total-duration="clipToDownload?.duration || 0"
@@ -812,7 +812,7 @@
           </div>
 
           <!-- Stream Details -->
-          <div class="bg-muted/30 rounded-lg p-3 border border-border/50">
+          <div class="bg-muted/30 rounded-md p-3 border border-border/50">
             <div class="space-y-2">
               <div class="flex items-center justify-between text-sm">
                 <span class="text-muted-foreground">Duration:</span>
@@ -836,7 +836,7 @@
           <!-- Action Buttons -->
           <div class="space-y-2 pt-5 border-t border-border">
             <button
-              class="w-full py-2.5 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl disabled:shadow-none"
+              class="w-full py-2.5 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-md font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl disabled:shadow-none"
               @click="downloadClipConfirmed"
               :disabled="
                 downloadStarting || (useSegmentDownload && selectedTimeRange.endTime <= selectedTimeRange.startTime)
@@ -873,7 +873,7 @@
             </button>
 
             <button
-              class="w-full py-2.5 px-4 bg-muted/50 text-muted-foreground rounded-lg font-semibold hover:bg-muted transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-border/50 hover:border-border"
+              class="w-full py-2.5 px-4 bg-muted/50 text-muted-foreground rounded-md font-semibold hover:bg-muted transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-border/50 hover:border-border"
               @click="closeDownloadDialog()"
               :disabled="downloadStarting"
             >

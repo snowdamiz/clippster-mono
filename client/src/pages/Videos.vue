@@ -11,7 +11,7 @@
           <button
             @click="openVideosFolder"
             title="Open videos folder"
-            class="p-3 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-all"
+            class="p-3 bg-muted hover:bg-muted/80 text-foreground rounded-md transition-all"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -31,7 +31,7 @@
           <button
             @click="handleUpload"
             :disabled="uploading"
-            class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -83,7 +83,7 @@
           <!-- Skeleton loader card for uploading -->
           <div
             v-if="uploading"
-            class="relative bg-card border border-border rounded-lg overflow-hidden aspect-video animate-pulse"
+            class="relative bg-card border border-border rounded-md overflow-hidden aspect-video animate-pulse"
           >
             <!-- Thumbnail skeleton -->
             <div class="absolute inset-0 bg-muted/50 flex items-center justify-center">
@@ -110,7 +110,7 @@
           <div
             v-for="download in activeDownloads"
             :key="download.id"
-            class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 group aspect-video"
+            class="relative bg-card border border-border rounded-md overflow-hidden hover:border-foreground/20 group aspect-video"
           >
             <!-- Thumbnail background with vignette -->
             <div
@@ -208,7 +208,7 @@
           <div
             v-for="download in queuedDownloads"
             :key="download.id"
-            class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 group aspect-video opacity-70"
+            class="relative bg-card border border-border rounded-md overflow-hidden hover:border-foreground/20 group aspect-video opacity-70"
           >
             <!-- Queued overlay -->
             <div class="absolute inset-0 bg-black/40 z-10 flex items-center justify-center">
@@ -267,7 +267,7 @@
           <div
             v-for="video in paginatedVideos"
             :key="video.id"
-            class="relative bg-card rounded-lg overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
+            class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
             @click="playVideo(video)"
           >
             <!-- Thumbnail background with vignette -->

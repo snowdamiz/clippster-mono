@@ -4,7 +4,7 @@
     class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
     @click.self="$emit('close')"
   >
-    <div class="bg-card rounded-2xl max-w-md w-full mx-4 border border-border p-6">
+    <div class="bg-card rounded-lg max-w-md w-full mx-4 border border-border p-6">
       <!-- Header -->
       <div class="mb-6">
         <h2 class="text-xl font-semibold text-foreground mb-2">Upload Asset</h2>
@@ -49,14 +49,14 @@
           <button
             @click="selectedType = 'outro'"
             :class="[
-              'p-4 rounded-lg border-2 transition-all text-left',
+              'p-4 rounded-md border-2 transition-all text-left',
               selectedType === 'outro'
                 ? 'border-purple-500 bg-purple-500/10'
                 : 'border-border hover:border-foreground/20',
             ]"
           >
             <div class="flex items-center gap-3 mb-2">
-              <div class="w-8 h-8 bg-purple-500/20 rounded-lg flex items-center justify-center">
+              <div class="w-8 h-8 bg-purple-500/20 rounded-md flex items-center justify-center">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   class="h-5 w-5 text-purple-500"
@@ -76,9 +76,9 @@
 
       <!-- File Info -->
       <div class="mb-6">
-        <div class="bg-muted/30 rounded-lg p-4 border border-border/50">
+        <div class="bg-muted/30 rounded-md p-4 border border-border/50">
           <div class="flex items-center gap-3">
-            <div class="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
+            <div class="w-10 h-10 bg-blue-500/20 rounded-md flex items-center justify-center flex-shrink-0">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 class="h-5 w-5 text-blue-500"
@@ -107,7 +107,7 @@
       <div class="flex gap-3">
         <button
           @click="$emit('close')"
-          class="flex-1 px-4 py-2.5 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-all"
+          class="flex-1 px-4 py-2.5 bg-muted hover:bg-muted/80 text-foreground rounded-md transition-all"
           :disabled="uploading"
         >
           Cancel
@@ -115,7 +115,7 @@
         <button
           @click="handleUpload"
           :disabled="!selectedType || uploading"
-          class="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          class="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <div class="flex items-center justify-center gap-2">
             <svg

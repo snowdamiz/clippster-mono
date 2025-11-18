@@ -5,7 +5,7 @@
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]"
       @click.self="cancelClose"
     >
-      <div class="bg-card rounded-2xl p-8 max-w-md w-full mx-4 border border-border">
+      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
         <h2 class="text-xl font-bold mb-4">
           {{ dialogTitle }}
         </h2>
@@ -38,13 +38,13 @@
           </p>
 
           <button
-            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg font-semibold hover:from-red-700 hover:to-red-800 transition-all"
+            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
             @click="confirmClose"
           >
             {{ confirmButtonText }}
           </button>
           <button
-            class="w-full py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 transition-all"
+            class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
             @click="cancelClose"
           >
             Cancel

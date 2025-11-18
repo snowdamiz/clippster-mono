@@ -44,7 +44,7 @@
     </div>
 
     <!-- Selection Info -->
-    <div class="bg-muted/50 rounded-lg p-3 space-y-2">
+    <div class="bg-muted/50 rounded-md p-3 space-y-2">
       <div class="flex items-center justify-between text-sm">
         <span class="text-muted-foreground">Selected Duration:</span>
         <span class="font-medium text-foreground">{{ formatDuration(selectedDuration) }}</span>

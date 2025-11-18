@@ -11,7 +11,7 @@
           @click="openClipsFolder"
           :disabled="!hasAnyClipsWithFiles"
           :title="hasAnyClipsWithFiles ? 'Open clips folder' : 'No clips available to show in folder'"
-          class="p-3 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          class="p-3 bg-muted hover:bg-muted/80 text-foreground rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path
@@ -39,7 +39,7 @@
           <div
             v-for="clip in paginatedClips"
             :key="clip.id"
-            class="relative bg-card rounded-lg overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
+            class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
             @click="playClip(clip)"
           >
             <!-- Thumbnail background with vignette -->

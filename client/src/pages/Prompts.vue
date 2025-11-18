@@ -8,7 +8,7 @@
     <template #actions>
       <button
         @click="navigateToNew"
-        class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all"
+        class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all"
       >
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -21,7 +21,7 @@
     <!-- Prompts List -->
 
     <div v-else-if="prompts.length > 0" class="grid grid-cols-1 lg:grid-cols-2 gap-5">
-      <div v-for="prompt in prompts" :key="prompt.id" class="bg-card border border-border rounded-lg">
+      <div v-for="prompt in prompts" :key="prompt.id" class="bg-card border border-border rounded-md">
         <div class="p-5">
           <div class="flex items-start justify-between mb-3">
             <h3 class="font-semibold text-foreground flex-1 pr-2">{{ prompt.name }}</h3>
@@ -120,7 +120,7 @@
         </div>
 
         <div
-          class="flex items-center gap-5 text-xs text-muted-foreground py-4 px-4 border-t border-border bg-[#141414] rounded-b-lg"
+          class="flex items-center gap-5 text-xs text-muted-foreground py-4 px-4 border-t border-border bg-[#141414] rounded-b-md"
         >
           <span class="flex items-center gap-1.5">
             <svg
@@ -173,7 +173,7 @@
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
       @click.self="showDeleteDialog = false"
     >
-      <div class="bg-card rounded-2xl p-8 max-w-md w-full mx-4 border border-border">
+      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
         <h2 class="text-2xl font-bold mb-4">Delete Prompt</h2>
 
         <div class="space-y-4">
@@ -183,13 +183,13 @@
             "? This action cannot be undone.
           </p>
           <button
-            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg font-semibold hover:from-red-700 hover:to-red-800 transition-all"
+            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
             @click="deletePromptConfirmed"
           >
             Delete
           </button>
           <button
-            class="w-full py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 transition-all"
+            class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
             @click="showDeleteDialog = false"
           >
             Cancel

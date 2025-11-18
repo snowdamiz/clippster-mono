@@ -4,7 +4,7 @@
     class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]"
     @click.self="$emit('close')"
   >
-    <div class="bg-card rounded-2xl p-8 max-w-md w-full mx-4 border border-border">
+    <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
       <h2 class="text-2xl font-bold mb-4">{{ title }}</h2>
 
       <div class="space-y-4">
@@ -14,13 +14,13 @@
           {{ suffix }} This action cannot be undone.
         </p>
         <button
-          class="w-full py-3 bg-gradient-to-r from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg font-semibold transition-all"
+          class="w-full py-3 bg-gradient-to-r from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-md font-semibold transition-all"
           @click="$emit('confirm')"
         >
           {{ confirmText }}
         </button>
         <button
-          class="w-full py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 transition-all"
+          class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
           @click="$emit('close')"
         >
           Cancel

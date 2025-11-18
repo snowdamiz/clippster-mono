@@ -27,7 +27,7 @@
       <!-- Timeline Tracks Container -->
       <div
         :class="[
-          'flex-1 pr-1 bg-muted/20 border border-border/40 rounded-lg relative overflow-x-auto',
+          'flex-1 pr-1 bg-muted/20 border border-border/40 rounded-md relative overflow-x-auto',
           shouldShowScrollbar
             ? 'overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800'
             : 'overflow-y-hidden',

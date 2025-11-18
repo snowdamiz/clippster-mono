@@ -9,7 +9,7 @@
       <button
         @click="fetchUsers"
         :disabled="loading"
-        class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <svg
           v-if="!loading"
@@ -61,7 +61,7 @@
     <!-- Error State -->
     <div
       v-else-if="error"
-      class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6 text-center"
+      class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-6 text-center"
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -81,7 +81,7 @@
       <p class="text-red-500 dark:text-red-300 text-sm mb-4">{{ error }}</p>
       <button
         @click="fetchUsers"
-        class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-all"
+        class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-md text-sm font-medium transition-all"
       >
         Try Again
       </button>
@@ -100,7 +100,7 @@
       </div>
 
       <!-- Table -->
-      <div class="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
+      <div class="bg-card border border-border rounded-md shadow-sm overflow-hidden">
         <div class="overflow-x-auto">
           <table class="w-full">
             <thead class="bg-muted/30">
@@ -577,7 +577,7 @@
         <p class="text-muted-foreground mb-4">No bug reports found</p>
         <button
           @click="fetchBugReports"
-          class="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium transition-all"
+          class="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium transition-all"
         >
           Refresh Bug Reports
         </button>
@@ -634,7 +634,7 @@
 
             <div
               v-if="titleBarPlatformOverride !== 'auto'"
-              class="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg"
+              class="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md"
             >
               <p class="text-sm text-blue-700 dark:text-blue-300">
                 <strong>Active Override:</strong>
@@ -708,13 +708,13 @@
             <!-- Error Display -->
             <div
               v-if="creditError"
-              class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3"
+              class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3"
             >
               <p class="text-red-600 dark:text-red-400 text-sm">{{ creditError }}</p>
             </div>
 
             <!-- Current Credits Display -->
-            <div v-if="userToEditCredits?.credits" class="bg-muted/30 border border-border rounded-lg p-3">
+            <div v-if="userToEditCredits?.credits" class="bg-muted/30 border border-border rounded-md p-3">
               <p class="text-sm text-muted-foreground mb-1">Current balance:</p>
               <div class="flex justify-between text-sm mb-2">
                 <span>Remaining: {{ formatCredits(userToEditCredits.credits.hours_remaining) }} hours</span>

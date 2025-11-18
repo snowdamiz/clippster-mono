@@ -193,7 +193,7 @@ export async function deleteCustomSubtitlePreset(id: string): Promise<void> {
  */
 export function customPresetToSettings(preset: CustomSubtitlePreset): SubtitleSettings {
   return {
-    enabled: true,
+    enabled: false,
     fontFamily: preset.font_family,
     fontSize: preset.font_size,
     fontWeight: preset.font_weight,

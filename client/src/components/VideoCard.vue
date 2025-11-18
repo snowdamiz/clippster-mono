@@ -12,7 +12,7 @@
           backgroundImage: `url(${thumbnailUrl})`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat'
+          backgroundRepeat: 'no-repeat',
         }"
       >
         <!-- Dark vignette overlay -->
@@ -49,7 +49,7 @@
           class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition-opacity"
         >
           <button
-            class="p-2.5 bg-white/90 hover:bg-white rounded-lg transition-colors"
+            class="p-2.5 bg-white/90 hover:bg-white rounded-md transition-colors"
             title="Play"
             @click.stop="$emit('play')"
           >
@@ -76,7 +76,7 @@
             </svg>
           </button>
           <button
-            class="p-2.5 bg-white/90 hover:bg-white rounded-lg transition-colors"
+            class="p-2.5 bg-white/90 hover:bg-white rounded-md transition-colors"
             title="Delete"
             @click.stop="$emit('delete')"
           >
@@ -114,44 +114,44 @@
 </template>
 
 <script setup lang="ts">
-  import { computed } from 'vue'
-  import type { RawVideo } from '@/services/database'
-  import { useFormatters } from '@/composables/useFormatters'
+  import { computed } from 'vue';
+  import type { RawVideo } from '@/services/database';
+  import { useFormatters } from '@/composables/useFormatters';
 
   interface Props {
-    video: RawVideo
-    thumbnailUrl?: string | null
+    video: RawVideo;
+    thumbnailUrl?: string | null;
   }
 
   interface Emits {
-    (e: 'play'): void
-    (e: 'delete'): void
+    (e: 'play'): void;
+    (e: 'delete'): void;
   }
 
-  const props = defineProps<Props>()
-  defineEmits<Emits>()
+  const props = defineProps<Props>();
+  defineEmits<Emits>();
 
-  const { getRelativeTime } = useFormatters()
+  const { getRelativeTime } = useFormatters();
 
   const videoTitle = computed(
     () => props.video.original_filename || props.video.file_path.split(/[\\\/]/).pop() || 'Untitled Video'
-  )
+  );
 
   // Helper function to format duration in seconds to human readable format
   function formatDuration(seconds: number): string {
-    if (isNaN(seconds) || !isFinite(seconds)) return '0:00'
+    if (isNaN(seconds) || !isFinite(seconds)) return '0:00';
 
     if (seconds < 60) {
-      return `0:${Math.round(seconds).toString().padStart(2, '0')}`
+      return `0:${Math.round(seconds).toString().padStart(2, '0')}`;
     } else if (seconds < 3600) {
-      const minutes = Math.floor(seconds / 60)
-      const remainingSeconds = Math.round(seconds % 60)
-      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+      const minutes = Math.floor(seconds / 60);
+      const remainingSeconds = Math.round(seconds % 60);
+      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
     } else {
-      const hours = Math.floor(seconds / 3600)
-      const minutes = Math.floor((seconds % 3600) / 60)
-      const remainingSeconds = Math.round(seconds % 60)
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const remainingSeconds = Math.round(seconds % 60);
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
     }
   }
 </script>

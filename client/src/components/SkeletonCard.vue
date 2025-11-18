@@ -1,5 +1,5 @@
 <template>
-  <div class="relative bg-card border border-border rounded-lg overflow-hidden animate-pulse aspect-video">
+  <div class="relative bg-card border border-border rounded-md overflow-hidden animate-pulse aspect-video">
     <!-- Thumbnail skeleton -->
     <div class="aspect-video bg-muted/50 relative">
       <div class="absolute inset-0 flex items-center justify-center">

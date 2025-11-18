@@ -23,7 +23,7 @@
         </div>
 
         <!-- Video Duration Info -->
-        <div v-if="videoDuration > 0" class="mb-4 p-3 bg-muted/30 rounded-lg">
+        <div v-if="videoDuration > 0" class="mb-4 p-3 bg-muted/30 rounded-md">
           <div class="flex items-center justify-between text-sm">
             <span class="text-muted-foreground">Video Duration:</span>
             <span class="font-medium">{{ formatDuration(videoDuration) }}</span>
@@ -72,7 +72,7 @@
         </div>
 
         <!-- Credit Information -->
-        <div class="mb-6 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+        <div class="mb-6 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
           <div class="flex items-start gap-2">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -100,7 +100,7 @@
         <!-- Error Message -->
         <div
           v-if="error"
-          class="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg"
+          class="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md"
         >
           <p class="text-red-600 dark:text-red-400 text-sm">{{ error }}</p>
         </div>

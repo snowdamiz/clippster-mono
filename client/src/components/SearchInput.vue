@@ -42,7 +42,7 @@
         :disabled="disabled || loading"
         :class="
           cn(
-            'w-full h-12 pl-12 pr-16 bg-muted border-l border-t border-b border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed',
+            'w-full h-12 pl-12 pr-16 bg-muted border-l border-t border-b border-border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed',
             inputClass
           )
         "
@@ -56,7 +56,7 @@
         :title="loading ? 'Searching...' : 'Search'"
         :class="
           cn(
-            'absolute right-0 top-0 h-12 w-12 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-r-lg flex items-center justify-center font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed',
+            'absolute right-0 top-0 h-12 w-12 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-r-md flex items-center justify-center font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed',
             buttonClass
           )
         "
@@ -91,20 +91,20 @@
 </template>
 
 <script setup lang="ts">
-  import type { HTMLAttributes } from 'vue'
-  import { cn } from '@/lib/utils'
-  import { useVModel } from '@vueuse/core'
+  import type { HTMLAttributes } from 'vue';
+  import { cn } from '@/lib/utils';
+  import { useVModel } from '@vueuse/core';
 
   interface Props {
-    modelValue?: string
-    placeholder?: string
-    type?: 'text' | 'search' | 'url'
-    disabled?: boolean
-    loading?: boolean
-    containerClass?: HTMLAttributes['class']
-    inputClass?: HTMLAttributes['class']
-    buttonClass?: HTMLAttributes['class']
-    autoSearch?: boolean
+    modelValue?: string;
+    placeholder?: string;
+    type?: 'text' | 'search' | 'url';
+    disabled?: boolean;
+    loading?: boolean;
+    containerClass?: HTMLAttributes['class'];
+    inputClass?: HTMLAttributes['class'];
+    buttonClass?: HTMLAttributes['class'];
+    autoSearch?: boolean;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -112,32 +112,32 @@
     type: 'text',
     disabled: false,
     loading: false,
-    autoSearch: true
-  })
+    autoSearch: true,
+  });
 
   const emits = defineEmits<{
-    (e: 'update:modelValue', payload: string): void
-    (e: 'search'): void
-    (e: 'input', payload: string): void
-  }>()
+    (e: 'update:modelValue', payload: string): void;
+    (e: 'search'): void;
+    (e: 'input', payload: string): void;
+  }>();
 
   const inputValue = useVModel(props, 'modelValue', emits, {
-    passive: true
-  })
+    passive: true,
+  });
 
   function handleInput() {
-    emits('input', inputValue.value || '')
+    emits('input', inputValue.value || '');
   }
 
   function handleEnter() {
     if (!props.disabled && !props.loading && inputValue.value?.trim()) {
-      handleSearch()
+      handleSearch();
     }
   }
 
   function handleSearch() {
     if (!props.disabled && !props.loading && inputValue.value?.trim()) {
-      emits('search')
+      emits('search');
     }
   }
 </script>

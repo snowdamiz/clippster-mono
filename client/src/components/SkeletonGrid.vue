@@ -6,7 +6,7 @@
       <div
         v-for="i in 6"
         :key="i"
-        class="relative bg-card border border-border rounded-lg overflow-hidden animate-pulse"
+        class="relative bg-card border border-border rounded-md overflow-hidden animate-pulse"
       >
         <!-- Thumbnail skeleton -->
         <div class="aspect-video bg-muted/50 relative">

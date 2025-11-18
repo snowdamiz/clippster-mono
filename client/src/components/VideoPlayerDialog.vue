@@ -4,9 +4,7 @@
     class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
     @click.self="$emit('close')"
   >
-    <div
-      class="bg-card rounded-2xl max-w-6xl max-h-[calc(100vh-80px)] w-full mx-4 border border-border overflow-hidden"
-    >
+    <div class="bg-card rounded-lg max-w-6xl max-h-[calc(100vh-80px)] w-full mx-4 border border-border overflow-hidden">
       <!-- Custom Video Player -->
       <div v-if="videoSrc" class="relative w-full h-full flex flex-col">
         <!-- Video Title Header -->
@@ -18,7 +16,7 @@
         <!-- Close Button (Top Right) -->
         <button
           @click="$emit('close')"
-          class="absolute top-6 right-6 z-30 p-2 bg-black/40 hover:bg-black/60 backdrop-blur-sm rounded-lg transition-colors"
+          class="absolute top-6 right-6 z-30 p-2 bg-black/40 hover:bg-black/60 backdrop-blur-sm rounded-md transition-colors"
           title="Close"
         >
           <svg
@@ -130,7 +128,7 @@
             <!-- Hover time preview -->
             <div
               v-if="hoverTime !== null"
-              class="absolute -top-10 bg-black/90 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-lg font-medium"
+              class="absolute -top-10 bg-black/90 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-md font-medium"
               :style="{ left: `${hoverPosition}%`, transform: 'translateX(-50%)' }"
             >
               {{ formatDuration(hoverTime) }}
@@ -146,7 +144,7 @@
               <!-- Play/Pause Button -->
               <button
                 @click="togglePlayPause"
-                class="px-1.5 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-all duration-200 backdrop-blur-sm"
+                class="px-1.5 py-1.5 bg-white/10 hover:bg-white/20 rounded-md transition-all duration-200 backdrop-blur-sm"
                 title="Play/Pause"
               >
                 <svg
@@ -176,7 +174,7 @@
                 </svg>
               </button>
               <!-- Time Display -->
-              <div class="text-white text-sm font-mono font-medium bg-white/10 px-3 py-2 rounded-lg backdrop-blur-sm">
+              <div class="text-white text-sm font-mono font-medium bg-white/10 px-3 py-2 rounded-md backdrop-blur-sm">
                 {{ formatDuration(currentTime) }} / {{ formatDuration(duration) }}
               </div>
             </div>
@@ -186,7 +184,7 @@
               <div class="flex items-center gap-3">
                 <button
                   @click="toggleMute"
-                  class="p-3 bg-white/10 hover:bg-white/20 rounded-lg transition-all duration-200 backdrop-blur-sm"
+                  class="p-3 bg-white/10 hover:bg-white/20 rounded-md transition-all duration-200 backdrop-blur-sm"
                   title="Mute/Unmute"
                 >
                   <svg
@@ -227,9 +225,9 @@
                     />
                   </svg>
                 </button>
-                <div class="relative w-24 h-1.5 bg-gray-800 rounded-lg">
+                <div class="relative w-24 h-1.5 bg-gray-800 rounded-md">
                   <div
-                    class="absolute left-0 top-0 h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-lg transition-all duration-200"
+                    class="absolute left-0 top-0 h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-md transition-all duration-200"
                     :style="{ width: `${volume * 100}%` }"
                   ></div>
                   <input

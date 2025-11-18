@@ -5,7 +5,7 @@
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
       @click.self="close"
     >
-      <div class="bg-card rounded-2xl p-8 max-w-md w-full mx-4 border border-border">
+      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
         <h2 class="text-2xl font-bold mb-6">{{ isEdit ? 'Edit Project' : 'Create Project' }}</h2>
 
         <form @submit.prevent="handleSubmit" class="space-y-5">
@@ -21,7 +21,7 @@
               type="text"
               required
               placeholder="Enter project name"
-              class="w-full px-4 py-3 bg-muted border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all"
+              class="w-full px-4 py-3 bg-muted border border-border rounded-md text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all"
               :class="{ 'border-red-500': errors.name }"
             />
             <p v-if="errors.name" class="mt-1 text-sm text-red-500">{{ errors.name }}</p>
@@ -34,7 +34,7 @@
               v-model="formData.description"
               rows="3"
               placeholder="Enter project description (optional)"
-              class="w-full px-4 py-3 bg-muted border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all resize-none"
+              class="w-full px-4 py-3 bg-muted border border-border rounded-md text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all resize-none"
             />
           </div>
           <!-- Video Selection -->
@@ -46,7 +46,7 @@
             <!-- Warning message when project has detected/generated clips -->
             <div
               v-if="isEdit && hasDetectedOrGeneratedClipsLocked"
-              class="mb-3 p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg"
+              class="mb-3 p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-md"
             >
               <div class="flex items-start gap-2">
                 <svg
@@ -74,7 +74,7 @@
             <!-- Selected Video Display -->
             <div
               v-if="selectedVideo"
-              class="mb-3 p-3 bg-muted/50 rounded-lg border border-border flex items-center gap-3"
+              class="mb-3 p-3 bg-muted/50 rounded-md border border-border flex items-center gap-3"
             >
               <div class="w-20 h-12 bg-muted rounded overflow-hidden flex-shrink-0">
                 <img
@@ -135,7 +135,7 @@
             <button
               type="button"
               @click="showVideoSelector = true"
-              class="w-full px-4 py-3 bg-muted hover:bg-muted/80 border rounded-lg text-foreground transition-all flex items-center justify-center gap-2"
+              class="w-full px-4 py-3 bg-muted hover:bg-muted/80 border rounded-md text-foreground transition-all flex items-center justify-center gap-2"
               :class="{
                 'border-red-500': errors.selectedVideoId,
                 'opacity-50 cursor-not-allowed': isEdit && hasDetectedOrGeneratedClipsLocked,
@@ -167,7 +167,7 @@
             <button
               type="submit"
               :disabled="loading"
-              class="flex-1 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              class="flex-1 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-md font-semibold hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               {{ loading ? 'Saving...' : isEdit ? 'Update Project' : 'Create Project' }}
             </button>
@@ -175,7 +175,7 @@
               type="button"
               @click="close"
               :disabled="loading"
-              class="flex-1 py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              class="flex-1 py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               Cancel
             </button>
@@ -190,12 +190,12 @@
       @click.self="showVideoSelector = false"
     >
       <div
-        class="bg-card rounded-2xl p-6 max-w-4xl w-full mx-4 border border-border max-h-[80vh] flex flex-col relative"
+        class="bg-card rounded-lg p-6 max-w-4xl w-full mx-4 border border-border max-h-[80vh] flex flex-col relative"
       >
         <!-- Close Button (Top Right) -->
         <button
           @click="showVideoSelector = false"
-          class="absolute top-6 right-6 z-30 p-2 bg-black/40 hover:bg-black/60 backdrop-blur-sm rounded-lg transition-colors"
+          class="absolute top-6 right-6 z-30 p-2 bg-black/40 hover:bg-black/60 backdrop-blur-sm rounded-md transition-colors"
           title="Close"
         >
           <svg
@@ -225,7 +225,7 @@
               :key="video.id"
               type="button"
               @click="selectVideoFromLibrary(video)"
-              class="group relative bg-card border-2 rounded-lg overflow-hidden transition-all"
+              class="group relative bg-card border-2 rounded-md overflow-hidden transition-all"
               :class="[
                 selectedVideo?.id === video.id ? 'border-purple-500' : 'border-border',
                 isVideoAvailable(video) ? 'hover:border-foreground/20' : 'opacity-60 cursor-not-allowed',

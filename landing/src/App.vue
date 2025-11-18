@@ -148,7 +148,7 @@ const closeMobileMenu = () => {
 
            <!-- CTA Button -->
            <div class="hidden lg:block">
-             <a href="#pricing" class="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-purple-600 to-indigo-600 rounded-lg hover:from-purple-500 hover:to-indigo-500 transition-all duration-200 shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40">
+             <a href="#pricing" class="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-purple-600 to-indigo-600 rounded-md hover:from-purple-500 hover:to-indigo-500 transition-all duration-200 shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40">
                Get Started
              </a>
            </div>
@@ -170,19 +170,19 @@ const closeMobileMenu = () => {
         <!-- Mobile Navigation Menu -->
         <div v-show="mobileMenuOpen" class="lg:hidden border-t border-border/40 bg-card/50 backdrop-blur-sm">
           <div class="px-4 pt-3 pb-4 space-y-2">
-            <a href="#features" class="block px-4 py-3 text-base font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-all duration-200" @click="closeMobileMenu">
+            <a href="#features" class="block px-4 py-3 text-base font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-all duration-200" @click="closeMobileMenu">
               Features
             </a>
-            <a href="#roadmap" class="block px-4 py-3 text-base font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-all duration-200" @click="closeMobileMenu">
+            <a href="#roadmap" class="block px-4 py-3 text-base font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-all duration-200" @click="closeMobileMenu">
               Roadmap
             </a>
-            <a href="#pricing" class="block px-4 py-3 text-base font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-all duration-200" @click="closeMobileMenu">
+            <a href="#pricing" class="block px-4 py-3 text-base font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-all duration-200" @click="closeMobileMenu">
               Pricing
             </a>
-            <a href="#download" class="block px-4 py-3 text-base font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-all duration-200" @click="closeMobileMenu">
+            <a href="#download" class="block px-4 py-3 text-base font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-all duration-200" @click="closeMobileMenu">
               Download
             </a>
-             <a href="#pricing" class="block w-full px-6 py-3 mt-4 text-center text-base font-semibold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 rounded-lg transition-all duration-200 shadow-lg shadow-purple-500/30" @click="closeMobileMenu">
+             <a href="#pricing" class="block w-full px-6 py-3 mt-4 text-center text-base font-semibold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 rounded-md transition-all duration-200 shadow-lg shadow-purple-500/30" @click="closeMobileMenu">
                Get Started
              </a>
           </div>
@@ -223,13 +223,13 @@ const closeMobileMenu = () => {
 
                <!-- CTA Buttons -->
                <div class="mt-12 flex flex-col sm:flex-row gap-4 justify-center items-center">
-                 <a href="#download" class="group inline-flex items-center justify-center px-8 py-4 text-base font-semibold text-white bg-gradient-to-r from-purple-600 to-indigo-600 rounded-xl hover:from-purple-500 hover:to-indigo-500 transition-all duration-200 shadow-xl shadow-purple-500/30 hover:shadow-purple-500/50 hover:scale-105">
+                 <a href="#download" class="group inline-flex items-center justify-center px-8 py-4 text-base font-semibold text-white bg-gradient-to-r from-purple-600 to-indigo-600 rounded-lg hover:from-purple-500 hover:to-indigo-500 transition-all duration-200 shadow-xl shadow-purple-500/30 hover:shadow-purple-500/50 hover:scale-105">
                    Download Clippster
                    <svg class="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
                    </svg>
                  </a>
-                 <a href="#pricing" class="inline-flex items-center justify-center px-8 py-4 text-base font-semibold text-foreground bg-card/50 border border-border/50 rounded-xl hover:bg-card hover:border-purple-500/30 transition-all duration-200 backdrop-blur-sm">
+                 <a href="#pricing" class="inline-flex items-center justify-center px-8 py-4 text-base font-semibold text-foreground bg-card/50 border border-border/50 rounded-lg hover:bg-card hover:border-purple-500/30 transition-all duration-200 backdrop-blur-sm">
                    View Pricing
                  </a>
                </div>
@@ -279,10 +279,10 @@ const closeMobileMenu = () => {
         <div class="grid md:grid-cols-3 gap-6 lg:gap-8 max-w-6xl mx-auto">
           <!-- Feature 1: Cost Savings -->
           <div class="group relative">
-            <div class="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-indigo-500/20 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-xl"></div>
-            <div class="relative bg-card/50 backdrop-blur-sm border border-border/50 rounded-2xl p-8 h-full group-hover:border-purple-500/50 transition-all duration-300 group-hover:shadow-2xl group-hover:shadow-purple-500/10 group-hover:-translate-y-1">
+            <div class="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-indigo-500/20 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-xl"></div>
+            <div class="relative bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-8 h-full group-hover:border-purple-500/50 transition-all duration-300 group-hover:shadow-2xl group-hover:shadow-purple-500/10 group-hover:-translate-y-1">
               <!-- Icon -->
-              <div class="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-purple-500/20 to-indigo-500/20 rounded-xl mb-6 group-hover:scale-110 transition-transform duration-300">
+              <div class="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-purple-500/20 to-indigo-500/20 rounded-lg mb-6 group-hover:scale-110 transition-transform duration-300">
                 <DollarSign class="w-7 h-7 text-purple-300" />
               </div>
 
@@ -301,10 +301,10 @@ const closeMobileMenu = () => {
 
           <!-- Feature 2: Privacy -->
           <div class="group relative">
-            <div class="absolute inset-0 bg-gradient-to-br from-indigo-500/20 to-blue-500/20 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-xl"></div>
-            <div class="relative bg-card/50 backdrop-blur-sm border border-border/50 rounded-2xl p-8 h-full group-hover:border-indigo-500/50 transition-all duration-300 group-hover:shadow-2xl group-hover:shadow-indigo-500/10 group-hover:-translate-y-1">
+            <div class="absolute inset-0 bg-gradient-to-br from-indigo-500/20 to-blue-500/20 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-xl"></div>
+            <div class="relative bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-8 h-full group-hover:border-indigo-500/50 transition-all duration-300 group-hover:shadow-2xl group-hover:shadow-indigo-500/10 group-hover:-translate-y-1">
               <!-- Icon -->
-              <div class="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-indigo-500/20 to-blue-500/20 rounded-xl mb-6 group-hover:scale-110 transition-transform duration-300">
+              <div class="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-indigo-500/20 to-blue-500/20 rounded-lg mb-6 group-hover:scale-110 transition-transform duration-300">
                 <Shield class="w-7 h-7 text-indigo-300" />
               </div>
 
@@ -323,10 +323,10 @@ const closeMobileMenu = () => {
 
           <!-- Feature 3: Crypto -->
           <div class="group relative">
-            <div class="absolute inset-0 bg-gradient-to-br from-emerald-500/20 to-purple-500/20 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-xl"></div>
-            <div class="relative bg-card/50 backdrop-blur-sm border border-border/50 rounded-2xl p-8 h-full group-hover:border-emerald-500/50 transition-all duration-300 group-hover:shadow-2xl group-hover:shadow-emerald-500/10 group-hover:-translate-y-1">
+            <div class="absolute inset-0 bg-gradient-to-br from-emerald-500/20 to-purple-500/20 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-xl"></div>
+            <div class="relative bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl p-8 h-full group-hover:border-emerald-500/50 transition-all duration-300 group-hover:shadow-2xl group-hover:shadow-emerald-500/10 group-hover:-translate-y-1">
               <!-- Icon -->
-              <div class="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-emerald-500/20 to-purple-500/20 rounded-xl mb-6 group-hover:scale-110 transition-transform duration-300">
+              <div class="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-emerald-500/20 to-purple-500/20 rounded-lg mb-6 group-hover:scale-110 transition-transform duration-300">
                 <Coins class="w-7 h-7 text-emerald-300" />
               </div>
 
@@ -481,7 +481,7 @@ const closeMobileMenu = () => {
               <!-- Milestone card - Enhanced design -->
               <div 
                 :class="[
-                  'flex-1 backdrop-blur-sm border rounded-2xl p-6 sm:p-8 transition-all duration-300 relative overflow-hidden',
+                  'flex-1 backdrop-blur-sm border rounded-xl p-6 sm:p-8 transition-all duration-300 relative overflow-hidden',
                   milestone.status === 'completed' ? 'bg-card/60 border-green-500/30 hover:border-green-500/60' :
                   milestone.status === 'in-progress' ? 'bg-card/60 border-blue-500/30 hover:border-blue-500/60' :
                   'bg-card/50 border-border/50 hover:border-purple-500/50',
@@ -557,7 +557,7 @@ const closeMobileMenu = () => {
         <!-- Pricing Grid -->
         <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-6">
           <!-- Starter Pack -->
-          <div class="group relative overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm hover:border-purple-500/50 transition-all duration-300 cursor-pointer h-full flex flex-col hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/10">
+          <div class="group relative overflow-hidden rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm hover:border-purple-500/50 transition-all duration-300 cursor-pointer h-full flex flex-col hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/10">
             <div class="p-6 flex-1 flex flex-col">
               <h3 class="text-2xl font-bold mb-3">Starter</h3>
               <div class="mb-4">
@@ -593,7 +593,7 @@ const closeMobileMenu = () => {
             <div class="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-xs font-bold px-4 py-1.5 rounded-full z-20 whitespace-nowrap shadow-lg">
               ⭐ MOST POPULAR
             </div>
-            <div class="group relative overflow-hidden rounded-2xl border-2 border-purple-500 bg-card shadow-2xl shadow-purple-500/30 h-full flex flex-col hover:-translate-y-1 hover:shadow-purple-500/40 transition-all duration-300">
+            <div class="group relative overflow-hidden rounded-xl border-2 border-purple-500 bg-card shadow-2xl shadow-purple-500/30 h-full flex flex-col hover:-translate-y-1 hover:shadow-purple-500/40 transition-all duration-300">
               <div class="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-indigo-500/10 pointer-events-none"></div>
               <div class="relative p-6 flex-1 flex flex-col">
                 <h3 class="text-2xl font-bold mb-3 text-purple-300">Creator</h3>
@@ -627,7 +627,7 @@ const closeMobileMenu = () => {
           </div>
 
           <!-- Pro Pack -->
-          <div class="group relative overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm hover:border-purple-500/50 transition-all duration-300 cursor-pointer h-full flex flex-col hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/10">
+          <div class="group relative overflow-hidden rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm hover:border-purple-500/50 transition-all duration-300 cursor-pointer h-full flex flex-col hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/10">
             <div class="p-6 flex-1 flex flex-col">
               <h3 class="text-2xl font-bold mb-3">Pro</h3>
               <div class="mb-4">
@@ -659,7 +659,7 @@ const closeMobileMenu = () => {
           </div>
 
           <!-- Studio Pack -->
-          <div class="group relative overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm hover:border-purple-500/50 transition-all duration-300 cursor-pointer h-full flex flex-col hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/10">
+          <div class="group relative overflow-hidden rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm hover:border-purple-500/50 transition-all duration-300 cursor-pointer h-full flex flex-col hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-500/10">
             <div class="absolute top-3 right-3 px-2 py-1 bg-indigo-500/20 text-indigo-300 text-xs font-semibold rounded-md border border-indigo-500/30">
               Best Deal
             </div>
@@ -696,7 +696,7 @@ const closeMobileMenu = () => {
 
         <!-- Trust Badge -->
         <div class="mt-16 text-center">
-          <div class="inline-flex items-center gap-3 px-8 py-4 rounded-2xl bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border border-purple-500/20 backdrop-blur-sm">
+          <div class="inline-flex items-center gap-3 px-8 py-4 rounded-xl bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border border-purple-500/20 backdrop-blur-sm">
             <Check class="w-5 h-5 text-purple-400 flex-shrink-0" />
             <span class="text-sm sm:text-base font-medium text-muted-foreground">
               Trusted by content creators • <span class="text-purple-400 font-semibold">No subscriptions</span> • Credits never expire
@@ -725,10 +725,10 @@ const closeMobileMenu = () => {
           <div class="grid sm:grid-cols-2 gap-6 lg:gap-8 max-w-3xl mx-auto">
             <!-- Main Platform Card -->
             <div class="relative group">
-              <div class="absolute inset-0 bg-gradient-to-br from-purple-600/30 to-indigo-600/30 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-xl"></div>
-              <div class="relative bg-card/50 backdrop-blur-sm border-2 border-purple-500/50 rounded-2xl p-8 sm:p-10 h-full group-hover:border-purple-500 transition-all duration-300 group-hover:shadow-2xl group-hover:shadow-purple-500/20 group-hover:-translate-y-1">
+              <div class="absolute inset-0 bg-gradient-to-br from-purple-600/30 to-indigo-600/30 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-xl"></div>
+              <div class="relative bg-card/50 backdrop-blur-sm border-2 border-purple-500/50 rounded-xl p-8 sm:p-10 h-full group-hover:border-purple-500 transition-all duration-300 group-hover:shadow-2xl group-hover:shadow-purple-500/20 group-hover:-translate-y-1">
                 <div class="text-center">
-                  <div class="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-purple-500/20 to-indigo-500/20 rounded-2xl mb-6 group-hover:scale-110 transition-transform duration-300">
+                  <div class="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-purple-500/20 to-indigo-500/20 rounded-xl mb-6 group-hover:scale-110 transition-transform duration-300">
                     <!-- Windows Icon -->
                     <svg v-if="platform === 'windows'" class="w-10 h-10 text-purple-300" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/>
@@ -754,10 +754,10 @@ const closeMobileMenu = () => {
 
             <!-- Alternative Platform Card -->
             <div v-if="otherPlatform" class="relative group">
-              <div class="absolute inset-0 bg-gradient-to-br from-muted/30 to-muted/30 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-xl"></div>
-              <div class="relative bg-card/30 backdrop-blur-sm border border-border/50 rounded-2xl p-8 sm:p-10 h-full group-hover:border-border transition-all duration-300 group-hover:shadow-lg group-hover:-translate-y-1">
+              <div class="absolute inset-0 bg-gradient-to-br from-muted/30 to-muted/30 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-xl"></div>
+              <div class="relative bg-card/30 backdrop-blur-sm border border-border/50 rounded-xl p-8 sm:p-10 h-full group-hover:border-border transition-all duration-300 group-hover:shadow-lg group-hover:-translate-y-1">
                 <div class="text-center">
-                  <div class="inline-flex items-center justify-center w-20 h-20 bg-muted/50 rounded-2xl mb-6 group-hover:scale-110 transition-transform duration-300">
+                  <div class="inline-flex items-center justify-center w-20 h-20 bg-muted/50 rounded-xl mb-6 group-hover:scale-110 transition-transform duration-300">
                     <!-- Windows Icon -->
                     <svg v-if="otherPlatform === 'windows'" class="w-10 h-10 text-muted-foreground" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/>

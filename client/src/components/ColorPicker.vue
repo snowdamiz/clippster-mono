@@ -15,7 +15,7 @@
     <Teleport to="body">
       <div
         v-if="showPicker"
-        class="color-picker-popup fixed z-[9999] bg-card border-2 border-border rounded-xl shadow-2xl p-4 w-64"
+        class="color-picker-popup fixed z-[9999] bg-card border-2 border-border rounded-md shadow-2xl p-4 w-64"
         :style="pickerPosition"
         @click.stop
       >
@@ -26,7 +26,7 @@
             type="text"
             v-model="hexInput"
             @input="onHexInput"
-            class="w-full px-3 py-2 bg-muted/50 border border-border rounded-lg text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 uppercase"
+            class="w-full px-3 py-2 bg-muted/50 border border-border rounded-md text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 uppercase"
             placeholder="#FFFFFF"
             maxlength="7"
           />
@@ -55,9 +55,9 @@
           <!-- Red -->
           <div class="flex items-center gap-2">
             <span class="text-xs text-red-400 w-4 font-medium">R</span>
-            <div class="relative flex-1 h-2 bg-muted-foreground/30 rounded-lg">
+            <div class="relative flex-1 h-2 bg-muted-foreground/30 rounded-md">
               <div
-                class="absolute left-0 top-0 h-full bg-red-500 rounded-lg transition-all duration-200"
+                class="absolute left-0 top-0 h-full bg-red-500 rounded-md transition-all duration-200"
                 :style="{ width: `${(rgb.r / 255) * 100}%` }"
               ></div>
               <input
@@ -75,9 +75,9 @@
           <!-- Green -->
           <div class="flex items-center gap-2">
             <span class="text-xs text-green-400 w-4 font-medium">G</span>
-            <div class="relative flex-1 h-2 bg-muted-foreground/30 rounded-lg">
+            <div class="relative flex-1 h-2 bg-muted-foreground/30 rounded-md">
               <div
-                class="absolute left-0 top-0 h-full bg-green-500 rounded-lg transition-all duration-200"
+                class="absolute left-0 top-0 h-full bg-green-500 rounded-md transition-all duration-200"
                 :style="{ width: `${(rgb.g / 255) * 100}%` }"
               ></div>
               <input
@@ -95,9 +95,9 @@
           <!-- Blue -->
           <div class="flex items-center gap-2">
             <span class="text-xs text-blue-400 w-4 font-medium">B</span>
-            <div class="relative flex-1 h-2 bg-muted-foreground/30 rounded-lg">
+            <div class="relative flex-1 h-2 bg-muted-foreground/30 rounded-md">
               <div
-                class="absolute left-0 top-0 h-full bg-blue-500 rounded-lg transition-all duration-200"
+                class="absolute left-0 top-0 h-full bg-blue-500 rounded-md transition-all duration-200"
                 :style="{ width: `${(rgb.b / 255) * 100}%` }"
               ></div>
               <input

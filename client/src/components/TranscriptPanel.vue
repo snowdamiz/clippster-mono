@@ -34,7 +34,7 @@
       <div class="text-center text-muted-foreground max-w-xs">
         <div class="mb-6 flex flex-col items-center">
           <div
-            class="w-20 h-20 bg-gradient-to-br from-green-500/10 to-emerald-500/10 rounded-2xl flex items-center justify-center mb-5 border border-green-500/20"
+            class="w-20 h-20 bg-gradient-to-br from-green-500/10 to-emerald-500/10 rounded-lg flex items-center justify-center mb-5 border border-green-500/20"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"

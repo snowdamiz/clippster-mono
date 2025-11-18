@@ -2,7 +2,7 @@
   <div class="flex items-center justify-between mb-3 pr-1 flex-shrink-0">
     <div class="flex items-center gap-2">
       <!-- Timeline Toolbar -->
-      <div class="flex items-center gap-1 bg-muted/30 rounded-lg">
+      <div class="flex items-center gap-1 bg-muted/30 rounded-md">
         <!-- Cut Button -->
         <button
           @click="$emit('toggleCutTool')"
@@ -102,7 +102,7 @@
         </button>
       </div>
       <!-- Zoom Slider -->
-      <div class="flex items-center gap-2 bg-muted/30 rounded-lg px-2.5 py-1.5">
+      <div class="flex items-center gap-2 bg-muted/30 rounded-md px-2.5 py-1.5">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           class="h-3 w-3 text-muted-foreground/70"
@@ -124,7 +124,7 @@
           :max="maxZoom"
           :step="zoomStep"
           v-model="localZoomLevel"
-          class="w-20 h-1 bg-muted-foreground/30 rounded-lg appearance-none cursor-pointer slider-zoom"
+          class="w-20 h-1 bg-muted-foreground/30 rounded-md appearance-none cursor-pointer slider-zoom"
           @input="handleZoomChange"
         />
         <span class="text-xs text-muted-foreground/70 min-w-[2rem] text-right">{{ Math.round(zoomLevel * 100) }}%</span>

@@ -26,7 +26,7 @@
       <button
         v-if="buttonText"
         @click="$emit('action')"
-        class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg font-medium shadow-sm transition-all"
+        class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-md font-medium shadow-sm transition-all"
       >
         {{ buttonText }}
       </button>
@@ -36,12 +36,12 @@
 
 <script setup lang="ts">
   defineProps<{
-    title: string
-    description: string
-    buttonText?: string
-  }>()
+    title: string;
+    description: string;
+    buttonText?: string;
+  }>();
 
   defineEmits<{
-    action: []
-  }>()
+    action: [];
+  }>();
 </script>
