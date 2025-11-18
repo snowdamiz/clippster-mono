@@ -2262,6 +2262,7 @@
       await invoke('build_clip_from_segments', {
         projectId: props.projectId,
         clipId: clip.id,
+        clipName: clip.current_version_name || clip.name || 'Untitled', // Pass clip name for folder
         videoPath: projectVideo.file_path,
         segments: segments,
         subtitleSettings: settings.includeSubtitles
@@ -2271,6 +2272,7 @@
         transcriptSegments: transcriptSegments,
         maxWords: maxWords,
         aspectRatio: props.aspectRatio,
+        runNumber: clip.run_number || null, // Pass the run number from detection session
       });
 
       console.log('[MediaPanel] Clip build started successfully');

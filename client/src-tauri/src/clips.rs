@@ -98,22 +98,26 @@ pub async fn build_clip_from_segments(
     app: tauri::AppHandle,
     project_id: String,
     clip_id: String,
+    clip_name: String,
     video_path: String,
     segments: Vec<serde_json::Value>,
     subtitle_settings: Option<SubtitleSettings>,
     transcript_words: Option<Vec<WordInfo>>,
     transcript_segments: Option<Vec<WhisperSegment>>,
     max_words: Option<usize>,
-    aspect_ratio: Option<AspectRatio>
+    aspect_ratio: Option<AspectRatio>,
+    run_number: Option<u32>
 ) -> Result<(), String> {
 
     println!("[Rust] build_clip_from_segments called with:");
     println!("[Rust]   project_id: {}", project_id);
     println!("[Rust]   clip_id: {}", clip_id);
+    println!("[Rust]   clip_name: {}", clip_name);
     println!("[Rust]   video_path: {}", video_path);
     println!("[Rust]   segments count: {}", segments.len());
     println!("[Rust]   subtitles enabled: {}", subtitle_settings.as_ref().map(|s| s.enabled).unwrap_or(false));
     println!("[Rust]   max words: {}", max_words.unwrap_or(0));
+    println!("[Rust]   run_number: {:?}", run_number);
 
     // Check if clip is already being built
     {
@@ -127,6 +131,7 @@ pub async fn build_clip_from_segments(
     // Clone app handle for use in async block
     let app_clone = app.clone();
     let clip_id_clone = clip_id.clone();
+    let clip_name_clone = clip_name.clone();
     let project_id_clone = project_id.clone();
     let video_path_clone = video_path.clone();
     let segments_clone = segments.clone();
@@ -152,13 +157,15 @@ pub async fn build_clip_from_segments(
             &app_clone,
             &project_id_clone,
             &clip_id_clone,
+            &clip_name_clone,
             &video_path_clone,
             &segments_clone,
             subtitle_settings_clone,
             transcript_words_clone,
             transcript_segments_clone,
             max_words,
-            aspect_ratio
+            aspect_ratio,
+            run_number
         ).await {
             Ok(result) => {
                 println!("[Rust] Clip build completed successfully for: {}", clip_id_clone);
@@ -198,18 +205,82 @@ pub async fn build_clip_from_segments(
     Ok(())
 }
 
+// Helper function to sanitize a clip name for use as a folder name
+fn sanitize_clip_name(name: &str) -> String {
+    // Replace invalid filesystem characters with underscores
+    let invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+    let mut sanitized = name.to_string();
+    
+    for ch in invalid_chars {
+        sanitized = sanitized.replace(ch, "_");
+    }
+    
+    // Trim whitespace and dots from start/end (invalid on Windows)
+    sanitized = sanitized.trim().trim_matches('.').to_string();
+    
+    // Limit length to avoid filesystem issues (keeping it reasonable)
+    if sanitized.len() > 100 {
+        sanitized.truncate(100);
+    }
+    
+    // If empty after sanitization, use a default name
+    if sanitized.is_empty() {
+        sanitized = "clip".to_string();
+    }
+    
+    sanitized
+}
+
+// Helper function to get or create the run folder for a project using database-tracked run numbers
+// If run_number is None (manually generated clips), uses a special "manual" folder
+fn get_or_create_run_folder(
+    project_clips_dir: &std::path::Path,
+    run_number: Option<u32>
+) -> Result<std::path::PathBuf, String> {
+    let run_folder = if let Some(run_num) = run_number {
+        // Use the run number from the detection session
+        project_clips_dir.join(format!("run-{}", run_num))
+    } else {
+        // For manually generated clips without a detection session, use a manual builds folder
+        project_clips_dir.join("manual-builds")
+    };
+    
+    std::fs::create_dir_all(&run_folder)
+        .map_err(|e| format!("Failed to create run folder: {}", e))?;
+    
+    println!("[Rust] Using run folder: {}", run_folder.display());
+    Ok(run_folder)
+}
+
+// Helper function to get or create the clip-specific folder within a run
+fn get_or_create_clip_folder(
+    run_folder: &std::path::Path,
+    clip_name: &str
+) -> Result<std::path::PathBuf, String> {
+    let sanitized_name = sanitize_clip_name(clip_name);
+    let clip_folder = run_folder.join(&sanitized_name);
+    
+    std::fs::create_dir_all(&clip_folder)
+        .map_err(|e| format!("Failed to create clip folder: {}", e))?;
+    
+    println!("[Rust] Using clip folder: {}", clip_folder.display());
+    Ok(clip_folder)
+}
+
 // Simplified internal clip building implementation (without progress callbacks)
 async fn build_clip_internal_simple(
     app: &tauri::AppHandle,
     project_id: &str,
     clip_id: &str,
+    clip_name: &str,
     video_path: &str,
     segments: &[serde_json::Value],
     subtitle_settings: Option<SubtitleSettings>,
     transcript_words: Option<Vec<WordInfo>>,
     _transcript_segments: Option<Vec<WhisperSegment>>,
     max_words: Option<usize>,
-    aspect_ratio: Option<AspectRatio>
+    aspect_ratio: Option<AspectRatio>,
+    run_number: Option<u32>
 ) -> Result<ClipBuildResult, String> {
 
     // Emit progress
@@ -227,13 +298,19 @@ async fn build_clip_internal_simple(
         .map_err(|e| format!("Failed to get storage paths: {}", e))?;
 
     // Create project-specific clips directory in the clips folder
-    let clips_dir = paths.clips.join(format!("project_{}", project_id));
-    std::fs::create_dir_all(&clips_dir)
-        .map_err(|e| format!("Failed to create clips directory: {}", e))?;
+    let project_clips_dir = paths.clips.join(format!("project_{}", project_id));
+    std::fs::create_dir_all(&project_clips_dir)
+        .map_err(|e| format!("Failed to create project clips directory: {}", e))?;
 
-    // Output file path
-    let output_filename = format!("clip_{}.mp4", clip_id);
-    let output_path = clips_dir.join(&output_filename);
+    // Get or create the run folder for this build using the database-tracked run number
+    let run_folder = get_or_create_run_folder(&project_clips_dir, run_number)?;
+
+    // Get or create the clip-specific folder within the run
+    let clips_dir = get_or_create_clip_folder(&run_folder, clip_name)?;
+
+    // Output file path - use simple "clip.mp4" name since it's in its own folder
+    let output_filename = "clip.mp4";
+    let output_path = clips_dir.join(output_filename);
 
     // Get video dimensions for proper subtitle rendering
     let video_info = get_video_info(app, video_path).await?;
@@ -242,7 +319,7 @@ async fn build_clip_internal_simple(
     // Generate subtitle file if needed
     let subtitle_file = if let (Some(settings), Some(words)) = (&subtitle_settings, &transcript_words) {
         if settings.enabled {
-            let sub_path = clips_dir.join(format!("clip_{}.ass", clip_id));
+            let sub_path = clips_dir.join("subtitles.ass");
             generate_ass_file(
                 settings, 
                 words, 
