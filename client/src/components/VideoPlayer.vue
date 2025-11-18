@@ -100,6 +100,18 @@
         @canplay="$emit('canPlay')"
         data-testid="project-video"
       />
+
+      <!-- Subtitle Overlay -->
+      <div
+        v-if="subtitleSettings?.enabled && currentSubtitleText && videoSrc && !videoLoading"
+        class="absolute subtitle-overlay pointer-events-none z-20"
+        :style="getSubtitleContainerStyle"
+      >
+        <div class="subtitle-text" :style="getSubtitleTextStyle">
+          {{ currentSubtitleText }}
+        </div>
+      </div>
+
       <!-- Focal Point Debug Indicator -->
       <div
         v-if="videoSrc && !videoLoading"
@@ -165,7 +177,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch } from 'vue';
+  import { ref, watch, computed } from 'vue';
 
   interface Props {
     videoSrc: string | null;
@@ -174,10 +186,71 @@
     isPlaying: boolean;
     aspectRatio: { width: number; height: number };
     focalPoint?: { x: number; y: number };
+    subtitleSettings?: SubtitleSettings;
+    transcriptWords?: WordInfo[];
+    currentTime?: number;
+  }
+
+  interface WordInfo {
+    word: string;
+    start: number;
+    end: number;
+    confidence?: number;
+  }
+
+  interface SubtitleSettings {
+    enabled: boolean;
+    fontFamily: string;
+    fontSize: number;
+    fontWeight: number;
+    textColor: string;
+    backgroundColor: string;
+    backgroundEnabled: boolean;
+    outlineWidth: number;
+    outlineColor: string;
+    shadowOffsetX: number;
+    shadowOffsetY: number;
+    shadowBlur: number;
+    shadowColor: string;
+    position: 'top' | 'middle' | 'bottom';
+    positionPercentage: number;
+    maxWidth: number;
+    animationStyle: 'none' | 'fade' | 'word-by-word';
+    lineHeight: number;
+    letterSpacing: number;
+    textAlign: 'left' | 'center' | 'right';
+    padding: number;
+    borderRadius: number;
   }
 
   const props = withDefaults(defineProps<Props>(), {
     focalPoint: () => ({ x: 0.5, y: 0.5 }),
+    subtitleSettings: () => ({
+      enabled: false,
+      fontFamily: 'Montserrat',
+      fontSize: 32,
+      fontWeight: 700,
+      textColor: '#FFFFFF',
+      backgroundColor: '#000000',
+      backgroundEnabled: false,
+      outlineWidth: 3,
+      outlineColor: '#000000',
+      shadowOffsetX: 2,
+      shadowOffsetY: 2,
+      shadowBlur: 4,
+      shadowColor: '#000000',
+      position: 'bottom',
+      positionPercentage: 85,
+      maxWidth: 90,
+      animationStyle: 'none',
+      lineHeight: 1.2,
+      letterSpacing: 0,
+      textAlign: 'center',
+      padding: 16,
+      borderRadius: 8,
+    }),
+    transcriptWords: () => [],
+    currentTime: 0,
   });
 
   interface Emits {
@@ -195,6 +268,100 @@
   const emit = defineEmits<Emits>();
 
   const videoElementRef = ref<HTMLVideoElement | null>(null);
+
+  // Subtitle logic
+  const currentSubtitleText = computed(() => {
+    if (!props.subtitleSettings?.enabled || !props.transcriptWords || props.transcriptWords.length === 0) {
+      return '';
+    }
+
+    const time = props.currentTime || 0;
+
+    // Find words around the current time (within 0.8 second window)
+    const words = props.transcriptWords.filter((word) => word.start <= time + 0.4 && word.end >= time - 0.4);
+
+    if (words.length === 0) return '';
+
+    // Get 2-4 words for better readability
+    const currentWordIndex = props.transcriptWords.findIndex((word) => word.start <= time && word.end >= time);
+
+    if (currentWordIndex === -1) return '';
+
+    // Get surrounding words for context
+    const startIndex = Math.max(0, currentWordIndex - 1);
+    const endIndex = Math.min(props.transcriptWords.length - 1, currentWordIndex + 2);
+
+    const displayWords = props.transcriptWords.slice(startIndex, endIndex + 1);
+    return displayWords.map((w) => w.word).join(' ');
+  });
+
+  const getSubtitleContainerStyle = computed(() => {
+    if (!props.subtitleSettings) return {};
+
+    const settings = props.subtitleSettings;
+    let topPosition = '50%';
+
+    if (settings.position === 'top') {
+      topPosition = settings.positionPercentage + '%';
+    } else if (settings.position === 'middle') {
+      topPosition = settings.positionPercentage + '%';
+    } else {
+      topPosition = settings.positionPercentage + '%';
+    }
+
+    return {
+      top: topPosition,
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      width: settings.maxWidth + '%',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+    };
+  });
+
+  const getSubtitleTextStyle = computed(() => {
+    if (!props.subtitleSettings) return {};
+
+    const settings = props.subtitleSettings;
+
+    // Build text-shadow for outline effect
+    let textShadow = '';
+    if (settings.outlineWidth > 0) {
+      // Create multiple shadows in a circle for outline effect
+      const steps = 16;
+      const shadows = [];
+      for (let i = 0; i < steps; i++) {
+        const angle = (i * 2 * Math.PI) / steps;
+        const x = Math.cos(angle) * settings.outlineWidth;
+        const y = Math.sin(angle) * settings.outlineWidth;
+        shadows.push(`${x}px ${y}px 0 ${settings.outlineColor}`);
+      }
+      textShadow = shadows.join(', ');
+    }
+
+    // Add drop shadow
+    if (settings.shadowBlur > 0) {
+      const dropShadow = `${settings.shadowOffsetX}px ${settings.shadowOffsetY}px ${settings.shadowBlur}px ${settings.shadowColor}`;
+      textShadow = textShadow ? `${textShadow}, ${dropShadow}` : dropShadow;
+    }
+
+    return {
+      fontFamily: settings.fontFamily,
+      fontSize: `${settings.fontSize}px`,
+      fontWeight: settings.fontWeight,
+      color: settings.textColor,
+      backgroundColor: settings.backgroundEnabled ? settings.backgroundColor : 'transparent',
+      padding: `${settings.padding}px`,
+      borderRadius: `${settings.borderRadius}px`,
+      lineHeight: settings.lineHeight,
+      letterSpacing: `${settings.letterSpacing}px`,
+      textAlign: settings.textAlign,
+      textShadow: textShadow || 'none',
+      wordWrap: 'break-word',
+      maxWidth: '100%',
+    };
+  });
 
   // Expose the video element ref to parent
   defineExpose({

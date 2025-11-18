@@ -155,6 +155,39 @@ export interface TimelineVideoTrackEmits {
   (e: 'timelineMouseLeave'): void;
 }
 
+// Subtitle Types
+export interface SubtitleSettings {
+  enabled: boolean;
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: number;
+  textColor: string;
+  backgroundColor: string;
+  backgroundEnabled: boolean;
+  outlineWidth: number;
+  outlineColor: string;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
+  shadowBlur: number;
+  shadowColor: string;
+  position: 'top' | 'middle' | 'bottom';
+  positionPercentage: number;
+  maxWidth: number;
+  animationStyle: 'none' | 'fade' | 'word-by-word';
+  lineHeight: number;
+  letterSpacing: number;
+  textAlign: 'left' | 'center' | 'right';
+  padding: number;
+  borderRadius: number;
+}
+
+export interface SubtitlePreset {
+  id: string;
+  name: string;
+  description: string;
+  settings: SubtitleSettings;
+}
+
 export interface MediaPanelProps {
   transcriptCollapsed: boolean;
   clipsCollapsed: boolean;
@@ -179,6 +212,7 @@ export interface MediaPanelEmits {
   (e: 'deleteClip', clipId: string): void;
   (e: 'playClip', clip: any): void; // Using any for ClipWithVersion for now
   (e: 'seekVideo', time: number): void;
+  (e: 'subtitleSettingsChanged', settings: SubtitleSettings): void;
 }
 
 export interface TimelinePlayheadProps {

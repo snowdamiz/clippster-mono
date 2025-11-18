@@ -52,6 +52,9 @@
                 :is-playing="isPlaying"
                 :aspect-ratio="selectedAspectRatio"
                 :focal-point="currentFocalPoint"
+                :subtitle-settings="subtitleSettings"
+                :transcript-words="transcriptData?.words || []"
+                :current-time="currentTime"
                 @togglePlayPause="togglePlayPause"
                 @timeUpdate="onTimeUpdate"
                 @loadedMetadata="onLoadedMetadata"
@@ -101,6 +104,7 @@
                 @deleteClip="onDeleteClip"
                 @playClip="onPlayClip"
                 @seekVideo="onSeekVideo"
+                @subtitleSettingsChanged="onSubtitleSettingsChanged"
               />
             </div>
           </div>
@@ -184,6 +188,7 @@
 <script setup lang="ts">
   import { ref, watch, computed } from 'vue';
   import { type Project, type ClipWithVersion, getClipsWithVersionsByProjectId, deleteClip } from '@/services/database';
+  import type { SubtitleSettings } from '@/types';
   import VideoPlayer from './VideoPlayer.vue';
   import VideoControls from './VideoControls.vue';
   import MediaPanel from './MediaPanel.vue';
@@ -197,6 +202,7 @@
   import { useToast } from '@/composables/useToast';
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useVideoFocalPoint } from '@/composables/useVideoFocalPoint';
+  import { useTranscriptData } from '@/composables/useTranscriptData';
   import { getRawVideosByProjectId } from '@/services/database';
 
   const { error: showError } = useToast();
@@ -246,8 +252,37 @@
   // Aspect ratio state
   const selectedAspectRatio = ref({ width: 16, height: 9 });
 
+  // Subtitle settings state
+  const subtitleSettings = ref<SubtitleSettings>({
+    enabled: false,
+    fontFamily: 'Montserrat',
+    fontSize: 32,
+    fontWeight: 700,
+    textColor: '#FFFFFF',
+    backgroundColor: '#000000',
+    backgroundEnabled: false,
+    outlineWidth: 3,
+    outlineColor: '#000000',
+    shadowOffsetX: 2,
+    shadowOffsetY: 2,
+    shadowBlur: 4,
+    shadowColor: '#000000',
+    position: 'bottom',
+    positionPercentage: 85,
+    maxWidth: 90,
+    animationStyle: 'none',
+    lineHeight: 1.2,
+    letterSpacing: 0,
+    textAlign: 'center',
+    padding: 16,
+    borderRadius: 8,
+  });
+
   // Use video player composable
   const projectRef = computed(() => props.project);
+
+  // Use transcript data composable for subtitles
+  const { transcriptData } = useTranscriptData(computed(() => props.project?.id || null));
 
   // Computed property for dialog height
   const dialogHeight = computed(() => {
@@ -758,6 +793,11 @@
   // Handle aspect ratio change
   function handleRatioChanged(ratio: { width: number; height: number }) {
     selectedAspectRatio.value = { width: ratio.width, height: ratio.height };
+  }
+
+  // Handle subtitle settings change
+  function onSubtitleSettingsChanged(settings: SubtitleSettings) {
+    subtitleSettings.value = settings;
   }
 
   // Function to handle clip playback
