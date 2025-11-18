@@ -121,28 +121,30 @@
         class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
         @click.self="showKeyboardShortcuts = false"
       >
-        <div class="bg-card rounded-2xl p-8 max-w-3xl w-full mx-4 border border-border max-h-[85vh] flex flex-col">
-          <!-- Header -->
-          <div class="flex items-center justify-between mb-4">
-            <div>
-              <h2 class="text-2xl font-bold text-foreground">Shortcuts & Controls</h2>
-              <p class="text-sm text-muted-foreground mt-1">Keyboard and mouse shortcuts for efficient editing</p>
-            </div>
-            <button
-              @click="showKeyboardShortcuts = false"
-              class="p-2 hover:bg-muted rounded-lg transition-colors"
-              title="Close"
+        <div
+          class="bg-card rounded-2xl p-6 max-w-3xl w-full mx-4 border border-border max-h-[85vh] flex flex-col relative"
+        >
+          <!-- Close Button (Top Right) -->
+          <button
+            @click="showKeyboardShortcuts = false"
+            class="absolute top-4 right-4 p-2 hover:bg-muted rounded-lg transition-colors z-10"
+            title="Close"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5 text-muted-foreground"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-5 w-5 text-muted-foreground"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
+          <!-- Header -->
+          <div class="mb-4 pr-10">
+            <h2 class="text-2xl font-bold text-foreground">Shortcuts & Controls</h2>
+            <p class="text-sm text-muted-foreground mt-1">Keyboard and mouse shortcuts for efficient editing</p>
           </div>
 
           <!-- Tabs -->
@@ -234,7 +236,7 @@
           </div>
 
           <!-- Content -->
-          <div class="flex-1 overflow-y-auto">
+          <div class="overflow-y-auto h-[480px]">
             <!-- Playback Tab -->
             <div v-if="activeShortcutTab === 'playback'" class="space-y-4">
               <div class="space-y-2">
