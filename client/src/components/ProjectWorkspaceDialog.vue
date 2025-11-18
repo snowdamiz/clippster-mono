@@ -99,6 +99,7 @@
                 :playing-clip-id="getCurrentPlayingClipId()"
                 :video-duration="duration"
                 :current-time="currentTime"
+                :aspect-ratio="selectedAspectRatio"
                 @detectClips="onDetectClips"
                 @clipHover="onClipHover"
                 @scrollToTimeline="onScrollToTimeline"

@@ -213,6 +213,7 @@ export interface MediaPanelProps {
   isPlayingSegments?: boolean;
   videoDuration?: number; // Duration in seconds
   currentTime?: number; // Current video playback time in seconds
+  aspectRatio: { width: number; height: number };
 }
 
 export interface MediaPanelEmits {

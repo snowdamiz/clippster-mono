@@ -1607,6 +1607,7 @@
   } from 'lucide-vue-next';
   import TranscriptPanel from './TranscriptPanel.vue';
   import ColorPicker from './ColorPicker.vue';
+  import { useTranscriptData } from '@/composables/useTranscriptData';
 
   const props = withDefaults(defineProps<MediaPanelProps>(), {
     isGenerating: false,
@@ -1618,6 +1619,7 @@
     isPlayingSegments: false,
     videoDuration: 0,
     currentTime: 0,
+    aspectRatio: () => ({ width: 16, height: 9 }),
   });
 
   const emit = defineEmits<MediaPanelEmits>();
@@ -1636,6 +1638,22 @@
 
   // Refs for scroll containers
   const clipsScrollContainer = ref<HTMLElement | null>(null);
+
+  // Use transcript data composable
+  const { transcriptData } = useTranscriptData(computed(() => props.projectId || null));
+
+  // Calculate max words based on aspect ratio (matches VideoPlayer.vue logic)
+  const maxWordsForAspectRatio = computed(() => {
+    const aspectRatioValue = props.aspectRatio.width / props.aspectRatio.height;
+
+    if (aspectRatioValue > 1.5) {
+      return 6; // wide formats (16:9, 21:9)
+    } else if (aspectRatioValue > 0.9) {
+      return 4; // squarish (1:1, 4:3)
+    } else {
+      return 3; // vertical (9:16, 4:5)
+    }
+  });
 
   // Subtitle state
   const getDefaultSubtitleSettings = (): SubtitleSettings => ({
@@ -2210,11 +2228,24 @@
 
       // Call the Tauri clip building command
       const { invoke } = await import('@tauri-apps/api/core');
+
+      // Get transcript data
+      const transcriptWords = transcriptData.value?.words || [];
+      const transcriptSegments = transcriptData.value?.whisperSegments || [];
+
+      // Get max words per line based on aspect ratio (matches VideoPlayer.vue preview)
+      const maxWords = maxWordsForAspectRatio.value;
+
       await invoke('build_clip_from_segments', {
         projectId: props.projectId,
         clipId: clip.id,
         videoPath: projectVideo.file_path,
         segments: segments,
+        subtitleSettings: subtitleSettings.value,
+        transcriptWords: transcriptWords,
+        transcriptSegments: transcriptSegments,
+        maxWords: maxWords,
+        aspectRatio: props.aspectRatio,
       });
 
       console.log('[MediaPanel] Clip build started successfully');

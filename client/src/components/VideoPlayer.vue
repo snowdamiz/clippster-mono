@@ -5,6 +5,7 @@
   >
     <!-- Video Crop Container -->
     <div
+      ref="videoContainerRef"
       class="video-crop-container"
       :style="{
         aspectRatio: `${aspectRatio.width}/${aspectRatio.height}`,
@@ -193,7 +194,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch, computed } from 'vue';
+  import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
 
   import type { WhisperSegment } from '@/types';
 
@@ -291,6 +292,8 @@
   const emit = defineEmits<Emits>();
 
   const videoElementRef = ref<HTMLVideoElement | null>(null);
+  const videoContainerRef = ref<HTMLElement | null>(null);
+  const containerHeight = ref<number>(1080); // Default to 1080p height
 
   // Calculate max words based on aspect ratio
   const maxWordsForAspectRatio = computed(() => {
@@ -464,6 +467,11 @@
 
     const settings = props.subtitleSettings;
 
+    // Get the video container dimensions to calculate proper scaling
+    // This makes the preview subtitles scale relative to video size (like they will in the burned output)
+    // Using containerHeight.value (reactive) instead of clientHeight (non-reactive)
+    const videoScaleFactor = containerHeight.value / 1080;
+
     // Calculate aspect ratio and adjust font size/line height for narrow formats
     const aspectRatioValue = props.aspectRatio.width / props.aspectRatio.height;
     let fontSizeScale = 1;
@@ -480,6 +488,9 @@
       lineHeightAdjustment = -0.1;
     }
 
+    // Combine both scaling factors: aspect ratio scaling * video size scaling
+    const finalFontSizeScale = fontSizeScale * videoScaleFactor;
+
     // Build text-shadow for outline effect
     let textShadow = '';
     if (settings.outlineWidth > 0) {
@@ -488,8 +499,8 @@
       const shadows = [];
       for (let i = 0; i < steps; i++) {
         const angle = (i * 2 * Math.PI) / steps;
-        const x = Math.cos(angle) * settings.outlineWidth * fontSizeScale;
-        const y = Math.sin(angle) * settings.outlineWidth * fontSizeScale;
+        const x = Math.cos(angle) * settings.outlineWidth * finalFontSizeScale;
+        const y = Math.sin(angle) * settings.outlineWidth * finalFontSizeScale;
         shadows.push(`${x}px ${y}px 0 ${settings.outlineColor}`);
       }
       textShadow = shadows.join(', ');
@@ -497,14 +508,14 @@
 
     // Add drop shadow
     if (settings.shadowBlur > 0) {
-      const dropShadow = `${settings.shadowOffsetX * fontSizeScale}px ${settings.shadowOffsetY * fontSizeScale}px ${settings.shadowBlur * fontSizeScale}px ${settings.shadowColor}`;
+      const dropShadow = `${settings.shadowOffsetX * finalFontSizeScale}px ${settings.shadowOffsetY * finalFontSizeScale}px ${settings.shadowBlur * finalFontSizeScale}px ${settings.shadowColor}`;
       textShadow = textShadow ? `${textShadow}, ${dropShadow}` : dropShadow;
     }
 
-    const adjustedFontSize = Math.round(settings.fontSize * fontSizeScale);
+    const adjustedFontSize = Math.round(settings.fontSize * finalFontSizeScale);
     const adjustedLineHeight = Math.max(0.5, settings.lineHeight + lineHeightAdjustment);
-    const adjustedPadding = Math.round(settings.padding * fontSizeScale);
-    const adjustedLetterSpacing = settings.letterSpacing * fontSizeScale;
+    const adjustedPadding = Math.round(settings.padding * finalFontSizeScale);
+    const adjustedLetterSpacing = settings.letterSpacing * finalFontSizeScale;
 
     return {
       fontFamily: settings.fontFamily,
@@ -536,6 +547,32 @@
   watch(videoElementRef, (newElement) => {
     if (newElement) {
       emit('videoElementReady', newElement);
+    }
+  });
+
+  // Setup ResizeObserver to track container size changes
+  let resizeObserver: ResizeObserver | null = null;
+
+  onMounted(() => {
+    if (videoContainerRef.value) {
+      // Initialize with current height
+      containerHeight.value = videoContainerRef.value.clientHeight;
+
+      // Create ResizeObserver to watch for size changes
+      resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          // Update the reactive containerHeight when size changes
+          containerHeight.value = entry.contentRect.height;
+        }
+      });
+
+      resizeObserver.observe(videoContainerRef.value);
+    }
+  });
+
+  onUnmounted(() => {
+    if (resizeObserver) {
+      resizeObserver.disconnect();
     }
   });
 </script>
