@@ -1,11 +1,11 @@
 <template>
   <div class="px-4 flex flex-col flex-1 h-full" data-media-panel>
     <!-- Tabs Header -->
-    <div class="flex items-center border-b border-border/60 -mx-3 px-3 gap-1">
+    <div class="flex items-center border-b border-border/60 -mx-4 gap-1">
       <button
         @click="activeTab = 'clips'"
         :class="[
-          'px-4 py-2.5 text-sm font-medium transition-all relative rounded-t-lg',
+          'px-4 py-2.5 text-sm font-medium transition-all relative',
           activeTab === 'clips'
             ? 'text-foreground bg-muted/30'
             : 'text-muted-foreground hover:text-foreground hover:bg-muted/20',
@@ -17,7 +17,7 @@
       <button
         @click="activeTab = 'audio'"
         :class="[
-          'px-4 py-2.5 text-sm font-medium transition-all relative rounded-t-lg',
+          'px-4 py-2.5 text-sm font-medium transition-all relative',
           activeTab === 'audio'
             ? 'text-foreground bg-muted/30'
             : 'text-muted-foreground hover:text-foreground hover:bg-muted/20',
@@ -29,7 +29,7 @@
       <button
         @click="activeTab = 'transcript'"
         :class="[
-          'px-4 py-2.5 text-sm font-medium transition-all relative rounded-t-lg',
+          'px-4 py-2.5 text-sm font-medium transition-all relative',
           activeTab === 'transcript'
             ? 'text-foreground bg-muted/30'
             : 'text-muted-foreground hover:text-foreground hover:bg-muted/20',
@@ -44,7 +44,7 @@
       <button
         @click="activeTab = 'subtitles'"
         :class="[
-          'px-4 py-2.5 text-sm font-medium transition-all relative rounded-t-lg',
+          'px-4 py-2.5 text-sm font-medium transition-all relative',
           activeTab === 'subtitles'
             ? 'text-foreground bg-muted/30'
             : 'text-muted-foreground hover:text-foreground hover:bg-muted/20',
