@@ -940,22 +940,6 @@ fn generate_ass_file(
             let t_mid = (t_start + t_end) / 2.0;
             let active_word_idx = chunk.iter().position(|w| t_mid >= w.start && t_mid <= w.end);
             
-            // Build text line
-            // Words joined by spaces (or \\N for newlines if we wanted, but logic assumes single line/wrap)
-            let mut text_parts = Vec::new();
-            
-            for (k, word) in chunk.iter().enumerate() {
-                if Some(k) == active_word_idx {
-                    // Active word: Scale up
-                    text_parts.push(format!("{{\\fscx115\\fscy115}}{}{{\\fscx100\\fscy100}}", word.word));
-                } else {
-                    // Normal word
-                    text_parts.push(word.word.clone());
-                }
-            }
-            
-            let line_text = text_parts.join(" "); // Using standard space
-            
             // Format time to H:MM:SS.cc
             let format_time = |t: f64| -> String {
                 let t = t.max(0.0);
@@ -966,13 +950,92 @@ fn generate_ass_file(
                 format!("{}:{:02}:{:02}.{:02}", hours, mins, secs, centis)
             };
             
+            // Strategy: Render text in two layers
+            // Layer 0: All words at normal size (provides stable layout)
+            // Layer 1: Active word only, scaled up, positioned exactly over the base word
+            
+            // Layer 0: Base text with all words at normal size
+            let base_text = chunk.iter().map(|w| w.word.as_str()).collect::<Vec<_>>().join(" ");
             writeln!(file, "Dialogue: 0,{},{},Default,,0,0,0,,{}",
                 format_time(t_start),
                 format_time(t_end),
-                line_text
+                base_text
             ).unwrap();
+            
+            // Layer 1: If there's an active word, render it scaled on top
+            if let Some(active_idx) = active_word_idx {
+                let active_word = &chunk[active_idx];
+                let word_duration = active_word.end - active_word.start;
+                let anim_duration_ms = calculate_animation_duration(word_duration);
+                
+                // Calculate when this word starts within the current interval
+                let word_start_in_interval = if active_word.start > t_start {
+                    ((active_word.start - t_start) * 1000.0) as u32
+                } else {
+                    0
+                };
+                
+                let scale_up_end = word_start_in_interval + anim_duration_ms;
+                
+                // Build text with spaces to position the active word correctly
+                // Use invisible characters (zero-width) for other words to maintain spacing
+                let mut positioned_text_parts = Vec::new();
+                for (k, word) in chunk.iter().enumerate() {
+                    if k == active_idx {
+                        // Active word with animation
+                        positioned_text_parts.push(format!(
+                            "{{\\t({},{},\\fscx115\\fscy115)}}{}{{\\fscx100\\fscy100}}",
+                            word_start_in_interval,
+                            scale_up_end,
+                            word.word
+                        ));
+                    } else {
+                        // Use {\alpha&HFF&} to make word invisible (maintains spacing)
+                        positioned_text_parts.push(format!("{{\\alpha&HFF&}}{}", word.word));
+                    }
+                }
+                
+                let overlay_text = positioned_text_parts.join(" ");
+                
+                // Render on layer 1 (on top of base layer)
+                writeln!(file, "Dialogue: 1,{},{},Default,,0,0,0,,{}",
+                    format_time(t_start),
+                    format_time(t_end),
+                    overlay_text
+                ).unwrap();
+            }
         }
     }
 
     Ok(())
+}
+
+// Calculate animation duration for a word (matches VideoPlayer.vue logic)
+fn calculate_animation_duration(word_duration: f64) -> u32 {
+    // Returns duration in milliseconds
+    
+    // For very short words (under 50ms), use instant transition
+    if word_duration < 0.05 {
+        return 0;
+    }
+    
+    // For short words (50-100ms), use 30% of duration for responsive animation
+    if word_duration < 0.1 {
+        return ((word_duration * 0.3) * 1000.0) as u32;
+    }
+    
+    // For medium words (100-200ms), use 35% of duration
+    if word_duration < 0.2 {
+        return ((word_duration * 0.35) * 1000.0) as u32;
+    }
+    
+    // For normal words (200-400ms), use 40% of duration
+    if word_duration < 0.4 {
+        return ((word_duration * 0.4) * 1000.0) as u32;
+    }
+    
+    // For longer words (400ms+), use 45% but cap at 200ms to prevent overly slow animations
+    let calculated_duration = word_duration * 0.45;
+    let capped_duration = calculated_duration.min(0.2);
+    (capped_duration * 1000.0) as u32
 }
