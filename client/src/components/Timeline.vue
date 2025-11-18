@@ -226,6 +226,7 @@
     calculateResizeConstraints as calcResizeConstraints,
   } from '../utils/timelineConstraints';
   import { createCutHoverInfo } from '../utils/timelineCut';
+  import { applySnapToSegment, applySnapToTime } from '../utils/timelineSnap';
   import type {
     Clip,
     ClipSegment,
@@ -1303,6 +1304,35 @@
       newStartTime = Math.max(props.duration - originalDuration, 0);
     }
 
+    // Apply snapping to both edges before updating drag state
+    const videoTrack = timelineScrollContainer.value?.querySelector(SELECTORS.VIDEO_TRACK) as HTMLElement;
+    if (videoTrack && props.duration) {
+      const snapResult = applySnapToSegment(newStartTime, newEndTime, props.currentTime, props.duration, videoTrack);
+
+      if (snapResult.didSnap) {
+        newStartTime = snapResult.startTime;
+        newEndTime = snapResult.endTime;
+
+        // After snapping, re-check constraints to ensure we still respect them
+        if (newStartTime < movementConstraints.value.minStartTime) {
+          const shift = movementConstraints.value.minStartTime - newStartTime;
+          newStartTime = movementConstraints.value.minStartTime;
+          newEndTime = newEndTime + shift;
+        } else if (newEndTime > movementConstraints.value.maxEndTime) {
+          const shift = newEndTime - movementConstraints.value.maxEndTime;
+          newEndTime = movementConstraints.value.maxEndTime;
+          newStartTime = Math.max(movementConstraints.value.minStartTime, newStartTime - shift);
+        }
+
+        // Final duration check after snap and constraint adjustment
+        if (newEndTime - newStartTime < originalDuration * 0.99) {
+          // If snapping breaks constraints, revert to original position
+          newStartTime = draggedSegmentInfo.value.originalStartTime;
+          newEndTime = draggedSegmentInfo.value.originalEndTime;
+        }
+      }
+    }
+
     // Final check: if we still can't maintain original duration, don't move at all
     if (newEndTime - newStartTime < originalDuration * 0.99) {
       // Allow tiny floating point errors
@@ -1483,6 +1513,39 @@
       // Ensure minimum duration
       if (newEndTime - newStartTime < TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION) {
         newEndTime = newStartTime + TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION;
+      }
+    }
+
+    // Apply snapping to the edge being resized
+    const videoTrack = timelineScrollContainer.value?.querySelector(SELECTORS.VIDEO_TRACK) as HTMLElement;
+    if (videoTrack && props.duration) {
+      const targetTime = handleType === 'left' ? newStartTime : newEndTime;
+      const snapResult = applySnapToTime(targetTime, props.currentTime, props.duration, videoTrack);
+
+      if (snapResult.didSnap) {
+        if (handleType === 'left') {
+          newStartTime = snapResult.time;
+
+          // Re-check constraints after snap
+          newStartTime = Math.max(resizeHandleInfo.value.minStartTime, newStartTime);
+          newStartTime = Math.min(resizeHandleInfo.value.maxEndTime, newStartTime);
+
+          // Ensure minimum duration after snap
+          if (newEndTime - newStartTime < TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION) {
+            newStartTime = newEndTime - TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION;
+          }
+        } else {
+          newEndTime = snapResult.time;
+
+          // Re-check constraints after snap
+          newEndTime = Math.max(resizeHandleInfo.value.minStartTime, newEndTime);
+          newEndTime = Math.min(resizeHandleInfo.value.maxEndTime, newEndTime);
+
+          // Ensure minimum duration after snap
+          if (newEndTime - newStartTime < TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION) {
+            newEndTime = newStartTime + TIMELINE_CONSTANTS.MIN_SEGMENT_DURATION;
+          }
+        }
       }
     }
 

@@ -45,18 +45,22 @@ export const TIMELINE_CONSTANTS = {
 
   // Positioning
   TOOLTIP_OFFSET_Y: 80,
-  DRAG_TOOLTIP_OFFSET_Y: 60
-} as const
+  DRAG_TOOLTIP_OFFSET_Y: 60,
+
+  // Snap settings
+  SNAP_THRESHOLD: 5, // pixels - distance for snapping to playhead
+  SNAP_ENABLED: true, // toggle for snap functionality
+} as const;
 
 // Timeline dimensions for calculations
 export const TIMELINE_DIMENSIONS = {
   LABEL_WIDTH: TIMELINE_CONSTANTS.LABEL_WIDTH,
   TOOLTIP_THROTTLE: TIMELINE_CONSTANTS.TOOLTIP_THROTTLE,
-  DEBOUNCE_DELAY: TIMELINE_CONSTANTS.DEBOUNCE_DELAY
-} as const
+  DEBOUNCE_DELAY: TIMELINE_CONSTANTS.DEBOUNCE_DELAY,
+} as const;
 
 // Seek configuration
 export const SEEK_CONFIG = {
   INTERVAL_MS: TIMELINE_CONSTANTS.SEEK_INTERVAL_MS,
-  SECONDS_PER_INTERVAL: TIMELINE_CONSTANTS.SECONDS_PER_INTERVAL
-} as const
+  SECONDS_PER_INTERVAL: TIMELINE_CONSTANTS.SECONDS_PER_INTERVAL,
+} as const;
