@@ -510,40 +510,111 @@
 
     <!-- Subtitles Tab Content -->
     <div v-if="activeTab === 'subtitles'" class="flex-1 flex flex-col overflow-hidden">
-      <div class="flex-1 overflow-y-auto py-2 pr-2 custom-scrollbar">
-        <!-- Header with Enable Toggle and Reset -->
-        <div class="sticky top-0 z-10 bg-background/95 backdrop-blur-sm pb-2 mb-2 border-b border-border/50">
-          <div class="flex items-center justify-between px-2">
-            <div class="flex items-center gap-2">
-              <button
-                @click="toggleSubtitles"
-                type="button"
+      <!-- Header with Enable Toggle and Reset -->
+      <div class="py-3 bg-card/30">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <button
+              @click="toggleSubtitles"
+              type="button"
+              :class="[
+                'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/30',
+                subtitleSettings.enabled ? 'bg-primary' : 'bg-muted-foreground/30',
+              ]"
+              :title="subtitleSettings.enabled ? 'Disable subtitles' : 'Enable subtitles'"
+              :aria-pressed="subtitleSettings.enabled"
+            >
+              <span
                 :class="[
-                  'relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-all duration-200 focus:outline-none focus:ring-1 focus:ring-primary/50',
-                  subtitleSettings.enabled ? 'bg-primary' : 'bg-muted-foreground/30',
+                  'inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-all duration-200 ease-in-out',
+                  subtitleSettings.enabled ? 'translate-x-[22px]' : 'translate-x-0.5',
                 ]"
-                :title="subtitleSettings.enabled ? 'Disable subtitles' : 'Enable subtitles'"
-                :aria-pressed="subtitleSettings.enabled"
-              >
-                <span
-                  :class="[
-                    'inline-block h-4 w-4 transform rounded-full bg-white shadow-lg transition-all duration-200 ease-in-out',
-                    subtitleSettings.enabled ? 'translate-x-[18px]' : 'translate-x-0.5',
-                  ]"
-                ></span>
-              </button>
-              <span class="text-xs font-semibold text-foreground">
+              ></span>
+            </button>
+            <div>
+              <span class="text-sm font-semibold text-foreground">
                 {{ subtitleSettings.enabled ? 'Enabled' : 'Disabled' }}
               </span>
+              <p class="text-[10px] text-muted-foreground mt-0.5">
+                {{ subtitleSettings.enabled ? 'Subtitles will appear on video' : 'Turn on to preview subtitles' }}
+              </p>
             </div>
+          </div>
+          <button
+            @click="resetToDefaults"
+            class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted/40 hover:bg-muted/60 rounded-md transition-all border border-border/50"
+            title="Reset all settings to defaults"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-3.5 w-3.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
+            </svg>
+            Reset
+          </button>
+        </div>
+      </div>
+
+      <!-- Sub-tabs for different settings categories -->
+      <div class="flex items-center py-3 bg-background/50 border-b border-border/30">
+        <div class="flex items-center gap-1">
+          <button
+            v-for="tab in subtitleTabs"
+            :key="tab.id"
+            @click="activeSubtitleTab = tab.id"
+            :class="[
+              'px-3 py-1.5 text-xs font-semibold rounded-md transition-all',
+              activeSubtitleTab === tab.id
+                ? 'text-primary bg-primary/10 border border-primary/30'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/30',
+            ]"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Tab Content -->
+      <div class="flex-1 overflow-y-auto py-4 custom-scrollbar">
+        <!-- Presets Tab -->
+        <div v-if="activeSubtitleTab === 'presets'" class="space-y-4">
+          <!-- Save Buttons -->
+          <div class="flex items-center gap-2">
             <button
-              @click="resetToDefaults"
-              class="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground bg-muted/30 hover:bg-muted/50 rounded-md transition-all"
-              title="Reset to defaults"
+              @click="openSaveDialog('new')"
+              class="flex-1 py-2 px-3 rounded-lg transition-all flex items-center justify-center gap-2 bg-muted/40 hover:bg-muted/60 border border-border/50 hover:border-border text-foreground/80 hover:text-foreground"
+              title="Save as a new preset"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                class="h-3 w-3"
+                class="h-3.5 w-3.5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              <span class="text-xs font-medium">New</span>
+            </button>
+            <button
+              v-if="selectedPreset"
+              @click="openSaveDialog('update')"
+              class="flex-1 py-2 px-3 rounded-lg transition-all flex items-center justify-center gap-2 bg-muted/40 hover:bg-muted/60 border border-border/50 hover:border-border text-foreground/80 hover:text-foreground"
+              :title="`Update ${selectedPreset.name}`"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-3.5 w-3.5"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -552,354 +623,208 @@
                 <path
                   stroke-linecap="round"
                   stroke-linejoin="round"
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                  d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
                 />
               </svg>
-              Reset
+              <span class="text-xs font-medium">Update</span>
+            </button>
+          </div>
+
+          <!-- Empty State -->
+          <div v-if="allPresets.length === 0" class="py-12 text-center">
+            <div
+              class="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-primary/10 to-primary/5 rounded-lg flex items-center justify-center border border-primary/20"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-8 w-8 text-primary/60"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
+                />
+              </svg>
+            </div>
+            <p class="text-sm text-muted-foreground mb-1">No presets saved yet</p>
+            <p class="text-xs text-muted-foreground/70">Customize settings and save them as presets</p>
+          </div>
+
+          <!-- Preset List -->
+          <div v-else class="space-y-2">
+            <div class="flex items-center justify-between mb-3">
+              <p class="text-xs text-muted-foreground">
+                {{ allPresets.length }} preset{{ allPresets.length !== 1 ? 's' : '' }} saved
+              </p>
+              <div v-if="selectedPreset" class="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                <div class="w-1.5 h-1.5 rounded-full bg-primary"></div>
+                <span>{{ selectedPreset.name }}</span>
+              </div>
+            </div>
+            <button
+              v-for="preset in allPresets"
+              :key="preset.id"
+              @click="applyPreset(preset)"
+              :class="[
+                'group w-full relative rounded-lg transition-all text-left overflow-hidden p-3 flex items-center gap-3',
+                isCurrentPreset(preset)
+                  ? 'bg-muted/40 border-l-2 border-l-primary'
+                  : 'bg-muted/20 border-l-2 border-l-transparent hover:bg-muted/30 hover:border-l-border',
+              ]"
+            >
+              <div class="flex-1 min-w-0">
+                <h4 class="text-sm font-medium text-foreground truncate mb-0.5">{{ preset.name }}</h4>
+                <p v-if="preset.description" class="text-xs text-muted-foreground/80 line-clamp-1">
+                  {{ preset.description }}
+                </p>
+              </div>
+              <button
+                @click.stop="presetToDelete = preset.id"
+                class="flex-shrink-0 w-7 h-7 rounded-md flex items-center justify-center transition-all text-muted-foreground/50 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100"
+                title="Delete preset"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                  />
+                </svg>
+              </button>
             </button>
           </div>
         </div>
 
-        <div class="space-y-2 px-2">
-          <!-- Presets Section - Collapsible -->
-          <div class="bg-card/30 backdrop-blur-sm border border-border/50 rounded-md overflow-hidden">
-            <!-- Header -->
-            <button
-              @click="toggleSection('presets')"
-              class="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/30 transition-colors"
-            >
-              <div class="flex items-center gap-2">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-3.5 w-3.5 text-primary"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
-                  />
-                </svg>
-                <span class="text-[11px] font-bold text-foreground uppercase tracking-wide">Presets</span>
-                <span
-                  v-if="selectedPreset"
-                  class="text-[9px] px-1.5 py-0.5 bg-primary/20 text-primary rounded-full font-semibold"
-                >
-                  {{ selectedPreset.name }}
-                </span>
-              </div>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                :class="[
-                  'h-3.5 w-3.5 text-muted-foreground transition-transform duration-200',
-                  collapsedSections.presets ? '' : 'rotate-180',
-                ]"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
+        <!-- Text Tab -->
+        <div v-if="activeSubtitleTab === 'text'" class="space-y-6">
+          <!-- Font Section -->
+          <div class="space-y-4">
+            <h3 class="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Font</h3>
 
-            <!-- Content -->
-            <div v-show="!collapsedSections.presets" class="px-3 pb-2 space-y-2">
-              <!-- Save Buttons -->
-              <div v-if="selectedPreset" class="flex gap-1.5">
+            <!-- Font Family -->
+            <div class="space-y-2">
+              <label class="text-xs font-semibold text-foreground">Font Family</label>
+              <div class="relative">
                 <button
-                  @click="openSaveDialog('new')"
-                  class="flex-1 py-1.5 px-2 rounded-md transition-all flex items-center justify-center gap-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/30 hover:border-primary/50 group"
-                  title="Save as a new preset"
+                  @click="showFontDropdown = !showFontDropdown"
+                  class="w-full px-3 py-2.5 bg-muted/30 border border-border/50 rounded-md text-left flex items-center justify-between hover:border-border hover:bg-muted/40 transition-colors text-sm text-foreground"
                 >
+                  <span>{{ subtitleSettings.fontFamily }}</span>
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
-                    class="h-3.5 w-3.5 text-primary"
+                    class="h-4 w-4 text-muted-foreground transition-transform"
+                    :class="{ 'rotate-180': showFontDropdown }"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
-                    stroke-width="2.5"
                   >
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                   </svg>
-                  <span class="text-[11px] font-bold text-primary">New</span>
                 </button>
-                <button
-                  @click="openSaveDialog('update')"
-                  class="flex-1 py-1.5 px-2 rounded-md transition-all flex items-center justify-center gap-1.5 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 hover:border-green-500/50 group"
-                  :title="`Update ${selectedPreset.name}`"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="h-3.5 w-3.5 text-green-500"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                  >
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                  <span class="text-[11px] font-bold text-green-500">Update</span>
-                </button>
-              </div>
-              <button
-                v-else
-                @click="openSaveDialog('new')"
-                class="w-full py-1.5 px-2 rounded-md transition-all flex items-center justify-center gap-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/30 hover:border-primary/50"
-                title="Save current settings as a new preset"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-3.5 w-3.5 text-primary"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2.5"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
-                </svg>
-                <span class="text-[11px] font-bold text-primary">Save Preset</span>
-              </button>
 
-              <!-- Empty State -->
-              <div v-if="allPresets.length === 0" class="py-3 text-center">
-                <p class="text-[10px] text-muted-foreground mb-1">No presets saved</p>
-                <p class="text-[9px] text-muted-foreground/70">Customize settings & save</p>
-              </div>
-
-              <!-- Preset List -->
-              <div v-else class="space-y-1.5">
-                <button
-                  v-for="preset in allPresets"
-                  :key="preset.id"
-                  @click="applyPreset(preset)"
-                  :class="[
-                    'group w-full relative rounded-md transition-all text-left overflow-hidden p-2 flex items-center gap-2',
-                    isCurrentPreset(preset)
-                      ? 'bg-primary/15 border border-primary'
-                      : 'bg-muted/30 border border-border/40 hover:border-primary/50 hover:bg-muted/50',
-                  ]"
+                <!-- Dropdown -->
+                <div
+                  v-if="showFontDropdown"
+                  class="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-[100] max-h-60 overflow-y-auto custom-scrollbar"
                 >
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-1.5">
-                      <h4 class="text-[11px] font-bold text-foreground truncate">{{ preset.name }}</h4>
-                      <div
-                        v-if="isCurrentPreset(preset)"
-                        class="w-1 h-1 rounded-full bg-primary animate-pulse flex-shrink-0"
-                      ></div>
-                    </div>
-                    <p v-if="preset.description" class="text-[9px] text-muted-foreground line-clamp-1">
-                      {{ preset.description }}
-                    </p>
-                  </div>
                   <button
-                    @click.stop="presetToDelete = preset.id"
-                    class="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center transition-all text-muted-foreground/40 hover:text-red-500 hover:bg-red-500/10 opacity-0 group-hover:opacity-100"
-                    title="Delete"
+                    v-for="font in fontOptions"
+                    :key="font"
+                    @click="selectFont(font)"
+                    class="block w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm"
+                    :class="{ 'bg-primary/10 text-primary': subtitleSettings.fontFamily === font }"
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      class="h-3 w-3"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      stroke-width="2"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                      />
-                    </svg>
+                    {{ font }}
                   </button>
-                </button>
+                </div>
               </div>
             </div>
-          </div>
 
-          <!-- Font Section - Collapsible -->
-          <div class="bg-card/30 backdrop-blur-sm border border-border/50 rounded-md overflow-hidden">
-            <!-- Header -->
-            <button
-              @click="toggleSection('font')"
-              class="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/30 transition-colors"
-            >
-              <div class="flex items-center gap-2">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-3.5 w-3.5 text-primary"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"
-                  />
-                </svg>
-                <span class="text-[11px] font-bold text-foreground uppercase tracking-wide">Font</span>
-                <span class="text-[9px] text-muted-foreground">
-                  {{ subtitleSettings.fontFamily }}, {{ subtitleSettings.fontSize }}px
+            <!-- Font Size -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <label class="text-xs font-semibold text-foreground">Font Size</label>
+                <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+                  {{ subtitleSettings.fontSize }}px
                 </span>
               </div>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                :class="[
-                  'h-3.5 w-3.5 text-muted-foreground transition-transform duration-200',
-                  collapsedSections.font ? '' : 'rotate-180',
-                ]"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
+              <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+                <div
+                  class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                  :style="{ width: `${((subtitleSettings.fontSize - 12) / (72 - 12)) * 100}%` }"
+                ></div>
+                <input
+                  type="range"
+                  v-model.number="subtitleSettings.fontSize"
+                  @input="emitSettingsChange"
+                  min="12"
+                  max="72"
+                  step="1"
+                  class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                />
+              </div>
+            </div>
 
-            <!-- Content -->
-            <div v-show="!collapsedSections.font" class="px-3 pb-2 space-y-2">
-              <!-- Font Family -->
-              <select
-                v-model="subtitleSettings.fontFamily"
-                @change="emitSettingsChange"
-                class="w-full px-2 py-1 bg-muted/50 border border-border rounded-md text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 transition-all"
-              >
-                <option value="Inter">Inter</option>
-                <option value="Montserrat">Montserrat</option>
-                <option value="Poppins">Poppins</option>
-                <option value="Roboto">Roboto</option>
-                <option value="Open Sans">Open Sans</option>
-                <option value="Arial">Arial</option>
-                <option value="Helvetica">Helvetica</option>
-                <option value="Impact">Impact</option>
-                <option value="Bebas Neue">Bebas Neue</option>
-              </select>
-
-              <!-- Size & Weight -->
-              <div class="grid grid-cols-2 gap-2">
-                <div class="space-y-1">
-                  <div class="flex justify-between items-center">
-                    <label class="text-[10px] font-medium text-muted-foreground">Size</label>
-                    <span class="text-[9px] font-mono text-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                      {{ subtitleSettings.fontSize }}
-                    </span>
-                  </div>
-                  <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
-                    <div
-                      class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                      :style="{ width: `${((subtitleSettings.fontSize - 12) / (72 - 12)) * 100}%` }"
-                    ></div>
-                    <input
-                      type="range"
-                      v-model.number="subtitleSettings.fontSize"
-                      @input="emitSettingsChange"
-                      min="12"
-                      max="72"
-                      step="1"
-                      class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-                    />
-                  </div>
-                </div>
-                <div class="space-y-1">
-                  <div class="flex justify-between items-center">
-                    <label class="text-[10px] font-medium text-muted-foreground">Weight</label>
-                    <span class="text-[9px] font-mono text-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                      {{ subtitleSettings.fontWeight }}
-                    </span>
-                  </div>
-                  <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
-                    <div
-                      class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                      :style="{ width: `${((subtitleSettings.fontWeight - 100) / (900 - 100)) * 100}%` }"
-                    ></div>
-                    <input
-                      type="range"
-                      v-model.number="subtitleSettings.fontWeight"
-                      @input="emitSettingsChange"
-                      min="100"
-                      max="900"
-                      step="100"
-                      class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-                    />
-                  </div>
-                </div>
+            <!-- Font Weight -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <label class="text-xs font-semibold text-foreground">Font Weight</label>
+                <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+                  {{ subtitleSettings.fontWeight }}
+                </span>
+              </div>
+              <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+                <div
+                  class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                  :style="{ width: `${((subtitleSettings.fontWeight - 100) / (900 - 100)) * 100}%` }"
+                ></div>
+                <input
+                  type="range"
+                  v-model.number="subtitleSettings.fontWeight"
+                  @input="emitSettingsChange"
+                  min="100"
+                  max="900"
+                  step="100"
+                  class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                />
               </div>
             </div>
           </div>
 
-          <!-- Colors Section - Collapsible -->
-          <div class="bg-card/30 backdrop-blur-sm border border-border/50 rounded-md overflow-hidden">
-            <!-- Header -->
-            <button
-              @click="toggleSection('colors')"
-              class="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/30 transition-colors"
-            >
-              <div class="flex items-center gap-2">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-3.5 w-3.5 text-primary"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
-                  />
-                </svg>
-                <span class="text-[11px] font-bold text-foreground uppercase tracking-wide">Colors</span>
-                <div class="flex items-center gap-1">
-                  <div
-                    class="w-3 h-3 rounded border border-border"
-                    :style="{ backgroundColor: subtitleSettings.textColor }"
-                  ></div>
-                  <div
-                    v-if="subtitleSettings.backgroundEnabled"
-                    class="w-3 h-3 rounded border border-border"
-                    :style="{ backgroundColor: subtitleSettings.backgroundColor }"
-                  ></div>
-                </div>
-              </div>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                :class="[
-                  'h-3.5 w-3.5 text-muted-foreground transition-transform duration-200',
-                  collapsedSections.colors ? '' : 'rotate-180',
-                ]"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
+          <!-- Colors Section -->
+          <div class="space-y-4">
+            <h3 class="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Colors</h3>
 
-            <!-- Content -->
-            <div v-show="!collapsedSections.colors" class="px-3 pb-2 space-y-2">
-              <!-- Text Color -->
-              <div class="flex gap-1.5">
+            <!-- Text Color -->
+            <div class="space-y-2">
+              <label class="text-xs font-semibold text-foreground">Text Color</label>
+              <div class="flex gap-2">
                 <ColorPicker v-model="subtitleSettings.textColor" @update:modelValue="emitSettingsChange" />
                 <input
                   type="text"
                   v-model="subtitleSettings.textColor"
                   @input="emitSettingsChange"
-                  class="flex-1 px-2 py-1 bg-muted/50 border border-border rounded-md text-[11px] text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary/50 transition-all uppercase"
-                  placeholder="Text"
+                  class="flex-1 px-3 py-2 bg-muted/50 border border-border rounded-md text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all uppercase"
+                  placeholder="#FFFFFF"
                 />
               </div>
+            </div>
 
-              <!-- Background -->
-              <div class="flex items-center justify-between py-1">
-                <span class="text-[10px] font-medium text-muted-foreground">Background</span>
+            <!-- Background Color -->
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <label class="text-xs font-semibold text-foreground">Background Color</label>
                 <button
                   @click="
                     subtitleSettings.backgroundEnabled = !subtitleSettings.backgroundEnabled;
@@ -907,399 +832,46 @@
                   "
                   type="button"
                   :class="[
-                    'relative inline-flex h-4 w-8 flex-shrink-0 items-center rounded-full transition-all duration-200',
+                    'relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-all duration-200',
                     subtitleSettings.backgroundEnabled ? 'bg-primary' : 'bg-muted-foreground/30',
                   ]"
                 >
                   <span
                     :class="[
-                      'inline-block h-3 w-3 transform rounded-full bg-white shadow-lg transition-all duration-200 ease-in-out',
-                      subtitleSettings.backgroundEnabled ? 'translate-x-[17px]' : 'translate-x-0.5',
+                      'inline-block h-4 w-4 transform rounded-full bg-white shadow-lg transition-all duration-200 ease-in-out',
+                      subtitleSettings.backgroundEnabled ? 'translate-x-[18px]' : 'translate-x-0.5',
                     ]"
                   ></span>
                 </button>
               </div>
-              <div v-if="subtitleSettings.backgroundEnabled" class="flex gap-1.5">
+              <div v-if="subtitleSettings.backgroundEnabled" class="flex gap-2">
                 <ColorPicker v-model="subtitleSettings.backgroundColor" @update:modelValue="emitSettingsChange" />
                 <input
                   type="text"
                   v-model="subtitleSettings.backgroundColor"
                   @input="emitSettingsChange"
-                  class="flex-1 px-2 py-1 bg-muted/50 border border-border rounded-md text-[11px] text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary/50 transition-all uppercase"
-                  placeholder="Background"
+                  class="flex-1 px-3 py-2 bg-muted/50 border border-border rounded-md text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all uppercase"
+                  placeholder="#000000"
                 />
               </div>
             </div>
           </div>
 
-          <!-- Effects (Outline & Shadow) Section - Collapsible -->
-          <div class="bg-card/30 backdrop-blur-sm border border-border/50 rounded-md overflow-hidden">
-            <!-- Header -->
-            <button
-              @click="toggleSection('effects')"
-              class="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/30 transition-colors"
-            >
-              <div class="flex items-center gap-2">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-3.5 w-3.5 text-primary"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                  />
-                </svg>
-                <span class="text-[11px] font-bold text-foreground uppercase tracking-wide">Effects</span>
-                <span class="text-[9px] text-muted-foreground">
-                  {{ subtitleSettings.outlineWidth > 0 ? 'Outline ' : '' }}
-                  {{ subtitleSettings.shadowBlur > 0 ? 'Shadow' : '' }}
-                  {{ subtitleSettings.outlineWidth === 0 && subtitleSettings.shadowBlur === 0 ? 'None' : '' }}
-                </span>
-              </div>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                :class="[
-                  'h-3.5 w-3.5 text-muted-foreground transition-transform duration-200',
-                  collapsedSections.effects ? '' : 'rotate-180',
-                ]"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
+          <!-- Alignment Section -->
+          <div class="space-y-4">
+            <h3 class="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Alignment</h3>
 
-            <!-- Content -->
-            <div v-show="!collapsedSections.effects" class="px-3 pb-2 space-y-2">
-              <!-- Outline & Shadow Width - Grid -->
-              <div class="grid grid-cols-2 gap-2">
-                <!-- Outline Width -->
-                <div class="space-y-1">
-                  <div class="flex justify-between items-center">
-                    <label class="text-[10px] font-medium text-muted-foreground">Outline</label>
-                    <span class="text-[10px] font-mono text-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                      {{ subtitleSettings.outlineWidth }}px
-                    </span>
-                  </div>
-                  <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
-                    <div
-                      class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                      :style="{ width: `${(subtitleSettings.outlineWidth / 8) * 100}%` }"
-                    ></div>
-                    <input
-                      type="range"
-                      v-model.number="subtitleSettings.outlineWidth"
-                      @input="emitSettingsChange"
-                      min="0"
-                      max="8"
-                      step="0.5"
-                      class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-                    />
-                  </div>
-                </div>
-
-                <!-- Shadow Blur -->
-                <div class="space-y-1">
-                  <div class="flex justify-between items-center">
-                    <label class="text-[10px] font-medium text-muted-foreground">Shadow</label>
-                    <span class="text-[10px] font-mono text-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                      {{ subtitleSettings.shadowBlur }}px
-                    </span>
-                  </div>
-                  <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
-                    <div
-                      class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                      :style="{ width: `${(subtitleSettings.shadowBlur / 20) * 100}%` }"
-                    ></div>
-                    <input
-                      type="range"
-                      v-model.number="subtitleSettings.shadowBlur"
-                      @input="emitSettingsChange"
-                      min="0"
-                      max="20"
-                      step="1"
-                      class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <!-- Outline Color (conditional) -->
-              <div v-if="subtitleSettings.outlineWidth > 0" class="space-y-1">
-                <label class="text-[10px] font-medium text-muted-foreground">Outline Color</label>
-                <div class="flex gap-1.5">
-                  <ColorPicker v-model="subtitleSettings.outlineColor" @update:modelValue="emitSettingsChange" />
-                  <input
-                    type="text"
-                    v-model="subtitleSettings.outlineColor"
-                    @input="emitSettingsChange"
-                    class="flex-1 px-2 py-1 bg-muted/50 border border-border rounded-md text-[11px] text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary/50 transition-all uppercase"
-                    placeholder="#000000"
-                  />
-                </div>
-              </div>
-
-              <!-- Shadow Offset & Color (conditional) -->
-              <div v-if="subtitleSettings.shadowBlur > 0" class="space-y-2">
-                <!-- Shadow Offsets - Grid -->
-                <div class="grid grid-cols-2 gap-2">
-                  <div class="space-y-1">
-                    <div class="flex justify-between items-center">
-                      <label class="text-[10px] font-medium text-muted-foreground">Offset X</label>
-                      <span class="text-[10px] font-mono text-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                        {{ subtitleSettings.shadowOffsetX }}
-                      </span>
-                    </div>
-                    <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
-                      <div
-                        class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                        :style="{ width: `${((subtitleSettings.shadowOffsetX + 20) / 40) * 100}%` }"
-                      ></div>
-                      <input
-                        type="range"
-                        v-model.number="subtitleSettings.shadowOffsetX"
-                        @input="emitSettingsChange"
-                        min="-20"
-                        max="20"
-                        step="1"
-                        class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-                      />
-                    </div>
-                  </div>
-                  <div class="space-y-1">
-                    <div class="flex justify-between items-center">
-                      <label class="text-[10px] font-medium text-muted-foreground">Offset Y</label>
-                      <span class="text-[10px] font-mono text-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                        {{ subtitleSettings.shadowOffsetY }}
-                      </span>
-                    </div>
-                    <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
-                      <div
-                        class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                        :style="{ width: `${((subtitleSettings.shadowOffsetY + 20) / 40) * 100}%` }"
-                      ></div>
-                      <input
-                        type="range"
-                        v-model.number="subtitleSettings.shadowOffsetY"
-                        @input="emitSettingsChange"
-                        min="-20"
-                        max="20"
-                        step="1"
-                        class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-                      />
-                    </div>
-                  </div>
-                </div>
-                <!-- Shadow Color -->
-                <div class="space-y-1">
-                  <label class="text-[10px] font-medium text-muted-foreground">Shadow Color</label>
-                  <div class="flex gap-1.5">
-                    <ColorPicker v-model="subtitleSettings.shadowColor" @update:modelValue="emitSettingsChange" />
-                    <input
-                      type="text"
-                      v-model="subtitleSettings.shadowColor"
-                      @input="emitSettingsChange"
-                      class="flex-1 px-2 py-1 bg-muted/50 border border-border rounded-md text-[11px] text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary/50 transition-all uppercase"
-                      placeholder="#000000"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Position Section - Collapsible -->
-          <div class="bg-card/30 backdrop-blur-sm border border-border/50 rounded-md overflow-hidden">
-            <!-- Header -->
-            <button
-              @click="toggleSection('position')"
-              class="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/30 transition-colors"
-            >
-              <div class="flex items-center gap-2">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-3.5 w-3.5 text-primary"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                  />
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                <span class="text-[11px] font-bold text-foreground uppercase tracking-wide">Position</span>
-                <span class="text-[9px] text-muted-foreground capitalize">{{ subtitleSettings.position }}</span>
-              </div>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                :class="[
-                  'h-3.5 w-3.5 text-muted-foreground transition-transform duration-200',
-                  collapsedSections.position ? '' : 'rotate-180',
-                ]"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            <!-- Content -->
-            <div v-show="!collapsedSections.position" class="px-3 pb-2 space-y-2">
-              <!-- Position Buttons -->
-              <div class="grid grid-cols-3 gap-1.5">
-                <button
-                  @click="setPosition('top')"
-                  :class="[
-                    'px-2 py-1 rounded-md text-[10px] font-medium transition-all',
-                    subtitleSettings.position === 'top'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted/50 text-muted-foreground hover:bg-muted',
-                  ]"
-                >
-                  Top
-                </button>
-                <button
-                  @click="setPosition('middle')"
-                  :class="[
-                    'px-2 py-1 rounded-md text-[10px] font-medium transition-all',
-                    subtitleSettings.position === 'middle'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted/50 text-muted-foreground hover:bg-muted',
-                  ]"
-                >
-                  Middle
-                </button>
-                <button
-                  @click="setPosition('bottom')"
-                  :class="[
-                    'px-2 py-1 rounded-md text-[10px] font-medium transition-all',
-                    subtitleSettings.position === 'bottom'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted/50 text-muted-foreground hover:bg-muted',
-                  ]"
-                >
-                  Bottom
-                </button>
-              </div>
-
-              <!-- Fine-tune & Max Width - Grid -->
-              <div class="grid grid-cols-2 gap-2">
-                <!-- Fine-tune Position -->
-                <div class="space-y-1">
-                  <div class="flex justify-between items-center">
-                    <label class="text-[10px] font-medium text-muted-foreground">Y Position</label>
-                    <span class="text-[10px] font-mono text-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                      {{ subtitleSettings.positionPercentage }}%
-                    </span>
-                  </div>
-                  <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
-                    <div
-                      class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                      :style="{ width: `${subtitleSettings.positionPercentage}%` }"
-                    ></div>
-                    <input
-                      type="range"
-                      v-model.number="subtitleSettings.positionPercentage"
-                      @input="emitSettingsChange"
-                      min="0"
-                      max="100"
-                      step="1"
-                      class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-                    />
-                  </div>
-                </div>
-
-                <!-- Max Width -->
-                <div class="space-y-1">
-                  <div class="flex justify-between items-center">
-                    <label class="text-[10px] font-medium text-muted-foreground">Max Width</label>
-                    <span class="text-[10px] font-mono text-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                      {{ subtitleSettings.maxWidth }}%
-                    </span>
-                  </div>
-                  <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
-                    <div
-                      class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                      :style="{ width: `${((subtitleSettings.maxWidth - 40) / (100 - 40)) * 100}%` }"
-                    ></div>
-                    <input
-                      type="range"
-                      v-model.number="subtitleSettings.maxWidth"
-                      @input="emitSettingsChange"
-                      min="40"
-                      max="100"
-                      step="5"
-                      class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Advanced Section - Collapsible -->
-          <div class="bg-card/30 backdrop-blur-sm border border-border/50 rounded-md overflow-hidden">
-            <!-- Header -->
-            <button
-              @click="toggleSection('advanced')"
-              class="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/30 transition-colors"
-            >
-              <div class="flex items-center gap-2">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-3.5 w-3.5 text-primary"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
-                  />
-                </svg>
-                <span class="text-[11px] font-bold text-foreground uppercase tracking-wide">Advanced</span>
-              </div>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                :class="[
-                  'h-3.5 w-3.5 text-muted-foreground transition-transform duration-200',
-                  collapsedSections.advanced ? '' : 'rotate-180',
-                ]"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            <!-- Content -->
-            <div v-show="!collapsedSections.advanced" class="px-3 pb-2 space-y-2">
-              <!-- Text Align -->
-              <div class="grid grid-cols-3 gap-1.5">
+            <!-- Text Alignment -->
+            <div class="space-y-2">
+              <label class="text-xs font-medium text-foreground/80">Text Alignment</label>
+              <div class="grid grid-cols-3 gap-2">
                 <button
                   @click="
                     subtitleSettings.textAlign = 'left';
                     emitSettingsChange();
                   "
                   :class="[
-                    'px-2 py-1 rounded-md text-[10px] font-medium transition-all',
+                    'px-3 py-2 rounded-md text-xs font-medium transition-all',
                     subtitleSettings.textAlign === 'left'
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-muted/50 text-muted-foreground hover:bg-muted',
@@ -1313,7 +885,7 @@
                     emitSettingsChange();
                   "
                   :class="[
-                    'px-2 py-1 rounded-md text-[10px] font-medium transition-all',
+                    'px-3 py-2 rounded-md text-xs font-medium transition-all',
                     subtitleSettings.textAlign === 'center'
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-muted/50 text-muted-foreground hover:bg-muted',
@@ -1327,7 +899,7 @@
                     emitSettingsChange();
                   "
                   :class="[
-                    'px-2 py-1 rounded-md text-[10px] font-medium transition-all',
+                    'px-3 py-2 rounded-md text-xs font-medium transition-all',
                     subtitleSettings.textAlign === 'right'
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-muted/50 text-muted-foreground hover:bg-muted',
@@ -1336,183 +908,471 @@
                   Right
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
 
-              <!-- Line Height, Letter & Word Spacing - 3 columns -->
+        <!-- Effects Tab -->
+        <div v-if="activeSubtitleTab === 'effects'" class="space-y-6">
+          <!-- Outline Section -->
+          <div class="space-y-4">
+            <h3 class="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Outline</h3>
+
+            <!-- Outline Width -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <label class="text-xs font-semibold text-foreground">Outline Width</label>
+                <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+                  {{ subtitleSettings.outlineWidth }}px
+                </span>
+              </div>
+              <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+                <div
+                  class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                  :style="{ width: `${(subtitleSettings.outlineWidth / 8) * 100}%` }"
+                ></div>
+                <input
+                  type="range"
+                  v-model.number="subtitleSettings.outlineWidth"
+                  @input="emitSettingsChange"
+                  min="0"
+                  max="8"
+                  step="0.5"
+                  class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                />
+              </div>
+            </div>
+
+            <!-- Outline Color (conditional) -->
+            <div v-if="subtitleSettings.outlineWidth > 0" class="space-y-2">
+              <label class="text-xs font-semibold text-foreground">Outline Color</label>
+              <div class="flex gap-2">
+                <ColorPicker v-model="subtitleSettings.outlineColor" @update:modelValue="emitSettingsChange" />
+                <input
+                  type="text"
+                  v-model="subtitleSettings.outlineColor"
+                  @input="emitSettingsChange"
+                  class="flex-1 px-3 py-2 bg-muted/50 border border-border rounded-md text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all uppercase"
+                  placeholder="#000000"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Shadow Section -->
+          <div class="space-y-4">
+            <h3 class="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Shadow</h3>
+
+            <!-- Shadow Blur -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <label class="text-xs font-semibold text-foreground">Shadow Blur</label>
+                <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+                  {{ subtitleSettings.shadowBlur }}px
+                </span>
+              </div>
+              <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+                <div
+                  class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                  :style="{ width: `${(subtitleSettings.shadowBlur / 20) * 100}%` }"
+                ></div>
+                <input
+                  type="range"
+                  v-model.number="subtitleSettings.shadowBlur"
+                  @input="emitSettingsChange"
+                  min="0"
+                  max="20"
+                  step="1"
+                  class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                />
+              </div>
+            </div>
+
+            <!-- Shadow Settings (conditional) -->
+            <div v-if="subtitleSettings.shadowBlur > 0" class="space-y-4">
+              <!-- Shadow Horizontal Offset -->
+              <div class="space-y-2">
+                <div class="flex justify-between items-center">
+                  <label class="text-xs font-semibold text-foreground">Horizontal Offset</label>
+                  <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+                    {{ subtitleSettings.shadowOffsetX }}px
+                  </span>
+                </div>
+                <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+                  <div
+                    class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                    :style="{ width: `${((subtitleSettings.shadowOffsetX + 20) / 40) * 100}%` }"
+                  ></div>
+                  <input
+                    type="range"
+                    v-model.number="subtitleSettings.shadowOffsetX"
+                    @input="emitSettingsChange"
+                    min="-20"
+                    max="20"
+                    step="1"
+                    class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                  />
+                </div>
+              </div>
+
+              <!-- Shadow Vertical Offset -->
+              <div class="space-y-2">
+                <div class="flex justify-between items-center">
+                  <label class="text-xs font-semibold text-foreground">Vertical Offset</label>
+                  <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+                    {{ subtitleSettings.shadowOffsetY }}px
+                  </span>
+                </div>
+                <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+                  <div
+                    class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                    :style="{ width: `${((subtitleSettings.shadowOffsetY + 20) / 40) * 100}%` }"
+                  ></div>
+                  <input
+                    type="range"
+                    v-model.number="subtitleSettings.shadowOffsetY"
+                    @input="emitSettingsChange"
+                    min="-20"
+                    max="20"
+                    step="1"
+                    class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                  />
+                </div>
+              </div>
+
+              <!-- Shadow Color -->
+              <div class="space-y-2">
+                <label class="text-xs font-semibold text-foreground">Shadow Color</label>
+                <div class="flex gap-2">
+                  <ColorPicker v-model="subtitleSettings.shadowColor" @update:modelValue="emitSettingsChange" />
+                  <input
+                    type="text"
+                    v-model="subtitleSettings.shadowColor"
+                    @input="emitSettingsChange"
+                    class="flex-1 px-3 py-2 bg-muted/50 border border-border rounded-md text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all uppercase"
+                    placeholder="#000000"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Empty State -->
+          <div v-if="subtitleSettings.outlineWidth === 0 && subtitleSettings.shadowBlur === 0" class="py-8 text-center">
+            <div
+              class="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-muted/20 to-muted/10 rounded-lg flex items-center justify-center border border-border/30"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-8 w-8 text-muted-foreground/50"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.5"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
+              </svg>
+            </div>
+            <p class="text-sm text-muted-foreground">No effects applied</p>
+            <p class="text-xs text-muted-foreground/70 mt-1">Adjust the sliders above to add outline or shadow</p>
+          </div>
+        </div>
+
+        <!-- Position Tab -->
+        <div v-if="activeSubtitleTab === 'position'" class="space-y-6">
+          <!-- Vertical Position Section -->
+          <div class="space-y-4">
+            <h3 class="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Vertical Position</h3>
+
+            <!-- Position Presets -->
+            <div class="space-y-2">
+              <label class="text-xs font-medium text-foreground/80">Position Presets</label>
               <div class="grid grid-cols-3 gap-2">
-                <div class="space-y-1">
-                  <div class="flex justify-between items-center">
-                    <label class="text-[10px] font-medium text-muted-foreground">Line</label>
-                    <span class="text-[9px] font-mono text-foreground bg-muted/50 px-1 py-0.5 rounded">
-                      {{ Number(subtitleSettings.lineHeight).toFixed(1) }}
-                    </span>
-                  </div>
-                  <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
-                    <div
-                      class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                      :style="{ width: `${((Number(subtitleSettings.lineHeight) - 0.5) / (2.5 - 0.5)) * 100}%` }"
-                    ></div>
-                    <input
-                      type="range"
-                      :value="subtitleSettings.lineHeight"
-                      @input="
-                        (e) => {
-                          subtitleSettings.lineHeight = parseFloat((e.target as HTMLInputElement).value);
-                          emitSettingsChange();
-                        }
-                      "
-                      min="0.5"
-                      max="2.5"
-                      step="0.05"
-                      class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-                    />
-                  </div>
-                </div>
-                <div class="space-y-1">
-                  <div class="flex justify-between items-center">
-                    <label class="text-[10px] font-medium text-muted-foreground">Letter</label>
-                    <span class="text-[9px] font-mono text-foreground bg-muted/50 px-1 py-0.5 rounded">
-                      {{ subtitleSettings.letterSpacing }}
-                    </span>
-                  </div>
-                  <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
-                    <div
-                      class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                      :style="{ width: `${((subtitleSettings.letterSpacing + 2) / (10 + 2)) * 100}%` }"
-                    ></div>
-                    <input
-                      type="range"
-                      v-model.number="subtitleSettings.letterSpacing"
-                      @input="emitSettingsChange"
-                      min="-2"
-                      max="10"
-                      step="0.5"
-                      class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-                    />
-                  </div>
-                </div>
-                <div class="space-y-1">
-                  <div class="flex justify-between items-center">
-                    <label class="text-[10px] font-medium text-muted-foreground">Word</label>
-                    <span class="text-[9px] font-mono text-foreground bg-muted/50 px-1 py-0.5 rounded">
-                      {{ subtitleSettings.wordSpacing.toFixed(1) }}
-                    </span>
-                  </div>
-                  <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
-                    <div
-                      class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                      :style="{ width: `${((subtitleSettings.wordSpacing - 0.1) / (1 - 0.1)) * 100}%` }"
-                    ></div>
-                    <input
-                      type="range"
-                      v-model.number="subtitleSettings.wordSpacing"
-                      @input="emitSettingsChange"
-                      min="0.1"
-                      max="1"
-                      step="0.05"
-                      class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-                    />
-                  </div>
-                </div>
+                <button
+                  @click="setPosition('top')"
+                  :class="[
+                    'px-3 py-2 rounded-md text-xs font-medium transition-all',
+                    subtitleSettings.position === 'top'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted/50 text-muted-foreground hover:bg-muted',
+                  ]"
+                >
+                  Top
+                </button>
+                <button
+                  @click="setPosition('middle')"
+                  :class="[
+                    'px-3 py-2 rounded-md text-xs font-medium transition-all',
+                    subtitleSettings.position === 'middle'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted/50 text-muted-foreground hover:bg-muted',
+                  ]"
+                >
+                  Middle
+                </button>
+                <button
+                  @click="setPosition('bottom')"
+                  :class="[
+                    'px-3 py-2 rounded-md text-xs font-medium transition-all',
+                    subtitleSettings.position === 'bottom'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted/50 text-muted-foreground hover:bg-muted',
+                  ]"
+                >
+                  Bottom
+                </button>
               </div>
+            </div>
 
-              <!-- Offset X & Y - 2 columns -->
-              <div class="grid grid-cols-2 gap-2">
-                <div class="space-y-1">
-                  <div class="flex justify-between items-center">
-                    <label class="text-[10px] font-medium text-muted-foreground">Offset X</label>
-                    <span class="text-[10px] font-mono text-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                      {{ subtitleSettings.textOffsetX }}
-                    </span>
-                  </div>
-                  <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
-                    <div
-                      class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                      :style="{ width: `${((subtitleSettings.textOffsetX + 50) / 100) * 100}%` }"
-                    ></div>
-                    <input
-                      type="range"
-                      v-model.number="subtitleSettings.textOffsetX"
-                      @input="emitSettingsChange"
-                      min="-50"
-                      max="50"
-                      step="1"
-                      class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-                    />
-                  </div>
-                </div>
-                <div class="space-y-1">
-                  <div class="flex justify-between items-center">
-                    <label class="text-[10px] font-medium text-muted-foreground">Offset Y</label>
-                    <span class="text-[10px] font-mono text-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                      {{ subtitleSettings.textOffsetY }}
-                    </span>
-                  </div>
-                  <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
-                    <div
-                      class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                      :style="{ width: `${((subtitleSettings.textOffsetY + 50) / 100) * 100}%` }"
-                    ></div>
-                    <input
-                      type="range"
-                      v-model.number="subtitleSettings.textOffsetY"
-                      @input="emitSettingsChange"
-                      min="-50"
-                      max="50"
-                      step="1"
-                      class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-                    />
-                  </div>
-                </div>
+            <!-- Fine-tune Y Position -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <label class="text-xs font-semibold text-foreground">Vertical Offset</label>
+                <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+                  {{ subtitleSettings.positionPercentage }}%
+                </span>
               </div>
+              <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+                <div
+                  class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                  :style="{ width: `${subtitleSettings.positionPercentage}%` }"
+                ></div>
+                <input
+                  type="range"
+                  v-model.number="subtitleSettings.positionPercentage"
+                  @input="emitSettingsChange"
+                  min="0"
+                  max="100"
+                  step="1"
+                  class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                />
+              </div>
+            </div>
+          </div>
 
-              <!-- Padding & Border Radius - 2 columns -->
-              <div class="grid grid-cols-2 gap-2">
-                <div class="space-y-1">
-                  <div class="flex justify-between items-center">
-                    <label class="text-[10px] font-medium text-muted-foreground">Padding</label>
-                    <span class="text-[10px] font-mono text-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                      {{ subtitleSettings.padding }}
-                    </span>
-                  </div>
-                  <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
-                    <div
-                      class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                      :style="{ width: `${(subtitleSettings.padding / 40) * 100}%` }"
-                    ></div>
-                    <input
-                      type="range"
-                      v-model.number="subtitleSettings.padding"
-                      @input="emitSettingsChange"
-                      min="0"
-                      max="40"
-                      step="2"
-                      class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-                    />
-                  </div>
-                </div>
-                <div class="space-y-1">
-                  <div class="flex justify-between items-center">
-                    <label class="text-[10px] font-medium text-muted-foreground">Radius</label>
-                    <span class="text-[10px] font-mono text-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                      {{ subtitleSettings.borderRadius }}
-                    </span>
-                  </div>
-                  <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
-                    <div
-                      class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                      :style="{ width: `${(subtitleSettings.borderRadius / 20) * 100}%` }"
-                    ></div>
-                    <input
-                      type="range"
-                      v-model.number="subtitleSettings.borderRadius"
-                      @input="emitSettingsChange"
-                      min="0"
-                      max="20"
-                      step="1"
-                      class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-                    />
-                  </div>
-                </div>
+          <!-- Width & Positioning Section -->
+          <div class="space-y-4">
+            <h3 class="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Width & Alignment</h3>
+
+            <!-- Max Width -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <label class="text-xs font-semibold text-foreground">Maximum Width</label>
+                <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+                  {{ subtitleSettings.maxWidth }}%
+                </span>
+              </div>
+              <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+                <div
+                  class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                  :style="{ width: `${((subtitleSettings.maxWidth - 40) / (100 - 40)) * 100}%` }"
+                ></div>
+                <input
+                  type="range"
+                  v-model.number="subtitleSettings.maxWidth"
+                  @input="emitSettingsChange"
+                  min="40"
+                  max="100"
+                  step="5"
+                  class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                />
+              </div>
+            </div>
+
+            <!-- Horizontal Offset -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <label class="text-xs font-semibold text-foreground">Horizontal Offset</label>
+                <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+                  {{ subtitleSettings.textOffsetX }}px
+                </span>
+              </div>
+              <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+                <div
+                  class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                  :style="{ width: `${((subtitleSettings.textOffsetX + 50) / 100) * 100}%` }"
+                ></div>
+                <input
+                  type="range"
+                  v-model.number="subtitleSettings.textOffsetX"
+                  @input="emitSettingsChange"
+                  min="-50"
+                  max="50"
+                  step="1"
+                  class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                />
+              </div>
+            </div>
+
+            <!-- Vertical Fine-tune -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <label class="text-xs font-semibold text-foreground">Vertical Fine-tune</label>
+                <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+                  {{ subtitleSettings.textOffsetY }}px
+                </span>
+              </div>
+              <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+                <div
+                  class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                  :style="{ width: `${((subtitleSettings.textOffsetY + 50) / 100) * 100}%` }"
+                ></div>
+                <input
+                  type="range"
+                  v-model.number="subtitleSettings.textOffsetY"
+                  @input="emitSettingsChange"
+                  min="-50"
+                  max="50"
+                  step="1"
+                  class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Advanced Tab -->
+        <div v-if="activeSubtitleTab === 'advanced'" class="space-y-6">
+          <!-- Spacing Section -->
+          <div class="space-y-4">
+            <h3 class="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Spacing</h3>
+
+            <!-- Line Height -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <label class="text-xs font-semibold text-foreground">Line Height</label>
+                <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+                  {{ Number(subtitleSettings.lineHeight).toFixed(1) }}
+                </span>
+              </div>
+              <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+                <div
+                  class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                  :style="{ width: `${((Number(subtitleSettings.lineHeight) - 0.5) / (2.5 - 0.5)) * 100}%` }"
+                ></div>
+                <input
+                  type="range"
+                  :value="subtitleSettings.lineHeight"
+                  @input="
+                    (e) => {
+                      subtitleSettings.lineHeight = parseFloat((e.target as HTMLInputElement).value);
+                      emitSettingsChange();
+                    }
+                  "
+                  min="0.5"
+                  max="2.5"
+                  step="0.05"
+                  class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                />
+              </div>
+            </div>
+
+            <!-- Letter Spacing -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <label class="text-xs font-semibold text-foreground">Letter Spacing</label>
+                <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+                  {{ subtitleSettings.letterSpacing }}px
+                </span>
+              </div>
+              <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+                <div
+                  class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                  :style="{ width: `${((subtitleSettings.letterSpacing + 2) / (10 + 2)) * 100}%` }"
+                ></div>
+                <input
+                  type="range"
+                  v-model.number="subtitleSettings.letterSpacing"
+                  @input="emitSettingsChange"
+                  min="-2"
+                  max="10"
+                  step="0.5"
+                  class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                />
+              </div>
+            </div>
+
+            <!-- Word Spacing -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <label class="text-xs font-semibold text-foreground">Word Spacing</label>
+                <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+                  {{ subtitleSettings.wordSpacing.toFixed(2) }}
+                </span>
+              </div>
+              <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+                <div
+                  class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                  :style="{ width: `${((subtitleSettings.wordSpacing - 0.1) / (1 - 0.1)) * 100}%` }"
+                ></div>
+                <input
+                  type="range"
+                  v-model.number="subtitleSettings.wordSpacing"
+                  @input="emitSettingsChange"
+                  min="0.1"
+                  max="1"
+                  step="0.05"
+                  class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Background Section -->
+          <div class="space-y-4">
+            <h3 class="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Background</h3>
+
+            <!-- Padding -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <label class="text-xs font-semibold text-foreground">Padding</label>
+                <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+                  {{ subtitleSettings.padding }}px
+                </span>
+              </div>
+              <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+                <div
+                  class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                  :style="{ width: `${(subtitleSettings.padding / 40) * 100}%` }"
+                ></div>
+                <input
+                  type="range"
+                  v-model.number="subtitleSettings.padding"
+                  @input="emitSettingsChange"
+                  min="0"
+                  max="40"
+                  step="2"
+                  class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                />
+              </div>
+            </div>
+
+            <!-- Border Radius -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <label class="text-xs font-semibold text-foreground">Border Radius</label>
+                <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+                  {{ subtitleSettings.borderRadius }}px
+                </span>
+              </div>
+              <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+                <div
+                  class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                  :style="{ width: `${(subtitleSettings.borderRadius / 20) * 100}%` }"
+                ></div>
+                <input
+                  type="range"
+                  v-model.number="subtitleSettings.borderRadius"
+                  @input="emitSettingsChange"
+                  min="0"
+                  max="20"
+                  step="1"
+                  class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                />
               </div>
             </div>
           </div>
@@ -1678,6 +1538,16 @@
   // Tab state
   const activeTab = ref('clips');
 
+  // Subtitle sub-tab state
+  const activeSubtitleTab = ref('presets');
+  const subtitleTabs = [
+    { id: 'presets', label: 'Presets' },
+    { id: 'text', label: 'Text' },
+    { id: 'effects', label: 'Effects' },
+    { id: 'position', label: 'Position' },
+    { id: 'advanced', label: 'Advanced' },
+  ];
+
   // Prompts state for matching prompt names to session prompts
   const prompts = ref<Prompt[]>([]);
 
@@ -1750,19 +1620,25 @@
   const showBuildSettingsDialog = ref(false);
   const clipToBuild = ref<ClipWithVersion | null>(null);
 
-  // UI state for collapsible sections
-  const collapsedSections = ref<Record<string, boolean>>({
-    presets: false,
-    font: false,
-    colors: false,
-    effects: false,
-    position: false,
-    advanced: true, // Start collapsed
-  });
+  // UI state for font dropdown
+  const showFontDropdown = ref(false);
+  const fontOptions = [
+    'Inter',
+    'Montserrat',
+    'Poppins',
+    'Roboto',
+    'Open Sans',
+    'Arial',
+    'Helvetica',
+    'Impact',
+    'Bebas Neue',
+  ];
 
-  // Toggle section collapse state
-  function toggleSection(section: string) {
-    collapsedSections.value[section] = !collapsedSections.value[section];
+  // Function to select font
+  function selectFont(font: string) {
+    subtitleSettings.value.fontFamily = font;
+    showFontDropdown.value = false;
+    emitSettingsChange();
   }
 
   // Computed property for custom presets only
@@ -1921,7 +1797,23 @@
     } catch (error) {
       console.error('[MediaPanel] Failed to load subtitle settings:', error);
     }
+
+    // Add click-outside handler for font dropdown
+    document.addEventListener('click', handleClickOutside);
   });
+
+  onUnmounted(() => {
+    // Remove click-outside handler
+    document.removeEventListener('click', handleClickOutside);
+  });
+
+  // Handle click outside to close dropdowns
+  function handleClickOutside(event: MouseEvent) {
+    const target = event.target as HTMLElement;
+    if (showFontDropdown.value && !target.closest('.relative')) {
+      showFontDropdown.value = false;
+    }
+  }
 
   // Watch for project changes and load clips
   watch(
@@ -2051,7 +1943,7 @@
     // Find the clip from our clips array
     const clip = clips.value.find((c) => c.id === clipId);
 
-    if (clip && clip.current_version_segments && clip.current_version_segments.length > 0) {
+    if (clip?.current_version_segments && clip.current_version_segments.length > 0) {
       // Sort segments by start_time to find the first one
       const sortedSegments = [...clip.current_version_segments].sort((a, b) => a.start_time - b.start_time);
       const firstSegment = sortedSegments[0];
@@ -2301,7 +2193,7 @@
       const projectVideo = rawVideos[0];
 
       // Prepare segments for the Rust backend
-      const segments = clip.current_version_segments.map((segment) => ({
+      const segments = (clip.current_version_segments || []).map((segment) => ({
         id: segment.id,
         start_time: segment.start_time,
         end_time: segment.end_time,
