@@ -13,7 +13,8 @@
     <div class="titlebar-drag-region" data-tauri-drag-region>
       <!-- App logo -->
       <div class="titlebar-app-info">
-        <img src="/logo.svg" alt="Clippster" class="titlebar-logo" />
+        <img src="/logo-titlebar.svg" alt="Clippster Logo Icon" class="titlebar-logo-icon" />
+        <img src="/logo.svg" alt="Clippster Logo" class="titlebar-logo" />
       </div>
     </div>
 
@@ -794,7 +795,9 @@
   .titlebar-app-info {
     display: flex;
     align-items: center;
+    justify-content: center;
     padding-left: 12px;
+    gap: 8px;
   }
 
   /* macOS app info positioning - center content and avoid window controls */
@@ -805,11 +808,18 @@
     padding-left: 0;
   }
 
+  .titlebar-logo-icon {
+    height: 20px;
+    margin-top: -2px;
+    width: auto;
+  }
+
   .titlebar-logo {
     height: 14px;
     width: auto;
     filter: brightness(0) invert(1); /* Make logo white for dark titlebar */
     opacity: 0.9;
+    margin-top: 2px;
   }
 
   .titlebar-keyboard-button {
