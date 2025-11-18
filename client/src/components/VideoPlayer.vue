@@ -87,7 +87,7 @@
         v-else
         ref="videoElementRef"
         :src="videoSrc || undefined"
-        class="w-full h-full object-cover"
+        class="w-full h-full object-cover video-with-focal-point"
         :style="{
           objectPosition: `${focalPoint.x * 100}% ${focalPoint.y * 100}%`,
         }"
@@ -100,6 +100,31 @@
         @canplay="$emit('canPlay')"
         data-testid="project-video"
       />
+      <!-- Focal Point Debug Indicator -->
+      <div
+        v-if="videoSrc && !videoLoading"
+        class="absolute top-2 right-2 z-20 bg-black/70 backdrop-blur-sm text-white text-xs px-2 py-1 rounded pointer-events-none font-mono"
+      >
+        Focal: {{ (focalPoint.x * 100).toFixed(0) }}%, {{ (focalPoint.y * 100).toFixed(0) }}%
+      </div>
+
+      <!-- Focal Point Crosshair (for debugging) -->
+      <div
+        v-if="videoSrc && !videoLoading && (Math.abs(focalPoint.x - 0.5) > 0.05 || Math.abs(focalPoint.y - 0.5) > 0.05)"
+        class="absolute pointer-events-none z-10"
+        :style="{
+          left: `${focalPoint.x * 100}%`,
+          top: `${focalPoint.y * 100}%`,
+          transform: 'translate(-50%, -50%)',
+        }"
+      >
+        <div class="relative">
+          <div class="absolute w-8 h-0.5 bg-red-500 opacity-70" style="left: -16px; top: 0"></div>
+          <div class="absolute w-0.5 h-8 bg-red-500 opacity-70" style="left: 0; top: -16px"></div>
+          <div class="w-2 h-2 bg-red-500 rounded-full opacity-70"></div>
+        </div>
+      </div>
+
       <!-- Center Play/Pause Overlay -->
       <button
         v-if="videoSrc && !videoLoading"
@@ -202,6 +227,11 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+
+  /* Smooth focal point transition */
+  .video-with-focal-point {
+    transition: object-position 1.5s ease-in-out;
   }
 
   /* Play overlay animation */

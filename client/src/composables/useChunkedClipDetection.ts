@@ -8,6 +8,7 @@ import {
 import { useChunkedTranscriptCache } from './useChunkedTranscriptCache';
 import { useVideoOperations } from './useVideoOperations';
 import { useToast } from '@/composables/useToast';
+import { useFocalPointDetection } from '@/composables/useFocalPointDetection';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -62,6 +63,12 @@ export function useChunkedClipDetection() {
       }
 
       const projectVideo = rawVideos[0];
+
+      // Trigger focal point detection in background (non-blocking)
+      const { detectFocalPointsBackground } = useFocalPointDetection();
+      detectFocalPointsBackground(projectVideo.id, projectVideo.file_path, 5).catch((error) => {
+        console.warn('[ClipDetection] Focal point detection failed (non-critical):', error);
+      });
 
       // Check for existing regular transcript first
       const existingTranscript = await getTranscriptByRawVideoId(projectVideo.id);
@@ -306,6 +313,12 @@ export function useChunkedClipDetection() {
     projectVideo: RawVideo
   ): Promise<{ success: boolean; sessionId?: string; error?: string }> {
     try {
+      // Trigger focal point detection in background (non-blocking)
+      const { detectFocalPointsBackground } = useFocalPointDetection();
+      detectFocalPointsBackground(projectVideo.id, projectVideo.file_path, 5).catch((error) => {
+        console.warn('[ClipDetection] Focal point detection failed (non-critical):', error);
+      });
+
       progress.value = {
         stage: 'transcribing_chunks',
         progress: 40,

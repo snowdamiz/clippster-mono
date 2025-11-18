@@ -137,6 +137,16 @@ export interface RawVideo {
   segment_end_time: number | null;
 }
 
+export interface FocalPoint {
+  id: string;
+  raw_video_id: string;
+  time_offset: number;
+  focal_x: number;
+  focal_y: number;
+  confidence: number;
+  created_at: number;
+}
+
 export interface ClipDetectionSession {
   id: string;
   project_id: string;

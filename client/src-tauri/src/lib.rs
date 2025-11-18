@@ -12,6 +12,7 @@ mod assets;
 mod ui_utils;
 mod pumpfun;
 mod waveform;
+mod focal_detection;
 mod commands;
 
 // Import items from modules
@@ -179,6 +180,12 @@ pub fn run() {
                             sql: include_str!("../migrations/026_add_clip_build_fields.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 27,
+                            description: "add_focal_points",
+                            sql: include_str!("../migrations/027_add_focal_points.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                           ],
                 )
                 .build(),
@@ -300,6 +307,9 @@ pub fn run() {
             clips::build_clip_from_segments,
             clips::cancel_clip_build,
             clips::is_clip_build_active,
+
+            // Focal detection commands
+            detect_focal_points,
 
             // UI Utils commands
             ui_utils::setup_macos_titlebar,

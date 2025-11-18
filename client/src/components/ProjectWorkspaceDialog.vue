@@ -51,7 +51,7 @@
                 :video-error="videoError"
                 :is-playing="isPlaying"
                 :aspect-ratio="selectedAspectRatio"
-                :focal-point="{ x: 0.5, y: 0.5 }"
+                :focal-point="currentFocalPoint"
                 @togglePlayPause="togglePlayPause"
                 @timeUpdate="onTimeUpdate"
                 @loadedMetadata="onLoadedMetadata"
@@ -196,6 +196,8 @@
   import { useProgressSocket } from '@/composables/useProgressSocket';
   import { useToast } from '@/composables/useToast';
   import { useWindowClose } from '@/composables/useWindowClose';
+  import { useVideoFocalPoint } from '@/composables/useVideoFocalPoint';
+  import { getRawVideosByProjectId } from '@/services/database';
 
   const { error: showError } = useToast();
   const { setClipGenerationInProgress } = useWindowClose();
@@ -298,6 +300,34 @@
     isPlayingSegments,
     segmentPlaybackEnded,
   } = useVideoPlayer(projectRef);
+
+  // Initialize focal point composable
+  const { currentFocalPoint, loadFocalPoints, updateTime, reset: resetFocalPoint } = useVideoFocalPoint();
+
+  // Watch for project changes to load focal points
+  watch(
+    () => props.project,
+    async (newProject) => {
+      if (newProject?.id) {
+        try {
+          const rawVideos = await getRawVideosByProjectId(newProject.id);
+          if (rawVideos.length > 0) {
+            await loadFocalPoints(rawVideos[0].id);
+          }
+        } catch (error) {
+          console.error('[ProjectWorkspaceDialog] Failed to load focal points:', error);
+        }
+      } else {
+        resetFocalPoint();
+      }
+    },
+    { immediate: true }
+  );
+
+  // Watch for time changes to update focal point
+  watch(currentTime, (newTime) => {
+    updateTime(newTime);
+  });
 
   function close() {
     emit('update:modelValue', false);

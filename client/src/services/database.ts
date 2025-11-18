@@ -17,6 +17,7 @@ export type {
   ClipVersion,
   ClipSegment,
   ClipWithVersion,
+  FocalPoint,
 } from './database/types';
 
 // Re-export intro/outro functions
@@ -148,3 +149,14 @@ export {
 
 // Re-export transcript word update functions
 export { updateTranscriptWord } from './database/transcript-words';
+
+// Re-export focal point functions
+export {
+  createFocalPoint,
+  bulkCreateFocalPoints,
+  getFocalPointsByRawVideoId,
+  getFocalPointAtTime,
+  hasFocalPoints,
+  deleteFocalPointsByRawVideoId,
+  getFocalPointCount,
+} from './database/focal-points';
