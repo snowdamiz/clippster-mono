@@ -111,6 +111,7 @@
         :timelineBoundsTop="timelineBounds.top"
         :timelineBoundsBottom="timelineBounds.bottom"
         :isCutToolActive="isCutToolActive"
+        :isDraggingToZoom="isDragging"
         @playheadDragStart="onPlayheadDragStart"
       />
 
@@ -335,6 +336,7 @@
   const dragEndX = computed(() => dragSelectionState.value.dragEndX);
   const dragStartPercent = computed(() => dragSelectionState.value.dragStartPercent);
   const dragEndPercent = computed(() => dragSelectionState.value.dragEndPercent);
+  const justFinishedDragging = computed(() => dragSelectionState.value.justFinishedDragging);
 
   // Timeline bounds for constraining interactions
   // timelineBounds is now managed by useTimelineInteraction composable
@@ -610,11 +612,11 @@
   }
 
   function onVideoTrackClick(event: MouseEvent) {
-    // Only seek if we're not in the middle of a drag selection
-    if (!isDragging.value) {
+    // Only seek if we're not in the middle of a drag selection and didn't just finish dragging
+    if (!isDragging.value && !justFinishedDragging.value) {
       onSeekTimeline(event);
     } else {
-      console.log('[Timeline] Not seeking - currently dragging');
+      console.log('[Timeline] Not seeking - currently dragging or just finished dragging');
     }
   }
 
@@ -627,8 +629,8 @@
   }
 
   function onClipTrackClick(event: MouseEvent) {
-    // Only seek if we're not in the middle of a drag selection
-    if (!isDragging.value) {
+    // Only seek if we're not in the middle of a drag selection and didn't just finish dragging
+    if (!isDragging.value && !justFinishedDragging.value) {
       onSeekTimeline(event);
     }
   }

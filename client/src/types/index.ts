@@ -188,6 +188,7 @@ export interface TimelinePlayheadProps {
   timelineBoundsTop: number;
   timelineBoundsBottom: number;
   isCutToolActive?: boolean;
+  isDraggingToZoom?: boolean;
 }
 
 export interface TimelinePlayheadEmits {

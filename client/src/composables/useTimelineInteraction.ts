@@ -10,6 +10,7 @@ export interface DragSelectionState {
   dragEndX: number;
   dragStartPercent: number;
   dragEndPercent: number;
+  justFinishedDragging: boolean;
 }
 
 export interface PanState {
@@ -62,6 +63,7 @@ export function useTimelineInteraction(
     dragEndX: 0,
     dragStartPercent: 0,
     dragEndPercent: 0,
+    justFinishedDragging: false,
   });
 
   // Timeline bounds for constraining interactions
@@ -335,6 +337,14 @@ export function useTimelineInteraction(
     dragSelectionState.value.dragEndX = 0;
     dragSelectionState.value.dragStartPercent = 0;
     dragSelectionState.value.dragEndPercent = 0;
+
+    // Set flag to prevent immediate seeking after drag
+    dragSelectionState.value.justFinishedDragging = true;
+
+    // Clear the flag after a short delay to allow normal clicking again
+    setTimeout(() => {
+      dragSelectionState.value.justFinishedDragging = false;
+    }, 100);
   }
 
   // Update timeline bounds

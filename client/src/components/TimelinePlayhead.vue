@@ -8,7 +8,7 @@
       height: `${timelineBoundsBottom - timelineBoundsTop}px`,
       width: '2px',
       cursor: isDragging ? 'grabbing' : 'col-resize',
-      'pointer-events': 'auto',
+      'pointer-events': isDraggingToZoom ? 'none' : 'auto',
     }"
     @mouseenter="onMouseEnter"
     @mouseleave="onMouseLeave"
@@ -49,7 +49,7 @@
   import { ref } from 'vue';
   import type { TimelinePlayheadProps, TimelinePlayheadEmits } from '../types';
 
-  defineProps<TimelinePlayheadProps>();
+  const props = defineProps<TimelinePlayheadProps>();
   const emit = defineEmits<TimelinePlayheadEmits>();
 
   // Local state for hover and drag
