@@ -984,7 +984,7 @@ fn generate_ass_file(
                     if k == active_idx {
                         // Active word with animation
                         positioned_text_parts.push(format!(
-                            "{{\\t({},{},\\fscx115\\fscy115)}}{}{{\\fscx100\\fscy100}}",
+                            "{{\\r\\t({},{},\\fscx115\\fscy115)}}{}{{\\fscx100\\fscy100}}",
                             word_start_in_interval,
                             scale_up_end,
                             word.word
