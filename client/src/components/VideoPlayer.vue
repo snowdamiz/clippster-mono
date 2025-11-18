@@ -109,11 +109,10 @@
       >
         <div
           class="subtitle-text-container"
-          :class="{
-            'fast-speech': isFastSpeech,
-            'very-fast-speech': isVeryFastSpeech,
+          :style="{
+            ...getSubtitleTextStyle,
+            '--animation-duration': `${dynamicAnimationDuration}s`,
           }"
-          :style="getSubtitleTextStyle"
         >
           <span
             v-for="(wordInfo, index) in visibleWords"
@@ -329,50 +328,64 @@
     }
 
     // Otherwise, filter from all transcript words
+    // Use a more inclusive filter - word overlaps with segment in any way
     if (!props.transcriptWords || props.transcriptWords.length === 0) return [];
 
-    return props.transcriptWords.filter(
-      (word) => word.start >= currentSegment.value!.start && word.end <= currentSegment.value!.end
-    );
+    const segment = currentSegment.value;
+    return props.transcriptWords.filter((word) => {
+      // Include word if it starts within segment OR ends within segment OR spans the entire segment
+      return (
+        (word.start >= segment.start && word.start < segment.end) ||
+        (word.end > segment.start && word.end <= segment.end) ||
+        (word.start <= segment.start && word.end >= segment.end)
+      );
+    });
   });
 
-  // Get visible words (with sliding window if needed)
+  // Get visible words (chunked display - shows X words at a time, then jumps to next X)
   const visibleWords = computed((): WordInfo[] => {
     const allSegmentWords = segmentWords.value;
     if (allSegmentWords.length === 0) return [];
 
     const maxWords = maxWordsForAspectRatio.value;
+    const time = props.currentTime || 0;
 
     // If segment has fewer words than the limit, show all
     if (allSegmentWords.length <= maxWords) {
       return allSegmentWords;
     }
 
-    // Find the current word in the segment
-    const time = props.currentTime || 0;
-    let currentWordIndex = allSegmentWords.findIndex((word) => time >= word.start && time <= word.end);
-
-    // If no exact match, find the closest word
-    if (currentWordIndex === -1) {
-      currentWordIndex = allSegmentWords.findIndex((word) => word.start > time);
-      if (currentWordIndex === -1) {
-        currentWordIndex = allSegmentWords.length - 1;
-      } else if (currentWordIndex > 0) {
-        currentWordIndex--;
+    // Find the current word being spoken
+    let currentWordIndex = -1;
+    for (let i = 0; i < allSegmentWords.length; i++) {
+      const word = allSegmentWords[i];
+      if (time >= word.start && time < word.end) {
+        currentWordIndex = i;
+        break;
       }
     }
 
-    // Create a sliding window centered on current word
-    const halfWindow = Math.floor(maxWords / 2);
-    let startIndex = Math.max(0, currentWordIndex - halfWindow);
-    let endIndex = Math.min(allSegmentWords.length - 1, startIndex + maxWords - 1);
-
-    // Adjust start if we hit the end
-    if (endIndex - startIndex + 1 < maxWords) {
-      startIndex = Math.max(0, endIndex - maxWords + 1);
+    // If no word is currently being spoken, find the next upcoming word
+    if (currentWordIndex === -1) {
+      for (let i = 0; i < allSegmentWords.length; i++) {
+        if (allSegmentWords[i].start > time) {
+          currentWordIndex = i;
+          break;
+        }
+      }
     }
 
-    return allSegmentWords.slice(startIndex, endIndex + 1);
+    // If still no match, default to first chunk
+    if (currentWordIndex === -1) {
+      currentWordIndex = 0;
+    }
+
+    // Calculate which "chunk" (page) this word belongs to
+    const chunkIndex = Math.floor(currentWordIndex / maxWords);
+    const startIndex = chunkIndex * maxWords;
+    const endIndex = Math.min(startIndex + maxWords, allSegmentWords.length);
+
+    return allSegmentWords.slice(startIndex, endIndex);
   });
 
   // Check if a word is currently being spoken
@@ -381,31 +394,33 @@
     return time >= word.start && time <= word.end;
   }
 
-  // Calculate speech speed for animation adjustments
-  const speechSpeed = computed((): 'normal' | 'fast' | 'very-fast' => {
-    if (!visibleWords.value.length) return 'normal';
+  // Dynamically calculate animation duration based on word timing
+  const dynamicAnimationDuration = computed((): number => {
+    if (!visibleWords.value.length) return 0.05;
 
     // Find the current word
     const time = props.currentTime || 0;
     const currentWord = visibleWords.value.find((word) => time >= word.start && time <= word.end);
 
-    if (!currentWord) return 'normal';
+    if (!currentWord) return 0.05;
 
-    // Calculate word duration
+    // Calculate word duration in seconds
     const wordDuration = currentWord.end - currentWord.start;
 
-    // Classify speech speed based on word duration
-    if (wordDuration < 0.08) {
-      return 'very-fast'; // Less than 80ms - remove animation entirely
-    } else if (wordDuration < 0.18) {
-      return 'fast'; // 80-180ms - very quick animation
-    } else {
-      return 'normal'; // 180ms+ - normal smooth animation
+    // For very short words (under 60ms), use instant transition
+    if (wordDuration < 0.06) {
+      return 0;
     }
-  });
 
-  const isFastSpeech = computed(() => speechSpeed.value === 'fast');
-  const isVeryFastSpeech = computed(() => speechSpeed.value === 'very-fast');
+    // For short words (60-120ms), use 20% of duration for snappy animation
+    if (wordDuration < 0.12) {
+      return wordDuration * 0.2;
+    }
+
+    // For normal words (120ms+), use 25% of duration, capped at 60ms
+    const calculatedDuration = wordDuration * 0.25;
+    return Math.min(0.06, calculatedDuration);
+  });
 
   const getSubtitleContainerStyle = computed(() => {
     if (!props.subtitleSettings) return {};
@@ -580,23 +595,14 @@
     justify-content: center;
     align-items: center;
     gap: 0.2em;
+    --animation-duration: 0.05s;
   }
 
   .subtitle-word {
     display: inline-block;
-    transition: transform 0.05s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    transition: transform var(--animation-duration) cubic-bezier(0.33, 1, 0.68, 1);
     transform-origin: center;
     will-change: transform;
-  }
-
-  /* Quick animation for fast speech (80-180ms words) */
-  .subtitle-text-container.fast-speech .subtitle-word {
-    transition: transform 0.015s linear;
-  }
-
-  /* No animation for very fast speech (<80ms words) - instant changes */
-  .subtitle-text-container.very-fast-speech .subtitle-word {
-    transition: none;
   }
 
   .subtitle-word.current-word {
