@@ -1,5 +1,5 @@
 <template>
-  <div class="px-3 pt-1 flex flex-col flex-1 h-full" data-media-panel>
+  <div class="px-4 flex flex-col flex-1 h-full" data-media-panel>
     <!-- Tabs Header -->
     <div class="flex items-center border-b border-border -mx-3 px-3">
       <button
@@ -35,7 +35,7 @@
     </div>
 
     <!-- Clips Tab Content -->
-    <div v-if="activeTab === 'clips'" class="flex-1 flex flex-col overflow-hidden mt-3">
+    <div v-if="activeTab === 'clips'" class="flex-1 flex flex-col overflow-hidden mt-4">
       <div class="flex items-center mb-3">
         <!-- Redesigned detect more button (only show when not generating and clips exist) -->
         <button
