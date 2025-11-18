@@ -121,16 +121,21 @@
         class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
         @click.self="showKeyboardShortcuts = false"
       >
-        <div
-          class="bg-card border border-border rounded-2xl shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden"
-        >
+        <div class="bg-card rounded-2xl p-8 max-w-3xl w-full mx-4 border border-border max-h-[85vh] flex flex-col">
           <!-- Header -->
-          <div class="flex items-center justify-between p-6 border-b border-border">
-            <h2 class="text-xl font-bold text-foreground">Keyboard Shortcuts</h2>
-            <button @click="showKeyboardShortcuts = false" class="p-2 hover:bg-muted rounded-lg transition-colors">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h2 class="text-2xl font-bold text-foreground">Shortcuts & Controls</h2>
+              <p class="text-sm text-muted-foreground mt-1">Keyboard and mouse shortcuts for efficient editing</p>
+            </div>
+            <button
+              @click="showKeyboardShortcuts = false"
+              class="p-2 hover:bg-muted rounded-lg transition-colors"
+              title="Close"
+            >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                class="h-5 w-5 text-foreground/70 hover:text-foreground"
+                class="h-5 w-5 text-muted-foreground"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -140,94 +145,439 @@
             </button>
           </div>
 
+          <!-- Tabs -->
+          <div class="flex gap-6 mb-6 overflow-x-auto border-b border-border">
+            <button
+              @click="activeShortcutTab = 'playback'"
+              :class="[
+                'flex items-center gap-2 px-1 py-3 relative transition-colors whitespace-nowrap',
+                activeShortcutTab === 'playback' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+              ]"
+            >
+              <Play :size="16" />
+              <span class="text-sm font-medium">Playback</span>
+              <span
+                v-if="activeShortcutTab === 'playback'"
+                class="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500"
+              ></span>
+            </button>
+            <button
+              @click="activeShortcutTab = 'timeline'"
+              :class="[
+                'flex items-center gap-2 px-1 py-3 relative transition-colors whitespace-nowrap',
+                activeShortcutTab === 'timeline' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+              ]"
+            >
+              <ZoomIn :size="16" />
+              <span class="text-sm font-medium">Timeline</span>
+              <span
+                v-if="activeShortcutTab === 'timeline'"
+                class="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500"
+              ></span>
+            </button>
+            <button
+              @click="activeShortcutTab = 'selection'"
+              :class="[
+                'flex items-center gap-2 px-1 py-3 relative transition-colors whitespace-nowrap',
+                activeShortcutTab === 'selection' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+              ]"
+            >
+              <MousePointer :size="16" />
+              <span class="text-sm font-medium">Selection</span>
+              <span
+                v-if="activeShortcutTab === 'selection'"
+                class="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500"
+              ></span>
+            </button>
+            <button
+              @click="activeShortcutTab = 'editing'"
+              :class="[
+                'flex items-center gap-2 px-1 py-3 relative transition-colors whitespace-nowrap',
+                activeShortcutTab === 'editing' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+              ]"
+            >
+              <Edit3 :size="16" />
+              <span class="text-sm font-medium">Editing</span>
+              <span
+                v-if="activeShortcutTab === 'editing'"
+                class="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500"
+              ></span>
+            </button>
+            <button
+              @click="activeShortcutTab = 'cut'"
+              :class="[
+                'flex items-center gap-2 px-1 py-3 relative transition-colors whitespace-nowrap',
+                activeShortcutTab === 'cut' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+              ]"
+            >
+              <Scissors :size="16" />
+              <span class="text-sm font-medium">Cut Tool</span>
+              <span
+                v-if="activeShortcutTab === 'cut'"
+                class="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500"
+              ></span>
+            </button>
+            <button
+              @click="activeShortcutTab = 'more'"
+              :class="[
+                'flex items-center gap-2 px-1 py-3 relative transition-colors whitespace-nowrap',
+                activeShortcutTab === 'more' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+              ]"
+            >
+              <MoreHorizontal :size="16" />
+              <span class="text-sm font-medium">More</span>
+              <span
+                v-if="activeShortcutTab === 'more'"
+                class="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500"
+              ></span>
+            </button>
+          </div>
+
           <!-- Content -->
-          <div class="p-6 overflow-y-auto max-h-[60vh]">
-            <!-- Timeline Shortcuts -->
-            <div class="mb-6">
-              <h3 class="text-lg font-semibold text-foreground mb-3">Timeline Editing</h3>
-              <div class="grid grid-cols-1 gap-2">
-                <div class="flex justify-between items-center py-2 border-b border-border/50">
-                  <span class="text-foreground">Activate Cut Tool</span>
-                  <kbd class="px-2 py-1 bg-muted text-foreground rounded text-sm font-mono">X</kbd>
+          <div class="flex-1 overflow-y-auto">
+            <!-- Playback Tab -->
+            <div v-if="activeShortcutTab === 'playback'" class="space-y-4">
+              <div class="space-y-2">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <span class="text-foreground">Play / Pause Video</span>
+                  <kbd
+                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
+                  >
+                    Space
+                  </kbd>
                 </div>
-                <div class="flex justify-between items-center py-2 border-b border-border/50">
-                  <span class="text-foreground">Deactivate Cut Tool</span>
-                  <kbd class="px-2 py-1 bg-muted text-foreground rounded text-sm font-mono">Esc</kbd>
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <span class="text-foreground">Play / Pause (Alternative)</span>
+                  <span
+                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
+                  >
+                    Click Video
+                  </span>
                 </div>
-                <div class="flex justify-between items-center py-2 border-b border-border/50">
-                  <span class="text-foreground">Merge Selected Segments</span>
-                  <kbd class="px-2 py-1 bg-muted text-foreground rounded text-sm font-mono">J</kbd>
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <span class="text-foreground">Seek Playhead (No Selection)</span>
+                  <div class="flex items-center gap-2">
+                    <kbd
+                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
+                    >
+                      ← →
+                    </kbd>
+                    <span class="text-xs text-muted-foreground">(Hold for 2x)</span>
+                  </div>
                 </div>
-                <div class="flex justify-between items-center py-2 border-b border-border/50">
-                  <span class="text-foreground">Move Segments Left/Right</span>
-                  <kbd class="px-2 py-1 bg-muted text-foreground rounded text-sm font-mono">← →</kbd>
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <span class="text-foreground">Seek to Time Position</span>
+                  <span
+                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
+                  >
+                    Click Video Track
+                  </span>
                 </div>
-                <div class="flex justify-between items-center py-2 border-b border-border/50">
-                  <span class="text-foreground">Seek Playhead</span>
-                  <kbd class="px-2 py-1 bg-muted text-foreground rounded text-sm font-mono">← →</kbd>
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <span class="text-foreground">Scrub Through Video</span>
+                  <span
+                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
+                  >
+                    Drag Playhead
+                  </span>
                 </div>
-                <div class="flex justify-between items-center py-2 border-b border-border/50">
-                  <span class="text-foreground">Delete Selected Segments</span>
-                  <kbd class="px-2 py-1 bg-muted text-foreground rounded text-sm font-mono">Backspace</kbd>
+              </div>
+            </div>
+
+            <!-- Timeline Tab -->
+            <div v-else-if="activeShortcutTab === 'timeline'" class="space-y-4">
+              <div class="space-y-2">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <span class="text-foreground">Zoom In / Out</span>
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
+                    >
+                      Scroll on Ruler
+                    </span>
+                  </div>
                 </div>
-                <div class="flex justify-between items-center py-2 border-b border-border/50">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <span class="text-foreground">Zoom to Time Range</span>
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
+                    >
+                      Click + Drag Timeline
+                    </span>
+                  </div>
+                </div>
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <span class="text-foreground">Zoom Level Slider</span>
+                  <span
+                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
+                  >
+                    Drag Slider
+                  </span>
+                </div>
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <span class="text-foreground">Pan Horizontally</span>
+                  <div class="flex items-center gap-2">
+                    <kbd
+                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
+                    >
+                      Ctrl
+                    </kbd>
+                    <span class="text-muted-foreground">+</span>
+                    <span
+                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
+                    >
+                      Scroll
+                    </span>
+                  </div>
+                </div>
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <span class="text-foreground">Pan Vertically (Through Clips)</span>
+                  <div class="flex items-center gap-2">
+                    <kbd
+                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
+                    >
+                      Alt
+                    </kbd>
+                    <span class="text-muted-foreground">+</span>
+                    <span
+                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
+                    >
+                      Scroll
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Selection Tab -->
+            <div v-else-if="activeShortcutTab === 'selection'" class="space-y-4">
+              <div class="space-y-2">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <span class="text-foreground">Select Single Segment</span>
+                  <span
+                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
+                  >
+                    Click Segment
+                  </span>
+                </div>
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
                   <span class="text-foreground">Multi-Select Segments</span>
-                  <div class="flex gap-1">
-                    <kbd class="px-2 py-1 bg-muted text-foreground rounded text-sm font-mono">Ctrl</kbd>
-                    <span class="text-foreground/70">+</span>
-                    <kbd class="px-2 py-1 bg-muted text-foreground rounded text-sm font-mono">Click</kbd>
+                  <div class="flex items-center gap-2">
+                    <kbd
+                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
+                    >
+                      Ctrl
+                    </kbd>
+                    <span class="text-muted-foreground">+</span>
+                    <span
+                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
+                    >
+                      Click Segments
+                    </span>
+                  </div>
+                </div>
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <span class="text-foreground">Deselect All Segments</span>
+                  <span
+                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
+                  >
+                    Click Empty Area
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Editing Tab -->
+            <div v-else-if="activeShortcutTab === 'editing'" class="space-y-4">
+              <!-- Keyboard Editing -->
+              <div>
+                <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                  Keyboard Editing
+                </h3>
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                    <span class="text-foreground">Move Selected Segments</span>
+                    <div class="flex items-center gap-2">
+                      <kbd
+                        class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
+                      >
+                        ← →
+                      </kbd>
+                      <span class="text-xs text-muted-foreground">(Hold for 2x)</span>
+                    </div>
+                  </div>
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                    <span class="text-foreground">Delete Selected Segments</span>
+                    <kbd
+                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
+                    >
+                      Backspace
+                    </kbd>
+                  </div>
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                    <span class="text-foreground">Merge Selected Segments</span>
+                    <kbd
+                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
+                    >
+                      J
+                    </kbd>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Mouse Manipulation -->
+              <div>
+                <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                  Mouse Manipulation
+                </h3>
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                    <span class="text-foreground">Reorder Segment Position</span>
+                    <span
+                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
+                    >
+                      Drag Segment
+                    </span>
+                  </div>
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                    <span class="text-foreground">Trim Segment Start/End</span>
+                    <span
+                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
+                    >
+                      Drag Segment Edge
+                    </span>
                   </div>
                 </div>
               </div>
             </div>
 
-            <!-- Timeline Navigation -->
-            <div class="mb-6">
-              <h3 class="text-lg font-semibold text-foreground mb-3">Timeline Navigation</h3>
-              <div class="grid grid-cols-1 gap-2">
-                <div class="flex justify-between items-center py-2 border-b border-border/50">
-                  <span class="text-foreground">Horizontal Scroll</span>
-                  <div class="flex gap-1">
-                    <kbd class="px-2 py-1 bg-muted text-foreground rounded text-sm font-mono">Ctrl</kbd>
-                    <span class="text-foreground/70">+</span>
-                    <kbd class="px-2 py-1 bg-muted text-foreground rounded text-sm font-mono">Scroll</kbd>
-                  </div>
+            <!-- Cut Tool Tab -->
+            <div v-else-if="activeShortcutTab === 'cut'" class="space-y-4">
+              <div class="space-y-2">
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <span class="text-foreground">Toggle Cut Tool On/Off</span>
+                  <kbd
+                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
+                  >
+                    X
+                  </kbd>
                 </div>
-                <div class="flex justify-between items-center py-2 border-b border-border/50">
-                  <span class="text-foreground">Vertical Scroll</span>
-                  <div class="flex gap-1">
-                    <kbd class="px-2 py-1 bg-muted text-foreground rounded text-sm font-mono">Alt</kbd>
-                    <span class="text-foreground/70">+</span>
-                    <kbd class="px-2 py-1 bg-muted text-foreground rounded text-sm font-mono">Scroll</kbd>
-                  </div>
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <span class="text-foreground">Split Segment at Cursor</span>
+                  <span
+                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
+                  >
+                    Click Segment
+                  </span>
                 </div>
-              </div>
-            </div>
-
-            <!-- Video Player -->
-            <div class="mb-6">
-              <h3 class="text-lg font-semibold text-foreground mb-3">Video Player</h3>
-              <div class="grid grid-cols-1 gap-2">
-                <div class="flex justify-between items-center py-2 border-b border-border/50">
-                  <span class="text-foreground">Play/Pause</span>
-                  <kbd class="px-2 py-1 bg-muted text-foreground rounded text-sm font-mono">Space</kbd>
-                </div>
-                <div class="flex justify-between items-center py-2 border-b border-border/50">
-                  <span class="text-foreground">Close Video Player</span>
-                  <kbd class="px-2 py-1 bg-muted text-foreground rounded text-sm font-mono">Esc</kbd>
+                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                  <span class="text-foreground">Cancel Cut Tool</span>
+                  <kbd
+                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
+                  >
+                    Esc
+                  </kbd>
                 </div>
               </div>
             </div>
 
-            <!-- Platform Notes -->
-            <div class="mt-6 p-4 bg-muted/30 rounded-lg">
-              <p class="text-sm text-muted-foreground">
-                <strong>Note:</strong>
-                <kbd>Ctrl</kbd>
-                on Windows/Linux functions as
-                <kbd>Cmd</kbd>
-                on macOS for multi-selection and scrolling.
-              </p>
+            <!-- More Tab -->
+            <div v-else-if="activeShortcutTab === 'more'" class="space-y-4">
+              <!-- General -->
+              <div>
+                <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">General</h3>
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                    <span class="text-foreground">Exit Cut Tool / Close Dialogs</span>
+                    <kbd
+                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
+                    >
+                      Esc
+                    </kbd>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Timeline Toolbar Buttons -->
+              <div>
+                <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                  Timeline Toolbar
+                </h3>
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                    <span class="text-foreground">Reverse 10 Seconds</span>
+                    <span
+                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
+                    >
+                      Hold Button
+                    </span>
+                  </div>
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                    <span class="text-foreground">Forward 10 Seconds</span>
+                    <span
+                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
+                    >
+                      Hold Button
+                    </span>
+                  </div>
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                    <span class="text-foreground">Cut Tool Button</span>
+                    <span
+                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
+                    >
+                      Click to Toggle
+                    </span>
+                  </div>
+                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                    <span class="text-foreground">Merge Segments Button</span>
+                    <span
+                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
+                    >
+                      Click to Merge
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Legend -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="p-3 bg-muted/30 rounded-lg border border-border">
+                  <div class="flex items-center gap-2 mb-1">
+                    <kbd class="px-2 py-1 bg-background border border-border rounded text-xs font-mono shadow-sm">
+                      Key
+                    </kbd>
+                    <span class="text-xs font-medium text-foreground">Keyboard Shortcut</span>
+                  </div>
+                  <p class="text-xs text-muted-foreground">Keys shown in monospace font</p>
+                </div>
+                <div class="p-3 bg-muted/30 rounded-lg border border-border">
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="px-2 py-1 bg-background border border-border rounded text-xs shadow-sm">Action</span>
+                    <span class="text-xs font-medium text-foreground">Mouse Action</span>
+                  </div>
+                  <p class="text-xs text-muted-foreground">Actions shown in regular font</p>
+                </div>
+              </div>
+
+              <!-- Platform Note -->
+              <div class="p-4 bg-muted/30 rounded-lg border border-border">
+                <p class="text-sm text-muted-foreground">
+                  <strong class="text-foreground">Platform Note:</strong>
+                  <kbd
+                    class="inline-flex items-center px-2 py-0.5 mx-1 bg-background border border-border rounded text-xs font-mono"
+                  >
+                    Ctrl
+                  </kbd>
+                  on Windows/Linux functions as
+                  <kbd
+                    class="inline-flex items-center px-2 py-0.5 mx-1 bg-background border border-border rounded text-xs font-mono"
+                  >
+                    Cmd
+                  </kbd>
+                  on macOS for multi-selection and scrolling operations.
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -240,7 +590,7 @@
   import { ref, onMounted, onUnmounted } from 'vue';
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { invoke } from '@tauri-apps/api/core';
-  import { KeyboardIcon } from 'lucide-vue-next';
+  import { KeyboardIcon, Play, ZoomIn, MousePointer, Edit3, Scissors, MoreHorizontal } from 'lucide-vue-next';
 
   // Props
   interface Props {
@@ -262,6 +612,7 @@
   const platformOverride = ref(props.platformOverride);
   const appWindow = getCurrentWebviewWindow();
   const showKeyboardShortcuts = ref(false);
+  const activeShortcutTab = ref('playback');
 
   // Window control functions
   async function minimizeWindow() {
