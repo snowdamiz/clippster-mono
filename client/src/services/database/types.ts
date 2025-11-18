@@ -212,3 +212,71 @@ export interface ClipWithVersion extends Clip {
   current_version?: ClipVersion;
   current_version_segments?: ClipSegment[];
 }
+
+export interface CustomSubtitlePreset {
+  id: string;
+  name: string;
+  description: string | null;
+  // Font settings
+  font_family: string;
+  font_size: number;
+  font_weight: number;
+  // Color settings
+  text_color: string;
+  background_color: string;
+  background_enabled: boolean | number; // SQLite stores as 0/1, converted to boolean
+  // Outline settings
+  outline_width: number;
+  outline_color: string;
+  // Shadow settings
+  shadow_offset_x: number;
+  shadow_offset_y: number;
+  shadow_blur: number;
+  shadow_color: string;
+  // Position settings
+  position: string;
+  position_percentage: number;
+  max_width: number;
+  // Animation
+  animation_style: string;
+  // Advanced settings
+  line_height: number;
+  letter_spacing: number;
+  text_align: string;
+  text_offset_x: number;
+  text_offset_y: number;
+  padding: number;
+  border_radius: number;
+  word_spacing: number;
+  // Metadata
+  created_at: number;
+  updated_at: number;
+}
+
+export interface SubtitleSettings {
+  enabled: boolean;
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: number;
+  textColor: string;
+  backgroundColor: string;
+  backgroundEnabled: boolean;
+  outlineWidth: number;
+  outlineColor: string;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
+  shadowBlur: number;
+  shadowColor: string;
+  position: 'top' | 'middle' | 'bottom';
+  positionPercentage: number;
+  maxWidth: number;
+  animationStyle: 'none' | 'fade' | 'word-by-word';
+  lineHeight: number;
+  letterSpacing: number;
+  textAlign: 'left' | 'center' | 'right';
+  textOffsetX: number;
+  textOffsetY: number;
+  padding: number;
+  borderRadius: number;
+  wordSpacing: number;
+}

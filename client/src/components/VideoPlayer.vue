@@ -502,7 +502,7 @@
     }
 
     const adjustedFontSize = Math.round(settings.fontSize * fontSizeScale);
-    const adjustedLineHeight = Math.max(1.1, settings.lineHeight + lineHeightAdjustment);
+    const adjustedLineHeight = Math.max(0.5, settings.lineHeight + lineHeightAdjustment);
     const adjustedPadding = Math.round(settings.padding * fontSizeScale);
     const adjustedLetterSpacing = settings.letterSpacing * fontSizeScale;
 

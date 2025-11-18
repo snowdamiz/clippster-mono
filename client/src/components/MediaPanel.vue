@@ -510,7 +510,7 @@
 
     <!-- Subtitles Tab Content -->
     <div v-if="activeTab === 'subtitles'" class="flex-1 flex flex-col overflow-hidden">
-      <div class="flex-1 overflow-y-auto py-4 space-y-6 pr-2 custom-scrollbar">
+      <div class="flex-1 overflow-y-auto py-4 space-y-4 pr-2 custom-scrollbar">
         <!-- Enable/Disable Toggle -->
         <div
           class="flex items-center justify-between p-4 bg-muted/40 rounded-xl border border-border/60 hover:border-primary/30 transition-colors"
@@ -539,37 +539,169 @@
         </div>
 
         <!-- Presets Section -->
-        <div class="space-y-3">
-          <div class="flex items-center justify-between">
-            <h3 class="text-sm font-semibold text-foreground">Presets</h3>
-            <span class="text-[10px] text-muted-foreground">Click to apply</span>
-          </div>
-          <div class="grid grid-cols-2 gap-2.5">
+        <div
+          class="bg-card/30 backdrop-blur-sm border border-border/50 rounded-xl p-4 space-y-3 hover:border-border/70 transition-colors"
+        >
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-sm font-bold text-foreground tracking-wide uppercase text-primary/90">Presets</h3>
             <button
-              v-for="preset in subtitlePresets"
-              :key="preset.id"
-              @click="applyPreset(preset)"
-              :class="[
-                'group relative p-3 rounded-lg border-2 transition-all duration-200 text-left overflow-hidden',
-                isCurrentPreset(preset)
-                  ? 'border-primary bg-primary/10 shadow-md shadow-primary/20'
-                  : 'border-border/50 hover:border-primary/40 bg-card/50 hover:bg-card/70',
-              ]"
+              @click="showSavePresetDialog = true"
+              class="text-xs font-semibold text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 border border-primary/20 hover:border-primary/40"
+              title="Save current settings as a new preset"
             >
-              <div class="relative z-10">
-                <div class="text-xs font-semibold text-foreground mb-1">{{ preset.name }}</div>
-                <div class="text-[10px] text-muted-foreground line-clamp-2 leading-relaxed">
-                  {{ preset.description }}
-                </div>
-              </div>
-              <div v-if="isCurrentPreset(preset)" class="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full"></div>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-3.5 w-3.5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2.5"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              Save New
             </button>
+          </div>
+
+          <!-- Preset Grid -->
+          <div class="space-y-2">
+            <div v-for="preset in allPresets" :key="preset.id" class="relative group">
+              <button
+                @click="applyPreset(preset)"
+                :class="[
+                  'w-full relative rounded-lg transition-all duration-200 text-left overflow-hidden',
+                  isCurrentPreset(preset)
+                    ? 'bg-primary/15 border border-primary shadow-md shadow-primary/10'
+                    : 'bg-muted/30 border border-border/40 hover:border-primary/50 hover:bg-muted/50',
+                ]"
+              >
+                <!-- Main content area -->
+                <div class="p-3 flex items-center gap-3">
+                  <!-- Icon/Indicator -->
+                  <div
+                    :class="[
+                      'flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center transition-all',
+                      isCurrentPreset(preset)
+                        ? 'bg-primary/30 text-primary'
+                        : 'bg-muted/60 text-muted-foreground group-hover:bg-primary/20 group-hover:text-primary',
+                    ]"
+                  >
+                    <svg
+                      v-if="isCustomPreset(preset.id)"
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="h-5 w-5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
+                      />
+                    </svg>
+                    <svg
+                      v-else
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="h-5 w-5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
+                      />
+                    </svg>
+                  </div>
+
+                  <!-- Text content -->
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-0.5">
+                      <h4 class="text-sm font-bold text-foreground truncate">{{ preset.name }}</h4>
+                      <span
+                        v-if="isCustomPreset(preset.id)"
+                        class="flex-shrink-0 text-[9px] px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded-md font-semibold uppercase tracking-wide"
+                      >
+                        Custom
+                      </span>
+                      <div
+                        v-if="isCurrentPreset(preset)"
+                        class="flex-shrink-0 flex items-center gap-1 text-[10px] font-semibold text-primary"
+                      >
+                        <div class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></div>
+                        Active
+                      </div>
+                    </div>
+                    <p class="text-xs text-muted-foreground line-clamp-1">
+                      {{ preset.description }}
+                    </p>
+                  </div>
+
+                  <!-- Delete button for custom presets (inline) -->
+                  <button
+                    v-if="isCustomPreset(preset.id)"
+                    @click.stop="presetToDelete = preset.id"
+                    :class="[
+                      'flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center transition-all duration-200',
+                      'text-muted-foreground/40 hover:text-red-500',
+                      'hover:bg-red-500/10 hover:scale-110',
+                    ]"
+                    title="Delete custom preset"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                      />
+                    </svg>
+                  </button>
+
+                  <!-- Arrow icon (only for non-custom) -->
+                  <div
+                    v-else
+                    :class="[
+                      'flex-shrink-0 transition-all duration-200',
+                      isCurrentPreset(preset)
+                        ? 'text-primary opacity-100'
+                        : 'text-muted-foreground opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5',
+                    ]"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      stroke-width="2.5"
+                    >
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </div>
+              </button>
+            </div>
           </div>
         </div>
 
         <!-- Font Settings -->
-        <div class="space-y-3 pt-2 border-t border-border/50">
-          <h3 class="text-sm font-semibold text-foreground flex items-center gap-2">
+        <div
+          class="bg-card/30 backdrop-blur-sm border border-border/50 rounded-xl p-4 space-y-4 hover:border-border/70 transition-colors"
+        >
+          <h3
+            class="text-sm font-bold text-foreground tracking-wide uppercase text-primary/90 flex items-center gap-2 pb-1 border-b border-border/30"
+          >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               class="h-4 w-4 text-primary"
@@ -593,7 +725,7 @@
             <select
               v-model="subtitleSettings.fontFamily"
               @change="emitSettingsChange"
-              class="w-full px-3 py-2 bg-muted/50 border border-border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+              class="w-full px-3 py-2 bg-muted/50 border border-border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
             >
               <option value="Inter">Inter</option>
               <option value="Montserrat">Montserrat</option>
@@ -609,9 +741,11 @@
 
           <!-- Font Size -->
           <div class="space-y-2">
-            <div class="flex justify-between">
+            <div class="flex justify-between items-center">
               <label class="text-xs font-medium text-muted-foreground">Font Size</label>
-              <span class="text-xs font-mono text-foreground">{{ subtitleSettings.fontSize }}px</span>
+              <span class="text-xs font-mono text-foreground bg-muted/50 px-2 py-0.5 rounded">
+                {{ subtitleSettings.fontSize }}px
+              </span>
             </div>
             <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
               <div
@@ -632,9 +766,11 @@
 
           <!-- Font Weight -->
           <div class="space-y-2">
-            <div class="flex justify-between">
+            <div class="flex justify-between items-center">
               <label class="text-xs font-medium text-muted-foreground">Font Weight</label>
-              <span class="text-xs font-mono text-foreground">{{ subtitleSettings.fontWeight }}</span>
+              <span class="text-xs font-mono text-foreground bg-muted/50 px-2 py-0.5 rounded">
+                {{ subtitleSettings.fontWeight }}
+              </span>
             </div>
             <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
               <div
@@ -655,8 +791,12 @@
         </div>
 
         <!-- Color Settings -->
-        <div class="space-y-3 pt-2 border-t border-border/50">
-          <h3 class="text-sm font-semibold text-foreground flex items-center gap-2">
+        <div
+          class="bg-card/30 backdrop-blur-sm border border-border/50 rounded-xl p-4 space-y-4 hover:border-border/70 transition-colors"
+        >
+          <h3
+            class="text-sm font-bold text-foreground tracking-wide uppercase text-primary/90 flex items-center gap-2 pb-1 border-b border-border/30"
+          >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               class="h-4 w-4 text-primary"
@@ -728,8 +868,12 @@
         </div>
 
         <!-- Outline Settings -->
-        <div class="space-y-3 pt-2 border-t border-border/50">
-          <h3 class="text-sm font-semibold text-foreground flex items-center gap-2">
+        <div
+          class="bg-card/30 backdrop-blur-sm border border-border/50 rounded-xl p-4 space-y-4 hover:border-border/70 transition-colors"
+        >
+          <h3
+            class="text-sm font-bold text-foreground tracking-wide uppercase text-primary/90 flex items-center gap-2 pb-1 border-b border-border/30"
+          >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               class="h-4 w-4 text-primary"
@@ -749,9 +893,11 @@
 
           <!-- Outline Width -->
           <div class="space-y-2">
-            <div class="flex justify-between">
+            <div class="flex justify-between items-center">
               <label class="text-xs font-medium text-muted-foreground">Width</label>
-              <span class="text-xs font-mono text-foreground">{{ subtitleSettings.outlineWidth }}px</span>
+              <span class="text-xs font-mono text-foreground bg-muted/50 px-2 py-0.5 rounded">
+                {{ subtitleSettings.outlineWidth }}px
+              </span>
             </div>
             <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
               <div
@@ -787,8 +933,12 @@
         </div>
 
         <!-- Shadow Settings -->
-        <div class="space-y-3 pt-2 border-t border-border/50">
-          <h3 class="text-sm font-semibold text-foreground flex items-center gap-2">
+        <div
+          class="bg-card/30 backdrop-blur-sm border border-border/50 rounded-xl p-4 space-y-4 hover:border-border/70 transition-colors"
+        >
+          <h3
+            class="text-sm font-bold text-foreground tracking-wide uppercase text-primary/90 flex items-center gap-2 pb-1 border-b border-border/30"
+          >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               class="h-4 w-4 text-primary"
@@ -808,9 +958,11 @@
 
           <!-- Shadow Blur -->
           <div class="space-y-2">
-            <div class="flex justify-between">
+            <div class="flex justify-between items-center">
               <label class="text-xs font-medium text-muted-foreground">Blur</label>
-              <span class="text-xs font-mono text-foreground">{{ subtitleSettings.shadowBlur }}px</span>
+              <span class="text-xs font-mono text-foreground bg-muted/50 px-2 py-0.5 rounded">
+                {{ subtitleSettings.shadowBlur }}px
+              </span>
             </div>
             <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
               <div
@@ -832,9 +984,11 @@
           <div v-if="subtitleSettings.shadowBlur > 0" class="grid grid-cols-2 gap-3">
             <!-- Shadow Offset X -->
             <div class="space-y-2">
-              <div class="flex justify-between">
+              <div class="flex justify-between items-center">
                 <label class="text-xs font-medium text-muted-foreground">Offset X</label>
-                <span class="text-xs font-mono text-foreground">{{ subtitleSettings.shadowOffsetX }}px</span>
+                <span class="text-xs font-mono text-foreground bg-muted/50 px-2 py-0.5 rounded">
+                  {{ subtitleSettings.shadowOffsetX }}px
+                </span>
               </div>
               <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
                 <div
@@ -855,9 +1009,11 @@
 
             <!-- Shadow Offset Y -->
             <div class="space-y-2">
-              <div class="flex justify-between">
+              <div class="flex justify-between items-center">
                 <label class="text-xs font-medium text-muted-foreground">Offset Y</label>
-                <span class="text-xs font-mono text-foreground">{{ subtitleSettings.shadowOffsetY }}px</span>
+                <span class="text-xs font-mono text-foreground bg-muted/50 px-2 py-0.5 rounded">
+                  {{ subtitleSettings.shadowOffsetY }}px
+                </span>
               </div>
               <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
                 <div
@@ -894,8 +1050,12 @@
         </div>
 
         <!-- Position Settings -->
-        <div class="space-y-3 pt-2 border-t border-border/50">
-          <h3 class="text-sm font-semibold text-foreground flex items-center gap-2">
+        <div
+          class="bg-card/30 backdrop-blur-sm border border-border/50 rounded-xl p-4 space-y-4 hover:border-border/70 transition-colors"
+        >
+          <h3
+            class="text-sm font-bold text-foreground tracking-wide uppercase text-primary/90 flex items-center gap-2 pb-1 border-b border-border/30"
+          >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               class="h-4 w-4 text-primary"
@@ -961,9 +1121,11 @@
 
           <!-- Fine-tune Position -->
           <div class="space-y-2">
-            <div class="flex justify-between">
+            <div class="flex justify-between items-center">
               <label class="text-xs font-medium text-muted-foreground">Fine-tune</label>
-              <span class="text-xs font-mono text-foreground">{{ subtitleSettings.positionPercentage }}%</span>
+              <span class="text-xs font-mono text-foreground bg-muted/50 px-2 py-0.5 rounded">
+                {{ subtitleSettings.positionPercentage }}%
+              </span>
             </div>
             <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
               <div
@@ -984,9 +1146,11 @@
 
           <!-- Max Width -->
           <div class="space-y-2">
-            <div class="flex justify-between">
+            <div class="flex justify-between items-center">
               <label class="text-xs font-medium text-muted-foreground">Max Width</label>
-              <span class="text-xs font-mono text-foreground">{{ subtitleSettings.maxWidth }}%</span>
+              <span class="text-xs font-mono text-foreground bg-muted/50 px-2 py-0.5 rounded">
+                {{ subtitleSettings.maxWidth }}%
+              </span>
             </div>
             <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
               <div
@@ -1007,8 +1171,12 @@
         </div>
 
         <!-- Advanced Settings -->
-        <div class="space-y-3 pt-2 border-t border-border/50">
-          <h3 class="text-sm font-semibold text-foreground flex items-center gap-2">
+        <div
+          class="bg-card/30 backdrop-blur-sm border border-border/50 rounded-xl p-4 space-y-4 hover:border-border/70 transition-colors"
+        >
+          <h3
+            class="text-sm font-bold text-foreground tracking-wide uppercase text-primary/90 flex items-center gap-2 pb-1 border-b border-border/30"
+          >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               class="h-4 w-4 text-primary"
@@ -1028,19 +1196,26 @@
 
           <!-- Line Height -->
           <div class="space-y-2">
-            <div class="flex justify-between">
+            <div class="flex justify-between items-center">
               <label class="text-xs font-medium text-muted-foreground">Line Height</label>
-              <span class="text-xs font-mono text-foreground">{{ subtitleSettings.lineHeight.toFixed(2) }}</span>
+              <span class="text-xs font-mono text-foreground bg-muted/50 px-2 py-0.5 rounded">
+                {{ Number(subtitleSettings.lineHeight).toFixed(2) }}
+              </span>
             </div>
             <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
               <div
                 class="absolute left-0 top-0 h-full bg-primary rounded-lg transition-all duration-200"
-                :style="{ width: `${((subtitleSettings.lineHeight - 0.5) / (2.5 - 0.5)) * 100}%` }"
+                :style="{ width: `${((Number(subtitleSettings.lineHeight) - 0.5) / (2.5 - 0.5)) * 100}%` }"
               ></div>
               <input
                 type="range"
-                v-model.number="subtitleSettings.lineHeight"
-                @input="emitSettingsChange"
+                :value="subtitleSettings.lineHeight"
+                @input="
+                  (e) => {
+                    subtitleSettings.lineHeight = parseFloat((e.target as HTMLInputElement).value);
+                    emitSettingsChange();
+                  }
+                "
                 min="0.5"
                 max="2.5"
                 step="0.05"
@@ -1051,9 +1226,11 @@
 
           <!-- Letter Spacing -->
           <div class="space-y-2">
-            <div class="flex justify-between">
+            <div class="flex justify-between items-center">
               <label class="text-xs font-medium text-muted-foreground">Letter Spacing</label>
-              <span class="text-xs font-mono text-foreground">{{ subtitleSettings.letterSpacing }}px</span>
+              <span class="text-xs font-mono text-foreground bg-muted/50 px-2 py-0.5 rounded">
+                {{ subtitleSettings.letterSpacing }}px
+              </span>
             </div>
             <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
               <div
@@ -1074,9 +1251,11 @@
 
           <!-- Word Spacing -->
           <div class="space-y-2">
-            <div class="flex justify-between">
+            <div class="flex justify-between items-center">
               <label class="text-xs font-medium text-muted-foreground">Word Spacing</label>
-              <span class="text-xs font-mono text-foreground">{{ subtitleSettings.wordSpacing.toFixed(2) }}em</span>
+              <span class="text-xs font-mono text-foreground bg-muted/50 px-2 py-0.5 rounded">
+                {{ subtitleSettings.wordSpacing.toFixed(2) }}em
+              </span>
             </div>
             <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
               <div
@@ -1146,9 +1325,11 @@
 
           <!-- Text Offset X (Horizontal Position) -->
           <div class="space-y-2">
-            <div class="flex justify-between">
+            <div class="flex justify-between items-center">
               <label class="text-xs font-medium text-muted-foreground">Horizontal Offset</label>
-              <span class="text-xs font-mono text-foreground">{{ subtitleSettings.textOffsetX }}%</span>
+              <span class="text-xs font-mono text-foreground bg-muted/50 px-2 py-0.5 rounded">
+                {{ subtitleSettings.textOffsetX }}%
+              </span>
             </div>
             <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
               <div
@@ -1169,9 +1350,11 @@
 
           <!-- Text Offset Y (Vertical Position) -->
           <div class="space-y-2">
-            <div class="flex justify-between">
+            <div class="flex justify-between items-center">
               <label class="text-xs font-medium text-muted-foreground">Vertical Offset</label>
-              <span class="text-xs font-mono text-foreground">{{ subtitleSettings.textOffsetY }}%</span>
+              <span class="text-xs font-mono text-foreground bg-muted/50 px-2 py-0.5 rounded">
+                {{ subtitleSettings.textOffsetY }}%
+              </span>
             </div>
             <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
               <div
@@ -1192,9 +1375,11 @@
 
           <!-- Padding -->
           <div class="space-y-2">
-            <div class="flex justify-between">
+            <div class="flex justify-between items-center">
               <label class="text-xs font-medium text-muted-foreground">Padding</label>
-              <span class="text-xs font-mono text-foreground">{{ subtitleSettings.padding }}px</span>
+              <span class="text-xs font-mono text-foreground bg-muted/50 px-2 py-0.5 rounded">
+                {{ subtitleSettings.padding }}px
+              </span>
             </div>
             <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
               <div
@@ -1215,9 +1400,11 @@
 
           <!-- Border Radius -->
           <div class="space-y-2">
-            <div class="flex justify-between">
+            <div class="flex justify-between items-center">
               <label class="text-xs font-medium text-muted-foreground">Border Radius</label>
-              <span class="text-xs font-mono text-foreground">{{ subtitleSettings.borderRadius }}px</span>
+              <span class="text-xs font-mono text-foreground bg-muted/50 px-2 py-0.5 rounded">
+                {{ subtitleSettings.borderRadius }}px
+              </span>
             </div>
             <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
               <div
@@ -1238,10 +1425,12 @@
         </div>
 
         <!-- Reset Button -->
-        <div class="pt-4 border-t-2 border-border/50">
+        <div
+          class="bg-destructive/5 backdrop-blur-sm border border-destructive/20 rounded-xl p-4 hover:border-destructive/30 transition-colors"
+        >
           <button
             @click="resetToDefaults"
-            class="w-full flex items-center justify-center gap-2 px-4 py-3 bg-muted/50 hover:bg-muted/70 text-foreground text-sm font-semibold rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98] shadow-sm hover:shadow-md"
+            class="w-full flex items-center justify-center gap-2.5 px-4 py-3 bg-destructive/10 hover:bg-destructive/20 text-destructive-foreground text-sm font-bold rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98] shadow-sm hover:shadow-md border border-destructive/30 hover:border-destructive/50"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -1249,11 +1438,11 @@
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
+              stroke-width="2.5"
             >
               <path
                 stroke-linecap="round"
                 stroke-linejoin="round"
-                stroke-width="2"
                 d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
               />
             </svg>
@@ -1262,6 +1451,90 @@
         </div>
       </div>
     </div>
+
+    <!-- Save Preset Dialog -->
+    <Teleport to="body">
+      <div
+        v-if="showSavePresetDialog"
+        class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]"
+        @click.self="showSavePresetDialog = false"
+      >
+        <div class="bg-card rounded-2xl p-8 max-w-md w-full mx-4 border border-border">
+          <h2 class="text-2xl font-bold mb-4">Save Custom Preset</h2>
+
+          <div class="space-y-4">
+            <p class="text-muted-foreground">Save your current subtitle settings as a reusable preset.</p>
+
+            <div>
+              <label class="block text-sm font-medium text-foreground mb-2">Preset Name *</label>
+              <input
+                v-model="newPresetName"
+                type="text"
+                placeholder="e.g., My Custom Style"
+                class="w-full px-3 py-2 bg-background border border-input rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                @keydown.enter="saveAsCustomPreset"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-foreground mb-2">Description</label>
+              <textarea
+                v-model="newPresetDescription"
+                placeholder="Optional description for this preset"
+                rows="2"
+                class="w-full px-3 py-2 bg-background border border-input rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-vertical"
+              ></textarea>
+            </div>
+
+            <button
+              @click="saveAsCustomPreset"
+              class="w-full py-3 bg-gradient-to-r from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg font-semibold transition-all"
+            >
+              Save Preset
+            </button>
+            <button
+              @click="showSavePresetDialog = false"
+              class="w-full py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 transition-all"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Delete Preset Confirmation Dialog -->
+    <Teleport to="body">
+      <div
+        v-if="presetToDelete"
+        class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]"
+        @click.self="presetToDelete = null"
+      >
+        <div class="bg-card rounded-2xl p-8 max-w-md w-full mx-4 border border-border">
+          <h2 class="text-2xl font-bold mb-4">Delete Custom Preset</h2>
+
+          <div class="space-y-4">
+            <p class="text-muted-foreground">
+              Are you sure you want to delete this custom preset?
+              <span class="font-semibold text-foreground">This action cannot be undone.</span>
+            </p>
+
+            <button
+              @click="deleteCustomPreset(presetToDelete)"
+              class="w-full py-3 bg-gradient-to-r from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-lg font-semibold transition-all"
+            >
+              Delete Preset
+            </button>
+            <button
+              @click="presetToDelete = null"
+              class="w-full py-3 bg-muted text-foreground rounded-lg font-semibold hover:bg-muted/80 transition-all"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -1274,9 +1547,14 @@
     getClipsWithBuildStatus,
     updateClipBuildStatus,
     getRawVideosByProjectId,
+    getAllCustomSubtitlePresets,
+    createCustomSubtitlePreset,
+    deleteCustomSubtitlePreset,
+    customPresetToSettings,
     type ClipWithVersion,
     type ClipDetectionSession,
     type Prompt,
+    type CustomSubtitlePreset,
   } from '@/services/database';
   import type { MediaPanelProps, MediaPanelEmits, SubtitleSettings, SubtitlePreset } from '../types';
   import {
@@ -1355,6 +1633,13 @@
   });
 
   const subtitleSettings = ref<SubtitleSettings>(getDefaultSubtitleSettings());
+  const customPresets = ref<CustomSubtitlePreset[]>([]);
+
+  // UI state for saving presets
+  const showSavePresetDialog = ref(false);
+  const newPresetName = ref('');
+  const newPresetDescription = ref('');
+  const presetToDelete = ref<string | null>(null);
 
   // Professional subtitle presets with exceptional styling
   const subtitlePresets = ref<SubtitlePreset[]>([
@@ -1363,7 +1648,7 @@
       name: 'Bold Classic',
       description: 'Crisp white with strong outline - works everywhere',
       settings: {
-        enabled: true,
+        enabled: false,
         fontFamily: 'Montserrat',
         fontSize: 34,
         fontWeight: 800,
@@ -1395,7 +1680,7 @@
       name: 'YouTube Style',
       description: 'Heavy shadow for perfect clarity',
       settings: {
-        enabled: true,
+        enabled: false,
         fontFamily: 'Roboto',
         fontSize: 32,
         fontWeight: 700,
@@ -1427,7 +1712,7 @@
       name: 'Golden Pop',
       description: 'Eye-catching gold with premium feel',
       settings: {
-        enabled: true,
+        enabled: false,
         fontFamily: 'Poppins',
         fontSize: 36,
         fontWeight: 900,
@@ -1459,7 +1744,7 @@
       name: 'Clean Minimal',
       description: 'Refined and unobtrusive',
       settings: {
-        enabled: true,
+        enabled: false,
         fontFamily: 'Inter',
         fontSize: 30,
         fontWeight: 700,
@@ -1491,7 +1776,7 @@
       name: 'High Contrast',
       description: 'Maximum readability with dark backing',
       settings: {
-        enabled: true,
+        enabled: false,
         fontFamily: 'Montserrat',
         fontSize: 32,
         fontWeight: 800,
@@ -1523,7 +1808,7 @@
       name: 'Cinematic',
       description: 'Movie-quality subtitles',
       settings: {
-        enabled: true,
+        enabled: false,
         fontFamily: 'Helvetica',
         fontSize: 31,
         fontWeight: 700,
@@ -1555,7 +1840,7 @@
       name: 'Viral Impact',
       description: 'Maximum attention with bold presence',
       settings: {
-        enabled: true,
+        enabled: false,
         fontFamily: 'Montserrat',
         fontSize: 38,
         fontWeight: 900,
@@ -1587,7 +1872,7 @@
       name: 'Executive',
       description: 'Corporate polish with elegant backdrop',
       settings: {
-        enabled: true,
+        enabled: false,
         fontFamily: 'Open Sans',
         fontSize: 30,
         fontWeight: 700,
@@ -1616,16 +1901,83 @@
     },
   ]);
 
+  // Computed property to combine built-in and custom presets
+  const allPresets = computed(() => {
+    const builtInPresets: SubtitlePreset[] = subtitlePresets.value;
+    const customPresetsConverted: SubtitlePreset[] = customPresets.value.map((preset) => ({
+      id: preset.id,
+      name: preset.name,
+      description: preset.description || '',
+      settings: customPresetToSettings(preset),
+    }));
+
+    return [...builtInPresets, ...customPresetsConverted];
+  });
+
+  // Load custom presets from database
+  async function loadCustomPresets() {
+    try {
+      customPresets.value = await getAllCustomSubtitlePresets();
+      console.log('[MediaPanel] Loaded custom presets:', customPresets.value.length);
+    } catch (error) {
+      console.error('[MediaPanel] Failed to load custom presets:', error);
+    }
+  }
+
+  // Save current settings as a new custom preset
+  async function saveAsCustomPreset() {
+    if (!newPresetName.value.trim()) {
+      showErrorMessage('Invalid Name', 'Please enter a name for the preset.');
+      return;
+    }
+
+    const presetName = newPresetName.value.trim();
+
+    try {
+      await createCustomSubtitlePreset(presetName, newPresetDescription.value.trim(), subtitleSettings.value);
+
+      // Reload custom presets
+      await loadCustomPresets();
+
+      // Clear form and close dialog
+      newPresetName.value = '';
+      newPresetDescription.value = '';
+      showSavePresetDialog.value = false;
+
+      showSuccessMessage('Preset Saved', `Preset "${presetName}" has been saved successfully!`);
+    } catch (error) {
+      console.error('[MediaPanel] Failed to save custom preset:', error);
+      showErrorMessage('Save Failed', 'Failed to save custom preset. Please try again.');
+    }
+  }
+
+  // Delete a custom preset
+  async function deleteCustomPreset(presetId: string) {
+    try {
+      await deleteCustomSubtitlePreset(presetId);
+      await loadCustomPresets();
+      presetToDelete.value = null;
+      showSuccessMessage('Preset Deleted', 'Custom preset has been deleted successfully!');
+    } catch (error) {
+      console.error('[MediaPanel] Failed to delete custom preset:', error);
+      showErrorMessage('Delete Failed', 'Failed to delete custom preset. Please try again.');
+    }
+  }
+
   onMounted(async () => {
     // Load prompts for name matching
     await loadPrompts();
+
+    // Load custom subtitle presets
+    await loadCustomPresets();
 
     // Load subtitle settings from localStorage
     try {
       const saved = localStorage.getItem('subtitle-settings');
       if (saved) {
         const parsed = JSON.parse(saved);
-        subtitleSettings.value = { ...getDefaultSubtitleSettings(), ...parsed };
+        // Restore all settings from localStorage but always default subtitles to off
+        subtitleSettings.value = { ...getDefaultSubtitleSettings(), ...parsed, enabled: false };
       }
     } catch (error) {
       console.error('[MediaPanel] Failed to load subtitle settings:', error);
@@ -2094,6 +2446,11 @@
       current.outlineWidth === presetSettings.outlineWidth &&
       current.position === presetSettings.position
     );
+  }
+
+  // Check if a preset is custom (not built-in)
+  function isCustomPreset(presetId: string): boolean {
+    return customPresets.value.some((preset) => preset.id === presetId);
   }
 
   function setPosition(position: 'top' | 'middle' | 'bottom') {

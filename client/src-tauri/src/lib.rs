@@ -186,7 +186,13 @@ pub fn run() {
                             sql: include_str!("../migrations/027_add_focal_points.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
-                          ],
+                        tauri_plugin_sql::Migration {
+                            version: 28,
+                            description: "add_custom_subtitle_presets",
+                            sql: include_str!("../migrations/028_add_custom_subtitle_presets.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                    ],
                 )
                 .build(),
         )

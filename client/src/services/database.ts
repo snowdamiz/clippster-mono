@@ -18,6 +18,8 @@ export type {
   ClipSegment,
   ClipWithVersion,
   FocalPoint,
+  CustomSubtitlePreset,
+  SubtitleSettings,
 } from './database/types';
 
 // Re-export intro/outro functions
@@ -160,3 +162,13 @@ export {
   deleteFocalPointsByRawVideoId,
   getFocalPointCount,
 } from './database/focal-points';
+
+// Re-export custom subtitle preset functions
+export {
+  createCustomSubtitlePreset,
+  getCustomSubtitlePreset,
+  getAllCustomSubtitlePresets,
+  updateCustomSubtitlePreset,
+  deleteCustomSubtitlePreset,
+  customPresetToSettings,
+} from './database/custom-subtitle-presets';
