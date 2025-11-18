@@ -103,12 +103,26 @@
 
       <!-- Subtitle Overlay -->
       <div
-        v-if="subtitleSettings?.enabled && currentSubtitleText && videoSrc && !videoLoading"
+        v-if="subtitleSettings?.enabled && visibleWords.length > 0 && videoSrc && !videoLoading"
         class="absolute subtitle-overlay pointer-events-none z-20"
         :style="getSubtitleContainerStyle"
       >
-        <div class="subtitle-text" :style="getSubtitleTextStyle">
-          {{ currentSubtitleText }}
+        <div
+          class="subtitle-text-container"
+          :class="{
+            'fast-speech': isFastSpeech,
+            'very-fast-speech': isVeryFastSpeech,
+          }"
+          :style="getSubtitleTextStyle"
+        >
+          <span
+            v-for="(wordInfo, index) in visibleWords"
+            :key="`subtitle-word-${wordInfo.start}-${index}`"
+            class="subtitle-word"
+            :class="{ 'current-word': isCurrentWord(wordInfo) }"
+          >
+            {{ wordInfo.word }}
+          </span>
         </div>
       </div>
 
@@ -179,6 +193,8 @@
 <script setup lang="ts">
   import { ref, watch, computed } from 'vue';
 
+  import type { WhisperSegment } from '@/types';
+
   interface Props {
     videoSrc: string | null;
     videoLoading: boolean;
@@ -188,6 +204,7 @@
     focalPoint?: { x: number; y: number };
     subtitleSettings?: SubtitleSettings;
     transcriptWords?: WordInfo[];
+    transcriptSegments?: WhisperSegment[];
     currentTime?: number;
   }
 
@@ -250,6 +267,7 @@
       borderRadius: 8,
     }),
     transcriptWords: () => [],
+    transcriptSegments: () => [],
     currentTime: 0,
   });
 
@@ -269,31 +287,125 @@
 
   const videoElementRef = ref<HTMLVideoElement | null>(null);
 
-  // Subtitle logic
-  const currentSubtitleText = computed(() => {
-    if (!props.subtitleSettings?.enabled || !props.transcriptWords || props.transcriptWords.length === 0) {
-      return '';
+  // Calculate max words based on aspect ratio
+  const maxWordsForAspectRatio = computed(() => {
+    const aspectRatioValue = props.aspectRatio.width / props.aspectRatio.height;
+
+    if (aspectRatioValue > 1.5) {
+      return 6; // wide formats (16:9, 21:9)
+    } else if (aspectRatioValue > 0.9) {
+      return 4; // squarish (1:1, 4:3)
+    } else {
+      return 3; // vertical (9:16, 4:5)
+    }
+  });
+
+  // Find the current whisper segment
+  const currentSegment = computed((): WhisperSegment | null => {
+    if (!props.subtitleSettings?.enabled || !props.transcriptSegments || props.transcriptSegments.length === 0) {
+      return null;
     }
 
     const time = props.currentTime || 0;
 
-    // Find words around the current time (within 0.8 second window)
-    const words = props.transcriptWords.filter((word) => word.start <= time + 0.4 && word.end >= time - 0.4);
+    // Find segment that contains the current time
+    for (const segment of props.transcriptSegments) {
+      if (time >= segment.start && time <= segment.end) {
+        return segment;
+      }
+    }
 
-    if (words.length === 0) return '';
-
-    // Get 2-4 words for better readability
-    const currentWordIndex = props.transcriptWords.findIndex((word) => word.start <= time && word.end >= time);
-
-    if (currentWordIndex === -1) return '';
-
-    // Get surrounding words for context
-    const startIndex = Math.max(0, currentWordIndex - 1);
-    const endIndex = Math.min(props.transcriptWords.length - 1, currentWordIndex + 2);
-
-    const displayWords = props.transcriptWords.slice(startIndex, endIndex + 1);
-    return displayWords.map((w) => w.word).join(' ');
+    // Return null if in dead space between segments
+    return null;
   });
+
+  // Get all words from the current segment
+  const segmentWords = computed((): WordInfo[] => {
+    if (!currentSegment.value) return [];
+
+    // If segment has words attached, use those
+    if (currentSegment.value.words && currentSegment.value.words.length > 0) {
+      return currentSegment.value.words;
+    }
+
+    // Otherwise, filter from all transcript words
+    if (!props.transcriptWords || props.transcriptWords.length === 0) return [];
+
+    return props.transcriptWords.filter(
+      (word) => word.start >= currentSegment.value!.start && word.end <= currentSegment.value!.end
+    );
+  });
+
+  // Get visible words (with sliding window if needed)
+  const visibleWords = computed((): WordInfo[] => {
+    const allSegmentWords = segmentWords.value;
+    if (allSegmentWords.length === 0) return [];
+
+    const maxWords = maxWordsForAspectRatio.value;
+
+    // If segment has fewer words than the limit, show all
+    if (allSegmentWords.length <= maxWords) {
+      return allSegmentWords;
+    }
+
+    // Find the current word in the segment
+    const time = props.currentTime || 0;
+    let currentWordIndex = allSegmentWords.findIndex((word) => time >= word.start && time <= word.end);
+
+    // If no exact match, find the closest word
+    if (currentWordIndex === -1) {
+      currentWordIndex = allSegmentWords.findIndex((word) => word.start > time);
+      if (currentWordIndex === -1) {
+        currentWordIndex = allSegmentWords.length - 1;
+      } else if (currentWordIndex > 0) {
+        currentWordIndex--;
+      }
+    }
+
+    // Create a sliding window centered on current word
+    const halfWindow = Math.floor(maxWords / 2);
+    let startIndex = Math.max(0, currentWordIndex - halfWindow);
+    let endIndex = Math.min(allSegmentWords.length - 1, startIndex + maxWords - 1);
+
+    // Adjust start if we hit the end
+    if (endIndex - startIndex + 1 < maxWords) {
+      startIndex = Math.max(0, endIndex - maxWords + 1);
+    }
+
+    return allSegmentWords.slice(startIndex, endIndex + 1);
+  });
+
+  // Check if a word is currently being spoken
+  function isCurrentWord(word: WordInfo): boolean {
+    const time = props.currentTime || 0;
+    return time >= word.start && time <= word.end;
+  }
+
+  // Calculate speech speed for animation adjustments
+  const speechSpeed = computed((): 'normal' | 'fast' | 'very-fast' => {
+    if (!visibleWords.value.length) return 'normal';
+
+    // Find the current word
+    const time = props.currentTime || 0;
+    const currentWord = visibleWords.value.find((word) => time >= word.start && time <= word.end);
+
+    if (!currentWord) return 'normal';
+
+    // Calculate word duration
+    const wordDuration = currentWord.end - currentWord.start;
+
+    // Classify speech speed based on word duration
+    if (wordDuration < 0.08) {
+      return 'very-fast'; // Less than 80ms - remove animation entirely
+    } else if (wordDuration < 0.18) {
+      return 'fast'; // 80-180ms - very quick animation
+    } else {
+      return 'normal'; // 180ms+ - normal smooth animation
+    }
+  });
+
+  const isFastSpeech = computed(() => speechSpeed.value === 'fast');
+  const isVeryFastSpeech = computed(() => speechSpeed.value === 'very-fast');
 
   const getSubtitleContainerStyle = computed(() => {
     if (!props.subtitleSettings) return {};
@@ -325,6 +437,22 @@
 
     const settings = props.subtitleSettings;
 
+    // Calculate aspect ratio and adjust font size/line height for narrow formats
+    const aspectRatioValue = props.aspectRatio.width / props.aspectRatio.height;
+    let fontSizeScale = 1;
+    let lineHeightAdjustment = 0;
+
+    // Scale down for vertical and square formats
+    if (aspectRatioValue <= 0.9) {
+      // Vertical formats (9:16, 4:5) - much smaller to prevent overflow
+      fontSizeScale = 0.65;
+      lineHeightAdjustment = -0.15;
+    } else if (aspectRatioValue > 0.9 && aspectRatioValue <= 1.1) {
+      // Square format (1:1) - moderately smaller
+      fontSizeScale = 0.78;
+      lineHeightAdjustment = -0.1;
+    }
+
     // Build text-shadow for outline effect
     let textShadow = '';
     if (settings.outlineWidth > 0) {
@@ -333,8 +461,8 @@
       const shadows = [];
       for (let i = 0; i < steps; i++) {
         const angle = (i * 2 * Math.PI) / steps;
-        const x = Math.cos(angle) * settings.outlineWidth;
-        const y = Math.sin(angle) * settings.outlineWidth;
+        const x = Math.cos(angle) * settings.outlineWidth * fontSizeScale;
+        const y = Math.sin(angle) * settings.outlineWidth * fontSizeScale;
         shadows.push(`${x}px ${y}px 0 ${settings.outlineColor}`);
       }
       textShadow = shadows.join(', ');
@@ -342,23 +470,32 @@
 
     // Add drop shadow
     if (settings.shadowBlur > 0) {
-      const dropShadow = `${settings.shadowOffsetX}px ${settings.shadowOffsetY}px ${settings.shadowBlur}px ${settings.shadowColor}`;
+      const dropShadow = `${settings.shadowOffsetX * fontSizeScale}px ${settings.shadowOffsetY * fontSizeScale}px ${settings.shadowBlur * fontSizeScale}px ${settings.shadowColor}`;
       textShadow = textShadow ? `${textShadow}, ${dropShadow}` : dropShadow;
     }
 
+    const adjustedFontSize = Math.round(settings.fontSize * fontSizeScale);
+    const adjustedLineHeight = Math.max(1.1, settings.lineHeight + lineHeightAdjustment);
+    const adjustedPadding = Math.round(settings.padding * fontSizeScale);
+    const adjustedLetterSpacing = settings.letterSpacing * fontSizeScale;
+
     return {
       fontFamily: settings.fontFamily,
-      fontSize: `${settings.fontSize}px`,
+      fontSize: `${adjustedFontSize}px`,
       fontWeight: settings.fontWeight,
       color: settings.textColor,
       backgroundColor: settings.backgroundEnabled ? settings.backgroundColor : 'transparent',
-      padding: `${settings.padding}px`,
+      padding: `${adjustedPadding}px`,
       borderRadius: `${settings.borderRadius}px`,
-      lineHeight: settings.lineHeight,
-      letterSpacing: `${settings.letterSpacing}px`,
+      lineHeight: adjustedLineHeight,
+      letterSpacing: `${adjustedLetterSpacing}px`,
       textAlign: settings.textAlign,
       textShadow: textShadow || 'none',
-      wordWrap: 'break-word',
+      display: 'flex',
+      flexWrap: 'wrap',
+      justifyContent:
+        settings.textAlign === 'left' ? 'flex-start' : settings.textAlign === 'right' ? 'flex-end' : 'center',
+      gap: '0.2em',
       maxWidth: '100%',
     };
   });
@@ -434,5 +571,35 @@
   /* Backdrop blur effects */
   .backdrop-blur-sm {
     backdrop-filter: blur(4px);
+  }
+
+  /* Subtitle word animation styles */
+  .subtitle-text-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 0.2em;
+  }
+
+  .subtitle-word {
+    display: inline-block;
+    transition: transform 0.05s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    transform-origin: center;
+    will-change: transform;
+  }
+
+  /* Quick animation for fast speech (80-180ms words) */
+  .subtitle-text-container.fast-speech .subtitle-word {
+    transition: transform 0.015s linear;
+  }
+
+  /* No animation for very fast speech (<80ms words) - instant changes */
+  .subtitle-text-container.very-fast-speech .subtitle-word {
+    transition: none;
+  }
+
+  .subtitle-word.current-word {
+    transform: scale(1.15);
   }
 </style>

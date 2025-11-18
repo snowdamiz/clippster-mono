@@ -54,6 +54,7 @@
                 :focal-point="currentFocalPoint"
                 :subtitle-settings="subtitleSettings"
                 :transcript-words="transcriptData?.words || []"
+                :transcript-segments="transcriptData?.whisperSegments || []"
                 :current-time="currentTime"
                 @togglePlayPause="togglePlayPause"
                 @timeUpdate="onTimeUpdate"

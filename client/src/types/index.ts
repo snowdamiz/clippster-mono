@@ -6,6 +6,14 @@ export interface WordInfo {
   confidence?: number;
 }
 
+export interface WhisperSegment {
+  id: number;
+  start: number;
+  end: number;
+  text: string;
+  words?: WordInfo[];
+}
+
 export interface Timestamp {
   time: number;
   position: number;

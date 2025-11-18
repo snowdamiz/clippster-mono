@@ -10,12 +10,14 @@ import {
   debounce,
   type WordInfo,
 } from '../utils/timelineUtils';
+import type { WhisperSegment } from '../types';
 
 // Transcript data interface
 interface TranscriptData {
   transcript: any;
   segments: any[];
   words: WordInfo[];
+  whisperSegments: WhisperSegment[];
 }
 
 export function useTranscriptData(projectId: Ref<string | null>) {
@@ -37,6 +39,64 @@ export function useTranscriptData(projectId: Ref<string | null>) {
   // Cache for word search results to improve performance
   const wordSearchCache = ref<Map<number, { words: WordInfo[]; centerIndex: number }>>(new Map());
 
+  // Parse whisper segments from raw JSON
+  function parseWhisperSegments(rawJson: string): WhisperSegment[] {
+    try {
+      const data = JSON.parse(rawJson);
+      const segments: WhisperSegment[] = [];
+
+      if (data.segments && Array.isArray(data.segments)) {
+        data.segments.forEach((segment: any, index: number) => {
+          if (segment.start !== undefined && segment.end !== undefined) {
+            const segmentWords: WordInfo[] = [];
+
+            // Extract words for this segment if available
+            if (segment.words && Array.isArray(segment.words)) {
+              segment.words.forEach((word: any) => {
+                if (word.word && word.start !== undefined && word.end !== undefined) {
+                  segmentWords.push({
+                    word: word.word.trim(),
+                    start: word.start,
+                    end: word.end,
+                    confidence: word.confidence,
+                  });
+                }
+              });
+            }
+
+            segments.push({
+              id: segment.id !== undefined ? segment.id : index,
+              start: segment.start,
+              end: segment.end,
+              text: segment.text || '',
+              words: segmentWords.length > 0 ? segmentWords : undefined,
+            });
+          }
+        });
+      }
+
+      return segments;
+    } catch (error) {
+      console.error('[useTranscriptData] Failed to parse whisper segments:', error);
+      return [];
+    }
+  }
+
+  // Find the whisper segment that contains the given timestamp
+  function findSegmentAtTime(timestamp: number, segments: WhisperSegment[]): WhisperSegment | null {
+    if (!segments || segments.length === 0) return null;
+
+    // Find segment that contains the timestamp
+    for (const segment of segments) {
+      if (timestamp >= segment.start && timestamp <= segment.end) {
+        return segment;
+      }
+    }
+
+    // If no exact match, return null (dead space between segments)
+    return null;
+  }
+
   // Load transcript data for enhanced tooltips
   async function loadTranscriptData(projectId: string | null) {
     if (!projectId) {
@@ -48,13 +108,15 @@ export function useTranscriptData(projectId: Ref<string | null>) {
       const { transcript, segments } = await getTranscriptWithSegmentsByProjectId(projectId);
 
       if (transcript && transcript.raw_json) {
-        // Parse the raw JSON to extract word-level timing
+        // Parse the raw JSON to extract word-level timing and segments
         const words = parseTranscriptToWords(transcript.raw_json);
+        const whisperSegments = parseWhisperSegments(transcript.raw_json);
 
         transcriptData.value = {
           transcript,
           segments,
           words,
+          whisperSegments,
         };
 
         // Clear cache when new transcript data is loaded
@@ -176,5 +238,6 @@ export function useTranscriptData(projectId: Ref<string | null>) {
     clearTooltipData,
     clearDragTooltipData,
     clearResizeTooltipData,
+    findSegmentAtTime,
   };
 }
