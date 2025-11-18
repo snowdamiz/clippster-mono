@@ -164,17 +164,17 @@
           ref="clipsScrollContainer"
         >
           <!-- Clips Grid -->
-          <div class="space-y-2.5 pb-4">
+          <div class="space-y-3 pb-4">
             <div
               v-for="(clip, index) in clips"
               :key="clip.id"
               :ref="(el) => setClipRef(el, clip.id)"
               :class="[
-                'group relative bg-card/40 backdrop-blur-sm border rounded-xl cursor-pointer transition-all duration-200 overflow-hidden',
+                'group relative bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl cursor-pointer transition-all duration-200 overflow-hidden',
                 // Playing clip gets green styling
                 props.isPlayingSegments && props.playingClipId === clip.id
-                  ? 'ring-2 ring-green-500/60 bg-green-500/[0.03] border-green-500/60 shadow-lg shadow-green-500/10'
-                  : 'hover:border-border hover:bg-card/60 hover:shadow-md',
+                  ? 'ring-2 ring-green-500/50 bg-green-500/[0.04] border-green-500/50 shadow-lg shadow-green-500/10'
+                  : 'hover:border-border/80 hover:bg-card/70 hover:shadow-lg hover:shadow-black/10',
               ]"
               :style="{
                 // Prioritize playing state over all other states
@@ -197,30 +197,36 @@
                 class="absolute left-0 top-0 bottom-0 w-1 transition-all duration-200"
                 :style="{
                   backgroundColor: clip.session_run_color || '#8B5CF6',
-                  opacity: props.isPlayingSegments && props.playingClipId === clip.id ? '0.8' : '0.4',
+                  opacity: props.isPlayingSegments && props.playingClipId === clip.id ? '1' : '0.6',
                 }"
               ></div>
 
-              <div class="flex flex-col p-3 pl-4">
-                <!-- Header Row: Title + Quick Actions -->
-                <div class="flex items-start justify-between gap-3 mb-2.5">
-                  <!-- Title Section -->
-                  <div class="flex items-start gap-2 flex-1 min-w-0">
-                    <span class="text-xs font-bold text-foreground/35 mt-0.5 flex-shrink-0 tabular-nums">
+              <div class="flex flex-col p-3.5 pl-4">
+                <!-- Main Content Row -->
+                <div class="flex items-start justify-between gap-3">
+                  <!-- Left: Number + Content -->
+                  <div class="flex items-start gap-2.5 flex-1 min-w-0">
+                    <!-- Number Badge -->
+                    <span class="text-xs font-bold text-foreground/30 mt-0.5 flex-shrink-0 tabular-nums select-none">
                       #{{ index + 1 }}
                     </span>
-                    <div class="flex-1 min-w-0">
-                      <h5 class="text-sm font-semibold text-foreground leading-tight mb-1 line-clamp-2">
+
+                    <!-- Content Column -->
+                    <div class="flex-1 min-w-0 space-y-2">
+                      <!-- Title -->
+                      <h5 class="text-[15px] font-semibold text-foreground leading-tight line-clamp-2">
                         {{ clip.current_version_name || clip.name || 'Untitled Clip' }}
                       </h5>
-                      <!-- Duration badge inline with title -->
-                      <div class="flex items-center gap-2">
+
+                      <!-- Primary Info Row: Duration + Time Range -->
+                      <div class="flex items-center gap-2.5 flex-wrap text-xs">
+                        <!-- Duration Badge -->
                         <span
-                          class="inline-flex items-center gap-1 text-xs font-semibold text-foreground/90 bg-muted/60 px-2 py-0.5 rounded-md"
+                          class="inline-flex items-center gap-1.5 text-foreground font-semibold bg-muted/60 px-2 py-0.5 rounded-md tabular-nums"
                         >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
-                            class="h-3 w-3 text-foreground/60"
+                            class="h-3 w-3 text-foreground/70"
                             fill="none"
                             viewBox="0 0 24 24"
                             stroke="currentColor"
@@ -238,76 +244,138 @@
                             )
                           }}
                         </span>
-                        <span class="text-xs font-mono text-muted-foreground tabular-nums">
+
+                        <!-- Time Range -->
+                        <span class="font-mono text-muted-foreground/80 text-[11px] tabular-nums">
                           {{ formatTime(clip.current_version_start_time || 0) }} →
                           {{ formatTime(clip.current_version_end_time || 0) }}
+                        </span>
+
+                        <!-- Build Status (when completed) -->
+                        <span
+                          v-if="clip.build_status === 'completed'"
+                          class="inline-flex items-center gap-1 text-green-400 text-[11px] font-medium"
+                          :title="`Built: ${clip.built_file_size ? formatFileSize(clip.built_file_size) : 'Complete'}`"
+                        >
+                          <CheckIcon class="h-3 w-3" />
+                          Built
+                          <span v-if="clip.built_file_size" class="text-green-400/70">
+                            ({{ formatFileSize(clip.built_file_size) }})
+                          </span>
+                        </span>
+
+                        <!-- Build Progress -->
+                        <span
+                          v-else-if="clip.build_status === 'building'"
+                          class="inline-flex items-center gap-1.5 text-blue-400 text-[11px] font-medium"
+                        >
+                          <LoaderIcon class="h-3 w-3 animate-spin" />
+                          Building {{ Math.round(clip.build_progress || 0) }}%
+                        </span>
+
+                        <!-- Playing Indicator -->
+                        <span
+                          v-if="props.isPlayingSegments && props.playingClipId === clip.id"
+                          class="inline-flex items-center gap-1.5 text-green-400 text-[11px] font-semibold"
+                        >
+                          <div class="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></div>
+                          Playing
+                        </span>
+                      </div>
+
+                      <!-- Secondary Info Row: Run + Prompt + Timestamp -->
+                      <div class="flex items-center gap-2 flex-wrap text-[11px]">
+                        <!-- Run Number Badge -->
+                        <span
+                          v-if="clip.run_number"
+                          class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-medium bg-muted/40"
+                          :style="{
+                            color: clip.session_run_color || '#A78BFA',
+                            backgroundColor: clip.session_run_color ? `${clip.session_run_color}15` : undefined,
+                          }"
+                          :title="`Detection run ${clip.run_number}`"
+                        >
+                          <div
+                            class="w-1.5 h-1.5 rounded-full"
+                            :style="{ backgroundColor: clip.session_run_color || '#8B5CF6' }"
+                          ></div>
+                          Run {{ clip.run_number }}
+                        </span>
+
+                        <!-- Prompt Badge -->
+                        <span
+                          v-if="clip.session_prompt"
+                          class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-medium bg-purple-500/10 text-purple-400"
+                          :title="`Used prompt: ${getPromptName(clip.session_prompt)}`"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            class="h-2.5 w-2.5"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            stroke-width="2"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                            />
+                          </svg>
+                          <span class="truncate max-w-32">{{ getPromptName(clip.session_prompt) }}</span>
+                        </span>
+
+                        <!-- Timestamp -->
+                        <span v-if="clip.session_created_at" class="text-muted-foreground/60 flex items-center gap-1">
+                          <ClockIcon class="h-3 w-3" />
+                          {{ formatTimestamp(clip.session_created_at) }}
+                        </span>
+
+                        <!-- Confidence Score (hover to see) -->
+                        <span
+                          v-if="clip.current_version_confidence_score"
+                          class="inline-flex items-center gap-1 text-blue-400/70 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Confidence score"
+                        >
+                          <TrendingUpIcon class="h-3 w-3" />
+                          {{ Math.round((clip.current_version_confidence_score || 0) * 100) }}%
                         </span>
                       </div>
                     </div>
                   </div>
 
-                  <!-- Action Buttons -->
+                  <!-- Right: Action Buttons -->
                   <div
-                    class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                    class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex-shrink-0"
                   >
                     <button
-                      class="p-1.5 hover:bg-blue-500/20 rounded-lg transition-all text-foreground/70 hover:text-blue-400 hover:scale-110"
+                      class="p-2 hover:bg-blue-500/15 rounded-lg transition-all duration-150 text-foreground/60 hover:text-blue-400 hover:scale-105 active:scale-95"
                       title="Play clip"
                       @click.stop="onPlayClip(clip)"
                     >
                       <PlayIcon class="h-4 w-4" />
                     </button>
 
-                    <!-- Build Clip Button -->
+                    <!-- Build/Download Button -->
                     <button
                       v-if="!clip.build_status || clip.build_status === 'pending' || clip.build_status === 'failed'"
-                      class="p-1.5 hover:bg-green-500/20 rounded-lg transition-all text-foreground/70 hover:text-green-400 hover:scale-110"
+                      class="p-2 hover:bg-green-500/15 rounded-lg transition-all duration-150 text-foreground/60 hover:text-green-400 hover:scale-105 active:scale-95"
                       title="Build clip"
                       @click.stop="onBuildClip(clip)"
                     >
                       <WrenchIcon class="h-4 w-4" />
                     </button>
-
-                    <!-- View Built Clip Button (when completed) -->
                     <button
                       v-else-if="clip.build_status === 'completed' && clip.built_file_path"
-                      class="p-1.5 hover:bg-green-500/20 rounded-lg transition-all text-green-500 hover:text-green-400 hover:scale-110"
+                      class="p-2 hover:bg-green-500/15 rounded-lg transition-all duration-150 text-green-500/80 hover:text-green-400 hover:scale-105 active:scale-95"
                       title="Open built clip"
                       @click.stop="onOpenBuiltClip(clip)"
                     >
                       <DownloadIcon class="h-4 w-4" />
                     </button>
 
-                    <!-- Building Status -->
-                    <div
-                      v-else-if="clip.build_status === 'building'"
-                      class="p-1.5 text-green-500"
-                      title="Building clip..."
-                    >
-                      <LoaderIcon class="h-4 w-4 animate-spin" />
-                    </div>
-
-                    <!-- Completed Status -->
-                    <div
-                      v-else-if="clip.build_status === 'completed'"
-                      class="p-1.5 text-green-500"
-                      title="Clip built successfully"
-                    >
-                      <CheckIcon class="h-4 w-4" />
-                    </div>
-
-                    <!-- Failed Status -->
                     <button
-                      v-else-if="clip.build_status === 'failed'"
-                      class="p-1.5 hover:bg-red-500/20 rounded-lg transition-all text-red-500 hover:text-red-400 hover:scale-110"
-                      title="Build failed - click to retry"
-                      @click.stop="onBuildClip(clip)"
-                    >
-                      <AlertCircleIcon class="h-4 w-4" />
-                    </button>
-
-                    <button
-                      class="p-1.5 hover:bg-red-500/20 rounded-lg transition-all text-foreground/70 hover:text-red-400 hover:scale-110"
+                      class="p-2 hover:bg-red-500/15 rounded-lg transition-all duration-150 text-foreground/60 hover:text-red-400 hover:scale-105 active:scale-95"
                       title="Delete clip"
                       @click.stop="onDeleteClip(clip.id)"
                     >
@@ -327,108 +395,6 @@
                       </svg>
                     </button>
                   </div>
-                </div>
-
-                <!-- Metadata Tags Row -->
-                <div class="flex items-center gap-1.5 flex-wrap pl-6">
-                  <!-- Run Number -->
-                  <span
-                    v-if="clip.run_number"
-                    class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md font-medium bg-muted/40 border border-border/40"
-                    :style="{
-                      color: clip.session_run_color || '#A78BFA',
-                      borderColor: clip.session_run_color ? `${clip.session_run_color}40` : undefined,
-                    }"
-                    :title="`Detection run ${clip.run_number}`"
-                  >
-                    <div
-                      class="w-1.5 h-1.5 rounded-full"
-                      :style="{
-                        backgroundColor: clip.session_run_color || '#8B5CF6',
-                      }"
-                    ></div>
-                    Run {{ clip.run_number }}
-                  </span>
-
-                  <!-- Prompt Name -->
-                  <span
-                    v-if="clip.session_prompt"
-                    class="inline-flex items-center gap-1 bg-purple-500/15 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded-md font-medium text-[11px]"
-                    :title="`Used prompt: ${getPromptName(clip.session_prompt)}`"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      class="h-3 w-3"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      stroke-width="2"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                      />
-                    </svg>
-                    <span class="truncate max-w-24">{{ getPromptName(clip.session_prompt) }}</span>
-                  </span>
-
-                  <!-- Confidence Score -->
-                  <span
-                    v-if="clip.current_version_confidence_score"
-                    class="inline-flex items-center gap-1 bg-blue-500/15 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-md font-medium text-[11px]"
-                  >
-                    <TrendingUpIcon class="h-3 w-3" />
-                    {{ Math.round((clip.current_version_confidence_score || 0) * 100) }}%
-                  </span>
-
-                  <!-- Timestamp -->
-                  <span
-                    v-if="clip.session_created_at"
-                    class="inline-flex items-center gap-1 text-muted-foreground text-[11px]"
-                  >
-                    <ClockIcon class="h-3 w-3" />
-                    {{ formatTimestamp(clip.session_created_at) }}
-                  </span>
-
-                  <!-- Playing Indicator -->
-                  <span
-                    v-if="props.isPlayingSegments && props.playingClipId === clip.id"
-                    class="inline-flex items-center gap-1.5 text-green-400 bg-green-500/20 border border-green-500/40 px-2 py-0.5 rounded-md font-semibold text-[11px]"
-                  >
-                    <div class="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></div>
-                    Playing
-                  </span>
-
-                  <!-- Build Progress Indicator -->
-                  <span
-                    v-if="clip.build_status === 'building'"
-                    class="inline-flex items-center gap-1.5 text-blue-400 bg-blue-500/20 border border-blue-500/40 px-2 py-0.5 rounded-md font-medium text-[11px]"
-                  >
-                    <div class="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse"></div>
-                    Building {{ Math.round(clip.build_progress || 0) }}%
-                  </span>
-
-                  <!-- Build Completed Status -->
-                  <span
-                    v-else-if="clip.build_status === 'completed'"
-                    class="inline-flex items-center gap-1 text-green-400 bg-green-500/20 border border-green-500/40 px-2 py-0.5 rounded-md font-medium text-[11px]"
-                    title="Clip built successfully"
-                  >
-                    <CheckIcon class="h-3 w-3" />
-                    Built
-                    <span v-if="clip.built_file_size">({{ formatFileSize(clip.built_file_size) }})</span>
-                  </span>
-
-                  <!-- Build Failed Status -->
-                  <span
-                    v-else-if="clip.build_status === 'failed'"
-                    class="inline-flex items-center gap-1 text-red-400 bg-red-500/20 border border-red-500/40 px-2 py-0.5 rounded-md font-medium text-[11px]"
-                    :title="clip.build_error || 'Build failed'"
-                  >
-                    <AlertCircleIcon class="h-3 w-3" />
-                    Failed
-                  </span>
                 </div>
               </div>
             </div>
