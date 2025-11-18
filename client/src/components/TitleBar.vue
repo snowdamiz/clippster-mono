@@ -119,7 +119,7 @@
     <Teleport to="body">
       <div
         v-if="showKeyboardShortcuts"
-        class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+        class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]"
         @click.self="showKeyboardShortcuts = false"
       >
         <div
@@ -749,7 +749,7 @@
     top: 0;
     left: 0;
     right: 0;
-    z-index: 9999;
+    z-index: 99999;
     border-bottom: 1px solid #3c3c3c;
     box-sizing: border-box;
   }
