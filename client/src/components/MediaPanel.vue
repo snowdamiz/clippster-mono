@@ -2257,8 +2257,7 @@
       // Get max words per line based on aspect ratio (matches VideoPlayer.vue preview)
       const maxWords = maxWordsForAspectRatio.value;
 
-      // TODO: Update backend to handle multiple aspect ratios and other settings
-      // For now, just use the first selected aspect ratio
+      // Pass all build settings to the backend
       await invoke('build_clip_from_segments', {
         projectId: props.projectId,
         clipId: clip.id,
@@ -2271,7 +2270,10 @@
         transcriptWords: transcriptWords,
         transcriptSegments: transcriptSegments,
         maxWords: maxWords,
-        aspectRatio: props.aspectRatio,
+        aspectRatios: settings.aspectRatios, // Pass all selected aspect ratios
+        quality: settings.quality,
+        frameRate: settings.frameRate,
+        outputFormat: settings.format,
         runNumber: clip.run_number || null, // Pass the run number from detection session
       });
 
