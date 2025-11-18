@@ -1568,6 +1568,9 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- Build Settings Dialog -->
+    <ClipBuildSettingsDialog v-model="showBuildSettingsDialog" :clip="clipToBuild" @confirm="onBuildConfirm" />
   </div>
 </template>
 
@@ -1607,6 +1610,7 @@
   } from 'lucide-vue-next';
   import TranscriptPanel from './TranscriptPanel.vue';
   import ColorPicker from './ColorPicker.vue';
+  import ClipBuildSettingsDialog, { type BuildSettings } from './ClipBuildSettingsDialog.vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
 
   const props = withDefaults(defineProps<MediaPanelProps>(), {
@@ -1694,6 +1698,10 @@
   const newPresetDescription = ref('');
   const presetToDelete = ref<string | null>(null);
   const saveMode = ref<'new' | 'update'>('new');
+
+  // UI state for build settings dialog
+  const showBuildSettingsDialog = ref(false);
+  const clipToBuild = ref<ClipWithVersion | null>(null);
 
   // Computed property for custom presets only
   const allPresets = computed(() => {
@@ -2191,7 +2199,7 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
-  // Handle clip build request
+  // Handle clip build request - show settings dialog
   async function onBuildClip(clip: ClipWithVersion) {
     if (!props.projectId) {
       console.error('[MediaPanel] No project ID available for clip build');
@@ -2203,8 +2211,21 @@
       return;
     }
 
+    // Show build settings dialog
+    clipToBuild.value = clip;
+    showBuildSettingsDialog.value = true;
+  }
+
+  // Handle build confirmation with settings
+  async function onBuildConfirm(settings: BuildSettings) {
+    const clip = clipToBuild.value;
+    if (!clip || !props.projectId) {
+      console.error('[MediaPanel] No clip or project ID available for build');
+      return;
+    }
+
     try {
-      console.log('[MediaPanel] Starting clip build for:', clip.id);
+      console.log('[MediaPanel] Starting clip build for:', clip.id, 'with settings:', settings);
 
       // Update database status to building
       await updateClipBuildStatus(clip.id, 'building', { progress: 0 });
@@ -2236,12 +2257,16 @@
       // Get max words per line based on aspect ratio (matches VideoPlayer.vue preview)
       const maxWords = maxWordsForAspectRatio.value;
 
+      // TODO: Update backend to handle multiple aspect ratios and other settings
+      // For now, just use the first selected aspect ratio
       await invoke('build_clip_from_segments', {
         projectId: props.projectId,
         clipId: clip.id,
         videoPath: projectVideo.file_path,
         segments: segments,
-        subtitleSettings: subtitleSettings.value,
+        subtitleSettings: settings.includeSubtitles
+          ? subtitleSettings.value
+          : { ...subtitleSettings.value, enabled: false },
         transcriptWords: transcriptWords,
         transcriptSegments: transcriptSegments,
         maxWords: maxWords,
