@@ -272,8 +272,13 @@ export function useTimelineInteraction(
     );
     const selectionDuration = endPercent - startPercent;
 
+    // Track if we actually performed a zoom
+    let didPerformZoom = false;
+
     // Only zoom if the selection is meaningful (at least 5% of timeline)
     if (selectionDuration >= 0.05 && duration.value > 0) {
+      didPerformZoom = true;
+
       // Calculate new zoom level to fit the selection
       const targetZoom = Math.min(maxZoom, Math.max(minZoom, 1.0 / selectionDuration));
 
@@ -338,13 +343,19 @@ export function useTimelineInteraction(
     dragSelectionState.value.dragStartPercent = 0;
     dragSelectionState.value.dragEndPercent = 0;
 
-    // Set flag to prevent immediate seeking after drag
-    dragSelectionState.value.justFinishedDragging = true;
+    // Only set the flag to prevent seeking if we actually performed a zoom
+    // This allows simple clicks to work normally
+    if (didPerformZoom) {
+      dragSelectionState.value.justFinishedDragging = true;
 
-    // Clear the flag after a short delay to allow normal clicking again
-    setTimeout(() => {
+      // Clear the flag after a short delay to allow normal clicking again
+      setTimeout(() => {
+        dragSelectionState.value.justFinishedDragging = false;
+      }, 100);
+    } else {
+      // For simple clicks (no meaningful drag), don't block seeking
       dragSelectionState.value.justFinishedDragging = false;
-    }, 100);
+    }
   }
 
   // Update timeline bounds
