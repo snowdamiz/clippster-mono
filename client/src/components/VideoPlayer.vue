@@ -111,7 +111,7 @@
           class="subtitle-text-container"
           :style="{
             ...getSubtitleTextStyle,
-            '--animation-duration': `${dynamicAnimationDuration}s`,
+            gap: `${subtitleSettings?.wordSpacing || 0.35}em`,
           }"
         >
           <span
@@ -119,6 +119,9 @@
             :key="`subtitle-word-${wordInfo.start}-${index}`"
             class="subtitle-word"
             :class="{ 'current-word': isCurrentWord(wordInfo) }"
+            :style="{
+              transitionDuration: `${getWordAnimationDuration(wordInfo)}s`,
+            }"
           >
             {{ wordInfo.word }}
           </span>
@@ -235,8 +238,11 @@
     lineHeight: number;
     letterSpacing: number;
     textAlign: 'left' | 'center' | 'right';
+    textOffsetX: number;
+    textOffsetY: number;
     padding: number;
     borderRadius: number;
+    wordSpacing: number;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -394,33 +400,35 @@
     return time >= word.start && time <= word.end;
   }
 
-  // Dynamically calculate animation duration based on word timing
-  const dynamicAnimationDuration = computed((): number => {
-    if (!visibleWords.value.length) return 0.05;
-
-    // Find the current word
-    const time = props.currentTime || 0;
-    const currentWord = visibleWords.value.find((word) => time >= word.start && time <= word.end);
-
-    if (!currentWord) return 0.05;
-
+  // Calculate animation duration for a specific word based on its timing
+  function getWordAnimationDuration(word: WordInfo): number {
     // Calculate word duration in seconds
-    const wordDuration = currentWord.end - currentWord.start;
+    const wordDuration = word.end - word.start;
 
-    // For very short words (under 60ms), use instant transition
-    if (wordDuration < 0.06) {
+    // For very short words (under 50ms), use instant transition
+    if (wordDuration < 0.05) {
       return 0;
     }
 
-    // For short words (60-120ms), use 20% of duration for snappy animation
-    if (wordDuration < 0.12) {
-      return wordDuration * 0.2;
+    // For short words (50-100ms), use 30% of duration for responsive animation
+    if (wordDuration < 0.1) {
+      return wordDuration * 0.3;
     }
 
-    // For normal words (120ms+), use 25% of duration, capped at 60ms
-    const calculatedDuration = wordDuration * 0.25;
-    return Math.min(0.06, calculatedDuration);
-  });
+    // For medium words (100-200ms), use 35% of duration
+    if (wordDuration < 0.2) {
+      return wordDuration * 0.35;
+    }
+
+    // For normal words (200-400ms), use 40% of duration
+    if (wordDuration < 0.4) {
+      return wordDuration * 0.4;
+    }
+
+    // For longer words (400ms+), use 45% but cap at 200ms to prevent overly slow animations
+    const calculatedDuration = wordDuration * 0.45;
+    return Math.min(0.2, calculatedDuration);
+  }
 
   const getSubtitleContainerStyle = computed(() => {
     if (!props.subtitleSettings) return {};
@@ -436,10 +444,14 @@
       topPosition = settings.positionPercentage + '%';
     }
 
+    // Apply text offsets (X and Y adjustments in percentage)
+    const leftOffset = settings.textOffsetX || 0;
+    const topOffset = settings.textOffsetY || 0;
+
     return {
       top: topPosition,
       left: '50%',
-      transform: 'translate(-50%, -50%)',
+      transform: `translate(calc(-50% + ${leftOffset}%), calc(-50% + ${topOffset}%))`,
       width: settings.maxWidth + '%',
       display: 'flex',
       justifyContent: 'center',
@@ -594,13 +606,13 @@
     flex-wrap: wrap;
     justify-content: center;
     align-items: center;
-    gap: 0.2em;
-    --animation-duration: 0.05s;
+    /* Gap is dynamically set via inline style from subtitleSettings.wordSpacing */
   }
 
   .subtitle-word {
     display: inline-block;
-    transition: transform var(--animation-duration) cubic-bezier(0.33, 1, 0.68, 1);
+    transition-property: transform;
+    transition-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
     transform-origin: center;
     will-change: transform;
   }

@@ -639,13 +639,13 @@
             <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
               <div
                 class="absolute left-0 top-0 h-full bg-primary rounded-lg transition-all duration-200"
-                :style="{ width: `${((subtitleSettings.fontWeight - 400) / (900 - 400)) * 100}%` }"
+                :style="{ width: `${((subtitleSettings.fontWeight - 100) / (900 - 100)) * 100}%` }"
               ></div>
               <input
                 type="range"
                 v-model.number="subtitleSettings.fontWeight"
                 @input="emitSettingsChange"
-                min="400"
+                min="100"
                 max="900"
                 step="100"
                 class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
@@ -1030,20 +1030,20 @@
           <div class="space-y-2">
             <div class="flex justify-between">
               <label class="text-xs font-medium text-muted-foreground">Line Height</label>
-              <span class="text-xs font-mono text-foreground">{{ subtitleSettings.lineHeight.toFixed(1) }}</span>
+              <span class="text-xs font-mono text-foreground">{{ subtitleSettings.lineHeight.toFixed(2) }}</span>
             </div>
             <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
               <div
                 class="absolute left-0 top-0 h-full bg-primary rounded-lg transition-all duration-200"
-                :style="{ width: `${((subtitleSettings.lineHeight - 1) / (2 - 1)) * 100}%` }"
+                :style="{ width: `${((subtitleSettings.lineHeight - 0.5) / (2.5 - 0.5)) * 100}%` }"
               ></div>
               <input
                 type="range"
                 v-model.number="subtitleSettings.lineHeight"
                 @input="emitSettingsChange"
-                min="1"
-                max="2"
-                step="0.1"
+                min="0.5"
+                max="2.5"
+                step="0.05"
                 class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
               />
             </div>
@@ -1067,6 +1067,29 @@
                 min="-2"
                 max="10"
                 step="0.5"
+                class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+              />
+            </div>
+          </div>
+
+          <!-- Word Spacing -->
+          <div class="space-y-2">
+            <div class="flex justify-between">
+              <label class="text-xs font-medium text-muted-foreground">Word Spacing</label>
+              <span class="text-xs font-mono text-foreground">{{ subtitleSettings.wordSpacing.toFixed(2) }}em</span>
+            </div>
+            <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
+              <div
+                class="absolute left-0 top-0 h-full bg-primary rounded-lg transition-all duration-200"
+                :style="{ width: `${((subtitleSettings.wordSpacing - 0.1) / (1 - 0.1)) * 100}%` }"
+              ></div>
+              <input
+                type="range"
+                v-model.number="subtitleSettings.wordSpacing"
+                @input="emitSettingsChange"
+                min="0.1"
+                max="1"
+                step="0.05"
                 class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
               />
             </div>
@@ -1118,6 +1141,52 @@
               >
                 Right
               </button>
+            </div>
+          </div>
+
+          <!-- Text Offset X (Horizontal Position) -->
+          <div class="space-y-2">
+            <div class="flex justify-between">
+              <label class="text-xs font-medium text-muted-foreground">Horizontal Offset</label>
+              <span class="text-xs font-mono text-foreground">{{ subtitleSettings.textOffsetX }}%</span>
+            </div>
+            <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
+              <div
+                class="absolute left-0 top-0 h-full bg-primary rounded-lg transition-all duration-200"
+                :style="{ width: `${((subtitleSettings.textOffsetX + 50) / 100) * 100}%` }"
+              ></div>
+              <input
+                type="range"
+                v-model.number="subtitleSettings.textOffsetX"
+                @input="emitSettingsChange"
+                min="-50"
+                max="50"
+                step="1"
+                class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+              />
+            </div>
+          </div>
+
+          <!-- Text Offset Y (Vertical Position) -->
+          <div class="space-y-2">
+            <div class="flex justify-between">
+              <label class="text-xs font-medium text-muted-foreground">Vertical Offset</label>
+              <span class="text-xs font-mono text-foreground">{{ subtitleSettings.textOffsetY }}%</span>
+            </div>
+            <div class="relative h-2 bg-muted-foreground/30 rounded-lg">
+              <div
+                class="absolute left-0 top-0 h-full bg-primary rounded-lg transition-all duration-200"
+                :style="{ width: `${((subtitleSettings.textOffsetY + 50) / 100) * 100}%` }"
+              ></div>
+              <input
+                type="range"
+                v-model.number="subtitleSettings.textOffsetY"
+                @input="emitSettingsChange"
+                min="-50"
+                max="50"
+                step="1"
+                class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+              />
             </div>
           </div>
 
@@ -1278,8 +1347,11 @@
     lineHeight: 1.2,
     letterSpacing: 0,
     textAlign: 'center',
+    textOffsetX: 0,
+    textOffsetY: 0,
     padding: 16,
     borderRadius: 8,
+    wordSpacing: 0.35,
   });
 
   const subtitleSettings = ref<SubtitleSettings>(getDefaultSubtitleSettings());
@@ -1311,8 +1383,11 @@
         lineHeight: 1.3,
         letterSpacing: 0.5,
         textAlign: 'center',
+        textOffsetX: 0,
+        textOffsetY: 0,
         padding: 6,
         borderRadius: 0,
+        wordSpacing: 0.35,
       },
     },
     {
@@ -1340,8 +1415,11 @@
         lineHeight: 1.35,
         letterSpacing: 0.3,
         textAlign: 'center',
+        textOffsetX: 0,
+        textOffsetY: 0,
         padding: 4,
         borderRadius: 0,
+        wordSpacing: 0.35,
       },
     },
     {
@@ -1369,8 +1447,11 @@
         lineHeight: 1.25,
         letterSpacing: 0.8,
         textAlign: 'center',
+        textOffsetX: 0,
+        textOffsetY: 0,
         padding: 6,
         borderRadius: 0,
+        wordSpacing: 0.35,
       },
     },
     {
@@ -1398,8 +1479,11 @@
         lineHeight: 1.4,
         letterSpacing: 0.4,
         textAlign: 'center',
+        textOffsetX: 0,
+        textOffsetY: 0,
         padding: 4,
         borderRadius: 0,
+        wordSpacing: 0.35,
       },
     },
     {
@@ -1427,8 +1511,11 @@
         lineHeight: 1.3,
         letterSpacing: 0.3,
         textAlign: 'center',
+        textOffsetX: 0,
+        textOffsetY: 0,
         padding: 12,
         borderRadius: 8,
+        wordSpacing: 0.35,
       },
     },
     {
@@ -1456,8 +1543,11 @@
         lineHeight: 1.35,
         letterSpacing: 1.2,
         textAlign: 'center',
+        textOffsetX: 0,
+        textOffsetY: 0,
         padding: 5,
         borderRadius: 0,
+        wordSpacing: 0.35,
       },
     },
     {
@@ -1485,8 +1575,11 @@
         lineHeight: 1.2,
         letterSpacing: 1.5,
         textAlign: 'center',
+        textOffsetX: 0,
+        textOffsetY: 0,
         padding: 6,
         borderRadius: 0,
+        wordSpacing: 0.35,
       },
     },
     {
@@ -1514,8 +1607,11 @@
         lineHeight: 1.4,
         letterSpacing: 0.5,
         textAlign: 'center',
+        textOffsetX: 0,
+        textOffsetY: 0,
         padding: 14,
         borderRadius: 6,
+        wordSpacing: 0.35,
       },
     },
   ]);

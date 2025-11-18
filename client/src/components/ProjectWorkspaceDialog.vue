@@ -275,8 +275,11 @@
     lineHeight: 1.2,
     letterSpacing: 0,
     textAlign: 'center',
+    textOffsetX: 0,
+    textOffsetY: 0,
     padding: 16,
     borderRadius: 8,
+    wordSpacing: 0.35,
   });
 
   // Use video player composable

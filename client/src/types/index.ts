@@ -185,8 +185,11 @@ export interface SubtitleSettings {
   lineHeight: number;
   letterSpacing: number;
   textAlign: 'left' | 'center' | 'right';
+  textOffsetX: number;
+  textOffsetY: number;
   padding: number;
   borderRadius: number;
+  wordSpacing: number;
 }
 
 export interface SubtitlePreset {
