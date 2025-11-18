@@ -1,47 +1,62 @@
 <template>
   <div class="px-4 flex flex-col flex-1 h-full" data-media-panel>
     <!-- Tabs Header -->
-    <div class="flex items-center border-b border-border -mx-3 px-3">
+    <div class="flex items-center border-b border-border/60 -mx-3 px-3 gap-1">
       <button
         @click="activeTab = 'clips'"
         :class="[
-          'px-4 py-2 text-sm font-medium transition-colors relative',
-          activeTab === 'clips' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+          'px-4 py-2.5 text-sm font-medium transition-all relative rounded-t-lg',
+          activeTab === 'clips'
+            ? 'text-foreground bg-muted/30'
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted/20',
         ]"
       >
         Clips
-        <div v-if="activeTab === 'clips'" class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"></div>
+        <div v-if="activeTab === 'clips'" class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"></div>
       </button>
       <button
         @click="activeTab = 'audio'"
         :class="[
-          'px-4 py-2 text-sm font-medium transition-colors relative',
-          activeTab === 'audio' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+          'px-4 py-2.5 text-sm font-medium transition-all relative rounded-t-lg',
+          activeTab === 'audio'
+            ? 'text-foreground bg-muted/30'
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted/20',
         ]"
       >
         Audio
-        <div v-if="activeTab === 'audio'" class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"></div>
+        <div v-if="activeTab === 'audio'" class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"></div>
       </button>
       <button
         @click="activeTab = 'transcript'"
         :class="[
-          'px-4 py-2 text-sm font-medium transition-colors relative',
-          activeTab === 'transcript' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+          'px-4 py-2.5 text-sm font-medium transition-all relative rounded-t-lg',
+          activeTab === 'transcript'
+            ? 'text-foreground bg-muted/30'
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted/20',
         ]"
       >
         Transcript
-        <div v-if="activeTab === 'transcript'" class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"></div>
+        <div
+          v-if="activeTab === 'transcript'"
+          class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"
+        ></div>
       </button>
     </div>
 
     <!-- Clips Tab Content -->
-    <div v-if="activeTab === 'clips'" class="flex-1 flex flex-col overflow-hidden mt-4">
-      <div class="flex items-center mb-3">
-        <!-- Redesigned detect more button (only show when not generating and clips exist) -->
+    <div v-if="activeTab === 'clips'" class="flex-1 flex flex-col overflow-hidden">
+      <!-- Header with Detect More button and count -->
+      <div v-if="clips.length > 0 && !isGenerating" class="flex items-center justify-between py-3 px-1 mb-2">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-medium text-foreground/90">
+            {{ clips.length }} Clip{{ clips.length !== 1 ? 's' : '' }}
+          </span>
+          <span class="text-xs text-muted-foreground">•</span>
+          <span class="text-xs text-muted-foreground">Click to preview on timeline</span>
+        </div>
         <button
-          v-if="!isGenerating && clips.length > 0"
           @click="handleDetectClips"
-          class="group flex items-center gap-1.5 px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground border border-border hover:border-foreground/30 rounded-md transition-all duration-200"
+          class="group flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted/30 hover:bg-muted/50 border border-border hover:border-foreground/40 rounded-lg transition-all duration-200"
           title="Run clip detection again to find more clips"
         >
           <svg
@@ -58,53 +73,54 @@
               d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
             />
           </svg>
-          <span class="font-medium">Detect More</span>
+          <span>Detect More</span>
         </button>
       </div>
 
       <div class="flex-1 overflow-y-auto">
         <!-- Progress State -->
         <div v-if="isGenerating" class="h-full flex items-center justify-center px-4">
-          <div class="text-center text-foreground w-full max-w-sm">
+          <div class="text-center text-foreground w-full max-w-md">
             <!-- Stage Icon -->
-            <div class="mb-5 flex justify-center">
+            <div class="mb-6 flex justify-center">
               <div
-                class="w-16 h-16 rounded-2xl bg-gradient-to-br flex items-center justify-center"
+                class="w-20 h-20 rounded-2xl bg-gradient-to-br flex items-center justify-center shadow-lg"
                 :class="
                   stageIconClass.replace('text-', 'from-') +
-                  '/10 to-' +
+                  '/10 via-' +
                   stageIconClass.replace('text-', '') +
-                  '/5 border border-' +
+                  '/5 to-transparent border-2 border-' +
                   stageIconClass.replace('text-', '') +
-                  '/20'
+                  '/30'
                 "
               >
-                <component :is="stageIcon" :class="stageIconClass" class="h-8 w-8" />
+                <component :is="stageIcon" :class="stageIconClass" class="h-9 w-9" />
               </div>
             </div>
             <!-- Stage Title -->
-            <h4 class="font-semibold text-foreground mb-2 text-base">{{ stageTitle }}</h4>
+            <h4 class="font-semibold text-foreground mb-2 text-lg">{{ stageTitle }}</h4>
 
-            <p class="text-sm text-foreground/60 mb-12 leading-relaxed">{{ stageDescription }}</p>
+            <p class="text-sm text-foreground/70 mb-10 leading-relaxed">{{ stageDescription }}</p>
             <!-- Loading Spinner with Time Estimate -->
-            <div class="mb-5">
-              <div class="flex justify-center mb-4">
+            <div class="mb-6">
+              <div class="flex justify-center mb-5">
                 <!-- Large spinner -->
-                <div class="relative w-12 h-12">
+                <div class="relative w-14 h-14">
                   <div class="absolute inset-0 border-4 border-muted/30 rounded-full"></div>
                   <div
-                    class="absolute inset-0 border-4 border-transparent border-t-primary rounded-full animate-spin"
+                    class="absolute inset-0 border-4 border-transparent rounded-full animate-spin"
                     :class="stageIconClass.replace('text-', 'border-t-')"
+                    style="animation-duration: 0.8s"
                   ></div>
                 </div>
               </div>
 
               <!-- Time estimate -->
               <div class="text-center mb-4">
-                <p class="text-sm font-medium text-foreground mb-1">
+                <p class="text-sm font-medium text-foreground mb-1.5">
                   {{ getLoadingMessage() }}
                 </p>
-                <p class="text-xs text-foreground/50">
+                <p class="text-xs text-muted-foreground">
                   {{ getTimeEstimate() }}
                 </p>
               </div>
@@ -112,16 +128,16 @@
             <!-- Status Message -->
             <div
               v-if="generationMessage"
-              class="text-sm text-foreground/70 bg-muted/40 rounded-lg p-3 mb-4 border border-muted"
+              class="text-sm text-foreground/80 bg-muted/50 rounded-xl p-4 mb-4 border border-border/60"
             >
               {{ generationMessage }}
             </div>
             <!-- Error State -->
-            <div v-if="generationError" class="bg-destructive/10 border border-destructive/30 rounded-lg p-3.5 mb-4">
-              <div class="flex items-start gap-2.5">
+            <div v-if="generationError" class="bg-red-500/10 border-2 border-red-500/30 rounded-xl p-4 mb-4">
+              <div class="flex items-start gap-3">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
-                  class="h-5 w-5 text-destructive flex-shrink-0 mt-0.5"
+                  class="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -133,10 +149,9 @@
                     d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                   />
                 </svg>
-                <div class="text-left">
-                  <h4 class="font-semibold text-destructive text-sm mb-1">Error</h4>
-
-                  <p class="text-xs text-destructive/80 leading-relaxed">{{ generationError }}</p>
+                <div class="text-left flex-1">
+                  <h4 class="font-semibold text-red-400 text-sm mb-1">Error</h4>
+                  <p class="text-xs text-red-400/90 leading-relaxed">{{ generationError }}</p>
                 </div>
               </div>
             </div>
@@ -149,22 +164,17 @@
           ref="clipsScrollContainer"
         >
           <!-- Clips Grid -->
-          <div class="space-y-3">
+          <div class="space-y-2.5 pb-4">
             <div
               v-for="(clip, index) in clips"
               :key="clip.id"
               :ref="(el) => setClipRef(el, clip.id)"
               :class="[
-                'group p-2 bg-muted/20 border rounded-lg cursor-pointer',
-                index === clips.length - 1 ? 'mb-4' : '',
-                // Only apply transition if not the currently playing clip
-                // !(props.isPlayingSegments && props.playingClipId === clip.id)
-                //   ? 'transition-all duration-200 ease-out'
-                //   : '',
+                'group relative bg-card/40 backdrop-blur-sm border rounded-xl cursor-pointer transition-all duration-200 overflow-hidden',
                 // Playing clip gets green styling
                 props.isPlayingSegments && props.playingClipId === clip.id
-                  ? 'ring-1 ring-green-500/60 bg-green-500/5 border-green-500/50 shadow-sm'
-                  : 'hover:border-border/80 hover:bg-muted/30 hover:shadow-sm',
+                  ? 'ring-2 ring-green-500/60 bg-green-500/[0.03] border-green-500/60 shadow-lg shadow-green-500/10'
+                  : 'hover:border-border hover:bg-card/60 hover:shadow-md',
               ]"
               :style="{
                 // Prioritize playing state over all other states
@@ -181,84 +191,129 @@
               }"
               @click="onClipClick(clip.id)"
             >
-              <div class="flex flex-col gap-2">
-                <!-- Header with title and actions -->
-                <div class="flex items-start justify-between gap-2">
-                  <div class="flex items-start gap-1.5 flex-1 min-w-0">
-                    <span class="text-xs font-bold text-foreground/40 mt-0.5 flex-shrink-0">#{{ index + 1 }}</span>
-                    <h5
-                      class="text-sm font-semibold text-foreground leading-snug flex-1 group-hover:text-foreground transition-colors"
-                    >
-                      {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
-                    </h5>
+              <!-- Left accent bar -->
+              <div
+                v-if="clip.run_number"
+                class="absolute left-0 top-0 bottom-0 w-1 transition-all duration-200"
+                :style="{
+                  backgroundColor: clip.session_run_color || '#8B5CF6',
+                  opacity: props.isPlayingSegments && props.playingClipId === clip.id ? '0.8' : '0.4',
+                }"
+              ></div>
+
+              <div class="flex flex-col p-3 pl-4">
+                <!-- Header Row: Title + Quick Actions -->
+                <div class="flex items-start justify-between gap-3 mb-2.5">
+                  <!-- Title Section -->
+                  <div class="flex items-start gap-2 flex-1 min-w-0">
+                    <span class="text-xs font-bold text-foreground/35 mt-0.5 flex-shrink-0 tabular-nums">
+                      #{{ index + 1 }}
+                    </span>
+                    <div class="flex-1 min-w-0">
+                      <h5 class="text-sm font-semibold text-foreground leading-tight mb-1 line-clamp-2">
+                        {{ clip.current_version_name || clip.name || 'Untitled Clip' }}
+                      </h5>
+                      <!-- Duration badge inline with title -->
+                      <div class="flex items-center gap-2">
+                        <span
+                          class="inline-flex items-center gap-1 text-xs font-semibold text-foreground/90 bg-muted/60 px-2 py-0.5 rounded-md"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            class="h-3 w-3 text-foreground/60"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            stroke-width="2"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                            />
+                          </svg>
+                          {{
+                            formatDuration(
+                              (clip.current_version_end_time || 0) - (clip.current_version_start_time || 0)
+                            )
+                          }}
+                        </span>
+                        <span class="text-xs font-mono text-muted-foreground tabular-nums">
+                          {{ formatTime(clip.current_version_start_time || 0) }} →
+                          {{ formatTime(clip.current_version_end_time || 0) }}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
-                  <!-- Action Buttons (always visible, more subtle) -->
-                  <div class="flex items-center gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
+                  <!-- Action Buttons -->
+                  <div
+                    class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                  >
                     <button
-                      class="p-1 hover:bg-muted rounded-md transition-colors text-foreground/60 hover:text-blue-500"
+                      class="p-1.5 hover:bg-blue-500/20 rounded-lg transition-all text-foreground/70 hover:text-blue-400 hover:scale-110"
                       title="Play clip"
                       @click.stop="onPlayClip(clip)"
                     >
-                      <PlayIcon class="h-3 w-3" />
+                      <PlayIcon class="h-4 w-4" />
                     </button>
 
                     <!-- Build Clip Button -->
                     <button
                       v-if="!clip.build_status || clip.build_status === 'pending' || clip.build_status === 'failed'"
-                      class="p-1 hover:bg-muted rounded-md transition-colors text-foreground/60 hover:text-green-500"
+                      class="p-1.5 hover:bg-green-500/20 rounded-lg transition-all text-foreground/70 hover:text-green-400 hover:scale-110"
                       title="Build clip"
                       @click.stop="onBuildClip(clip)"
                     >
-                      <WrenchIcon class="h-3 w-3" />
+                      <WrenchIcon class="h-4 w-4" />
                     </button>
 
                     <!-- View Built Clip Button (when completed) -->
                     <button
                       v-else-if="clip.build_status === 'completed' && clip.built_file_path"
-                      class="p-1 hover:bg-muted rounded-md transition-colors text-green-500 hover:text-green-600"
+                      class="p-1.5 hover:bg-green-500/20 rounded-lg transition-all text-green-500 hover:text-green-400 hover:scale-110"
                       title="Open built clip"
                       @click.stop="onOpenBuiltClip(clip)"
                     >
-                      <DownloadIcon class="h-3 w-3" />
+                      <DownloadIcon class="h-4 w-4" />
                     </button>
 
                     <!-- Building Status -->
                     <div
                       v-else-if="clip.build_status === 'building'"
-                      class="p-1 text-green-500 animate-pulse"
+                      class="p-1.5 text-green-500"
                       title="Building clip..."
                     >
-                      <LoaderIcon class="h-3 w-3 animate-spin" />
+                      <LoaderIcon class="h-4 w-4 animate-spin" />
                     </div>
 
                     <!-- Completed Status -->
                     <div
                       v-else-if="clip.build_status === 'completed'"
-                      class="p-1 text-green-500"
+                      class="p-1.5 text-green-500"
                       title="Clip built successfully"
                     >
-                      <CheckIcon class="h-3 w-3" />
+                      <CheckIcon class="h-4 w-4" />
                     </div>
 
                     <!-- Failed Status -->
                     <button
                       v-else-if="clip.build_status === 'failed'"
-                      class="p-1 hover:bg-muted rounded-md transition-colors text-red-500 hover:text-red-600"
+                      class="p-1.5 hover:bg-red-500/20 rounded-lg transition-all text-red-500 hover:text-red-400 hover:scale-110"
                       title="Build failed - click to retry"
                       @click.stop="onBuildClip(clip)"
                     >
-                      <AlertCircleIcon class="h-3 w-3" />
+                      <AlertCircleIcon class="h-4 w-4" />
                     </button>
 
                     <button
-                      class="p-1 hover:bg-muted rounded-md transition-colors text-foreground/60 hover:text-red-500"
+                      class="p-1.5 hover:bg-red-500/20 rounded-lg transition-all text-foreground/70 hover:text-red-400 hover:scale-110"
                       title="Delete clip"
                       @click.stop="onDeleteClip(clip.id)"
                     >
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
-                        class="h-3 w-3"
+                        class="h-4 w-4"
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
@@ -274,114 +329,106 @@
                   </div>
                 </div>
 
-                <!-- Info Section -->
-                <div class="flex-1 min-w-0 pl-5">
-                  <!-- Primary Info Row -->
-                  <div class="flex items-center gap-2 text-xs mb-1.5">
-                    <span class="font-semibold text-foreground/80 bg-muted/50 px-2 py-0.5 rounded">
-                      {{
-                        formatDuration((clip.current_version?.end_time || 0) - (clip.current_version?.start_time || 0))
-                      }}
-                    </span>
-                    <span class="text-foreground/30">•</span>
-                    <span class="font-mono text-foreground/60 text-[11px] pt-0.5">
-                      {{ formatTime(clip.current_version?.start_time || 0) }} -
-                      {{ formatTime(clip.current_version?.end_time || 0) }}
-                    </span>
-                  </div>
-
-                  <!-- Secondary Info Row -->
-                  <div class="flex items-center gap-1.5 text-xs flex-wrap">
-                    <!-- Run Number (more subtle, inline) -->
-                    <span
-                      v-if="clip.run_number"
-                      class="flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded font-medium"
+                <!-- Metadata Tags Row -->
+                <div class="flex items-center gap-1.5 flex-wrap pl-6">
+                  <!-- Run Number -->
+                  <span
+                    v-if="clip.run_number"
+                    class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md font-medium bg-muted/40 border border-border/40"
+                    :style="{
+                      color: clip.session_run_color || '#A78BFA',
+                      borderColor: clip.session_run_color ? `${clip.session_run_color}40` : undefined,
+                    }"
+                    :title="`Detection run ${clip.run_number}`"
+                  >
+                    <div
+                      class="w-1.5 h-1.5 rounded-full"
                       :style="{
-                        color: clip.session_run_color || '#A78BFA',
+                        backgroundColor: clip.session_run_color || '#8B5CF6',
                       }"
-                      :title="`Detection run ${clip.run_number}`"
-                    >
-                      <div
-                        class="w-1.5 h-1.5 rounded-full"
-                        :style="{
-                          backgroundColor: clip.session_run_color || '#8B5CF6',
-                        }"
-                      ></div>
-                      Run {{ clip.run_number }}
-                    </span>
+                    ></div>
+                    Run {{ clip.run_number }}
+                  </span>
 
-                    <!-- Prompt Name -->
-                    <span
-                      v-if="clip.session_prompt"
-                      class="flex items-center gap-1 bg-purple-500/15 text-purple-400 px-1.5 py-0.5 rounded-md font-medium text-[10px]"
-                      :title="`Used prompt: ${getPromptName(clip.session_prompt)}`"
+                  <!-- Prompt Name -->
+                  <span
+                    v-if="clip.session_prompt"
+                    class="inline-flex items-center gap-1 bg-purple-500/15 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded-md font-medium text-[11px]"
+                    :title="`Used prompt: ${getPromptName(clip.session_prompt)}`"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="h-3 w-3"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      stroke-width="2"
                     >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="h-2.5 w-2.5"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        stroke-width="2"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                        />
-                      </svg>
-                      <span class="truncate max-w-20">{{ getPromptName(clip.session_prompt) }}</span>
-                    </span>
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                      />
+                    </svg>
+                    <span class="truncate max-w-24">{{ getPromptName(clip.session_prompt) }}</span>
+                  </span>
 
-                    <span
-                      v-if="clip.current_version?.confidence_score"
-                      class="flex items-center gap-1 bg-blue-500/15 text-blue-400 px-1.5 py-0.5 rounded-md font-medium text-[10px]"
-                    >
-                      <TrendingUpIcon class="h-2.5 w-2.5" />
-                      <span>{{ Math.round((clip.current_version.confidence_score || 0) * 100) }}%</span>
-                    </span>
-                    <span v-if="clip.session_created_at" class="flex items-center gap-1 text-foreground/50">
-                      <ClockIcon class="h-3 w-3" />
-                      {{ formatTimestamp(clip.session_created_at) }}
-                    </span>
-                    <span
-                      v-if="props.isPlayingSegments && props.playingClipId === clip.id"
-                      class="flex items-center gap-1 text-green-500 bg-green-500/15 px-1.5 py-0.5 rounded-md font-semibold text-[10px]"
-                    >
-                      <div class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                      Playing
-                    </span>
+                  <!-- Confidence Score -->
+                  <span
+                    v-if="clip.current_version_confidence_score"
+                    class="inline-flex items-center gap-1 bg-blue-500/15 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-md font-medium text-[11px]"
+                  >
+                    <TrendingUpIcon class="h-3 w-3" />
+                    {{ Math.round((clip.current_version_confidence_score || 0) * 100) }}%
+                  </span>
 
-                    <!-- Build Progress Indicator -->
-                    <span
-                      v-if="clip.build_status === 'building'"
-                      class="flex items-center gap-1 text-blue-500 bg-blue-500/15 px-1.5 py-0.5 rounded-md font-medium text-[10px]"
-                    >
-                      <div class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
-                      Building {{ Math.round(clip.build_progress || 0) }}%
-                    </span>
+                  <!-- Timestamp -->
+                  <span
+                    v-if="clip.session_created_at"
+                    class="inline-flex items-center gap-1 text-muted-foreground text-[11px]"
+                  >
+                    <ClockIcon class="h-3 w-3" />
+                    {{ formatTimestamp(clip.session_created_at) }}
+                  </span>
 
-                    <!-- Build Completed Status -->
-                    <span
-                      v-else-if="clip.build_status === 'completed'"
-                      class="flex items-center gap-1 text-green-500 bg-green-500/15 px-1.5 py-0.5 rounded-md font-medium text-[10px]"
-                      title="Clip built successfully"
-                    >
-                      <CheckIcon class="h-2.5 w-2.5" />
-                      Built
-                      <span v-if="clip.built_file_size" class="ml-1">({{ formatFileSize(clip.built_file_size) }})</span>
-                    </span>
+                  <!-- Playing Indicator -->
+                  <span
+                    v-if="props.isPlayingSegments && props.playingClipId === clip.id"
+                    class="inline-flex items-center gap-1.5 text-green-400 bg-green-500/20 border border-green-500/40 px-2 py-0.5 rounded-md font-semibold text-[11px]"
+                  >
+                    <div class="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></div>
+                    Playing
+                  </span>
 
-                    <!-- Build Failed Status -->
-                    <span
-                      v-else-if="clip.build_status === 'failed'"
-                      class="flex items-center gap-1 text-red-500 bg-red-500/15 px-1.5 py-0.5 rounded-md font-medium text-[10px]"
-                      :title="clip.build_error || 'Build failed'"
-                    >
-                      <AlertCircleIcon class="h-2.5 w-2.5" />
-                      Failed
-                    </span>
-                  </div>
+                  <!-- Build Progress Indicator -->
+                  <span
+                    v-if="clip.build_status === 'building'"
+                    class="inline-flex items-center gap-1.5 text-blue-400 bg-blue-500/20 border border-blue-500/40 px-2 py-0.5 rounded-md font-medium text-[11px]"
+                  >
+                    <div class="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse"></div>
+                    Building {{ Math.round(clip.build_progress || 0) }}%
+                  </span>
+
+                  <!-- Build Completed Status -->
+                  <span
+                    v-else-if="clip.build_status === 'completed'"
+                    class="inline-flex items-center gap-1 text-green-400 bg-green-500/20 border border-green-500/40 px-2 py-0.5 rounded-md font-medium text-[11px]"
+                    title="Clip built successfully"
+                  >
+                    <CheckIcon class="h-3 w-3" />
+                    Built
+                    <span v-if="clip.built_file_size">({{ formatFileSize(clip.built_file_size) }})</span>
+                  </span>
+
+                  <!-- Build Failed Status -->
+                  <span
+                    v-else-if="clip.build_status === 'failed'"
+                    class="inline-flex items-center gap-1 text-red-400 bg-red-500/20 border border-red-500/40 px-2 py-0.5 rounded-md font-medium text-[11px]"
+                    :title="clip.build_error || 'Build failed'"
+                  >
+                    <AlertCircleIcon class="h-3 w-3" />
+                    Failed
+                  </span>
                 </div>
               </div>
             </div>
@@ -389,18 +436,18 @@
         </div>
         <!-- Default State -->
         <div v-else class="h-full flex items-center justify-center px-4">
-          <div class="text-center text-muted-foreground max-w-xs">
-            <div class="mb-6 flex flex-col items-center">
+          <div class="text-center text-muted-foreground max-w-sm">
+            <div class="mb-8 flex flex-col items-center">
               <div
-                class="w-20 h-20 bg-gradient-to-br from-purple-500/10 to-indigo-500/10 rounded-2xl flex items-center justify-center mb-5 border border-purple-500/20"
+                class="w-24 h-24 bg-gradient-to-br from-purple-500/10 via-indigo-500/10 to-blue-500/10 rounded-2xl flex items-center justify-center mb-6 border border-purple-500/20 shadow-lg shadow-purple-500/5"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
-                  class="h-9 w-9 text-purple-400/70"
+                  class="h-12 w-12 text-purple-400/80"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
-                  stroke-width="2"
+                  stroke-width="1.5"
                 >
                   <path
                     stroke-linecap="round"
@@ -409,14 +456,14 @@
                   />
                 </svg>
               </div>
-              <h4 class="text-base font-semibold text-foreground mb-2">No Clips Yet</h4>
-              <p class="text-sm text-muted-foreground mb-6 leading-relaxed">
+              <h4 class="text-lg font-semibold text-foreground mb-2">No Clips Yet</h4>
+              <p class="text-sm text-muted-foreground/80 mb-8 leading-relaxed">
                 Start detecting clips from your video using AI-powered analysis
               </p>
             </div>
             <button
               @click="handleDetectClips"
-              class="group flex items-center gap-2 px-4 py-2 text-sm font-medium text-foreground border-2 border-border hover:border-foreground/40 rounded-md transition-all mx-auto"
+              class="group inline-flex items-center gap-2.5 px-5 py-2.5 text-sm font-medium text-foreground bg-muted/40 hover:bg-muted/60 border border-border hover:border-foreground/50 rounded-lg transition-all hover:shadow-lg hover:scale-105 active:scale-100"
               title="Detect Clips"
             >
               <svg
@@ -433,7 +480,7 @@
                   d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                 />
               </svg>
-              Detect Clips
+              <span>Detect Clips</span>
             </button>
           </div>
         </div>
@@ -948,7 +995,7 @@
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       showErrorMessage(
         'Build Failed',
-        `Failed to build clip "${clip.current_version?.name || clip.name || 'Untitled'}": ${errorMessage}`
+        `Failed to build clip "${clip.current_version_name || clip.name || 'Untitled'}": ${errorMessage}`
       );
     }
   }
@@ -1058,7 +1105,7 @@
           if (clip) {
             showSuccessMessage(
               'Clip Built Successfully',
-              `Clip "${clip.current_version?.name || clip.name || 'Untitled'}" has been built successfully! (${formatFileSize(file_size || 0)})`
+              `Clip "${clip.current_version_name || clip.name || 'Untitled'}" has been built successfully! (${formatFileSize(file_size || 0)})`
             );
           } else {
             showSuccessMessage(
@@ -1086,7 +1133,7 @@
           if (clip) {
             showErrorMessage(
               'Build Failed',
-              `Failed to build clip "${clip.current_version?.name || clip.name || 'Untitled'}": ${error || 'Unknown error'}`
+              `Failed to build clip "${clip.current_version_name || clip.name || 'Untitled'}": ${error || 'Unknown error'}`
             );
           } else {
             showErrorMessage('Build Failed', `Failed to build clip: ${error || 'Unknown error'}`);
