@@ -49,48 +49,66 @@
         </div>
 
         <!-- RGB Sliders -->
-        <div class="space-y-2">
+        <div class="space-y-3">
           <label class="text-xs font-medium text-muted-foreground block">RGB Values</label>
 
           <!-- Red -->
           <div class="flex items-center gap-2">
-            <span class="text-xs text-red-400 w-4">R</span>
-            <input
-              type="range"
-              v-model.number="rgb.r"
-              @input="onRgbChange"
-              min="0"
-              max="255"
-              class="flex-1 h-1.5 bg-red-900/30 rounded slider-rgb"
-            />
+            <span class="text-xs text-red-400 w-4 font-medium">R</span>
+            <div class="relative flex-1 h-2 bg-muted-foreground/30 rounded-lg">
+              <div
+                class="absolute left-0 top-0 h-full bg-red-500 rounded-lg transition-all duration-200"
+                :style="{ width: `${(rgb.r / 255) * 100}%` }"
+              ></div>
+              <input
+                type="range"
+                v-model.number="rgb.r"
+                @input="onRgbChange"
+                min="0"
+                max="255"
+                class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+              />
+            </div>
             <span class="text-xs text-foreground w-8 text-right font-mono">{{ rgb.r }}</span>
           </div>
 
           <!-- Green -->
           <div class="flex items-center gap-2">
-            <span class="text-xs text-green-400 w-4">G</span>
-            <input
-              type="range"
-              v-model.number="rgb.g"
-              @input="onRgbChange"
-              min="0"
-              max="255"
-              class="flex-1 h-1.5 bg-green-900/30 rounded slider-rgb"
-            />
+            <span class="text-xs text-green-400 w-4 font-medium">G</span>
+            <div class="relative flex-1 h-2 bg-muted-foreground/30 rounded-lg">
+              <div
+                class="absolute left-0 top-0 h-full bg-green-500 rounded-lg transition-all duration-200"
+                :style="{ width: `${(rgb.g / 255) * 100}%` }"
+              ></div>
+              <input
+                type="range"
+                v-model.number="rgb.g"
+                @input="onRgbChange"
+                min="0"
+                max="255"
+                class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+              />
+            </div>
             <span class="text-xs text-foreground w-8 text-right font-mono">{{ rgb.g }}</span>
           </div>
 
           <!-- Blue -->
           <div class="flex items-center gap-2">
-            <span class="text-xs text-blue-400 w-4">B</span>
-            <input
-              type="range"
-              v-model.number="rgb.b"
-              @input="onRgbChange"
-              min="0"
-              max="255"
-              class="flex-1 h-1.5 bg-blue-900/30 rounded slider-rgb"
-            />
+            <span class="text-xs text-blue-400 w-4 font-medium">B</span>
+            <div class="relative flex-1 h-2 bg-muted-foreground/30 rounded-lg">
+              <div
+                class="absolute left-0 top-0 h-full bg-blue-500 rounded-lg transition-all duration-200"
+                :style="{ width: `${(rgb.b / 255) * 100}%` }"
+              ></div>
+              <input
+                type="range"
+                v-model.number="rgb.b"
+                @input="onRgbChange"
+                min="0"
+                max="255"
+                class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+              />
+            </div>
             <span class="text-xs text-foreground w-8 text-right font-mono">{{ rgb.b }}</span>
           </div>
         </div>
@@ -284,7 +302,7 @@
 </script>
 
 <style scoped>
-  .slider-rgb {
+  .slider {
     -webkit-appearance: none;
     appearance: none;
     background: transparent;
@@ -292,17 +310,17 @@
     outline: none;
   }
 
-  .slider-rgb::-webkit-slider-track {
+  .slider::-webkit-slider-track {
     background: transparent;
-    height: 6px;
-    border-radius: 3px;
+    height: 100%;
+    border-radius: 0.5rem;
   }
 
-  .slider-rgb::-webkit-slider-thumb {
+  .slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     background: white;
     cursor: pointer;
@@ -310,20 +328,21 @@
     transition: all 0.2s ease;
   }
 
-  .slider-rgb::-webkit-slider-thumb:hover {
+  .slider::-webkit-slider-thumb:hover {
     transform: scale(1.2);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
   }
 
-  .slider-rgb::-moz-range-track {
+  .slider::-moz-range-track {
     background: transparent;
-    height: 6px;
-    border-radius: 3px;
+    height: 100%;
+    border-radius: 0.5rem;
     border: none;
   }
 
-  .slider-rgb::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
+  .slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     background: white;
     cursor: pointer;
@@ -332,7 +351,8 @@
     transition: all 0.2s ease;
   }
 
-  .slider-rgb::-moz-range-thumb:hover {
+  .slider::-moz-range-thumb:hover {
     transform: scale(1.2);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
   }
 </style>
