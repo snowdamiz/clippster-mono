@@ -172,14 +172,10 @@
                 {{ preset.description }}
               </p>
             </div>
-            <div
+            <button
               @click.stop="presetToDelete = preset.id"
-              class="flex-shrink-0 w-7 h-7 rounded-md flex items-center justify-center transition-all text-muted-foreground/50 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 cursor-pointer"
+              class="flex-shrink-0 w-7 h-7 rounded-md flex items-center justify-center transition-all text-muted-foreground/50 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100"
               title="Delete preset"
-              role="button"
-              tabindex="0"
-              @keydown.enter.stop="presetToDelete = preset.id"
-              @keydown.space.prevent.stop="presetToDelete = preset.id"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -195,7 +191,7 @@
                   d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                 />
               </svg>
-            </div>
+            </button>
           </button>
         </div>
       </div>
