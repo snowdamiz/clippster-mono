@@ -123,32 +123,91 @@
               transitionDuration: `${getWordAnimationDuration(wordInfo)}s`,
             }"
           >
-            <!-- Layer 1 (bottom): Shadow + Border 2 - only render if border2 width > 0 -->
+            <!-- Render word using SVG to allow rounded line joins -->
             <span
-              v-if="subtitleSettings && (subtitleSettings.border2Width > 0 || subtitleSettings.border1Width > 0)"
-              class="subtitle-layer shadow-border2-layer"
-              :style="getShadowBorder2Style"
-            >
-              {{ wordInfo.word }}
-            </span>
-
-            <!-- Layer 2 (middle): Border 1 - only render if border1 width > 0 -->
-            <span
-              v-if="subtitleSettings && subtitleSettings.border1Width > 0"
-              class="subtitle-layer border1-layer"
-              :style="getBorder1Style"
-            >
-              {{ wordInfo.word }}
-            </span>
-
-            <!-- Layer 3 (top): Text - always render -->
-            <span
-              class="subtitle-layer text-layer"
+              class="invisible pointer-events-none select-none"
               :class="{ 'current-word': isCurrentWord(wordInfo) }"
               :style="getTextStyle"
             >
               {{ wordInfo.word }}
             </span>
+
+            <svg class="absolute inset-0 w-full h-full overflow-visible" style="pointer-events: none">
+              <defs>
+                <!-- Filter for drop shadow that can apply to the stroke -->
+                <filter :id="`shadow-${index}`" x="-50%" y="-50%" width="200%" height="200%">
+                  <feDropShadow
+                    v-if="subtitleSettings?.shadowBlur > 0"
+                    :dx="subtitleSettings.shadowOffsetX * finalFontSizeScale"
+                    :dy="subtitleSettings.shadowOffsetY * finalFontSizeScale"
+                    :stdDeviation="subtitleSettings.shadowBlur * finalFontSizeScale"
+                    :flood-color="subtitleSettings.shadowColor"
+                  />
+                </filter>
+              </defs>
+
+              <g :style="{ transformOrigin: 'center', transformBox: 'fill-box' }">
+                <!-- Layer 1 (bottom): Border 2 (Outer) with Shadow -->
+                <text
+                  v-if="subtitleSettings && (subtitleSettings.border2Width > 0 || subtitleSettings.border1Width > 0)"
+                  x="50%"
+                  y="55%"
+                  dominant-baseline="middle"
+                  text-anchor="middle"
+                  :style="{
+                    fontFamily: subtitleSettings.fontFamily,
+                    fontWeight: subtitleSettings.fontWeight,
+                    fontSize: getTextStyle.fontSize,
+                    stroke: subtitleSettings.border2Color,
+                    strokeWidth:
+                      (subtitleSettings.border1Width + subtitleSettings.border2Width) * 2 * finalFontSizeScale + 'px',
+                    strokeLinejoin: 'round',
+                    strokeLinecap: 'round',
+                    fill: 'none', // No fill for border layer
+                    filter: `url(#shadow-${index})`,
+                  }"
+                >
+                  {{ wordInfo.word }}
+                </text>
+
+                <!-- Layer 2 (middle): Border 1 (Inner) -->
+                <text
+                  v-if="subtitleSettings && subtitleSettings.border1Width > 0"
+                  x="50%"
+                  y="55%"
+                  dominant-baseline="middle"
+                  text-anchor="middle"
+                  :style="{
+                    fontFamily: subtitleSettings.fontFamily,
+                    fontWeight: subtitleSettings.fontWeight,
+                    fontSize: getTextStyle.fontSize,
+                    stroke: subtitleSettings.border1Color,
+                    strokeWidth: subtitleSettings.border1Width * 2 * finalFontSizeScale + 'px',
+                    strokeLinejoin: 'round',
+                    strokeLinecap: 'round',
+                    fill: 'none',
+                  }"
+                >
+                  {{ wordInfo.word }}
+                </text>
+
+                <!-- Layer 3 (top): Fill Text -->
+                <text
+                  x="50%"
+                  y="55%"
+                  dominant-baseline="middle"
+                  text-anchor="middle"
+                  :style="{
+                    fontFamily: subtitleSettings.fontFamily,
+                    fontWeight: subtitleSettings.fontWeight,
+                    fontSize: getTextStyle.fontSize,
+                    fill: subtitleSettings?.textColor || '#FFFFFF',
+                  }"
+                >
+                  {{ wordInfo.word }}
+                </text>
+              </g>
+            </svg>
           </span>
         </div>
       </div>
@@ -545,65 +604,18 @@
     };
   });
 
-  // Style for shadow + border2 layer (bottom layer)
-  const getShadowBorder2Style = computed(() => {
-    if (!props.subtitleSettings) return {};
-
-    const settings = props.subtitleSettings;
-    const adjustedBorder1 = settings.border1Width * finalFontSizeScale.value;
-    const adjustedBorder2 = settings.border2Width * finalFontSizeScale.value;
-    const totalStroke = adjustedBorder1 + adjustedBorder2;
-
-    // Use filter: drop-shadow() instead of text-shadow so the shadow applies to the entire
-    // rendered element including the stroke, not just the text path
-    let dropShadow = 'none';
-    if (settings.shadowBlur > 0) {
-      const offsetX = settings.shadowOffsetX * finalFontSizeScale.value;
-      const offsetY = settings.shadowOffsetY * finalFontSizeScale.value;
-      const blur = settings.shadowBlur * finalFontSizeScale.value;
-      dropShadow = `drop-shadow(${offsetX}px ${offsetY}px ${blur}px ${settings.shadowColor})`;
-    }
-
-    return {
-      // Use transparent color so only the stroke is visible, not the fill
-      color: 'transparent',
-      WebkitTextStroke: `${totalStroke}px ${settings.border2Color}`,
-      WebkitTextFillColor: 'transparent',
-      filter: dropShadow,
-      paintOrder: 'stroke fill',
-      fontFamily: `"${settings.fontFamily}", Arial, sans-serif`,
-      fontWeight: settings.fontWeight,
-    };
-  });
-
-  // Style for border1 layer (middle layer)
-  const getBorder1Style = computed(() => {
-    if (!props.subtitleSettings) return {};
-
-    const settings = props.subtitleSettings;
-    const adjustedBorder1 = settings.border1Width * finalFontSizeScale.value;
-
-    return {
-      // Use transparent color so only the stroke is visible, not the fill
-      color: 'transparent',
-      WebkitTextStroke: `${adjustedBorder1}px ${settings.border1Color}`,
-      WebkitTextFillColor: 'transparent',
-      paintOrder: 'stroke fill',
-      fontFamily: `"${settings.fontFamily}", Arial, sans-serif`,
-      fontWeight: settings.fontWeight,
-    };
-  });
-
   // Style for text layer (top layer)
   const getTextStyle = computed(() => {
     if (!props.subtitleSettings) return {};
 
     const settings = props.subtitleSettings;
+    const adjustedFontSize = Math.round(settings.fontSize * finalFontSizeScale.value);
 
     return {
       color: settings.textColor,
       fontFamily: `"${settings.fontFamily}", Arial, sans-serif`,
       fontWeight: settings.fontWeight,
+      fontSize: `${adjustedFontSize}px`,
     };
   });
 
@@ -742,34 +754,11 @@
     will-change: transform;
   }
 
-  .subtitle-layer {
-    position: absolute;
-    top: 0;
-    left: 0;
-    white-space: nowrap;
-  }
-
-  /* Bottom layer: shadow + border2 */
-  .shadow-border2-layer {
-    z-index: 1;
-  }
-
-  /* Middle layer: border1 */
-  .border1-layer {
-    z-index: 2;
-  }
-
-  /* Top layer: text */
-  .text-layer {
-    position: relative;
-    z-index: 3;
-  }
-
-  .text-layer.current-word {
-    /* Animation scale is applied to the parent word-stack */
-  }
-
   .subtitle-word-stack:has(.current-word) {
+    /* Animation scale logic is handled via transform on parent or logic in JS if needed */
+    /* But here we kept the transform logic on the stack itself? */
+    /* The :class="{ 'current-word': isCurrentWord(wordInfo) }" is now on the ghost span? No. */
+    /* We need to make sure the transform still works */
     transform: scale(1.15);
   }
 </style>
