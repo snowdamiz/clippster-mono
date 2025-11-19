@@ -7,6 +7,14 @@ use crate::storage;
 use crate::ffmpeg_utils::{get_video_duration_sync, parse_video_info_from_ffmpeg_output};
 use std::io::Write;
 use tauri_plugin_shell::ShellExt;
+use futures::future::join_all;
+
+// Video info cache for eliminating redundant ffmpeg probes
+static VIDEO_INFO_CACHE: Lazy<Arc<Mutex<HashMap<String, crate::ffmpeg_utils::VideoInfo>>>> = 
+    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+
+// Intro/outro processing cache per build session
+type IntroOutroCache = HashMap<(String, String, u32, u32, u32), std::path::PathBuf>;
 
 // Subtitle settings structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -324,7 +332,7 @@ async fn build_clip_internal_simple(
     intro_path: Option<&str>,
     intro_duration: Option<f64>,
     outro_path: Option<&str>,
-    outro_duration: Option<f64>
+    _outro_duration: Option<f64>
 ) -> Result<ClipBuildResult, String> {
 
     // Emit progress
@@ -362,130 +370,175 @@ async fn build_clip_internal_simple(
     let mut first_thumbnail_path: Option<std::path::PathBuf> = None;
     let mut total_file_size: u64 = 0;
     let mut clip_duration: Option<f64> = None;
+    
+    // Create intro/outro cache for this build session (thread-safe for parallel builds)
+    let intro_outro_cache = Arc::new(Mutex::new(IntroOutroCache::new()));
 
-    // Build clip for each aspect ratio
+    // Build clips for all aspect ratios IN PARALLEL for maximum speed
     let total_ratios = aspect_ratios.len();
-    for (ratio_idx, aspect_ratio_str) in aspect_ratios.iter().enumerate() {
-        println!("[Rust] Building clip for aspect ratio: {}", aspect_ratio_str);
+    println!("[Rust] Building {} aspect ratios in parallel...", total_ratios);
+    
+    let build_tasks: Vec<_> = aspect_ratios.iter().enumerate().map(|(ratio_idx, aspect_ratio_str)| {
+        let app = app.clone();
+        let video_path = video_path.to_string();
+        let clip_id = clip_id.to_string();
+        let project_id = project_id.to_string();
+        let clip_base_dir = clip_base_dir.clone();
+        let segments = segments.to_vec();
+        let subtitle_settings = subtitle_settings.clone();
+        let transcript_words = transcript_words.clone();
+        let quality = quality.to_string();
+        let output_format = output_format.to_string();
+        let intro_path = intro_path.map(|s| s.to_string());
+        let outro_path = outro_path.map(|s| s.to_string());
+        let video_info = video_info.clone();
+        let intro_outro_cache = intro_outro_cache.clone();
+        let aspect_ratio_str = aspect_ratio_str.clone();
         
-        let progress_start = 10.0 + (ratio_idx as f64 / total_ratios as f64) * 75.0;
-        let _ = app.emit("clip-build-progress", ClipBuildProgress {
-            clip_id: clip_id.to_string(),
-            project_id: project_id.to_string(),
-            progress: progress_start,
-            stage: "building".to_string(),
-            message: format!("Building {} ({}/{})", aspect_ratio_str, ratio_idx + 1, total_ratios),
-            error: None,
-        });
+        async move {
+            println!("[Rust] Building clip for aspect ratio: {}", aspect_ratio_str);
+            
+            let progress_start = 10.0 + (ratio_idx as f64 / total_ratios as f64) * 75.0;
+            let _ = app.emit("clip-build-progress", ClipBuildProgress {
+                clip_id: clip_id.clone(),
+                project_id: project_id.clone(),
+                progress: progress_start,
+                stage: "building".to_string(),
+                message: format!("Building {} ({}/{})", aspect_ratio_str, ratio_idx + 1, total_ratios),
+                error: None,
+            });
 
-        // Parse aspect ratio string (e.g., "16:9")
-        let aspect_ratio = parse_aspect_ratio(aspect_ratio_str)?;
-        
-        // Create filename with aspect ratio (replace : with -) and selected format (mp4/mov)
-        let ratio_suffix = aspect_ratio_str.replace(":", "-");
-        let output_filename = format!("clip_{}.{}", ratio_suffix, output_format);  // Format is applied here!
-        let output_path = clip_base_dir.join(&output_filename);
+            // Parse aspect ratio string (e.g., "16:9")
+            let aspect_ratio = parse_aspect_ratio(&aspect_ratio_str)?;
+            
+            // Create filename with aspect ratio (replace : with -) and selected format (mp4/mov)
+            let ratio_suffix = aspect_ratio_str.replace(":", "-");
+            let output_filename = format!("clip_{}.{}", ratio_suffix, output_format);
+            let output_path = clip_base_dir.join(&output_filename);
 
-        // Generate subtitle file if needed for this aspect ratio
-        let subtitle_file = if let (Some(settings), Some(words)) = (&subtitle_settings, &transcript_words) {
-            if settings.enabled {
-                // Get fonts directory
-                let fonts_dir = get_fonts_dir(app).ok();
-                
-                let sub_path = clip_base_dir.join(format!("subtitles_{}.ass", ratio_suffix));
-                // Pass intro_duration as time offset for subtitle timings
-                let subtitle_offset = intro_duration.unwrap_or(0.0);
-                generate_ass_file(
-                    settings, 
-                    words, 
-                    segments, 
-                    &sub_path, 
-                    max_words.unwrap_or(4), 
-                    Some(&aspect_ratio),
-                    video_info.width,
-                    video_info.height,
-                    fonts_dir.as_deref(),
-                    subtitle_offset
-                ).map_err(|e| format!("Failed to generate subtitle file: {}", e))?;
-                
-                // Debug: Log first few lines of generated ASS file
-                if let Ok(ass_content) = std::fs::read_to_string(&sub_path) {
-                    let lines: Vec<&str> = ass_content.lines().take(30).collect();
-                    println!("[Rust] Generated ASS file preview (first 30 lines):");
-                    for (i, line) in lines.iter().enumerate() {
-                        println!("[Rust]   {}: {}", i+1, line);
-                    }
+            // Generate subtitle file if needed for this aspect ratio
+            let subtitle_file = if let (Some(settings), Some(words)) = (&subtitle_settings, &transcript_words) {
+                if settings.enabled {
+                    // Get fonts directory
+                    let fonts_dir = get_fonts_dir(&app).ok();
+                    
+                    let sub_path = clip_base_dir.join(format!("subtitles_{}.ass", ratio_suffix));
+                    // Pass intro_duration as time offset for subtitle timings
+                    let subtitle_offset = intro_duration.unwrap_or(0.0);
+                    generate_ass_file(
+                        settings, 
+                        words, 
+                        &segments, 
+                        &sub_path, 
+                        max_words.unwrap_or(4), 
+                        Some(&aspect_ratio),
+                        video_info.width,
+                        video_info.height,
+                        fonts_dir.as_deref(),
+                        subtitle_offset
+                    ).map_err(|e| format!("Failed to generate subtitle file: {}", e))?;
+                    
+                    Some(sub_path)
+                } else {
+                    None
                 }
-                
-                Some(sub_path)
             } else {
                 None
+            };
+
+            // Build clip based on segments with aspect ratio cropping
+            // Note: We pass the Arc<Mutex<>> cache, and lock/unlock inside the build functions
+            if segments.len() == 1 {
+                println!("[Rust] Building single-segment clip for {}", aspect_ratio_str);
+                build_single_segment_clip_with_settings(
+                    &app,
+                    &video_path,
+                    &output_path,
+                    &segments[0],
+                    subtitle_file.as_deref(),
+                    &aspect_ratio,
+                    &quality,
+                    frame_rate,
+                    &output_format,
+                    intro_path.as_deref(),
+                    outro_path.as_deref(),
+                    intro_outro_cache.clone()
+                ).await?;
+            } else {
+                println!("[Rust] Building multi-segment clip for {} with {} segments", aspect_ratio_str, segments.len());
+                build_multi_segment_clip_with_settings(
+                    &app,
+                    &video_path,
+                    &output_path,
+                    &segments,
+                    subtitle_file.as_deref(),
+                    &aspect_ratio,
+                    &quality,
+                    frame_rate,
+                    &output_format,
+                    intro_path.as_deref(),
+                    outro_path.as_deref(),
+                    intro_outro_cache.clone()
+                ).await?;
             }
-        } else {
-            None
-        };
 
-        // Build clip based on segments with aspect ratio cropping
-        if segments.len() == 1 {
-            println!("[Rust] Building single-segment clip for {}", aspect_ratio_str);
-            build_single_segment_clip_with_settings(
-                app,
-                video_path,
-                &output_path,
-                &segments[0],
-                subtitle_file.as_deref(),
-                &aspect_ratio,
-                quality,
-                frame_rate,
-                output_format,
-                intro_path,
-                outro_path
-            ).await?;
-        } else {
-            println!("[Rust] Building multi-segment clip for {} with {} segments", aspect_ratio_str, segments.len());
-            build_multi_segment_clip_with_settings(
-                app,
-                video_path,
-                &output_path,
-                segments,
-                subtitle_file.as_deref(),
-                &aspect_ratio,
-                quality,
-                frame_rate,
-                output_format,
-                intro_path,
-                outro_path
-            ).await?;
+            // Clean up subtitle file
+            if let Some(sub_path) = subtitle_file {
+                let _ = std::fs::remove_file(sub_path);
+            }
+
+            // Generate thumbnail for the first aspect ratio
+            let thumbnail = if ratio_idx == 0 {
+                println!("[Rust] Generating thumbnail for first aspect ratio...");
+                generate_clip_thumbnail_simple(&app, &output_path, &clip_id).await?
+            } else {
+                None
+            };
+
+            // Get file metadata
+            let metadata = std::fs::metadata(&output_path)
+                .map_err(|e| format!("Failed to get output file metadata: {}", e))?;
+            let file_size = metadata.len();
+
+            // Get clip duration (from first clip)
+            let duration = if ratio_idx == 0 {
+                get_video_duration_sync(&app, output_path.to_str().ok_or("Invalid output path")?).await.ok()
+            } else {
+                None
+            };
+
+            // Return build result
+            Ok::<_, String>((
+                output_path.to_string_lossy().to_string(),
+                file_size,
+                duration,
+                thumbnail,
+                ratio_idx
+            ))
         }
+    }).collect();
 
-        // Clean up subtitle file
-        if let Some(sub_path) = subtitle_file {
-            let _ = std::fs::remove_file(sub_path);
-        }
-
-        // Generate thumbnail for the first aspect ratio
-        if ratio_idx == 0 {
-            println!("[Rust] Generating thumbnail for first aspect ratio...");
-            first_thumbnail_path = generate_clip_thumbnail_simple(app, &output_path, clip_id).await?;
-        }
-
-        // Get file metadata
-        let metadata = std::fs::metadata(&output_path)
-            .map_err(|e| format!("Failed to get output file metadata: {}", e))?;
-        total_file_size += metadata.len();
-
-        // Get clip duration (from first clip)
-        if ratio_idx == 0 {
-            clip_duration = get_video_duration_sync(app, output_path.to_str().ok_or("Invalid output path")?).await.ok();
-        }
-
-        // Track output paths
-        let output_path_str = output_path.to_string_lossy().to_string();
-        all_output_paths.push(output_path_str.clone());
-        if first_output_path.is_none() {
-            first_output_path = Some(output_path_str);
+    // Wait for all aspect ratios to complete in parallel
+    let build_results = join_all(build_tasks).await;
+    
+    // Process results
+    for result in build_results {
+        match result {
+            Ok((output_path_str, file_size, duration, thumbnail, ratio_idx)) => {
+                all_output_paths.push(output_path_str.clone());
+                total_file_size += file_size;
+                
+                if ratio_idx == 0 {
+                    first_output_path = Some(output_path_str);
+                    first_thumbnail_path = thumbnail;
+                    clip_duration = duration;
+                }
+            },
+            Err(e) => return Err(format!("Aspect ratio build failed: {}", e)),
         }
     }
+    
+    println!("[Rust] All {} aspect ratios built successfully in parallel!", total_ratios);
 
     // Emit completion progress
     println!("[Rust] Emitting completion progress event...");
@@ -556,6 +609,83 @@ fn get_quality_settings(quality: &str) -> (&str, &str) {
     }
 }
 
+// Hardware encoder configuration
+#[derive(Debug, Clone)]
+struct EncoderConfig {
+    codec: String,
+    preset: Option<String>,
+    quality_param: String,
+    quality_value: String,
+}
+
+// Detect available hardware encoders and return optimal encoder config
+async fn detect_hardware_encoder(app: &tauri::AppHandle, quality: &str) -> EncoderConfig {
+    let shell = app.shell();
+    
+    // Try to get ffmpeg encoder list
+    let encoder_check = shell.sidecar("ffmpeg")
+        .map_err(|_| ())
+        .and_then(|cmd| Ok(cmd.args(["-encoders"])));
+    
+    if let Ok(cmd) = encoder_check {
+        if let Ok(output) = cmd.output().await {
+            let encoders = String::from_utf8_lossy(&output.stdout);
+            
+            // Check for NVIDIA NVENC (best quality/speed)
+            if encoders.contains("h264_nvenc") {
+                println!("[Rust] Hardware encoder detected: NVIDIA NVENC");
+                let (_, crf) = get_quality_settings(quality);
+                return EncoderConfig {
+                    codec: "h264_nvenc".to_string(),
+                    preset: Some("p4".to_string()), // p4 = medium quality preset
+                    quality_param: "-cq".to_string(),
+                    quality_value: crf.to_string(), // NVENC uses same CRF values
+                };
+            }
+            
+            // Check for Intel Quick Sync
+            if encoders.contains("h264_qsv") {
+                println!("[Rust] Hardware encoder detected: Intel Quick Sync");
+                let (_, crf) = get_quality_settings(quality);
+                return EncoderConfig {
+                    codec: "h264_qsv".to_string(),
+                    preset: None,
+                    quality_param: "-global_quality".to_string(),
+                    quality_value: crf.to_string(),
+                };
+            }
+            
+            // Check for Apple VideoToolbox (macOS)
+            if encoders.contains("h264_videotoolbox") {
+                println!("[Rust] Hardware encoder detected: Apple VideoToolbox");
+                // VideoToolbox uses different quality scale, map CRF to bitrate
+                let quality_value = match quality {
+                    "low" => "2000000",   // 2 Mbps
+                    "medium" => "5000000", // 5 Mbps
+                    "high" => "10000000",  // 10 Mbps
+                    _ => "5000000",
+                };
+                return EncoderConfig {
+                    codec: "h264_videotoolbox".to_string(),
+                    preset: None,
+                    quality_param: "-b:v".to_string(),
+                    quality_value: quality_value.to_string(),
+                };
+            }
+        }
+    }
+    
+    // Fallback to software encoder
+    println!("[Rust] No hardware encoder detected, using libx264");
+    let (preset, crf) = get_quality_settings(quality);
+    EncoderConfig {
+        codec: "libx264".to_string(),
+        preset: Some(preset.to_string()),
+        quality_param: "-crf".to_string(),
+        quality_value: crf.to_string(),
+    }
+}
+
 // Cancel clip build
 #[tauri::command]
 pub async fn cancel_clip_build(clip_id: String) -> Result<bool, String> {
@@ -588,7 +718,8 @@ async fn build_single_segment_clip_with_settings(
     frame_rate: u32,
     _output_format: &str,  // Format already applied in output_path extension
     intro_path: Option<&str>,
-    outro_path: Option<&str>
+    outro_path: Option<&str>,
+    intro_outro_cache: Arc<Mutex<IntroOutroCache>>
 ) -> Result<(), String> {
     use tauri_plugin_shell::ShellExt;
     let shell = app.shell();
@@ -602,8 +733,8 @@ async fn build_single_segment_clip_with_settings(
     let video_info = get_video_info(app, video_path).await?;
     let (crop_w, crop_h, crop_x, crop_y) = calculate_crop_params(video_info.width, video_info.height, aspect_ratio);
     
-    // Get quality settings
-    let (preset, crf) = get_quality_settings(quality);
+    // Get quality settings (unused in this path, but kept for reference)
+    let (_preset, _crf) = get_quality_settings(quality);
     
     // If intro or outro is present, we need to use the concat approach
     if intro_path.is_some() || outro_path.is_some() {
@@ -617,28 +748,46 @@ async fn build_single_segment_clip_with_settings(
         std::fs::create_dir_all(&temp_dir)
             .map_err(|e| format!("Failed to create temp directory: {}", e))?;
 
+        // Detect hardware encoder for better performance
+        let encoder = detect_hardware_encoder(app, quality).await;
+
         // Extract the main segment without subtitles (we'll add them later if needed)
         let segment_file = temp_dir.join("main_segment.mp4");
         let crop_filter = format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y);
 
+        // Build encoder-specific args
+        let mut args = vec![
+            "-ss".to_string(), format!("{:.3}", start_time),
+            "-i".to_string(), video_path.to_string(),
+            "-t".to_string(), format!("{:.3}", duration),
+            "-vf".to_string(), crop_filter.clone(),
+            "-c:v".to_string(), encoder.codec.clone(),
+        ];
+        
+        // Add preset if applicable
+        if let Some(enc_preset) = &encoder.preset {
+            args.push("-preset".to_string());
+            args.push(enc_preset.clone());
+        }
+        
+        // Add quality parameter
+        args.push(encoder.quality_param.clone());
+        args.push(encoder.quality_value.clone());
+        
+        // Add common parameters
+        args.extend_from_slice(&[
+            "-r".to_string(), frame_rate.to_string(),
+            "-c:a".to_string(), "aac".to_string(),
+            "-b:a".to_string(), "192k".to_string(),
+            "-pix_fmt".to_string(), "yuv420p".to_string(),
+            "-avoid_negative_ts".to_string(), "1".to_string(),
+            "-y".to_string(),
+            segment_file.to_string_lossy().to_string(),
+        ]);
+
         let output = shell.sidecar("ffmpeg")
             .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-            .args([
-                "-ss", &format!("{:.3}", start_time),
-                "-i", video_path,
-                "-t", &format!("{:.3}", duration),
-                "-vf", &crop_filter,
-                "-c:v", "libx264",
-                "-preset", preset,
-                "-crf", crf,
-                "-r", &frame_rate.to_string(),
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-pix_fmt", "yuv420p",
-                "-avoid_negative_ts", "1",
-                "-y",
-                segment_file.to_str().ok_or("Invalid segment path")?,
-            ])
+            .args(args)
             .output()
             .await
             .map_err(|e| format!("Failed to extract segment: {}", e))?;
@@ -663,7 +812,8 @@ async fn build_single_segment_clip_with_settings(
                 quality,
                 frame_rate,
                 crop_w,
-                crop_h
+                crop_h,
+                intro_outro_cache.clone()
             ).await?);
         }
 
@@ -678,7 +828,8 @@ async fn build_single_segment_clip_with_settings(
                 quality,
                 frame_rate,
                 crop_w,
-                crop_h
+                crop_h,
+                intro_outro_cache.clone()
             ).await?);
         }
 
@@ -731,7 +882,7 @@ async fn build_single_segment_clip_with_settings(
 
         // If subtitles are present, burn them now
         if let Some(sub_path) = subtitle_path {
-            println!("[Rust] Burning subtitles...");
+            println!("[Rust] Burning subtitles with hardware acceleration...");
             
             // Get fonts directory
             let fonts_dir_for_burn = get_fonts_dir(app).ok();
@@ -748,23 +899,38 @@ async fn build_single_segment_clip_with_settings(
 
             // Set fontconfig path for FFmpeg to find our custom fonts
             let fontconfig_path = paths.temp.join("fonts.conf");
+            
+            // Build encoder-specific args
+            let mut subtitle_args = vec![
+                "-i".to_string(), concat_output_path.to_string_lossy().to_string(),
+                "-vf".to_string(), vf_arg.clone(),
+                "-c:v".to_string(), encoder.codec.clone(),
+            ];
+            
+            // Add preset if applicable
+            if let Some(enc_preset) = &encoder.preset {
+                subtitle_args.push("-preset".to_string());
+                subtitle_args.push(enc_preset.clone());
+            }
+            
+            // Add quality parameter
+            subtitle_args.push(encoder.quality_param.clone());
+            subtitle_args.push(encoder.quality_value.clone());
+            
+            // Add common parameters
+            subtitle_args.extend_from_slice(&[
+                "-c:a".to_string(), "aac".to_string(),
+                "-b:a".to_string(), "192k".to_string(),
+                "-pix_fmt".to_string(), "yuv420p".to_string(),
+                "-movflags".to_string(), "+faststart".to_string(),
+                "-y".to_string(),
+                output_path.to_string_lossy().to_string(),
+            ]);
 
             let output = shell.sidecar("ffmpeg")
                 .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
                 .env("FONTCONFIG_FILE", fontconfig_path.to_string_lossy().to_string())
-                .args([
-                    "-i", concat_output_path.to_str().ok_or("Invalid concat output path")?,
-                    "-vf", &vf_arg,
-                    "-c:v", "libx264",
-                    "-preset", preset,
-                    "-crf", crf,
-                    "-c:a", "aac",
-                    "-b:a", "192k",
-                    "-pix_fmt", "yuv420p",
-                    "-movflags", "+faststart",
-                    "-y",
-                    output_path.to_str().ok_or("Invalid output path")?,
-                ])
+                .args(subtitle_args)
                 .output()
                 .await
                 .map_err(|e| format!("Failed to burn subtitles: {}", e))?;
@@ -782,10 +948,13 @@ async fn build_single_segment_clip_with_settings(
     }
 
     // Original single-segment path (no intro/outro)
+    // Detect hardware encoder for better performance
+    let encoder = detect_hardware_encoder(app, quality).await;
+    
     // Get fonts directory for subtitle rendering
     let fonts_dir = get_fonts_dir(app).ok();
 
-    // Build video filter
+    // Build video filter combining crop + subtitles in ONE PASS
     // Force RGB24 for accurate subtitle color rendering before applying ASS
     let mut vf_parts = vec![
         format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y),
@@ -805,14 +974,27 @@ async fn build_single_segment_clip_with_settings(
     
     let vf_arg = vf_parts.join(",");
 
-    let args = vec![
+    // Build encoder-specific args
+    let mut args = vec![
         "-ss".to_string(), format!("{:.3}", start_time),
         "-i".to_string(), video_path.to_string(),
         "-t".to_string(), format!("{:.3}", duration),
         "-vf".to_string(), vf_arg,
-        "-c:v".to_string(), "libx264".to_string(),
-        "-preset".to_string(), preset.to_string(),
-        "-crf".to_string(), crf.to_string(),
+        "-c:v".to_string(), encoder.codec.clone(),
+    ];
+    
+    // Add preset if applicable
+    if let Some(preset) = &encoder.preset {
+        args.push("-preset".to_string());
+        args.push(preset.clone());
+    }
+    
+    // Add quality parameter
+    args.push(encoder.quality_param.clone());
+    args.push(encoder.quality_value.clone());
+    
+    // Add common parameters
+    args.extend_from_slice(&[
         "-r".to_string(), frame_rate.to_string(),
         "-c:a".to_string(), "aac".to_string(),
         "-b:a".to_string(), "192k".to_string(),
@@ -821,7 +1003,7 @@ async fn build_single_segment_clip_with_settings(
         "-avoid_negative_ts".to_string(), "1".to_string(),
         "-y".to_string(),
         output_path.to_string_lossy().to_string(),
-    ];
+    ]);
 
     // Set fontconfig path for FFmpeg to find our custom fonts
     let fontconfig_path = storage::init_storage_dirs()
@@ -857,7 +1039,8 @@ async fn build_multi_segment_clip_with_settings(
     frame_rate: u32,
     _output_format: &str,  // Format already applied in output_path extension
     intro_path: Option<&str>,
-    outro_path: Option<&str>
+    outro_path: Option<&str>,
+    intro_outro_cache: Arc<Mutex<IntroOutroCache>>
 ) -> Result<(), String> {
     use tauri_plugin_shell::ShellExt;
     let shell = app.shell();
@@ -877,47 +1060,87 @@ async fn build_multi_segment_clip_with_settings(
     let (crop_w, crop_h, crop_x, crop_y) = calculate_crop_params(video_info.width, video_info.height, aspect_ratio);
     let crop_filter = format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y);
 
-    // Get quality settings
-    let (preset, crf) = get_quality_settings(quality);
+    // Get quality settings (unused in this path, but kept for reference)
+    let (_preset, _crf) = get_quality_settings(quality);
+    
+    // Detect hardware encoder for better performance
+    let encoder = detect_hardware_encoder(app, quality).await;
 
-    // Extract segments with cropping
-    let mut segment_files = Vec::new();
-    for (i, segment) in segments.iter().enumerate() {
-        let start_time: f64 = segment["start_time"].as_f64().ok_or("Invalid start_time")?;
-        let end_time: f64 = segment["end_time"].as_f64().ok_or("Invalid end_time")?;
+    // Extract segments with cropping IN PARALLEL for speed
+    println!("[Rust] Extracting {} segments in parallel...", segments.len());
+    let segment_tasks: Vec<_> = segments.iter().enumerate().map(|(i, segment)| {
+        let start_time: f64 = segment["start_time"].as_f64().unwrap_or(0.0);
+        let end_time: f64 = segment["end_time"].as_f64().unwrap_or(0.0);
         let duration = end_time - start_time;
-
         let segment_file = temp_dir.join(format!("segment_{:03}.mp4", i));
+        let crop_filter = crop_filter.clone();
+        let video_path = video_path.to_string();
+        let app = app.clone();
+        let encoder = encoder.clone();
+        let frame_rate_str = frame_rate.to_string();
 
-        let output = shell.sidecar("ffmpeg")
-            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-            .args([
-                "-ss", &format!("{:.3}", start_time),
-                "-i", video_path,
-                "-t", &format!("{:.3}", duration),
-                "-vf", &crop_filter,
-                "-c:v", "libx264",
-                "-preset", preset,
-                "-crf", crf,
-                "-r", &frame_rate.to_string(),
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-pix_fmt", "yuv420p",
-                "-avoid_negative_ts", "1",
-                "-y",
-                segment_file.to_str().ok_or("Invalid segment path")?,
-            ])
-            .output()
-            .await
-            .map_err(|e| format!("Failed to extract segment {}: {}", i, e))?;
+        async move {
+            let shell = app.shell();
+            
+            // Build encoder-specific args
+            let mut args = vec![
+                "-ss".to_string(), format!("{:.3}", start_time),
+                "-i".to_string(), video_path.clone(),
+                "-t".to_string(), format!("{:.3}", duration),
+                "-vf".to_string(), crop_filter.clone(),
+                "-c:v".to_string(), encoder.codec.clone(),
+            ];
+            
+            // Add preset if applicable
+            if let Some(preset) = &encoder.preset {
+                args.push("-preset".to_string());
+                args.push(preset.clone());
+            }
+            
+            // Add quality parameter
+            args.push(encoder.quality_param.clone());
+            args.push(encoder.quality_value.clone());
+            
+            // Add common parameters
+            args.extend_from_slice(&[
+                "-r".to_string(), frame_rate_str.clone(),
+                "-c:a".to_string(), "aac".to_string(),
+                "-b:a".to_string(), "192k".to_string(),
+                "-pix_fmt".to_string(), "yuv420p".to_string(),
+                "-avoid_negative_ts".to_string(), "1".to_string(),
+                "-y".to_string(),
+                segment_file.to_string_lossy().to_string(),
+            ]);
+            
+            let output = shell.sidecar("ffmpeg")
+                .map_err(|e| format!("Failed to get ffmpeg sidecar for segment {}: {}", i, e))?
+                .args(args)
+                .output()
+                .await
+                .map_err(|e| format!("Failed to extract segment {}: {}", i, e))?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Failed to extract segment {}: {}", i, stderr));
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("Failed to extract segment {}: {}", i, stderr));
+            }
+
+            Ok::<std::path::PathBuf, String>(segment_file)
         }
+    }).collect();
 
-        segment_files.push(segment_file.clone());
+    // Wait for all segments to complete in parallel
+    let segment_results = join_all(segment_tasks).await;
+    
+    // Check for errors and collect successful segment files
+    let mut segment_files = Vec::new();
+    for (i, result) in segment_results.into_iter().enumerate() {
+        match result {
+            Ok(path) => segment_files.push(path),
+            Err(e) => return Err(format!("Segment {} failed: {}", i, e)),
+        }
     }
+    
+    println!("[Rust] All {} segments extracted successfully", segment_files.len());
 
     // Process intro and outro if provided
     let mut intro_file: Option<std::path::PathBuf> = None;
@@ -934,7 +1157,8 @@ async fn build_multi_segment_clip_with_settings(
             quality,
             frame_rate,
             crop_w,
-            crop_h
+            crop_h,
+            intro_outro_cache.clone()
         ).await?);
     }
 
@@ -949,7 +1173,8 @@ async fn build_multi_segment_clip_with_settings(
             quality,
             frame_rate,
             crop_w,
-            crop_h
+            crop_h,
+            intro_outro_cache.clone()
         ).await?);
     }
 
@@ -1002,9 +1227,9 @@ async fn build_multi_segment_clip_with_settings(
         return Err(format!("FFmpeg concatenation failed: {}", stderr));
     }
 
-    // If subtitles are present, burn them now
+    // If subtitles are present, burn them now with hardware acceleration
     if let Some(sub_path) = subtitle_path {
-        println!("[Rust] Burning subtitles...");
+        println!("[Rust] Burning subtitles with hardware acceleration...");
         
         // Get fonts directory for multi-segment path
         let fonts_dir_for_burn = get_fonts_dir(app).ok();
@@ -1022,23 +1247,38 @@ async fn build_multi_segment_clip_with_settings(
 
         // Set fontconfig path for FFmpeg to find our custom fonts
         let fontconfig_path = paths.temp.join("fonts.conf");
+        
+        // Build encoder-specific args
+        let mut subtitle_args = vec![
+            "-i".to_string(), concat_output_path.to_string_lossy().to_string(),
+            "-vf".to_string(), vf_arg.clone(),
+            "-c:v".to_string(), encoder.codec.clone(),
+        ];
+        
+        // Add preset if applicable
+        if let Some(enc_preset) = &encoder.preset {
+            subtitle_args.push("-preset".to_string());
+            subtitle_args.push(enc_preset.clone());
+        }
+        
+        // Add quality parameter
+        subtitle_args.push(encoder.quality_param.clone());
+        subtitle_args.push(encoder.quality_value.clone());
+        
+        // Add common parameters
+        subtitle_args.extend_from_slice(&[
+            "-c:a".to_string(), "aac".to_string(),
+            "-b:a".to_string(), "192k".to_string(),
+            "-pix_fmt".to_string(), "yuv420p".to_string(),
+            "-movflags".to_string(), "+faststart".to_string(),
+            "-y".to_string(),
+            output_path.to_string_lossy().to_string(),
+        ]);
 
         let output = shell.sidecar("ffmpeg")
             .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
             .env("FONTCONFIG_FILE", fontconfig_path.to_string_lossy().to_string())
-            .args([
-                "-i", concat_output_path.to_str().ok_or("Invalid concat output path")?,
-                "-vf", &vf_arg,
-                "-c:v", "libx264",
-                "-preset", preset,
-                "-crf", crf,
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart",
-                "-y",
-                output_path.to_str().ok_or("Invalid output path")?,
-            ])
+            .args(subtitle_args)
             .output()
             .await
             .map_err(|e| format!("Failed to burn subtitles: {}", e))?;
@@ -1097,6 +1337,7 @@ async fn generate_clip_thumbnail_simple(
 
 // Helper function to prepare intro/outro for concatenation with the main clip
 // This processes the intro/outro to match the aspect ratio, frame rate, and resolution
+// Includes caching to avoid re-processing the same intro/outro multiple times
 async fn prepare_intro_outro_for_concat(
     app: &tauri::AppHandle,
     intro_outro_path: &str,
@@ -1106,19 +1347,40 @@ async fn prepare_intro_outro_for_concat(
     quality: &str,
     frame_rate: u32,
     crop_w: u32,
-    crop_h: u32
+    crop_h: u32,
+    cache: Arc<Mutex<IntroOutroCache>>
 ) -> Result<std::path::PathBuf, String> {
     use tauri_plugin_shell::ShellExt;
+    
+    // Create cache key based on all relevant parameters
+    let cache_key = (
+        intro_outro_path.to_string(),
+        format!("{}:{}", aspect_ratio.width, aspect_ratio.height),
+        frame_rate,
+        crop_w,
+        crop_h
+    );
+    
+    // Check if already processed in this build session
+    {
+        let cache_lock = cache.lock().unwrap();
+        if let Some(cached_path) = cache_lock.get(&cache_key) {
+            if cached_path.exists() {
+                println!("[Rust] Using cached {} from: {}", file_prefix, cached_path.display());
+                return Ok(cached_path.clone());
+            }
+        }
+    } // Lock is dropped here before any await points
+    
     let shell = app.shell();
-
     println!("[Rust] Preparing {} for concat with aspect ratio {}:{}", file_prefix, aspect_ratio.width, aspect_ratio.height);
 
     // Get video info for the intro/outro
     let video_info = get_video_info(app, intro_outro_path).await?;
     let (crop_x, crop_y) = calculate_crop_position(video_info.width, video_info.height, crop_w, crop_h);
 
-    // Get quality settings
-    let (preset, crf) = get_quality_settings(quality);
+    // Detect hardware encoder
+    let encoder = detect_hardware_encoder(app, quality).await;
 
     // Create output path in temp directory
     let output_path = temp_dir.join(format!("{}_processed.mp4", file_prefix));
@@ -1126,23 +1388,38 @@ async fn prepare_intro_outro_for_concat(
     // Build crop filter
     let crop_filter = format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y);
 
-    // Process the intro/outro: crop to aspect ratio and set frame rate
+    // Build encoder-specific args
+    let mut args = vec![
+        "-i".to_string(), intro_outro_path.to_string(),
+        "-vf".to_string(), crop_filter.clone(),
+        "-c:v".to_string(), encoder.codec.clone(),
+    ];
+    
+    // Add preset if applicable
+    if let Some(preset) = &encoder.preset {
+        args.push("-preset".to_string());
+        args.push(preset.clone());
+    }
+    
+    // Add quality parameter
+    args.push(encoder.quality_param.clone());
+    args.push(encoder.quality_value.clone());
+    
+    // Add common parameters
+    args.extend_from_slice(&[
+        "-r".to_string(), frame_rate.to_string(),
+        "-c:a".to_string(), "aac".to_string(),
+        "-b:a".to_string(), "192k".to_string(),
+        "-pix_fmt".to_string(), "yuv420p".to_string(),
+        "-avoid_negative_ts".to_string(), "1".to_string(),
+        "-y".to_string(),
+        output_path.to_string_lossy().to_string(),
+    ]);
+
+    // Process the intro/outro
     let output = shell.sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args([
-            "-i", intro_outro_path,
-            "-vf", &crop_filter,
-            "-c:v", "libx264",
-            "-preset", preset,
-            "-crf", crf,
-            "-r", &frame_rate.to_string(),
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-pix_fmt", "yuv420p",
-            "-avoid_negative_ts", "1",
-            "-y",
-            output_path.to_str().ok_or("Invalid output path")?,
-        ])
+        .args(args)
         .output()
         .await
         .map_err(|e| format!("Failed to process {}: {}", file_prefix, e))?;
@@ -1153,6 +1430,13 @@ async fn prepare_intro_outro_for_concat(
     }
 
     println!("[Rust] Successfully processed {} to: {}", file_prefix, output_path.display());
+    
+    // Cache the result (lock only for the insertion)
+    {
+        let mut cache_lock = cache.lock().unwrap();
+        cache_lock.insert(cache_key, output_path.clone());
+    }
+    
     Ok(output_path)
 }
 
@@ -1171,8 +1455,19 @@ fn calculate_crop_position(video_width: u32, video_height: u32, crop_w: u32, cro
     (crop_x, crop_y)
 }
 
-// Helper function to get video info with improved parsing
+// Helper function to get video info with caching to eliminate redundant probes
 async fn get_video_info(app: &tauri::AppHandle, video_path: &str) -> Result<crate::ffmpeg_utils::VideoInfo, String> {
+    // Check cache first
+    {
+        let cache = VIDEO_INFO_CACHE.lock().unwrap();
+        if let Some(info) = cache.get(video_path) {
+            println!("[Rust] Using cached video info for: {}", video_path);
+            return Ok(info.clone());
+        }
+    }
+    
+    // Not in cache, fetch from ffmpeg
+    println!("[Rust] Fetching video info from ffmpeg for: {}", video_path);
     let shell = app.shell();
     let output = shell.sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
@@ -1188,13 +1483,21 @@ async fn get_video_info(app: &tauri::AppHandle, video_path: &str) -> Result<crat
     let stderr = String::from_utf8_lossy(&output.stderr);
     
     // Try the standard parser first
-    if let Ok(info) = parse_video_info_from_ffmpeg_output(&stderr) {
-        return Ok(info);
+    let info = if let Ok(info) = parse_video_info_from_ffmpeg_output(&stderr) {
+        info
+    } else {
+        // If that fails, try alternative parsing
+        println!("[Rust] Standard parsing failed, trying alternative method...");
+        parse_video_info_alternative(&stderr)?
+    };
+    
+    // Cache the result
+    {
+        let mut cache = VIDEO_INFO_CACHE.lock().unwrap();
+        cache.insert(video_path.to_string(), info.clone());
     }
     
-    // If that fails, try alternative parsing
-    println!("[Rust] Standard parsing failed, trying alternative method...");
-    parse_video_info_alternative(&stderr)
+    Ok(info)
 }
 
 // Alternative video info parser that's more flexible
