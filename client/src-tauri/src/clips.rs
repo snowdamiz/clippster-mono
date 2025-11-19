@@ -1225,7 +1225,7 @@ fn generate_ass_file(
         1.0 // Wide formats (16:9, 21:9)
     };
 
-    // Apply a correction factor to match the frontend visual size
+    // Apply a correction factor to match the frontend visual size for font size
     // The frontend preview renders fonts larger relative to the video frame due to DPI/scaling differences
     let font_size_scale = font_size_scale * 1.5;
 
@@ -1233,8 +1233,8 @@ fn generate_ass_file(
     // CSS WebkitTextStroke is centered on the path, so only half extends outwards.
     // ASS Outline is entirely outwards. To match the visual thickness of the frontend,
     // we need to divide the stroke width by 2.
-    let adjusted_border1_width = (settings.border1_width * font_size_scale) / 2.0;
-    let adjusted_border2_width = (settings.border2_width * font_size_scale) / 2.0;
+    let adjusted_border1_width = settings.border1_width * font_size_scale * 0.8;
+    let adjusted_border2_width = settings.border2_width * font_size_scale * 0.8;
     // ASS Shadow parameter is an offset depth, calculate from shadow offset X/Y
     // Use the magnitude of the offset vector for proper shadow distance
     let shadow_offset_magnitude = ((settings.shadow_offset_x.powi(2) + settings.shadow_offset_y.powi(2)).sqrt()) * font_size_scale;
