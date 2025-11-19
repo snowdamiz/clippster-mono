@@ -1259,7 +1259,13 @@ fn generate_ass_file(
     // We approximate height as 2 lines + padding for the offset calculation
     let approx_height = (adjusted_font_size as f64 * 2.0) + (adjusted_padding as f64 * 2.0);
     let shift_y_px = approx_height * (settings.text_offset_y as f64 / 100.0);
-    let target_y = (play_res_y as f64 * (settings.position_percentage as f64 / 100.0)) + shift_y_px;
+    
+    // Apply a vertical correction to raise the subtitles slightly
+    // The font scaling (1.5x) pushes the bottom edge down, so we compensate by moving the center up
+    // We use a factor of the font size as a heuristic for the correction
+    let vertical_correction = (adjusted_font_size as f64) * 0.3;
+    
+    let target_y = (play_res_y as f64 * (settings.position_percentage as f64 / 100.0)) + shift_y_px - vertical_correction;
     
     // Use Alignment 5 (Middle Center) to match Vue's translate(-50%, -50%)
     let alignment = 5;
