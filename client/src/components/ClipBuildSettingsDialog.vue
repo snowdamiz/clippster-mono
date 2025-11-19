@@ -52,6 +52,145 @@
                 <span class="text-muted-foreground">Segments:</span>
                 <span class="font-medium text-foreground">{{ clip?.current_version_segments?.length || 0 }}</span>
               </div>
+              <div
+                v-if="selectedIntro || selectedOutro"
+                class="flex items-center justify-between pt-1 border-t border-border/30 mt-2"
+              >
+                <span class="text-muted-foreground">Total Duration:</span>
+                <span class="font-medium text-primary">{{ formatDuration(totalDuration) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Intro Selection -->
+          <div class="space-y-3">
+            <h3 class="text-sm font-semibold text-foreground">Intro Video</h3>
+            <div class="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto custom-scrollbar">
+              <!-- None option -->
+              <button
+                @click="selectedIntro = null"
+                :class="[
+                  'flex items-center gap-3 p-3 rounded-lg border-2 transition-all text-left',
+                  selectedIntro === null
+                    ? 'border-primary bg-primary/10'
+                    : 'border-border/50 bg-muted/20 hover:border-border hover:bg-muted/30',
+                ]"
+              >
+                <div
+                  :class="[
+                    'w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0',
+                    selectedIntro === null ? 'border-primary bg-primary' : 'border-muted-foreground/30',
+                  ]"
+                >
+                  <CheckIcon v-if="selectedIntro === null" class="h-2.5 w-2.5 text-primary-foreground" />
+                </div>
+                <span class="text-sm font-medium text-foreground">None</span>
+              </button>
+
+              <!-- Loading state -->
+              <div v-if="loadingAssets" class="p-3 text-center text-sm text-muted-foreground">Loading intros...</div>
+
+              <!-- Intro options -->
+              <button
+                v-for="intro in intros"
+                :key="intro.id"
+                @click="selectedIntro = intro"
+                :class="[
+                  'flex items-center gap-3 p-3 rounded-lg border-2 transition-all text-left',
+                  selectedIntro?.id === intro.id
+                    ? 'border-primary bg-primary/10'
+                    : 'border-border/50 bg-muted/20 hover:border-border hover:bg-muted/30',
+                ]"
+              >
+                <div
+                  :class="[
+                    'w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0',
+                    selectedIntro?.id === intro.id ? 'border-primary bg-primary' : 'border-muted-foreground/30',
+                  ]"
+                >
+                  <CheckIcon v-if="selectedIntro?.id === intro.id" class="h-2.5 w-2.5 text-primary-foreground" />
+                </div>
+                <div
+                  v-if="getThumbnailUrl(intro)"
+                  class="w-16 h-9 rounded bg-cover bg-center flex-shrink-0"
+                  :style="{ backgroundImage: `url(${getThumbnailUrl(intro)})` }"
+                ></div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium text-foreground truncate">{{ intro.name }}</div>
+                  <div class="text-xs text-muted-foreground">{{ formatDuration(intro.duration || 0) }}</div>
+                </div>
+              </button>
+
+              <!-- Empty state -->
+              <div v-if="!loadingAssets && intros.length === 0" class="p-3 text-center text-sm text-muted-foreground">
+                No intros available. Upload intros in the Assets page.
+              </div>
+            </div>
+          </div>
+
+          <!-- Outro Selection -->
+          <div class="space-y-3">
+            <h3 class="text-sm font-semibold text-foreground">Outro Video</h3>
+            <div class="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto custom-scrollbar">
+              <!-- None option -->
+              <button
+                @click="selectedOutro = null"
+                :class="[
+                  'flex items-center gap-3 p-3 rounded-lg border-2 transition-all text-left',
+                  selectedOutro === null
+                    ? 'border-primary bg-primary/10'
+                    : 'border-border/50 bg-muted/20 hover:border-border hover:bg-muted/30',
+                ]"
+              >
+                <div
+                  :class="[
+                    'w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0',
+                    selectedOutro === null ? 'border-primary bg-primary' : 'border-muted-foreground/30',
+                  ]"
+                >
+                  <CheckIcon v-if="selectedOutro === null" class="h-2.5 w-2.5 text-primary-foreground" />
+                </div>
+                <span class="text-sm font-medium text-foreground">None</span>
+              </button>
+
+              <!-- Loading state -->
+              <div v-if="loadingAssets" class="p-3 text-center text-sm text-muted-foreground">Loading outros...</div>
+
+              <!-- Outro options -->
+              <button
+                v-for="outro in outros"
+                :key="outro.id"
+                @click="selectedOutro = outro"
+                :class="[
+                  'flex items-center gap-3 p-3 rounded-lg border-2 transition-all text-left',
+                  selectedOutro?.id === outro.id
+                    ? 'border-primary bg-primary/10'
+                    : 'border-border/50 bg-muted/20 hover:border-border hover:bg-muted/30',
+                ]"
+              >
+                <div
+                  :class="[
+                    'w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0',
+                    selectedOutro?.id === outro.id ? 'border-primary bg-primary' : 'border-muted-foreground/30',
+                  ]"
+                >
+                  <CheckIcon v-if="selectedOutro?.id === outro.id" class="h-2.5 w-2.5 text-primary-foreground" />
+                </div>
+                <div
+                  v-if="getThumbnailUrl(outro)"
+                  class="w-16 h-9 rounded bg-cover bg-center flex-shrink-0"
+                  :style="{ backgroundImage: `url(${getThumbnailUrl(outro)})` }"
+                ></div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium text-foreground truncate">{{ outro.name }}</div>
+                  <div class="text-xs text-muted-foreground">{{ formatDuration(outro.duration || 0) }}</div>
+                </div>
+              </button>
+
+              <!-- Empty state -->
+              <div v-if="!loadingAssets && outros.length === 0" class="p-3 text-center text-sm text-muted-foreground">
+                No outros available. Upload outros in the Assets page.
+              </div>
             </div>
           </div>
 
@@ -375,9 +514,11 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed } from 'vue';
+  import { ref, computed, watch, onMounted } from 'vue';
   import { WrenchIcon, CheckIcon } from 'lucide-vue-next';
   import type { ClipWithVersion } from '@/services/database';
+  import { getAllIntroOutros, type IntroOutro } from '@/services/database';
+  import { convertFileSrc } from '@tauri-apps/api/core';
 
   const props = defineProps<{
     modelValue: boolean;
@@ -395,6 +536,8 @@
     frameRate: 30 | 60;
     format: 'mp4' | 'mov';
     includeSubtitles: boolean;
+    intro: IntroOutro | null;
+    outro: IntroOutro | null;
   }
 
   // State
@@ -403,6 +546,11 @@
   const quality = ref<'low' | 'medium' | 'high'>('high');
   const frameRate = ref<30 | 60>(30);
   const outputFormat = ref<'mp4' | 'mov'>('mp4');
+  const intros = ref<IntroOutro[]>([]);
+  const outros = ref<IntroOutro[]>([]);
+  const selectedIntro = ref<IntroOutro | null>(null);
+  const selectedOutro = ref<IntroOutro | null>(null);
+  const loadingAssets = ref(false);
 
   // Computed
   const clipDuration = computed(() => {
@@ -411,6 +559,47 @@
     }
     return props.clip.current_version_end_time - props.clip.current_version_start_time;
   });
+
+  const totalDuration = computed(() => {
+    let total = clipDuration.value;
+    if (selectedIntro.value?.duration) total += selectedIntro.value.duration;
+    if (selectedOutro.value?.duration) total += selectedOutro.value.duration;
+    return total;
+  });
+
+  // Load intros and outros when dialog opens
+  watch(
+    () => props.modelValue,
+    async (isOpen) => {
+      if (isOpen && intros.value.length === 0 && outros.value.length === 0) {
+        await loadIntroOutros();
+      }
+    }
+  );
+
+  onMounted(async () => {
+    if (props.modelValue) {
+      await loadIntroOutros();
+    }
+  });
+
+  async function loadIntroOutros() {
+    loadingAssets.value = true;
+    try {
+      const allAssets = await getAllIntroOutros();
+      intros.value = allAssets.filter((a) => a.type === 'intro');
+      outros.value = allAssets.filter((a) => a.type === 'outro');
+    } catch (error) {
+      console.error('Failed to load intro/outros:', error);
+    } finally {
+      loadingAssets.value = false;
+    }
+  }
+
+  function getThumbnailUrl(asset: IntroOutro): string | null {
+    if (!asset.thumbnail_path) return null;
+    return convertFileSrc(asset.thumbnail_path);
+  }
 
   // Methods
   function toggleRatio(ratio: string) {
@@ -442,6 +631,8 @@
       frameRate: frameRate.value,
       format: outputFormat.value,
       includeSubtitles: includeSubtitles.value,
+      intro: selectedIntro.value,
+      outro: selectedOutro.value,
     };
 
     emit('confirm', settings);

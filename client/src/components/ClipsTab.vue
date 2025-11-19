@@ -799,6 +799,10 @@
         frameRate: settings.frameRate,
         outputFormat: settings.format,
         runNumber: clip.run_number || null,
+        introPath: settings.intro?.file_path || null,
+        introDuration: settings.intro?.duration || null,
+        outroPath: settings.outro?.file_path || null,
+        outroDuration: settings.outro?.duration || null,
       });
 
       console.log('[ClipsTab] Clip build started successfully');

@@ -121,7 +121,11 @@ pub async fn build_clip_from_segments(
     quality: String,
     frame_rate: u32,
     output_format: String,
-    run_number: Option<u32>
+    run_number: Option<u32>,
+    intro_path: Option<String>,
+    intro_duration: Option<f64>,
+    outro_path: Option<String>,
+    outro_duration: Option<f64>
 ) -> Result<(), String> {
 
     println!("[Rust] build_clip_from_segments called with:");
@@ -137,6 +141,8 @@ pub async fn build_clip_from_segments(
     println!("[Rust]   frame_rate: {}", frame_rate);
     println!("[Rust]   output_format: {}", output_format);
     println!("[Rust]   run_number: {:?}", run_number);
+    println!("[Rust]   intro_path: {:?}", intro_path);
+    println!("[Rust]   outro_path: {:?}", outro_path);
 
     // Check if clip is already being built
     {
@@ -160,6 +166,8 @@ pub async fn build_clip_from_segments(
     let aspect_ratios_clone = aspect_ratios.clone();
     let quality_clone = quality.clone();
     let output_format_clone = output_format.clone();
+    let intro_path_clone = intro_path.clone();
+    let outro_path_clone = outro_path.clone();
 
     // Send initial progress
     let _ = app.emit("clip-build-progress", ClipBuildProgress {
@@ -190,7 +198,11 @@ pub async fn build_clip_from_segments(
             &quality_clone,
             frame_rate,
             &output_format_clone,
-            run_number
+            run_number,
+            intro_path_clone.as_deref(),
+            intro_duration,
+            outro_path_clone.as_deref(),
+            outro_duration
         ).await {
             Ok(result) => {
                 println!("[Rust] Clip build completed successfully for: {}", clip_id_clone);
@@ -308,7 +320,11 @@ async fn build_clip_internal_simple(
     quality: &str,
     frame_rate: u32,
     output_format: &str,
-    run_number: Option<u32>
+    run_number: Option<u32>,
+    intro_path: Option<&str>,
+    intro_duration: Option<f64>,
+    outro_path: Option<&str>,
+    outro_duration: Option<f64>
 ) -> Result<ClipBuildResult, String> {
 
     // Emit progress
@@ -377,6 +393,8 @@ async fn build_clip_internal_simple(
                 let fonts_dir = get_fonts_dir(app).ok();
                 
                 let sub_path = clip_base_dir.join(format!("subtitles_{}.ass", ratio_suffix));
+                // Pass intro_duration as time offset for subtitle timings
+                let subtitle_offset = intro_duration.unwrap_or(0.0);
                 generate_ass_file(
                     settings, 
                     words, 
@@ -386,7 +404,8 @@ async fn build_clip_internal_simple(
                     Some(&aspect_ratio),
                     video_info.width,
                     video_info.height,
-                    fonts_dir.as_deref()
+                    fonts_dir.as_deref(),
+                    subtitle_offset
                 ).map_err(|e| format!("Failed to generate subtitle file: {}", e))?;
                 
                 // Debug: Log first few lines of generated ASS file
@@ -418,7 +437,9 @@ async fn build_clip_internal_simple(
                 &aspect_ratio,
                 quality,
                 frame_rate,
-                output_format
+                output_format,
+                intro_path,
+                outro_path
             ).await?;
         } else {
             println!("[Rust] Building multi-segment clip for {} with {} segments", aspect_ratio_str, segments.len());
@@ -431,7 +452,9 @@ async fn build_clip_internal_simple(
                 &aspect_ratio,
                 quality,
                 frame_rate,
-                output_format
+                output_format,
+                intro_path,
+                outro_path
             ).await?;
         }
 
@@ -563,7 +586,9 @@ async fn build_single_segment_clip_with_settings(
     aspect_ratio: &AspectRatio,
     quality: &str,
     frame_rate: u32,
-    _output_format: &str  // Format already applied in output_path extension
+    _output_format: &str,  // Format already applied in output_path extension
+    intro_path: Option<&str>,
+    outro_path: Option<&str>
 ) -> Result<(), String> {
     use tauri_plugin_shell::ShellExt;
     let shell = app.shell();
@@ -580,6 +605,183 @@ async fn build_single_segment_clip_with_settings(
     // Get quality settings
     let (preset, crf) = get_quality_settings(quality);
     
+    // If intro or outro is present, we need to use the concat approach
+    if intro_path.is_some() || outro_path.is_some() {
+        println!("[Rust] Intro or outro detected, using concat approach for single segment");
+        
+        // Get storage paths for temporary files
+        let paths = storage::init_storage_dirs()
+            .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+
+        let temp_dir = paths.temp.join(format!("clip_single_segment_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir)
+            .map_err(|e| format!("Failed to create temp directory: {}", e))?;
+
+        // Extract the main segment without subtitles (we'll add them later if needed)
+        let segment_file = temp_dir.join("main_segment.mp4");
+        let crop_filter = format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y);
+
+        let output = shell.sidecar("ffmpeg")
+            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+            .args([
+                "-ss", &format!("{:.3}", start_time),
+                "-i", video_path,
+                "-t", &format!("{:.3}", duration),
+                "-vf", &crop_filter,
+                "-c:v", "libx264",
+                "-preset", preset,
+                "-crf", crf,
+                "-r", &frame_rate.to_string(),
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-pix_fmt", "yuv420p",
+                "-avoid_negative_ts", "1",
+                "-y",
+                segment_file.to_str().ok_or("Invalid segment path")?,
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("Failed to extract segment: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Failed to extract segment: {}", stderr));
+        }
+
+        // Process intro and outro if provided
+        let mut intro_file: Option<std::path::PathBuf> = None;
+        let mut outro_file: Option<std::path::PathBuf> = None;
+
+        if let Some(intro) = intro_path {
+            println!("[Rust] Processing intro video...");
+            intro_file = Some(prepare_intro_outro_for_concat(
+                app,
+                intro,
+                &temp_dir,
+                "intro",
+                aspect_ratio,
+                quality,
+                frame_rate,
+                crop_w,
+                crop_h
+            ).await?);
+        }
+
+        if let Some(outro) = outro_path {
+            println!("[Rust] Processing outro video...");
+            outro_file = Some(prepare_intro_outro_for_concat(
+                app,
+                outro,
+                &temp_dir,
+                "outro",
+                aspect_ratio,
+                quality,
+                frame_rate,
+                crop_w,
+                crop_h
+            ).await?);
+        }
+
+        // Create concat list file
+        let concat_file = temp_dir.join("concat_list.txt");
+        let mut concat_content = String::new();
+        
+        // Add intro if present
+        if let Some(intro_path) = &intro_file {
+            concat_content.push_str(&format!("file '{}'\n", intro_path.display()));
+        }
+        
+        // Add main segment
+        concat_content.push_str(&format!("file '{}'\n", segment_file.display()));
+        
+        // Add outro if present
+        if let Some(outro_path) = &outro_file {
+            concat_content.push_str(&format!("file '{}'\n", outro_path.display()));
+        }
+
+        std::fs::write(&concat_file, concat_content)
+            .map_err(|e| format!("Failed to write concat file: {}", e))?;
+
+        // Concatenate files
+        let concat_output_path = if subtitle_path.is_some() {
+            temp_dir.join("concat_output.mp4")
+        } else {
+            output_path.to_path_buf()
+        };
+
+        let output = shell.sidecar("ffmpeg")
+            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+            .args([
+                "-f", "concat",
+                "-safe", "0",
+                "-i", concat_file.to_str().ok_or("Invalid concat file path")?,
+                "-c", "copy",
+                "-avoid_negative_ts", "1",
+                "-y",
+                concat_output_path.to_str().ok_or("Invalid output path")?,
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("Failed to concatenate: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("FFmpeg concatenation failed: {}", stderr));
+        }
+
+        // If subtitles are present, burn them now
+        if let Some(sub_path) = subtitle_path {
+            println!("[Rust] Burning subtitles...");
+            
+            // Get fonts directory
+            let fonts_dir_for_burn = get_fonts_dir(app).ok();
+            
+            let sub_arg = sub_path.to_string_lossy().replace("\\", "/").replace(":", "\\:");
+            
+            // Build ass filter with fontsdir parameter
+            let vf_arg = if let Some(fdir) = fonts_dir_for_burn {
+                let fonts_dir_str = fdir.to_string_lossy().replace("\\", "/").replace(":", "\\:");
+                format!("format=rgb24,ass='{}':fontsdir='{}'", sub_arg, fonts_dir_str)
+            } else {
+                format!("format=rgb24,ass='{}'", sub_arg)
+            };
+
+            // Set fontconfig path for FFmpeg to find our custom fonts
+            let fontconfig_path = paths.temp.join("fonts.conf");
+
+            let output = shell.sidecar("ffmpeg")
+                .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+                .env("FONTCONFIG_FILE", fontconfig_path.to_string_lossy().to_string())
+                .args([
+                    "-i", concat_output_path.to_str().ok_or("Invalid concat output path")?,
+                    "-vf", &vf_arg,
+                    "-c:v", "libx264",
+                    "-preset", preset,
+                    "-crf", crf,
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart",
+                    "-y",
+                    output_path.to_str().ok_or("Invalid output path")?,
+                ])
+                .output()
+                .await
+                .map_err(|e| format!("Failed to burn subtitles: {}", e))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("FFmpeg subtitle burning failed: {}", stderr));
+            }
+        }
+
+        // Clean up temporary files
+        let _ = std::fs::remove_dir_all(&temp_dir);
+
+        return Ok(());
+    }
+
+    // Original single-segment path (no intro/outro)
     // Get fonts directory for subtitle rendering
     let fonts_dir = get_fonts_dir(app).ok();
 
@@ -653,7 +855,9 @@ async fn build_multi_segment_clip_with_settings(
     aspect_ratio: &AspectRatio,
     quality: &str,
     frame_rate: u32,
-    _output_format: &str  // Format already applied in output_path extension
+    _output_format: &str,  // Format already applied in output_path extension
+    intro_path: Option<&str>,
+    outro_path: Option<&str>
 ) -> Result<(), String> {
     use tauri_plugin_shell::ShellExt;
     let shell = app.shell();
@@ -715,11 +919,57 @@ async fn build_multi_segment_clip_with_settings(
         segment_files.push(segment_file.clone());
     }
 
-    // Create concat list file
+    // Process intro and outro if provided
+    let mut intro_file: Option<std::path::PathBuf> = None;
+    let mut outro_file: Option<std::path::PathBuf> = None;
+
+    if let Some(intro) = intro_path {
+        println!("[Rust] Processing intro video...");
+        intro_file = Some(prepare_intro_outro_for_concat(
+            app,
+            intro,
+            &temp_dir,
+            "intro",
+            aspect_ratio,
+            quality,
+            frame_rate,
+            crop_w,
+            crop_h
+        ).await?);
+    }
+
+    if let Some(outro) = outro_path {
+        println!("[Rust] Processing outro video...");
+        outro_file = Some(prepare_intro_outro_for_concat(
+            app,
+            outro,
+            &temp_dir,
+            "outro",
+            aspect_ratio,
+            quality,
+            frame_rate,
+            crop_w,
+            crop_h
+        ).await?);
+    }
+
+    // Create concat list file with intro, segments, and outro
     let concat_file = temp_dir.join("concat_list.txt");
     let mut concat_content = String::new();
+    
+    // Add intro if present
+    if let Some(intro_path) = &intro_file {
+        concat_content.push_str(&format!("file '{}'\n", intro_path.display()));
+    }
+    
+    // Add main clip segments
     for segment_file in &segment_files {
         concat_content.push_str(&format!("file '{}'\n", segment_file.display()));
+    }
+    
+    // Add outro if present
+    if let Some(outro_path) = &outro_file {
+        concat_content.push_str(&format!("file '{}'\n", outro_path.display()));
     }
 
     std::fs::write(&concat_file, concat_content)
@@ -843,6 +1093,82 @@ async fn generate_clip_thumbnail_simple(
         println!("[Rust] Failed to generate thumbnail: {}", stderr);
         Ok(None)
     }
+}
+
+// Helper function to prepare intro/outro for concatenation with the main clip
+// This processes the intro/outro to match the aspect ratio, frame rate, and resolution
+async fn prepare_intro_outro_for_concat(
+    app: &tauri::AppHandle,
+    intro_outro_path: &str,
+    temp_dir: &std::path::Path,
+    file_prefix: &str,
+    aspect_ratio: &AspectRatio,
+    quality: &str,
+    frame_rate: u32,
+    crop_w: u32,
+    crop_h: u32
+) -> Result<std::path::PathBuf, String> {
+    use tauri_plugin_shell::ShellExt;
+    let shell = app.shell();
+
+    println!("[Rust] Preparing {} for concat with aspect ratio {}:{}", file_prefix, aspect_ratio.width, aspect_ratio.height);
+
+    // Get video info for the intro/outro
+    let video_info = get_video_info(app, intro_outro_path).await?;
+    let (crop_x, crop_y) = calculate_crop_position(video_info.width, video_info.height, crop_w, crop_h);
+
+    // Get quality settings
+    let (preset, crf) = get_quality_settings(quality);
+
+    // Create output path in temp directory
+    let output_path = temp_dir.join(format!("{}_processed.mp4", file_prefix));
+
+    // Build crop filter
+    let crop_filter = format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y);
+
+    // Process the intro/outro: crop to aspect ratio and set frame rate
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args([
+            "-i", intro_outro_path,
+            "-vf", &crop_filter,
+            "-c:v", "libx264",
+            "-preset", preset,
+            "-crf", crf,
+            "-r", &frame_rate.to_string(),
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-pix_fmt", "yuv420p",
+            "-avoid_negative_ts", "1",
+            "-y",
+            output_path.to_str().ok_or("Invalid output path")?,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to process {}: {}", file_prefix, e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("FFmpeg failed to process {}: {}", file_prefix, stderr));
+    }
+
+    println!("[Rust] Successfully processed {} to: {}", file_prefix, output_path.display());
+    Ok(output_path)
+}
+
+// Helper function to calculate crop position (center crop)
+fn calculate_crop_position(video_width: u32, video_height: u32, crop_w: u32, crop_h: u32) -> (u32, u32) {
+    let crop_x = if video_width > crop_w {
+        (video_width - crop_w) / 2
+    } else {
+        0
+    };
+    let crop_y = if video_height > crop_h {
+        (video_height - crop_h) / 2
+    } else {
+        0
+    };
+    (crop_x, crop_y)
 }
 
 // Helper function to get video info with improved parsing
@@ -1147,7 +1473,8 @@ fn generate_ass_file(
     aspect_ratio: Option<&AspectRatio>,
     video_width: u32,
     video_height: u32,
-    fonts_dir: Option<&std::path::Path>
+    fonts_dir: Option<&std::path::Path>,
+    time_offset: f64  // Offset to add to all subtitle times (e.g., intro duration)
 ) -> Result<(), String> {
     let mut file = std::fs::File::create(output_path)
         .map_err(|e| format!("Failed to create subtitle file: {}", e))?;
@@ -1380,9 +1707,9 @@ fn generate_ass_file(
             // Filter words within this segment
             // Add buffer to catch boundary words
             if word.start >= clip_seg_start - 0.1 && word.end <= clip_seg_end + 0.1 {
-                // Calculate relative timing
-                let start_rel = word.start - clip_seg_start + current_clip_time;
-                let end_rel = word.end - clip_seg_start + current_clip_time;
+                // Calculate relative timing and add the time offset (e.g., intro duration)
+                let start_rel = word.start - clip_seg_start + current_clip_time + time_offset;
+                let end_rel = word.end - clip_seg_start + current_clip_time + time_offset;
                 
                 clip_timeline_words.push(ClipWord {
                     word: word.word.clone(),
@@ -1462,7 +1789,7 @@ fn generate_ass_file(
         // (And the gap after C[i] is covered by C[i+1] starting at C[i].end)
         
         let chunk_visible_start = if i == 0 {
-            0.0
+            time_offset  // Start at the time offset (after intro)
         } else {
             clip_timeline_words[start_idx - 1].end
         };
