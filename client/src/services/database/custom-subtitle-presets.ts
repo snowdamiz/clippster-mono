@@ -18,14 +18,14 @@ export async function createCustomSubtitlePreset(
       id, name, description,
       font_family, font_size, font_weight,
       text_color, background_color, background_enabled,
-      outline_width, outline_color,
+      border1_width, border1_color, border2_width, border2_color,
       shadow_offset_x, shadow_offset_y, shadow_blur, shadow_color,
       position, position_percentage, max_width,
       animation_style,
       line_height, letter_spacing, text_align,
       text_offset_x, text_offset_y, padding, border_radius, word_spacing,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       name,
@@ -36,8 +36,10 @@ export async function createCustomSubtitlePreset(
       settings.textColor,
       settings.backgroundColor,
       settings.backgroundEnabled ? 1 : 0,
-      settings.outlineWidth,
-      settings.outlineColor,
+      settings.border1Width,
+      settings.border1Color,
+      settings.border2Width,
+      settings.border2Color,
       settings.shadowOffsetX,
       settings.shadowOffsetY,
       settings.shadowBlur,
@@ -129,8 +131,18 @@ export async function updateCustomSubtitlePreset(
     updates.push('text_color = ?', 'background_color = ?', 'background_enabled = ?');
     values.push(settings.textColor, settings.backgroundColor, settings.backgroundEnabled ? 1 : 0);
 
-    updates.push('outline_width = ?', 'outline_color = ?');
-    values.push(settings.outlineWidth, settings.outlineColor);
+    updates.push(
+      'border1_width = ?',
+      'border1_color = ?',
+      'border2_width = ?',
+      'border2_color = ?'
+    );
+    values.push(
+      settings.border1Width,
+      settings.border1Color,
+      settings.border2Width,
+      settings.border2Color
+    );
 
     updates.push(
       'shadow_offset_x = ?',
@@ -200,8 +212,10 @@ export function customPresetToSettings(preset: CustomSubtitlePreset): SubtitleSe
     textColor: preset.text_color,
     backgroundColor: preset.background_color,
     backgroundEnabled: preset.background_enabled,
-    outlineWidth: preset.outline_width,
-    outlineColor: preset.outline_color,
+    border1Width: preset.border1_width,
+    border1Color: preset.border1_color,
+    border2Width: preset.border2_width,
+    border2Color: preset.border2_color,
     shadowOffsetX: preset.shadow_offset_x,
     shadowOffsetY: preset.shadow_offset_y,
     shadowBlur: preset.shadow_blur,

@@ -19,8 +19,10 @@ pub struct SubtitleSettings {
     pub text_color: String,
     pub background_color: String,
     pub background_enabled: bool,
-    pub outline_width: f32,
-    pub outline_color: String,
+    pub border1_width: f32,
+    pub border1_color: String,
+    pub border2_width: f32,
+    pub border2_color: String,
     pub shadow_offset_x: f32,
     pub shadow_offset_y: f32,
     pub shadow_blur: f32,
@@ -371,6 +373,9 @@ async fn build_clip_internal_simple(
         // Generate subtitle file if needed for this aspect ratio
         let subtitle_file = if let (Some(settings), Some(words)) = (&subtitle_settings, &transcript_words) {
             if settings.enabled {
+                // Get fonts directory
+                let fonts_dir = get_fonts_dir(app).ok();
+                
                 let sub_path = clip_base_dir.join(format!("subtitles_{}.ass", ratio_suffix));
                 generate_ass_file(
                     settings, 
@@ -380,8 +385,19 @@ async fn build_clip_internal_simple(
                     max_words.unwrap_or(4), 
                     Some(&aspect_ratio),
                     video_info.width,
-                    video_info.height
+                    video_info.height,
+                    fonts_dir.as_deref()
                 ).map_err(|e| format!("Failed to generate subtitle file: {}", e))?;
+                
+                // Debug: Log first few lines of generated ASS file
+                if let Ok(ass_content) = std::fs::read_to_string(&sub_path) {
+                    let lines: Vec<&str> = ass_content.lines().take(30).collect();
+                    println!("[Rust] Generated ASS file preview (first 30 lines):");
+                    for (i, line) in lines.iter().enumerate() {
+                        println!("[Rust]   {}: {}", i+1, line);
+                    }
+                }
+                
                 Some(sub_path)
             } else {
                 None
@@ -563,13 +579,22 @@ async fn build_single_segment_clip_with_settings(
     
     // Get quality settings
     let (preset, crf) = get_quality_settings(quality);
+    
+    // Get fonts directory for subtitle rendering
+    let fonts_dir = get_fonts_dir(app).ok();
 
     // Build video filter
     let mut vf_parts = vec![format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y)];
     
     if let Some(path) = subtitle_path {
         let path_str = path.to_string_lossy().replace("\\", "/").replace(":", "\\:");
-        vf_parts.push(format!("ass='{}'", path_str));
+        // Add fonts directory parameter to ass filter
+        if let Some(ref fdir) = fonts_dir {
+            let fonts_dir_str = fdir.to_string_lossy().replace("\\", "/").replace(":", "\\:");
+            vf_parts.push(format!("ass='{}':fontsdir='{}'", path_str, fonts_dir_str));
+        } else {
+            vf_parts.push(format!("ass='{}'", path_str));
+        }
     }
     
     let vf_arg = vf_parts.join(",");
@@ -592,8 +617,14 @@ async fn build_single_segment_clip_with_settings(
         output_path.to_string_lossy().to_string(),
     ];
 
+    // Set fontconfig path for FFmpeg to find our custom fonts
+    let fontconfig_path = storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?
+        .temp.join("fonts.conf");
+
     let output = shell.sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .env("FONTCONFIG_FILE", fontconfig_path.to_string_lossy().to_string())
         .args(args)
         .output()
         .await
@@ -721,11 +752,25 @@ async fn build_multi_segment_clip_with_settings(
     if let Some(sub_path) = subtitle_path {
         println!("[Rust] Burning subtitles...");
         
+        // Get fonts directory for multi-segment path
+        let fonts_dir_for_burn = get_fonts_dir(app).ok();
+        
         let sub_arg = sub_path.to_string_lossy().replace("\\", "/").replace(":", "\\:");
-        let vf_arg = format!("ass='{}'", sub_arg);
+        
+        // Build ass filter with fontsdir parameter
+        let vf_arg = if let Some(fdir) = fonts_dir_for_burn {
+            let fonts_dir_str = fdir.to_string_lossy().replace("\\", "/").replace(":", "\\:");
+            format!("ass='{}':fontsdir='{}'", sub_arg, fonts_dir_str)
+        } else {
+            format!("ass='{}'", sub_arg)
+        };
+
+        // Set fontconfig path for FFmpeg to find our custom fonts
+        let fontconfig_path = paths.temp.join("fonts.conf");
 
         let output = shell.sidecar("ffmpeg")
             .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+            .env("FONTCONFIG_FILE", fontconfig_path.to_string_lossy().to_string())
             .args([
                 "-i", concat_output_path.to_str().ok_or("Invalid concat output path")?,
                 "-vf", &vf_arg,
@@ -868,7 +913,230 @@ fn parse_video_info_alternative(output: &str) -> Result<crate::ffmpeg_utils::Vid
     }
 }
 
-// Helper to generate ASS file content
+// Helper to get fonts directory and create fontconfig
+fn get_fonts_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+    
+    // In dev mode, fonts are in src-tauri/fonts
+    // In production, fonts are in the resource directory
+    let fonts_dir = if cfg!(debug_assertions) {
+        // Dev mode: use src-tauri/fonts directly
+        let app_dir = app.path().app_data_dir()
+            .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+        
+        // Navigate up to find the project root
+        let current_exe = std::env::current_exe()
+            .map_err(|e| format!("Failed to get current exe: {}", e))?;
+        
+        // In dev mode, exe is in target/debug/, so go up to src-tauri then to fonts
+        let src_tauri_dir = current_exe
+            .parent().unwrap() // debug
+            .parent().unwrap() // target
+            .parent().unwrap(); // src-tauri
+        
+        src_tauri_dir.join("fonts")
+    } else {
+        // Production mode: use bundled fonts from resource directory
+        let resource_dir = app.path()
+            .resource_dir()
+            .map_err(|e| format!("Failed to get resource directory: {}", e))?;
+        resource_dir.join("fonts")
+    };
+    
+    println!("[Rust] Fonts directory: {}", fonts_dir.display());
+    println!("[Rust] Fonts directory exists: {}", fonts_dir.exists());
+    
+    if fonts_dir.exists() {
+        // List font files found
+        if let Ok(entries) = std::fs::read_dir(&fonts_dir) {
+            println!("[Rust] Font files found:");
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.ends_with(".ttf") || name.ends_with(".otf") {
+                        println!("[Rust]   - {}", name);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Create fontconfig file to tell FFmpeg where to find fonts
+    create_fontconfig_file(&fonts_dir)?;
+    
+    Ok(fonts_dir)
+}
+
+// Helper to create fontconfig file for FFmpeg
+fn create_fontconfig_file(fonts_dir: &std::path::Path) -> Result<(), String> {
+    let storage_paths = storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+    
+    let fontconfig_path = storage_paths.temp.join("fonts.conf");
+    
+    // Convert Windows path to Unix-style path for fontconfig
+    let fonts_dir_str = fonts_dir.to_string_lossy().replace("\\", "/");
+    
+    let fontconfig_content = format!(
+        r#"<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig>
+    <dir>{}</dir>
+    <cachedir>{}/font-cache</cachedir>
+</fontconfig>
+"#,
+        fonts_dir_str,
+        storage_paths.temp.to_string_lossy().replace("\\", "/")
+    );
+    
+    std::fs::write(&fontconfig_path, fontconfig_content)
+        .map_err(|e| format!("Failed to write fontconfig file: {}", e))?;
+    
+    println!("[Rust] Created fontconfig at: {}", fontconfig_path.display());
+    
+    Ok(())
+}
+
+// Helper to embed fonts directly in ASS file
+fn embed_fonts_in_ass(
+    file: &mut std::fs::File,
+    fonts_dir: &std::path::Path,
+    settings: &SubtitleSettings
+) -> Result<(), String> {
+    use std::io::Read;
+    
+    // Determine which font files we need based on font family and weight
+    let font_files_to_embed = get_required_font_files(settings);
+    
+    // ASS fonts section uses UUencoded format
+    writeln!(file, "[Fonts]").unwrap();
+    
+    for font_filename in font_files_to_embed {
+        let font_path = fonts_dir.join(&font_filename);
+        
+        if !font_path.exists() {
+            println!("[Rust] Warning: Font file not found: {} - FFmpeg will use system fallback", font_path.display());
+            continue;
+        }
+        
+        println!("[Rust] Embedding font: {}", font_filename);
+        
+        // Read font file
+        let mut font_file = std::fs::File::open(&font_path)
+            .map_err(|e| format!("Failed to open font file {}: {}", font_filename, e))?;
+        
+        let mut font_data = Vec::new();
+        font_file.read_to_end(&mut font_data)
+            .map_err(|e| format!("Failed to read font file {}: {}", font_filename, e))?;
+        
+        println!("[Rust] Font file size: {} bytes", font_data.len());
+        
+        // Encode as UUencoded (ASS standard for embedded fonts)
+        let encoded = uuencode_data(&font_data);
+        
+        // Write font header - use filename WITHOUT extension (ASS format requirement)
+        let font_name_without_ext = font_filename.trim_end_matches(".ttf").trim_end_matches(".otf");
+        writeln!(file, "fontname: {}", font_name_without_ext).unwrap();
+        
+        // Write encoded data
+        for line in encoded {
+            writeln!(file, "{}", line).unwrap();
+        }
+        
+        writeln!(file, "").unwrap();
+    }
+    
+    Ok(())
+}
+
+// Helper to get required font files for embedding
+fn get_required_font_files(settings: &SubtitleSettings) -> Vec<String> {
+    let mut files = Vec::new();
+    
+    // Determine font file based on family and weight
+    let weight_suffix = if settings.font_weight >= 700 {
+        "Bold"
+    } else if settings.font_weight >= 600 {
+        "SemiBold"
+    } else if settings.font_weight >= 500 {
+        "Medium"
+    } else if settings.font_weight < 400 && settings.font_weight >= 300 {
+        "Light"
+    } else if settings.font_weight < 300 {
+        "Thin"
+    } else {
+        "Regular"
+    };
+    
+    // Build font filename
+    let font_file = match settings.font_family.as_str() {
+        "Open Sans" => {
+            // Handle space in name
+            if weight_suffix == "Regular" {
+                "OpenSans-Regular.ttf".to_string()
+            } else {
+                format!("OpenSans-{}.ttf", weight_suffix)
+            }
+        },
+        "Bebas Neue" => {
+            // Bebas Neue only has Regular weight
+            "BebasNeue-Regular.ttf".to_string()
+        },
+        _ => {
+            // Standard format: FontName-Weight.ttf
+            if weight_suffix == "Regular" {
+                format!("{}-Regular.ttf", settings.font_family)
+            } else {
+                format!("{}-{}.ttf", settings.font_family, weight_suffix)
+            }
+        }
+    };
+    
+    files.push(font_file);
+    files
+}
+
+// UUencode data for ASS font embedding (ASS uses UUencoding, not base64)
+fn uuencode_data(data: &[u8]) -> Vec<String> {
+    let mut lines = Vec::new();
+    
+    for chunk in data.chunks(45) { // UUencode uses 45 bytes per line (60 chars output)
+        let mut line = String::new();
+        
+        // Length character: 45 bytes = 'M' in UUencode
+        let len_char = (chunk.len() as u8 + 32) as char;
+        line.push(len_char);
+        
+        // Encode the chunk
+        for group in chunk.chunks(3) {
+            let mut buf = [0u8; 3];
+            for (i, &byte) in group.iter().enumerate() {
+                buf[i] = byte;
+            }
+            
+            // UUencode: split 3 bytes into 4 6-bit values, add 32 to each
+            let b1 = ((buf[0] >> 2) & 0x3f) + 32;
+            let b2 = ((((buf[0] & 0x03) << 4) | ((buf[1] >> 4) & 0x0f)) & 0x3f) + 32;
+            let b3 = ((((buf[1] & 0x0f) << 2) | ((buf[2] >> 6) & 0x03)) & 0x3f) + 32;
+            let b4 = ((buf[2] & 0x3f)) + 32;
+            
+            line.push(b1 as char);
+            line.push(b2 as char);
+            
+            if group.len() > 1 {
+                line.push(b3 as char);
+            }
+            if group.len() > 2 {
+                line.push(b4 as char);
+            }
+        }
+        
+        lines.push(line);
+    }
+    
+    lines
+}
+
+// Helper to generate ASS file content  
 fn generate_ass_file(
     settings: &SubtitleSettings,
     all_words: &[WordInfo],
@@ -877,7 +1145,8 @@ fn generate_ass_file(
     max_words: usize,
     aspect_ratio: Option<&AspectRatio>,
     video_width: u32,
-    video_height: u32
+    video_height: u32,
+    fonts_dir: Option<&std::path::Path>
 ) -> Result<(), String> {
     let mut file = std::fs::File::create(output_path)
         .map_err(|e| format!("Failed to create subtitle file: {}", e))?;
@@ -888,6 +1157,22 @@ fn generate_ass_file(
     writeln!(file, "PlayResX: {}", video_width).unwrap();
     writeln!(file, "PlayResY: {}", video_height).unwrap();
     writeln!(file, "WrapStyle: 1").unwrap(); // Word wrapping
+    writeln!(file, "ScaledBorderAndShadow: yes").unwrap();
+    writeln!(file, "").unwrap();
+    
+    // Embed fonts if available
+    if let Some(fonts_path) = fonts_dir {
+        println!("[Rust] Attempting to embed fonts from: {}", fonts_path.display());
+        if fonts_path.exists() {
+            println!("[Rust] Fonts directory exists, embedding...");
+            embed_fonts_in_ass(&mut file, fonts_path, settings)?;
+        } else {
+            println!("[Rust] WARNING: Fonts directory does not exist! Fonts will not be embedded.");
+        }
+    } else {
+        println!("[Rust] WARNING: No fonts directory provided, fonts will not be embedded.");
+    }
+    
     writeln!(file, "").unwrap();
 
     // Generate Style
@@ -910,12 +1195,14 @@ fn generate_ass_file(
     };
 
     let primary_color = convert_color(&settings.text_color);
-    let outline_color = convert_color(&settings.outline_color);
-    let back_color = convert_color(&settings.background_color);
+    let border1_color = convert_color(&settings.border1_color);
+    let border2_color = convert_color(&settings.border2_color);
+    let _back_color = convert_color(&settings.background_color);
 
-    println!("[Rust] Subtitle colors - Text: {}, Outline: {}, Background: {}", 
-        settings.text_color, settings.outline_color, settings.background_color);
-    println!("[Rust] ASS colors - Primary: {}, Outline: {}", primary_color, outline_color);
+    println!("[Rust] Subtitle colors - Text: {}, Border1: {}, Border2: {}, Background: {}", 
+        settings.text_color, settings.border1_color, settings.border2_color, settings.background_color);
+    println!("[Rust] ASS colors - Primary: {}, Border1: {}, Border2: {}", primary_color, border1_color, border2_color);
+    println!("[Rust] Using font: {}", settings.font_family);
 
     // Calculate aspect ratio scaling (matches VideoPlayer.vue logic)
     let aspect_ratio_value = if let Some(ar) = aspect_ratio {
@@ -933,8 +1220,12 @@ fn generate_ass_file(
     };
 
     let adjusted_font_size = (settings.font_size * font_size_scale).round();
-    let adjusted_outline_width = settings.outline_width * font_size_scale;
-    let adjusted_shadow = settings.shadow_blur * font_size_scale;
+    let adjusted_border1_width = settings.border1_width * font_size_scale;
+    let adjusted_border2_width = settings.border2_width * font_size_scale;
+    // ASS Shadow parameter is an offset depth, calculate from shadow offset X/Y
+    // Use the magnitude of the offset vector for proper shadow distance
+    let shadow_offset_magnitude = ((settings.shadow_offset_x.powi(2) + settings.shadow_offset_y.powi(2)).sqrt()) * font_size_scale;
+    let adjusted_shadow = shadow_offset_magnitude;
     let adjusted_letter_spacing = settings.letter_spacing * font_size_scale;
 
     println!("[Rust] Font size: {} -> {} (scale: {})", settings.font_size, adjusted_font_size, font_size_scale);
@@ -956,24 +1247,62 @@ fn generate_ass_file(
         0
     };
 
-    // Determine bold flag (ASS uses -1 for bold, 0 for normal)
-    let bold = if settings.font_weight >= 700 { -1 } else { 0 };
+    // For embedded fonts, we need to reference the actual font family name 
+    // and use \fw tags for specific weights, as standard ASS only supports Bold/Italic.
+    // This avoids issues where libass fails to match a constructed name like "Montserrat-Bold"
+    // if the internal family name is just "Montserrat".
+    
+    // We'll use the base family name in the Style
+    let font_name_for_style = settings.font_family.clone();
+    
+    // But we still need to embed the specific font file corresponding to the weight.
+    // (This is handled by get_required_font_files and embed_fonts_in_ass)
 
+    // Standard ASS Bold flag (only for generic bold, specific weights handled via \fw)
+    let bold = if settings.font_weight >= 700 { -1 } else { 0 };
+    
+    println!("[Rust] Font name for ASS: {}", font_name_for_style);
+
+    // Generate two styles for layered borders
+    // Layer ordering: shadow (bottom) > border2 (middle) > border1 (top) > text
+    
+    // Style 1: Border2Layer (bottom layer with larger outline = border1 + border2)
     // ASS Style format:
     // Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, 
     // Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, 
     // BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-    writeln!(file, "Style: Default,{},{},{},{},{},{},{},0,0,0,100,100,{},0,1,{},{},{},10,10,{},1",
-        settings.font_family,
+    let total_border_width = adjusted_border1_width + adjusted_border2_width;
+    
+    // Use shadow_color for BackColour (which controls Shadow color in BorderStyle=1)
+    let shadow_color_ass = convert_color(&settings.shadow_color);
+    
+    writeln!(file, "Style: Border2Layer,{},{},{},{},{},{},{},0,0,0,100,100,{},0,1,{},{},{},10,10,{},1",
+        font_name_for_style,
         adjusted_font_size,
         primary_color,
-        primary_color, // SecondaryColour (for karaoke, use same as primary)
-        outline_color,
-        if settings.background_enabled { back_color } else { "&H00000000&".to_string() },
+        primary_color, // SecondaryColour
+        border2_color, // OutlineColour (border2 color)
+        shadow_color_ass, // BackColour (Shadow color)
         bold,
-        adjusted_letter_spacing, // Spacing parameter
-        adjusted_outline_width,
-        adjusted_shadow,
+        adjusted_letter_spacing,
+        total_border_width, // Outline (total width)
+        adjusted_shadow, // Shadow (drop shadow)
+        alignment,
+        margin_v
+    ).unwrap();
+
+    // Style 2: Border1Layer (top layer with smaller outline = border1 only)
+    writeln!(file, "Style: Border1Layer,{},{},{},{},{},{},{},0,0,0,100,100,{},0,1,{},{},{},10,10,{},1",
+        font_name_for_style,
+        adjusted_font_size,
+        primary_color,
+        primary_color, // SecondaryColour
+        border1_color, // OutlineColour (border1 color)
+        "&H00000000&".to_string(), // No background for top layer
+        bold,
+        adjusted_letter_spacing,
+        adjusted_border1_width, // Outline (border1 only)
+        0.0, // No shadow on top layer
         alignment,
         margin_v
     ).unwrap();
@@ -1129,19 +1458,31 @@ fn generate_ass_file(
                 format!("{}:{:02}:{:02}.{:02}", hours, mins, secs, centis)
             };
             
-            // Strategy: Render text in two layers
-            // Layer 0: All words at normal size (provides stable layout)
-            // Layer 1: Active word only, scaled up, positioned exactly over the base word
+            // Strategy: Render text in four layers for dual borders + animation
+            // Layer 0: Border2Layer base text (shadow + outer border)
+            // Layer 1: Border2Layer active word animation (shadow + outer border, scaled)
+            // Layer 2: Border1Layer base text (inner border)
+            // Layer 3: Border1Layer active word animation (inner border, scaled)
             
-            // Layer 0: Base text with all words at normal size
-            let base_text = chunk.iter().map(|w| w.word.as_str()).collect::<Vec<_>>().join(" ");
-            writeln!(file, "Dialogue: 0,{},{},Default,,0,0,0,,{}",
+            // Layer 0: Border2Layer base text with all words at normal size
+            // Use \fw tag to ensure correct font weight
+            let weight_tag = format!("{{\\fw{}}}", settings.font_weight);
+            let base_text = chunk.iter().map(|w| format!("{}{}", weight_tag, w.word)).collect::<Vec<_>>().join(" ");
+            
+            writeln!(file, "Dialogue: 0,{},{},Border2Layer,,0,0,0,,{}",
                 format_time(t_start),
                 format_time(t_end),
                 base_text
             ).unwrap();
             
-            // Layer 1: If there's an active word, render it scaled on top
+            // Layer 2: Border1Layer base text with all words at normal size
+            writeln!(file, "Dialogue: 2,{},{},Border1Layer,,0,0,0,,{}",
+                format_time(t_start),
+                format_time(t_end),
+                base_text
+            ).unwrap();
+            
+            // Layers 1 & 3: If there's an active word, render it scaled on top (for both border layers)
             if let Some(active_idx) = active_word_idx {
                 let active_word = &chunk[active_idx];
                 let word_duration = active_word.end - active_word.start;
@@ -1163,21 +1504,30 @@ fn generate_ass_file(
                     if k == active_idx {
                         // Active word with animation
                         positioned_text_parts.push(format!(
-                            "{{\\r\\t({},{},\\fscx115\\fscy115)}}{}{{\\fscx100\\fscy100}}",
+                            "{}{{\\r\\t({},{},\\fscx115\\fscy115)}}{}{{\\fscx100\\fscy100}}",
+                            weight_tag,
                             word_start_in_interval,
                             scale_up_end,
                             word.word
                         ));
                     } else {
                         // Use {\alpha&HFF&} to make word invisible (maintains spacing)
-                        positioned_text_parts.push(format!("{{\\alpha&HFF&}}{}", word.word));
+                        // Still include weight tag to maintain spacing metrics
+                        positioned_text_parts.push(format!("{}{{\\alpha&HFF&}}{}", weight_tag, word.word));
                     }
                 }
                 
                 let overlay_text = positioned_text_parts.join(" ");
                 
-                // Render on layer 1 (on top of base layer)
-                writeln!(file, "Dialogue: 1,{},{},Default,,0,0,0,,{}",
+                // Layer 1: Border2Layer active word (shadow + outer border)
+                writeln!(file, "Dialogue: 1,{},{},Border2Layer,,0,0,0,,{}",
+                    format_time(t_start),
+                    format_time(t_end),
+                    overlay_text
+                ).unwrap();
+                
+                // Layer 3: Border1Layer active word (inner border)
+                writeln!(file, "Dialogue: 3,{},{},Border1Layer,,0,0,0,,{}",
                     format_time(t_start),
                     format_time(t_end),
                     overlay_text

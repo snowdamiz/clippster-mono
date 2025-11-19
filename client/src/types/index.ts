@@ -172,8 +172,10 @@ export interface SubtitleSettings {
   textColor: string;
   backgroundColor: string;
   backgroundEnabled: boolean;
-  outlineWidth: number;
-  outlineColor: string;
+  border1Width: number;
+  border1Color: string;
+  border2Width: number;
+  border2Color: string;
   shadowOffsetX: number;
   shadowOffsetY: number;
   shadowBlur: number;

@@ -191,6 +191,12 @@ pub fn run() {
                             description: "add_custom_subtitle_presets",
                             sql: include_str!("../migrations/028_add_custom_subtitle_presets.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
+                        },                        
+                        tauri_plugin_sql::Migration {
+                            version: 29,
+                            description: "add_second_border_to_subtitle_presets",
+                            sql: include_str!("../migrations/029_add_second_border_to_subtitle_presets.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                     ],
                 )

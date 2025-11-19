@@ -404,26 +404,26 @@
 
       <!-- Effects Tab -->
       <div v-if="activeSubtitleTab === 'effects'" class="space-y-6">
-        <!-- Outline Section -->
+        <!-- Border 1 (Inner) Section -->
         <div class="space-y-4">
-          <h3 class="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Outline</h3>
+          <h3 class="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Border 1 (Inner)</h3>
 
-          <!-- Outline Width -->
+          <!-- Border 1 Width -->
           <div class="space-y-2">
             <div class="flex justify-between items-center">
-              <label class="text-xs font-semibold text-foreground">Outline Width</label>
+              <label class="text-xs font-semibold text-foreground">Border 1 Width</label>
               <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
-                {{ localSettings.outlineWidth }}px
+                {{ localSettings.border1Width }}px
               </span>
             </div>
             <div class="relative h-2 bg-muted-foreground/30 rounded-md">
               <div
                 class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                :style="{ width: `${(localSettings.outlineWidth / 20) * 100}%` }"
+                :style="{ width: `${(localSettings.border1Width / 20) * 100}%` }"
               ></div>
               <input
                 type="range"
-                v-model.number="localSettings.outlineWidth"
+                v-model.number="localSettings.border1Width"
                 @input="emitSettingsChange"
                 min="0"
                 max="20"
@@ -433,14 +433,59 @@
             </div>
           </div>
 
-          <!-- Outline Color (conditional) -->
-          <div v-if="localSettings.outlineWidth > 0" class="space-y-2">
-            <label class="text-xs font-semibold text-foreground">Outline Color</label>
+          <!-- Border 1 Color (conditional) -->
+          <div v-if="localSettings.border1Width > 0" class="space-y-2">
+            <label class="text-xs font-semibold text-foreground">Border 1 Color</label>
             <div class="flex gap-2">
-              <ColorPicker v-model="localSettings.outlineColor" @update:modelValue="emitSettingsChange" />
+              <ColorPicker v-model="localSettings.border1Color" @update:modelValue="emitSettingsChange" />
               <input
                 type="text"
-                v-model="localSettings.outlineColor"
+                v-model="localSettings.border1Color"
+                @input="emitSettingsChange"
+                class="flex-1 px-3 py-2 bg-muted/50 border border-border rounded-md text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all uppercase"
+                placeholder="#00FF00"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Border 2 (Outer) Section -->
+        <div class="space-y-4">
+          <h3 class="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Border 2 (Outer)</h3>
+
+          <!-- Border 2 Width -->
+          <div class="space-y-2">
+            <div class="flex justify-between items-center">
+              <label class="text-xs font-semibold text-foreground">Border 2 Width</label>
+              <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+                {{ localSettings.border2Width }}px
+              </span>
+            </div>
+            <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+              <div
+                class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                :style="{ width: `${(localSettings.border2Width / 20) * 100}%` }"
+              ></div>
+              <input
+                type="range"
+                v-model.number="localSettings.border2Width"
+                @input="emitSettingsChange"
+                min="0"
+                max="20"
+                step="0.5"
+                class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+              />
+            </div>
+          </div>
+
+          <!-- Border 2 Color (conditional) -->
+          <div v-if="localSettings.border2Width > 0" class="space-y-2">
+            <label class="text-xs font-semibold text-foreground">Border 2 Color</label>
+            <div class="flex gap-2">
+              <ColorPicker v-model="localSettings.border2Color" @update:modelValue="emitSettingsChange" />
+              <input
+                type="text"
+                v-model="localSettings.border2Color"
                 @input="emitSettingsChange"
                 class="flex-1 px-3 py-2 bg-muted/50 border border-border rounded-md text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all uppercase"
                 placeholder="#000000"
@@ -548,7 +593,10 @@
         </div>
 
         <!-- Empty State -->
-        <div v-if="localSettings.outlineWidth === 0 && localSettings.shadowBlur === 0" class="py-8 text-center">
+        <div
+          v-if="localSettings.border1Width === 0 && localSettings.border2Width === 0 && localSettings.shadowBlur === 0"
+          class="py-8 text-center"
+        >
           <div
             class="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-muted/20 to-muted/10 rounded-lg flex items-center justify-center border border-border/30"
           >
@@ -1104,8 +1152,10 @@
       textColor: '#FFFFFF',
       backgroundColor: '#000000',
       backgroundEnabled: false,
-      outlineWidth: 3,
-      outlineColor: '#000000',
+      border1Width: 2,
+      border1Color: '#00FF00',
+      border2Width: 4,
+      border2Color: '#000000',
       shadowOffsetX: 2,
       shadowOffsetY: 2,
       shadowBlur: 4,

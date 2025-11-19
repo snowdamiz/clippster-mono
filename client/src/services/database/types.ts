@@ -225,9 +225,11 @@ export interface CustomSubtitlePreset {
   text_color: string;
   background_color: string;
   background_enabled: boolean | number; // SQLite stores as 0/1, converted to boolean
-  // Outline settings
-  outline_width: number;
-  outline_color: string;
+  // Border settings
+  border1_width: number;
+  border1_color: string;
+  border2_width: number;
+  border2_color: string;
   // Shadow settings
   shadow_offset_x: number;
   shadow_offset_y: number;
@@ -261,8 +263,10 @@ export interface SubtitleSettings {
   textColor: string;
   backgroundColor: string;
   backgroundEnabled: boolean;
-  outlineWidth: number;
-  outlineColor: string;
+  border1Width: number;
+  border1Color: string;
+  border2Width: number;
+  border2Color: string;
   shadowOffsetX: number;
   shadowOffsetY: number;
   shadowBlur: number;

@@ -118,13 +118,37 @@
           <span
             v-for="(wordInfo, index) in visibleWords"
             :key="`subtitle-word-${wordInfo.start}-${index}`"
-            class="subtitle-word"
-            :class="{ 'current-word': isCurrentWord(wordInfo) }"
+            class="subtitle-word-stack"
             :style="{
               transitionDuration: `${getWordAnimationDuration(wordInfo)}s`,
             }"
           >
-            {{ wordInfo.word }}
+            <!-- Layer 1 (bottom): Shadow + Border 2 - only render if border2 width > 0 -->
+            <span
+              v-if="subtitleSettings && (subtitleSettings.border2Width > 0 || subtitleSettings.border1Width > 0)"
+              class="subtitle-layer shadow-border2-layer"
+              :style="getShadowBorder2Style"
+            >
+              {{ wordInfo.word }}
+            </span>
+
+            <!-- Layer 2 (middle): Border 1 - only render if border1 width > 0 -->
+            <span
+              v-if="subtitleSettings && subtitleSettings.border1Width > 0"
+              class="subtitle-layer border1-layer"
+              :style="getBorder1Style"
+            >
+              {{ wordInfo.word }}
+            </span>
+
+            <!-- Layer 3 (top): Text - always render -->
+            <span
+              class="subtitle-layer text-layer"
+              :class="{ 'current-word': isCurrentWord(wordInfo) }"
+              :style="getTextStyle"
+            >
+              {{ wordInfo.word }}
+            </span>
           </span>
         </div>
       </div>
@@ -226,8 +250,10 @@
     textColor: string;
     backgroundColor: string;
     backgroundEnabled: boolean;
-    outlineWidth: number;
-    outlineColor: string;
+    border1Width: number;
+    border1Color: string;
+    border2Width: number;
+    border2Color: string;
     shadowOffsetX: number;
     shadowOffsetY: number;
     shadowBlur: number;
@@ -256,8 +282,10 @@
       textColor: '#FFFFFF',
       backgroundColor: '#000000',
       backgroundEnabled: false,
-      outlineWidth: 3,
-      outlineColor: '#000000',
+      border1Width: 2,
+      border1Color: '#00FF00',
+      border2Width: 4,
+      border2Color: '#000000',
       shadowOffsetX: 2,
       shadowOffsetY: 2,
       shadowBlur: 4,
@@ -462,79 +490,120 @@
     };
   });
 
+  // Calculate the final font size scale factor
+  const finalFontSizeScale = computed(() => {
+    if (!props.subtitleSettings) return 1;
+
+    const videoScaleFactor = containerHeight.value / 1080;
+    const aspectRatioValue = props.aspectRatio.width / props.aspectRatio.height;
+    let fontSizeScale = 1;
+
+    if (aspectRatioValue <= 0.9) {
+      fontSizeScale = 0.65; // Vertical formats (9:16, 4:5)
+    } else if (aspectRatioValue > 0.9 && aspectRatioValue <= 1.1) {
+      fontSizeScale = 0.78; // Square format (1:1)
+    }
+
+    return fontSizeScale * videoScaleFactor;
+  });
+
+  // Base style for subtitle container
   const getSubtitleTextStyle = computed(() => {
     if (!props.subtitleSettings) return {};
 
     const settings = props.subtitleSettings;
-
-    // Get the video container dimensions to calculate proper scaling
-    // This makes the preview subtitles scale relative to video size (like they will in the burned output)
-    // Using containerHeight.value (reactive) instead of clientHeight (non-reactive)
-    const videoScaleFactor = containerHeight.value / 1080;
-
-    // Calculate aspect ratio and adjust font size/line height for narrow formats
     const aspectRatioValue = props.aspectRatio.width / props.aspectRatio.height;
-    let fontSizeScale = 1;
     let lineHeightAdjustment = 0;
 
-    // Scale down for vertical and square formats
     if (aspectRatioValue <= 0.9) {
-      // Vertical formats (9:16, 4:5) - much smaller to prevent overflow
-      fontSizeScale = 0.65;
       lineHeightAdjustment = -0.15;
     } else if (aspectRatioValue > 0.9 && aspectRatioValue <= 1.1) {
-      // Square format (1:1) - moderately smaller
-      fontSizeScale = 0.78;
       lineHeightAdjustment = -0.1;
     }
 
-    // Combine both scaling factors: aspect ratio scaling * video size scaling
-    const finalFontSizeScale = fontSizeScale * videoScaleFactor;
-
-    // Build text-shadow for outline effect
-    let textShadow = '';
-    if (settings.outlineWidth > 0) {
-      // Create multiple shadows in a circle for outline effect
-      const steps = 16;
-      const shadows = [];
-      for (let i = 0; i < steps; i++) {
-        const angle = (i * 2 * Math.PI) / steps;
-        const x = Math.cos(angle) * settings.outlineWidth * finalFontSizeScale;
-        const y = Math.sin(angle) * settings.outlineWidth * finalFontSizeScale;
-        shadows.push(`${x}px ${y}px 0 ${settings.outlineColor}`);
-      }
-      textShadow = shadows.join(', ');
-    }
-
-    // Add drop shadow
-    if (settings.shadowBlur > 0) {
-      const dropShadow = `${settings.shadowOffsetX * finalFontSizeScale}px ${settings.shadowOffsetY * finalFontSizeScale}px ${settings.shadowBlur * finalFontSizeScale}px ${settings.shadowColor}`;
-      textShadow = textShadow ? `${textShadow}, ${dropShadow}` : dropShadow;
-    }
-
-    const adjustedFontSize = Math.round(settings.fontSize * finalFontSizeScale);
+    const adjustedFontSize = Math.round(settings.fontSize * finalFontSizeScale.value);
     const adjustedLineHeight = Math.max(0.5, settings.lineHeight + lineHeightAdjustment);
-    const adjustedPadding = Math.round(settings.padding * finalFontSizeScale);
-    const adjustedLetterSpacing = settings.letterSpacing * finalFontSizeScale;
+    const adjustedPadding = Math.round(settings.padding * finalFontSizeScale.value);
+    const adjustedLetterSpacing = settings.letterSpacing * finalFontSizeScale.value;
 
     return {
-      fontFamily: settings.fontFamily,
+      fontFamily: `"${settings.fontFamily}", Arial, sans-serif`,
       fontSize: `${adjustedFontSize}px`,
       fontWeight: settings.fontWeight,
-      color: settings.textColor,
       backgroundColor: settings.backgroundEnabled ? settings.backgroundColor : 'transparent',
       padding: `${adjustedPadding}px`,
       borderRadius: `${settings.borderRadius}px`,
       lineHeight: adjustedLineHeight,
       letterSpacing: `${adjustedLetterSpacing}px`,
       textAlign: settings.textAlign,
-      textShadow: textShadow || 'none',
       display: 'flex',
       flexWrap: 'wrap',
       justifyContent:
         settings.textAlign === 'left' ? 'flex-start' : settings.textAlign === 'right' ? 'flex-end' : 'center',
       gap: '0.2em',
       maxWidth: '100%',
+    };
+  });
+
+  // Style for shadow + border2 layer (bottom layer)
+  const getShadowBorder2Style = computed(() => {
+    if (!props.subtitleSettings) return {};
+
+    const settings = props.subtitleSettings;
+    const adjustedBorder1 = settings.border1Width * finalFontSizeScale.value;
+    const adjustedBorder2 = settings.border2Width * finalFontSizeScale.value;
+    const totalStroke = adjustedBorder1 + adjustedBorder2;
+
+    // Use filter: drop-shadow() instead of text-shadow so the shadow applies to the entire
+    // rendered element including the stroke, not just the text path
+    let dropShadow = 'none';
+    if (settings.shadowBlur > 0) {
+      const offsetX = settings.shadowOffsetX * finalFontSizeScale.value;
+      const offsetY = settings.shadowOffsetY * finalFontSizeScale.value;
+      const blur = settings.shadowBlur * finalFontSizeScale.value;
+      dropShadow = `drop-shadow(${offsetX}px ${offsetY}px ${blur}px ${settings.shadowColor})`;
+    }
+
+    return {
+      // Use transparent color so only the stroke is visible, not the fill
+      color: 'transparent',
+      WebkitTextStroke: `${totalStroke}px ${settings.border2Color}`,
+      WebkitTextFillColor: 'transparent',
+      filter: dropShadow,
+      paintOrder: 'stroke fill',
+      fontFamily: `"${settings.fontFamily}", Arial, sans-serif`,
+      fontWeight: settings.fontWeight,
+    };
+  });
+
+  // Style for border1 layer (middle layer)
+  const getBorder1Style = computed(() => {
+    if (!props.subtitleSettings) return {};
+
+    const settings = props.subtitleSettings;
+    const adjustedBorder1 = settings.border1Width * finalFontSizeScale.value;
+
+    return {
+      // Use transparent color so only the stroke is visible, not the fill
+      color: 'transparent',
+      WebkitTextStroke: `${adjustedBorder1}px ${settings.border1Color}`,
+      WebkitTextFillColor: 'transparent',
+      paintOrder: 'stroke fill',
+      fontFamily: `"${settings.fontFamily}", Arial, sans-serif`,
+      fontWeight: settings.fontWeight,
+    };
+  });
+
+  // Style for text layer (top layer)
+  const getTextStyle = computed(() => {
+    if (!props.subtitleSettings) return {};
+
+    const settings = props.subtitleSettings;
+
+    return {
+      color: settings.textColor,
+      fontFamily: `"${settings.fontFamily}", Arial, sans-serif`,
+      fontWeight: settings.fontWeight,
     };
   });
 
@@ -567,6 +636,23 @@
       });
 
       resizeObserver.observe(videoContainerRef.value);
+    }
+
+    // Debug: Check if fonts are loaded
+    if (props.subtitleSettings?.fontFamily) {
+      console.log(
+        '[VideoPlayer] Subtitle font:',
+        props.subtitleSettings.fontFamily,
+        'weight:',
+        props.subtitleSettings.fontWeight
+      );
+
+      // Check if font is actually loaded
+      document.fonts.ready.then(() => {
+        const testFont = `${props.subtitleSettings?.fontWeight || 400} 12px "${props.subtitleSettings?.fontFamily}"`;
+        const loaded = document.fonts.check(testFont);
+        console.log('[VideoPlayer] Font loaded in browser?', loaded, 'test:', testFont);
+      });
     }
   });
 
@@ -646,7 +732,9 @@
     /* Gap is dynamically set via inline style from subtitleSettings.wordSpacing */
   }
 
-  .subtitle-word {
+  /* Subtitle layering for crisp borders */
+  .subtitle-word-stack {
+    position: relative;
     display: inline-block;
     transition-property: transform;
     transition-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
@@ -654,7 +742,34 @@
     will-change: transform;
   }
 
-  .subtitle-word.current-word {
+  .subtitle-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    white-space: nowrap;
+  }
+
+  /* Bottom layer: shadow + border2 */
+  .shadow-border2-layer {
+    z-index: 1;
+  }
+
+  /* Middle layer: border1 */
+  .border1-layer {
+    z-index: 2;
+  }
+
+  /* Top layer: text */
+  .text-layer {
+    position: relative;
+    z-index: 3;
+  }
+
+  .text-layer.current-word {
+    /* Animation scale is applied to the parent word-stack */
+  }
+
+  .subtitle-word-stack:has(.current-word) {
     transform: scale(1.15);
   }
 </style>
