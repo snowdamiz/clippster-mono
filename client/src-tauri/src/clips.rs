@@ -1219,6 +1219,10 @@ fn generate_ass_file(
         1.0 // Wide formats (16:9, 21:9)
     };
 
+    // Apply a correction factor to match the frontend visual size
+    // The frontend preview renders fonts larger relative to the video frame due to DPI/scaling differences
+    let font_size_scale = font_size_scale * 1.5;
+
     let adjusted_font_size = (settings.font_size * font_size_scale).round();
     // CSS WebkitTextStroke is centered on the path, so only half extends outwards.
     // ASS Outline is entirely outwards. To match the visual thickness of the frontend,
