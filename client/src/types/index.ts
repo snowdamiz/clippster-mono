@@ -192,6 +192,7 @@ export interface SubtitleSettings {
   padding: number;
   borderRadius: number;
   wordSpacing: number;
+  selectedPresetId?: string | null;
 }
 
 export interface SubtitlePreset {

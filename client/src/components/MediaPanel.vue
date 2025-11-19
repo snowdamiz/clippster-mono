@@ -202,6 +202,7 @@
     padding: 16,
     borderRadius: 8,
     wordSpacing: 0.35,
+    selectedPresetId: null,
   });
 
   const subtitleSettings = ref<SubtitleSettings>(getDefaultSubtitleSettings());
@@ -216,7 +217,14 @@
       if (saved) {
         const parsed = JSON.parse(saved);
         // Restore all settings from localStorage but always default subtitles to off
-        subtitleSettings.value = { ...getDefaultSubtitleSettings(), ...parsed, enabled: false };
+        // Preserve selectedPresetId if it exists in localStorage
+        const { selectedPresetId: savedPresetId } = parsed;
+        subtitleSettings.value = {
+          ...getDefaultSubtitleSettings(),
+          ...parsed,
+          enabled: false,
+          selectedPresetId: savedPresetId || null,
+        };
         // Emit to sync with VideoPlayer
         emit('subtitleSettingsChanged', subtitleSettings.value);
       }

@@ -160,7 +160,7 @@
             :key="preset.id"
             @click="applyPreset(preset)"
             :class="[
-              'group w-full relative rounded-lg transition-all text-left overflow-hidden p-3 flex items-center gap-3',
+              'group w-full relative rounded-sm transition-all text-left overflow-hidden p-3 flex items-center gap-3',
               isCurrentPreset(preset)
                 ? 'bg-muted/40 border-l-2 border-l-primary'
                 : 'bg-muted/20 border-l-2 border-l-transparent hover:bg-muted/30 hover:border-l-border',
@@ -1049,7 +1049,7 @@
   const localSettings = ref<SubtitleSettings>({ ...props.settings });
   const activeSubtitleTab = ref('presets');
   const customPresets = ref<CustomSubtitlePreset[]>([]);
-  const selectedPresetId = ref<string | null>(null);
+  const selectedPresetId = ref<string | null>(props.settings.selectedPresetId || null);
   const showSavePresetDialog = ref(false);
   const newPresetName = ref('');
   const newPresetDescription = ref('');
@@ -1097,13 +1097,16 @@
     () => props.settings,
     (newSettings) => {
       localSettings.value = { ...newSettings };
+      selectedPresetId.value = newSettings.selectedPresetId || null;
     },
     { deep: true }
   );
 
   // Functions
   function emitSettingsChange() {
-    emit('settingsChanged', localSettings.value);
+    // Include selectedPresetId in the emitted settings
+    const settingsWithPresetId = { ...localSettings.value, selectedPresetId: selectedPresetId.value };
+    emit('settingsChanged', settingsWithPresetId);
   }
 
   function toggleSubtitles() {
@@ -1122,7 +1125,7 @@
 
   function applyPreset(preset: SubtitlePreset) {
     const currentEnabledState = localSettings.value.enabled;
-    localSettings.value = { ...preset.settings, enabled: currentEnabledState };
+    localSettings.value = { ...preset.settings, enabled: currentEnabledState, selectedPresetId: preset.id };
     selectedPresetId.value = preset.id;
     emitSettingsChange();
   }
@@ -1172,6 +1175,7 @@
       padding: 16,
       borderRadius: 8,
       wordSpacing: 0.35,
+      selectedPresetId: null,
     };
     localSettings.value = defaults;
     selectedPresetId.value = null;
