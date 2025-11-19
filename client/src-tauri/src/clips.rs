@@ -1308,6 +1308,19 @@ fn generate_ass_file(
     // Use shadow_color for BackColour (which controls Shadow color in BorderStyle=1)
     let shadow_color_ass = convert_color(&settings.shadow_color);
     
+    // Calculate word spacing separator
+    // Frontend uses flex gap which replaces the space character.
+    // In ASS, we use a space character, so we need to adjust its spacing to match the desired gap.
+    // We assume a standard space width of ~0.25em.
+    // Target width = word_spacing * font_size
+    // Required spacing = Target width - Estimated space width
+    let space_glyph_width = adjusted_font_size * 0.25;
+    let target_word_gap = settings.word_spacing * adjusted_font_size;
+    let space_char_spacing = (target_word_gap - space_glyph_width).max(0.0);
+    
+    // Separator: Set spacing for space char, then space char, then reset spacing for next word
+    let word_separator = format!("{{\\fsp{:.1}}} {{\\fsp{:.1}}}", space_char_spacing, adjusted_letter_spacing);
+
     writeln!(file, "Style: Border2Layer,{},{},{},{},{},{},{},0,0,0,100,100,{},0,1,{},{},{},{},{},{},1",
         font_name_for_style,
         adjusted_font_size,
@@ -1503,7 +1516,7 @@ fn generate_ass_file(
             // Layer 0: Border2Layer base text with all words at normal size
             // Use \fw tag to ensure correct font weight
             let weight_tag = format!("{{\\fw{}}}", settings.font_weight);
-            let base_text = chunk.iter().map(|w| format!("{}{}", weight_tag, w.word)).collect::<Vec<_>>().join(" ");
+            let base_text = chunk.iter().map(|w| format!("{}{}", weight_tag, w.word)).collect::<Vec<_>>().join(&word_separator);
             
             writeln!(file, "Dialogue: 0,{},{},Border2Layer,,0,0,0,,{}{}",
                 format_time(t_start),
@@ -1555,7 +1568,7 @@ fn generate_ass_file(
                     }
                 }
                 
-                let overlay_text = positioned_text_parts.join(" ");
+                let overlay_text = positioned_text_parts.join(&word_separator);
                 
                 // Layer 1: Border2Layer active word (shadow + outer border)
                 writeln!(file, "Dialogue: 1,{},{},Border2Layer,,0,0,0,,{}{}",
