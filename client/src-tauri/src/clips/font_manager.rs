@@ -27,20 +27,6 @@ pub fn get_fonts_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, Strin
     println!("[Rust] Fonts directory: {}", fonts_dir.display());
     println!("[Rust] Fonts directory exists: {}", fonts_dir.exists());
     
-    if fonts_dir.exists() {
-        // List font files found
-        if let Ok(entries) = std::fs::read_dir(&fonts_dir) {
-            println!("[Rust] Font files found:");
-            for entry in entries.flatten() {
-                if let Some(name) = entry.file_name().to_str() {
-                    if name.ends_with(".ttf") || name.ends_with(".otf") {
-                        println!("[Rust]   - {}", name);
-                    }
-                }
-            }
-        }
-    }
-    
     // Create fontconfig file to tell FFmpeg where to find fonts
     create_fontconfig_file(&fonts_dir)?;
     
