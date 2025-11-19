@@ -1220,8 +1220,11 @@ fn generate_ass_file(
     };
 
     let adjusted_font_size = (settings.font_size * font_size_scale).round();
-    let adjusted_border1_width = settings.border1_width * font_size_scale;
-    let adjusted_border2_width = settings.border2_width * font_size_scale;
+    // CSS WebkitTextStroke is centered on the path, so only half extends outwards.
+    // ASS Outline is entirely outwards. To match the visual thickness of the frontend,
+    // we need to divide the stroke width by 2.
+    let adjusted_border1_width = (settings.border1_width * font_size_scale) / 2.0;
+    let adjusted_border2_width = (settings.border2_width * font_size_scale) / 2.0;
     // ASS Shadow parameter is an offset depth, calculate from shadow offset X/Y
     // Use the magnitude of the offset vector for proper shadow distance
     let shadow_offset_magnitude = ((settings.shadow_offset_x.powi(2) + settings.shadow_offset_y.powi(2)).sqrt()) * font_size_scale;
