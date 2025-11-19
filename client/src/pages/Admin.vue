@@ -783,6 +783,7 @@
   import { useAuthStore } from '@/stores/auth';
   import PageLayout from '@/components/PageLayout.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
+  import api from '@/services/api';
 
   interface User {
     id: number;
@@ -859,26 +860,11 @@
     try {
       console.log('🔐 Admin - Fetching users...');
 
-      const response = await fetch(`${API_BASE}/api/admin/users`, {
-        headers: {
-          Authorization: `Bearer ${authStore.token}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      const response = await api.get('/admin/users');
 
       console.log('🔐 Admin - Response status:', response.status);
 
-      if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Admin access required');
-        } else if (response.status === 401) {
-          throw new Error('Authentication required');
-        } else {
-          throw new Error(`Failed to fetch users: ${response.statusText}`);
-        }
-      }
-
-      const data: UsersResponse = await response.json();
+      const data: UsersResponse = response.data;
       console.log('🔐 Admin - Users data:', data);
 
       if (data.success) {
@@ -949,29 +935,11 @@
     try {
       console.log(`🔐 Admin - Promoting user ${userToPromote.value.id} to admin...`);
 
-      const response = await fetch(`${API_BASE}/api/admin/users/${userToPromote.value.id}/promote`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${authStore.token}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      const response = await api.post(`/admin/users/${userToPromote.value.id}/promote`);
 
       console.log('🔐 Admin - Promote response status:', response.status);
 
-      if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Admin access required');
-        } else if (response.status === 401) {
-          throw new Error('Authentication required');
-        } else if (response.status === 404) {
-          throw new Error('User not found');
-        } else {
-          throw new Error(`Failed to promote user: ${response.statusText}`);
-        }
-      }
-
-      const data = await response.json();
+      const data = response.data;
       console.log('🔐 Admin - Promote response data:', data);
 
       if (data.success) {

@@ -439,8 +439,7 @@
   import { useRouter } from 'vue-router';
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
-
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+  import api from '@/services/api';
   const router = useRouter();
   const authStore = useAuthStore();
   const { success: showSuccessToast, error: showErrorToast } = useToast();
@@ -474,8 +473,8 @@
 
   async function fetchPricing() {
     try {
-      const response = await fetch(`${API_BASE}/api/pricing`);
-      const data = await response.json();
+      const response = await api.get('/pricing');
+      const data = response.data;
       if (data.success) {
         packs.value = data.packs;
         solUsdRate.value = data.sol_usd_rate;
@@ -499,13 +498,8 @@
     }
 
     try {
-      const response = await fetch(`${API_BASE}/api/credits/balance`, {
-        headers: {
-          Authorization: `Bearer ${authStore.token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      const data = await response.json();
+      const response = await api.get('/credits/balance');
+      const data = response.data;
       if (data.success) {
         balance.value = data.balance;
       } else {

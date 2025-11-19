@@ -133,6 +133,7 @@
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
   import { useAuthStore } from '@/stores/auth';
+  import api from '@/services/api';
 
   interface Props {
     show: boolean;
@@ -195,27 +196,9 @@
         user_wallet_address: authStore.walletAddress,
       };
 
-      const response = await fetch(`${API_BASE}/api/bug-reports`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${authStore.token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
+      const response = await api.post('/bug-reports', requestBody);
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('Authentication required');
-        } else if (response.status === 400) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Invalid bug report data');
-        } else {
-          throw new Error(`Failed to submit bug report: ${response.statusText}`);
-        }
-      }
-
-      const data = await response.json();
+      const data = response.data;
 
       if (data.success) {
         success.value = 'Bug report submitted successfully! Thank you for helping us improve the application.';

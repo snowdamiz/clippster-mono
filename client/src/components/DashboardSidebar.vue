@@ -179,6 +179,7 @@
   import { useWallet } from '@/composables/useWallet';
   import { navigationItems } from '@/config/navigation';
   import BugReportDialog from '@/components/BugReportDialog.vue';
+  import api from '@/services/api';
 
   const route = useRoute();
   const router = useRouter();
@@ -268,20 +269,13 @@
 
     loadingBalance.value = true;
     try {
-      const response = await fetch(`${API_BASE}/api/credits/balance`, {
-        headers: {
-          Authorization: `Bearer ${authStore.token}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      const response = await api.get('/credits/balance');
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          hoursRemaining.value =
-            data.balance.hours_remaining === 'unlimited'
-              ? 'unlimited'
-              : parseFloat(data.balance.hours_remaining.toFixed(1));
+      if (response.data.success) {
+        hoursRemaining.value =
+          response.data.balance.hours_remaining === 'unlimited'
+            ? 'unlimited'
+            : parseFloat(response.data.balance.hours_remaining.toFixed(1));
         }
       }
     } catch (error) {

@@ -1,7 +1,6 @@
 import { ref, computed } from 'vue';
 import { useAuthStore } from '../stores/auth';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+import api from '../services/api';
 
 export function useCreditBalance() {
   const authStore = useAuthStore();
@@ -25,27 +24,17 @@ export function useCreditBalance() {
     error.value = null;
 
     try {
-      const response = await fetch(`${API_BASE}/api/credits/balance`, {
-        headers: {
-          Authorization: `Bearer ${authStore.token}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      const response = await api.get('/credits/balance');
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          hoursRemaining.value =
-            data.balance.hours_remaining === 'unlimited'
-              ? 'unlimited'
-              : data.balance.hours_remaining;
-          isAdmin.value = data.balance.hours_remaining === 'unlimited';
-          return data;
-        } else {
-          throw new Error(data.error || 'Failed to fetch balance');
-        }
+      if (response.data.success) {
+        hoursRemaining.value =
+          response.data.balance.hours_remaining === 'unlimited'
+            ? 'unlimited'
+            : response.data.balance.hours_remaining;
+        isAdmin.value = response.data.balance.hours_remaining === 'unlimited';
+        return response.data;
       } else {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        throw new Error(response.data.error || 'Failed to fetch balance');
       }
     } catch (err: any) {
       error.value = err.message;

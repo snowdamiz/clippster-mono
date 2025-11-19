@@ -9,8 +9,7 @@ import { useChunkedTranscriptCache } from './useChunkedTranscriptCache';
 import { useVideoOperations } from './useVideoOperations';
 import { useToast } from '@/composables/useToast';
 import { useFocalPointDetection } from '@/composables/useFocalPointDetection';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+import api from '@/services/api';
 
 export interface ChunkedDetectionOptions {
   chunkDurationMinutes?: number;
@@ -186,20 +185,13 @@ export function useChunkedClipDetection() {
       };
 
       // Call the chunked detection endpoint
-      const response = await fetch(`${API_BASE}/api/clips/detect-chunked`, {
-        method: 'POST',
+      const response = await api.post('/clips/detect-chunked', formData, {
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
+          'Content-Type': 'multipart/form-data',
         },
-        body: formData,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Server error: ${response.status}`);
-      }
-
-      const result = await response.json();
+      const result = response.data;
 
       if (!result.success) {
         throw new Error(result.error || 'Clip detection failed');
@@ -266,20 +258,13 @@ export function useChunkedClipDetection() {
         message: 'Analyzing transcript for clips...',
       };
 
-      const response = await fetch(`${API_BASE}/api/clips/detect`, {
-        method: 'POST',
+      const response = await api.post('/clips/detect', formData, {
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
+          'Content-Type': 'multipart/form-data',
         },
-        body: formData,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Server error: ${response.status}`);
-      }
-
-      const result = await response.json();
+      const result = response.data;
 
       if (!result.success) {
         throw new Error(result.error || 'Clip detection failed');
@@ -356,20 +341,13 @@ export function useChunkedClipDetection() {
       formData.append('using_cached_transcript', 'false');
       formData.append('audio', audioFile, audioFile.name);
 
-      const response = await fetch(`${API_BASE}/api/clips/detect`, {
-        method: 'POST',
+      const response = await api.post('/clips/detect', formData, {
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
+          'Content-Type': 'multipart/form-data',
         },
-        body: formData,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Server error: ${response.status}`);
-      }
-
-      const result = await response.json();
+      const result = response.data;
 
       if (!result.success) {
         throw new Error(result.error || 'Clip detection failed');
@@ -443,20 +421,13 @@ export function useChunkedClipDetection() {
         message: 'Analyzing transcript for clips...',
       };
 
-      const response = await fetch(`${API_BASE}/api/clips/detect`, {
-        method: 'POST',
+      const response = await api.post('/clips/detect', formData, {
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
+          'Content-Type': 'multipart/form-data',
         },
-        body: formData,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Server error: ${response.status}`);
-      }
-
-      const result = await response.json();
+      const result = response.data;
 
       if (!result.success) {
         throw new Error(result.error || 'Clip detection failed');
