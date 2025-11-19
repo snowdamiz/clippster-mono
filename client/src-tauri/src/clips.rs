@@ -920,10 +920,6 @@ fn get_fonts_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     // In dev mode, fonts are in src-tauri/fonts
     // In production, fonts are in the resource directory
     let fonts_dir = if cfg!(debug_assertions) {
-        // Dev mode: use src-tauri/fonts directly
-        let app_dir = app.path().app_data_dir()
-            .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-        
         // Navigate up to find the project root
         let current_exe = std::env::current_exe()
             .map_err(|e| format!("Failed to get current exe: {}", e))?;
