@@ -1151,11 +1151,15 @@ fn generate_ass_file(
     let mut file = std::fs::File::create(output_path)
         .map_err(|e| format!("Failed to create subtitle file: {}", e))?;
 
-    // Generate ASS header with actual video dimensions
+    // Generate ASS header with normalized 1080p height coordinate system
+    // This ensures font sizes match the frontend which uses 1080p as reference
+    let play_res_y = 1080;
+    let play_res_x = (video_width as f64 * (1080.0 / video_height as f64)).round() as u32;
+
     writeln!(file, "[Script Info]").unwrap();
     writeln!(file, "ScriptType: v4.00+").unwrap();
-    writeln!(file, "PlayResX: {}", video_width).unwrap();
-    writeln!(file, "PlayResY: {}", video_height).unwrap();
+    writeln!(file, "PlayResX: {}", play_res_x).unwrap();
+    writeln!(file, "PlayResY: {}", play_res_y).unwrap();
     writeln!(file, "WrapStyle: 1").unwrap(); // Word wrapping
     writeln!(file, "ScaledBorderAndShadow: yes").unwrap();
     writeln!(file, "").unwrap();
@@ -1233,22 +1237,35 @@ fn generate_ass_file(
 
     println!("[Rust] Font size: {} -> {} (scale: {})", settings.font_size, adjusted_font_size, font_size_scale);
 
-    // Alignment: 1=Left, 2=Center, 3=Right (Subtitles usually bottom, so 1,2,3 for bottom; 4,5,6 for middle; 7,8,9 for top)
-    let alignment = match settings.position.as_str() {
-        "top" => 8,
-        "middle" => 5,
-        "bottom" => 2,
-        _ => 2,
-    };
-
-    // Calculate MarginV based on positionPercentage and actual video height
-    let margin_v = if settings.position == "bottom" {
-        (video_height as f32 * (1.0 - settings.position_percentage / 100.0)) as i32
-    } else if settings.position == "top" {
-         (video_height as f32 * (settings.position_percentage / 100.0)) as i32
-    } else {
-        0
-    };
+    // Calculate margins and positioning to match VideoPlayer.vue
+    // Vue uses a container with width=maxWidth% centered on screen
+    // And positions it using top=positionPercentage% and translate(-50%, -50%)
+    
+    let adjusted_padding = settings.padding * font_size_scale;
+    let box_width_px = play_res_x as f64 * (settings.max_width as f64 / 100.0);
+    
+    // Calculate margins to constrain text to box_width - 2*padding
+    // The box is centered on screen, so margins are symmetric
+    let side_margin = (play_res_x as f64 - box_width_px) / 2.0;
+    let margin_l = (side_margin + adjusted_padding as f64).round() as i32;
+    let margin_r = (side_margin + adjusted_padding as f64).round() as i32;
+    
+    // Calculate target position for \pos(x,y)
+    // X: Center of screen + Offset (percentage of box width)
+    let shift_x_px = box_width_px * (settings.text_offset_x as f64 / 100.0);
+    let target_x = (play_res_x as f64 / 2.0) + shift_x_px;
+    
+    // Y: Position% of screen + Offset (percentage of height)
+    // We approximate height as 2 lines + padding for the offset calculation
+    let approx_height = (adjusted_font_size as f64 * 2.0) + (adjusted_padding as f64 * 2.0);
+    let shift_y_px = approx_height * (settings.text_offset_y as f64 / 100.0);
+    let target_y = (play_res_y as f64 * (settings.position_percentage as f64 / 100.0)) + shift_y_px;
+    
+    // Use Alignment 5 (Middle Center) to match Vue's translate(-50%, -50%)
+    let alignment = 5;
+    let margin_v = 10; // Not used for positioning with \pos, but required by Style
+    
+    let pos_tag = format!("{{\\pos({:.0},{:.0})}}", target_x, target_y);
 
     // For embedded fonts, we need to reference the actual font family name 
     // and use \fw tags for specific weights, as standard ASS only supports Bold/Italic.
@@ -1279,7 +1296,7 @@ fn generate_ass_file(
     // Use shadow_color for BackColour (which controls Shadow color in BorderStyle=1)
     let shadow_color_ass = convert_color(&settings.shadow_color);
     
-    writeln!(file, "Style: Border2Layer,{},{},{},{},{},{},{},0,0,0,100,100,{},0,1,{},{},{},10,10,{},1",
+    writeln!(file, "Style: Border2Layer,{},{},{},{},{},{},{},0,0,0,100,100,{},0,1,{},{},{},{},{},{},1",
         font_name_for_style,
         adjusted_font_size,
         primary_color,
@@ -1291,11 +1308,13 @@ fn generate_ass_file(
         total_border_width, // Outline (total width)
         adjusted_shadow, // Shadow (drop shadow)
         alignment,
+        margin_l,
+        margin_r,
         margin_v
     ).unwrap();
 
     // Style 2: Border1Layer (top layer with smaller outline = border1 only)
-    writeln!(file, "Style: Border1Layer,{},{},{},{},{},{},{},0,0,0,100,100,{},0,1,{},{},{},10,10,{},1",
+    writeln!(file, "Style: Border1Layer,{},{},{},{},{},{},{},0,0,0,100,100,{},0,1,{},{},{},{},{},{},1",
         font_name_for_style,
         adjusted_font_size,
         primary_color,
@@ -1307,6 +1326,8 @@ fn generate_ass_file(
         adjusted_border1_width, // Outline (border1 only)
         0.0, // No shadow on top layer
         alignment,
+        margin_l,
+        margin_r,
         margin_v
     ).unwrap();
 
@@ -1472,16 +1493,18 @@ fn generate_ass_file(
             let weight_tag = format!("{{\\fw{}}}", settings.font_weight);
             let base_text = chunk.iter().map(|w| format!("{}{}", weight_tag, w.word)).collect::<Vec<_>>().join(" ");
             
-            writeln!(file, "Dialogue: 0,{},{},Border2Layer,,0,0,0,,{}",
+            writeln!(file, "Dialogue: 0,{},{},Border2Layer,,0,0,0,,{}{}",
                 format_time(t_start),
                 format_time(t_end),
+                pos_tag,
                 base_text
             ).unwrap();
             
             // Layer 2: Border1Layer base text with all words at normal size
-            writeln!(file, "Dialogue: 2,{},{},Border1Layer,,0,0,0,,{}",
+            writeln!(file, "Dialogue: 2,{},{},Border1Layer,,0,0,0,,{}{}",
                 format_time(t_start),
                 format_time(t_end),
+                pos_tag,
                 base_text
             ).unwrap();
             
@@ -1523,16 +1546,18 @@ fn generate_ass_file(
                 let overlay_text = positioned_text_parts.join(" ");
                 
                 // Layer 1: Border2Layer active word (shadow + outer border)
-                writeln!(file, "Dialogue: 1,{},{},Border2Layer,,0,0,0,,{}",
+                writeln!(file, "Dialogue: 1,{},{},Border2Layer,,0,0,0,,{}{}",
                     format_time(t_start),
                     format_time(t_end),
+                    pos_tag,
                     overlay_text
                 ).unwrap();
                 
                 // Layer 3: Border1Layer active word (inner border)
-                writeln!(file, "Dialogue: 3,{},{},Border1Layer,,0,0,0,,{}",
+                writeln!(file, "Dialogue: 3,{},{},Border1Layer,,0,0,0,,{}{}",
                     format_time(t_start),
                     format_time(t_end),
+                    pos_tag,
                     overlay_text
                 ).unwrap();
             }
