@@ -1,8 +1,24 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
 import { useAuthStore } from '../stores/auth';
 
+const getBaseUrl = () => {
+  let url = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+
+  // Remove trailing slash if present
+  if (url.endsWith('/')) {
+    url = url.slice(0, -1);
+  }
+
+  // Ensure it ends with /api if it doesn't already
+  if (!url.endsWith('/api')) {
+    url += '/api';
+  }
+
+  return url;
+};
+
 const api: AxiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:4000/api',
+  baseURL: getBaseUrl(),
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',

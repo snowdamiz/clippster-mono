@@ -276,7 +276,6 @@
           response.data.balance.hours_remaining === 'unlimited'
             ? 'unlimited'
             : parseFloat(response.data.balance.hours_remaining.toFixed(1));
-        }
       }
     } catch (error) {
       console.error('Failed to fetch balance:', error);
