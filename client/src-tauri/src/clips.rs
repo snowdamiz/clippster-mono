@@ -584,7 +584,11 @@ async fn build_single_segment_clip_with_settings(
     let fonts_dir = get_fonts_dir(app).ok();
 
     // Build video filter
-    let mut vf_parts = vec![format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y)];
+    // Force RGB24 for accurate subtitle color rendering before applying ASS
+    let mut vf_parts = vec![
+        format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y),
+        "format=rgb24".to_string()
+    ];
     
     if let Some(path) = subtitle_path {
         let path_str = path.to_string_lossy().replace("\\", "/").replace(":", "\\:");
@@ -758,11 +762,12 @@ async fn build_multi_segment_clip_with_settings(
         let sub_arg = sub_path.to_string_lossy().replace("\\", "/").replace(":", "\\:");
         
         // Build ass filter with fontsdir parameter
+        // Force RGB24 for accurate subtitle color rendering
         let vf_arg = if let Some(fdir) = fonts_dir_for_burn {
             let fonts_dir_str = fdir.to_string_lossy().replace("\\", "/").replace(":", "\\:");
-            format!("ass='{}':fontsdir='{}'", sub_arg, fonts_dir_str)
+            format!("format=rgb24,ass='{}':fontsdir='{}'", sub_arg, fonts_dir_str)
         } else {
-            format!("ass='{}'", sub_arg)
+            format!("format=rgb24,ass='{}'", sub_arg)
         };
 
         // Set fontconfig path for FFmpeg to find our custom fonts
@@ -1188,9 +1193,10 @@ fn generate_ass_file(
             let g = &hex[2..4];
             let b = &hex[4..6];
             // ASS uses BGR order with alpha prefix (00 = fully opaque)
-            format!("&H00{}{}{}&", b, g, r)
+            // Note: Style definitions do NOT use the trailing '&' that override tags use
+            format!("&H00{}{}{}", b, g, r).to_uppercase()
         } else {
-            "&H00FFFFFF&".to_string()
+            "&H00FFFFFF".to_string()
         }
     };
 
@@ -1326,7 +1332,7 @@ fn generate_ass_file(
         primary_color,
         primary_color, // SecondaryColour
         border1_color, // OutlineColour (border1 color)
-        "&H00000000&".to_string(), // No background for top layer
+        "&H00000000".to_string(), // No background for top layer
         bold,
         adjusted_letter_spacing,
         adjusted_border1_width, // Outline (border1 only)
