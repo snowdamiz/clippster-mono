@@ -1,6 +1,6 @@
 <template>
   <div class="min-h-screen bg-background flex">
-    <DashboardSidebar />
+    <DashboardSidebar @show-auth-modal="showAuthModal = true" />
     <!-- Main content area with left margin to account for fixed sidebar -->
     <main class="flex-1 ml-64">
       <!-- <DashboardHeader /> -->
@@ -13,11 +13,17 @@
         </div>
       </div>
     </main>
+    <!-- Authentication Modal -->
+    <AuthModal v-model="showAuthModal" />
   </div>
 </template>
 
 <script setup lang="ts">
+  import { ref } from 'vue';
   import DashboardSidebar from '@/components/DashboardSidebar.vue';
+  import AuthModal from '@/components/AuthModal.vue';
+
+  const showAuthModal = ref(false);
 </script>
 
 <style scoped>

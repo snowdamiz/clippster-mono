@@ -189,6 +189,7 @@
 
 <script setup lang="ts">
   import { ref, watch, computed } from 'vue';
+  import { useRouter } from 'vue-router';
   import { type Project, type ClipWithVersion, getClipsWithVersionsByProjectId, deleteClip } from '@/services/database';
   import type { SubtitleSettings } from '@/types';
   import VideoPlayer from './VideoPlayer.vue';
@@ -205,8 +206,11 @@
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useVideoFocalPoint } from '@/composables/useVideoFocalPoint';
   import { useTranscriptData } from '@/composables/useTranscriptData';
+  import { useAuthStore } from '@/stores/auth';
   import { getRawVideosByProjectId } from '@/services/database';
 
+  const router = useRouter();
+  const authStore = useAuthStore();
   const { error: showError } = useToast();
   const { setClipGenerationInProgress } = useWindowClose();
 
@@ -384,6 +388,13 @@
   }
 
   async function onDetectClips() {
+    // Check if user is authenticated before showing clip detection dialog
+    if (!authStore.isAuthenticated) {
+      // Show auth modal directly without error toast
+      window.dispatchEvent(new CustomEvent('show-auth-modal'));
+      return;
+    }
+
     // Show confirmation dialog (prompt will be selected within the dialog)
     showDetectConfirmDialog.value = true;
   }

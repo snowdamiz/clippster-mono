@@ -4,6 +4,7 @@
   import AppCloseDialog from '@/components/AppCloseDialog.vue';
   import TitleBar from '@/components/TitleBar.vue';
   import LoadingScreen from '@/components/LoadingScreen.vue';
+  import AuthModal from '@/components/AuthModal.vue';
   import { initDatabase, seedDefaultPrompt } from '@/services/database';
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
@@ -15,11 +16,12 @@
   const router = useRouter();
   const isLoading = ref(true);
   const titleBarPlatformOverride = ref('auto');
+  const showAuthModal = ref(false);
 
   // Auth event listener function
   const handleAuthRequired = () => {
-    console.log('[App] Auth required, redirecting to login');
-    router.push('/login');
+    console.log('[App] Auth required, showing auth modal');
+    showAuthModal.value = true;
   };
 
   // Platform override functions
@@ -52,6 +54,11 @@
 
     // Listen for auth-required events (e.g., when token expires)
     window.addEventListener('auth-required', handleAuthRequired);
+
+    // Listen for show-auth-modal events from components
+    window.addEventListener('show-auth-modal', () => {
+      showAuthModal.value = true;
+    });
 
     // Listen for platform override events from Admin panel
     window.addEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
@@ -87,6 +94,9 @@
   // Cleanup auth event listener on unmount
   onUnmounted(() => {
     window.removeEventListener('auth-required', handleAuthRequired);
+    window.removeEventListener('show-auth-modal', () => {
+      showAuthModal.value = true;
+    });
     window.removeEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
   });
 </script>
@@ -108,6 +118,8 @@
       <router-view />
       <!-- Global app close confirmation dialog -->
       <AppCloseDialog />
+      <!-- Authentication Modal -->
+      <AuthModal v-model="showAuthModal" />
     </div>
   </div>
 </template>

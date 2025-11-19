@@ -143,7 +143,10 @@
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+  import { useRouter } from 'vue-router';
   import { useCreditBalance } from '@/composables/useCreditBalance';
+  import { useAuthStore } from '@/stores/auth';
+  import { useToast } from '@/composables/useToast';
   import { getAllPrompts } from '@/services/database';
 
   interface Prompt {
@@ -170,8 +173,19 @@
   const error = ref<string>('');
   const prompts = ref<Prompt[]>([]);
 
+  const router = useRouter();
+  const authStore = useAuthStore();
+  const { error: showError } = useToast();
+
   // Use credit balance composable
-  const { loading: loadingCredits, error: creditError, hoursRemaining, isAdmin, fetchBalance } = useCreditBalance();
+  const {
+    loading: loadingCredits,
+    error: creditError,
+    hoursRemaining,
+    isAdmin,
+    isAuthenticated,
+    fetchBalance,
+  } = useCreditBalance();
 
   // Computed credit information
   const creditInfo = computed(() => {
@@ -248,6 +262,13 @@
   async function confirm() {
     if (!selectedPromptId.value) {
       error.value = 'Please select a detection prompt';
+      return;
+    }
+
+    // Check authentication
+    if (!authStore.isAuthenticated) {
+      close();
+      window.dispatchEvent(new CustomEvent('show-auth-modal'));
       return;
     }
 

@@ -105,7 +105,11 @@
     <div class="absolute bottom-0 w-64 border-t border-border">
       <!-- Credit Balance -->
       <div class="px-2 pb-2 pt-2">
-        <router-link to="/pricing" class="credit-balance-card" title="View Pricing & Purchase Credits">
+        <button
+          @click="handleCreditClick"
+          class="credit-balance-card w-full"
+          :title="authStore.isAuthenticated ? 'View Pricing & Purchase Credits' : 'Sign in to view credits'"
+        >
           <div class="credit-balance-header">
             <div class="credit-left">
               <div class="credit-icon-wrapper">
@@ -128,14 +132,21 @@
             </div>
 
             <div v-if="!loadingBalance" class="credit-right">
-              <div v-if="typeof hoursRemaining === 'string'" class="credit-value-wrapper">
-                <span class="credit-value unlimited">∞</span>
+              <!-- Authenticated user: show balance -->
+              <div v-if="authStore.isAuthenticated">
+                <div v-if="typeof hoursRemaining === 'string'" class="credit-value-wrapper">
+                  <span class="credit-value unlimited">∞</span>
+                </div>
+                <div v-else class="credit-value-wrapper">
+                  <span class="credit-value">
+                    {{ hoursRemaining }}
+                  </span>
+                  <span class="credit-unit">{{ hoursRemaining === 1 ? 'hr' : 'hrs' }}</span>
+                </div>
               </div>
-              <div v-else class="credit-value-wrapper">
-                <span class="credit-value">
-                  {{ hoursRemaining }}
-                </span>
-                <span class="credit-unit">{{ hoursRemaining === 1 ? 'hr' : 'hrs' }}</span>
+              <!-- Unauthenticated user: show sign in prompt -->
+              <div v-else class="credit-sign-in-prompt">
+                <span class="credit-sign-in-text">Sign in</span>
               </div>
             </div>
 
@@ -145,13 +156,16 @@
               </div>
             </div>
           </div>
-        </router-link>
+        </button>
       </div>
       <!-- Wallet info -->
-      <div class="px-4 pb-4 pt-4 border-t border-border">
-        <div class="flex items-center justify-between">
+      <div :class="authStore.isAuthenticated ? 'px-4 pb-4 pt-4' : 'px-2 pb-2 pt-2'" class="border-t border-border">
+        <div v-if="authStore.isAuthenticated" class="flex items-center justify-between">
           <span class="font-mono text-xs text-primary">{{ formattedAddress }}</span>
           <button @click="handleDisconnect" class="disconnect-btn">Disconnect</button>
+        </div>
+        <div v-else class="flex items-center justify-center">
+          <button @click="showAuthModal" class="sign-in-btn">Sign In</button>
         </div>
       </div>
     </div>
@@ -171,6 +185,10 @@
   const authStore = useAuthStore();
   const { formatAddress } = useWallet();
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
+  const emit = defineEmits<{
+    'show-auth-modal': [];
+  }>();
 
   const hoursRemaining = ref<number | 'unlimited'>(0);
   const loadingBalance = ref(false);
@@ -208,11 +226,24 @@
     return previousItem.category !== category;
   };
 
-  const formattedAddress = computed(() => formatAddress(authStore.walletAddress));
+  const formattedAddress = computed(() => {
+    return authStore.isAuthenticated ? formatAddress(authStore.walletAddress) : '';
+  });
 
   const handleDisconnect = () => {
     authStore.logout();
-    router.push('/login');
+  };
+
+  const showAuthModal = () => {
+    emit('show-auth-modal');
+  };
+
+  const handleCreditClick = () => {
+    if (authStore.isAuthenticated) {
+      router.push('/pricing');
+    } else {
+      showAuthModal();
+    }
   };
 
   // Dialog handling
@@ -229,9 +260,11 @@
     // Could add a toast notification here if needed
   };
 
-  
   async function fetchBalance() {
-    if (!authStore.token) return;
+    if (!authStore.isAuthenticated) {
+      hoursRemaining.value = null;
+      return;
+    }
 
     loadingBalance.value = true;
     try {
@@ -309,12 +342,15 @@
   /* Credit Balance Card Styles */
   .credit-balance-card {
     display: block;
+    width: 100%;
     padding: 0.625rem;
     border-radius: 0.375rem;
     background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%);
     border: 1px solid rgba(99, 102, 241, 0.2);
     transition: all 0.2s ease;
     cursor: pointer;
+    text-align: left;
+    font: inherit;
   }
 
   .credit-balance-card:hover {
@@ -386,7 +422,6 @@
     background-clip: text;
   }
 
-  
   .credit-unit {
     font-size: 0.75rem;
     font-weight: 500;
@@ -411,5 +446,38 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  .credit-sign-in-prompt {
+    display: flex;
+    align-items: center;
+  }
+
+  .credit-sign-in-text {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .sign-in-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: white;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.8) 0%, rgba(139, 92, 246, 0.8) 100%);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 0.375rem;
+    text-decoration: none;
+    transition: all 0.2s ease;
+  }
+
+  .sign-in-btn:hover {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 1) 0%, rgba(139, 92, 246, 1) 100%);
+    border-color: rgba(99, 102, 241, 0.5);
+    transform: translateY(-1px);
   }
 </style>

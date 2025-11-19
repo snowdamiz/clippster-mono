@@ -1,17 +1,23 @@
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useAuthStore } from '../stores/auth';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 export function useCreditBalance() {
+  const authStore = useAuthStore();
   const loading = ref(false);
   const error = ref<string | null>(null);
   const hoursRemaining = ref<number | 'unlimited' | null>(null);
   const isAdmin = ref(false);
 
+  const isAuthenticated = computed(() => authStore.isAuthenticated);
+
   async function fetchBalance() {
-    if (!useAuthStore().token) {
-      error.value = 'Authentication required';
+    if (!authStore.token) {
+      // Clear previous data but don't set error for unauthenticated users
+      hoursRemaining.value = null;
+      isAdmin.value = false;
+      error.value = null;
       return null;
     }
 
@@ -21,7 +27,7 @@ export function useCreditBalance() {
     try {
       const response = await fetch(`${API_BASE}/api/credits/balance`, {
         headers: {
-          Authorization: `Bearer ${useAuthStore().token}`,
+          Authorization: `Bearer ${authStore.token}`,
           'Content-Type': 'application/json',
         },
       });
@@ -55,6 +61,7 @@ export function useCreditBalance() {
     error,
     hoursRemaining,
     isAdmin,
+    isAuthenticated,
     fetchBalance,
   };
 }

@@ -30,10 +30,12 @@ api.interceptors.response.use(
     const authStore = useAuthStore();
 
     if (error.response?.status === 401) {
-      // Token expired or invalid
-      authStore.logout();
-      // Optionally redirect to login or show auth modal
-      window.dispatchEvent(new CustomEvent('auth-required'));
+      // Only auto-logout if user was previously authenticated
+      if (authStore.isAuthenticated) {
+        authStore.logout();
+        // Dispatch auth-required event for components to handle individually
+        window.dispatchEvent(new CustomEvent('auth-required'));
+      }
     }
 
     return Promise.reject(error);

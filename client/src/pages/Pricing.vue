@@ -27,7 +27,12 @@
 
       <div class="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-muted rounded-md">
         <span class="text-sm text-muted-foreground">Current Balance:</span>
-        <span v-if="typeof balance.hours_remaining === 'string'" class="text-lg font-bold text-purple-600">
+        <span v-if="!authStore.isAuthenticated" class="text-sm text-muted-foreground">
+          <button @click="showAuthModal" class="text-purple-600 hover:text-purple-700 font-medium">
+            Sign in to view balance
+          </button>
+        </span>
+        <span v-else-if="typeof balance.hours_remaining === 'string'" class="text-lg font-bold text-purple-600">
           Unlimited Credits
         </span>
         <span v-else class="text-lg font-bold text-foreground">{{ balance.hours_remaining }} hours</span>
@@ -39,7 +44,7 @@
     </div>
     <!-- Admin State -->
     <div
-      v-else-if="typeof balance.hours_remaining === 'string'"
+      v-else-if="authStore.isAuthenticated && typeof balance.hours_remaining === 'string'"
       class="flex flex-col items-center justify-center py-20"
     >
       <div class="text-center max-w-md">
@@ -167,7 +172,8 @@
               "
               @click.stop="selectPack(packKey, packs[packKey])"
             >
-              <span v-if="packKey === 'creator'">Get Started</span>
+              <span v-if="!authStore.isAuthenticated">Sign in to Purchase</span>
+              <span v-else-if="packKey === 'creator'">Get Started</span>
               <span v-else>Purchase</span>
             </button>
           </div>
@@ -430,10 +436,12 @@
 
 <script setup lang="ts">
   import { ref, onMounted } from 'vue';
+  import { useRouter } from 'vue-router';
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
 
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+  const router = useRouter();
   const authStore = useAuthStore();
   const { success: showSuccessToast, error: showErrorToast } = useToast();
 
@@ -484,6 +492,12 @@
   }
 
   async function fetchBalance() {
+    // Only fetch balance if user is authenticated
+    if (!authStore.isAuthenticated) {
+      balance.value = { hours_remaining: 0, hours_used: 0 };
+      return;
+    }
+
     try {
       const response = await fetch(`${API_BASE}/api/credits/balance`, {
         headers: {
@@ -523,6 +537,13 @@
   }
 
   function selectPack(key: string, pack: any) {
+    // Check if user is authenticated
+    if (!authStore.isAuthenticated) {
+      // Show auth modal instead of redirecting
+      showAuthModal();
+      return;
+    }
+
     selectedPack.value = {
       key,
       hours: pack.hours,
@@ -531,6 +552,11 @@
     };
     showPaymentModal.value = true;
     paymentStep.value = 'confirm';
+  }
+
+  function showAuthModal() {
+    // Dispatch event to show auth modal in App component
+    window.dispatchEvent(new CustomEvent('show-auth-modal'));
   }
 
   async function initiatePayment() {

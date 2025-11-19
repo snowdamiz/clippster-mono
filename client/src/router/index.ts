@@ -13,23 +13,9 @@ const router = createRouter({
       redirect: '/projects',
     },
     {
-      path: '/login',
-      name: 'login',
-      component: () => import('@/components/WalletAuth.vue'),
-      beforeEnter: (_to, _from, next) => {
-        const authStore = useAuthStore();
-        if (authStore.isAuthenticated) {
-          next('/projects');
-        } else {
-          next();
-        }
-      },
-    },
-    {
       path: '/projects',
       name: 'projects',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
       children: [
         {
           path: '',
@@ -42,7 +28,6 @@ const router = createRouter({
       path: '/clips',
       name: 'clips',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
       children: [
         {
           path: '',
@@ -55,7 +40,6 @@ const router = createRouter({
       path: '/videos',
       name: 'videos',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
       children: [
         {
           path: '',
@@ -68,7 +52,6 @@ const router = createRouter({
       path: '/assets',
       name: 'assets',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
       children: [
         {
           path: '',
@@ -81,7 +64,6 @@ const router = createRouter({
       path: '/prompts',
       name: 'prompts',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
       children: [
         {
           path: '',
@@ -104,7 +86,6 @@ const router = createRouter({
       path: '/pricing',
       name: 'pricing',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
       children: [
         {
           path: '',
@@ -117,7 +98,6 @@ const router = createRouter({
       path: '/pumpfun',
       name: 'pumpfun',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
       children: [
         {
           path: '',
@@ -130,7 +110,6 @@ const router = createRouter({
       path: '/kick',
       name: 'kick',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
       children: [
         {
           path: '',
@@ -143,7 +122,6 @@ const router = createRouter({
       path: '/twitch',
       name: 'twitch',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
       children: [
         {
           path: '',
@@ -156,7 +134,6 @@ const router = createRouter({
       path: '/youtube',
       name: 'youtube',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
       children: [
         {
           path: '',
@@ -181,14 +158,12 @@ const router = createRouter({
   ],
 });
 
-// Navigation guard to check authentication and admin access
+// Navigation guard to check admin access only
 router.beforeEach((to, _from, next) => {
   const authStore = useAuthStore();
 
-  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-    next('/login');
-  } else if (to.meta.requiresAdmin && !authStore.user?.is_admin) {
-    next('/projects'); // Redirect to projects if not admin
+  if (to.meta.requiresAdmin && (!authStore.isAuthenticated || !authStore.user?.is_admin)) {
+    next('/projects'); // Redirect to projects if not authenticated or not admin
   } else {
     next();
   }
