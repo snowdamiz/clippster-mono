@@ -42,6 +42,8 @@ client/src-tauri/WixTools/
 client/src-tauri/gen/
 client/src-tauri/binaries/
 
+client/public/fonts
+
 # ===========================
 # Server (Elixir/Phoenix)
 # ===========================
