@@ -236,7 +236,7 @@ async fn run_recorder_process(
         .arg(&mint_id)
         .arg(&session_id)
         .arg(&output_dir)
-        .arg("15")
+        .arg("5")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()

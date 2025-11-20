@@ -27,7 +27,7 @@ if (!mintId || !sessionId || !outputDirArg) {
   process.exit(1);
 }
 
-const segmentMinutes = Math.max(parseInt(segmentMinutesArg || '15', 10), 1);
+const segmentMinutes = Math.max(parseInt(segmentMinutesArg || '5', 10), 1);
 const segmentDurationSeconds = segmentMinutes * 60;
 const outputDir = path.resolve(outputDirArg);
 
@@ -132,6 +132,7 @@ class PumpfunRecorder {
     this.videoFps = 30;
     this.segmentWatcher = null;
     this.playlistPoller = null;
+    this.checkingPlaylist = false;
     
     this.currentWidth = 0;
     this.currentHeight = 0;
@@ -186,6 +187,15 @@ class PumpfunRecorder {
           sessionId: this.sessionId,
         });
         this.stop().catch(() => {});
+      })
+      .on(RoomEvent.Connected, () => {
+        log('LiveKit room connected successfully');
+      })
+      .on(RoomEvent.Reconnecting, () => {
+        log('LiveKit reconnecting...');
+      })
+      .on(RoomEvent.Reconnected, () => {
+        log('LiveKit reconnected');
       });
 
     log('Connecting to LiveKit', { url });
@@ -261,7 +271,24 @@ class PumpfunRecorder {
           }
         }
 
+        // Only restart encoder for resolution change if we have frames and dimensions are non-zero
+        if (this.currentWidth !== 0 && this.currentHeight !== 0 && 
+            (width !== this.currentWidth || height !== this.currentHeight)) {
+              
+          // Only trigger restart if we are already encoding
+          if (this.encoderStarted) {
+             log('Resolution changed', { old: `${this.currentWidth}x${this.currentHeight}`, new: `${width}x${height}` });
+             await this.restartEncoder(width, height);
+          } else {
+             // If encoder hasn't started yet, just update dimensions
+             this.currentWidth = width;
+             this.currentHeight = height;
+             this.videoInfo = { width, height };
+          }
+        }
+
         if (!this.videoInfo) {
+          log('Received first video frame', { width, height });
           this.currentWidth = width;
           this.currentHeight = height;
           this.videoInfo = { width, height };
@@ -450,12 +477,18 @@ class PumpfunRecorder {
   }
 
   async checkPlaylist() {
+    if (this.checkingPlaylist) return;
+    this.checkingPlaylist = true;
+
     try {
       if (!fs.existsSync(this.playlistPath)) {
+        // log('Playlist not found yet', { path: this.playlistPath });
         return;
       }
       const content = await fs.promises.readFile(this.playlistPath, 'utf8');
       const lines = content.split('\n').filter((line) => line.trim() !== '');
+
+      log('Checking playlist lines', { count: lines.length });
 
       for (const line of lines) {
         const parts = line.split(',');
@@ -467,7 +500,10 @@ class PumpfunRecorder {
         if (this.processedSegments.has(fullPath)) continue;
         
         const segmentIndex = this.extractSegmentNumber(filename);
-        if (segmentIndex === null) continue;
+        if (segmentIndex === null) {
+            // log('Could not extract segment number', { filename });
+            continue;
+        }
         
         // Update last seen segment number
         if (segmentIndex > this.lastSegmentNumber) {
@@ -476,15 +512,22 @@ class PumpfunRecorder {
 
         // Double check file existence and size
         try {
-          if (!fs.existsSync(fullPath)) continue;
+          if (!fs.existsSync(fullPath)) {
+             // log('Segment file missing', { fullPath });
+             continue;
+          }
           const stats = await fs.promises.stat(fullPath);
-          if (stats.size === 0) continue;
+          if (stats.size === 0) {
+             // log('Segment file empty', { fullPath });
+             continue;
+          }
         } catch (e) {
+          // log('Error checking segment file', { error: e.message, fullPath });
           continue;
         }
 
         this.processedSegments.add(fullPath);
-        log('Segment complete', { segmentIndex, fullPath });
+        log('Segment complete', { segmentIndex, fullPath, size: (await fs.promises.stat(fullPath)).size });
         
         this.emitEvent({
           type: 'segment_complete',
@@ -495,9 +538,37 @@ class PumpfunRecorder {
           duration: this.segmentDurationSeconds,
         });
       }
+      
+      // After checking all lines in the playlist, also check for a potential "last" segment
+      // that isn't in the playlist yet but exists on disk (e.g. when stopping)
+      if (!this.running || this.restarting) {
+          const potentialLastSegmentIndex = this.lastSegmentNumber + 1;
+          const potentialLastSegmentName = `${this.segmentPrefix}${String(potentialLastSegmentIndex).padStart(5, '0')}.mp4`;
+          const potentialLastSegmentPath = path.join(this.outputDir, potentialLastSegmentName);
+          
+          if (!this.processedSegments.has(potentialLastSegmentPath) && fs.existsSync(potentialLastSegmentPath)) {
+             try {
+               const stats = await fs.promises.stat(potentialLastSegmentPath);
+               if (stats.size > 0) {
+                   this.processedSegments.add(potentialLastSegmentPath);
+                   log('Found final segment not in playlist', { segmentIndex: potentialLastSegmentIndex, fullPath: potentialLastSegmentPath, size: stats.size });
+                   this.emitEvent({
+                      type: 'segment_complete',
+                      mintId: this.mintId,
+                      sessionId: this.sessionId,
+                      segment: potentialLastSegmentIndex + 1,
+                      path: potentialLastSegmentPath,
+                      duration: this.segmentDurationSeconds, // Note: It might be shorter, but UI handles duration mostly for ordering
+                    });
+               }
+             } catch(e) {}
+          }
+      }
     } catch (error) {
       // Ignore errors reading playlist (e.g. locked file)
-      // console.warn('[Recorder] Failed to read playlist', error);
+      console.warn('[Recorder] Failed to read playlist', error);
+    } finally {
+        this.checkingPlaylist = false;
     }
   }
 
@@ -562,13 +633,24 @@ class PumpfunRecorder {
         const exitPromise = once(this.ffmpeg, 'exit');
         
         // Close inputs
-        try { this.ffmpeg.stdin.end(); } catch(e) {}
+        // For stdin (audio), we must end it to signal EOF
+        try { 
+            if (!this.ffmpeg.stdin.destroyed) {
+                this.ffmpeg.stdin.end(); 
+            }
+        } catch(e) {}
+        
+        // For video pipe (stdio[3]), we must also end it
         if (this.videoPipe) {
-          try { this.videoPipe.end(); } catch(e) {}
+          try { 
+            if (!this.videoPipe.destroyed) {
+                this.videoPipe.end(); 
+            }
+          } catch(e) {}
         }
 
-        // Wait up to 5 seconds for clean exit
-        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 5000));
+        // Wait up to 10 seconds for clean exit (increased from 5s to allow final segment flush)
+        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 10000));
         const result = await Promise.race([exitPromise, timeoutPromise]);
         
         if (result === 'timeout') {
@@ -576,6 +658,8 @@ class PumpfunRecorder {
            this.ffmpeg.kill('SIGKILL');
         } else {
            log('ffmpeg exited cleanly');
+           // Small delay to allow file system to flush
+           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       } catch (error) {
         console.error('[Recorder] Error stopping ffmpeg', error);
@@ -619,7 +703,9 @@ class PumpfunRecorder {
       this.segmentWatcher = null;
     }
 
-    // Final check of playlist
+    // Final check of playlist to catch the last segment
+    // Force a check even if one was "in progress" or recently done
+    this.checkingPlaylist = false; 
     await this.checkPlaylist();
 
     if (this.room) {
