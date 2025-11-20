@@ -181,7 +181,6 @@
 
 <script setup lang="ts">
   import { ref, watch, computed } from 'vue';
-  import { useRouter } from 'vue-router';
   import { type Project, type ClipWithVersion, getClipsWithVersionsByProjectId, deleteClip } from '@/services/database';
   import { X } from 'lucide-vue-next';
   import type { SubtitleSettings } from '@/types';
@@ -202,7 +201,6 @@
   import { useAuthStore } from '@/stores/auth';
   import { getRawVideosByProjectId } from '@/services/database';
 
-  const router = useRouter();
   const authStore = useAuthStore();
   const { error: showError } = useToast();
   const { setClipGenerationInProgress } = useWindowClose();

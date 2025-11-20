@@ -204,10 +204,6 @@
     }
   }
 
-  function closePicker() {
-    showPicker.value = false;
-  }
-
   function selectColor(color: string) {
     emit('update:modelValue', color.toUpperCase());
     hexInput.value = color.toUpperCase();
@@ -253,20 +249,6 @@
         .join('')
         .toUpperCase()
     );
-  }
-
-  function getContrastColor(hex: string): string {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    if (!result) return '#000000';
-
-    const r = parseInt(result[1], 16);
-    const g = parseInt(result[2], 16);
-    const b = parseInt(result[3], 16);
-
-    // Calculate relative luminance
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-
-    return luminance > 0.5 ? '#000000' : '#FFFFFF';
   }
 
   // Close picker when clicking outside

@@ -72,7 +72,7 @@
       :playing-clip-id="playingClipId"
       :is-playing-segments="isPlayingSegments"
       :hovered-timeline-clip-id="hoveredTimelineClipId"
-      :video-duration="videoDuration"
+      :video-duration="videoDuration || 0"
       :prompts="prompts"
       :transcript-data="transcriptData"
       :subtitle-settings="subtitleSettings"
@@ -93,8 +93,8 @@
     <TranscriptPanel
       v-if="activeTab === 'transcript'"
       :project-id="projectId"
-      :current-time="currentTime"
-      :duration="videoDuration"
+      :current-time="currentTime || undefined"
+      :duration="videoDuration || undefined"
       @seekVideo="onSeekVideo"
     />
 
@@ -134,10 +134,12 @@
     generationStage: '',
     generationMessage: '',
     generationError: '',
+    projectId: null,
+    hoveredTimelineClipId: null,
     playingClipId: null,
     isPlayingSegments: false,
-    videoDuration: 0,
-    currentTime: 0,
+    videoDuration: null,
+    currentTime: null,
     aspectRatio: () => ({ width: 16, height: 9 }),
   });
 

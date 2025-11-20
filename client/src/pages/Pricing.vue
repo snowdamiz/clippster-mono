@@ -361,12 +361,10 @@
 
 <script setup lang="ts">
   import { ref, onMounted } from 'vue';
-  import { useRouter } from 'vue-router';
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
   import api from '@/services/api';
-  import { CreditCard, Check, AlertTriangle, Shield, TrendingUp, Lock, DollarSign, X, Loader2 } from 'lucide-vue-next';
-  const router = useRouter();
+  import { CreditCard, Check, AlertTriangle, Shield, TrendingUp, Lock, DollarSign, X } from 'lucide-vue-next';
   const authStore = useAuthStore();
   const { success: showSuccessToast, error: showErrorToast } = useToast();
 
@@ -495,6 +493,7 @@
         // Verify payment with backend
         paymentStatus.value = 'Verifying payment...';
         try {
+          const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
           const confirmResponse = await fetch(`${API_BASE}/api/payments/confirm`, {
             method: 'POST',
             headers: {

@@ -1,14 +1,10 @@
 import type { Component } from 'vue';
 import {
-  FolderOpen,
   Video,
   LayoutGrid,
   MessageSquare,
   Bug,
   Settings,
-  MoreHorizontal,
-  Youtube,
-  Twitch,
   Archive,
   Folder,
   Radio,

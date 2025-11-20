@@ -69,13 +69,7 @@
         class="absolute subtitle-overlay pointer-events-none z-20"
         :style="getSubtitleContainerStyle"
       >
-        <div
-          class="subtitle-text-container"
-          :style="{
-            ...getSubtitleTextStyle,
-            gap: `${subtitleSettings?.wordSpacing || 0.35}em`,
-          }"
-        >
+        <div class="subtitle-text-container" :style="getSubtitleContainerStyle">
           <span
             v-for="(wordInfo, index) in visibleWords"
             :key="`subtitle-word-${wordInfo.start}-${index}`"
@@ -297,6 +291,9 @@
       textAlign: 'center',
       padding: 16,
       borderRadius: 8,
+      textOffsetX: 0,
+      textOffsetY: 0,
+      wordSpacing: 0.35,
     }),
     transcriptWords: () => [],
     transcriptSegments: () => [],
@@ -503,44 +500,6 @@
     }
 
     return fontSizeScale * videoScaleFactor;
-  });
-
-  // Base style for subtitle container
-  const getSubtitleTextStyle = computed(() => {
-    if (!props.subtitleSettings) return {};
-
-    const settings = props.subtitleSettings;
-    const aspectRatioValue = props.aspectRatio.width / props.aspectRatio.height;
-    let lineHeightAdjustment = 0;
-
-    if (aspectRatioValue <= 0.9) {
-      lineHeightAdjustment = -0.15;
-    } else if (aspectRatioValue > 0.9 && aspectRatioValue <= 1.1) {
-      lineHeightAdjustment = -0.1;
-    }
-
-    const adjustedFontSize = Math.round(settings.fontSize * finalFontSizeScale.value);
-    const adjustedLineHeight = Math.max(0.5, settings.lineHeight + lineHeightAdjustment);
-    const adjustedPadding = Math.round(settings.padding * finalFontSizeScale.value);
-    const adjustedLetterSpacing = settings.letterSpacing * finalFontSizeScale.value;
-
-    return {
-      fontFamily: `"${settings.fontFamily}", Arial, sans-serif`,
-      fontSize: `${adjustedFontSize}px`,
-      fontWeight: settings.fontWeight,
-      backgroundColor: settings.backgroundEnabled ? settings.backgroundColor : 'transparent',
-      padding: `${adjustedPadding}px`,
-      borderRadius: `${settings.borderRadius}px`,
-      lineHeight: adjustedLineHeight,
-      letterSpacing: `${adjustedLetterSpacing}px`,
-      textAlign: settings.textAlign,
-      display: 'flex',
-      flexWrap: 'wrap',
-      justifyContent:
-        settings.textAlign === 'left' ? 'flex-start' : settings.textAlign === 'right' ? 'flex-end' : 'center',
-      gap: '0.2em',
-      maxWidth: '100%',
-    };
   });
 
   // Style for text layer (top layer)

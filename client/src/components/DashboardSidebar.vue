@@ -53,9 +53,9 @@
                 :fill="isActive(item.path) ? 'white' : 'currentColor'"
                 viewBox="0 0 24 24"
               >
-                <path :d="item.icon" />
+                <path :d="item.icon as string" />
               </svg>
-              <component v-else :is="item.icon" class="h-5 w-5" />
+              <component v-else :is="item.icon as string" class="h-5 w-5" />
               <span>{{ item.name }}</span>
             </router-link>
 
@@ -76,7 +76,7 @@
                   WebkitMaskPosition: 'center',
                 }"
               />
-              <component v-else :is="item.icon" class="h-5 w-5" />
+              <component v-else :is="item.icon as string" class="h-5 w-5" />
               <span>{{ item.name }}</span>
             </button>
           </li>
@@ -155,7 +155,6 @@
   const router = useRouter();
   const authStore = useAuthStore();
   const { formatAddress } = useWallet();
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
   const emit = defineEmits<{
     'show-auth-modal': [];
@@ -233,7 +232,7 @@
 
   async function fetchBalance() {
     if (!authStore.isAuthenticated) {
-      hoursRemaining.value = null;
+      hoursRemaining.value = 0;
       return;
     }
 

@@ -210,12 +210,12 @@ export interface MediaPanelProps {
   generationStage?: string;
   generationMessage?: string;
   generationError?: string;
-  projectId?: string;
+  projectId?: string | null;
   hoveredTimelineClipId?: string | null;
   playingClipId?: string | null;
   isPlayingSegments?: boolean;
-  videoDuration?: number; // Duration in seconds
-  currentTime?: number; // Current video playback time in seconds
+  videoDuration?: number | null; // Duration in seconds
+  currentTime?: number | null; // Current video playback time in seconds
   aspectRatio: { width: number; height: number };
 }
 

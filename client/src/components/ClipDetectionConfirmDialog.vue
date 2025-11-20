@@ -104,10 +104,8 @@
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
   import { X, ChevronDown, Info, Loader2 } from 'lucide-vue-next';
-  import { useRouter } from 'vue-router';
   import { useCreditBalance } from '@/composables/useCreditBalance';
   import { useAuthStore } from '@/stores/auth';
-  import { useToast } from '@/composables/useToast';
   import { getAllPrompts } from '@/services/database';
 
   interface Prompt {
@@ -134,19 +132,10 @@
   const error = ref<string>('');
   const prompts = ref<Prompt[]>([]);
 
-  const router = useRouter();
   const authStore = useAuthStore();
-  const { error: showError } = useToast();
 
   // Use credit balance composable
-  const {
-    loading: loadingCredits,
-    error: creditError,
-    hoursRemaining,
-    isAdmin,
-    isAuthenticated,
-    fetchBalance,
-  } = useCreditBalance();
+  const { loading: loadingCredits, error: creditError, hoursRemaining, isAdmin, fetchBalance } = useCreditBalance();
 
   // Computed credit information
   const creditInfo = computed(() => {

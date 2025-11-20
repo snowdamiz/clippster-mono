@@ -49,7 +49,7 @@
   import { ref } from 'vue';
   import type { TimelinePlayheadProps, TimelinePlayheadEmits } from '../types';
 
-  const props = defineProps<TimelinePlayheadProps>();
+  defineProps<TimelinePlayheadProps>();
   const emit = defineEmits<TimelinePlayheadEmits>();
 
   // Local state for hover and drag

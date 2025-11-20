@@ -256,7 +256,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
+  import { ref, computed, onUnmounted } from 'vue';
   import { Radio, Plus, Check, Play, Square, Search, Trash2, Activity, Loader2 } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { Button } from '@/components/ui/button';

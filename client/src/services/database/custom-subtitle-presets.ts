@@ -211,7 +211,7 @@ export function customPresetToSettings(preset: CustomSubtitlePreset): SubtitleSe
     fontWeight: preset.font_weight,
     textColor: preset.text_color,
     backgroundColor: preset.background_color,
-    backgroundEnabled: preset.background_enabled,
+    backgroundEnabled: Boolean(preset.background_enabled),
     border1Width: preset.border1_width,
     border1Color: preset.border1_color,
     border2Width: preset.border2_width,

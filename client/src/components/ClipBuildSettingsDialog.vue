@@ -551,7 +551,6 @@
   import { WrenchIcon, CheckIcon, X, ChevronDown } from 'lucide-vue-next';
   import type { ClipWithVersion } from '@/services/database';
   import { getAllIntroOutros, type IntroOutro } from '@/services/database';
-  import { convertFileSrc } from '@tauri-apps/api/core';
 
   const props = defineProps<{
     modelValue: boolean;
@@ -754,11 +753,6 @@
   function selectOutro(outro: IntroOutro | null) {
     selectedOutro.value = outro;
     showOutroDropdown.value = false;
-  }
-
-  function getThumbnailUrl(asset: IntroOutro): string | null {
-    if (!asset.thumbnail_path) return null;
-    return convertFileSrc(asset.thumbnail_path);
   }
 
   // Methods

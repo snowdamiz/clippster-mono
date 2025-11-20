@@ -9,11 +9,9 @@
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
   import { invoke } from '@tauri-apps/api/core';
-  import { useRouter } from 'vue-router';
 
   const { initializeWindowCloseHandler } = useWindowClose();
   const authStore = useAuthStore();
-  const router = useRouter();
   const isLoading = ref(true);
   const titleBarPlatformOverride = ref('auto');
   const showAuthModal = ref(false);
