@@ -67,6 +67,7 @@ export async function ensureClipVersioningTables(): Promise<void> {
           start_time REAL NOT NULL,
           end_time REAL NOT NULL,
           confidence_score REAL,
+          virality_score REAL,
           relevance_score REAL,
           detection_reason TEXT,
           tags TEXT,
@@ -78,6 +79,14 @@ export async function ensureClipVersioningTables(): Promise<void> {
           FOREIGN KEY (parent_version_id) REFERENCES clip_versions(id)
         )
       `);
+    } else {
+      // Check for missing columns in existing table
+      const pragmaResult = await db.select<{ name: string }[]>('PRAGMA table_info(clip_versions)');
+      const columns = pragmaResult.map((col) => col.name);
+
+      if (!columns.includes('virality_score')) {
+        await db.execute('ALTER TABLE clip_versions ADD COLUMN virality_score REAL');
+      }
     }
 
     // Add columns to clips table if they don't exist
@@ -136,6 +145,7 @@ export async function createVersionedClip(
     endTime: number;
     description?: string;
     confidenceScore?: number;
+    viralityScore?: number;
     relevanceScore?: number;
     detectionReason?: string;
     tags?: string[];
@@ -228,6 +238,7 @@ export async function getClipsWithVersionsByProjectId(
       cv.start_time as current_version_start_time,
       cv.end_time as current_version_end_time,
       cv.confidence_score as current_version_confidence_score,
+      cv.virality_score as current_version_virality_score,
       cv.relevance_score as current_version_relevance_score,
       cv.detection_reason as current_version_detection_reason,
       cv.tags as current_version_tags,
@@ -275,6 +286,7 @@ export async function getClipsWithVersionsByProjectId(
             start_time: clip.current_version_start_time || clip.start_time || 0,
             end_time: clip.current_version_end_time || clip.end_time || 0,
             confidence_score: clip.current_version_confidence_score,
+            virality_score: clip.current_version_virality_score,
             relevance_score: clip.current_version_relevance_score,
             detection_reason: clip.current_version_detection_reason,
             tags: clip.current_version_tags,
@@ -301,6 +313,7 @@ export async function getClipsByDetectionSession(sessionId: string): Promise<Cli
       cv.start_time as current_version_start_time,
       cv.end_time as current_version_end_time,
       cv.confidence_score as current_version_confidence_score,
+      cv.virality_score as current_version_virality_score,
       cv.relevance_score as current_version_relevance_score,
       cv.detection_reason as current_version_detection_reason,
       cv.tags as current_version_tags,
@@ -536,6 +549,7 @@ export async function persistClipDetectionResults(
       endTime: endTime,
       description: clipData.description || clipData.summary || clipData.socialMediaPost,
       confidenceScore: clipData.confidenceScore || clipData.confidence,
+      viralityScore: clipData.viralityScore || clipData.virality_score || clipData.virality,
       relevanceScore: clipData.relevanceScore || clipData.relevance,
       detectionReason:
         clipData.reason || clipData.detectionReason || 'AI detected clip-worthy moment',

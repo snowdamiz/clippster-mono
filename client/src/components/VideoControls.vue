@@ -7,19 +7,19 @@
         <!-- Go to Beginning Button -->
         <button
           @click="goToBeginning"
-          class="p-1.5 bg-white/5 hover:bg-white/10 rounded-md transition-all duration-200 backdrop-blur-sm"
+          class="p-2.5 bg-white/5 hover:bg-white/10 rounded-md transition-all duration-200 backdrop-blur-sm"
           title="Go to Beginning"
         >
-          <SkipBack class="h-6 w-6 text-white" />
+          <SkipBack class="h-4 w-4 text-white" />
         </button>
         <!-- Play/Pause Button -->
         <button
           @click="togglePlayPause"
-          class="p-1.5 bg-white/5 hover:bg-white/10 rounded-md transition-all duration-200 backdrop-blur-sm"
+          class="p-2.5 bg-white/5 hover:bg-white/10 rounded-md transition-all duration-200 backdrop-blur-sm"
           title="Play/Pause"
         >
-          <Play v-if="!isPlaying" class="h-6 w-6 text-white" />
-          <Pause v-else class="h-6 w-6 text-white" />
+          <Play v-if="!isPlaying" class="h-4 w-4 text-white" />
+          <Pause v-else class="h-4 w-4 text-white" />
         </button>
         <!-- Time Display -->
         <div class="text-white text-sm font-mono font-medium bg-white/5 px-4 py-2 rounded-md backdrop-blur-sm">

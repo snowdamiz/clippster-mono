@@ -21,66 +21,68 @@
 
     <div class="flex-1 overflow-y-auto">
       <!-- Progress State -->
-      <div v-if="isGenerating" class="h-full flex items-center justify-center px-4">
-        <div class="text-center text-foreground w-full max-w-md">
-          <!-- Stage Icon -->
-          <div class="mb-6 flex justify-center">
-            <div
-              class="w-20 h-20 rounded-lg bg-gradient-to-br flex items-center justify-center shadow-lg"
-              :class="
-                stageIconClass.replace('text-', 'from-') +
-                '/10 via-' +
-                stageIconClass.replace('text-', '') +
-                '/5 to-transparent border-2 border-' +
-                stageIconClass.replace('text-', '') +
-                '/30'
-              "
-            >
-              <component :is="stageIcon" :class="stageIconClass" class="h-9 w-9" />
-            </div>
-          </div>
-          <!-- Stage Title -->
-          <h4 class="font-semibold text-foreground mb-2 text-lg">{{ stageTitle }}</h4>
-
-          <p class="text-sm text-foreground/70 mb-10 leading-relaxed">{{ stageDescription }}</p>
-          <!-- Loading Spinner with Time Estimate -->
-          <div class="mb-6">
-            <div class="flex justify-center mb-5">
-              <!-- Large spinner -->
-              <div class="relative w-14 h-14">
-                <div class="absolute inset-0 border-4 border-muted/30 rounded-full"></div>
-                <div
-                  class="absolute inset-0 border-4 border-transparent rounded-full animate-spin"
-                  :class="stageIconClass.replace('text-', 'border-t-')"
-                  style="animation-duration: 0.8s"
-                ></div>
+      <div v-if="isGenerating" class="h-full flex flex-col items-center justify-center px-8">
+        <div class="w-full max-w-xs space-y-6">
+          <!-- Icon & Status -->
+          <div class="text-center space-y-3">
+            <div class="relative mx-auto w-12 h-12">
+              <div class="absolute inset-0 rounded-full bg-primary/5 animate-ping duration-1000"></div>
+              <div
+                class="relative w-12 h-12 rounded-full bg-background border border-border/50 shadow-sm flex items-center justify-center"
+              >
+                <component :is="stageIcon" class="w-5 h-5 transition-colors duration-300" :class="stageIconClass" />
               </div>
             </div>
 
-            <!-- Time estimate -->
-            <div class="text-center mb-4">
-              <p class="text-sm font-medium text-foreground mb-1.5">
-                {{ getLoadingMessage() }}
-              </p>
-              <p class="text-xs text-muted-foreground">
-                {{ getTimeEstimate() }}
-              </p>
+            <div class="space-y-1">
+              <h4 class="font-medium text-foreground text-sm tracking-wide uppercase opacity-90">{{ stageTitle }}</h4>
+              <p class="text-sm text-muted-foreground leading-relaxed max-w-[260px] mx-auto">{{ stageDescription }}</p>
             </div>
           </div>
-          <!-- Status Message -->
+
+          <!-- Progress Bar -->
+          <div class="space-y-2">
+            <div class="h-1 w-full bg-secondary/30 rounded-full overflow-hidden">
+              <div
+                class="h-full bg-primary transition-all duration-500 ease-out"
+                :class="{ 'animate-pulse': generationProgress === 0 }"
+                :style="{ width: `${Math.max(generationProgress, 5)}%` }"
+              ></div>
+            </div>
+            <div class="flex justify-between items-center text-[11px] text-muted-foreground font-medium px-0.5">
+              <span class="flex items-center gap-1.5">
+                <LoaderIcon class="w-3 h-3 animate-spin opacity-70" />
+                {{ getLoadingMessage() }}
+              </span>
+              <span class="font-mono">{{ Math.round(generationProgress) }}%</span>
+            </div>
+          </div>
+
+          <!-- Time Estimate -->
+          <div class="flex justify-center">
+            <div
+              class="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground/70 bg-secondary/20 px-2.5 py-1 rounded-full border border-border/10"
+            >
+              <ClockIcon class="w-3 h-3" />
+              {{ getTimeEstimate() }}
+            </div>
+          </div>
+
+          <!-- Status Message (if extra details) -->
           <div
-            v-if="generationMessage"
-            class="text-sm text-foreground/80 bg-muted/50 rounded-lg p-4 mb-4 border border-border/60"
+            v-if="generationMessage && generationMessage !== getLoadingMessage()"
+            class="text-xs text-center text-muted-foreground/80 bg-muted/20 rounded px-3 py-2 border border-border/20"
           >
             {{ generationMessage }}
           </div>
+
           <!-- Error State -->
-          <div v-if="generationError" class="bg-red-500/10 border-2 border-red-500/30 rounded-lg p-4 mb-4">
-            <div class="flex items-start gap-3">
-              <AlertTriangle class="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
-              <div class="text-left flex-1">
-                <h4 class="font-semibold text-red-400 text-sm mb-1">Error</h4>
-                <p class="text-xs text-red-400/90 leading-relaxed">{{ generationError }}</p>
+          <div v-if="generationError" class="bg-red-500/5 border border-red-500/20 rounded-md p-3">
+            <div class="flex items-start gap-2.5">
+              <AlertTriangle class="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
+              <div class="text-left">
+                <h4 class="font-medium text-red-400 text-xs mb-0.5">Error</h4>
+                <p class="text-[11px] text-red-400/80 leading-snug">{{ generationError }}</p>
               </div>
             </div>
           </div>
@@ -130,137 +132,33 @@
               }"
             ></div>
 
-            <div class="flex flex-col p-3.5 pl-4">
-              <!-- Main Content Row -->
-              <div class="flex items-start justify-between gap-3">
-                <!-- Left: Number + Content -->
-                <div class="flex items-start gap-2.5 flex-1 min-w-0">
-                  <!-- Number Badge -->
-                  <span class="text-xs font-bold text-foreground/30 mt-0.5 flex-shrink-0 tabular-nums select-none">
+            <div class="flex flex-col p-3 pl-4">
+              <!-- Header: Title & Actions -->
+              <div class="flex items-start justify-between gap-3 mb-2">
+                <div class="flex items-start gap-2 min-w-0">
+                  <span class="text-xs font-bold text-foreground/30 mt-1 tabular-nums select-none">
                     #{{ index + 1 }}
                   </span>
-
-                  <!-- Content Column -->
-                  <div class="flex-1 min-w-0 space-y-2">
-                    <!-- Title -->
-                    <h5 class="text-[15px] font-semibold text-foreground leading-tight line-clamp-2">
-                      {{ clip.current_version_name || clip.name || 'Untitled Clip' }}
-                    </h5>
-
-                    <!-- Primary Info Row: Duration + Time Range -->
-                    <div class="flex items-center gap-2.5 flex-wrap text-xs">
-                      <!-- Duration Badge -->
-                      <span
-                        class="inline-flex items-center gap-1.5 text-foreground font-semibold bg-muted/60 px-2 py-0.5 rounded-md tabular-nums"
-                      >
-                        <ClockIcon class="h-3 w-3 text-foreground/70" />
-                        {{
-                          formatDuration((clip.current_version_end_time || 0) - (clip.current_version_start_time || 0))
-                        }}
-                      </span>
-
-                      <!-- Time Range -->
-                      <span class="font-mono text-muted-foreground/80 text-[11px] tabular-nums">
-                        {{ formatTime(clip.current_version_start_time || 0) }} →
-                        {{ formatTime(clip.current_version_end_time || 0) }}
-                      </span>
-
-                      <!-- Build Status (when completed) -->
-                      <span
-                        v-if="clip.build_status === 'completed'"
-                        class="inline-flex items-center gap-1 text-green-400 text-[11px] font-medium"
-                        :title="`Built: ${clip.built_file_size ? formatFileSize(clip.built_file_size) : 'Complete'}`"
-                      >
-                        <CheckIcon class="h-3 w-3" />
-                        Built
-                        <span v-if="clip.built_file_size" class="text-green-400/70">
-                          ({{ formatFileSize(clip.built_file_size) }})
-                        </span>
-                      </span>
-
-                      <!-- Build Progress -->
-                      <span
-                        v-else-if="clip.build_status === 'building'"
-                        class="inline-flex items-center gap-1.5 text-blue-400 text-[11px] font-medium"
-                      >
-                        <LoaderIcon class="h-3 w-3 animate-spin" />
-                        Building {{ Math.round(clip.build_progress || 0) }}%
-                      </span>
-
-                      <!-- Playing Indicator -->
-                      <span
-                        v-if="props.isPlayingSegments && props.playingClipId === clip.id"
-                        class="inline-flex items-center gap-1.5 text-green-400 text-[11px] font-semibold"
-                      >
-                        <div class="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></div>
-                        Playing
-                      </span>
-                    </div>
-
-                    <!-- Secondary Info Row: Run + Prompt + Timestamp -->
-                    <div class="flex items-center gap-2 flex-wrap text-[11px]">
-                      <!-- Run Number Badge -->
-                      <span
-                        v-if="clip.run_number"
-                        class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-medium bg-muted/40"
-                        :style="{
-                          color: clip.session_run_color || '#A78BFA',
-                          backgroundColor: clip.session_run_color ? `${clip.session_run_color}15` : undefined,
-                        }"
-                        :title="`Detection run ${clip.run_number}`"
-                      >
-                        <div
-                          class="w-1.5 h-1.5 rounded-full"
-                          :style="{ backgroundColor: clip.session_run_color || '#8B5CF6' }"
-                        ></div>
-                        Run {{ clip.run_number }}
-                      </span>
-
-                      <!-- Prompt Badge -->
-                      <span
-                        v-if="clip.session_prompt"
-                        class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-medium bg-purple-500/10 text-purple-400"
-                        :title="`Used prompt: ${getPromptName(clip.session_prompt)}`"
-                      >
-                        <Lightbulb class="h-2.5 w-2.5" />
-                        <span class="truncate max-w-32">{{ getPromptName(clip.session_prompt) }}</span>
-                      </span>
-
-                      <!-- Timestamp -->
-                      <span v-if="clip.session_created_at" class="text-muted-foreground/60 flex items-center gap-1">
-                        <ClockIcon class="h-3 w-3" />
-                        {{ formatTimestamp(clip.session_created_at) }}
-                      </span>
-
-                      <!-- Confidence Score (hover to see) -->
-                      <span
-                        v-if="clip.current_version_confidence_score"
-                        class="inline-flex items-center gap-1 text-blue-400/70 opacity-0 group-hover:opacity-100 transition-opacity"
-                        title="Confidence score"
-                      >
-                        <TrendingUpIcon class="h-3 w-3" />
-                        {{ Math.round((clip.current_version_confidence_score || 0) * 100) }}%
-                      </span>
-                    </div>
-                  </div>
+                  <h5 class="text-[15px] font-semibold text-foreground leading-snug line-clamp-2">
+                    {{ clip.current_version_name || clip.name || 'Untitled Clip' }}
+                  </h5>
                 </div>
 
-                <!-- Right: Action Buttons -->
+                <!-- Actions (visible on hover or if active) -->
                 <div
-                  class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex-shrink-0"
+                  class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex-shrink-0 -mr-1 -mt-1"
+                  :class="{ 'opacity-100': showBuildSettingsDialog && clipToBuild?.id === clip.id }"
                 >
                   <button
-                    class="p-2 hover:bg-blue-500/15 rounded-md transition-all duration-150 text-foreground/60 hover:text-blue-400 hover:scale-105 active:scale-95"
+                    class="p-1.5 hover:bg-blue-500/15 rounded-md transition-colors text-foreground/60 hover:text-blue-400"
                     title="Play clip"
                     @click.stop="onPlayClip(clip)"
                   >
                     <PlayIcon class="h-4 w-4" />
                   </button>
-
-                  <!-- Build/Download Button -->
                   <button
                     v-if="!clip.build_status || clip.build_status === 'pending' || clip.build_status === 'failed'"
-                    class="p-2 hover:bg-green-500/15 rounded-md transition-all duration-150 text-foreground/60 hover:text-green-400 hover:scale-105 active:scale-95"
+                    class="p-1.5 hover:bg-green-500/15 rounded-md transition-colors text-foreground/60 hover:text-green-400"
                     title="Build clip"
                     @click.stop="onBuildClip(clip)"
                   >
@@ -268,20 +166,97 @@
                   </button>
                   <button
                     v-else-if="clip.build_status === 'completed' && clip.built_file_path"
-                    class="p-2 hover:bg-green-500/15 rounded-md transition-all duration-150 text-green-500/80 hover:text-green-400 hover:scale-105 active:scale-95"
+                    class="p-1.5 hover:bg-green-500/15 rounded-md transition-colors text-green-500/80 hover:text-green-400"
                     title="Open built clip"
                     @click.stop="onOpenBuiltClip(clip)"
                   >
                     <DownloadIcon class="h-4 w-4" />
                   </button>
-
                   <button
-                    class="p-2 hover:bg-red-500/15 rounded-md transition-all duration-150 text-foreground/60 hover:text-red-400 hover:scale-105 active:scale-95"
+                    class="p-1.5 hover:bg-red-500/15 rounded-md transition-colors text-foreground/60 hover:text-red-400"
                     title="Delete clip"
                     @click.stop="onDeleteClip(clip.id)"
                   >
                     <Trash2 class="h-4 w-4" />
                   </button>
+                </div>
+              </div>
+
+              <!-- Metrics Row -->
+              <div class="flex items-center flex-wrap gap-2 mb-2.5">
+                <!-- Virality Score -->
+                <div
+                  v-if="
+                    clip.current_version_virality_score !== undefined && clip.current_version_virality_score !== null
+                  "
+                  class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium transition-colors"
+                  :class="getViralityColorClass(clip.current_version_virality_score)"
+                  title="Predicted Virality Score"
+                >
+                  <Flame class="h-3 w-3" />
+                  <span>{{ Math.round(clip.current_version_virality_score) }}% Viral</span>
+                </div>
+
+                <!-- Duration -->
+                <div
+                  class="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 bg-secondary/40 px-2 py-0.5 rounded-md"
+                >
+                  <ClockIcon class="h-3 w-3 opacity-70" />
+                  <span>
+                    {{ formatDuration((clip.current_version_end_time || 0) - (clip.current_version_start_time || 0)) }}
+                  </span>
+                </div>
+
+                <!-- Confidence (Subtle) -->
+                <div
+                  v-if="clip.current_version_confidence_score"
+                  class="inline-flex items-center gap-1 text-[11px] font-medium px-1.5"
+                  :class="getConfidenceColorClass(clip.current_version_confidence_score)"
+                  title="AI Confidence Score"
+                >
+                  <BrainIcon class="h-3 w-3" />
+                  <span>{{ Math.round((clip.current_version_confidence_score || 0) * 100) }}%</span>
+                </div>
+              </div>
+
+              <!-- Description (if avail) -->
+              <p
+                v-if="clip.current_version_detection_reason"
+                class="text-xs text-muted-foreground/80 line-clamp-2 mb-2.5 leading-relaxed italic"
+              >
+                "{{ clip.current_version_detection_reason }}"
+              </p>
+
+              <!-- Footer Info -->
+              <div
+                class="flex items-center justify-between text-[10px] text-muted-foreground/60 border-t border-border/30 pt-2 mt-auto"
+              >
+                <div class="flex items-center gap-2">
+                  <span class="font-mono">
+                    {{ formatTime(clip.current_version_start_time || 0) }} -
+                    {{ formatTime(clip.current_version_end_time || 0) }}
+                  </span>
+
+                  <!-- Build Status -->
+                  <span v-if="clip.build_status === 'building'" class="text-blue-400 flex items-center gap-1">
+                    <LoaderIcon class="h-2.5 w-2.5 animate-spin" />
+                    Building...
+                  </span>
+                  <span v-else-if="clip.build_status === 'completed'" class="text-green-400 flex items-center gap-1">
+                    <CheckIcon class="h-2.5 w-2.5" />
+                    Built
+                  </span>
+                </div>
+
+                <!-- Run Info -->
+                <div class="flex items-center gap-2">
+                  <span v-if="clip.run_number" class="flex items-center gap-1">
+                    <div
+                      class="w-1 h-1 rounded-full"
+                      :style="{ backgroundColor: clip.session_run_color || '#8B5CF6' }"
+                    ></div>
+                    Run {{ clip.run_number }}
+                  </span>
                 </div>
               </div>
             </div>
@@ -330,16 +305,15 @@
     ActivityIcon,
     MicIcon,
     ClockIcon,
-    TrendingUpIcon,
     WrenchIcon,
     DownloadIcon,
     LoaderIcon,
     CheckIcon,
     RefreshCw,
     AlertTriangle,
-    Lightbulb,
     Trash2,
     Video,
+    Flame,
   } from 'lucide-vue-next';
   import ClipBuildSettingsDialog, { type BuildSettings } from './ClipBuildSettingsDialog.vue';
   import type { SubtitleSettings } from '@/types';
@@ -474,15 +448,6 @@
     }
   });
 
-  // Computed property to match session prompt content to prompt names
-  const promptNameMap = computed(() => {
-    const map = new Map<string, string>();
-    props.prompts.forEach((prompt) => {
-      map.set(prompt.content, prompt.name);
-    });
-    return map;
-  });
-
   // Watch for timeline hover changes to clear internal hover state
   watch(
     () => props.hoveredTimelineClipId,
@@ -518,28 +483,6 @@
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
-  function formatTimestamp(timestamp: number): string {
-    return new Date(timestamp * 1000).toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  }
-
-  function formatFileSize(bytes: number): string {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  }
-
-  function getPromptName(sessionPrompt?: string): string {
-    if (!sessionPrompt) return 'Unknown Prompt';
-    return promptNameMap.value.get(sessionPrompt) || 'Custom Prompt';
-  }
-
   function getLoadingMessage(): string {
     switch (props.generationStage) {
       case 'starting':
@@ -557,6 +500,22 @@
       default:
         return 'Processing...';
     }
+  }
+
+  function getViralityColorClass(score: number | null | undefined): string {
+    if (!score) return 'bg-muted/50 text-muted-foreground';
+    if (score >= 90)
+      return 'bg-rose-500/15 text-rose-400 ring-1 ring-rose-500/30 shadow-[0_0_8px_rgba(244,63,94,0.15)]';
+    if (score >= 80) return 'bg-orange-500/15 text-orange-400 ring-1 ring-orange-500/30';
+    if (score >= 60) return 'bg-yellow-500/15 text-yellow-400 ring-1 ring-yellow-500/30';
+    return 'bg-muted/50 text-muted-foreground';
+  }
+
+  function getConfidenceColorClass(score: number | null | undefined): string {
+    if (!score) return 'text-muted-foreground';
+    if (score >= 0.8) return 'text-green-400';
+    if (score >= 0.6) return 'text-yellow-400';
+    return 'text-muted-foreground';
   }
 
   function getTimeEstimate(): string {

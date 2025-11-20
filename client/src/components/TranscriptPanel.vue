@@ -82,17 +82,6 @@
             <span v-else>{{ getWordText(word) }}{{ index < transcriptData.words.length - 1 ? ' ' : '' }}</span>
           </span>
         </div>
-
-        <!-- Scroll indicator -->
-        <div
-          v-if="showScrollIndicator"
-          class="absolute bottom-8 left-1/2 transform -translate-x-1/2 pointer-events-none animate-bounce z-10"
-        >
-          <div class="bg-primary/90 text-primary-foreground px-3 py-1.5 rounded-full text-xs font-medium shadow-lg">
-            Scroll to explore
-            <ChevronDown class="inline-block ml-1 h-3 w-3" />
-          </div>
-        </div>
       </div>
     </template>
   </div>

@@ -11,6 +11,7 @@ export async function createClipVersion(
     startTime: number;
     endTime: number;
     confidenceScore?: number;
+    viralityScore?: number;
     relevanceScore?: number;
     detectionReason?: string;
     tags?: string[];
@@ -27,9 +28,9 @@ export async function createClipVersion(
     `INSERT INTO clip_versions (
       id, clip_id, session_id, version_number, parent_version_id,
       name, description, start_time, end_time,
-      confidence_score, relevance_score, detection_reason, tags,
+      confidence_score, virality_score, relevance_score, detection_reason, tags,
       change_type, change_description, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       clipId,
@@ -41,6 +42,7 @@ export async function createClipVersion(
       clipData.startTime,
       clipData.endTime,
       clipData.confidenceScore || null,
+      clipData.viralityScore || null,
       clipData.relevanceScore || null,
       clipData.detectionReason || null,
       clipData.tags ? JSON.stringify(clipData.tags) : null,
@@ -106,6 +108,7 @@ export async function restoreClipVersion(clipId: string, versionId: string): Pro
       startTime: version.start_time,
       endTime: version.end_time,
       confidenceScore: version.confidence_score || undefined,
+      viralityScore: version.virality_score || undefined,
       relevanceScore: version.relevance_score || undefined,
       detectionReason: version.detection_reason || undefined,
       tags: version.tags ? JSON.parse(version.tags) : undefined,

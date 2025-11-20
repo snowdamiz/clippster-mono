@@ -211,6 +211,7 @@ export interface ClipVersion {
   start_time: number;
   end_time: number;
   confidence_score: number | null;
+  virality_score: number | null;
   relevance_score: number | null;
   detection_reason: string | null;
   tags: string | null;
@@ -243,6 +244,7 @@ export interface ClipWithVersion extends Clip {
   current_version_start_time?: number;
   current_version_end_time?: number;
   current_version_confidence_score?: number;
+  current_version_virality_score?: number;
   current_version_relevance_score?: number;
   current_version_detection_reason?: string;
   current_version_tags?: string;
