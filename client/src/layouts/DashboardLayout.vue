@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-background flex">
+  <div class="bg-background flex">
     <DashboardSidebar @show-auth-modal="showAuthModal = true" />
     <!-- Main content area with left margin to account for fixed sidebar -->
     <main class="flex-1 ml-64">
