@@ -17,9 +17,9 @@ pub async fn setup_macos_titlebar(_window: tauri::Window) -> Result<(), String> 
     {
         // On macOS, we use the window parameter to access the native NSWindow
         use cocoa::appkit::{NSColor, NSWindow};
+        use cocoa::base::NO;
         use cocoa::foundation::NSAutoreleasePool;
-        use objc::msg_send;
-        use objc::runtime::Sel;
+        use objc::{msg_send, sel, sel_impl};
 
         // Get the native window handle
         let ns_window = _window.ns_window().map_err(|e| format!("Failed to get NSWindow: {}", e))?;
@@ -38,10 +38,10 @@ pub async fn setup_macos_titlebar(_window: tauri::Window) -> Result<(), String> 
             );
 
             // Apply the background color to the window
-            let _: () = msg_send![ns_window, setBackgroundColor_: bg_color];
+            let _: () = msg_send![ns_window as *mut objc::runtime::Object, setBackgroundColor: bg_color];
 
             // Make sure the window is opaque for better performance
-            let _: () = msg_send![ns_window, setOpaque_: cocoa::foundation::NO];
+            let _: () = msg_send![ns_window as *mut objc::runtime::Object, setOpaque: NO];
 
             // Clean up the autorelease pool
             let _: () = msg_send![pool, release];
