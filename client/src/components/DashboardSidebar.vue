@@ -11,7 +11,7 @@
       <img src="/logo.svg" alt="Clippster" class="h-7 w-auto" />
     </div>
     <!-- Navigation -->
-    <nav class="p-4">
+    <nav class="p-3">
       <ul class="space-y-1">
         <template v-for="(item, index) in visibleNavigationItems" :key="item.path">
           <!-- Category Label -->
