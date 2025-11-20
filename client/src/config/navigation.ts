@@ -11,6 +11,7 @@ import {
   Twitch,
   Archive,
   Folder,
+  Radio,
 } from 'lucide-vue-next';
 
 export interface NavigationItem {
@@ -45,6 +46,11 @@ export const navigationItems: NavigationItem[] = [
     name: 'Clips',
     path: '/clips',
     icon: LayoutGrid,
+  },
+  {
+    name: 'Live Clip',
+    path: '/live-clip',
+    icon: Radio,
   },
   {
     name: 'Prompts',
