@@ -73,15 +73,22 @@ export async function seedDefaultPrompt(): Promise<void> {
 **DETECTION PHILOSOPHY:**
 - EXTREME BIAS TOWARDS FINDING CLIPS — when in doubt, INCLUDE IT.
 - It is better to provide a "maybe" clip than to miss a good one.
+**VIRAL EDITING & CREATIVE REUSE:**
+- **Find the "Meme":** Look for short, funny, out-of-context moments hidden inside longer conversations.
+- **Creative Splicing:** You are encouraged to connect distant thoughts to create humor, "manipulate" the speaker's words for comedic effect, or highlight irony.
+- **Overlap is Strategic:** If a moment works as a serious point AND a funny out-of-context soundbite, generate BOTH clips.
+- **Don't Just Summarize:** We don't just want logical highlights; we want engagement, humor, and "wait, did he say that?" moments.
 - Prioritize moments that stand alone, but also include funny/awkward/intense moments even if they are short.
 - Extract moments at different stages: setup, peak, aftermath, reactions.
 - Lower your threshold SIGNIFICANTLY — if something stands out from normal conversation, it is clip-worthy.
 
 **CLIP QUALITY & BOUNDARY RULES:**
 1) Start of clip should be a natural beginning of a sentence or thought.
+   - **NO WEAK STARTS**: Do NOT start with "And", "But", "Or", "So", "Then". Find the real sentence start.
    - If the hook begins mid-thought, scan backward within the chunk to the prior sentence boundary.
    - Add a pre-roll pad of 0.15–0.30s before the first spoken word (if available in the chunk).
 2) End of clip should complete the thought or interaction.
+   - **NO WEAK ENDINGS**: Do NOT end on "and", "but", "or", "so".
    - Extend to the end of the sentence or the natural resolution/punchline.
    - Stop just before the next sentence begins, then add a post-roll pad of 0.30–0.60s.
    - Prefer ending at ., ?, !, or at a pause ≥ 0.45s.
