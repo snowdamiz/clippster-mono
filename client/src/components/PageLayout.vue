@@ -2,40 +2,49 @@
   <div class="pl-2">
     <!-- Page Title and Actions -->
     <div v-if="showHeader" class="mb-8">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <div>
-            <div class="flex items-center gap-2.5">
-              <div v-if="icon" class="p-2 bg-muted rounded-md flex-shrink-0">
-                <!-- SVG file reference -->
-                <img
-                  v-if="typeof icon === 'string' && icon.endsWith('.svg')"
-                  :src="icon"
-                  :alt="title"
-                  class="h-4 w-4 text-foreground invert"
-                />
-                <!-- Component icon -->
-                <component v-else-if="typeof icon !== 'string'" :is="icon" class="h-4 w-4 text-foreground" />
-                <!-- Fallback inline SVG path (for backward compatibility) -->
-                <svg
-                  v-else
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-4 w-4 text-foreground"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="icon" />
-                </svg>
-              </div>
+      <div class="relative overflow-hidden rounded-xl bg-card border border-border p-6 shadow-sm">
+        <!-- Gradient Background Decoration -->
+        <div
+          class="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-transparent pointer-events-none"
+        ></div>
 
-              <h1 class="text-2xl font-bold text-foreground">{{ title }}</h1>
+        <div class="relative flex items-center justify-between">
+          <div class="flex items-center gap-4">
+            <div
+              v-if="icon"
+              class="p-3 bg-background/80 backdrop-blur-sm rounded-lg border border-border/50 shadow-sm flex-shrink-0"
+            >
+              <!-- SVG file reference -->
+              <img
+                v-if="typeof icon === 'string' && icon.endsWith('.svg')"
+                :src="icon"
+                :alt="title"
+                class="h-6 w-6 text-primary invert-0 dark:invert"
+              />
+              <!-- Component icon -->
+              <component v-else-if="typeof icon !== 'string'" :is="icon" class="h-6 w-6 text-primary" />
+              <!-- Fallback inline SVG path -->
+              <svg
+                v-else
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-6 w-6 text-primary"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="icon" />
+              </svg>
             </div>
 
-            <p class="text-sm text-muted-foreground mt-2">{{ description }}</p>
+            <div>
+              <h1 class="text-2xl font-bold text-foreground tracking-tight">{{ title }}</h1>
+              <p class="text-sm text-muted-foreground mt-1">{{ description }}</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <slot name="actions"></slot>
           </div>
         </div>
-        <slot name="actions"></slot>
       </div>
     </div>
     <!-- Content -->

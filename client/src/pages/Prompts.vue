@@ -19,91 +19,112 @@
     <LoadingState v-if="loading" message="Loading prompts..." />
 
     <!-- Prompts Grid -->
-    <div v-else-if="prompts.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pb-10">
+    <div v-else-if="prompts.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-6 pb-10">
       <div
         v-for="prompt in prompts"
         :key="prompt.id"
-        class="group relative flex flex-col h-64 rounded-lg border border-border bg-card/50 hover:bg-muted/10 hover:border-foreground/20 transition-all duration-200 overflow-hidden"
+        class="group relative flex flex-col h-[340px] rounded-xl border border-border bg-card hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 overflow-hidden cursor-pointer"
         @click="editPrompt(prompt)"
       >
-        <!-- Card Header -->
-        <div class="px-5 pt-5 pb-3 flex items-start justify-between gap-4">
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2 mb-1">
-              <h3 class="font-semibold text-lg text-foreground truncate tracking-tight" :title="prompt.name">
-                {{ prompt.name }}
-              </h3>
-              <span
-                v-if="isDefaultPrompt(prompt)"
-                class="inline-flex items-center justify-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-purple-500/10 text-purple-400 border border-purple-500/20"
-              >
-                Default
-              </span>
+        <div class="flex flex-col h-full p-5">
+          <!-- Header -->
+          <div class="flex items-start justify-between mb-4">
+            <div class="min-w-0 pr-4">
+              <div class="flex items-center gap-2 mb-1.5">
+                <h3 class="font-semibold text-base text-foreground truncate tracking-tight" :title="prompt.name">
+                  {{ prompt.name }}
+                </h3>
+                <!-- System Badge -->
+                <div
+                  v-if="isDefaultPrompt(prompt)"
+                  class="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-bold text-primary uppercase tracking-wide"
+                  title="System Prompt"
+                >
+                  <Shield class="w-3 h-3" />
+                  <span>System</span>
+                </div>
+              </div>
+              <p class="text-xs text-muted-foreground flex items-center gap-1.5">
+                <Clock class="w-3 h-3" />
+                Updated {{ getRelativeTime(prompt.updated_at) }}
+              </p>
             </div>
-            <p class="text-xs text-muted-foreground flex items-center gap-1.5">
-              <Clock class="h-3 w-3" />
-              Updated {{ getRelativeTime(prompt.updated_at) }}
-            </p>
-          </div>
 
-          <!-- Action Menu (Visible on Hover) -->
-          <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 -mr-2">
+            <!-- Copy Button -->
             <button
               @click.stop="copyPrompt(prompt)"
-              class="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              :class="{ 'text-green-500 hover:text-green-600': copiedId === prompt.id }"
+              class="shrink-0 p-2 -mr-2 -mt-2 rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-muted transition-colors"
+              :class="{ 'text-green-500 hover:text-green-600 bg-green-500/10': copiedId === prompt.id }"
               :title="copiedId === prompt.id ? 'Copied!' : 'Copy to clipboard'"
             >
               <Copy v-if="copiedId !== prompt.id" class="h-4 w-4" />
               <Check v-else class="h-4 w-4" />
             </button>
+          </div>
 
-            <button
-              v-if="!isDefaultPrompt(prompt)"
-              @click.stop="editPrompt(prompt)"
-              class="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              title="Edit prompt"
-            >
-              <Edit class="h-4 w-4" />
-            </button>
+          <!-- Content Preview Window -->
+          <div
+            class="flex-1 relative rounded-lg border border-border/50 bg-muted/20 overflow-hidden group-hover:bg-muted/30 transition-colors flex flex-col"
+          >
+            <!-- Window Toolbar -->
+            <div class="flex items-center justify-between px-3 py-2 border-b border-border/50 bg-muted/30">
+              <div class="flex items-center gap-2">
+                <div class="flex gap-1.5">
+                  <div class="w-2 h-2 rounded-full bg-border/60"></div>
+                  <div class="w-2 h-2 rounded-full bg-border/60"></div>
+                </div>
+                <div class="h-3 w-px bg-border/50 ml-1"></div>
+                <Terminal class="w-3 h-3 text-muted-foreground/50" />
+              </div>
+              <div class="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">
+                {{ prompt.content.length }} chars
+              </div>
+            </div>
 
-            <button
-              v-if="!isDefaultPrompt(prompt)"
-              @click.stop="confirmDelete(prompt)"
-              class="p-2 rounded-md text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors"
-              title="Delete prompt"
+            <!-- Text Content -->
+            <div
+              class="flex-1 p-3 font-mono text-xs text-muted-foreground/80 leading-relaxed whitespace-pre-wrap overflow-hidden relative"
             >
-              <Trash2 class="h-4 w-4" />
-            </button>
+              {{ prompt.content }}
+
+              <!-- Bottom Fade -->
+              <div
+                class="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-muted/50 to-transparent pointer-events-none"
+              ></div>
+            </div>
+          </div>
+
+          <!-- Hover Actions Overlay -->
+          <div class="absolute bottom-6 right-6 z-10">
+            <div
+              class="flex items-center gap-1 p-1 rounded-lg bg-background/95 backdrop-blur border border-border shadow-lg opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200"
+            >
+              <template v-if="!isDefaultPrompt(prompt)">
+                <button
+                  @click.stop="editPrompt(prompt)"
+                  class="p-2 rounded-md hover:bg-primary/10 hover:text-primary text-muted-foreground transition-colors"
+                  title="Edit"
+                >
+                  <Edit class="h-4 w-4" />
+                </button>
+                <div class="w-px h-3 bg-border mx-0.5"></div>
+                <button
+                  @click.stop="confirmDelete(prompt)"
+                  class="p-2 rounded-md hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors"
+                  title="Delete"
+                >
+                  <Trash2 class="h-4 w-4" />
+                </button>
+              </template>
+              <span
+                v-else
+                class="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider select-none"
+              >
+                Read Only
+              </span>
+            </div>
           </div>
         </div>
-
-        <!-- Content Preview -->
-        <div class="px-5 pb-5 flex-1 min-h-0 flex flex-col">
-          <div
-            class="relative flex-1 font-mono text-xs text-muted-foreground/80 leading-relaxed overflow-hidden select-none"
-          >
-            {{ prompt.content }}
-
-            <!-- Gradient Fade -->
-            <div class="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-card to-transparent"></div>
-          </div>
-
-          <!-- Footer Stats -->
-          <div
-            class="mt-3 pt-3 border-t border-border/50 flex items-center justify-between text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider"
-          >
-            <span>{{ prompt.content.length }} Characters</span>
-            <span class="group-hover:text-purple-400 transition-colors">
-              {{ isDefaultPrompt(prompt) ? 'System Template' : 'Custom Template' }}
-            </span>
-          </div>
-        </div>
-
-        <!-- Hover Border Effect -->
-        <div
-          class="absolute inset-0 border-2 border-transparent group-hover:border-purple-500/10 rounded-lg pointer-events-none transition-colors duration-200"
-        ></div>
       </div>
     </div>
 
@@ -172,7 +193,18 @@
   import { ref, onMounted } from 'vue';
   import { useRouter } from 'vue-router';
   import { getAllPrompts, deletePrompt, type Prompt } from '@/services/database';
-  import { MessageSquare, Plus, Clock, Copy, Check, Edit, Trash2, MessageCircle } from 'lucide-vue-next';
+  import {
+    MessageSquare,
+    Plus,
+    Clock,
+    Copy,
+    Check,
+    Edit,
+    Trash2,
+    MessageCircle,
+    Shield,
+    Terminal,
+  } from 'lucide-vue-next';
   import { useFormatters } from '@/composables/useFormatters';
   import { useToast } from '@/composables/useToast';
   import PageLayout from '@/components/PageLayout.vue';
