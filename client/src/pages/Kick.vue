@@ -1,10 +1,5 @@
 <template>
-  <PageLayout
-    title="Kick"
-    description="Manage your Kick streaming content"
-    :show-header="false"
-    icon="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-  >
+  <PageLayout title="Kick" description="Manage your Kick streaming content" :show-header="false" :icon="MoreHorizontal">
     <div class="flex flex-col items-center justify-center min-h-[calc(100vh-16rem)]">
       <div class="p-5 bg-muted rounded-full mb-6 flex items-center justify-center">
         <div
@@ -18,7 +13,7 @@
             maskRepeat: 'no-repeat',
             WebkitMaskRepeat: 'no-repeat',
             maskPosition: 'center',
-            WebkitMaskPosition: 'center'
+            WebkitMaskPosition: 'center',
           }"
         />
       </div>
@@ -34,5 +29,6 @@
 </template>
 
 <script setup lang="ts">
-  import PageLayout from '@/components/PageLayout.vue'
+  import PageLayout from '@/components/PageLayout.vue';
+  import { MoreHorizontal } from 'lucide-vue-next';
 </script>

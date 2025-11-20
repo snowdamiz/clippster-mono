@@ -8,8 +8,15 @@
             <div class="flex items-center gap-2.5">
               <div v-if="icon" class="p-2 bg-muted rounded-md flex-shrink-0">
                 <!-- SVG file reference -->
-                <img v-if="icon.endsWith('.svg')" :src="icon" :alt="title" class="h-4 w-4 text-foreground invert" />
-                <!-- Inline SVG path -->
+                <img
+                  v-if="typeof icon === 'string' && icon.endsWith('.svg')"
+                  :src="icon"
+                  :alt="title"
+                  class="h-4 w-4 text-foreground invert"
+                />
+                <!-- Component icon -->
+                <component v-else-if="typeof icon !== 'string'" :is="icon" class="h-4 w-4 text-foreground" />
+                <!-- Fallback inline SVG path (for backward compatibility) -->
                 <svg
                   v-else
                   xmlns="http://www.w3.org/2000/svg"
@@ -37,10 +44,12 @@
 </template>
 
 <script setup lang="ts">
+  import type { Component } from 'vue';
+
   defineProps<{
-    title: string
-    description: string
-    showHeader?: boolean
-    icon?: string
-  }>()
+    title: string;
+    description: string;
+    showHeader?: boolean;
+    icon?: string | Component;
+  }>();
 </script>

@@ -20,15 +20,7 @@
             </h2>
           </div>
           <button @click="close" class="p-1.5 hover:bg-[#ffffff]/10 rounded-md transition-colors" title="Close">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-4 w-4 text-foreground/70 hover:text-foreground"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X class="h-4 w-4 text-foreground/70 hover:text-foreground" />
           </button>
         </div>
         <!-- Main Content Area -->
@@ -191,6 +183,7 @@
   import { ref, watch, computed } from 'vue';
   import { useRouter } from 'vue-router';
   import { type Project, type ClipWithVersion, getClipsWithVersionsByProjectId, deleteClip } from '@/services/database';
+  import { X } from 'lucide-vue-next';
   import type { SubtitleSettings } from '@/types';
   import VideoPlayer from './VideoPlayer.vue';
   import VideoControls from './VideoControls.vue';

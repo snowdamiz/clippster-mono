@@ -22,15 +22,7 @@
         class="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-all text-sm"
         title="Previous page"
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="h-3.5 w-3.5"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-        </svg>
+        <ChevronLeft class="h-3.5 w-3.5" />
         Previous
       </button>
 
@@ -47,7 +39,7 @@
             @click="$emit('goToPage', page)"
             :class="[
               'px-2.5 py-1.5 rounded-md transition-all text-sm font-medium',
-              currentPage === page ? 'text-purple-500' : 'hover:bg-muted/80 text-foreground'
+              currentPage === page ? 'text-purple-500' : 'hover:bg-muted/80 text-foreground',
             ]"
           >
             {{ page }}
@@ -64,7 +56,7 @@
             @click="$emit('goToPage', page)"
             :class="[
               'px-2.5 py-1.5 rounded-md transition-all text-sm font-medium',
-              currentPage === page ? 'text-purple-500' : 'hover:bg-muted/80 text-foreground'
+              currentPage === page ? 'text-purple-500' : 'hover:bg-muted/80 text-foreground',
             ]"
           >
             {{ page }}
@@ -86,7 +78,7 @@
             @click="$emit('goToPage', page)"
             :class="[
               'px-2.5 py-1.5 rounded-md transition-all text-sm font-medium',
-              currentPage === page ? 'bg-purple-500 text-white' : 'hover:bg-muted/80 text-foreground'
+              currentPage === page ? 'bg-purple-500 text-white' : 'hover:bg-muted/80 text-foreground',
             ]"
           >
             {{ page }}
@@ -103,37 +95,31 @@
         title="Next page"
       >
         Next
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="h-3.5 w-3.5"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-        </svg>
+        <ChevronRight class="h-3.5 w-3.5" />
       </button>
     </div>
   </footer>
 </template>
 
 <script setup lang="ts">
+  import { ChevronLeft, ChevronRight } from 'lucide-vue-next';
+
   interface Props {
-    currentPage: number
-    totalPages: number
-    totalItems: number
-    itemLabel?: string
+    currentPage: number;
+    totalPages: number;
+    totalItems: number;
+    itemLabel?: string;
   }
 
   interface Emits {
-    (e: 'goToPage', page: number): void
-    (e: 'previous'): void
-    (e: 'next'): void
+    (e: 'goToPage', page: number): void;
+    (e: 'previous'): void;
+    (e: 'next'): void;
   }
 
   withDefaults(defineProps<Props>(), {
-    itemLabel: 'item'
-  })
+    itemLabel: 'item',
+  });
 
-  defineEmits<Emits>()
+  defineEmits<Emits>();
 </script>

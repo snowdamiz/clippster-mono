@@ -4,16 +4,7 @@
   >
     <nav class="flex items-center gap-2 text-sm">
       <template v-for="(crumb, index) in breadcrumbs" :key="index">
-        <svg
-          v-if="index > 0"
-          xmlns="http://www.w3.org/2000/svg"
-          class="h-3.5 w-3.5 text-muted-foreground/50"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-        </svg>
+        <ChevronRight v-if="index > 0" class="h-3.5 w-3.5 text-muted-foreground/50" />
         <router-link
           v-if="crumb.path && index < breadcrumbs.length - 1"
           :to="crumb.path"
@@ -31,6 +22,7 @@
   import { computed } from 'vue';
   import { useRoute } from 'vue-router';
   import { useBreadcrumb } from '@/composables/useBreadcrumb';
+  import { ChevronRight } from 'lucide-vue-next';
 
   const route = useRoute();
 

@@ -10,15 +10,7 @@
         <div class="flex items-center justify-between mb-4">
           <h3 class="text-lg font-semibold text-foreground">Detect Clips</h3>
           <button @click="close" class="p-1 hover:bg-[#ffffff]/10 rounded-md transition-colors">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-4 w-4 text-foreground/70 hover:text-foreground"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X class="h-4 w-4 text-foreground/70 hover:text-foreground" />
           </button>
         </div>
 
@@ -41,16 +33,10 @@
               <span class="truncate">
                 {{ selectedPromptName || 'Select a prompt...' }}
               </span>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
+              <ChevronDown
                 class="h-4 w-4 text-muted-foreground transition-transform"
                 :class="{ 'rotate-180': showPromptDropdown }"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-              </svg>
+              />
             </button>
 
             <!-- Dropdown -->
@@ -74,20 +60,7 @@
         <!-- Credit Information -->
         <div class="mb-6 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
           <div class="flex items-start gap-2">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+            <Info class="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
             <div class="text-sm">
               <p class="font-medium text-blue-900 dark:text-blue-100 mb-1">Credit Cost</p>
               <p class="text-blue-700 dark:text-blue-300">
@@ -119,20 +92,7 @@
             :disabled="!selectedPromptId || isProcessing"
             class="px-4 py-2 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 disabled:from-gray-500/50 disabled:to-gray-600/50 disabled:cursor-not-allowed text-white rounded-md font-medium transition-all disabled:opacity-50 flex items-center gap-2"
           >
-            <svg
-              v-if="isProcessing"
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-4 w-4 animate-spin"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
+            <Loader2 v-if="isProcessing" class="h-4 w-4 animate-spin" />
             {{ isProcessing ? 'Detecting...' : 'Detect Clips' }}
           </button>
         </div>
@@ -143,6 +103,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+  import { X, ChevronDown, Info, Loader2 } from 'lucide-vue-next';
   import { useRouter } from 'vue-router';
   import { useCreditBalance } from '@/composables/useCreditBalance';
   import { useAuthStore } from '@/stores/auth';

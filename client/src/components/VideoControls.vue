@@ -10,16 +10,7 @@
           class="p-1.5 bg-white/5 hover:bg-white/10 rounded-md transition-all duration-200 backdrop-blur-sm"
           title="Go to Beginning"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-6 w-6 text-white"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.5 14.5l-3-3 3-3" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.5 14.5l-3-3 3-3" />
-          </svg>
+          <SkipBack class="h-6 w-6 text-white" />
         </button>
         <!-- Play/Pause Button -->
         <button
@@ -27,31 +18,8 @@
           class="p-1.5 bg-white/5 hover:bg-white/10 rounded-md transition-all duration-200 backdrop-blur-sm"
           title="Play/Pause"
         >
-          <svg
-            v-if="!isPlaying"
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-6 w-6 text-white"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-            />
-          </svg>
-          <svg
-            v-else
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-6 w-6 text-white"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6" />
-          </svg>
+          <Play v-if="!isPlaying" class="h-6 w-6 text-white" />
+          <Pause v-else class="h-6 w-6 text-white" />
         </button>
         <!-- Time Display -->
         <div class="text-white text-sm font-mono font-medium bg-white/5 px-4 py-2 rounded-md backdrop-blur-sm">
@@ -67,43 +35,8 @@
             class="p-3 rounded-md transition-all duration-200 backdrop-blur-sm"
             title="Mute/Unmute"
           >
-            <svg
-              v-if="isMuted || volume === 0"
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5 text-white"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-              />
-
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"
-              />
-            </svg>
-            <svg
-              v-else
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5 text-white"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-              />
-            </svg>
+            <VolumeX v-if="isMuted || volume === 0" class="h-5 w-5 text-white" />
+            <Volume2 v-else class="h-5 w-5 text-white" />
           </button>
           <div class="relative w-30 h-1.5 bg-gray-700 rounded-md">
             <div
@@ -128,6 +61,7 @@
 
 <script setup lang="ts">
   import { ref, watch } from 'vue';
+  import { SkipBack, Play, Pause, VolumeX, Volume2 } from 'lucide-vue-next';
 
   interface Props {
     videoSrc: string | null;

@@ -55,16 +55,7 @@
               >
                 <path :d="item.icon" />
               </svg>
-              <svg
-                v-else
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon" />
-              </svg>
+              <component v-else :is="item.icon" class="h-5 w-5" />
               <span>{{ item.name }}</span>
             </router-link>
 
@@ -85,16 +76,7 @@
                   WebkitMaskPosition: 'center',
                 }"
               />
-              <svg
-                v-else
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon" />
-              </svg>
+              <component v-else :is="item.icon" class="h-5 w-5" />
               <span>{{ item.name }}</span>
             </button>
           </li>
@@ -113,20 +95,7 @@
           <div class="credit-balance-header">
             <div class="credit-left">
               <div class="credit-icon-wrapper">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="credit-icon"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
+                <DollarSign class="credit-icon" />
               </div>
               <span class="credit-label">Credits</span>
             </div>
@@ -180,6 +149,7 @@
   import { navigationItems } from '@/config/navigation';
   import BugReportDialog from '@/components/BugReportDialog.vue';
   import api from '@/services/api';
+  import { DollarSign } from 'lucide-vue-next';
 
   const route = useRoute();
   const router = useRouter();
@@ -447,7 +417,7 @@
   }
 
   .credit-sign-in-text {
-    font-size: 0.875rem;
+    font-size: 0.775rem;
     font-weight: 500;
     color: rgba(255, 255, 255, 0.8);
   }

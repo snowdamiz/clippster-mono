@@ -136,29 +136,13 @@
             <div
               class="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-orange-400 rounded-full shadow-md shadow-orange-400/50 border border-white/80 cut-indicator flex items-center justify-center"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-1.5 w-1.5 text-white"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X :size="6" class="text-white" stroke-width="3" />
             </div>
             <!-- Bottom cut indicator -->
             <div
               class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-2 h-2 bg-orange-400 rounded-full shadow-md shadow-orange-400/50 border border-white/80 cut-indicator flex items-center justify-center"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-1.5 w-1.5 text-white"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X :size="6" class="text-white" stroke-width="3" />
             </div>
           </div>
           <!-- Left resize handle -->
@@ -191,6 +175,7 @@
 
 <script setup lang="ts">
   import { ref } from 'vue';
+  import { X } from 'lucide-vue-next';
   import { formatDuration, generateClipGradient, getSegmentDisplayTime } from '../utils/timelineUtils';
   import type { TimelineClipTrackProps } from '../types';
 

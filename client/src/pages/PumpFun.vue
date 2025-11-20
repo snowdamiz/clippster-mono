@@ -14,31 +14,9 @@
             class="px-3 py-2.5 bg-muted border border-border rounded-md text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all flex items-center gap-2"
             title="Recent searches"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+            <Clock class="h-4 w-4" />
             <span class="text-sm">Recent</span>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-3 w-3 transition-transform"
-              :class="{ 'rotate-180': showRecentDropdown }"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-            </svg>
+            <ChevronDown class="h-3 w-3 transition-transform" :class="{ 'rotate-180': showRecentDropdown }" />
           </button>
           <!-- Dropdown Menu -->
           <div
@@ -57,20 +35,7 @@
                   class="w-full text-left px-3 py-2 rounded-md hover:bg-muted/80 transition-colors flex items-center gap-2 cursor-pointer"
                   :title="`Search: ${search.displayText}${search.label ? ` (${search.label})` : ''}`"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="h-3 w-3 text-muted-foreground group-hover:text-purple-400 flex-shrink-0"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
+                  <Clock class="h-3 w-3 text-muted-foreground group-hover:text-purple-400 flex-shrink-0" />
                   <div class="flex-1 min-w-0">
                     <div class="text-sm truncate">{{ search.displayText }}</div>
                     <div v-if="search.label" class="text-xs text-purple-400 truncate" :title="`Label: ${search.label}`">
@@ -82,20 +47,7 @@
                     class="opacity-0 group-hover:opacity-100 p-1 hover:bg-muted/60 rounded transition-all"
                     title="Edit label"
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      class="h-3 w-3 text-muted-foreground hover:text-foreground"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                      />
-                    </svg>
+                    <Edit class="h-3 w-3 text-muted-foreground hover:text-foreground" />
                   </button>
                 </div>
 
@@ -106,20 +58,7 @@
                   @click.stop
                 >
                   <div class="flex items-center gap-1.5">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      class="h-3 w-3 text-muted-foreground flex-shrink-0"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
-                      />
-                    </svg>
+                    <Tag class="h-3 w-3 text-muted-foreground flex-shrink-0" />
                     <input
                       ref="labelInputRef"
                       v-model="labelInput"
@@ -134,35 +73,14 @@
                       class="p-0.5 text-green-400 hover:text-green-300 transition-colors flex-shrink-0"
                       title="Save"
                     >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="h-3 w-3"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                      </svg>
+                      <Check class="h-3 w-3" />
                     </button>
                     <button
                       @click="cancelEditingLabel"
                       class="p-0.5 text-red-400 hover:text-red-300 transition-colors flex-shrink-0"
                       title="Cancel"
                     >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="h-3 w-3"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M6 18L18 6M6 6l12 12"
-                        />
-                      </svg>
+                      <X class="h-3 w-3" />
                     </button>
                   </div>
                 </div>
@@ -225,20 +143,7 @@
     </div>
     <!-- Error State -->
     <div v-else-if="pumpFunStore.error" class="bg-red-500/10 border border-red-500/50 rounded-md p-6 text-center">
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        class="h-12 w-12 text-red-500 mx-auto mb-3"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-        />
-      </svg>
+      <AlertTriangle class="h-12 w-12 text-red-500 mx-auto mb-3" />
       <h3 class="text-lg font-semibold text-red-400 mb-2">Error</h3>
 
       <p class="text-muted-foreground">{{ pumpFunStore.error }}</p>
@@ -253,20 +158,7 @@
     <div v-else-if="pumpFunStore.clips.length > 0" class="space-y-6">
       <!-- Filter Notice -->
       <div class="bg-blue-500/10 border border-blue-500/50 rounded-md p-4 flex items-center gap-3">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="h-5 w-5 text-blue-400 flex-shrink-0"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-          />
-        </svg>
+        <AlertTriangle class="h-5 w-5 text-blue-400 flex-shrink-0" />
         <div class="flex-1">
           <p class="text-sm text-blue-400">
             Showing videos
@@ -335,20 +227,7 @@
               title="Download"
               @click.stop="handleDownloadClip(clip)"
             >
-              <svg
-                class="h-6 w-6"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
-                />
-              </svg>
+              <Download class="h-6 w-6" />
             </button>
           </div>
           <!-- Bottom Action Bar (for cards without thumbnails) -->
@@ -363,20 +242,7 @@
                 title="Download"
                 @click.stop="handleDownloadClip(clip)"
               >
-                <svg
-                  class="h-4 w-4 transition-colors text-muted-foreground hover:text-foreground"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
-                  />
-                </svg>
+                <Download class="h-4 w-4 transition-colors text-muted-foreground hover:text-foreground" />
               </button>
             </div>
           </div>
@@ -388,20 +254,7 @@
       <!-- Empty State Component -->
       <EmptyState title="Search VODs on Pump" description="Enter a mint ID or PumpFun URL to search for VODs">
         <template #icon>
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-16 w-16 text-muted-foreground"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="1.5"
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
+          <Search class="h-16 w-16 text-muted-foreground" />
         </template>
         <template #action>
           <div class="flex items-center gap-3 w-full max-w-md">
@@ -412,31 +265,9 @@
                 class="h-12 px-3 bg-muted border border-border rounded-md text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all flex items-center gap-2"
                 title="Recent searches"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
+                <Clock class="h-4 w-4" />
                 <span class="text-sm">Recent</span>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-3 w-3 transition-transform"
-                  :class="{ 'rotate-180': showEmptyRecentDropdown }"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                </svg>
+                <ChevronDown class="h-3 w-3 transition-transform" :class="{ 'rotate-180': showEmptyRecentDropdown }" />
               </button>
               <!-- Dropdown Menu -->
               <div
@@ -455,20 +286,7 @@
                       class="w-full text-left px-3 py-2 rounded-md hover:bg-muted/80 transition-colors flex items-center gap-2 cursor-pointer"
                       :title="`Search: ${search.displayText}${search.label ? ` (${search.label})` : ''}`"
                     >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="h-3 w-3 text-muted-foreground group-hover:text-purple-400 flex-shrink-0"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                        />
-                      </svg>
+                      <Clock class="h-3 w-3 text-muted-foreground group-hover:text-purple-400 flex-shrink-0" />
                       <div class="flex-1 min-w-0">
                         <div class="text-sm truncate">{{ search.displayText }}</div>
                         <div
@@ -484,20 +302,7 @@
                         class="opacity-0 group-hover:opacity-100 p-1 hover:bg-muted/60 rounded transition-all"
                         title="Edit label"
                       >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          class="h-3 w-3 text-muted-foreground hover:text-foreground"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                          />
-                        </svg>
+                        <Edit class="h-3 w-3 text-muted-foreground hover:text-foreground" />
                       </button>
                     </div>
 
@@ -508,20 +313,7 @@
                       @click.stop
                     >
                       <div class="flex items-center gap-1.5">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          class="h-3 w-3 text-muted-foreground flex-shrink-0"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
-                          />
-                        </svg>
+                        <Tag class="h-3 w-3 text-muted-foreground flex-shrink-0" />
                         <input
                           ref="labelInputRef"
                           v-model="labelInput"
@@ -536,35 +328,14 @@
                           class="p-0.5 text-green-400 hover:text-green-300 transition-colors flex-shrink-0"
                           title="Save"
                         >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            class="h-3 w-3"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                          </svg>
+                          <Check class="h-3 w-3" />
                         </button>
                         <button
                           @click="cancelEditingLabel"
                           class="p-0.5 text-red-400 hover:text-red-300 transition-colors flex-shrink-0"
                           title="Cancel"
                         >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            class="h-3 w-3"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                              stroke-width="2"
-                              d="M6 18L18 6M6 6l12 12"
-                            />
-                          </svg>
+                          <X class="h-3 w-3" />
                         </button>
                       </div>
                     </div>
@@ -604,15 +375,7 @@
             class="p-1.5 hover:bg-muted rounded-md transition-colors"
             :disabled="downloadStarting"
           >
-            <svg
-              class="h-4 w-4 text-muted-foreground"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X class="h-4 w-4 text-muted-foreground" />
           </button>
         </div>
 
@@ -624,20 +387,7 @@
               <div
                 class="w-8 h-8 bg-gradient-to-br from-purple-500/20 to-indigo-500/20 rounded-md flex items-center justify-center flex-shrink-0"
               >
-                <svg
-                  class="h-4 w-4 text-purple-500"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                  />
-                </svg>
+                <Video class="h-4 w-4 text-purple-500" />
               </div>
               <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium text-foreground truncate">{{ downloadTitle }}</p>
@@ -666,20 +416,7 @@
                       !useSegmentDownload ? 'bg-purple-500 text-white' : 'bg-muted text-muted-foreground',
                     ]"
                   >
-                    <svg
-                      class="h-3 w-3"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
-                      />
-                    </svg>
+                    <Download class="h-3 w-3" />
                   </div>
                   <div class="flex-1 min-w-0">
                     <h4
@@ -693,15 +430,7 @@
                   </div>
                   <div v-if="!useSegmentDownload" class="flex-shrink-0">
                     <div class="w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center">
-                      <svg
-                        class="h-2.5 w-2.5 text-white"
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-                      </svg>
+                      <Check class="h-2.5 w-2.5 text-white" />
                     </div>
                   </div>
                 </div>
@@ -721,20 +450,7 @@
                       useSegmentDownload ? 'bg-purple-500 text-white' : 'bg-muted text-muted-foreground',
                     ]"
                   >
-                    <svg
-                      class="h-3 w-3"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
+                    <Clock class="h-3 w-3" />
                   </div>
                   <div class="flex-1 min-w-0">
                     <h4
@@ -748,15 +464,7 @@
                   </div>
                   <div v-if="useSegmentDownload" class="flex-shrink-0">
                     <div class="w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center">
-                      <svg
-                        class="h-2.5 w-2.5 text-white"
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-                      </svg>
+                      <Check class="h-2.5 w-2.5 text-white" />
                     </div>
                   </div>
                 </div>
@@ -767,20 +475,7 @@
           <!-- Time Range Picker (shown only for segment downloads) -->
           <div v-if="useSegmentDownload" class="space-y-2">
             <label class="text-sm font-medium text-foreground flex items-center gap-1.5">
-              <svg
-                class="h-3.5 w-3.5 text-purple-400"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
+              <Clock class="h-3.5 w-3.5 text-purple-400" />
               Select Time Range:
             </label>
             <div class="bg-muted/20 rounded-md p-3 border border-border/50">
@@ -824,31 +519,11 @@
               "
             >
               <span v-if="downloadStarting" class="flex items-center justify-center gap-2">
-                <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                  <path
-                    class="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  ></path>
-                </svg>
+                <Loader2 class="animate-spin h-4 w-4" />
                 {{ useSegmentDownload ? 'Starting Segment Download...' : 'Starting Download...' }}
               </span>
               <span v-else class="flex items-center justify-center gap-2">
-                <svg
-                  class="h-4 w-4"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
-                  />
-                </svg>
+                <Download class="h-4 w-4" />
                 {{ useSegmentDownload ? 'Download Segment' : 'Download Full Stream' }}
               </span>
             </button>
@@ -859,15 +534,7 @@
               :disabled="downloadStarting"
             >
               <span class="flex items-center justify-center gap-2">
-                <svg
-                  class="h-4 w-4"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <X class="h-4 w-4" />
                 Cancel
               </span>
             </button>
@@ -902,6 +569,19 @@
   import { useDownloads } from '@/composables/useDownloads';
   import { usePumpFunStore } from '@/stores/pumpfun';
   import { getNextSegmentNumber } from '@/services/database';
+  import {
+    Clock,
+    ChevronDown,
+    Edit,
+    Tag,
+    Check,
+    X,
+    AlertTriangle,
+    Download,
+    Video,
+    Search,
+    Loader2,
+  } from 'lucide-vue-next';
 
   const { success, error: showError } = useToast();
   const { startDownload } = useDownloads();

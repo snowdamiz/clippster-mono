@@ -4,7 +4,7 @@
       title="Raw Videos"
       description="Browse and manage your raw video files"
       :show-header="videos.length > 0"
-      icon="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+      :icon="Video"
     >
       <template #actions>
         <div class="flex items-center gap-2">
@@ -13,40 +13,14 @@
             title="Open videos folder"
             class="p-3 bg-muted hover:bg-muted/80 text-foreground rounded-md transition-all"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-              />
-            </svg>
+            <Folder class="h-5 w-5" />
           </button>
           <button
             @click="handleUpload"
             :disabled="uploading"
             class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-              />
-            </svg>
+            <Upload class="h-5 w-5" />
             {{ uploading ? 'Uploading...' : 'Upload Video' }}
           </button>
         </div>
@@ -88,20 +62,7 @@
             <!-- Thumbnail skeleton -->
             <div class="absolute inset-0 bg-muted/50 flex items-center justify-center">
               <div class="flex flex-col items-center gap-3">
-                <svg
-                  class="animate-spin h-8 w-8 text-muted-foreground"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-
-                  <path
-                    class="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  ></path>
-                </svg>
+                <Loader2 class="animate-spin h-8 w-8 text-muted-foreground" />
                 <span class="text-sm text-muted-foreground">Uploading...</span>
               </div>
             </div>
@@ -134,20 +95,7 @@
                 <div
                   class="inline-flex items-center justify-center w-12 h-12 mb-3 bg-white/10 rounded-full backdrop-blur-sm"
                 >
-                  <svg
-                    class="h-6 w-6"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3 3m0 0l-3-3m3 3V4"
-                    />
-                  </svg>
+                  <Download class="h-6 w-6" />
                 </div>
 
                 <!-- Title -->
@@ -191,15 +139,7 @@
                 class="p-2 bg-red-500/90 hover:bg-red-500 text-white rounded-full transition-all transform hover:scale-110 shadow-lg"
                 title="Cancel Download"
               >
-                <svg
-                  class="h-4 w-4"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <X class="h-4 w-4" />
               </button>
             </div>
           </div>
@@ -217,20 +157,7 @@
                 <div
                   class="inline-flex items-center justify-center w-12 h-12 mb-3 bg-white/10 rounded-full backdrop-blur-sm"
                 >
-                  <svg
-                    class="h-6 w-6"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
+                  <Clock class="h-6 w-6" />
                 </div>
 
                 <!-- Title -->
@@ -251,15 +178,7 @@
                 class="p-2 bg-red-500/90 hover:bg-red-500 text-white rounded-full transition-all transform hover:scale-110 shadow-lg"
                 title="Cancel Download"
               >
-                <svg
-                  class="h-4 w-4"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <X class="h-4 w-4" />
               </button>
             </div>
           </div>
@@ -294,20 +213,7 @@
                     : 'text-muted-foreground bg-muted',
                 ]"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-3 w-3"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-                  />
-                </svg>
+                <Folder class="h-3 w-3" />
                 In Project
               </span>
             </div>
@@ -350,47 +256,14 @@
                 title="Play"
                 @click.stop="playVideo(video)"
               >
-                <svg
-                  class="h-6 w-6"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                  />
-
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
+                <Play class="h-6 w-6" />
               </button>
               <button
                 class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
                 title="Delete"
                 @click.stop="confirmDelete(video)"
               >
-                <svg
-                  class="h-6 w-6"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                  />
-                </svg>
+                <Trash2 class="h-6 w-6" />
               </button>
             </div>
           </div>
@@ -404,20 +277,7 @@
           @action="handleUpload"
         >
           <template #icon>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-16 w-16 text-muted-foreground"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="1.5"
-                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-              />
-            </svg>
+            <Video class="h-16 w-16 text-muted-foreground" />
           </template>
         </EmptyState>
       </div>
@@ -468,6 +328,7 @@
 
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
+  import { Video, Folder, Upload, Loader2, Download, X, Clock, Play, Trash2 } from 'lucide-vue-next';
   import {
     getAllRawVideos,
     hasClipsReferencingRawVideo,

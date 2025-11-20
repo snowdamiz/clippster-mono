@@ -29,20 +29,7 @@
         </div>
         <!-- Center placeholder if no thumbnail -->
         <div v-if="!clip.thumbnailUrl" class="flex-1 flex items-center justify-center">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-14 w-14 text-white/60"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="1.5"
-              d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-            />
-          </svg>
+          <Video class="h-14 w-14 text-white/60" />
         </div>
         <!-- Hover Overlay -->
         <div
@@ -53,20 +40,7 @@
             title="Download"
             @click.stop="downloadClip"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5 text-black"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-              />
-            </svg>
+            <Download class="h-5 w-5 text-black" />
           </button>
         </div>
       </div>
@@ -92,6 +66,7 @@
 <script setup lang="ts">
   import { computed } from 'vue';
   import { formatDuration, formatRelativeTime, type PumpFunClip } from '@/services/pumpfun';
+  import { Video, Download } from 'lucide-vue-next';
 
   interface Props {
     clip: PumpFunClip;

@@ -29,20 +29,7 @@
         </div>
         <!-- Center placeholder if no thumbnail -->
         <div v-if="!thumbnailUrl" class="flex-1 flex items-center justify-center">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-14 w-14 text-white/60"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="1.5"
-              d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-            />
-          </svg>
+          <Video class="h-14 w-14 text-white/60" />
         </div>
         <!-- Hover Overlay -->
         <div
@@ -53,47 +40,14 @@
             title="Play"
             @click.stop="$emit('play')"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5 text-black"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-              />
-
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+            <Play class="h-5 w-5 text-black" />
           </button>
           <button
             class="p-2.5 bg-white/90 hover:bg-white rounded-md transition-colors"
             title="Delete"
             @click.stop="$emit('delete')"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5 text-black"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-              />
-            </svg>
+            <Trash2 class="h-5 w-5 text-black" />
           </button>
         </div>
       </div>
@@ -117,6 +71,7 @@
   import { computed } from 'vue';
   import type { RawVideo } from '@/services/database';
   import { useFormatters } from '@/composables/useFormatters';
+  import { Video, Play, Trash2 } from 'lucide-vue-next';
 
   interface Props {
     video: RawVideo;

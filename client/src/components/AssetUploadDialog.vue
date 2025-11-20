@@ -26,20 +26,7 @@
           >
             <div class="flex items-center gap-3 mb-2">
               <div class="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-5 w-5 text-blue-500"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                  />
-                </svg>
+                <Plus class="h-5 w-5 text-blue-500" />
               </div>
               <span class="font-medium">Intro</span>
             </div>
@@ -57,15 +44,7 @@
           >
             <div class="flex items-center gap-3 mb-2">
               <div class="w-8 h-8 bg-purple-500/20 rounded-md flex items-center justify-center">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-5 w-5 text-purple-500"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
-                </svg>
+                <Minus class="h-5 w-5 text-purple-500" />
               </div>
               <span class="font-medium">Outro</span>
             </div>
@@ -79,20 +58,7 @@
         <div class="bg-muted/30 rounded-md p-4 border border-border/50">
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 bg-blue-500/20 rounded-md flex items-center justify-center flex-shrink-0">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-5 w-5 text-blue-500"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                />
-              </svg>
+              <CloudUpload class="h-5 w-5 text-blue-500" />
             </div>
             <div class="flex-1">
               <p class="text-sm font-medium text-foreground">File Selection</p>
@@ -118,21 +84,7 @@
           class="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <div class="flex items-center justify-center gap-2">
-            <svg
-              v-if="uploading"
-              xmlns="http://www.w3.org/2000/svg"
-              class="animate-spin h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
+            <Loader2 v-if="uploading" class="animate-spin h-4 w-4" />
             {{ uploading ? 'Uploading...' : 'Upload' }}
           </div>
         </button>
@@ -143,6 +95,7 @@
 
 <script setup lang="ts">
   import { ref } from 'vue';
+  import { Plus, Minus, CloudUpload, Loader2 } from 'lucide-vue-next';
   import { useAssetOperations } from '@/composables/useAssetOperations';
 
   const emit = defineEmits<{

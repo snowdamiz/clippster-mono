@@ -10,15 +10,7 @@
           class="p-2 hover:bg-[#ffffff]/10 rounded-md transition-colors"
           title="Close"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-4 w-4 text-foreground/70 hover:text-foreground"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <X class="h-4 w-4 text-foreground/70 hover:text-foreground" />
         </button>
       </div>
       <!-- Progress Content -->
@@ -65,20 +57,7 @@
         <!-- Error State -->
         <div v-if="error" class="bg-destructive/10 border border-destructive/20 rounded-md p-3">
           <div class="flex items-start gap-2">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5 text-destructive flex-shrink-0 mt-0.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+            <AlertTriangle class="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
             <div>
               <h4 class="font-medium text-destructive">Error</h4>
 
@@ -98,7 +77,16 @@
 
 <script setup lang="ts">
   import { computed, watch } from 'vue';
-  import { PlayIcon, Loader2Icon, BrainIcon, CheckCircleIcon, XCircleIcon, ActivityIcon } from 'lucide-vue-next';
+  import {
+    PlayIcon,
+    Loader2Icon,
+    BrainIcon,
+    CheckCircleIcon,
+    XCircleIcon,
+    ActivityIcon,
+    X,
+    AlertTriangle,
+  } from 'lucide-vue-next';
 
   interface Props {
     visible: boolean;

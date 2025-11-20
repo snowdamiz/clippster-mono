@@ -21,20 +21,7 @@
         <!-- Video Track Background -->
         <div v-if="!videoSrc" class="absolute inset-0 flex items-center justify-center">
           <div class="text-center text-muted-foreground/40">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-4 w-4 mx-auto mb-1"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="1.5"
-                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-              />
-            </svg>
+            <Video class="h-3.5 w-3.5 mx-auto mb-1" />
             <p class="text-xs">No video</p>
           </div>
         </div>
@@ -71,6 +58,7 @@
 
 <script setup lang="ts">
   import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
+  import { Video } from 'lucide-vue-next';
   import { useAudioWaveform } from '@/composables/useAudioWaveform';
   import { calculateWaveformParameters, createThrottledRenderer } from '@/utils/audioWaveformUtils';
   import type { TimelineVideoTrackProps, TimelineVideoTrackEmits } from '../types';

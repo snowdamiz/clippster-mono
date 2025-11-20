@@ -4,7 +4,7 @@
       title="Clips"
       description="Browse and manage all your video clips"
       :show-header="clips.length > 0"
-      icon="M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4"
+      :icon="LayoutGrid"
     >
       <template #actions>
         <button
@@ -13,14 +13,7 @@
           :title="hasAnyClipsWithFiles ? 'Open clips folder' : 'No clips available to show in folder'"
           class="p-3 bg-muted hover:bg-muted/80 text-foreground rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-            />
-          </svg>
+          <Folder class="h-5 w-5" />
         </button>
       </template>
       <!-- Loading State -->
@@ -107,47 +100,14 @@
                 @click.stop="playClip(clip)"
                 :disabled="clip.status === 'detected' && !clip.file_path"
               >
-                <svg
-                  class="h-6 w-6"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                  />
-
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
+                <Play class="h-6 w-6" />
               </button>
               <button
                 class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
                 title="Delete"
                 @click.stop="confirmDelete(clip)"
               >
-                <svg
-                  class="h-6 w-6"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                  />
-                </svg>
+                <Trash2 class="h-6 w-6" />
               </button>
             </div>
           </div>
@@ -160,27 +120,7 @@
           button-text="Upload Clip"
         >
           <template #icon>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-16 w-16 text-muted-foreground"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="1.5"
-                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-              />
-
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="1.5"
-                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+            <Video class="h-16 w-16 text-muted-foreground" />
           </template>
         </EmptyState>
       </div>
@@ -217,6 +157,7 @@
   import { ref, onMounted, computed, watch } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
+  import { LayoutGrid, Folder, Play, Trash2, Video } from 'lucide-vue-next';
   import {
     getGeneratedClips,
     getDetectedClips,

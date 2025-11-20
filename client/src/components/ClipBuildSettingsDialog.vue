@@ -24,15 +24,7 @@
             </div>
           </div>
           <button @click="close" class="p-2 hover:bg-white/10 rounded-lg transition-colors" title="Close">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5 text-foreground/70 hover:text-foreground"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X class="h-5 w-5 text-foreground/70 hover:text-foreground" />
           </button>
         </div>
 
@@ -214,16 +206,10 @@
                             : 'None'
                         }}
                       </span>
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
+                      <ChevronDown
                         class="h-4 w-4 text-muted-foreground transition-transform flex-shrink-0 ml-2"
                         :class="{ 'rotate-180': showIntroDropdown }"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                      </svg>
+                      />
                     </button>
 
                     <!-- Dropdown - Teleported -->
@@ -291,16 +277,10 @@
                             : 'None'
                         }}
                       </span>
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
+                      <ChevronDown
                         class="h-4 w-4 text-muted-foreground transition-transform flex-shrink-0 ml-2"
                         :class="{ 'rotate-180': showOutroDropdown }"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                      </svg>
+                      />
                     </button>
 
                     <!-- Dropdown - Teleported -->
@@ -568,7 +548,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-  import { WrenchIcon, CheckIcon } from 'lucide-vue-next';
+  import { WrenchIcon, CheckIcon, X, ChevronDown } from 'lucide-vue-next';
   import type { ClipWithVersion } from '@/services/database';
   import { getAllIntroOutros, type IntroOutro } from '@/services/database';
   import { convertFileSrc } from '@tauri-apps/api/core';

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { Sparkles, Zap, DollarSign, Scissors, Shield, Coins, Check, Calendar, MapPin, ChevronDown } from 'lucide-vue-next'
+import { Sparkles, Zap, DollarSign, Scissors, Shield, Coins, Check, Calendar, MapPin, ChevronDown, Menu, X, ArrowRight, Download } from 'lucide-vue-next'
 
 const platform = ref<'windows' | 'macos' | 'unknown'>('unknown')
 const otherPlatform = ref<'windows' | 'macos' | null>(null)
@@ -160,10 +160,8 @@ const closeMobileMenu = () => {
             aria-label="Open menu"
             @click="toggleMobileMenu"
           >
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" v-if="!mobileMenuOpen"/>
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" v-else/>
-            </svg>
+            <Menu v-if="!mobileMenuOpen" class="w-6 h-6" />
+            <X v-else class="w-6 h-6" />
           </button>
         </div>
 
@@ -225,9 +223,7 @@ const closeMobileMenu = () => {
                <div class="mt-12 flex flex-col sm:flex-row gap-4 justify-center items-center">
                  <a href="#download" class="group inline-flex items-center justify-center px-8 py-4 text-base font-semibold text-white bg-gradient-to-r from-purple-600 to-indigo-600 rounded-lg hover:from-purple-500 hover:to-indigo-500 transition-all duration-200 shadow-xl shadow-purple-500/30 hover:shadow-purple-500/50 hover:scale-105">
                    Download Clippster
-                   <svg class="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
-                   </svg>
+                   <ArrowRight class="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
                  </a>
                  <a href="#pricing" class="inline-flex items-center justify-center px-8 py-4 text-base font-semibold text-foreground bg-card/50 border border-border/50 rounded-lg hover:bg-card hover:border-purple-500/30 transition-all duration-200 backdrop-blur-sm">
                    View Pricing
@@ -744,9 +740,7 @@ const closeMobileMenu = () => {
                   <p class="text-sm text-muted-foreground/90 mb-8">Recommended for your system</p>
                    <a v-if="platform !== 'unknown'" href="#" class="group inline-flex items-center justify-center w-full px-8 py-4 text-base font-semibold text-white bg-gradient-to-r from-purple-600 to-indigo-600 rounded-xl hover:from-purple-500 hover:to-indigo-500 transition-all duration-200 shadow-lg shadow-purple-500/40 hover:shadow-purple-500/60">
                      Download Now
-                     <svg class="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                     </svg>
+                     <Download class="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
                    </a>
                 </div>
               </div>

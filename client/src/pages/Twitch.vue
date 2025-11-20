@@ -1,10 +1,5 @@
 <template>
-  <PageLayout
-    title="Twitch"
-    description="Manage your Twitch streaming content"
-    :show-header="false"
-    icon="M2.5 17a2.5 2.5 0 110-5 2.5 2.5 0 010 5zM2.5 7a2.5 2.5 0 110-5 2.5 2.5 0 010 5zM22.5 17a2.5 2.5 0 110-5 2.5 2.5 0 010 5zM22.5 7a2.5 2.5 0 110-5 2.5 2.5 0 010 5z"
-  >
+  <PageLayout title="Twitch" description="Manage your Twitch streaming content" :show-header="false" :icon="Twitch">
     <div class="flex flex-col items-center justify-center min-h-[calc(100vh-16rem)]">
       <div class="p-5 bg-muted rounded-full mb-6 flex items-center justify-center">
         <div
@@ -18,7 +13,7 @@
             maskRepeat: 'no-repeat',
             WebkitMaskRepeat: 'no-repeat',
             maskPosition: 'center',
-            WebkitMaskPosition: 'center'
+            WebkitMaskPosition: 'center',
           }"
         />
       </div>
@@ -34,5 +29,6 @@
 </template>
 
 <script setup lang="ts">
-  import PageLayout from '@/components/PageLayout.vue'
+  import PageLayout from '@/components/PageLayout.vue';
+  import { Twitch } from 'lucide-vue-next';
 </script>

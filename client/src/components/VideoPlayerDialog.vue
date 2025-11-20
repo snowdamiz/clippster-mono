@@ -19,15 +19,7 @@
           class="absolute top-6 right-6 z-30 p-2 bg-black/40 hover:bg-black/60 backdrop-blur-sm rounded-md transition-colors"
           title="Close"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-5 w-5 text-white"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <X class="h-5 w-5 text-white" />
         </button>
         <!-- Video Display (16:9 Aspect Ratio) -->
         <div class="relative flex-1 flex items-center justify-center bg-black aspect-video">
@@ -43,20 +35,7 @@
           <!-- Loading Indicator -->
           <div v-if="isVideoLoading" class="absolute inset-0 flex items-center justify-center bg-black/50">
             <div class="flex flex-col items-center gap-3">
-              <svg
-                class="animate-spin h-12 w-12 text-white"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-
-                <path
-                  class="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                ></path>
-              </svg>
+              <Loader2 class="animate-spin h-12 w-12 text-white" />
               <span class="text-white text-sm">Loading video...</span>
             </div>
           </div>
@@ -68,31 +47,8 @@
             title="Play/Pause"
           >
             <div class="p-4 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-colors">
-              <svg
-                v-if="!isPlaying"
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-8 w-8 text-white"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                />
-              </svg>
-              <svg
-                v-else
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-8 w-8 text-white"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6" />
-              </svg>
+              <Play v-if="!isPlaying" class="h-8 w-8 text-white" />
+              <Pause v-else class="h-8 w-8 text-white" />
             </div>
           </button>
         </div>
@@ -147,31 +103,8 @@
                 class="px-1.5 py-1.5 bg-white/10 hover:bg-white/20 rounded-md transition-all duration-200 backdrop-blur-sm"
                 title="Play/Pause"
               >
-                <svg
-                  v-if="!isPlaying"
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-6 w-6 text-white"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                  />
-                </svg>
-                <svg
-                  v-else
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-6 w-6 text-white"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6" />
-                </svg>
+                <Play v-if="!isPlaying" class="h-6 w-6 text-white" />
+                <Pause v-else class="h-6 w-6 text-white" />
               </button>
               <!-- Time Display -->
               <div class="text-white text-sm font-mono font-medium bg-white/10 px-3 py-2 rounded-md backdrop-blur-sm">
@@ -187,43 +120,8 @@
                   class="p-3 bg-white/10 hover:bg-white/20 rounded-md transition-all duration-200 backdrop-blur-sm"
                   title="Mute/Unmute"
                 >
-                  <svg
-                    v-if="isMuted || volume === 0"
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="h-4 w-4 text-white pt-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                    />
-
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"
-                    />
-                  </svg>
-                  <svg
-                    v-else
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="h-4 w-4 text-white"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                    />
-                  </svg>
+                  <VolumeX v-if="isMuted || volume === 0" class="h-4 w-4 text-white" />
+                  <Volume2 v-else class="h-4 w-4 text-white" />
                 </button>
                 <div class="relative w-24 h-1.5 bg-gray-800 rounded-md">
                   <div
@@ -253,6 +151,7 @@
   import { ref, watch, onMounted, onUnmounted } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import type { RawVideo, IntroOutro } from '@/services/database';
+  import { X, Loader2, Play, Pause, VolumeX, Volume2 } from 'lucide-vue-next';
 
   type VideoLike = RawVideo | IntroOutro;
 

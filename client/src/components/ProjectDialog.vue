@@ -49,20 +49,7 @@
               class="mb-3 p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-md"
             >
               <div class="flex items-start gap-2">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.82 16.5c-.77.833.192 2.5 1.732 2.5z"
-                  />
-                </svg>
+                <AlertTriangle class="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
                 <div>
                   <p class="text-sm font-medium text-amber-800 dark:text-amber-200">Video selection locked</p>
                   <p class="text-xs text-amber-700 dark:text-amber-300 mt-1">
@@ -84,20 +71,7 @@
                   class="w-full h-full object-cover"
                 />
                 <div v-else class="w-full h-full flex items-center justify-center">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="h-6 w-6 text-muted-foreground/40"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="1.5"
-                      d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                    />
-                  </svg>
+                  <Video class="h-6 w-6 text-muted-foreground/40" />
                 </div>
               </div>
 
@@ -120,15 +94,7 @@
                 :disabled="isEdit && hasDetectedOrGeneratedClipsLocked"
                 :class="{ 'opacity-50 cursor-not-allowed': isEdit && hasDetectedOrGeneratedClipsLocked }"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-4 w-4 text-muted-foreground"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <X class="h-4 w-4 text-muted-foreground" />
               </button>
             </div>
             <!-- Select Video Button -->
@@ -142,20 +108,7 @@
               }"
               :disabled="isEdit && hasDetectedOrGeneratedClipsLocked"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                />
-              </svg>
+              <Video class="h-5 w-5" />
               Select from Video Library
             </button>
             <p v-if="errors.selectedVideoId" class="mt-1 text-sm text-red-500">
@@ -198,15 +151,7 @@
           class="absolute top-6 right-6 z-30 p-2 bg-black/40 hover:bg-black/60 backdrop-blur-sm rounded-md transition-colors"
           title="Close"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-5 w-5 text-white"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <X class="h-5 w-5 text-white" />
         </button>
         <h3 class="text-xl font-bold mb-4">Select a Video</h3>
         <!-- Videos Grid -->
@@ -246,20 +191,7 @@
                   class="absolute inset-0 flex items-center justify-center"
                   :class="{ 'opacity-50': !isVideoAvailable(video) }"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="h-8 w-8 text-muted-foreground/40"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="1.5"
-                      d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                    />
-                  </svg>
+                  <Video class="h-8 w-8 text-muted-foreground/40" />
                 </div>
                 <!-- Status Badge -->
                 <div class="absolute top-2 left-2">
@@ -282,18 +214,7 @@
                   class="absolute inset-0 bg-purple-500/20 flex items-center justify-center"
                 >
                   <div class="bg-purple-600 rounded-full p-1">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      class="h-5 w-5 text-white"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                    >
-                      <path
-                        fill-rule="evenodd"
-                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                        clip-rule="evenodd"
-                      />
-                    </svg>
+                    <CheckCircle class="h-5 w-5 text-white" />
                   </div>
                 </div>
               </div>
@@ -311,20 +232,7 @@
           </div>
           <!-- Empty State -->
           <div v-else class="py-12 text-center">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-12 w-12 text-muted-foreground mx-auto mb-3"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="1.5"
-                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-              />
-            </svg>
+            <Video class="h-12 w-12 text-muted-foreground mx-auto mb-3" />
             <p class="text-muted-foreground">{{ emptyStateMessage }}</p>
           </div>
         </div>
@@ -342,15 +250,7 @@
                 class="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-all text-sm"
                 title="Previous page"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-3.5 w-3.5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-                </svg>
+                <ChevronLeft class="h-3.5 w-3.5" />
                 Previous
               </button>
               <!-- Page Numbers -->
@@ -411,15 +311,7 @@
                 title="Next page"
               >
                 Next
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-3.5 w-3.5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                </svg>
+                <ChevronRight class="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
@@ -440,6 +332,7 @@
     type RawVideo,
   } from '@/services/database';
   import { useFormatters } from '@/composables/useFormatters';
+  import { AlertTriangle, Video, X, ChevronLeft, ChevronRight, CheckCircle } from 'lucide-vue-next';
 
   export interface ProjectFormData {
     name: string;

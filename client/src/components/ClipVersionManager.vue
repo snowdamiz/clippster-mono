@@ -6,15 +6,7 @@
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-sm font-medium text-foreground">Clip Version History</h3>
         <button @click="closeVersions" class="p-1 hover:bg-muted/50 rounded-md">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-4 w-4 text-foreground/70"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <X class="h-4 w-4 text-foreground/70" />
         </button>
       </div>
 
@@ -171,7 +163,7 @@
     restoreClipVersion,
     type ClipVersion,
   } from '@/services/database';
-  import { HistoryIcon, TrendingUpIcon, RotateCcwIcon, GitCompareIcon } from 'lucide-vue-next';
+  import { HistoryIcon, TrendingUpIcon, RotateCcwIcon, GitCompareIcon, X } from 'lucide-vue-next';
 
   interface Props {
     clipId: string;

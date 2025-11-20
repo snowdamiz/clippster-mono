@@ -3,7 +3,7 @@
     title="New Prompt"
     description="Create a new AI prompt template for your video editing workflow"
     :show-header="true"
-    icon="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-4l-4 4v-4z"
+    :icon="MessageSquare"
   >
     <div>
       <!-- Main Form -->
@@ -53,13 +53,7 @@
                 @click="handleCancel"
                 class="px-5 py-2.5 text-muted-foreground hover:text-foreground font-medium transition-all flex items-center gap-2"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                  <path
-                    fill-rule="evenodd"
-                    d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
+                <ArrowLeft class="h-4 w-4" />
                 Cancel
               </button>
               <div class="flex items-center gap-3">
@@ -69,13 +63,7 @@
                   @click="resetForm"
                   class="px-4 py-2 bg-muted hover:bg-muted/80 text-foreground rounded-md font-medium transition-all flex items-center gap-2"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                    <path
-                      fill-rule="evenodd"
-                      d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
-                      clip-rule="evenodd"
-                    />
-                  </svg>
+                  <RotateCcw class="h-4 w-4" />
                   Reset
                 </button>
                 <button
@@ -83,32 +71,8 @@
                   :disabled="saving || !isFormValid"
                   class="px-5 py-2.5 bg-gradient-to-br from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white rounded-md font-medium shadow-lg shadow-purple-500/20 hover:shadow-xl hover:shadow-purple-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none flex items-center gap-2"
                 >
-                  <svg
-                    v-if="!saving"
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="h-5 w-5"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h5a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2h5v5.586l-1.293-1.293zM9 4a1 1 0 012 0v2H9V4z"
-                    />
-                  </svg>
-                  <svg
-                    v-else
-                    class="animate-spin h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-
-                    <path
-                      class="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
+                  <Save v-if="!saving" class="h-5 w-5" />
+                  <Loader2 v-else class="animate-spin h-5 w-5" />
                   {{ saving ? 'Saving...' : 'Save Prompt' }}
                 </button>
               </div>
@@ -123,16 +87,7 @@
           >
             <div class="flex items-center gap-2.5">
               <div class="p-1.5 bg-purple-500/10 rounded-md">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-4 w-4 text-purple-500"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"
-                  />
-                </svg>
+                <Star class="h-4 w-4 text-purple-500" />
               </div>
 
               <h3 class="font-medium text-foreground">Quick Tips</h3>
@@ -140,66 +95,22 @@
 
             <ul class="space-y-2.5 text-sm text-muted-foreground">
               <li class="flex items-start gap-2">
-                <svg
-                  class="h-4 w-4 text-green-500 flex-shrink-0 mt-0.5"
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fill-rule="evenodd"
-                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
+                <Check class="h-4 w-4 text-green-500 flex-shrink-0 mt-0.5" />
                 <span>Be specific about the task and desired output</span>
               </li>
 
               <li class="flex items-start gap-2">
-                <svg
-                  class="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5"
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fill-rule="evenodd"
-                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
+                <Check class="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
                 <span>Create reusable templates for common tasks</span>
               </li>
 
               <li class="flex items-start gap-2">
-                <svg
-                  class="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5"
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fill-rule="evenodd"
-                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
+                <Check class="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
                 <span>Include context about video style and tone</span>
               </li>
 
               <li class="flex items-start gap-2">
-                <svg
-                  class="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5"
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fill-rule="evenodd"
-                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
+                <Check class="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
                 <span>Test and refine your prompts iteratively</span>
               </li>
             </ul>
@@ -208,18 +119,7 @@
           <div class="bg-card border border-border rounded-md p-5 space-y-3">
             <div class="flex items-center gap-2.5">
               <div class="p-1.5 bg-muted rounded-md">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-4 w-4 text-foreground"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fill-rule="evenodd"
-                    d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
+                <FileText class="h-4 w-4 text-foreground" />
               </div>
 
               <h3 class="font-medium text-foreground">Example Templates</h3>
@@ -245,18 +145,9 @@
                       {{ example.preview }}
                     </p>
                   </div>
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
+                  <ArrowRight
                     class="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-all flex-shrink-0 group-hover:translate-x-0.5"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fill-rule="evenodd"
-                      d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z"
-                      clip-rule="evenodd"
-                    />
-                  </svg>
+                  />
                 </div>
               </button>
             </div>
@@ -271,6 +162,17 @@
   import { ref, reactive, computed, onMounted } from 'vue';
   import { useRouter } from 'vue-router';
   import { createPrompt } from '@/services/database';
+  import {
+    MessageSquare,
+    ArrowLeft,
+    RotateCcw,
+    Save,
+    Loader2,
+    Star,
+    Check,
+    FileText,
+    ArrowRight,
+  } from 'lucide-vue-next';
   import { useToast } from '@/composables/useToast';
   import PageLayout from '@/components/PageLayout.vue';
 

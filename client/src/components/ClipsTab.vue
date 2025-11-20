@@ -14,20 +14,7 @@
         class="group flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted/30 hover:bg-muted/50 border border-border hover:border-foreground/40 rounded-md transition-all duration-200"
         title="Run clip detection again to find more clips"
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="h-3.5 w-3.5 group-hover:rotate-180 transition-transform duration-500"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-          />
-        </svg>
+        <RefreshCw class="h-3.5 w-3.5 group-hover:rotate-180 transition-transform duration-500" />
         <span>Detect More</span>
       </button>
     </div>
@@ -90,20 +77,7 @@
           <!-- Error State -->
           <div v-if="generationError" class="bg-red-500/10 border-2 border-red-500/30 rounded-lg p-4 mb-4">
             <div class="flex items-start gap-3">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
+              <AlertTriangle class="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
               <div class="text-left flex-1">
                 <h4 class="font-semibold text-red-400 text-sm mb-1">Error</h4>
                 <p class="text-xs text-red-400/90 leading-relaxed">{{ generationError }}</p>
@@ -179,20 +153,7 @@
                       <span
                         class="inline-flex items-center gap-1.5 text-foreground font-semibold bg-muted/60 px-2 py-0.5 rounded-md tabular-nums"
                       >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          class="h-3 w-3 text-foreground/70"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          stroke-width="2"
-                        >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                          />
-                        </svg>
+                        <ClockIcon class="h-3 w-3 text-foreground/70" />
                         {{
                           formatDuration((clip.current_version_end_time || 0) - (clip.current_version_start_time || 0))
                         }}
@@ -261,20 +222,7 @@
                         class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-medium bg-purple-500/10 text-purple-400"
                         :title="`Used prompt: ${getPromptName(clip.session_prompt)}`"
                       >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          class="h-2.5 w-2.5"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          stroke-width="2"
-                        >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                          />
-                        </svg>
+                        <Lightbulb class="h-2.5 w-2.5" />
                         <span class="truncate max-w-32">{{ getPromptName(clip.session_prompt) }}</span>
                       </span>
 
@@ -332,20 +280,7 @@
                     title="Delete clip"
                     @click.stop="onDeleteClip(clip.id)"
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      class="h-4 w-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      stroke-width="2"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                      />
-                    </svg>
+                    <Trash2 class="h-4 w-4" />
                   </button>
                 </div>
               </div>
@@ -360,20 +295,7 @@
             <div
               class="w-24 h-24 bg-gradient-to-br from-purple-500/10 via-indigo-500/10 to-blue-500/10 rounded-lg flex items-center justify-center mb-6 border border-purple-500/20 shadow-lg shadow-purple-500/5"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-12 w-12 text-purple-400/80"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="1.5"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                />
-              </svg>
+              <Video class="h-12 w-12 text-purple-400/80" />
             </div>
             <h4 class="text-lg font-semibold text-foreground mb-2">No Clips Yet</h4>
             <p class="text-sm text-muted-foreground/80 mb-8 leading-relaxed">
@@ -385,20 +307,7 @@
             class="group inline-flex items-center gap-2.5 px-5 py-2.5 text-sm font-medium text-foreground bg-muted/40 hover:bg-muted/60 border border-border hover:border-foreground/50 rounded-md transition-all hover:shadow-lg hover:scale-105 active:scale-100"
             title="Detect Clips"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-4 w-4 group-hover:rotate-180 transition-transform duration-500"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
+            <RefreshCw class="h-4 w-4 group-hover:rotate-180 transition-transform duration-500" />
             <span>Detect Clips</span>
           </button>
         </div>
@@ -426,6 +335,11 @@
     DownloadIcon,
     LoaderIcon,
     CheckIcon,
+    RefreshCw,
+    AlertTriangle,
+    Lightbulb,
+    Trash2,
+    Video,
   } from 'lucide-vue-next';
   import ClipBuildSettingsDialog, { type BuildSettings } from './ClipBuildSettingsDialog.vue';
   import type { SubtitleSettings } from '@/types';

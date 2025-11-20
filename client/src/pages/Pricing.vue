@@ -4,20 +4,7 @@
     <div class="text-center mb-12">
       <div class="flex justify-center items-center gap-3 mb-4">
         <div class="p-2 bg-muted rounded-md">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-6 w-6 text-foreground"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
-            />
-          </svg>
+          <CreditCard class="h-6 w-6 text-foreground" />
         </div>
 
         <h1 class="text-4xl font-bold">Choose Your Credit Pack</h1>
@@ -51,18 +38,7 @@
         <div
           class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-purple-500/20 to-indigo-500/20 rounded-full mb-6"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-8 w-8 text-purple-600"
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
-            <path
-              fill-rule="evenodd"
-              d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 00-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 00-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 002.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-              clip-rule="evenodd"
-            />
-          </svg>
+          <Check class="h-8 w-8 text-purple-600" />
         </div>
         <h2 class="text-2xl font-bold text-foreground mb-2">Admin Access</h2>
         <p class="text-muted-foreground text-lg mb-4">
@@ -71,30 +47,14 @@
         <div
           class="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500/20 to-indigo-500/20 rounded-md border border-purple-500/30"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-5 w-5 text-purple-600"
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
-            <path
-              d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"
-            />
-          </svg>
+          <Shield class="h-5 w-5 text-purple-600" />
           <span class="text-purple-600 font-medium">Unlimited Credits</span>
         </div>
       </div>
     </div>
     <!-- Error State -->
     <div v-else-if="!packs || Object.keys(packs).length === 0" class="flex flex-col items-center justify-center py-20">
-      <svg class="h-16 w-16 text-red-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-        />
-      </svg>
+      <AlertTriangle class="h-16 w-16 text-red-500 mb-4" />
       <h3 class="text-xl font-bold mb-2">Unable to Load Pricing</h3>
 
       <p class="text-muted-foreground mb-4">Please check your connection and try again</p>
@@ -149,16 +109,12 @@
             <!-- Features -->
             <ul class="space-y-2.5 mb-6 flex-1" v-if="packs[packKey]">
               <li class="flex items-center gap-2 text-sm text-muted-foreground">
-                <svg class="h-4 w-4 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                </svg>
+                <Check class="h-4 w-4 text-green-500 flex-shrink-0" />
                 <span>Credits never expire</span>
               </li>
 
               <li class="flex items-center gap-2 text-sm text-muted-foreground">
-                <svg class="h-4 w-4 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                </svg>
+                <Check class="h-4 w-4 text-green-500 flex-shrink-0" />
                 <span>Use anytime, no limits</span>
               </li>
             </ul>
@@ -219,14 +175,7 @@
                 <div
                   class="flex items-center justify-center w-16 h-16 mb-4 rounded-lg bg-gradient-to-br from-purple-500/20 to-indigo-500/20 mx-auto"
                 >
-                  <svg class="w-8 h-8 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
-                    />
-                  </svg>
+                  <TrendingUp class="w-8 h-8 text-purple-400" />
                 </div>
 
                 <div class="text-center">
@@ -250,14 +199,7 @@
                 <div
                   class="flex items-center justify-center w-16 h-16 mb-4 rounded-lg bg-gradient-to-br from-indigo-500/20 to-purple-500/20 mx-auto"
                 >
-                  <svg class="w-8 h-8 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                    />
-                  </svg>
+                  <Lock class="w-8 h-8 text-indigo-400" />
                 </div>
 
                 <div class="text-center">
@@ -281,14 +223,7 @@
                 <div
                   class="flex items-center justify-center w-16 h-16 mb-4 rounded-lg bg-gradient-to-br from-purple-500/20 to-indigo-500/20 mx-auto"
                 >
-                  <svg class="w-8 h-8 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
+                  <DollarSign class="w-8 h-8 text-purple-400" />
                 </div>
 
                 <div class="text-center">
@@ -306,9 +241,7 @@
             <div
               class="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border border-purple-500/20"
             >
-              <svg class="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-              </svg>
+              <Check class="w-5 h-5 text-purple-400" />
               <span class="text-sm font-medium text-muted-foreground">
                 Trusted by content creators •
                 <span class="text-purple-400 font-semibold">No subscriptions</span>
@@ -374,11 +307,7 @@
                 title="Stripe payments coming soon"
               >
                 <div class="flex items-center justify-center gap-2">
-                  <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M13.976 9.15c-2.172-.806-3.356-1.426-3.356-2.409 0-.831.683-1.305 1.902-1.305 2.227 0 4.515.858 6.09 1.631l.894-5.494C18.25 1.242 15.908 0 12.183 0 9.735 0 7.735.658 6.332 1.896 4.862 3.193 4.106 5.058 4.106 7.307c0 4.349 2.637 6.172 5.433 7.344 2.33.946 3.231 1.58 3.231 2.583 0 .96-.813 1.413-2.354 1.413-1.876 0-4.938-.919-7.088-2.144l-.894 5.633c2.162 1.242 4.856 1.896 7.828 1.896 2.566 0 4.693-.62 6.162-1.799 1.574-1.242 2.401-3.066 2.401-5.508 0-4.416-2.672-6.228-5.749-7.525zM24 11.757c0 2.532-2.055 4.587-4.587 4.587S14.826 14.289 14.826 11.757 16.881 7.17 19.413 7.17 24 9.225 24 11.757z"
-                    />
-                  </svg>
+                  <CreditCard class="w-5 h-5" />
                   Pay with Card
                 </div>
               </button>
@@ -401,9 +330,7 @@
         </div>
 
         <div v-else-if="paymentStep === 'success'" class="text-center py-8">
-          <svg class="h-16 w-16 text-green-500 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-          </svg>
+          <Check class="h-16 w-16 text-green-500 mx-auto mb-4" />
           <h3 class="text-xl font-bold mb-2">Payment Successful!</h3>
 
           <p class="text-muted-foreground mb-4">{{ selectedPack?.hours }} hours added to your balance</p>
@@ -416,9 +343,7 @@
         </div>
 
         <div v-else-if="paymentStep === 'error'" class="text-center py-8">
-          <svg class="h-16 w-16 text-red-500 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <X class="h-16 w-16 text-red-500 mx-auto mb-4" />
           <h3 class="text-xl font-bold mb-2">Payment Failed</h3>
 
           <p class="text-muted-foreground mb-4">{{ errorMessage }}</p>
@@ -440,6 +365,7 @@
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
   import api from '@/services/api';
+  import { CreditCard, Check, AlertTriangle, Shield, TrendingUp, Lock, DollarSign, X, Loader2 } from 'lucide-vue-next';
   const router = useRouter();
   const authStore = useAuthStore();
   const { success: showSuccessToast, error: showErrorToast } = useToast();

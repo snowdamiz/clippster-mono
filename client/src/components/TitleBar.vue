@@ -131,15 +131,7 @@
             class="absolute top-4 right-4 p-2 hover:bg-muted rounded-md transition-colors z-10"
             title="Close"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5 text-muted-foreground"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X class="h-5 w-5 text-muted-foreground" />
           </button>
 
           <!-- Header -->
@@ -593,7 +585,7 @@
   import { ref, onMounted, onUnmounted } from 'vue';
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { invoke } from '@tauri-apps/api/core';
-  import { KeyboardIcon, Play, ZoomIn, MousePointer, Edit3, Scissors, MoreHorizontal } from 'lucide-vue-next';
+  import { KeyboardIcon, Play, ZoomIn, MousePointer, Edit3, Scissors, MoreHorizontal, X } from 'lucide-vue-next';
 
   // Props
   interface Props {
