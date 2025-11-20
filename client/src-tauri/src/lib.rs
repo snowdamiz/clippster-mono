@@ -198,6 +198,18 @@ pub fn run() {
                             sql: include_str!("../migrations/029_add_second_border_to_subtitle_presets.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 30,
+                            description: "add_livestream_monitoring",
+                            sql: include_str!("../migrations/030_add_livestream_monitoring.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 31,
+                            description: "add_project_to_livestream_sessions",
+                            sql: include_str!("../migrations/031_add_project_to_livestream_sessions.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -287,6 +299,9 @@ pub fn run() {
 
             // PumpFun commands
             pumpfun::get_pumpfun_clips,
+            pumpfun::check_pumpfun_livestream,
+            pumpfun::start_livestream_recording,
+            pumpfun::stop_livestream_recording,
 
             // Download commands
             downloads::download_pumpfun_vod,

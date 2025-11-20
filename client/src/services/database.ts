@@ -20,6 +20,9 @@ export type {
   FocalPoint,
   CustomSubtitlePreset,
   SubtitleSettings,
+  MonitoredStreamerRecord,
+  LivestreamSessionRecord,
+  LivestreamSegmentRecord,
 } from './database/types';
 
 // Re-export intro/outro functions
@@ -146,6 +149,7 @@ export {
   ensureClipVersioningTables,
   createVersionedClip,
   getClipsWithVersionsByProjectId,
+  getClipsByDetectionSession,
   persistClipDetectionResults,
 } from './database/clip-detection';
 
@@ -172,3 +176,23 @@ export {
   deleteCustomSubtitlePreset,
   customPresetToSettings,
 } from './database/custom-subtitle-presets';
+
+// Livestream monitoring exports
+export {
+  getAllMonitoredStreamers,
+  getMonitoredStreamer,
+  getMonitoredStreamerByMint,
+  createMonitoredStreamer,
+  updateMonitoredStreamer,
+  deleteMonitoredStreamer,
+  createLivestreamSession,
+  getLivestreamSession,
+  getActiveLivestreamSessions,
+  endLivestreamSession,
+  updateLivestreamSessionProgress,
+  createLivestreamSegment,
+  getLivestreamSegment,
+  getSegmentsBySession,
+  updateLivestreamSegment,
+  updateSegmentStatus,
+} from './database/livestream-monitoring';

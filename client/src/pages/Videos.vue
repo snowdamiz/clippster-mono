@@ -686,12 +686,20 @@
     showCancelDownloadDialog.value = true;
   }
 
+  // Listen for video added events (e.g. from livestream segments)
+  function handleVideoAdded(_event: CustomEvent) {
+    loadVideos();
+  }
+
   onMounted(async () => {
     // Initialize downloads system
     await initializeDownloads();
 
     // Register for download completion events for immediate updates
     unregisterDownloadCallback = onDownloadComplete(handleDownloadComplete);
+
+    // Listen for video added events
+    document.addEventListener('video-added', handleVideoAdded as EventListener);
 
     // Load videos (will show existing videos + any recently completed downloads)
     await loadVideos();
@@ -709,6 +717,7 @@
     if (unregisterDownloadCallback) {
       unregisterDownloadCallback();
     }
+    document.removeEventListener('video-added', handleVideoAdded as EventListener);
   });
 </script>
 

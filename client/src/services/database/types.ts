@@ -137,6 +137,45 @@ export interface RawVideo {
   segment_end_time: number | null;
 }
 
+export interface MonitoredStreamerRecord {
+  id: string;
+  mint_id: string;
+  display_name: string;
+  last_check_timestamp: number | null;
+  is_currently_live: number | boolean;
+  current_session_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface LivestreamSessionRecord {
+  id: string;
+  monitored_streamer_id: string;
+  mint_id: string;
+  stream_start_time: number;
+  stream_end_time: number | null;
+  is_recording: number | boolean;
+  total_segments: number;
+  processed_segments: number;
+  created_at: number;
+  updated_at: number;
+  project_id: string | null;
+}
+
+export interface LivestreamSegmentRecord {
+  id: string;
+  session_id: string;
+  segment_number: number;
+  start_time_offset: number;
+  duration: number;
+  raw_video_id: string | null;
+  status: 'recording' | 'ready' | 'processing' | 'completed' | 'error' | string;
+  clips_detected: number;
+  error_message: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface FocalPoint {
   id: string;
   raw_video_id: string;

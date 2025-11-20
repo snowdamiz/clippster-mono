@@ -119,7 +119,7 @@
                   <!-- Text -->
                   <div class="flex flex-col min-w-0">
                     <h3 class="font-semibold text-lg truncate pr-4 text-foreground">
-                      {{ streamer.identifier }}
+                      {{ streamer.displayName }}
                     </h3>
                     <span class="text-sm text-muted-foreground flex items-center gap-1">
                       {{ streamer.platform }}
@@ -256,22 +256,19 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onUnmounted } from 'vue';
+  import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { Radio, Plus, Check, Play, Square, Search, Trash2, Activity, Loader2 } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
+  import { useLivestreamMonitoring } from '@/composables/useLivestreamMonitoring';
+  import { useLivestreamSegmentProcessing } from '@/composables/useLivestreamSegmentProcessing';
+  import { getAllMonitoredStreamers, createMonitoredStreamer, deleteMonitoredStreamer } from '@/services/database';
+  import { extractMintId } from '@/services/pumpfun';
+  import type { MonitoredStreamer, SegmentEventPayload } from '@/types/livestream';
 
-  // Types
   type Platform = 'Youtube' | 'Twitch' | 'Kick' | 'PumpFun';
-
-  interface Streamer {
-    id: string;
-    platform: Platform;
-    identifier: string; // URL or Username
-    selected: boolean;
-    isDetecting: boolean;
-  }
 
   interface ActivityLog {
     id: string;
@@ -281,24 +278,134 @@
     platform: Platform;
     message: string;
     status: 'loading' | 'success' | 'info';
+    mintId?: string;
   }
 
-  // State
-  const streamers = ref<Streamer[]>([]);
+  const streamers = ref<MonitoredStreamer[]>([]);
   const inputValue = ref('');
   const detectedPlatform = ref<Platform | null>(null);
   const activityLogs = ref<ActivityLog[]>([]);
   const logsContainer = ref<HTMLElement | null>(null);
-  let simulationInterval: number | null = null;
 
-  // Computed
+  const { activeSessions, startMonitoring, stopMonitoring, isMonitoring } = useLivestreamMonitoring();
+  const { handleSegmentReady } = useLivestreamSegmentProcessing();
+
   const selectedStreamers = computed(() => streamers.value.filter((s) => s.selected));
   const allSelected = computed(() => streamers.value.length > 0 && streamers.value.every((s) => s.selected));
-  const isDetectingAny = computed(() => selectedStreamers.value.some((s) => s.isDetecting));
+  const isDetectingAny = computed(() => activeSessions.value.size > 0 || isMonitoring.value === true);
 
-  // Platform Detection Logic
+  let segmentUnlisten: UnlistenFn | null = null;
+  let streamEndedUnlisten: UnlistenFn | null = null;
+  let recorderLogUnlisten: UnlistenFn | null = null;
+
+  onMounted(async () => {
+    await loadStreamers();
+    await attachEventListeners();
+  });
+
+  onUnmounted(async () => {
+    if (segmentUnlisten) {
+      await segmentUnlisten();
+      segmentUnlisten = null;
+    }
+    if (streamEndedUnlisten) {
+      await streamEndedUnlisten();
+      streamEndedUnlisten = null;
+    }
+    if (recorderLogUnlisten) {
+      await recorderLogUnlisten();
+      recorderLogUnlisten = null;
+    }
+    await stopMonitoring();
+  });
+
+  watch(
+    () => activeSessions.value.size,
+    () => syncDetectionState()
+  );
+
+  function syncDetectionState() {
+    const activeIds = new Set(activeSessions.value.keys());
+    streamers.value = streamers.value.map((streamer) => ({
+      ...streamer,
+      isDetecting: activeIds.has(streamer.id),
+    }));
+  }
+
+  async function attachEventListeners() {
+    segmentUnlisten = await listen<SegmentEventPayload>('segment-ready', async (event) => {
+      const payload = event.payload;
+      await handleSegmentReady(payload.sessionId, payload);
+      addActivityLog({
+        streamerId: payload.streamerId,
+        streamerName: getStreamerName(payload.streamerId),
+        platform: 'PumpFun',
+        mintId: payload.mintId,
+        message: `Segment ${payload.segment} ready, processing...`,
+        status: 'loading',
+      });
+    });
+
+    streamEndedUnlisten = await listen<{ streamerId: string; mintId: string }>('stream-ended', (event) => {
+      activeSessions.value.delete(event.payload.streamerId);
+      syncDetectionState();
+      addActivityLog({
+        streamerId: event.payload.streamerId,
+        streamerName: getStreamerName(event.payload.streamerId),
+        platform: 'PumpFun',
+        mintId: event.payload.mintId,
+        message: 'Stream ended. Finishing final segments...',
+        status: 'info',
+      });
+    });
+
+    recorderLogUnlisten = await listen<{ streamerId: string; mintId: string; message: string; level: string }>(
+      'recorder-log',
+      (event) => {
+        // Filter out overly verbose messages if needed
+        const { streamerId, mintId, message } = event.payload;
+
+        // Don't show "Encoder waiting for media" as it spams
+        if (message.includes('Encoder waiting for media')) return;
+
+        addActivityLog({
+          streamerId,
+          streamerName: getStreamerName(streamerId),
+          platform: 'PumpFun',
+          mintId,
+          message: message,
+          status: 'info',
+        });
+      }
+    );
+  }
+
+  async function loadStreamers() {
+    try {
+      const records = await getAllMonitoredStreamers();
+      const activeIds = new Set(activeSessions.value.keys());
+      streamers.value = records.map((record) => ({
+        id: record.id,
+        mintId: record.mint_id,
+        displayName: record.display_name,
+        platform: 'PumpFun',
+        lastCheckTimestamp: record.last_check_timestamp,
+        isCurrentlyLive: Boolean(record.is_currently_live),
+        currentSessionId: record.current_session_id,
+        selected: false,
+        isDetecting: activeIds.has(record.id),
+      }));
+    } catch (error) {
+      console.error('[LiveClip] Failed to load monitored streamers', error);
+    }
+  }
+
   function detectPlatform() {
     const val = inputValue.value.toLowerCase();
+    if (val.includes('pump.fun') || /^[1-9A-HJ-NP-Za-km-z]{43,44}$/.test(val)) {
+      detectedPlatform.value = 'PumpFun';
+      return;
+    }
 
     if (val.includes('youtube.com') || val.includes('youtu.be')) {
       detectedPlatform.value = 'Youtube';
@@ -306,8 +413,6 @@
       detectedPlatform.value = 'Twitch';
     } else if (val.includes('kick.com')) {
       detectedPlatform.value = 'Kick';
-    } else if (val.includes('pump.fun')) {
-      detectedPlatform.value = 'PumpFun';
     } else {
       detectedPlatform.value = null;
     }
@@ -344,14 +449,13 @@
   }
 
   function getPlatformIconClasses(platform: Platform) {
-    // Ensure icons are clearly visible on their solid colored backgrounds
     switch (platform) {
       case 'Youtube':
       case 'Twitch':
       case 'PumpFun':
-        return 'brightness-200'; // White icon
+        return 'brightness-200';
       case 'Kick':
-        return 'brightness-0 invert-0'; // Black icon for neon green background
+        return 'brightness-0 invert-0';
       default:
         return '';
     }
@@ -372,49 +476,70 @@
     }
   }
 
-  function extractIdentifier(input: string, platform: Platform | null): string {
-    // Simple extraction for display purposes
+  function extractIdentifier(input: string): string {
     try {
       const url = new URL(input);
-      if (platform === 'Youtube') {
-        if (url.pathname.startsWith('/@')) return url.pathname.substring(1);
-        if (url.pathname.startsWith('/channel/')) return 'Channel';
-        if (url.searchParams.get('v')) return 'Video';
+      const parts = url.pathname.split('/').filter(Boolean);
+      if (parts.length > 0) {
+        return parts[parts.length - 1];
       }
-      if (platform === 'Twitch' || platform === 'Kick') {
-        const parts = url.pathname.split('/').filter(Boolean);
-        if (parts.length > 0) return parts[0];
-      }
-      if (platform === 'PumpFun') {
-        const parts = url.pathname.split('/').filter(Boolean);
-        if (parts.length > 0) return parts[parts.length - 1].substring(0, 8) + '...';
-      }
-    } catch (e) {
-      // Not a URL, return as is
+    } catch {
+      // plain mint or text
     }
-    return input;
+    return input.slice(0, 16);
   }
 
-  function addStreamer() {
-    if (!inputValue.value || !detectedPlatform.value) return;
+  async function addStreamer() {
+    if (!inputValue.value) return;
 
-    const identifier = extractIdentifier(inputValue.value, detectedPlatform.value);
+    const mintId = extractMintId(inputValue.value);
+    if (!mintId) {
+      addActivityLog({
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        streamerId: 'system',
+        streamerName: 'System',
+        platform: 'PumpFun',
+        message: 'Invalid PumpFun URL or mint.',
+        status: 'info',
+      });
+      return;
+    }
 
-    streamers.value.unshift({
-      id: crypto.randomUUID(),
-      platform: detectedPlatform.value,
-      identifier: identifier,
-      selected: true,
-      isDetecting: false,
-    });
-
-    // Reset
-    inputValue.value = '';
-    detectedPlatform.value = null;
+    try {
+      const displayName = extractIdentifier(inputValue.value);
+      await createMonitoredStreamer(mintId, displayName);
+      await loadStreamers();
+      inputValue.value = '';
+      detectedPlatform.value = null;
+      addActivityLog({
+        streamerId: mintId,
+        streamerName: displayName,
+        platform: 'PumpFun',
+        message: 'Added to monitored list.',
+        status: 'success',
+        mintId,
+      });
+    } catch (error) {
+      console.error('[LiveClip] Failed to add streamer', error);
+      addActivityLog({
+        streamerId: mintId,
+        streamerName: mintId,
+        platform: 'PumpFun',
+        message: 'Failed to add streamer. Ensure it is not already tracked.',
+        status: 'info',
+        mintId,
+      });
+    }
   }
 
-  function removeStreamer(id: string) {
-    streamers.value = streamers.value.filter((s) => s.id !== id);
+  async function removeStreamer(id: string) {
+    try {
+      await deleteMonitoredStreamer(id);
+      streamers.value = streamers.value.filter((s) => s.id !== id);
+    } catch (error) {
+      console.error('[LiveClip] Failed to remove streamer', error);
+    }
   }
 
   function toggleSelection(id: string) {
@@ -426,110 +551,69 @@
 
   function selectAll() {
     const targetState = !allSelected.value;
-    streamers.value.forEach((s) => (s.selected = targetState));
+    streamers.value = streamers.value.map((streamer) => ({
+      ...streamer,
+      selected: targetState,
+    }));
   }
 
-  function toggleDetection() {
-    const targetState = !isDetectingAny.value;
-    streamers.value.forEach((s) => {
-      if (s.selected) {
-        s.isDetecting = targetState;
-      }
-    });
-
-    if (targetState) {
-      startSimulation();
-    } else {
-      stopSimulation();
+  async function toggleDetection() {
+    if (isDetectingAny.value) {
+      await stopMonitoring();
+      addActivityLog({
+        streamerId: 'system',
+        streamerName: 'System',
+        platform: 'PumpFun',
+        message: 'Stopped monitoring.',
+        status: 'info',
+      });
+      return;
     }
-  }
 
-  // --- Simulation Logic ---
+    const selected = selectedStreamers.value;
+    if (selected.length === 0) return;
 
-  function startSimulation() {
-    if (simulationInterval) return;
-
-    // Initial logs for starting
-    streamers.value.forEach((s) => {
-      if (s.selected) {
-        addLog(s, `Connecting to stream...`, 'loading');
-      }
+    await startMonitoring(selected);
+    selected.forEach((streamer) => {
+      addActivityLog({
+        streamerId: streamer.id,
+        streamerName: streamer.displayName,
+        platform: streamer.platform,
+        message: 'Monitoring started.',
+        status: 'loading',
+        mintId: streamer.mintId,
+      });
     });
-
-    simulationInterval = window.setInterval(() => {
-      const activeStreamers = streamers.value.filter((s) => s.isDetecting);
-      if (activeStreamers.length === 0) {
-        stopSimulation();
-        return;
-      }
-
-      // Pick a random active streamer
-      const streamer = activeStreamers[Math.floor(Math.random() * activeStreamers.length)];
-      const actions = [
-        { msg: `Downloading Segment ${Math.floor(Math.random() * 100)}`, status: 'loading' },
-        { msg: `Transcribing audio from segment...`, status: 'loading' },
-        { msg: `Analyzing transcript for keywords`, status: 'loading' },
-        { msg: `Clip detected: "Funny moment" (0:30)`, status: 'success' },
-        { msg: `Clip detected: "Epic win" (1:15)`, status: 'success' },
-        { msg: `Starting next segment download`, status: 'info' },
-      ];
-
-      const randomAction = actions[Math.floor(Math.random() * actions.length)];
-      addLog(streamer, randomAction.msg, randomAction.status as any);
-    }, 2500); // New log every 2.5s
   }
 
-  function stopSimulation() {
-    if (simulationInterval) {
-      clearInterval(simulationInterval);
-      simulationInterval = null;
-    }
-    if (!isDetectingAny.value && activityLogs.value.length > 0) {
-      // Add stopped logs
-      activityLogs.value.push({
-        id: crypto.randomUUID(),
-        timestamp: new Date().toLocaleTimeString([], {
+  function getStreamerName(streamerId: string) {
+    return streamers.value.find((s) => s.id === streamerId)?.displayName || 'Unknown';
+  }
+
+  function addActivityLog(log: Omit<ActivityLog, 'id' | 'timestamp'> & Partial<Pick<ActivityLog, 'id' | 'timestamp'>>) {
+    const entry: ActivityLog = {
+      id: log.id ?? crypto.randomUUID(),
+      timestamp:
+        log.timestamp ??
+        new Date().toLocaleTimeString([], {
           hour12: false,
           hour: '2-digit',
           minute: '2-digit',
           second: '2-digit',
         }),
-        streamerId: 'system',
-        streamerName: 'System',
-        platform: 'Youtube', // dummy
-        message: 'Monitoring stopped for all channels.',
-        status: 'info',
-      });
-    }
-  }
-
-  function addLog(streamer: Streamer, message: string, status: 'loading' | 'success' | 'info') {
-    const log: ActivityLog = {
-      id: crypto.randomUUID(),
-      timestamp: new Date().toLocaleTimeString([], {
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      }),
-      streamerId: streamer.id,
-      streamerName: streamer.identifier,
-      platform: streamer.platform,
-      message: message,
-      status: status,
+      streamerId: log.streamerId,
+      streamerName: log.streamerName,
+      platform: log.platform,
+      message: log.message,
+      status: log.status,
+      mintId: log.mintId,
     };
 
-    activityLogs.value.unshift(log); // Add to top
-
-    // Keep log size manageable
-    if (activityLogs.value.length > 50) {
+    activityLogs.value.unshift(entry);
+    if (activityLogs.value.length > 100) {
       activityLogs.value.pop();
     }
   }
-
-  onUnmounted(() => {
-    stopSimulation();
-  });
 </script>
 
 <style scoped>

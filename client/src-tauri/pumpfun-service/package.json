@@ -4,6 +4,7 @@
   "type": "module",
   "private": true,
   "dependencies": {
-    "@120356aa/pumpfun-wrapper": "^1.0.0"
+    "@120356aa/pumpfun-wrapper": "^1.0.0",
+    "@livekit/rtc-node": "^0.13.21"
   }
 }

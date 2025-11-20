@@ -433,15 +433,23 @@
     loadProjects();
   }
 
+  // Listen for video added events (to update project thumbnails)
+  function handleVideoAdded(_event: CustomEvent) {
+    loadProjects();
+  }
+
   onMounted(() => {
     loadProjects();
 
     // Add event listener for clip refresh events
     document.addEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener);
+    // Add event listener for video added events
+    document.addEventListener('video-added', handleVideoAdded as EventListener);
   });
 
   onUnmounted(() => {
     // Clean up event listener
     document.removeEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener);
+    document.removeEventListener('video-added', handleVideoAdded as EventListener);
   });
 </script>

@@ -289,6 +289,51 @@ export async function getClipsWithVersionsByProjectId(
   }) as ClipWithVersion[];
 }
 
+export async function getClipsByDetectionSession(sessionId: string): Promise<ClipWithVersion[]> {
+  const db = await getDatabase();
+
+  const clips = await db.select<any[]>(
+    `SELECT
+      c.*,
+      cv.id as current_version_id,
+      cv.name as current_version_name,
+      cv.description as current_version_description,
+      cv.start_time as current_version_start_time,
+      cv.end_time as current_version_end_time,
+      cv.confidence_score as current_version_confidence_score,
+      cv.relevance_score as current_version_relevance_score,
+      cv.detection_reason as current_version_detection_reason,
+      cv.tags as current_version_tags,
+      cv.change_type as current_version_change_type,
+      cv.created_at as current_version_created_at,
+      s.created_at as session_created_at,
+      s.run_color as session_run_color,
+      s.prompt as session_prompt,
+      (SELECT COUNT(*) + 1 FROM clip_detection_sessions s2
+       WHERE s2.project_id = s.project_id AND s2.created_at < s.created_at) as run_number
+     FROM clips c
+     LEFT JOIN clip_versions cv ON c.current_version_id = cv.id
+     LEFT JOIN clip_detection_sessions s ON c.detection_session_id = s.id
+     WHERE c.detection_session_id = ?
+     ORDER BY c.created_at ASC`,
+    [sessionId]
+  );
+
+  for (const clip of clips) {
+    if (clip.current_version_id) {
+      const segments = await db.select<ClipSegment[]>(
+        `SELECT * FROM clip_segments
+         WHERE clip_version_id = ?
+         ORDER BY segment_index ASC`,
+        [clip.current_version_id]
+      );
+      clip.current_version_segments = segments;
+    }
+  }
+
+  return clips as ClipWithVersion[];
+}
+
 export async function persistClipDetectionResults(
   projectId: string,
   prompt: string,
@@ -301,6 +346,8 @@ export async function persistClipDetectionResults(
     detectionModel?: string;
     serverResponseId?: string;
     processingTimeMs?: number;
+    videoFilePath?: string;
+    rawVideoId?: string;
   }
 ): Promise<string> {
   const startTime = Date.now();
@@ -497,7 +544,7 @@ export async function persistClipDetectionResults(
     };
 
     try {
-      await createVersionedClip(projectId, sessionId, clipInfo);
+      await createVersionedClip(projectId, sessionId, clipInfo, options?.videoFilePath);
     } catch (e) {
       console.error(`[Database] Failed to create clip ${i + 1}:`, e);
     }
