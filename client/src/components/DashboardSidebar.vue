@@ -45,7 +45,7 @@
                   maskPosition: 'center',
                   WebkitMaskPosition: 'center',
                 }"
-              />
+              ></div>
               <svg
                 v-else-if="item.name === 'PumpFun'"
                 xmlns="http://www.w3.org/2000/svg"
@@ -75,7 +75,7 @@
                   maskPosition: 'center',
                   WebkitMaskPosition: 'center',
                 }"
-              />
+              ></div>
               <component v-else :is="item.icon as string" class="h-5 w-5" />
               <span>{{ item.name }}</span>
             </button>
