@@ -8,28 +8,28 @@
           <transition name="scale" mode="out-in">
             <div
               v-if="detectedPlatform === 'Youtube'"
-              class="w-6 h-6 bg-red-600 rounded-md flex items-center justify-center shadow-sm"
+              class="w-6 h-6 bg-red-600 rounded-md flex items-center justify-center shadow-sm border-border/80"
               key="yt"
             >
               <img src="/youtube.svg" class="w-3.5 h-3.5 invert brightness-200" />
             </div>
             <div
               v-else-if="detectedPlatform === 'Twitch'"
-              class="w-6 h-6 bg-[#9146FF] rounded-md flex items-center justify-center shadow-sm"
+              class="w-6 h-6 bg-[#9146FF] rounded-md flex items-center justify-center shadow-sm border-border/80"
               key="tw"
             >
               <img src="/twitch.svg" class="w-3.5 h-3.5 invert brightness-200" />
             </div>
             <div
               v-else-if="detectedPlatform === 'Kick'"
-              class="w-6 h-6 bg-[#53FC18] rounded-md flex items-center justify-center shadow-sm"
+              class="w-6 h-6 bg-[#53FC18] rounded-md flex items-center justify-center shadow-sm border-border/80"
               key="kick"
             >
               <img src="/kick.svg" class="w-3.5 h-3.5" />
             </div>
             <div
               v-else-if="detectedPlatform === 'PumpFun'"
-              class="w-6 h-6 bg-emerald-500 rounded-md flex items-center justify-center shadow-sm"
+              class="w-6 h-6 bg-emerald-500 rounded-md flex items-center justify-center shadow-sm border-border/80"
               key="pf"
             >
               <img src="/capsule.svg" class="w-3.5 h-3.5 brightness-200" />
@@ -40,7 +40,7 @@
 
         <Input
           v-model="inputValue"
-          class="h-14 pl-11 pr-30 text-sm bg-background border-border/40 rounded-xl focus-visible:ring-primary/20 transition-all hover:border-primary/30 focus:border-primary/50 shadow-sm w-full"
+          class="h-14 pl-11 pr-30 text-sm bg-background border-border/70 rounded-xl focus-visible:ring-primary/20 transition-all hover:border-primary/30 focus:border-primary/50 shadow-sm w-full"
           placeholder="Paste stream link..."
           @keyup.enter="addStreamer"
           @input="detectPlatform"
