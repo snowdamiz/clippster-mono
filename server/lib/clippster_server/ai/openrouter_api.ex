@@ -1,9 +1,10 @@
 defmodule ClippsterServer.AI.OpenRouterAPI do
   @moduledoc """
   Interface to the OpenRouter API for AI-powered clip generation.
+  Updated to use the Responses API Beta with reasoning capabilities.
   """
 
-  @openrouter_api_url "https://openrouter.ai/api/v1/chat/completions"
+  @openrouter_api_url "https://openrouter.ai/api/v1/responses"
 
   def generate_clips(transcript, system_prompt, user_prompt_input) do
     IO.puts("[OpenRouterAPI] Starting clip generation...")
@@ -22,6 +23,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
         # Get model from environment or use default
         model = System.get_env("OPENROUTER_MODEL", "openai/gpt-4o-mini")
         IO.puts("[OpenRouterAPI] Using model: #{model}")
+        IO.puts("[OpenRouterAPI] Using Responses API with high reasoning effort")
 
         # Start with the initial request
         generate_clips_with_retry(transcript, system_prompt, user_prompt_input, model, api_key, 0)
@@ -43,22 +45,35 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
 
     payload = %{
       "model" => model,
-      "messages" => [
+      "input" => [
         %{
+          "type" => "message",
           "role" => "system",
-          "content" => system_prompt
+          "content" => [
+            %{
+              "type" => "input_text",
+              "text" => system_prompt
+            }
+          ]
         },
         %{
+          "type" => "message",
           "role" => "user",
-          "content" => user_prompt
+          "content" => [
+            %{
+              "type" => "input_text",
+              "text" => user_prompt
+            }
+          ]
         }
       ],
-      "temperature" => 0.3,
-      "max_tokens" => 8000,
-      "response_format" => %{"type" => "json_object"}
+      "reasoning" => %{
+        "effort" => "high"
+      },
+      "max_output_tokens" => 8000
     }
 
-    IO.puts("[OpenRouterAPI] Request payload prepared")
+    IO.puts("[OpenRouterAPI] Request payload prepared for Responses API")
 
     # Make the HTTP request
     json_payload = Jason.encode!(payload)
@@ -123,62 +138,19 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
     generate_clips_with_retry(transcript, enhanced_system_prompt, user_prompt_input, model, api_key, attempt)
   end
 
-defp build_headers(api_key) do
-  [
-    {"Authorization", "Bearer #{api_key}"},
-    {"Content-Type", "application/json"},
-    {"HTTP-Referer", "https://github.com/snowdamiz/clippster-prototype"},
-    {"X-Title", "Clippster AI Clip Detection"},
-    {"User-Agent", "Clippster/1.0"}
-  ]
-end
+  defp build_headers(api_key) do
+    [
+      {"Authorization", "Bearer #{api_key}"},
+      {"Content-Type", "application/json"},
+      {"HTTP-Referer", "https://github.com/snowdamiz/clippster-prototype"},
+      {"X-Title", "Clippster AI Clip Detection"},
+      {"User-Agent", "Clippster/1.0"}
+    ]
+  end
 
-defp build_user_prompt(transcript, user_prompt, attempt) do
-  try do
-    transcript_json = Jason.encode!(transcript, pretty: true)
-
-    retry_message = if attempt > 0 do
-      """
-
-      **⚠️ RETRY NOTICE:** Previous response was missing required fields. Please ensure ALL required fields are included in your response, especially the socialMediaPost field for each clip.
-      """
-    else
-      ""
-    end
-
-    """
-    **USER INSTRUCTIONS:**
-
-    #{user_prompt}
-
-    **TRANSCRIPT CHUNK:**
-
-    #{transcript_json}
-
-    Please analyze this transcript and generate viral clips according to the user instructions and system prompt.#{retry_message}
-    """
-  rescue
-    e ->
-      IO.puts("[OpenRouterAPI] Error encoding transcript: #{inspect(e)}")
-
-      # Fallback: try to encode just the essential parts
-      simplified_transcript = %{
-        "duration" => Map.get(transcript, "duration"),
-        "language" => Map.get(transcript, "language"),
-        "text" => Map.get(transcript, "text"),
-        "segments" => Map.get(transcript, "segments", [])
-          |> Enum.map(fn segment ->
-            %{
-              "id" => Map.get(segment, "id"),
-              "start" => Map.get(segment, "start"),
-              "end" => Map.get(segment, "end"),
-              "text" => Map.get(segment, "text"),
-              "speaker" => Map.get(segment, "speaker")
-            }
-          end)
-      }
-
-      transcript_json = Jason.encode!(simplified_transcript, pretty: true)
+  defp build_user_prompt(transcript, user_prompt, attempt) do
+    try do
+      transcript_json = Jason.encode!(transcript, pretty: true)
 
       retry_message = if attempt > 0 do
         """
@@ -200,33 +172,104 @@ defp build_user_prompt(transcript, user_prompt, attempt) do
 
       Please analyze this transcript and generate viral clips according to the user instructions and system prompt.#{retry_message}
       """
-  end
-end
+    rescue
+      e ->
+        IO.puts("[OpenRouterAPI] Error encoding transcript: #{inspect(e)}")
 
-defp extract_clips_from_response(response) do
-  case get_in(response, ["choices"]) do
-    [choice | _] ->
-      case get_in(choice, ["message", "content"]) do
-        content when is_binary(content) ->
+        # Fallback: try to encode just the essential parts
+        simplified_transcript = %{
+          "duration" => Map.get(transcript, "duration"),
+          "language" => Map.get(transcript, "language"),
+          "text" => Map.get(transcript, "text"),
+          "segments" => Map.get(transcript, "segments", [])
+            |> Enum.map(fn segment ->
+              %{
+                "id" => Map.get(segment, "id"),
+                "start" => Map.get(segment, "start"),
+                "end" => Map.get(segment, "end"),
+                "text" => Map.get(segment, "text"),
+                "speaker" => Map.get(segment, "speaker")
+              }
+            end)
+        }
+
+        transcript_json = Jason.encode!(simplified_transcript, pretty: true)
+
+        retry_message = if attempt > 0 do
+          """
+
+          **⚠️ RETRY NOTICE:** Previous response was missing required fields. Please ensure ALL required fields are included in your response, especially the socialMediaPost field for each clip.
+          """
+        else
+          ""
+        end
+
+        """
+        **USER INSTRUCTIONS:**
+
+        #{user_prompt}
+
+        **TRANSCRIPT CHUNK:**
+
+        #{transcript_json}
+
+        Please analyze this transcript and generate viral clips according to the user instructions and system prompt.#{retry_message}
+        """
+    end
+  end
+
+  defp extract_clips_from_response(response) do
+    # Handle new Responses API structure
+    case Map.get(response, "output") do
+      output when is_list(output) ->
+        # Find the message component with output_text
+        message_content = output
+          |> Enum.find_value(fn
+            %{"type" => "message", "content" => content} when is_list(content) ->
+              # Find the first output_text part
+              Enum.find_value(content, fn
+                %{"type" => "output_text", "text" => text} -> text
+                _ -> nil
+              end)
+            _ -> nil
+          end)
+
+        if message_content do
           # Try to parse the content as JSON
-          case Jason.decode(content) do
+          case Jason.decode(message_content) do
             {:ok, clips_data} ->
               {:ok, clips_data}
 
             {:error, reason} ->
-              IO.puts("[OpenRouterAPI] Failed to parse AI response as JSON: #{inspect(reason)}")
-              IO.puts("[OpenRouterAPI] AI response content: #{String.slice(content, 0, 1000)}...")
-              {:error, "AI response is not valid JSON"}
+              # Try to find JSON block in markdown code fence if pure JSON parse fails
+              case Regex.run(~r/```(?:json)?\s*([\s\S]*?)\s*```/, message_content) do
+                [_, json_block] ->
+                  case Jason.decode(json_block) do
+                    {:ok, clips_data} -> {:ok, clips_data}
+                    {:error, _} ->
+                      IO.puts("[OpenRouterAPI] Failed to parse extracted JSON block: #{inspect(reason)}")
+                      {:error, "Invalid JSON in extracted block"}
+                  end
+                nil ->
+                  IO.puts("[OpenRouterAPI] Failed to parse AI response as JSON: #{inspect(reason)}")
+                  IO.puts("[OpenRouterAPI] AI response content: #{String.slice(message_content, 0, 1000)}...")
+                  {:error, "AI response is not valid JSON"}
+              end
           end
+        else
+           {:error, "No output text found in response"}
+        end
 
-        nil ->
-          {:error, "No content in AI response"}
-      end
-
-    nil ->
-      {:error, "No choices in AI response"}
+      # Handle possible error structure or unexpected format
+      _ ->
+        # Check for top-level error
+        if Map.has_key?(response, "error") do
+           {:error, "API Error: #{inspect(response["error"])}"}
+        else
+           {:error, "Unexpected response format (missing 'output')"}
+        end
+    end
   end
-end
 
   # Validate clips response structure
   defp validate_clips_response(clips) do
