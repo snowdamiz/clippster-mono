@@ -1,4 +1,4 @@
-export type SupportedLivestreamPlatform = 'PumpFun';
+export type SupportedLivestreamPlatform = 'PumpFun' | 'Youtube' | 'Twitch' | 'Kick';
 
 export interface MonitoredStreamer {
   id: string;
@@ -35,6 +35,10 @@ export interface LiveSession {
   processedSegments: number;
   isRecording: boolean;
   projectId: string;
+  // Display info for logs
+  displayName: string;
+  platform: SupportedLivestreamPlatform;
+  profileImageUrl?: string;
 }
 
 export interface SegmentEventPayload {
@@ -55,4 +59,17 @@ export interface SegmentJob {
   mintId: string;
   filePath: string;
   projectId: string;
+}
+
+export interface ActivityLog {
+  id: string;
+  timestamp: string;
+  streamerId: string;
+  streamerName: string;
+  platform: SupportedLivestreamPlatform;
+  message: string;
+  status: 'loading' | 'success' | 'info';
+  mintId?: string;
+  profileImageUrl?: string;
+  streamThumbnailUrl?: string;
 }

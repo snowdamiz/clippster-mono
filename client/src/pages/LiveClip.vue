@@ -1,7 +1,7 @@
 <template>
   <PageLayout title="Live Clip" description="Real-time clip detection" :show-header="true" :icon="Radio">
     <template #actions>
-      <div class="relative w-[380px] shadow-sm group mr-2">
+      <div class="relative w-[380px] shadow-sm group">
         <div
           class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 pointer-events-none z-10"
         >
@@ -140,7 +140,7 @@
                 </div>
 
                 <!-- Right: Actions -->
-                <div class="flex items-center gap-5">
+                <div class="flex items-center gap-2">
                   <!-- Status Pill -->
                   <div
                     class="hidden sm:flex px-4 py-1.5 rounded-full text-xs font-semibold border transition-colors"
@@ -203,8 +203,15 @@
 
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 mb-0.5">
-                      <!-- Platform Dot -->
-                      <span class="w-2 h-2 rounded-full" :class="getPlatformDotColor(log.platform)"></span>
+                      <!-- Avatar or Platform Dot -->
+                      <div
+                        v-if="log.profileImageUrl || log.streamThumbnailUrl"
+                        class="w-5 h-5 rounded-full overflow-hidden flex-shrink-0 bg-muted border border-border/50"
+                      >
+                        <img :src="log.streamThumbnailUrl || log.profileImageUrl" class="w-full h-full object-cover" />
+                      </div>
+                      <span v-else class="w-2 h-2 rounded-full" :class="getPlatformDotColor(log.platform)"></span>
+
                       <span class="font-medium text-foreground">{{ log.streamerName }}</span>
                     </div>
                     <p class="text-muted-foreground group-hover:text-foreground transition-colors truncate">
@@ -265,7 +272,7 @@
       <!-- Floating Control Bar -->
       <transition name="slide-up">
         <div
-          v-if="selectedStreamers.length > 0"
+          v-if="selectedStreamers.length > 0 || isDetectingAny"
           class="fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-md px-4 z-50"
         >
           <div
@@ -302,14 +309,12 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
-  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { Radio, Plus, Check, Play, Square, Search, Trash2, Activity, Loader2 } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
   import { useLivestreamMonitoring } from '@/composables/useLivestreamMonitoring';
-  import { useLivestreamSegmentProcessing } from '@/composables/useLivestreamSegmentProcessing';
   import {
     getAllMonitoredStreamers,
     createMonitoredStreamer,
@@ -317,25 +322,13 @@
     updateMonitoredStreamer,
   } from '@/services/database';
   import { extractMintId, searchPumpFunTokens, type TokenSearchResult } from '@/services/pumpfun';
-  import type { MonitoredStreamer, SegmentEventPayload } from '@/types/livestream';
+  import type { MonitoredStreamer } from '@/types/livestream';
 
   type Platform = 'Youtube' | 'Twitch' | 'Kick' | 'PumpFun';
-
-  interface ActivityLog {
-    id: string;
-    timestamp: string;
-    streamerId: string;
-    streamerName: string;
-    platform: Platform;
-    message: string;
-    status: 'loading' | 'success' | 'info';
-    mintId?: string;
-  }
 
   const streamers = ref<MonitoredStreamer[]>([]);
   const inputValue = ref('');
   const detectedPlatform = ref<Platform | null>(null);
-  const activityLogs = ref<ActivityLog[]>([]);
   const logsContainer = ref<HTMLElement | null>(null);
 
   // Search state
@@ -343,20 +336,15 @@
   const showSearchDialog = ref(false);
   const isSearching = ref(false);
 
-  const { activeSessions, startMonitoring, stopMonitoring, isMonitoring } = useLivestreamMonitoring();
-  const { handleSegmentReady } = useLivestreamSegmentProcessing();
+  const { activeSessions, startMonitoring, stopMonitoring, isMonitoring, activityLogs, addActivityLog, clearLogs } =
+    useLivestreamMonitoring();
 
   const selectedStreamers = computed(() => streamers.value.filter((s) => s.selected));
   const allSelected = computed(() => streamers.value.length > 0 && streamers.value.every((s) => s.selected));
   const isDetectingAny = computed(() => activeSessions.value.size > 0 || isMonitoring.value === true);
 
-  let segmentUnlisten: UnlistenFn | null = null;
-  let streamEndedUnlisten: UnlistenFn | null = null;
-  let recorderLogUnlisten: UnlistenFn | null = null;
-
   onMounted(async () => {
     await loadStreamers();
-    await attachEventListeners();
     // Refresh metadata for streamers that might be missing names or images
     refreshStreamerMetadata();
   });
@@ -401,19 +389,7 @@
   }
 
   onUnmounted(async () => {
-    if (segmentUnlisten) {
-      await segmentUnlisten();
-      segmentUnlisten = null;
-    }
-    if (streamEndedUnlisten) {
-      await streamEndedUnlisten();
-      streamEndedUnlisten = null;
-    }
-    if (recorderLogUnlisten) {
-      await recorderLogUnlisten();
-      recorderLogUnlisten = null;
-    }
-    await stopMonitoring();
+    // Do not stop monitoring on unmount to allow background processing
   });
 
   watch(
@@ -429,108 +405,6 @@
     }));
   }
 
-  const segmentLogIds = new Map<number, string>();
-
-  async function attachEventListeners() {
-    segmentUnlisten = await listen<SegmentEventPayload>('segment-ready', async (event) => {
-      const payload = event.payload;
-
-      // 1. Update previous segment log to success if it exists (and wasn't already updated)
-      // Note: Usually segment-ready for X means X is done.
-      // So payload.segment IS the finished segment.
-
-      // Find the log for THIS segment that was "starting"
-      const startingLogId = segmentLogIds.get(payload.segment);
-      if (startingLogId) {
-        updateActivityLog(startingLogId, {
-          message: `Segment ${payload.segment} finished recording`,
-          status: 'success',
-        });
-        segmentLogIds.delete(payload.segment);
-      } else {
-        // Fallback if missed start event or first segment logic handling
-        addActivityLog({
-          streamerId: payload.streamerId,
-          streamerName: getStreamerName(payload.streamerId),
-          platform: 'PumpFun',
-          mintId: payload.mintId,
-          message: `Segment ${payload.segment} finished recording`,
-          status: 'success',
-        });
-      }
-
-      // 2. Log next segment starting
-      if (activeSessions.value.has(payload.streamerId)) {
-        const nextSegment = payload.segment + 1;
-        const id = addActivityLog({
-          streamerId: payload.streamerId,
-          streamerName: getStreamerName(payload.streamerId),
-          platform: 'PumpFun',
-          mintId: payload.mintId,
-          message: `Segment ${nextSegment} starting recording`,
-          status: 'loading',
-        });
-        segmentLogIds.set(nextSegment, id);
-      }
-
-      // 3. Create log for processing status
-      const processingLogId = addActivityLog({
-        streamerId: payload.streamerId,
-        streamerName: getStreamerName(payload.streamerId),
-        platform: 'PumpFun',
-        mintId: payload.mintId,
-        message: `Processing Segment ${payload.segment}...`,
-        status: 'loading',
-      });
-
-      await handleSegmentReady(payload.sessionId, payload, (status) => {
-        const isSuccess = status.includes('Found');
-        const isError = status.toLowerCase().includes('error') || status.toLowerCase().includes('failed');
-
-        updateActivityLog(processingLogId, {
-          message: status,
-          status: isSuccess ? 'success' : isError ? 'info' : 'loading', // info for error to not be too alarming or add error status support
-        });
-      });
-    });
-
-    streamEndedUnlisten = await listen<{ streamerId: string; mintId: string }>('stream-ended', (event) => {
-      activeSessions.value.delete(event.payload.streamerId);
-      syncDetectionState();
-      addActivityLog({
-        streamerId: event.payload.streamerId,
-        streamerName: getStreamerName(event.payload.streamerId),
-        platform: 'PumpFun',
-        mintId: event.payload.mintId,
-        message: 'Stream ended. Finishing final segments...',
-        status: 'info',
-      });
-    });
-
-    recorderLogUnlisten = await listen<{ streamerId: string; mintId: string; message: string; level: string }>(
-      'recorder-log',
-      (event) => {
-        // Filter out overly verbose messages if needed
-        const { streamerId, mintId, message } = event.payload;
-
-        // Don't show "Encoder waiting for media" as it spams
-        if (message.includes('Encoder waiting for media')) return;
-
-        // Ignore resolution changes in logs as users don't need to see it
-        if (message.includes('Resolution changed')) return;
-
-        addActivityLog({
-          streamerId,
-          streamerName: getStreamerName(streamerId),
-          platform: 'PumpFun',
-          mintId,
-          message: message,
-          status: 'info',
-        });
-      }
-    );
-  }
-
   async function loadStreamers() {
     try {
       const records = await getAllMonitoredStreamers();
@@ -543,7 +417,7 @@
         lastCheckTimestamp: record.last_check_timestamp,
         isCurrentlyLive: Boolean(record.is_currently_live),
         currentSessionId: record.current_session_id,
-        selected: false,
+        selected: activeIds.has(record.id),
         isDetecting: activeIds.has(record.id),
         profileImageUrl: record.profile_image_url || undefined,
         streamThumbnailUrl: record.stream_thumbnail_url || undefined,
@@ -741,6 +615,7 @@
         message: 'Added to monitored list.',
         status: 'success',
         mintId,
+        profileImageUrl,
       });
     } catch (error) {
       console.error('[LiveClip] Failed to add streamer', error);
@@ -785,6 +660,7 @@
 
   async function toggleDetection() {
     if (isDetectingAny.value) {
+      // Stop monitoring
       await stopMonitoring();
       addActivityLog({
         streamerId: 'system',
@@ -793,74 +669,28 @@
         message: 'Stopped monitoring.',
         status: 'info',
       });
+
+      // Resolve pending logs
+      resolvePendingLogs();
       return;
     }
 
     const selected = selectedStreamers.value;
     if (selected.length === 0) return;
 
+    // Clear logs and state from previous runs
+    clearLogs();
+
     await startMonitoring(selected);
-    selected.forEach((streamer) => {
-      addActivityLog({
-        streamerId: streamer.id,
-        streamerName: streamer.displayName,
-        platform: streamer.platform,
-        message: 'Monitoring started.',
-        status: 'success',
-        mintId: streamer.mintId,
-      });
+    // Logs are now handled by the composable
+  }
 
-      // Initial segment start log
-      const id = addActivityLog({
-        streamerId: streamer.id,
-        streamerName: streamer.displayName,
-        platform: streamer.platform,
-        message: 'Segment 1 starting recording',
-        status: 'loading',
-        mintId: streamer.mintId,
-      });
-      segmentLogIds.set(1, id);
+  function resolvePendingLogs() {
+    activityLogs.value.forEach((log) => {
+      if (log.status === 'loading') {
+        log.status = 'info';
+      }
     });
-  }
-
-  function getStreamerName(streamerId: string) {
-    return streamers.value.find((s) => s.id === streamerId)?.displayName || 'Unknown';
-  }
-
-  function addActivityLog(
-    log: Omit<ActivityLog, 'id' | 'timestamp'> & Partial<Pick<ActivityLog, 'id' | 'timestamp'>>
-  ): string {
-    const id = log.id ?? crypto.randomUUID();
-    const entry: ActivityLog = {
-      id,
-      timestamp:
-        log.timestamp ??
-        new Date().toLocaleTimeString([], {
-          hour12: false,
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-        }),
-      streamerId: log.streamerId,
-      streamerName: log.streamerName,
-      platform: log.platform,
-      message: log.message,
-      status: log.status,
-      mintId: log.mintId,
-    };
-
-    activityLogs.value.unshift(entry);
-    if (activityLogs.value.length > 100) {
-      activityLogs.value.pop();
-    }
-    return id;
-  }
-
-  function updateActivityLog(id: string, updates: Partial<ActivityLog>) {
-    const index = activityLogs.value.findIndex((log) => log.id === id);
-    if (index !== -1) {
-      activityLogs.value[index] = { ...activityLogs.value[index], ...updates };
-    }
   }
 </script>
 

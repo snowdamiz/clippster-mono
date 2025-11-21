@@ -236,6 +236,19 @@ export async function createLivestreamSegment(
   }
 ): Promise<string> {
   const db = await getDatabase();
+
+  // Check if segment already exists to avoid unique constraint violation
+  const existing = await db.select<LivestreamSegmentRecord[]>(
+    'SELECT id FROM livestream_segments WHERE session_id = ? AND segment_number = ?',
+    [sessionId, payload.segmentNumber]
+  );
+
+  if (existing.length > 0) {
+    // If it exists, update it instead of failing, or just return the ID
+    // Let's return the ID to be safe, assuming it's the same segment
+    return existing[0].id;
+  }
+
   const id = generateId();
   const now = timestamp();
 

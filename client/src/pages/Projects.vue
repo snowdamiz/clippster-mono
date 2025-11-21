@@ -27,6 +27,15 @@
         class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
         @click="openWorkspace(project)"
       >
+        <!-- Live Badge -->
+        <div
+          v-if="isProjectLive(project.id)"
+          class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-red-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm animate-pulse"
+        >
+          <Radio class="w-3 h-3" />
+          <span>LIVE</span>
+        </div>
+
         <!-- Thumbnail background with vignette -->
         <div
           v-if="getThumbnailUrl(project.id)"
@@ -44,8 +53,20 @@
         <!-- Fallback background for projects without thumbnails -->
         <div v-else class="absolute inset-0 z-0 bg-muted">
           <div class="absolute inset-0 bg-gradient-to-br from-black/20 via-transparent to-black/40"></div>
-          <!-- Centered folder icon -->
-          <div class="absolute inset-0 flex items-center justify-center opacity-20">
+
+          <!-- Live Empty State -->
+          <div
+            v-if="isProjectLive(project.id)"
+            class="absolute inset-0 flex flex-col items-center justify-center gap-3 opacity-50"
+          >
+            <div class="relative">
+              <div class="absolute inset-0 bg-red-500 rounded-full animate-ping opacity-20"></div>
+              <Radio class="h-12 w-12 text-red-500 relative z-10" />
+            </div>
+            <span class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Monitoring</span>
+          </div>
+          <!-- Standard Empty State -->
+          <div v-else class="absolute inset-0 flex items-center justify-center opacity-20">
             <Folder class="h-16 w-16 text-foreground" />
           </div>
         </div>
@@ -182,7 +203,7 @@
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
-  import { Folder, Plus, Play, Edit, Trash2 } from 'lucide-vue-next';
+  import { Folder, Plus, Play, Edit, Trash2, Radio } from 'lucide-vue-next';
   import {
     getAllProjects,
     getClipsWithVersionsByProjectId,
@@ -198,6 +219,7 @@
   } from '@/services/database';
   import { useFormatters } from '@/composables/useFormatters';
   import { useToast } from '@/composables/useToast';
+  import { useLivestreamMonitoring } from '@/composables/useLivestreamMonitoring';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
   import SkeletonGrid from '@/components/SkeletonGrid.vue';
@@ -220,6 +242,7 @@
   const thumbnailCache = ref<Map<string, string>>(new Map());
   const { getRelativeTime } = useFormatters();
   const { success, error } = useToast();
+  const { activeSessions } = useLivestreamMonitoring();
 
   // Pagination state
   const currentPage = ref(1);
@@ -280,6 +303,15 @@
 
   function getThumbnailUrl(projectId: string): string | null {
     return thumbnailCache.value.get(projectId) || null;
+  }
+
+  function isProjectLive(projectId: string) {
+    for (const session of activeSessions.value.values()) {
+      if (session.projectId === projectId) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // Pagination computed properties

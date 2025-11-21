@@ -11,6 +11,8 @@ import {
   persistClipDetectionResults,
   getClipsByDetectionSession,
   updateClipBuildStatus,
+  createProject,
+  getProject,
 } from '@/services/database';
 import type { SegmentEventPayload, SegmentJob } from '@/types/livestream';
 import type { ClipWithVersion, SubtitleSettings } from '@/services/database';
@@ -98,6 +100,14 @@ export function useLivestreamSegmentProcessing() {
     await updateSegmentStatus(job.segmentId, 'processing');
 
     try {
+      // Create a new project for this segment to avoid raw_videos unique constraint
+      const parentProject = await getProject(job.projectId);
+      const segmentProjectName = parentProject
+        ? `${parentProject.name} (Part ${job.segmentNumber})`
+        : `Livestream Segment ${job.segmentNumber}`;
+
+      const segmentProjectId = await createProject(segmentProjectName, parentProject?.description);
+
       // Generate thumbnail for the segment video
       let thumbnailPath: string | undefined;
       try {
@@ -111,12 +121,13 @@ export function useLivestreamSegmentProcessing() {
 
       const originalFilename = filenameFromPath(job.filePath);
       const rawVideoId = await createRawVideo(job.filePath, {
-        projectId: job.projectId,
+        projectId: segmentProjectId,
         originalFilename,
         thumbnailPath,
         sourceMintId: job.mintId,
         isSegment: true,
         segmentNumber: job.segmentNumber,
+        originalProjectId: job.projectId, // Track the parent project
       });
 
       // Notify other components that a new video is available
@@ -137,7 +148,7 @@ export function useLivestreamSegmentProcessing() {
       const audioFile = new File([audioBlob], audioFilename, { type: 'audio/ogg' });
 
       const formData = new FormData();
-      formData.append('project_id', job.projectId);
+      formData.append('project_id', segmentProjectId);
       formData.append('prompt', DEFAULT_LIVE_PROMPT);
       formData.append('audio', audioFile, audioFile.name);
 
@@ -148,7 +159,7 @@ export function useLivestreamSegmentProcessing() {
 
       if (response.data?.success) {
         const detectionSessionId = await persistClipDetectionResults(
-          job.projectId,
+          segmentProjectId,
           DEFAULT_LIVE_PROMPT,
           response.data,
           {

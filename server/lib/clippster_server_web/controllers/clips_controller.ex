@@ -137,7 +137,7 @@ defmodule ClippsterServerWeb.ClipsController do
       IO.puts("[ClipsController] Sending reconstructed transcript to OpenRouter API...")
       system_prompt = SystemPrompt.get()
 
-      ai_result = OpenRouterAPI.generate_clips(reconstructed_transcript, system_prompt, user_prompt)
+      ai_result = OpenRouterAPI.generate_clips(reconstructed_transcript, system_prompt, user_prompt, project_id)
       IO.puts("[ClipsController] OpenRouter API call completed")
 
       case ai_result do
@@ -458,7 +458,7 @@ defmodule ClippsterServerWeb.ClipsController do
           ProgressChannel.broadcast_progress(project_id, "analyzing", 50, "Analyzing transcript for clip-worthy moments...")
           system_prompt = SystemPrompt.get()
 
-          ai_result = OpenRouterAPI.generate_clips(ai_transcript, system_prompt, user_prompt)
+          ai_result = OpenRouterAPI.generate_clips(ai_transcript, system_prompt, user_prompt, project_id)
           IO.puts("[ClipsController] OpenRouter API call completed")
           ProgressChannel.broadcast_progress(project_id, "analyzing", 80, "AI analysis completed")
 

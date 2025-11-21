@@ -4,9 +4,11 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
   Updated to use the Responses API Beta with reasoning capabilities.
   """
 
+  alias ClippsterServerWeb.ProgressChannel
+
   @openrouter_api_url "https://openrouter.ai/api/v1/responses"
 
-  def generate_clips(transcript, system_prompt, user_prompt_input) do
+  def generate_clips(transcript, system_prompt, user_prompt_input, project_id \\ nil) do
     IO.puts("[OpenRouterAPI] Starting clip generation...")
 
     # Get API key from environment
@@ -26,7 +28,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
         IO.puts("[OpenRouterAPI] Using Responses API with high reasoning effort")
 
         # Start with the initial request
-        generate_clips_with_retry(transcript, system_prompt, user_prompt_input, model, api_key, 0)
+        generate_clips_with_retry(transcript, system_prompt, user_prompt_input, model, api_key, 0, [], project_id)
     end
   rescue
     reason ->
@@ -35,8 +37,12 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
       {:error, "Rescue exception: #{inspect(reason)}"}
   end
 
-  defp generate_clips_with_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt) do
+  defp generate_clips_with_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt, missing_fields \\ [], project_id \\ nil) do
     max_attempts = 3
+    
+    if attempt > 0 and project_id do
+      ProgressChannel.broadcast_progress(project_id, "analyzing", 50, "AI request failed, retrying (Attempt #{attempt + 1}/#{max_attempts})...")
+    end
 
     IO.puts("[OpenRouterAPI] Attempt #{attempt + 1}/#{max_attempts}")
 
@@ -52,7 +58,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
           "content" => [
             %{
               "type" => "input_text",
-              "text" => system_prompt
+              "text" => missing_fields_prompt(system_prompt, missing_fields)
             }
           ]
         },
@@ -77,7 +83,10 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
 
     # Make the HTTP request
     json_payload = Jason.encode!(payload)
-    case HTTPoison.post(@openrouter_api_url, json_payload, build_headers(api_key)) do
+    # Increase timeout to 120s (120000ms) to avoid premature timeouts
+    options = [recv_timeout: 120_000, timeout: 120_000]
+    
+    case HTTPoison.post(@openrouter_api_url, json_payload, build_headers(api_key), options) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         IO.puts("[OpenRouterAPI] Received response from API")
 
@@ -96,16 +105,16 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
                     IO.puts("[OpenRouterAPI] Clips validation passed")
                     {:ok, clips}
 
-                  {:error, missing_fields} when attempt < max_attempts - 1 ->
-                    IO.puts("[OpenRouterAPI] Validation failed, missing fields: #{inspect(missing_fields)}")
+                  {:error, new_missing_fields} when attempt < max_attempts - 1 ->
+                    IO.puts("[OpenRouterAPI] Validation failed, missing fields: #{inspect(new_missing_fields)}")
                     IO.puts("[OpenRouterAPI] Retrying with field-specific guidance...")
 
                     # Retry with field-specific guidance
-                    generate_clips_with_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt + 1, missing_fields)
+                    generate_clips_with_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt + 1, new_missing_fields, project_id)
 
-                  {:error, missing_fields} ->
-                    IO.puts("[OpenRouterAPI] Validation failed after #{max_attempts} attempts, missing fields: #{inspect(missing_fields)}")
-                    {:error, "Missing required fields: #{Enum.join(missing_fields, ", ")}"}
+                  {:error, new_missing_fields} ->
+                    IO.puts("[OpenRouterAPI] Validation failed after #{max_attempts} attempts, missing fields: #{inspect(new_missing_fields)}")
+                    {:error, "Missing required fields: #{Enum.join(new_missing_fields, ", ")}"}
                 end
 
               {:error, reason} ->
@@ -120,22 +129,40 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
 
       {:ok, %HTTPoison.Response{status_code: status_code, body: body}} ->
         IO.puts("[OpenRouterAPI] API returned error status: #{status_code}")
-        {:error, "OpenRouter API error (#{status_code}): #{body}"}
+        
+        # Retry on server errors (5xx) if we have attempts left
+        if status_code >= 500 and attempt < max_attempts - 1 do
+          IO.puts("[OpenRouterAPI] Server error #{status_code}, retrying...")
+          :timer.sleep(2000 * (attempt + 1)) # Exponential backoff
+          generate_clips_with_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt + 1, missing_fields, project_id)
+        else
+          {:error, "OpenRouter API error (#{status_code}): #{body}"}
+        end
 
       {:error, %HTTPoison.Error{reason: reason}} ->
         IO.puts("[OpenRouterAPI] HTTP request failed: #{inspect(reason)}")
-        {:error, "Network error: #{inspect(reason)}"}
+        
+        # Retry on network errors if we have attempts left
+        if attempt < max_attempts - 1 do
+          IO.puts("[OpenRouterAPI] Network error, retrying...")
+          if project_id do
+             ProgressChannel.broadcast_progress(project_id, "analyzing", 50, "Network error: #{inspect(reason)}. Retrying (Attempt #{attempt + 1}/#{max_attempts})...")
+          end
+          :timer.sleep(2000 * (attempt + 1)) # Exponential backoff
+          generate_clips_with_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt + 1, missing_fields, project_id)
+        else
+          {:error, "Network error: #{inspect(reason)}"}
+        end
     end
   end
 
-  defp generate_clips_with_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt, missing_fields) do
+  defp missing_fields_prompt(system_prompt, []), do: system_prompt
+  defp missing_fields_prompt(system_prompt, missing_fields) do
     # Build field-specific retry prompt
     field_guidance = build_field_guidance(missing_fields)
 
     # Add field guidance to the system prompt
-    enhanced_system_prompt = system_prompt <> "\n\n**CRITICAL FIELD REQUIREMENTS:**\n" <> field_guidance
-
-    generate_clips_with_retry(transcript, enhanced_system_prompt, user_prompt_input, model, api_key, attempt)
+    system_prompt <> "\n\n**CRITICAL FIELD REQUIREMENTS:**\n" <> field_guidance
   end
 
   defp build_headers(api_key) do
