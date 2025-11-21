@@ -2,7 +2,7 @@
   <div class="w-full">
     <!-- Page Title and Actions -->
     <div v-if="showHeader" class="mb-8 -mt-2">
-      <div class="relative overflow-hidden rounded-xl bg-card border border-border p-4 shadow-sm">
+      <div class="relative overflow-hidden rounded-lg bg-card border border-border p-3 shadow-sm">
         <!-- Gradient Background Decoration -->
         <div class="absolute inset-0 bg-gradient-to-r from-primary/3 to-primary/1 pointer-events-none"></div>
 
@@ -35,8 +35,8 @@
             </div>
 
             <div>
-              <h1 class="text-2xl font-bold text-foreground tracking-tight">{{ title }}</h1>
-              <p class="text-sm text-muted-foreground mt-1">{{ description }}</p>
+              <h1 class="text-xl font-bold text-foreground tracking-tight">{{ title }}</h1>
+              <p class="text-sm text-muted-foreground mt-0.5">{{ description }}</p>
             </div>
           </div>
           <div class="flex items-center gap-2 mr-1">

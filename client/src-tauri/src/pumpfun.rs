@@ -6,10 +6,7 @@ use std::{
 
 use once_cell::sync::Lazy;
 use serde::Deserialize;
-use tokio::{
-    io::AsyncBufReadExt,
-    sync::oneshot,
-};
+use tokio::sync::oneshot;
 
 use tauri::{Emitter, Manager};
 use tauri_plugin_shell::ShellExt;

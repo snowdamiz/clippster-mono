@@ -40,7 +40,7 @@
 
         <Input
           v-model="inputValue"
-          class="h-14 pl-11 pr-30 text-sm bg-background border-border/70 rounded-xl focus-visible:ring-primary/20 transition-all hover:border-primary/30 focus:border-primary/50 shadow-sm w-full"
+          class="h-14 pl-11 pr-30 text-sm bg-background border-border/70 rounded-lg focus-visible:ring-primary/20 transition-all hover:border-primary/30 focus:border-primary/50 shadow-sm w-full"
           placeholder="Paste stream link..."
           @keyup.enter="addStreamer"
           @input="detectPlatform"
@@ -49,7 +49,7 @@
         <div class="absolute right-2.5 top-1/2 -translate-y-1/2">
           <Button
             size="sm"
-            class="h-8 px-4 rounded-lg font-medium transition-all text-xs"
+            class="h-8 px-4 rounded-sm font-medium transition-all text-xs"
             :disabled="!inputValue"
             @click="addStreamer"
           >
@@ -80,7 +80,7 @@
               <div
                 v-for="streamer in streamers"
                 :key="streamer.id"
-                class="group relative flex items-center justify-between p-4 bg-card border border-border/50 rounded-xl transition-all duration-200 cursor-pointer hover:border-primary/30 hover:bg-accent/5"
+                class="group relative flex items-center justify-between p-3 bg-card border border-border/50 rounded-lg transition-all duration-200 cursor-pointer hover:border-primary/30 hover:bg-accent/5"
                 :class="{
                   'border-primary/30 bg-primary/3': streamer.selected,
                   'shadow-sm': !streamer.selected,
@@ -140,10 +140,10 @@
                 </div>
 
                 <!-- Right: Actions -->
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-1">
                   <!-- Status Pill -->
                   <div
-                    class="hidden sm:flex px-4 py-1.5 rounded-full text-xs font-semibold border transition-colors"
+                    class="hidden sm:flex px-3 py-1 rounded-full text-xs font-semibold border transition-colors"
                     :class="
                       streamer.isDetecting
                         ? 'bg-green-500/10 text-green-500 border-green-500/20'
@@ -191,7 +191,7 @@
             <span class="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">Live</span>
           </div>
 
-          <div class="bg-card border border-border/50 rounded-2xl overflow-hidden shadow-sm h-[500px] flex flex-col">
+          <div class="bg-card border border-border/50 rounded-lg overflow-hidden shadow-sm h-[500px] flex flex-col">
             <div class="flex-1 overflow-y-auto p-4 space-y-1 scroll-smooth" ref="logsContainer">
               <transition-group name="list">
                 <div

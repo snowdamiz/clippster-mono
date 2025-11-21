@@ -37,7 +37,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
       {:error, "Rescue exception: #{inspect(reason)}"}
   end
 
-  defp generate_clips_with_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt, missing_fields \\ [], project_id \\ nil) do
+  defp generate_clips_with_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt, missing_fields, project_id) do
     max_attempts = 3
     
     if attempt > 0 and project_id do
