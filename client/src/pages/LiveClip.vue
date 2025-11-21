@@ -331,25 +331,12 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
-  import {
-    Radio,
-    Plus,
-    Check,
-    Play,
-    Square,
-    Search,
-    Trash2,
-    Activity,
-    Loader2,
-    Info,
-    Video,
-    Sparkles,
-  } from 'lucide-vue-next';
+  import { Radio, Plus, Check, Square, Search, Trash2, Activity, Loader2, Video, Sparkles } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-  import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+  // import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
   import { useLivestreamMonitoring } from '@/composables/useLivestreamMonitoring';
   import {
     getAllMonitoredStreamers,
@@ -359,6 +346,7 @@
   } from '@/services/database';
   import { extractMintId, searchPumpFunTokens, type TokenSearchResult } from '@/services/pumpfun';
   import type { MonitoredStreamer } from '@/types/livestream';
+  import { useToast, useToastStore } from '@/composables/useToast';
 
   type Platform = 'Youtube' | 'Twitch' | 'Kick' | 'PumpFun';
 
@@ -374,6 +362,9 @@
 
   const { activeSessions, startMonitoring, stopMonitoring, isMonitoring, activityLogs, addActivityLog, clearLogs } =
     useLivestreamMonitoring();
+
+  const { toast } = useToast();
+  const { removeToast } = useToastStore();
 
   const selectedStreamers = computed(() => streamers.value.filter((s) => s.selected));
   const allSelected = computed(() => streamers.value.length > 0 && streamers.value.every((s) => s.selected));
@@ -706,18 +697,44 @@
 
   async function toggleDetection() {
     if (isDetectingAny.value) {
-      // Stop monitoring
-      await stopMonitoring();
-      addActivityLog({
-        streamerId: 'system',
-        streamerName: 'System',
-        platform: 'PumpFun',
-        message: 'Stopped monitoring.',
-        status: 'info',
+      // Show loading toast
+      const toastId = toast({
+        title: 'Stopping Monitoring',
+        description: 'Finishing up the last segment. This may take a moment...',
+        type: 'loading',
+        duration: 45000, // Long duration to cover the 30s timeout
       });
 
-      // Resolve pending logs
-      resolvePendingLogs();
+      try {
+        // Stop monitoring
+        await stopMonitoring();
+
+        removeToast(toastId);
+        toast({
+          title: 'Monitoring Stopped',
+          description: 'All recordings have been finalized.',
+          type: 'success',
+        });
+
+        addActivityLog({
+          streamerId: 'system',
+          streamerName: 'System',
+          platform: 'PumpFun',
+          message: 'Stopped monitoring.',
+          status: 'info',
+        });
+
+        // Resolve pending logs
+        resolvePendingLogs();
+      } catch (error) {
+        removeToast(toastId);
+        console.error('Failed to stop monitoring', error);
+        toast({
+          title: 'Error Stopping',
+          description: 'An error occurred while stopping monitoring.',
+          type: 'error',
+        });
+      }
       return;
     }
   }

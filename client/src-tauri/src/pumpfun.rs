@@ -261,7 +261,7 @@ async fn run_recorder_process(
     use tauri_plugin_shell::process::CommandEvent;
 
     // Spawn Node sidecar
-    let (mut rx, child) = app.shell()
+    let (mut rx, mut child) = app.shell()
         .sidecar("node")
         .map_err(|e| format!("Failed to create node sidecar: {}", e))?
         .args([
@@ -275,6 +275,9 @@ async fn run_recorder_process(
         .map_err(|e| format!("Failed to spawn recorder sidecar: {}", e))?;
 
     println!("[Recorder] Started Node sidecar with PID: {:?}", child.pid());
+
+    let mut stopping = false;
+    let mut kill_timer = Box::pin(tokio::time::sleep(tokio::time::Duration::from_secs(3600 * 24)));
 
     loop {
         tokio::select! {
@@ -310,8 +313,25 @@ async fn run_recorder_process(
                 }
             }
             // Handle stop signal
-            _ = &mut stop_rx => {
-                println!("[Recorder] Stop signal received, killing process...");
+            _ = &mut stop_rx, if !stopping => {
+                println!("[Recorder] Stop signal received, sending graceful STOP command...");
+                
+                // Try to write to stdin
+                if let Err(e) = child.write(b"STOP\n") {
+                    eprintln!("[Recorder] Failed to write to stdin: {}, falling back to kill", e);
+                    if let Err(err) = child.kill() {
+                        eprintln!("[Recorder] Failed to kill child: {}", err);
+                    }
+                    break;
+                }
+                
+                stopping = true;
+                // Set kill timer to 30 seconds to allow for graceful shutdown (ffmpeg flush + cleanup)
+                kill_timer = Box::pin(tokio::time::sleep(tokio::time::Duration::from_secs(30)));
+            }
+            // Handle kill timeout
+            _ = &mut kill_timer, if stopping => {
+                println!("[Recorder] Graceful stop timed out, forcing kill...");
                 if let Err(err) = child.kill() {
                     eprintln!("[Recorder] Failed to kill child: {}", err);
                 }

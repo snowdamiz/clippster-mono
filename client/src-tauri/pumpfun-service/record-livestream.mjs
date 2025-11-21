@@ -445,6 +445,8 @@ class PumpfunRecorder {
   }
   
   async startEncoderIfReady() {
+    if (!this.running) return; // Do not start encoder if stopping
+
     if (this.encoderStarted) {
       return;
     }
@@ -589,7 +591,7 @@ class PumpfunRecorder {
     ];
 
     this.ffmpeg = spawn(this.ffmpegPath, args, {
-      stdio: ['pipe', 'pipe', 'pipe', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe', 'pipe', 'ignore'],
       cwd: this.outputDir,
     });
 
@@ -622,11 +624,15 @@ class PumpfunRecorder {
 
   async restartEncoder(width, height) {
     if (this.restarting) return;
+    if (!this.running) return; // Do not restart if we are stopping
+    
     this.restarting = true;
     
     try {
         // 1. Stop current encoder cleanly
         await this.stopEncoderInternal();
+        
+        if (!this.running) return; // Double check in case stop() was called while awaiting above
         
         // 2. Update dimensions
         this.currentWidth = width;
@@ -784,6 +790,9 @@ class PumpfunRecorder {
   }
 
   async writeVideo(buffer, flushing = false) {
+    // If shutting down, strictly do NOT write to avoid partial frames or writing to closing pipes
+    if (!flushing && !this.running) return;
+
     if (!flushing && (!this.encoderStarted || !this.videoPipe || this.restarting)) {
       this.pendingVideo.push(buffer);
       if (!this.restarting) {
@@ -794,8 +803,11 @@ class PumpfunRecorder {
     }
 
     try {
-        if (!this.videoPipe.write(buffer)) {
-          await once(this.videoPipe, 'drain');
+        // Extra safety check before write
+        if (this.videoPipe && !this.videoPipe.destroyed && (flushing || this.running)) {
+            if (!this.videoPipe.write(buffer)) {
+                await once(this.videoPipe, 'drain');
+            }
         }
     } catch (e) {
         if (this.restarting) {
@@ -809,6 +821,12 @@ class PumpfunRecorder {
       
       this.encoderStarted = false;
       
+      // Immediately mark pipes as unusable to prevent writes
+      const vPipe = this.videoPipe;
+      const aPipe = this.audioPipe;
+      this.videoPipe = null;
+      this.audioPipe = null;
+      
       try {
         // Wait for ffmpeg to exit after closing inputs
         const exitPromise = once(this.ffmpeg, 'exit');
@@ -816,24 +834,41 @@ class PumpfunRecorder {
         // Close inputs
         // For stdin (audio), we must end it to signal EOF
         try { 
-            if (!this.ffmpeg.stdin.destroyed) {
+            if (this.ffmpeg.stdin && !this.ffmpeg.stdin.destroyed) {
                 this.ffmpeg.stdin.end(); 
             }
-        } catch(e) {}
+        } catch(e) {
+            console.error('[Recorder] Error closing audio pipe', e);
+        }
         
         // For video pipe (stdio[3]), we must also end it
-        if (this.videoPipe) {
+        if (vPipe) {
           try { 
-            if (!this.videoPipe.destroyed) {
-                this.videoPipe.end(); 
+            if (!vPipe.destroyed) {
+                vPipe.end(); 
             }
-          } catch(e) {}
+          } catch(e) {
+            console.error('[Recorder] Error closing video pipe', e);
+          }
         }
 
-        // Wait up to 10 seconds for clean exit (increased from 5s to allow final segment flush)
-        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 10000));
-        const result = await Promise.race([exitPromise, timeoutPromise]);
+
+        // Wait up to 12 seconds for clean exit (increased to allow final segment flush)
+        // If it doesn't exit in 2 seconds, try SIGINT to encourage it.
         
+        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 12000));
+        
+        // Race against timeout
+        let result = await Promise.race([exitPromise, new Promise(resolve => setTimeout(() => resolve('soft-timeout'), 2000))]);
+        
+        if (result === 'soft-timeout') {
+             log('ffmpeg did not exit quickly, sending SIGINT');
+             try {
+                 this.ffmpeg.kill('SIGINT');
+             } catch (e) {}
+             result = await Promise.race([exitPromise, timeoutPromise]);
+        }
+
         if (result === 'timeout') {
            log('encoder did not exit in time, forcing kill');
            this.ffmpeg.kill('SIGKILL');
@@ -913,12 +948,39 @@ async function main() {
   await recorder.start();
 
   const shutdown = async () => {
-    await recorder.stop();
+    // Remove listeners to prevent double handling
+    process.off('SIGINT', shutdown);
+    process.off('SIGTERM', shutdown);
+    process.stdin.off('data', onStdinData);
+
+    console.log(JSON.stringify({ type: 'log', message: 'Shutting down recorder...' }));
+    
+    // Force exit after 25 seconds if recorder.stop() hangs (must be less than Rust's 30s)
+    const forceExitTimer = setTimeout(() => {
+        console.error(JSON.stringify({ type: 'log', message: 'Shutdown timed out, forcing exit' }));
+        process.exit(0);
+    }, 25000);
+
+    try {
+        await recorder.stop();
+    } catch (e) {
+        console.error(JSON.stringify({ type: 'log', message: `Error during stop: ${e.message}` }));
+    }
+    
+    clearTimeout(forceExitTimer);
     process.exit(0);
+  };
+
+  const onStdinData = (data) => {
+    const str = data.toString().trim();
+    if (str === 'STOP') {
+        shutdown();
+    }
   };
 
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+  process.stdin.on('data', onStdinData);
 }
 
 main().catch((error) => {

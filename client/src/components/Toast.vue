@@ -22,6 +22,10 @@
           <AlertTriangle class="h-5 w-5 text-yellow-500" />
         </div>
 
+        <div v-else-if="toast.type === 'loading'" class="p-1.5 bg-blue-500/10 rounded-md">
+          <Loader2 class="h-5 w-5 text-blue-500 animate-spin" />
+        </div>
+
         <div v-else class="p-1.5 bg-primary/10 rounded-md">
           <Info class="h-5 w-5 text-primary" />
         </div>
@@ -47,7 +51,7 @@
 <script setup lang="ts">
   import { ToastProvider, ToastRoot, ToastTitle, ToastDescription, ToastClose, ToastViewport } from 'radix-vue';
   import { useToastStore } from '@/composables/useToast';
-  import { CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-vue-next';
+  import { CheckCircle, XCircle, AlertTriangle, Info, X, Loader2 } from 'lucide-vue-next';
 
   const { toasts, removeToast } = useToastStore();
 </script>
