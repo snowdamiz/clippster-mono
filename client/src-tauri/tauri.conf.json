@@ -22,6 +22,7 @@
         "transparent": true
       }
     ],
+    "macOSPrivateApi": true,
     "security": {
       "csp": "default-src 'self' asset: https://asset.localhost; connect-src 'self' http://localhost:4000 https://api.clippster.example.com https://*; img-src 'self' asset: https://asset.localhost data:; media-src 'self' asset: https://asset.localhost; video-src 'self' asset: https://asset.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:",
       "dangerousDisableAssetCspModification": [".*/.*"],

@@ -22,7 +22,7 @@ tar = "0.4"
 xz2 = "0.1"
 
 [dependencies]
-tauri = { version = "2.3.0", features = ["protocol-asset", "native-tls-vendored"] }
+tauri = { version = "2.3.0", features = ["macos-private-api", "protocol-asset", "native-tls-vendored"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"

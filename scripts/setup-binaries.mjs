@@ -122,6 +122,25 @@ async function installBinary(config, name) {
   
   if (fs.existsSync(destPath)) {
     console.log(`✅ ${config.filename} already exists.`);
+    
+    // Ensure executable permissions on Unix-like systems even if file exists
+    if (PLATFORM !== 'win32') {
+      try {
+        fs.chmodSync(destPath, 0o755);
+        
+        // On macOS, try to remove quarantine attribute
+        if (PLATFORM === 'darwin') {
+          try {
+            execSync(`xattr -d com.apple.quarantine "${destPath}"`);
+          } catch (e) {
+            // Ignore error, attribute might not exist
+          }
+        }
+      } catch (e) {
+        console.error(`Warning: Could not set executable permissions for ${config.filename}: ${e.message}`);
+      }
+    }
+    
     return;
   }
 
@@ -189,6 +208,15 @@ async function installBinary(config, name) {
     // Make executable on unix
     if (PLATFORM !== 'win32') {
       fs.chmodSync(destPath, 0o755);
+
+      // On macOS, try to remove quarantine attribute
+      if (PLATFORM === 'darwin') {
+        try {
+          execSync(`xattr -d com.apple.quarantine "${destPath}"`);
+        } catch (e) {
+          // Ignore error, attribute might not exist
+        }
+      }
     }
 
     console.log(`✅ Installed ${config.filename}`);

@@ -886,6 +886,7 @@ class PumpfunRecorder {
   }
 
   async stop() {
+    log('Stopping recorder...');
     this.running = false;
 
     if (this.playlistPoller) {
@@ -893,35 +894,35 @@ class PumpfunRecorder {
       this.playlistPoller = null;
     }
 
-    if (this.audioReader) {
-      try {
-        await this.audioReader.cancel();
-      } catch (error) {
-        // ignore
-      }
-      this.audioReader = null;
-    }
-
-    if (this.videoReader) {
-      try {
-        await this.videoReader.cancel();
-      } catch (error) {
-        // ignore
-      }
-      this.videoReader = null;
-    }
-    
+    // Stop encoder first to ensure video is saved
+    log('Stopping encoder...');
     await this.stopEncoderInternal();
+    log('Encoder stopped.');
 
     if (this.segmentWatcher) {
       this.segmentWatcher.close();
       this.segmentWatcher = null;
     }
 
-    // Final check of playlist to catch the last segment
-    // Force a check even if one was "in progress" or recently done
+    // Check playlist for last segment
+    log('Checking playlist...');
     this.checkingPlaylist = false; 
     await this.checkPlaylist();
+    log('Playlist checked.');
+
+    // Cleanup LiveKit
+    log('Disconnecting LiveKit...');
+    
+    // Do not await reader cancellations as they might hang if streams are idle
+    if (this.audioReader) {
+        this.audioReader.cancel().catch(e => console.error('[Recorder] Error cancelling audio reader', e));
+        this.audioReader = null;
+    }
+    
+    if (this.videoReader) {
+        this.videoReader.cancel().catch(e => console.error('[Recorder] Error cancelling video reader', e));
+        this.videoReader = null;
+    }
 
     if (this.room) {
       try {
@@ -930,6 +931,7 @@ class PumpfunRecorder {
         // ignore
       }
     }
+    log('LiveKit disconnected.');
   }
 
   emitEvent(payload) {

@@ -16,6 +16,7 @@ pub async fn setup_macos_titlebar(_window: tauri::Window) -> Result<(), String> 
     #[cfg(target_os = "macos")]
     {
         // On macOS, we use the window parameter to access the native NSWindow
+        #[allow(unused_imports)]
         use cocoa::appkit::{NSColor, NSWindow};
         use cocoa::base::NO;
         use cocoa::foundation::NSAutoreleasePool;
@@ -25,6 +26,7 @@ pub async fn setup_macos_titlebar(_window: tauri::Window) -> Result<(), String> 
         let ns_window = _window.ns_window().map_err(|e| format!("Failed to get NSWindow: {}", e))?;
 
         // Create an autorelease pool for memory management
+        #[allow(deprecated)]
         unsafe {
             let pool = NSAutoreleasePool::new(std::ptr::null_mut());
 
