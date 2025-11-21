@@ -332,17 +332,69 @@
     }));
   }
 
+  const segmentLogIds = new Map<number, string>();
+
   async function attachEventListeners() {
     segmentUnlisten = await listen<SegmentEventPayload>('segment-ready', async (event) => {
       const payload = event.payload;
-      await handleSegmentReady(payload.sessionId, payload);
-      addActivityLog({
+
+      // 1. Update previous segment log to success if it exists (and wasn't already updated)
+      const previousSegment = payload.segment - 1;
+      // Note: Usually segment-ready for X means X is done.
+      // So payload.segment IS the finished segment.
+
+      // Find the log for THIS segment that was "starting"
+      const startingLogId = segmentLogIds.get(payload.segment);
+      if (startingLogId) {
+        updateActivityLog(startingLogId, {
+          message: `Segment ${payload.segment} finished recording`,
+          status: 'success',
+        });
+        segmentLogIds.delete(payload.segment);
+      } else {
+        // Fallback if missed start event or first segment logic handling
+        addActivityLog({
+          streamerId: payload.streamerId,
+          streamerName: getStreamerName(payload.streamerId),
+          platform: 'PumpFun',
+          mintId: payload.mintId,
+          message: `Segment ${payload.segment} finished recording`,
+          status: 'success',
+        });
+      }
+
+      // 2. Log next segment starting
+      if (activeSessions.value.has(payload.streamerId)) {
+        const nextSegment = payload.segment + 1;
+        const id = addActivityLog({
+          streamerId: payload.streamerId,
+          streamerName: getStreamerName(payload.streamerId),
+          platform: 'PumpFun',
+          mintId: payload.mintId,
+          message: `Segment ${nextSegment} starting recording`,
+          status: 'loading',
+        });
+        segmentLogIds.set(nextSegment, id);
+      }
+
+      // 3. Create log for processing status
+      const processingLogId = addActivityLog({
         streamerId: payload.streamerId,
         streamerName: getStreamerName(payload.streamerId),
         platform: 'PumpFun',
         mintId: payload.mintId,
-        message: `Segment ${payload.segment} ready, processing...`,
+        message: `Processing Segment ${payload.segment}...`,
         status: 'loading',
+      });
+
+      await handleSegmentReady(payload.sessionId, payload, (status) => {
+        const isSuccess = status.includes('Found');
+        const isError = status.toLowerCase().includes('error') || status.toLowerCase().includes('failed');
+
+        updateActivityLog(processingLogId, {
+          message: status,
+          status: isSuccess ? 'success' : isError ? 'info' : 'loading', // info for error to not be too alarming or add error status support
+        });
       });
     });
 
@@ -367,6 +419,9 @@
 
         // Don't show "Encoder waiting for media" as it spams
         if (message.includes('Encoder waiting for media')) return;
+
+        // Ignore resolution changes in logs as users don't need to see it
+        if (message.includes('Resolution changed')) return;
 
         addActivityLog({
           streamerId,
@@ -580,9 +635,20 @@
         streamerName: streamer.displayName,
         platform: streamer.platform,
         message: 'Monitoring started.',
+        status: 'success',
+        mintId: streamer.mintId,
+      });
+
+      // Initial segment start log
+      const id = addActivityLog({
+        streamerId: streamer.id,
+        streamerName: streamer.displayName,
+        platform: streamer.platform,
+        message: 'Segment 1 starting recording',
         status: 'loading',
         mintId: streamer.mintId,
       });
+      segmentLogIds.set(1, id);
     });
   }
 
@@ -590,9 +656,12 @@
     return streamers.value.find((s) => s.id === streamerId)?.displayName || 'Unknown';
   }
 
-  function addActivityLog(log: Omit<ActivityLog, 'id' | 'timestamp'> & Partial<Pick<ActivityLog, 'id' | 'timestamp'>>) {
+  function addActivityLog(
+    log: Omit<ActivityLog, 'id' | 'timestamp'> & Partial<Pick<ActivityLog, 'id' | 'timestamp'>>
+  ): string {
+    const id = log.id ?? crypto.randomUUID();
     const entry: ActivityLog = {
-      id: log.id ?? crypto.randomUUID(),
+      id,
       timestamp:
         log.timestamp ??
         new Date().toLocaleTimeString([], {
@@ -612,6 +681,14 @@
     activityLogs.value.unshift(entry);
     if (activityLogs.value.length > 100) {
       activityLogs.value.pop();
+    }
+    return id;
+  }
+
+  function updateActivityLog(id: string, updates: Partial<ActivityLog>) {
+    const index = activityLogs.value.findIndex((log) => log.id === id);
+    if (index !== -1) {
+      activityLogs.value[index] = { ...activityLogs.value[index], ...updates };
     }
   }
 </script>

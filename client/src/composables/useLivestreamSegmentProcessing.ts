@@ -17,41 +17,10 @@ import type { ClipWithVersion, SubtitleSettings } from '@/services/database';
 
 const DEFAULT_LIVE_PROMPT =
   'Detect the most viral, high-energy PumpFun livestream moments suitable for short-form clips.';
-const DEFAULT_ASPECT_RATIOS = ['9:16'];
-const DEFAULT_QUALITY = 'high';
-const DEFAULT_FRAME_RATE = 30;
-const DEFAULT_OUTPUT_FORMAT = 'mp4';
-const DEFAULT_MAX_WORDS = 3;
-const AUTO_BUILD_SUBTITLE_SETTINGS: SubtitleSettings = {
-  enabled: false,
-  fontFamily: 'Montserrat',
-  fontSize: 32,
-  fontWeight: 700,
-  textColor: '#FFFFFF',
-  backgroundColor: '#000000',
-  backgroundEnabled: false,
-  border1Width: 2,
-  border1Color: '#00FF00',
-  border2Width: 4,
-  border2Color: '#000000',
-  shadowOffsetX: 2,
-  shadowOffsetY: 2,
-  shadowBlur: 4,
-  shadowColor: '#000000',
-  position: 'bottom',
-  positionPercentage: 85,
-  maxWidth: 90,
-  animationStyle: 'none',
-  lineHeight: 1.2,
-  letterSpacing: 0,
-  textAlign: 'center',
-  textOffsetX: 0,
-  textOffsetY: 0,
-  padding: 16,
-  borderRadius: 8,
-  wordSpacing: 0.35,
-  selectedPresetId: null,
-};
+
+interface ProcessingJob extends SegmentJob {
+  onProgress?: (status: string) => void;
+}
 
 function base64ToBlob(base64: string, mime = 'audio/ogg'): Blob {
   const binary = atob(base64);
@@ -69,10 +38,14 @@ function filenameFromPath(filePath: string): string {
 }
 
 export function useLivestreamSegmentProcessing() {
-  const queue = ref<SegmentJob[]>([]);
+  const queue = ref<ProcessingJob[]>([]);
   const isProcessing = ref(false);
 
-  async function handleSegmentReady(sessionId: string, payload: SegmentEventPayload) {
+  async function handleSegmentReady(
+    sessionId: string,
+    payload: SegmentEventPayload,
+    onProgress?: (status: string) => void
+  ) {
     const session = await getLivestreamSession(sessionId);
     if (!session || !session.project_id) {
       console.error('[LiveSegments] Missing project for session', sessionId);
@@ -94,6 +67,7 @@ export function useLivestreamSegmentProcessing() {
       mintId: payload.mintId,
       filePath: payload.path,
       projectId: session.project_id,
+      onProgress,
     });
 
     if (!isProcessing.value) {
@@ -119,13 +93,15 @@ export function useLivestreamSegmentProcessing() {
     isProcessing.value = false;
   }
 
-  async function processSegment(job: SegmentJob) {
+  async function processSegment(job: ProcessingJob) {
+    job.onProgress?.('Processing started');
     await updateSegmentStatus(job.segmentId, 'processing');
 
     try {
       // Generate thumbnail for the segment video
       let thumbnailPath: string | undefined;
       try {
+        job.onProgress?.('Generating thumbnail');
         thumbnailPath = await invoke<string>('generate_thumbnail', {
           videoPath: job.filePath,
         });
@@ -148,6 +124,7 @@ export function useLivestreamSegmentProcessing() {
 
       await updateLivestreamSegment(job.segmentId, { raw_video_id: rawVideoId });
 
+      job.onProgress?.('Separating audio');
       const [audioFilename, audioBase64] = await invoke<[string, string]>(
         'extract_audio_from_video',
         {
@@ -164,6 +141,7 @@ export function useLivestreamSegmentProcessing() {
       formData.append('prompt', DEFAULT_LIVE_PROMPT);
       formData.append('audio', audioFile, audioFile.name);
 
+      job.onProgress?.('Transcribing audio & Detecting Clips');
       const response = await api.post('/clips/detect', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
@@ -183,6 +161,8 @@ export function useLivestreamSegmentProcessing() {
         );
 
         const clips = await getClipsByDetectionSession(detectionSessionId);
+        job.onProgress?.(`Found ${clips.length} clips`);
+
         if (clips.length > 0) {
           await updateLivestreamSegment(job.segmentId, { clips_detected: clips.length });
           // Clips are stored in the database as detected, but not built yet.
@@ -196,6 +176,7 @@ export function useLivestreamSegmentProcessing() {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      job.onProgress?.(`Error: ${message}`);
       await updateSegmentStatus(job.segmentId, 'error', message);
       throw error;
     }

@@ -14,8 +14,8 @@
       {
         "label": "main",
         "title": "Clippster",
-        "width": 1500,
-        "height": 950,
+        "width": 1300,
+        "height": 850,
         "decorations": false,
         "titleBarStyle": "Overlay",
         "visible": false,
