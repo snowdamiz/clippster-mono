@@ -216,6 +216,12 @@ pub fn run() {
                             sql: include_str!("../migrations/032_add_virality_score_to_clip_versions.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 33,
+                            description: "add_monitored_streamer_thumbnails",
+                            sql: include_str!("../migrations/033_add_monitored_streamer_thumbnails.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

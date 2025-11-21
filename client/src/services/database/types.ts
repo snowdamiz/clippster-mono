@@ -144,6 +144,8 @@ export interface MonitoredStreamerRecord {
   last_check_timestamp: number | null;
   is_currently_live: number | boolean;
   current_session_id: string | null;
+  profile_image_url?: string | null;
+  stream_thumbnail_url?: string | null;
   created_at: number;
   updated_at: number;
 }

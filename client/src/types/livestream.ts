@@ -10,6 +10,8 @@ export interface MonitoredStreamer {
   currentSessionId: string | null;
   selected: boolean;
   isDetecting: boolean;
+  profileImageUrl?: string;
+  streamThumbnailUrl?: string;
 }
 
 export interface LiveStatus {

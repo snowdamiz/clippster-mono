@@ -50,7 +50,7 @@
           <Button
             size="sm"
             class="h-8 px-4 rounded-lg font-medium transition-all text-xs"
-            :disabled="!inputValue || !detectedPlatform"
+            :disabled="!inputValue"
             @click="addStreamer"
           >
             <Plus class="w-3.5 h-3.5 mr-1.5" />
@@ -103,13 +103,21 @@
 
                   <!-- Icon -->
                   <div
-                    class="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 overflow-hidden relative"
+                    class="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 overflow-hidden relative bg-muted"
                   >
-                    <!-- Solid Background Layer -->
+                    <!-- Image Layer (Profile or Stream Thumbnail) -->
+                    <img
+                      v-if="streamer.profileImageUrl || streamer.streamThumbnailUrl"
+                      :src="streamer.streamThumbnailUrl || streamer.profileImageUrl"
+                      class="w-full h-full object-cover absolute inset-0 z-20"
+                    />
+
+                    <!-- Solid Background Layer (Fallback) -->
                     <div class="absolute inset-0" :class="getPlatformSolidBg(streamer.platform)"></div>
 
-                    <!-- Icon Layer -->
+                    <!-- Icon Layer (Fallback) -->
                     <img
+                      v-if="!streamer.profileImageUrl && !streamer.streamThumbnailUrl"
                       :src="getPlatformIcon(streamer.platform)"
                       class="w-7 h-7 relative z-10"
                       :class="getPlatformIconClasses(streamer.platform)"
@@ -217,6 +225,43 @@
         </div>
       </div>
 
+      <!-- Search Dialog -->
+      <Dialog :open="showSearchDialog" @update:open="showSearchDialog = $event">
+        <DialogContent class="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Select Token</DialogTitle>
+            <DialogDescription>Multiple tokens found for your search. Please select one.</DialogDescription>
+          </DialogHeader>
+          <div class="grid gap-2 py-4 max-h-[60vh] overflow-y-auto">
+            <div
+              v-for="token in searchResults"
+              :key="token.mint"
+              class="flex items-center gap-3 p-3 rounded-lg border border-border/50 hover:bg-accent/50 hover:border-primary/30 cursor-pointer transition-colors"
+              @click="selectSearchResult(token)"
+            >
+              <div
+                class="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden flex-shrink-0"
+              >
+                <img v-if="token.image" :src="token.image" class="w-full h-full object-cover" />
+                <span v-else class="text-xs font-bold">{{ token.symbol.slice(0, 2) }}</span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <h4 class="font-medium truncate text-sm">{{ token.name }}</h4>
+                <p class="text-xs text-muted-foreground truncate">{{ token.symbol }}</p>
+              </div>
+              <div class="text-right flex flex-col items-end">
+                <span class="text-xs font-mono bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
+                  {{ token.mint.slice(0, 4) }}...{{ token.mint.slice(-4) }}
+                </span>
+                <span v-if="token.marketCap" class="text-[10px] text-green-500 mt-1">
+                  ${{ (token.marketCap / 1000).toFixed(0) }}k MC
+                </span>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <!-- Floating Control Bar -->
       <transition name="slide-up">
         <div
@@ -262,10 +307,16 @@
   import PageLayout from '@/components/PageLayout.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
+  import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
   import { useLivestreamMonitoring } from '@/composables/useLivestreamMonitoring';
   import { useLivestreamSegmentProcessing } from '@/composables/useLivestreamSegmentProcessing';
-  import { getAllMonitoredStreamers, createMonitoredStreamer, deleteMonitoredStreamer } from '@/services/database';
-  import { extractMintId } from '@/services/pumpfun';
+  import {
+    getAllMonitoredStreamers,
+    createMonitoredStreamer,
+    deleteMonitoredStreamer,
+    updateMonitoredStreamer,
+  } from '@/services/database';
+  import { extractMintId, searchPumpFunTokens, type TokenSearchResult } from '@/services/pumpfun';
   import type { MonitoredStreamer, SegmentEventPayload } from '@/types/livestream';
 
   type Platform = 'Youtube' | 'Twitch' | 'Kick' | 'PumpFun';
@@ -287,6 +338,11 @@
   const activityLogs = ref<ActivityLog[]>([]);
   const logsContainer = ref<HTMLElement | null>(null);
 
+  // Search state
+  const searchResults = ref<TokenSearchResult[]>([]);
+  const showSearchDialog = ref(false);
+  const isSearching = ref(false);
+
   const { activeSessions, startMonitoring, stopMonitoring, isMonitoring } = useLivestreamMonitoring();
   const { handleSegmentReady } = useLivestreamSegmentProcessing();
 
@@ -301,7 +357,48 @@
   onMounted(async () => {
     await loadStreamers();
     await attachEventListeners();
+    // Refresh metadata for streamers that might be missing names or images
+    refreshStreamerMetadata();
   });
+
+  async function refreshStreamerMetadata() {
+    const needsUpdate = streamers.value.filter(
+      (s) => s.platform === 'PumpFun' && (s.displayName === s.mintId || !s.profileImageUrl)
+    );
+
+    if (needsUpdate.length === 0) return;
+
+    // Process sequentially to avoid rate limits
+    for (const streamer of needsUpdate) {
+      try {
+        // Use search to find token metadata
+        const results = await searchPumpFunTokens(streamer.mintId);
+        if (results && results.length > 0) {
+          // Find exact match if possible, or take first
+          const match = results.find((r) => r.mint === streamer.mintId) || results[0];
+
+          if (match) {
+            const updates: any = {};
+            if (streamer.displayName === streamer.mintId) {
+              updates.display_name = match.symbol; // Use symbol as display name
+            }
+            if (!streamer.profileImageUrl && match.image) {
+              updates.profile_image_url = match.image;
+            }
+
+            if (Object.keys(updates).length > 0) {
+              await updateMonitoredStreamer(streamer.id, updates);
+              // Update local state
+              if (updates.display_name) streamer.displayName = updates.display_name;
+              if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to refresh metadata for', streamer.mintId, e);
+      }
+    }
+  }
 
   onUnmounted(async () => {
     if (segmentUnlisten) {
@@ -339,7 +436,6 @@
       const payload = event.payload;
 
       // 1. Update previous segment log to success if it exists (and wasn't already updated)
-      const previousSegment = payload.segment - 1;
       // Note: Usually segment-ready for X means X is done.
       // So payload.segment IS the finished segment.
 
@@ -449,6 +545,8 @@
         currentSessionId: record.current_session_id,
         selected: false,
         isDetecting: activeIds.has(record.id),
+        profileImageUrl: record.profile_image_url || undefined,
+        streamThumbnailUrl: record.stream_thumbnail_url || undefined,
       }));
     } catch (error) {
       console.error('[LiveClip] Failed to load monitored streamers', error);
@@ -547,26 +645,95 @@
   async function addStreamer() {
     if (!inputValue.value) return;
 
+    // Check if it's a valid mint ID or URL first
     const mintId = extractMintId(inputValue.value);
-    if (!mintId) {
+
+    if (mintId) {
+      // Even if we have a mint ID, try to fetch metadata first for better UX
       addActivityLog({
-        id: crypto.randomUUID(),
-        timestamp: new Date().toISOString(),
         streamerId: 'system',
         streamerName: 'System',
         platform: 'PumpFun',
-        message: 'Invalid PumpFun URL or mint.',
-        status: 'info',
+        message: `Fetching metadata for ${mintId.slice(0, 8)}...`,
+        status: 'loading',
       });
+
+      let displayName = extractIdentifier(inputValue.value);
+      let profileImage = undefined;
+
+      try {
+        const results = await searchPumpFunTokens(mintId);
+        const match = results.find((r) => r.mint === mintId) || results[0];
+        if (match) {
+          displayName = match.symbol;
+          profileImage = match.image;
+          addActivityLog({
+            streamerId: 'system',
+            streamerName: 'System',
+            platform: 'PumpFun',
+            message: `Identified as ${match.name} (${match.symbol})`,
+            status: 'success',
+          });
+        }
+      } catch (e) {
+        // Ignore errors, fallback to basic ID
+      }
+
+      await confirmAddStreamer(mintId, displayName, profileImage);
       return;
     }
 
+    // If not a mint ID, try searching
+    if (detectedPlatform.value === 'PumpFun' || !detectedPlatform.value) {
+      isSearching.value = true;
+      addActivityLog({
+        streamerId: 'system',
+        streamerName: 'System',
+        platform: 'PumpFun',
+        message: `Searching for "${inputValue.value}"...`,
+        status: 'loading',
+      });
+
+      const results = await searchPumpFunTokens(inputValue.value);
+      isSearching.value = false;
+
+      if (results.length === 0) {
+        addActivityLog({
+          streamerId: 'system',
+          streamerName: 'System',
+          platform: 'PumpFun',
+          message: `No tokens found for "${inputValue.value}".`,
+          status: 'info',
+        });
+        return;
+      }
+
+      if (results.length === 1) {
+        const token = results[0];
+        addActivityLog({
+          streamerId: 'system',
+          streamerName: 'System',
+          platform: 'PumpFun',
+          message: `Found ${token.name} (${token.symbol}).`,
+          status: 'success',
+        });
+        await confirmAddStreamer(token.mint, token.symbol, token.image);
+      } else {
+        // Multiple results
+        searchResults.value = results;
+        showSearchDialog.value = true;
+      }
+    }
+  }
+
+  async function confirmAddStreamer(mintId: string, displayName: string, profileImageUrl?: string) {
     try {
-      const displayName = extractIdentifier(inputValue.value);
-      await createMonitoredStreamer(mintId, displayName);
+      await createMonitoredStreamer(mintId, displayName, profileImageUrl);
       await loadStreamers();
       inputValue.value = '';
       detectedPlatform.value = null;
+      showSearchDialog.value = false;
+
       addActivityLog({
         streamerId: mintId,
         streamerName: displayName,
@@ -579,13 +746,17 @@
       console.error('[LiveClip] Failed to add streamer', error);
       addActivityLog({
         streamerId: mintId,
-        streamerName: mintId,
+        streamerName: displayName,
         platform: 'PumpFun',
         message: 'Failed to add streamer. Ensure it is not already tracked.',
         status: 'info',
         mintId,
       });
     }
+  }
+
+  function selectSearchResult(token: TokenSearchResult) {
+    confirmAddStreamer(token.mint, token.symbol, token.image);
   }
 
   async function removeStreamer(id: string) {

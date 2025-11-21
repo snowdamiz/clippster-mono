@@ -196,3 +196,58 @@ export function formatRelativeTime(dateString?: string): string {
     return 'Unknown';
   }
 }
+
+export interface TokenSearchResult {
+  name: string;
+  symbol: string;
+  mint: string;
+  image?: string;
+  marketCap?: number;
+  pairAddress: string;
+}
+
+/**
+ * Search for PumpFun/Solana tokens by name or symbol using DexScreener API
+ */
+export async function searchPumpFunTokens(query: string): Promise<TokenSearchResult[]> {
+  if (!query || query.length < 2) return [];
+
+  try {
+    const response = await fetch(
+      `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`
+    );
+    if (!response.ok) throw new Error('Search failed');
+
+    const data = await response.json();
+    if (!data.pairs || !Array.isArray(data.pairs)) return [];
+
+    const uniqueTokens = new Map<string, TokenSearchResult>();
+
+    for (const pair of data.pairs) {
+      // Filter for Solana chain
+      if (pair.chainId === 'solana' && pair.baseToken) {
+        // Use the base token address as key to deduplicate
+        const mint = pair.baseToken.address;
+
+        // Prefer pairs with higher liquidity/volume or specifically from pumpfun if we could tell
+        // For now, we just take the first occurrence or update if we find a "better" pair
+        // But simple deduplication is enough for basic search
+        if (!uniqueTokens.has(mint)) {
+          uniqueTokens.set(mint, {
+            name: pair.baseToken.name,
+            symbol: pair.baseToken.symbol,
+            mint: mint,
+            image: pair.info?.imageUrl,
+            marketCap: pair.fdv,
+            pairAddress: pair.pairAddress,
+          });
+        }
+      }
+    }
+
+    return Array.from(uniqueTokens.values()).slice(0, 20);
+  } catch (e) {
+    console.error('[PumpFun] Token search error:', e);
+    return [];
+  }
+}
