@@ -422,8 +422,8 @@ pub fn save_temp_file(file_name: String, bytes: Vec<u8>) -> Result<String, Strin
 
 /// Tauri command to get video duration using FFmpeg
 #[tauri::command]
-pub fn get_video_duration(video_path: String) -> Result<f64, String> {
-    use std::process::Command;
+pub async fn get_video_duration(app: tauri::AppHandle, video_path: String) -> Result<f64, String> {
+    use tauri_plugin_shell::ShellExt;
     use std::path::Path;
 
     let path = Path::new(&video_path);
@@ -434,13 +434,15 @@ pub fn get_video_duration(video_path: String) -> Result<f64, String> {
     }
 
     // Use FFmpeg to get duration
-    let output = Command::new("ffmpeg")
-        .arg("-i")
-        .arg(&video_path)
-        .arg("-f")
-        .arg("null")
-        .arg("-")
+    let output = app.shell().sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?
+        .args([
+            "-i", &video_path,
+            "-f", "null",
+            "-",
+        ])
         .output()
+        .await
         .map_err(|e| format!("Failed to execute FFmpeg: {}", e))?;
 
     // Parse the stderr output to find duration

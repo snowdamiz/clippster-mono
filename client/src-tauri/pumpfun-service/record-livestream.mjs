@@ -32,7 +32,7 @@ const segmentDurationSeconds = segmentMinutes * 60;
 const outputDir = path.resolve(outputDirArg);
 
 // Sync Offset: Positive = Fixes "Audio Ahead" (Drops Video). Negative = Fixes "Video Ahead" (Drops Audio).
-const AV_SYNC_OFFSET_MS = 700;
+const AV_SYNC_OFFSET_MS = 800;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

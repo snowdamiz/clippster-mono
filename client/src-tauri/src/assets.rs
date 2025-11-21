@@ -61,7 +61,7 @@ pub async fn upload_asset_async(
         };
 
         // Get video duration
-        let duration = match storage::get_video_duration(destination_path.clone()) {
+        let duration = match storage::get_video_duration(app_clone.clone(), destination_path.clone()).await {
             Ok(d) => {
                 println!("[Rust] Asset duration: {:?}", d);
                 Some(d)
