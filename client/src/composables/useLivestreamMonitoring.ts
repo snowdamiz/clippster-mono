@@ -23,6 +23,7 @@ const POLL_INTERVAL_MS = 30_000;
 const activeSessions = ref<Map<string, LiveSession>>(new Map());
 const pollingHandle = ref<number | null>(null);
 const isMonitoring = ref(false);
+const monitoringOptions = ref<{ detectClips: boolean }>({ detectClips: true });
 const activityLogs = ref<ActivityLog[]>([]);
 const segmentLogIds = new Map<number, string>();
 let listenersInitialized = false;
@@ -190,8 +191,11 @@ async function initializeListeners() {
     });
 
     // Process the segment
-    await handleSegmentReady(payload.sessionId, payload, (status) => {
-      const isSuccess = status.includes('Found');
+    const session = activeSessions.value.get(payload.streamerId);
+    const detectClips = session?.detectClips ?? true;
+
+    await handleSegmentReady(payload.sessionId, payload, detectClips, (status) => {
+      const isSuccess = status.includes('Found') || status.includes('Detection skipped');
       const isError =
         status.toLowerCase().includes('error') || status.toLowerCase().includes('failed');
 
@@ -253,7 +257,10 @@ async function initializeListeners() {
 }
 
 export function useLivestreamMonitoring() {
-  async function startMonitoring(streamers: MonitoredStreamer[]) {
+  async function startMonitoring(
+    streamers: MonitoredStreamer[],
+    options: { detectClips: boolean } = { detectClips: true }
+  ) {
     if (streamers.length === 0) {
       return;
     }
@@ -264,6 +271,7 @@ export function useLivestreamMonitoring() {
     }
 
     isMonitoring.value = true;
+    monitoringOptions.value = options;
 
     // Initialize listeners if not already done
     await initializeListeners();
@@ -349,6 +357,7 @@ export function useLivestreamMonitoring() {
         displayName: streamer.displayName,
         platform: streamer.platform,
         profileImageUrl: streamer.profileImageUrl,
+        detectClips: monitoringOptions.value.detectClips,
       });
 
       // Add log

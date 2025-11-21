@@ -46,6 +46,7 @@ export function useLivestreamSegmentProcessing() {
   async function handleSegmentReady(
     sessionId: string,
     payload: SegmentEventPayload,
+    detectClips: boolean = true,
     onProgress?: (status: string) => void
   ) {
     const session = await getLivestreamSession(sessionId);
@@ -69,6 +70,7 @@ export function useLivestreamSegmentProcessing() {
       mintId: payload.mintId,
       filePath: payload.path,
       projectId: session.project_id,
+      detectClips,
       onProgress,
     });
 
@@ -135,55 +137,61 @@ export function useLivestreamSegmentProcessing() {
 
       await updateLivestreamSegment(job.segmentId, { raw_video_id: rawVideoId });
 
-      job.onProgress?.('Separating audio');
-      const [audioFilename, audioBase64] = await invoke<[string, string]>(
-        'extract_audio_from_video',
-        {
-          videoPath: job.filePath,
-          outputPath: `segment_${job.segmentId}_audio.ogg`,
-        }
-      );
-
-      const audioBlob = base64ToBlob(audioBase64);
-      const audioFile = new File([audioBlob], audioFilename, { type: 'audio/ogg' });
-
-      const formData = new FormData();
-      formData.append('project_id', segmentProjectId);
-      formData.append('prompt', DEFAULT_LIVE_PROMPT);
-      formData.append('audio', audioFile, audioFile.name);
-
-      job.onProgress?.('Transcribing audio & Detecting Clips');
-      const response = await api.post('/clips/detect', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-
-      if (response.data?.success) {
-        const detectionSessionId = await persistClipDetectionResults(
-          segmentProjectId,
-          DEFAULT_LIVE_PROMPT,
-          response.data,
+      if (job.detectClips) {
+        job.onProgress?.('Separating audio');
+        const [audioFilename, audioBase64] = await invoke<[string, string]>(
+          'extract_audio_from_video',
           {
-            processingTimeMs: 0,
-            detectionModel: 'pumpfun-live-segment',
-            serverResponseId: response.data?.jobId || null,
-            videoFilePath: job.filePath,
-            rawVideoId: rawVideoId,
+            videoPath: job.filePath,
+            outputPath: `segment_${job.segmentId}_audio.ogg`,
           }
         );
 
-        const clips = await getClipsByDetectionSession(detectionSessionId);
-        job.onProgress?.(`Found ${clips.length} clips`);
+        const audioBlob = base64ToBlob(audioBase64);
+        const audioFile = new File([audioBlob], audioFilename, { type: 'audio/ogg' });
 
-        if (clips.length > 0) {
-          await updateLivestreamSegment(job.segmentId, { clips_detected: clips.length });
-          // Clips are stored in the database as detected, but not built yet.
-          // User can build them later from the project dashboard.
+        const formData = new FormData();
+        formData.append('project_id', segmentProjectId);
+        formData.append('prompt', DEFAULT_LIVE_PROMPT);
+        formData.append('audio', audioFile, audioFile.name);
+
+        job.onProgress?.('Transcribing audio & Detecting Clips');
+        const response = await api.post('/clips/detect', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+
+        if (response.data?.success) {
+          const detectionSessionId = await persistClipDetectionResults(
+            segmentProjectId,
+            DEFAULT_LIVE_PROMPT,
+            response.data,
+            {
+              processingTimeMs: 0,
+              detectionModel: 'pumpfun-live-segment',
+              serverResponseId: response.data?.jobId || null,
+              videoFilePath: job.filePath,
+              rawVideoId: rawVideoId,
+            }
+          );
+
+          const clips = await getClipsByDetectionSession(detectionSessionId);
+          job.onProgress?.(`Found ${clips.length} clips`);
+
+          if (clips.length > 0) {
+            await updateLivestreamSegment(job.segmentId, { clips_detected: clips.length });
+            // Clips are stored in the database as detected, but not built yet.
+            // User can build them later from the project dashboard.
+          }
+
+          await updateSegmentStatus(job.segmentId, 'completed');
+          await updateLivestreamSessionProgress(job.sessionId, { processedSegmentsDelta: 1 });
+        } else {
+          throw new Error(response.data?.error || 'Clip detection failed');
         }
-
+      } else {
+        job.onProgress?.('Segment recorded (Detection skipped)');
         await updateSegmentStatus(job.segmentId, 'completed');
         await updateLivestreamSessionProgress(job.sessionId, { processedSegmentsDelta: 1 });
-      } else {
-        throw new Error(response.data?.error || 'Clip detection failed');
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

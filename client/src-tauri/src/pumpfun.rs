@@ -214,6 +214,27 @@ pub async fn start_livestream_recording(
     Ok(())
 }
 
+pub fn get_active_recordings_count() -> usize {
+    ACTIVE_RECORDINGS.lock().unwrap().len()
+}
+
+pub async fn stop_all_recordings() {
+    let mut recordings = ACTIVE_RECORDINGS.lock().unwrap();
+    for (_, entry) in recordings.drain() {
+        if let Some(tx) = entry.stop_tx {
+            let _ = tx.send(());
+        }
+        // We can't easily await the tasks here because they are spawned, 
+        // but sending the signal should trigger the cleanup in the task.
+    }
+}
+
+#[tauri::command]
+pub async fn stop_all_livestream_recordings() -> Result<(), String> {
+    stop_all_recordings().await;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn stop_livestream_recording(mint_id: String) -> Result<(), String> {
     let entry = ACTIVE_RECORDINGS.lock().unwrap().remove(&mint_id);

@@ -264,18 +264,22 @@ pub fn run() {
                         *clip_gen
                     };
 
-                    // Show dialog if there are active downloads OR clip generation in progress
-                    if active_count > 0 || clip_gen_in_progress {
+                    // Check if there are active recordings
+                    let recording_count = pumpfun::get_active_recordings_count();
+
+                    // Show dialog if there are active downloads OR clip generation in progress OR active recordings
+                    if active_count > 0 || clip_gen_in_progress || recording_count > 0 {
                         println!(
-                            "[Rust] Operations in progress - Downloads: {}, Clip Generation: {}",
-                            active_count, clip_gen_in_progress
+                            "[Rust] Operations in progress - Downloads: {}, Recordings: {}, Clip Generation: {}",
+                            active_count, recording_count, clip_gen_in_progress
                         );
 
                         // Prevent the window from closing immediately
                         api.prevent_close();
 
                         // Emit event to frontend to show confirmation dialog
-                        let _ = app_handle.emit("window-close-requested", active_count);
+                        // We send the total count of background operations
+                        let _ = app_handle.emit("window-close-requested", active_count + recording_count);
                     } else {
                         println!("[Rust] No active operations, allowing close");
                     }
@@ -314,6 +318,7 @@ pub fn run() {
             pumpfun::check_pumpfun_livestream,
             pumpfun::start_livestream_recording,
             pumpfun::stop_livestream_recording,
+            pumpfun::stop_all_livestream_recordings,
 
             // Download commands
             downloads::download_pumpfun_vod,

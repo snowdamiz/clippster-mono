@@ -39,6 +39,7 @@ export interface LiveSession {
   displayName: string;
   platform: SupportedLivestreamPlatform;
   profileImageUrl?: string;
+  detectClips?: boolean;
 }
 
 export interface SegmentEventPayload {
@@ -59,6 +60,7 @@ export interface SegmentJob {
   mintId: string;
   filePath: string;
   projectId: string;
+  detectClips?: boolean;
 }
 
 export interface ActivityLog {

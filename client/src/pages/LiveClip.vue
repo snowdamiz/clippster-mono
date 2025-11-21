@@ -62,7 +62,10 @@
 
     <div
       class="mx-auto pt-2 relative transition-all duration-500 ease-in-out"
-      :class="isDetectingAny && activityLogs.length > 0 ? 'max-w-7xl' : 'max-w-full'"
+      :class="[
+        isDetectingAny && activityLogs.length > 0 ? 'max-w-7xl' : 'max-w-full',
+        selectedStreamers.length > 0 || isDetectingAny ? 'pb-32' : '',
+      ]"
     >
       <div :class="{ 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start': isDetectingAny && activityLogs.length > 0 }">
         <!-- Streamers List Column -->
@@ -273,33 +276,52 @@
       <transition name="slide-up">
         <div
           v-if="selectedStreamers.length > 0 || isDetectingAny"
-          class="fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-md px-4 z-50"
+          class="fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-xl px-4 z-50"
         >
           <div
-            class="bg-popover text-popover-foreground rounded-4xl shadow-2xl border border-border px-4 py-3 flex items-center justify-between backdrop-blur-xl"
+            class="bg-[#09090b] text-white rounded-full shadow-2xl border border-white/10 px-6 py-3 flex items-center justify-between backdrop-blur-xl"
           >
-            <div class="flex items-center gap-4 pl-2">
+            <div class="flex items-center gap-4">
               <div class="flex flex-col">
-                <span class="text-sm font-semibold">{{ selectedStreamers.length }} selected</span>
+                <span class="text-sm font-bold">{{ selectedStreamers.length }} selected</span>
                 <button
                   @click="selectAll"
-                  class="text-xs text-muted-foreground hover:text-foreground text-left transition-colors"
+                  class="text-xs text-muted-foreground hover:text-white text-left transition-colors"
                 >
                   {{ allSelected ? 'Deselect All' : 'Select All' }}
                 </button>
               </div>
             </div>
 
-            <Button
-              size="sm"
-              :variant="isDetectingAny ? 'destructive' : 'default'"
-              class="rounded-xl px-6 font-semibold shadow-lg transition-all"
-              :class="{ 'opacity-100 hover:bg-destructive/90 text-white': isDetectingAny }"
-              @click="toggleDetection"
-            >
-              <component :is="isDetectingAny ? Square : Play" class="w-4 h-4 mr-2 fill-current" />
-              {{ isDetectingAny ? 'Stop Detection' : 'Start Detection' }}
-            </Button>
+            <div class="flex items-center gap-3 -mr-3">
+              <template v-if="!isDetectingAny">
+                <button
+                  class="flex items-center gap-2 px-5 py-2.5 rounded-full bg-zinc-800 hover:bg-zinc-700 transition-all text-sm font-medium border border-white/5"
+                  @click="startWithMode(false)"
+                >
+                  <Video class="w-4 h-4 text-zinc-400" />
+                  Record Only
+                </button>
+                <button
+                  class="flex items-center gap-2 px-6 py-2.5 rounded-full bg-gradient-to-r from-purple-400 to-purple-600 hover:opacity-90 transition-all text-white text-sm font-semibold shadow-lg shadow-purple-500/20"
+                  @click="startWithMode(true)"
+                >
+                  <Sparkles class="w-4 h-4 fill-current" />
+                  Auto-Detect
+                </button>
+              </template>
+
+              <Button
+                v-else
+                size="sm"
+                variant="destructive"
+                class="rounded-full px-6 font-semibold shadow-lg transition-all h-10 hover:bg-red-600/90 text-white"
+                @click="toggleDetection"
+              >
+                <Square class="w-4 h-4 mr-2 fill-current" />
+                Stop Detection
+              </Button>
+            </div>
           </div>
         </div>
       </transition>
@@ -309,11 +331,25 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
-  import { Radio, Plus, Check, Play, Square, Search, Trash2, Activity, Loader2 } from 'lucide-vue-next';
+  import {
+    Radio,
+    Plus,
+    Check,
+    Play,
+    Square,
+    Search,
+    Trash2,
+    Activity,
+    Loader2,
+    Info,
+    Video,
+    Sparkles,
+  } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+  import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
   import { useLivestreamMonitoring } from '@/composables/useLivestreamMonitoring';
   import {
     getAllMonitoredStreamers,
@@ -658,6 +694,16 @@
     }));
   }
 
+  async function startWithMode(detectClips: boolean) {
+    const selected = selectedStreamers.value;
+    if (selected.length === 0) return;
+
+    // Clear logs and state from previous runs
+    clearLogs();
+
+    await startMonitoring(selected, { detectClips });
+  }
+
   async function toggleDetection() {
     if (isDetectingAny.value) {
       // Stop monitoring
@@ -674,15 +720,6 @@
       resolvePendingLogs();
       return;
     }
-
-    const selected = selectedStreamers.value;
-    if (selected.length === 0) return;
-
-    // Clear logs and state from previous runs
-    clearLogs();
-
-    await startMonitoring(selected);
-    // Logs are now handled by the composable
   }
 
   function resolvePendingLogs() {

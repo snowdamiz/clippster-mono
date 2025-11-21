@@ -312,33 +312,38 @@ class PumpfunRecorder {
         const width = converted.width;
         const height = converted.height;
 
-        // Check for resolution change
-        if (this.encoderStarted && (width !== this.currentWidth || height !== this.currentHeight)) {
+        // Ensure even dimensions for YUV420p
+        const effectiveWidth = width & ~1;
+        const effectiveHeight = height & ~1;
+
+        // Check for resolution change (using effective dimensions)
+        if (this.encoderStarted && (effectiveWidth !== this.currentWidth || effectiveHeight !== this.currentHeight)) {
           // Only restart if dimensions actually changed and are non-zero
           if (this.currentWidth !== 0 && this.currentHeight !== 0) {
-            await this.restartEncoder(width, height);
+            // log('Resolution changed', { oldW: this.currentWidth, oldH: this.currentHeight, newW: effectiveWidth, newH: effectiveHeight });
+            await this.restartEncoder(effectiveWidth, effectiveHeight);
           }
         }
 
         // Only restart encoder for resolution change if we have frames and dimensions are non-zero
         if (this.currentWidth !== 0 && this.currentHeight !== 0 && 
-            (width !== this.currentWidth || height !== this.currentHeight)) {
+            (effectiveWidth !== this.currentWidth || effectiveHeight !== this.currentHeight)) {
               
           // Only trigger restart if we are already encoding
           if (this.encoderStarted) {
-             await this.restartEncoder(width, height);
+             await this.restartEncoder(effectiveWidth, effectiveHeight);
           } else {
              // If encoder hasn't started yet, just update dimensions
-             this.currentWidth = width;
-             this.currentHeight = height;
-             this.videoInfo = { width, height };
+             this.currentWidth = effectiveWidth;
+             this.currentHeight = effectiveHeight;
+             this.videoInfo = { width: effectiveWidth, height: effectiveHeight };
           }
         }
 
         if (!this.videoInfo) {
-          this.currentWidth = width;
-          this.currentHeight = height;
-          this.videoInfo = { width, height };
+          this.currentWidth = effectiveWidth;
+          this.currentHeight = effectiveHeight;
+          this.videoInfo = { width: effectiveWidth, height: effectiveHeight };
           // Only start if FPS detection is also complete
           if (this.fpsDetected) {
             this.checkSyncAndStart();
@@ -354,25 +359,57 @@ class PumpfunRecorder {
         }
 
         // Check for stride mismatch and copy row-by-row if needed
-        const extractPlane = (plane, w, h) => {
-             const stride = plane.stride || w; 
-             if (stride === w) {
-                 return Buffer.from(plane.buffer, plane.byteOffset, plane.byteLength);
+        // We now extract based on EFFECTIVE width/height (even dimensions)
+        // This effectively crops 1 pixel if original was odd.
+        
+        const yStride = width;
+        const uvStride = (width + 1) >> 1;
+
+        const extractPlane = (plane, w, h, originalStride) => {
+             let stride = plane.stride || originalStride || w;
+             
+             // Heuristic: Check if the buffer actually has enough data for the reported stride.
+             // If not, and the stride is larger than width, it's likely a packed buffer with an aligned stride reported.
+             // We use plane.byteLength if available, otherwise calculate from buffer.
+             const availableBytes = plane.byteLength !== undefined ? plane.byteLength : (plane.buffer.byteLength - plane.byteOffset);
+             const requiredBytes = stride * h;
+
+             if (requiredBytes > availableBytes && stride > w) {
+                 // Stride is too large for the buffer. Fallback to packed.
+                 // log('Detected invalid stride, falling back to packed', { reportedStride: stride, w, originalStride, availableBytes, requiredBytes });
+                 stride = originalStride || w;
              }
+
+             // Debug logging for strides (once per stream ideally, but here randomized)
+             // if (Math.random() < 0.001) {
+             //    log('Plane info', { stride, w, h, byteLength: availableBytes, originalStride });
+             // }
+             
+             if (stride === w) {
+                 // Ensure we only take exactly w * h bytes. 
+                 return Buffer.from(plane.buffer, plane.byteOffset, w * h);
+             }
+             
              // If stride != width, we must copy row by row to pack the data tightly for FFmpeg rawvideo
              const tight = Buffer.allocUnsafe(w * h);
              for (let y = 0; y < h; y++) {
                  const srcStart = plane.byteOffset + (y * stride);
                  const dstStart = y * w;
+                 
+                 // Boundary check to prevent crashes if stride is still slightly off
+                 if (srcStart + w > plane.buffer.byteLength) {
+                     break;
+                 }
+
                  // Copy w bytes from source to dest
                  Buffer.from(plane.buffer, srcStart, w).copy(tight, dstStart);
              }
              return tight;
         };
 
-        const yBuffer = extractPlane(yPlane, width, height);
-        const uBuffer = extractPlane(uPlane, width / 2, height / 2);
-        const vBuffer = extractPlane(vPlane, width / 2, height / 2);
+        const yBuffer = extractPlane(yPlane, effectiveWidth, effectiveHeight, yStride);
+        const uBuffer = extractPlane(uPlane, effectiveWidth >> 1, effectiveHeight >> 1, uvStride);
+        const vBuffer = extractPlane(vPlane, effectiveWidth >> 1, effectiveHeight >> 1, uvStride);
 
         const buffer = Buffer.concat([yBuffer, uBuffer, vBuffer]);
 
@@ -502,6 +539,10 @@ class PumpfunRecorder {
       '-loglevel',
       'warning',
       '-y',
+      '-probesize', // Add probesize
+      '100M',
+      '-analyzeduration', // Add analyzeduration
+      '100M',
       '-f',
       's16le',
       '-ac',
@@ -595,6 +636,9 @@ class PumpfunRecorder {
         // 3. Start new encoder
         // Logic of startEncoderIfReady will start it and flush any pending buffers accumulated during stop
         await this.startEncoderIfReady();
+        
+        // 4. Log resolution change
+        log('Resolution changed', { width, height });
         
     } catch (e) {
         console.error('Failed to restart encoder', e);
