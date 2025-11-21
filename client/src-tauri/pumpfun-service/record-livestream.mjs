@@ -31,6 +31,9 @@ const segmentMinutes = Math.max(parseInt(segmentMinutesArg || '5', 10), 1);
 const segmentDurationSeconds = segmentMinutes * 60;
 const outputDir = path.resolve(outputDirArg);
 
+// Sync Offset: Positive = Fixes "Audio Ahead" (Drops Video). Negative = Fixes "Video Ahead" (Drops Audio).
+const AV_SYNC_OFFSET_MS = 700;
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -326,11 +329,28 @@ class PumpfunRecorder {
           continue;
         }
 
-        const buffer = Buffer.concat([
-          Buffer.from(yPlane.buffer, yPlane.byteOffset, yPlane.byteLength),
-          Buffer.from(uPlane.buffer, uPlane.byteOffset, uPlane.byteLength),
-          Buffer.from(vPlane.buffer, vPlane.byteOffset, vPlane.byteLength),
-        ]);
+        // Check for stride mismatch and copy row-by-row if needed
+        const extractPlane = (plane, w, h) => {
+             const stride = plane.stride || w; 
+             if (stride === w) {
+                 return Buffer.from(plane.buffer, plane.byteOffset, plane.byteLength);
+             }
+             // If stride != width, we must copy row by row to pack the data tightly for FFmpeg rawvideo
+             const tight = Buffer.allocUnsafe(w * h);
+             for (let y = 0; y < h; y++) {
+                 const srcStart = plane.byteOffset + (y * stride);
+                 const dstStart = y * w;
+                 // Copy w bytes from source to dest
+                 Buffer.from(plane.buffer, srcStart, w).copy(tight, dstStart);
+             }
+             return tight;
+        };
+
+        const yBuffer = extractPlane(yPlane, width, height);
+        const uBuffer = extractPlane(uPlane, width / 2, height / 2);
+        const vBuffer = extractPlane(vPlane, width / 2, height / 2);
+
+        const buffer = Buffer.concat([yBuffer, uBuffer, vBuffer]);
 
         await this.writeVideo(buffer);
       }
@@ -398,27 +418,44 @@ class PumpfunRecorder {
     
     // Video: Frame rate is this.videoFps. Each frame is 1000/FPS ms.
     
-    if (this.syncStartTime) {
-        // Align Audio
-        if (this.firstAudioTime < this.syncStartTime) {
-            const diffMs = this.syncStartTime - this.firstAudioTime;
-            const chunksToDrop = Math.floor(diffMs / 20); // Approx 20ms per chunk
-            if (chunksToDrop > 0 && chunksToDrop < pendingAudio.length) {
+    // Note: We previously dropped audio/video based on arrival time difference to sync them.
+    // However, testing showed this caused "Audio Ahead" issues (audio playing before video action).
+    // This implies that the delay in 'firstVideoTime' was primarily network latency/buffering 
+    // and not a content timestamp offset. By dropping audio, we were shifting audio "future" 
+    // to match "past" video arrival, causing the desync.
+    // We now write all captured data. FFmpeg will mux them starting from t=0.
+    // Since we start capturing both tracks at subscription time, they should be roughly aligned 
+    // by content, even if one arrives later than the other.
+    
+    // UPDATE: User reports video corruption when syncing logic was enabled.
+    // This is likely because we were dropping P-frames or B-frames without dropping the preceding I-frame,
+    // causing the decoder to glitch until the next I-frame.
+    // We will remove the syncing logic (dropping frames) but keep the manual offset capability 
+    // in case we need to implement a safer offset mechanism (e.g. dropping only audio, or full GOPs).
+    
+    // For now, we will just flush all pending data. The AV_SYNC_OFFSET_MS constant remains but is currently unused
+    // to prevent video corruption. If we need to shift audio, we should do it by dropping audio packets only.
+    
+    if (this.syncStartTime && AV_SYNC_OFFSET_MS !== 0) {
+         const offset = AV_SYNC_OFFSET_MS;
+         
+         // If offset is positive (Audio Ahead), we want to delay Audio (or drop Video).
+         // But dropping video frames corrupted the stream.
+         // So we should only try to adjust AUDIO if possible.
+         
+         // If offset is NEGATIVE (Video Ahead), we drop Audio. This is safe.
+         if (offset < 0) {
+             // Drop initial audio corresponding to 'offset' ms
+             const chunksToDrop = Math.floor(Math.abs(offset) / 20);
+             if (chunksToDrop > 0 && chunksToDrop < pendingAudio.length) {
                 pendingAudio.splice(0, chunksToDrop);
-                // log(`Dropped ${chunksToDrop} audio chunks for sync`);
-            }
-        }
-        
-        // Align Video
-        if (this.firstVideoTime < this.syncStartTime) {
-            const diffMs = this.syncStartTime - this.firstVideoTime;
-            const frameDurationMs = 1000 / this.videoFps;
-            const framesToDrop = Math.floor(diffMs / frameDurationMs);
-            if (framesToDrop > 0 && framesToDrop < pendingVideo.length) {
-                pendingVideo.splice(0, framesToDrop);
-                // log(`Dropped ${framesToDrop} video frames for sync`);
-            }
-        }
+             }
+         }
+         
+         // If offset is POSITIVE (Audio Ahead), we technically need to drop Video or insert silent Audio.
+         // Dropping video corrupted it.
+         // Inserting silent audio is complex with raw buffers.
+         // We will SKIP video dropping for now to fix the corruption.
     }
     
     for (const chunk of pendingAudio) {
