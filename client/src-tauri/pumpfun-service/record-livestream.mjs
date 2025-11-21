@@ -32,14 +32,14 @@ const segmentDurationSeconds = segmentMinutes * 60;
 const outputDir = path.resolve(outputDirArg);
 
 // Sync Offset: Positive = Fixes "Audio Ahead" (Drops Video). Negative = Fixes "Video Ahead" (Drops Audio).
-const AV_SYNC_OFFSET_MS = 800;
+const AV_SYNC_OFFSET_MS = 1000;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const FFMPEG_BINARIES = {
   win32: 'ffmpeg-x86_64-pc-windows-msvc.exe',
-  darwin: 'ffmpeg-x86_64-apple-darwin',
+  darwin: process.arch === 'arm64' ? 'ffmpeg-aarch64-apple-darwin' : 'ffmpeg-x86_64-apple-darwin',
   linux: 'ffmpeg-x86_64-unknown-linux-gnu',
 };
 
@@ -50,9 +50,33 @@ function resolveFfmpegBinary() {
 
   const binName = FFMPEG_BINARIES[process.platform];
   if (binName) {
-    const candidate = path.resolve(__dirname, '../binaries', binName);
-    if (fs.existsSync(candidate)) {
-      return candidate;
+    const candidates = [
+      // 1. Dev structure: ../binaries/<binName>
+      path.resolve(__dirname, '../binaries', binName),
+      // 2. Production structure (sidecar next to executable): ../<binName>
+      path.resolve(__dirname, '..', binName),
+      // 3. Just in case it's in the same folder
+      path.resolve(__dirname, binName)
+    ];
+
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+    
+    // Fallback for macOS: If arm64 binary missing, try x86_64 (Rosetta)
+    if (process.platform === 'darwin' && process.arch === 'arm64') {
+       const x86Name = 'ffmpeg-x86_64-apple-darwin';
+       const x86Candidates = [
+          path.resolve(__dirname, '../binaries', x86Name),
+          path.resolve(__dirname, '..', x86Name)
+       ];
+       for (const candidate of x86Candidates) {
+          if (fs.existsSync(candidate)) {
+            return candidate;
+          }
+       }
     }
   }
 

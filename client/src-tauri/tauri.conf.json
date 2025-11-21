@@ -49,10 +49,12 @@
     ],
     "resources": [
       "binaries/ffmpeg*",
-      "fonts/*"
+      "fonts/*",
+      "pumpfun-service/**/*"
     ],
     "externalBin": [
-      "binaries/ffmpeg"
+      "binaries/ffmpeg",
+      "binaries/node"
     ],
     "windows": {
       "wix": {

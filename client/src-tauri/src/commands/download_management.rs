@@ -1,5 +1,5 @@
 use std::fs;
-use crate::downloads::{ACTIVE_DOWNLOADS, DOWNLOAD_METADATA};
+use crate::downloads::{ACTIVE_DOWNLOADS, ACTIVE_FFMPEG_PROCESSES, DOWNLOAD_METADATA};
 use crate::storage;
 
 /// Cancels all active downloads and cleans up partial files
@@ -15,6 +15,16 @@ use crate::storage;
 pub async fn cancel_all_downloads() -> Result<Vec<String>, String> {
     let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
     let download_ids: Vec<String> = downloads.keys().cloned().collect();
+
+    // Kill all active processes first
+    let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
+    // We need to drain the processes to own them so we can call kill() which consumes self
+    for (download_id, child) in processes.drain() {
+        println!("[Rust] Killing active process for download: {}", download_id);
+        if let Err(e) = child.kill() {
+            eprintln!("[Rust] Failed to kill process for {}: {}", download_id, e);
+        }
+    }
 
     // Get storage paths to clean up partial files
     let paths = match storage::init_storage_dirs() {
@@ -81,57 +91,20 @@ pub async fn cancel_all_downloads() -> Result<Vec<String>, String> {
 pub async fn cancel_download(download_id: String) -> Result<bool, String> {
     println!("[Rust] Canceling download: {}", download_id);
 
-    // Since we only allow 1 concurrent download, we can safely kill all FFmpeg processes
-    // This is much more reliable than trying to track individual processes
-    #[allow(unused_assignments)]
+    // Attempt to kill specific child process via Tauri sidecar handle
     let mut ffmpeg_killed = false;
-    #[cfg(target_os = "windows")]
     {
-        use std::process::Command;
-
-        println!("[Rust] Terminating FFmpeg processes (1 concurrent download limit)");
-
-        match Command::new("taskkill")
-            .args(["/F", "/IM", "ffmpeg.exe"])
-            .output()
-        {
-            Ok(output) => {
-                if output.status.success() {
-                    println!("[Rust] Successfully terminated FFmpeg processes");
+        let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
+        if let Some(child) = processes.remove(&download_id) {
+            println!("[Rust] Found active sidecar process for download {}, killing it...", download_id);
+            // CommandChild::kill consumes self, so we don't need to dereference
+            match child.kill() {
+                Ok(_) => {
+                    println!("[Rust] Successfully killed active sidecar process");
                     ffmpeg_killed = true;
-                } else {
-                    println!("[Rust] No FFmpeg processes were running");
-                    ffmpeg_killed = false;
-                }
+                },
+                Err(e) => println!("[Rust] Failed to kill sidecar process: {}", e),
             }
-            Err(e) => {
-                println!("[Rust] Failed to terminate FFmpeg processes: {}", e);
-                ffmpeg_killed = false;
-            },
-        }
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        use std::process::Command;
-
-        match Command::new("pkill")
-            .args(["-f", "ffmpeg"])
-            .output()
-        {
-            Ok(output) => {
-                if output.status.success() {
-                    println!("[Rust] Successfully terminated FFmpeg processes");
-                    ffmpeg_killed = true;
-                } else {
-                    println!("[Rust] No FFmpeg processes were running");
-                    ffmpeg_killed = false;
-                }
-            }
-            Err(e) => {
-                println!("[Rust] Failed to terminate FFmpeg processes: {}", e);
-                ffmpeg_killed = false;
-            },
         }
     }
 
@@ -172,15 +145,15 @@ pub async fn cancel_download(download_id: String) -> Result<bool, String> {
 
     // Consider cancellation successful if:
     // 1. The download was active in our tracking, OR
-    // 2. We successfully killed FFmpeg processes (indicates cancellation worked)
+    // 2. We successfully killed an FFmpeg process
     let cancellation_successful = was_active || ffmpeg_killed;
 
     if was_active {
         println!("[Rust] Successfully cancelled download: {}", download_id);
     } else if ffmpeg_killed {
-        println!("[Rust] Download was not active in tracking, but FFmpeg was killed - cancellation successful: {}", download_id);
+        println!("[Rust] Download was not active in tracking, but process was killed - cancellation successful: {}", download_id);
     } else {
-        println!("[Rust] Cancellation attempt failed - download not active and no FFmpeg processes killed: {}", download_id);
+        println!("[Rust] Cancellation attempt failed - download not active and no process killed: {}", download_id);
     }
 
     Ok(cancellation_successful)

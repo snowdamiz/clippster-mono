@@ -1,20 +1,19 @@
 use std::{
     collections::HashMap,
-    path::{PathBuf},
-    process::Command as StdCommand,
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use tokio::{
-    io::{AsyncBufReadExt, BufReader},
-    process::Command as TokioCommand,
+    io::AsyncBufReadExt,
     sync::oneshot,
 };
 
+use tauri::{Emitter, Manager};
+use tauri_plugin_shell::ShellExt;
 use crate::storage;
-use tauri::Emitter;
 
 #[derive(Debug, Deserialize)]
 struct RecorderEvent {
@@ -72,46 +71,56 @@ static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
         .expect("Failed to build reqwest client")
 });
 
-fn resolve_service_script(script_name: &str) -> Result<PathBuf, String> {
+fn resolve_service_script(app: &tauri::AppHandle, script_name: &str) -> Result<String, String> {
+    use tauri::path::BaseDirectory;
+    
+    // Try resolving via Tauri resource API first (Production & Correct Dev)
+    if let Ok(path) = app.path().resolve(format!("pumpfun-service/{}", script_name), BaseDirectory::Resource) {
+        if path.exists() {
+            return Ok(path.to_string_lossy().to_string());
+        }
+    }
+
+    // Fallback: Try locating relative to executable (Old Dev Logic)
     let exe_path = std::env::current_exe()
         .map_err(|e| format!("Failed to get executable path: {}", e))?;
-
+    
     let exe_dir = exe_path
         .parent()
         .ok_or("Failed to get parent directory")?;
 
-    let dev_script_path = exe_dir
-        .parent()
-        .and_then(|p| p.parent())
-        .map(|p| p.join("pumpfun-service").join(script_name));
+    // Try various dev paths
+    let candidate_paths = vec![
+        exe_dir.join("pumpfun-service").join(script_name),
+        exe_dir.parent().and_then(|p| p.parent()).map(|p| p.join("pumpfun-service").join(script_name)).unwrap_or(PathBuf::from("")),
+        PathBuf::from("pumpfun-service").join(script_name),
+    ];
 
-    let current_dir_path = exe_dir.join("pumpfun-service").join(script_name);
-    let prod_script_path = exe_dir.join("pumpfun-service").join(script_name);
-
-    if let Some(path) = dev_script_path {
-        if path.exists() {
-            return Ok(path);
+    for path in candidate_paths {
+        if path.exists() && path.file_name().is_some() {
+            return Ok(path.to_string_lossy().to_string());
         }
     }
 
-    if current_dir_path.exists() {
-        return Ok(current_dir_path);
-    }
-
-    Ok(prod_script_path)
+    Err(format!("Could not find service script: {}", script_name))
 }
 
 #[tauri::command]
-pub async fn get_pumpfun_clips(mint_id: String, limit: Option<u32>) -> Result<String, String> {
+pub async fn get_pumpfun_clips(app: tauri::AppHandle, mint_id: String, limit: Option<u32>) -> Result<String, String> {
     let limit_str = limit.unwrap_or(20).to_string();
-    let script_path = resolve_service_script("fetch-clips.mjs")?;
+    let script_path = resolve_service_script(&app, "fetch-clips.mjs")?;
 
-    let output = StdCommand::new("node")
-        .arg(script_path)
-        .arg(&mint_id)
-        .arg(&limit_str)
+    let output = app.shell()
+        .sidecar("node")
+        .map_err(|e| format!("Failed to create node sidecar: {}. Make sure Node.js is installed or bundled.", e))?
+        .args([
+            &script_path,
+            &mint_id,
+            &limit_str
+        ])
         .output()
-        .map_err(|e| format!("Failed to execute Node.js script: {}. Make sure Node.js is installed.", e))?;
+        .await
+        .map_err(|e| format!("Failed to execute Node.js script: {}", e))?;
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -168,7 +177,7 @@ pub async fn start_livestream_recording(
     std::fs::create_dir_all(&output_dir)
         .map_err(|e| format!("Failed to create output directory: {}", e))?;
 
-    let script_path = resolve_service_script("record-livestream.mjs")?;
+    let script_path = resolve_service_script(&app, "record-livestream.mjs")?;
     let output_str = output_dir
         .to_str()
         .ok_or("Invalid output directory path")?
@@ -224,61 +233,74 @@ pub async fn stop_livestream_recording(mint_id: String) -> Result<(), String> {
 
 async fn run_recorder_process(
     app: tauri::AppHandle,
-    script_path: PathBuf,
+    script_path: String,
     mint_id: String,
     streamer_id: String,
     session_id: String,
     output_dir: String,
     mut stop_rx: oneshot::Receiver<()>,
 ) -> Result<(), String> {
-    let mut child = TokioCommand::new("node")
-        .arg(&script_path)
-        .arg(&mint_id)
-        .arg(&session_id)
-        .arg(&output_dir)
-        .arg("5")
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+    use tauri_plugin_shell::process::CommandEvent;
+
+    // Spawn Node sidecar
+    let (mut rx, child) = app.shell()
+        .sidecar("node")
+        .map_err(|e| format!("Failed to create node sidecar: {}", e))?
+        .args([
+            &script_path,
+            &mint_id,
+            &session_id,
+            &output_dir,
+            "5" // segment duration in minutes
+        ])
         .spawn()
-        .map_err(|e| format!("Failed to spawn recorder: {}", e))?;
+        .map_err(|e| format!("Failed to spawn recorder sidecar: {}", e))?;
 
-    if let Some(stderr) = child.stderr.take() {
-        tokio::spawn(async move {
-            let mut reader = BufReader::new(stderr).lines();
-            while let Ok(Some(line)) = reader.next_line().await {
-                eprintln!("[Recorder stderr] {}", line);
-            }
-        });
-    }
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or("Failed to capture recorder stdout")?;
-    let mut reader = BufReader::new(stdout).lines();
+    println!("[Recorder] Started Node sidecar with PID: {:?}", child.pid());
 
     loop {
         tokio::select! {
-            line = reader.next_line() => {
-                match line {
-                    Ok(Some(content)) => handle_recorder_line(&app, &mint_id, &streamer_id, &session_id, content),
-                    Ok(None) => break,
-                    Err(err) => {
-                        eprintln!("[Recorder] Failed to read stdout: {}", err);
+            // Handle sidecar events (stdout/stderr)
+            event = rx.recv() => {
+                match event {
+                    Some(CommandEvent::Stdout(line_bytes)) => {
+                        let line = String::from_utf8_lossy(&line_bytes).to_string();
+                        // Handle partial lines if needed, but for now assume line-buffered or JSON chunks
+                        // The recorder script uses console.log(JSON.stringify(...)) which is newline delimited
+                        for chunk in line.split('\n') {
+                            if !chunk.trim().is_empty() {
+                                handle_recorder_line(&app, &mint_id, &streamer_id, &session_id, chunk.to_string());
+                            }
+                        }
+                    }
+                    Some(CommandEvent::Stderr(line_bytes)) => {
+                        let line = String::from_utf8_lossy(&line_bytes);
+                        eprintln!("[Recorder stderr] {}", line);
+                    }
+                    Some(CommandEvent::Terminated(payload)) => {
+                        println!("[Recorder] Process terminated with code: {:?}", payload.code);
                         break;
                     }
+                    Some(CommandEvent::Error(err)) => {
+                        eprintln!("[Recorder] Process error: {}", err);
+                    }
+                    None => {
+                        println!("[Recorder] Event channel closed");
+                        break;
+                    }
+                    _ => {}
                 }
             }
+            // Handle stop signal
             _ = &mut stop_rx => {
-                if let Err(err) = child.start_kill() {
-                    eprintln!("[Recorder] Failed to stop child: {}", err);
+                println!("[Recorder] Stop signal received, killing process...");
+                if let Err(err) = child.kill() {
+                    eprintln!("[Recorder] Failed to kill child: {}", err);
                 }
                 break;
             }
         }
     }
-
-    let _ = child.wait().await;
 
     Ok(())
 }

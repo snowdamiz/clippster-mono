@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
-use std::process::Stdio;
 use tauri::Emitter;
 use once_cell::sync::Lazy;
 
@@ -42,7 +41,10 @@ pub struct DownloadMetadata {
     pub process_id: Option<u32>,
 }
 
+use tauri_plugin_shell::process::CommandChild;
+
 pub static ACTIVE_DOWNLOADS: Lazy<Arc<Mutex<HashMap<String, bool>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+pub static ACTIVE_FFMPEG_PROCESSES: Lazy<Arc<Mutex<HashMap<String, CommandChild>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 pub static DOWNLOAD_METADATA: Lazy<Arc<Mutex<HashMap<String, DownloadMetadata>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 // Helper function to format time for filename
@@ -189,7 +191,7 @@ pub async fn download_pumpfun_vod_segment(
         println!("[Rust] Spawning FFmpeg sidecar for segment with real-time progress...");
 
         let cmd = shell.sidecar("ffmpeg").map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?;
-        let (mut rx, _) = cmd.args([
+        let (mut rx, child) = cmd.args([
             "-ss", &format!("{:.3}", start_time),  // Seek before input (efficient)
             "-i", &video_url,
             "-t", &format!("{:.3}", segment_duration),  // Duration
@@ -203,6 +205,12 @@ pub async fn download_pumpfun_vod_segment(
             "-y",
             video_path.to_str().ok_or("Invalid video path")?,
         ]).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
+
+        // Store process handle for cancellation
+        {
+            let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
+            processes.insert(download_id_clone.clone(), child);
+        }
 
         let result = tokio::spawn(async move {
             let total_duration = total_segment_duration;
@@ -629,7 +637,7 @@ pub async fn download_pumpfun_vod(
         println!("[Rust] Spawning FFmpeg sidecar with real-time progress...");
 
         let cmd = shell.sidecar("ffmpeg").map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?;
-        let (mut rx, _) = cmd.args([
+        let (mut rx, child) = cmd.args([
             "-i", &video_url,
             "-c:v", "copy",
             "-c:a", "aac",
@@ -640,6 +648,12 @@ pub async fn download_pumpfun_vod(
             "-y",
             video_path.to_str().ok_or("Invalid video path")?,
         ]).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
+
+        // Store process handle for cancellation
+        {
+            let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
+            processes.insert(download_id_clone.clone(), child);
+        }
 
         let result = tokio::spawn(async move {
             let total_duration = duration_for_progress.unwrap_or(600.0);
