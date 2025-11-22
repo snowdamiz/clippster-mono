@@ -178,8 +178,7 @@ class PumpfunRecorder {
     this.isWritingAudio = false;
     this.isWritingVideo = false;
     
-    this.audioStartTime = null;
-    this.videoStartTime = null;
+    this.referenceTime = null; // Master Start Time (Max of first arrivals)
     this.audioSamplesWritten = 0;
     this.videoFramesWritten = 0;
     this.lastVideoBuffer = null;
@@ -286,8 +285,6 @@ class PumpfunRecorder {
 
         if (!this.firstAudioTime) {
             this.firstAudioTime = arrivalTime;
-            // Independent Start Time
-            this.audioStartTime = arrivalTime;
             this.checkSyncAndStart();
         }
 
@@ -338,8 +335,6 @@ class PumpfunRecorder {
         
         if (!this.firstVideoTime) {
             this.firstVideoTime = arrivalTime;
-            // Independent Start Time
-            this.videoStartTime = arrivalTime;
         }
 
         const converted = frame.convert(VideoBufferType.I420);
@@ -464,6 +459,16 @@ class PumpfunRecorder {
         return;
     }
     
+    if (!this.referenceTime) {
+        // Trim Head Strategy: Start at the LATEST of the two arrival times.
+        // This discards the "tail" of the faster starting stream to ensure precise alignment at T=0.
+        this.referenceTime = Math.max(this.firstAudioTime, this.firstVideoTime);
+        
+        // Reset counters for the new file
+        this.audioSamplesWritten = 0;
+        this.videoFramesWritten = 0;
+    }
+
     this.audioReady = true;
     this.videoReady = true;
     await this.startEncoderIfReady();
@@ -604,6 +609,16 @@ class PumpfunRecorder {
         // Clear last video buffer to prevent resolution mismatch on next write
         this.lastVideoBuffer = null;
         
+        // Reset Timeline state for the new file/segment
+        this.referenceTime = null; // Will be re-set on next packet arrival
+        this.audioSamplesWritten = 0;
+        this.videoFramesWritten = 0;
+        this.firstAudioTime = null; // Force re-sync
+        this.firstVideoTime = null; // Force re-sync
+        this.fpsDetected = false;   // Re-detect FPS? Maybe keep it. 
+        // Actually, if we reset firstAudioTime, checkSyncAndStart will wait again.
+        // This is safer to align the new segment.
+        
         if (!this.running) return; // Double check in case stop() was called while awaiting above
         
         // 2. Update dimensions
@@ -613,7 +628,10 @@ class PumpfunRecorder {
         
         // 3. Start new encoder
         // Logic of startEncoderIfReady will start it and flush any pending buffers accumulated during stop
-        await this.startEncoderIfReady();
+        // But we need to make sure checkSyncAndStart is called again since we reset variables.
+        
+        // We don't call startEncoderIfReady here directly because we want checkSyncAndStart to handle the refTime.
+        // The next incoming packet loop will trigger checkSyncAndStart.
         
         // 4. Log resolution change
         log('Resolution changed', { width, height });
@@ -762,27 +780,33 @@ class PumpfunRecorder {
       return;
     }
 
-    // Independent Start logic
-    if (arrivalTime > 0 && this.audioStartTime !== null) {
-        const elapsedMs = arrivalTime - this.audioStartTime;
+    // Filter out packets that are older than our reference start time
+    if (arrivalTime < this.referenceTime) {
+        return;
+    }
+
+    // Audio Drift Correction (Silence Injection)
+    if (arrivalTime > 0 && this.referenceTime !== null) {
+        const elapsedMs = arrivalTime - this.referenceTime;
         const elapsedSec = elapsedMs / 1000;
         
         const sampleRate = 48000;
         const channels = 2;
         const bytesPerSample = 2;
-        const bytesPerFrame = channels * bytesPerSample;
+        const bytesPerFrame = channels * bytesPerSample; // 4 bytes
         
         const targetSamples = Math.floor(elapsedSec * sampleRate);
         const gapSamples = targetSamples - this.audioSamplesWritten;
 
-        // Threshold ~20ms
-        if (gapSamples > 1000) {
-             const maxSilence = 48000; // Max 1s silence
+        // Threshold ~20ms (approx 1000 samples @ 48k)
+        if (gapSamples > 960) {
+             const maxSilence = 48000; // Max 1s silence per chunk
              const fillSamples = Math.min(gapSamples, maxSilence);
              const silenceBytes = fillSamples * bytesPerFrame;
              
              if (silenceBytes > 0) {
                  try {
+                    // Allocate zero-filled buffer
                     const silence = Buffer.alloc(silenceBytes);
                     if (!this.audioPipe.write(silence)) {
                         await once(this.audioPipe, 'drain');
@@ -791,6 +815,7 @@ class PumpfunRecorder {
                  } catch(e) { }
              }
              
+             // Prevent runaway filling on massive gaps
              if (gapSamples > maxSilence) {
                  this.audioSamplesWritten = targetSamples;
              }
@@ -826,21 +851,28 @@ class PumpfunRecorder {
       return;
     }
 
-    // Independent Start logic
-    if (arrivalTime > 0 && this.videoStartTime !== null && this.videoFps > 0) {
-        const elapsedMs = arrivalTime - this.videoStartTime;
+    // Filter out packets that are older than our reference start time
+    if (arrivalTime < this.referenceTime) {
+        return;
+    }
+
+    // Video VFR -> CFR Gap Filling
+    if (arrivalTime > 0 && this.referenceTime !== null && this.videoFps > 0) {
+        const elapsedMs = arrivalTime - this.referenceTime;
         const elapsedSec = elapsedMs / 1000;
         
         const targetFrames = Math.floor(elapsedSec * this.videoFps);
         const gapFrames = targetFrames - this.videoFramesWritten;
         
         if (gapFrames > 0) {
-            const maxFill = this.videoFps; // Max 1s
+            const maxFill = this.videoFps; // Max 1s gap fill
             const fillCount = Math.min(gapFrames, maxFill);
-            const fillBuffer = this.lastVideoBuffer; // Only use last buffer if exists
             
-            // IMPORTANT: Check resolution match before duping!
-            // This prevents artifacting during resolution switches
+            // Use last buffer for duplication
+            const fillBuffer = this.lastVideoBuffer; 
+            
+            // SAFEGUARD: Only duplicate if we have a buffer AND it matches current resolution
+            // This prevents the green/purple artifacting from resolution mismatch
             if (fillBuffer && fillBuffer.length === buffer.length) {
                 for (let i = 0; i < fillCount; i++) {
                     try {
@@ -854,6 +886,7 @@ class PumpfunRecorder {
                 }
             }
             
+            // If gap was massive (e.g. paused stream), jump counter to avoid endless loop
             if (gapFrames > maxFill) {
                 this.videoFramesWritten = targetFrames;
             }
