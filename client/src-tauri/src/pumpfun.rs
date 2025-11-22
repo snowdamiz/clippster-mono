@@ -52,6 +52,15 @@ struct StreamEndedPayload {
     mint_id: String,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecorderExitPayload {
+    streamer_id: String,
+    session_id: String,
+    mint_id: String,
+    code: Option<i32>,
+}
+
 #[derive(Debug)]
 struct RecordingEntry {
     stop_tx: Option<oneshot::Sender<()>>,
@@ -300,6 +309,14 @@ async fn run_recorder_process(
                     }
                     Some(CommandEvent::Terminated(payload)) => {
                         println!("[Recorder] Process terminated with code: {:?}", payload.code);
+                        // Emit exit event for frontend cleanup
+                        let exit_payload = RecorderExitPayload {
+                            streamer_id: streamer_id.to_string(),
+                            session_id: session_id.to_string(),
+                            mint_id: mint_id.to_string(),
+                            code: payload.code,
+                        };
+                        let _ = app.emit("recorder-exit", exit_payload);
                         break;
                     }
                     Some(CommandEvent::Error(err)) => {

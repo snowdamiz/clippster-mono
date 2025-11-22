@@ -40,6 +40,7 @@ export interface LiveSession {
   platform: SupportedLivestreamPlatform;
   profileImageUrl?: string;
   detectClips?: boolean;
+  isStopping?: boolean;
 }
 
 export interface SegmentEventPayload {

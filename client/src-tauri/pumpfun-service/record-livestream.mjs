@@ -172,6 +172,9 @@ class PumpfunRecorder {
     this.syncStartTime = null;
     this.syncedAudio = false;
     this.syncedVideo = false;
+    
+    this.isWritingAudio = false;
+    this.isWritingVideo = false;
   }
 
   async start() {
@@ -705,8 +708,9 @@ class PumpfunRecorder {
              continue;
           }
           const stats = await fs.promises.stat(fullPath);
-          if (stats.size === 0) {
-             // log('Segment file empty', { fullPath });
+          // Ignore segments smaller than 50KB (likely partial/empty or missing audio)
+          if (stats.size < 50 * 1024) {
+             // log('Segment file too small', { fullPath, size: stats.size });
              continue;
           }
         } catch (e) {
@@ -736,7 +740,8 @@ class PumpfunRecorder {
           if (!this.processedSegments.has(potentialLastSegmentPath) && fs.existsSync(potentialLastSegmentPath)) {
              try {
                const stats = await fs.promises.stat(potentialLastSegmentPath);
-               if (stats.size > 0) {
+               // Ignore segments smaller than 50KB (likely partial/empty or missing audio)
+               if (stats.size > 50 * 1024) {
                    this.processedSegments.add(potentialLastSegmentPath);
                    this.emitEvent({
                       type: 'segment_complete',
@@ -775,6 +780,7 @@ class PumpfunRecorder {
       return;
     }
 
+    this.isWritingAudio = true;
     try {
         if (!this.audioPipe.write(buffer)) {
           await once(this.audioPipe, 'drain');
@@ -786,6 +792,8 @@ class PumpfunRecorder {
         if (this.restarting) {
             this.pendingAudio.push(buffer);
         }
+    } finally {
+        this.isWritingAudio = false;
     }
   }
 
@@ -802,6 +810,7 @@ class PumpfunRecorder {
       return;
     }
 
+    this.isWritingVideo = true;
     try {
         // Extra safety check before write
         if (this.videoPipe && !this.videoPipe.destroyed && (flushing || this.running)) {
@@ -813,6 +822,8 @@ class PumpfunRecorder {
         if (this.restarting) {
             this.pendingVideo.push(buffer);
         }
+    } finally {
+        this.isWritingVideo = false;
     }
   }
   
@@ -820,6 +831,12 @@ class PumpfunRecorder {
       if (!this.ffmpeg) return;
       
       this.encoderStarted = false;
+      
+      // Wait for pending writes to finish/drain to prevent partial packets
+      const startWait = Date.now();
+      while ((this.isWritingAudio || this.isWritingVideo) && Date.now() - startWait < 2000) {
+          await new Promise(r => setTimeout(r, 50));
+      }
       
       // Immediately mark pipes as unusable to prevent writes
       const vPipe = this.videoPipe;
@@ -853,13 +870,13 @@ class PumpfunRecorder {
         }
 
 
-        // Wait up to 12 seconds for clean exit (increased to allow final segment flush)
-        // If it doesn't exit in 2 seconds, try SIGINT to encourage it.
+        // Wait up to 25 seconds for clean exit (increased to allow final segment flush + faststart)
+        // If it doesn't exit in 15 seconds, try SIGINT to encourage it.
         
-        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 12000));
+        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 25000));
         
         // Race against timeout
-        let result = await Promise.race([exitPromise, new Promise(resolve => setTimeout(() => resolve('soft-timeout'), 2000))]);
+        let result = await Promise.race([exitPromise, new Promise(resolve => setTimeout(() => resolve('soft-timeout'), 15000))]);
         
         if (result === 'soft-timeout') {
              log('ffmpeg did not exit quickly, sending SIGINT');
@@ -894,26 +911,9 @@ class PumpfunRecorder {
       this.playlistPoller = null;
     }
 
-    // Stop encoder first to ensure video is saved
-    log('Stopping encoder...');
-    await this.stopEncoderInternal();
-    log('Encoder stopped.');
-
-    if (this.segmentWatcher) {
-      this.segmentWatcher.close();
-      this.segmentWatcher = null;
-    }
-
-    // Check playlist for last segment
-    log('Checking playlist...');
-    this.checkingPlaylist = false; 
-    await this.checkPlaylist();
-    log('Playlist checked.');
-
-    // Cleanup LiveKit
-    log('Disconnecting LiveKit...');
-    
-    // Do not await reader cancellations as they might hang if streams are idle
+    // 1. Stop readers (Source) first to prevent new data
+    // This prevents writing to encoder while it's closing
+    log('Cancelling readers...');
     if (this.audioReader) {
         this.audioReader.cancel().catch(e => console.error('[Recorder] Error cancelling audio reader', e));
         this.audioReader = null;
@@ -924,11 +924,33 @@ class PumpfunRecorder {
         this.videoReader = null;
     }
 
+    if (this.segmentWatcher) {
+      this.segmentWatcher.close();
+      this.segmentWatcher = null;
+    }
+
+    // 2. Stop encoder (Sink)
+    log('Stopping encoder...');
+    await this.stopEncoderInternal();
+    log('Encoder stopped.');
+
+    // 3. Check playlist for last segment
+    log('Checking playlist...');
+    this.checkingPlaylist = false; 
+    await this.checkPlaylist();
+    log('Playlist checked.');
+
+    // 4. Disconnect LiveKit
+    log('Disconnecting LiveKit...');
     if (this.room) {
       try {
-        await this.room.disconnect();
+        // Timeout disconnect to prevent hanging
+        await Promise.race([
+            this.room.disconnect(),
+            new Promise(resolve => setTimeout(resolve, 2000))
+        ]);
       } catch (error) {
-        // ignore
+        console.warn('[Recorder] Error disconnecting LiveKit', error);
       }
     }
     log('LiveKit disconnected.');
@@ -957,11 +979,11 @@ async function main() {
 
     console.log(JSON.stringify({ type: 'log', message: 'Shutting down recorder...' }));
     
-    // Force exit after 25 seconds if recorder.stop() hangs (must be less than Rust's 30s)
+    // Force exit after 28 seconds if recorder.stop() hangs (must be less than Rust's 30s)
     const forceExitTimer = setTimeout(() => {
         console.error(JSON.stringify({ type: 'log', message: 'Shutdown timed out, forcing exit' }));
         process.exit(0);
-    }, 25000);
+    }, 28000);
 
     try {
         await recorder.stop();
@@ -970,6 +992,11 @@ async function main() {
     }
     
     clearTimeout(forceExitTimer);
+    
+    // Emit a specific exit event via stdout for the Rust side to pick up if needed, 
+    // but usually process exit is enough.
+    // However, our Rust side listens for "stream_ended" which we emitted inside stop().
+    
     process.exit(0);
   };
 

@@ -1,11 +1,10 @@
-import { ref, watch } from 'vue';
+import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import {
   createLivestreamSession,
   endLivestreamSession,
   updateMonitoredStreamer,
-  getAllMonitoredStreamers,
   getMonitoredStreamer,
 } from '@/services/database';
 import type {
@@ -21,9 +20,13 @@ const POLL_INTERVAL_MS = 30_000;
 
 // Global State
 const activeSessions = ref<Map<string, LiveSession>>(new Map());
+const monitoredStreamers = ref<
+  Map<string, { streamer: MonitoredStreamer; options: { detectClips: boolean } }>
+>(new Map());
 const pollingHandle = ref<number | null>(null);
-const isMonitoring = ref(false);
-const monitoringOptions = ref<{ detectClips: boolean }>({ detectClips: true });
+// isMonitoring is true if we are actively polling any streamers
+const isMonitoring = computed(() => monitoredStreamers.value.size > 0);
+
 const activityLogs = ref<ActivityLog[]>([]);
 const segmentLogIds = new Map<number, string>();
 let listenersInitialized = false;
@@ -133,6 +136,30 @@ async function getStreamerInfo(streamerId: string): Promise<{
   };
 }
 
+async function handleStreamEnd(streamer: MonitoredStreamer) {
+  const session = activeSessions.value.get(streamer.id);
+  if (!session) return;
+
+  try {
+    await invoke('stop_livestream_recording', { mintId: streamer.mintId });
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to stop recorder on end', error);
+  }
+
+  try {
+    await endLivestreamSession(session.sessionId, Math.floor(Date.now() / 1000));
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to mark session ended', error);
+  }
+
+  await updateMonitoredStreamer(streamer.id, {
+    is_currently_live: 0,
+    current_session_id: null,
+  });
+
+  activeSessions.value.delete(streamer.id);
+}
+
 async function initializeListeners() {
   if (listenersInitialized) return;
 
@@ -192,6 +219,7 @@ async function initializeListeners() {
 
     // Process the segment
     const session = activeSessions.value.get(payload.streamerId);
+    // Use session config for detection
     const detectClips = session?.detectClips ?? true;
 
     await handleSegmentReady(payload.sessionId, payload, detectClips, (status) => {
@@ -213,7 +241,30 @@ async function initializeListeners() {
       // Capture info before deletion if possible, or use helper
       const info = await getStreamerInfo(streamerId);
 
-      activeSessions.value.delete(streamerId);
+      // When stream ends, we should probably stop monitoring it if it was monitored?
+      // Or keep monitoring for when it comes back online?
+      // Current logic: session ends, but we might still be polling if it's in monitoredStreamers.
+      // The pollStreamers loop handles "not live && sessionActive" -> handleStreamEnd
+      // So we might just let pollStreamers handle the cleanup of the session object,
+      // or do it here. Doing it here is faster for UI feedback.
+
+      // If we delete from activeSessions here, pollStreamers needs to know not to try to end it again immediately.
+      const session = activeSessions.value.get(streamerId);
+      if (session) {
+        // We let handleStreamEnd do the heavy lifting to ensure DB updates etc.
+        // But if this event comes from backend, it means the recording stopped.
+        // We can trigger handleStreamEnd manually.
+        const streamerEntry = monitoredStreamers.value.get(streamerId);
+        if (streamerEntry) {
+          await handleStreamEnd(streamerEntry.streamer);
+        } else {
+          // If not in monitored list but has active session (e.g. zombie), clean it up
+          // BUT if it is marked as stopping, we wait for recorder-exit to clean it up
+          if (!session.isStopping) {
+            activeSessions.value.delete(streamerId);
+          }
+        }
+      }
 
       addActivityLog({
         streamerId,
@@ -252,7 +303,34 @@ async function initializeListeners() {
     });
   });
 
-  unlistenFunctions.push(segmentUnlisten, streamEndedUnlisten, recorderLogUnlisten);
+  // 4. Process terminated log
+  const processExitUnlisten = await listen<{
+    streamerId: string;
+    mintId: string;
+    code: number | null;
+  }>('recorder-exit', async (event) => {
+    const { streamerId } = event.payload;
+    const session = activeSessions.value.get(streamerId);
+
+    // Only if we were stopping or monitoring this session
+    if (session) {
+      // This is the final signal that the process is dead.
+      // We can now safely remove it from activeSessions if it was stopping.
+      if (session.isStopping) {
+        activeSessions.value.delete(streamerId);
+      } else {
+        // If it exited unexpectedly (crashed), we should also clean up
+        activeSessions.value.delete(streamerId);
+      }
+    }
+  });
+
+  unlistenFunctions.push(
+    segmentUnlisten,
+    streamEndedUnlisten,
+    recorderLogUnlisten,
+    processExitUnlisten
+  );
   listenersInitialized = true;
 }
 
@@ -265,37 +343,56 @@ export function useLivestreamMonitoring() {
       return;
     }
 
-    if (pollingHandle.value) {
-      clearInterval(pollingHandle.value);
-      pollingHandle.value = null;
-    }
-
-    isMonitoring.value = true;
-    monitoringOptions.value = options;
-
     // Initialize listeners if not already done
     await initializeListeners();
 
-    await pollStreamers(streamers);
+    // Add or update streamers in the monitored set
+    for (const streamer of streamers) {
+      monitoredStreamers.value.set(streamer.id, { streamer, options });
+    }
 
-    pollingHandle.value = window.setInterval(() => {
-      pollStreamers(streamers);
-    }, POLL_INTERVAL_MS);
+    // Start polling if not running
+    if (!pollingHandle.value) {
+      await pollAllStreamers(); // Initial immediate poll
+      pollingHandle.value = window.setInterval(() => {
+        pollAllStreamers();
+      }, POLL_INTERVAL_MS);
+    } else {
+      // If already polling, just poll the new ones immediately to give fast feedback
+      await pollStreamers(streamers);
+    }
   }
 
-  async function stopMonitoring() {
-    if (pollingHandle.value) {
+  async function stopMonitoring(streamerIds?: string[]) {
+    // If no IDs provided, stop all
+    const idsToStop = streamerIds ?? Array.from(monitoredStreamers.value.keys());
+
+    // Mark sessions as stopping IMMEDIATELY before removing from monitored list
+    // This ensures UI transitions to "Stopping..." instead of "Idle"
+    for (const id of idsToStop) {
+      const session = activeSessions.value.get(id);
+      if (session) {
+        activeSessions.value.set(id, { ...session, isStopping: true });
+      }
+    }
+
+    // Remove from monitoring list
+    for (const id of idsToStop) {
+      monitoredStreamers.value.delete(id);
+    }
+
+    // If no more streamers monitored, stop polling
+    if (monitoredStreamers.value.size === 0 && pollingHandle.value) {
       clearInterval(pollingHandle.value);
       pollingHandle.value = null;
     }
 
-    isMonitoring.value = false;
-
-    const entries = Array.from(activeSessions.value.values());
-    activeSessions.value.clear();
-
+    // Stop active sessions for these streamers
     await Promise.all(
-      entries.map(async (session) => {
+      idsToStop.map(async (id) => {
+        const session = activeSessions.value.get(id);
+        if (!session) return;
+
         try {
           await invoke('stop_livestream_recording', { mintId: session.mintId });
         } catch (error) {
@@ -311,8 +408,18 @@ export function useLivestreamMonitoring() {
     );
   }
 
+  // Polls all currently monitored streamers
+  async function pollAllStreamers() {
+    const streamers = Array.from(monitoredStreamers.value.values()).map((v) => v.streamer);
+    await pollStreamers(streamers);
+  }
+
   async function pollStreamers(streamers: MonitoredStreamer[]) {
     for (const streamer of streamers) {
+      // Check if still monitored (in case it was removed while polling)
+      const config = monitoredStreamers.value.get(streamer.id);
+      if (!config) continue;
+
       const status = await fetchLiveStatus(streamer.mintId);
       await updateMonitoredStreamer(streamer.id, {
         last_check_timestamp: Math.floor(Date.now() / 1000),
@@ -322,14 +429,18 @@ export function useLivestreamMonitoring() {
       const sessionActive = activeSessions.value.has(streamer.id);
 
       if (status.isLive && !sessionActive) {
-        await handleStreamStart(streamer, status);
+        await handleStreamStart(streamer, status, config.options);
       } else if (!status.isLive && sessionActive) {
         await handleStreamEnd(streamer);
       }
     }
   }
 
-  async function handleStreamStart(streamer: MonitoredStreamer, status: LiveStatus) {
+  async function handleStreamStart(
+    streamer: MonitoredStreamer,
+    status: LiveStatus,
+    options: { detectClips: boolean }
+  ) {
     try {
       const sessionInfo = await createLivestreamSession(
         streamer.id,
@@ -357,7 +468,7 @@ export function useLivestreamMonitoring() {
         displayName: streamer.displayName,
         platform: streamer.platform,
         profileImageUrl: streamer.profileImageUrl,
-        detectClips: monitoringOptions.value.detectClips,
+        detectClips: options.detectClips,
       });
 
       // Add log
@@ -365,7 +476,7 @@ export function useLivestreamMonitoring() {
         streamerId: streamer.id,
         streamerName: streamer.displayName,
         platform: streamer.platform,
-        message: 'Monitoring started.',
+        message: `Monitoring started (${options.detectClips ? 'Auto-Detect' : 'Record Only'}).`,
         status: 'success',
         mintId: streamer.mintId,
         profileImageUrl: streamer.profileImageUrl,
@@ -394,30 +505,6 @@ export function useLivestreamMonitoring() {
     }
   }
 
-  async function handleStreamEnd(streamer: MonitoredStreamer) {
-    const session = activeSessions.value.get(streamer.id);
-    if (!session) return;
-
-    try {
-      await invoke('stop_livestream_recording', { mintId: streamer.mintId });
-    } catch (error) {
-      console.warn('[LiveMonitor] Failed to stop recorder on end', error);
-    }
-
-    try {
-      await endLivestreamSession(session.sessionId, Math.floor(Date.now() / 1000));
-    } catch (error) {
-      console.warn('[LiveMonitor] Failed to mark session ended', error);
-    }
-
-    await updateMonitoredStreamer(streamer.id, {
-      is_currently_live: 0,
-      current_session_id: null,
-    });
-
-    activeSessions.value.delete(streamer.id);
-  }
-
   function clearLogs() {
     activityLogs.value = [];
     segmentLogIds.clear();
@@ -427,6 +514,7 @@ export function useLivestreamMonitoring() {
     startMonitoring,
     stopMonitoring,
     activeSessions,
+    monitoredStreamers,
     isMonitoring,
     activityLogs,
     addActivityLog,

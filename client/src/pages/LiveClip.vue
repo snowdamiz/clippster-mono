@@ -62,10 +62,7 @@
 
     <div
       class="mx-auto pt-2 relative transition-all duration-500 ease-in-out"
-      :class="[
-        isDetectingAny && activityLogs.length > 0 ? 'max-w-7xl' : 'max-w-full',
-        selectedStreamers.length > 0 || isDetectingAny ? 'pb-32' : '',
-      ]"
+      :class="[isDetectingAny && activityLogs.length > 0 ? 'max-w-7xl' : 'max-w-full', 'pb-12']"
     >
       <div :class="{ 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start': isDetectingAny && activityLogs.length > 0 }">
         <!-- Streamers List Column -->
@@ -75,7 +72,7 @@
             class="flex items-center justify-between px-4 text-sm text-muted-foreground font-medium mb-3"
           >
             <span>Monitored Channels</span>
-            <span>{{ streamers.length }} active</span>
+            <span>{{ streamers.length }} total</span>
           </div>
 
           <div class="relative">
@@ -83,27 +80,13 @@
               <div
                 v-for="streamer in streamers"
                 :key="streamer.id"
-                class="group relative flex items-center justify-between p-3 bg-card border border-border/50 rounded-lg transition-all duration-200 cursor-pointer hover:border-primary/30 hover:bg-accent/5"
+                class="group relative flex items-center justify-between p-3 bg-card border border-border/50 rounded-lg transition-all duration-200 hover:border-primary/30 hover:bg-accent/5 shadow-sm"
                 :class="{
-                  'border-primary/30 bg-primary/3': streamer.selected,
-                  'shadow-sm': !streamer.selected,
+                  'border-green-500/30 bg-green-500/5': streamer.isDetecting,
                 }"
-                @click="toggleSelection(streamer.id)"
               >
                 <!-- Left: Identity -->
                 <div class="flex items-center gap-4 min-w-0">
-                  <!-- Checkbox (Visual) -->
-                  <div
-                    class="w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors"
-                    :class="
-                      streamer.selected
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-muted-foreground/20 group-hover:border-primary/50'
-                    "
-                  >
-                    <Check v-if="streamer.selected" class="w-3.5 h-3.5" />
-                  </div>
-
                   <!-- Icon -->
                   <div
                     class="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 overflow-hidden relative bg-muted"
@@ -136,33 +119,67 @@
                       {{ streamer.platform }}
                       <span v-if="streamer.isDetecting" class="text-green-500 flex items-center gap-1 ml-2">
                         <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                        Live Monitoring
+                        {{ getStatusLabel(streamer) }}
                       </span>
                     </span>
                   </div>
                 </div>
 
                 <!-- Right: Actions -->
-                <div class="flex items-center gap-1">
-                  <!-- Status Pill -->
-                  <div
-                    class="hidden sm:flex px-3 py-1 rounded-full text-xs font-semibold border transition-colors"
-                    :class="
-                      streamer.isDetecting
-                        ? 'bg-green-500/10 text-green-500 border-green-500/20'
-                        : 'bg-muted/50 text-muted-foreground border-transparent'
-                    "
-                  >
-                    {{ streamer.isDetecting ? 'ACTIVE' : 'IDLE' }}
-                  </div>
+                <div class="flex items-center gap-2">
+                  <!-- Controls when Idle -->
+                  <template v-if="!streamer.isDetecting">
+                    <div
+                      v-if="streamer.status === 'STOPPING'"
+                      class="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 text-amber-500 rounded-md border border-amber-500/20"
+                    >
+                      <Loader2 class="w-3.5 h-3.5 animate-spin" />
+                      <span class="text-xs font-medium">Stopping...</span>
+                    </div>
+                    <div v-else class="flex items-center bg-muted/30 rounded-lg p-1 gap-1 border border-border/50">
+                      <button
+                        @click="startStreamer(streamer, false)"
+                        class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all hover:bg-background hover:shadow-sm text-muted-foreground hover:text-foreground"
+                        title="Start Recording Only"
+                      >
+                        <Video class="w-3.5 h-3.5" />
+                        Rec
+                      </button>
+                      <div class="w-px h-4 bg-border/50"></div>
+                      <button
+                        @click="startStreamer(streamer, true)"
+                        class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all hover:bg-background hover:shadow-sm text-purple-500 hover:text-purple-600"
+                        title="Start Auto-Detect"
+                      >
+                        <Sparkles class="w-3.5 h-3.5" />
+                        Auto
+                      </button>
+                    </div>
+                  </template>
 
-                  <!-- Delete Button -->
+                  <!-- Controls when Active -->
+                  <template v-else>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      class="h-9 px-4 rounded-lg text-xs font-semibold shadow-sm opacity-90 hover:opacity-100 transition-all text-white"
+                      @click="stopStreamer(streamer)"
+                    >
+                      <Square class="w-3.5 h-3.5 mr-1.5 fill-current" />
+                      Stop
+                    </Button>
+                  </template>
+
+                  <!-- Delete Button (Only show when idle or hover) -->
+                  <div class="w-px h-8 bg-border/30 mx-1" v-if="!streamer.isDetecting"></div>
+
                   <button
+                    v-if="!streamer.isDetecting"
                     @click.stop="removeStreamer(streamer.id)"
-                    class="p-2.5 rounded-xl text-muted-foreground hover:text-destructive transition-colors"
+                    class="p-2 rounded-lg text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors"
                     title="Remove streamer"
                   >
-                    <Trash2 class="w-5 h-5" />
+                    <Trash2 class="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -271,60 +288,6 @@
           </div>
         </DialogContent>
       </Dialog>
-
-      <!-- Floating Control Bar -->
-      <transition name="slide-up">
-        <div
-          v-if="selectedStreamers.length > 0 || isDetectingAny"
-          class="fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-xl px-4 z-50"
-        >
-          <div
-            class="bg-[#09090b] text-white rounded-full shadow-2xl border border-white/10 px-6 py-3 flex items-center justify-between backdrop-blur-xl"
-          >
-            <div class="flex items-center gap-4">
-              <div class="flex flex-col">
-                <span class="text-sm font-bold">{{ selectedStreamers.length }} selected</span>
-                <button
-                  @click="selectAll"
-                  class="text-xs text-muted-foreground hover:text-white text-left transition-colors"
-                >
-                  {{ allSelected ? 'Deselect All' : 'Select All' }}
-                </button>
-              </div>
-            </div>
-
-            <div class="flex items-center gap-3 -mr-3">
-              <template v-if="!isDetectingAny">
-                <button
-                  class="flex items-center gap-2 px-5 py-2.5 rounded-full bg-zinc-800 hover:bg-zinc-700 transition-all text-sm font-medium border border-white/5"
-                  @click="startWithMode(false)"
-                >
-                  <Video class="w-4 h-4 text-zinc-400" />
-                  Record Only
-                </button>
-                <button
-                  class="flex items-center gap-2 px-6 py-2.5 rounded-full bg-gradient-to-r from-purple-400 to-purple-600 hover:opacity-90 transition-all text-white text-sm font-semibold shadow-lg shadow-purple-500/20"
-                  @click="startWithMode(true)"
-                >
-                  <Sparkles class="w-4 h-4 fill-current" />
-                  Auto-Detect
-                </button>
-              </template>
-
-              <Button
-                v-else
-                size="sm"
-                variant="destructive"
-                class="rounded-full px-6 font-semibold shadow-lg transition-all h-10 hover:bg-red-600/90 text-white"
-                @click="toggleDetection"
-              >
-                <Square class="w-4 h-4 mr-2 fill-current" />
-                Stop Detection
-              </Button>
-            </div>
-          </div>
-        </div>
-      </transition>
     </div>
   </PageLayout>
 </template>
@@ -350,7 +313,13 @@
 
   type Platform = 'Youtube' | 'Twitch' | 'Kick' | 'PumpFun';
 
-  const streamers = ref<MonitoredStreamer[]>([]);
+  type ExtendedStreamer = MonitoredStreamer & {
+    isDetecting: boolean;
+    mode?: 'Auto-Detect' | 'Record Only' | null;
+    status?: 'LIVE' | 'WAITING' | 'IDLE' | 'STOPPING';
+  };
+
+  const streamers = ref<ExtendedStreamer[]>([]);
   const inputValue = ref('');
   const detectedPlatform = ref<Platform | null>(null);
   const logsContainer = ref<HTMLElement | null>(null);
@@ -360,20 +329,27 @@
   const showSearchDialog = ref(false);
   const isSearching = ref(false);
 
-  const { activeSessions, startMonitoring, stopMonitoring, isMonitoring, activityLogs, addActivityLog, clearLogs } =
-    useLivestreamMonitoring();
+  const {
+    activeSessions,
+    monitoredStreamers,
+    startMonitoring,
+    stopMonitoring,
+    isMonitoring,
+    activityLogs,
+    addActivityLog,
+    clearLogs,
+  } = useLivestreamMonitoring();
 
   const { toast } = useToast();
   const { removeToast } = useToastStore();
 
-  const selectedStreamers = computed(() => streamers.value.filter((s) => s.selected));
-  const allSelected = computed(() => streamers.value.length > 0 && streamers.value.every((s) => s.selected));
-  const isDetectingAny = computed(() => activeSessions.value.size > 0 || isMonitoring.value === true);
+  const isDetectingAny = computed(() => monitoredStreamers.value.size > 0 || activeSessions.value.size > 0);
 
   onMounted(async () => {
     await loadStreamers();
     // Refresh metadata for streamers that might be missing names or images
     refreshStreamerMetadata();
+    syncDetectionState(); // Initial sync
   });
 
   async function refreshStreamerMetadata() {
@@ -419,36 +395,53 @@
     // Do not stop monitoring on unmount to allow background processing
   });
 
-  watch(
-    () => activeSessions.value.size,
-    () => syncDetectionState()
-  );
+  watch([activeSessions, monitoredStreamers], () => syncDetectionState(), { deep: true });
 
   function syncDetectionState() {
-    const activeIds = new Set(activeSessions.value.keys());
-    streamers.value = streamers.value.map((streamer) => ({
-      ...streamer,
-      isDetecting: activeIds.has(streamer.id),
-    }));
+    streamers.value = streamers.value.map((streamer) => {
+      const monitored = monitoredStreamers.value.get(streamer.id);
+      const session = activeSessions.value.get(streamer.id);
+
+      return {
+        ...streamer,
+        isDetecting: !!monitored,
+        mode: monitored ? (monitored.options.detectClips ? 'Auto-Detect' : 'Record Only') : null,
+        status: session ? (session.isStopping ? 'STOPPING' : 'LIVE') : monitored ? 'WAITING' : 'IDLE',
+      };
+    });
+  }
+
+  function getStatusLabel(streamer: ExtendedStreamer) {
+    if (streamer.status === 'STOPPING') return 'STOPPING...';
+    if (!streamer.isDetecting) return 'IDLE';
+    if (streamer.status === 'LIVE') return `LIVE (${streamer.mode === 'Auto-Detect' ? 'AUTO' : 'REC'})`;
+    return `WAITING (${streamer.mode === 'Auto-Detect' ? 'AUTO' : 'REC'})`;
   }
 
   async function loadStreamers() {
     try {
       const records = await getAllMonitoredStreamers();
-      const activeIds = new Set(activeSessions.value.keys());
-      streamers.value = records.map((record) => ({
-        id: record.id,
-        mintId: record.mint_id,
-        displayName: record.display_name,
-        platform: 'PumpFun',
-        lastCheckTimestamp: record.last_check_timestamp,
-        isCurrentlyLive: Boolean(record.is_currently_live),
-        currentSessionId: record.current_session_id,
-        selected: activeIds.has(record.id),
-        isDetecting: activeIds.has(record.id),
-        profileImageUrl: record.profile_image_url || undefined,
-        streamThumbnailUrl: record.stream_thumbnail_url || undefined,
-      }));
+
+      streamers.value = records.map((record) => {
+        const monitored = monitoredStreamers.value.get(record.id);
+        const session = activeSessions.value.get(record.id);
+
+        return {
+          id: record.id,
+          mintId: record.mint_id,
+          displayName: record.display_name,
+          platform: 'PumpFun',
+          lastCheckTimestamp: record.last_check_timestamp,
+          isCurrentlyLive: Boolean(record.is_currently_live),
+          currentSessionId: record.current_session_id,
+          isDetecting: !!monitored,
+          profileImageUrl: record.profile_image_url || undefined,
+          streamThumbnailUrl: record.stream_thumbnail_url || undefined,
+          mode: monitored ? (monitored.options.detectClips ? 'Auto-Detect' : 'Record Only') : null,
+          status: session ? 'LIVE' : monitored ? 'WAITING' : 'IDLE',
+          selected: false,
+        };
+      });
     } catch (error) {
       console.error('[LiveClip] Failed to load monitored streamers', error);
     }
@@ -670,72 +663,24 @@
     }
   }
 
-  function toggleSelection(id: string) {
-    const streamer = streamers.value.find((s) => s.id === id);
-    if (streamer) {
-      streamer.selected = !streamer.selected;
+  async function startStreamer(streamer: ExtendedStreamer, detectClips: boolean) {
+    // Clear logs if we are starting detection for the first time on this page view
+    // and nothing else is currently running.
+    if (!isDetectingAny.value) {
+      clearLogs();
     }
+
+    await startMonitoring([streamer], { detectClips });
   }
 
-  function selectAll() {
-    const targetState = !allSelected.value;
-    streamers.value = streamers.value.map((streamer) => ({
-      ...streamer,
-      selected: targetState,
-    }));
-  }
+  async function stopStreamer(streamer: ExtendedStreamer) {
+    try {
+      await stopMonitoring([streamer.id]);
 
-  async function startWithMode(detectClips: boolean) {
-    const selected = selectedStreamers.value;
-    if (selected.length === 0) return;
-
-    // Clear logs and state from previous runs
-    clearLogs();
-
-    await startMonitoring(selected, { detectClips });
-  }
-
-  async function toggleDetection() {
-    if (isDetectingAny.value) {
-      // Show loading toast
-      const toastId = toast({
-        title: 'Stopping Monitoring',
-        description: 'Finishing up the last segment. This may take a moment...',
-        type: 'loading',
-        duration: 45000, // Long duration to cover the 30s timeout
-      });
-
-      try {
-        // Stop monitoring
-        await stopMonitoring();
-
-        removeToast(toastId);
-        toast({
-          title: 'Monitoring Stopped',
-          description: 'All recordings have been finalized.',
-          type: 'success',
-        });
-
-        addActivityLog({
-          streamerId: 'system',
-          streamerName: 'System',
-          platform: 'PumpFun',
-          message: 'Stopped monitoring.',
-          status: 'info',
-        });
-
-        // Resolve pending logs
-        resolvePendingLogs();
-      } catch (error) {
-        removeToast(toastId);
-        console.error('Failed to stop monitoring', error);
-        toast({
-          title: 'Error Stopping',
-          description: 'An error occurred while stopping monitoring.',
-          type: 'error',
-        });
-      }
-      return;
+      // Resolve pending logs
+      resolvePendingLogs();
+    } catch (error) {
+      console.error('Failed to stop monitoring', error);
     }
   }
 
