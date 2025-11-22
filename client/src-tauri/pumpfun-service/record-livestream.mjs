@@ -676,6 +676,10 @@ class PumpfunRecorder {
     try {
       if (!fs.existsSync(this.playlistPath)) {
         // log('Playlist not found yet', { path: this.playlistPath });
+        // Even if playlist not found, we should check for the first segment if we are stopping
+        if (!this.running || this.restarting) {
+            await this.checkPotentialLastSegment();
+        }
         return;
       }
       const content = await fs.promises.readFile(this.playlistPath, 'utf8');
@@ -708,9 +712,9 @@ class PumpfunRecorder {
              continue;
           }
           const stats = await fs.promises.stat(fullPath);
-          // Ignore segments smaller than 50KB (likely partial/empty or missing audio)
-          if (stats.size < 50 * 1024) {
-             // log('Segment file too small', { fullPath, size: stats.size });
+          // Ignore segments smaller than 5KB (likely partial/empty)
+          if (stats.size < 5 * 1024) {
+             log('Segment file too small, ignoring', { fullPath, size: stats.size });
              continue;
           }
         } catch (e) {
@@ -731,29 +735,8 @@ class PumpfunRecorder {
       }
       
       // After checking all lines in the playlist, also check for a potential "last" segment
-      // that isn't in the playlist yet but exists on disk (e.g. when stopping)
       if (!this.running || this.restarting) {
-          const potentialLastSegmentIndex = this.lastSegmentNumber + 1;
-          const potentialLastSegmentName = `${this.segmentPrefix}${String(potentialLastSegmentIndex).padStart(5, '0')}.mp4`;
-          const potentialLastSegmentPath = path.join(this.outputDir, potentialLastSegmentName);
-          
-          if (!this.processedSegments.has(potentialLastSegmentPath) && fs.existsSync(potentialLastSegmentPath)) {
-             try {
-               const stats = await fs.promises.stat(potentialLastSegmentPath);
-               // Ignore segments smaller than 50KB (likely partial/empty or missing audio)
-               if (stats.size > 50 * 1024) {
-                   this.processedSegments.add(potentialLastSegmentPath);
-                   this.emitEvent({
-                      type: 'segment_complete',
-                      mintId: this.mintId,
-                      sessionId: this.sessionId,
-                      segment: potentialLastSegmentIndex + 1,
-                      path: potentialLastSegmentPath,
-                      duration: this.segmentDurationSeconds, // Note: It might be shorter, but UI handles duration mostly for ordering
-                    });
-               }
-             } catch(e) {}
-          }
+          await this.checkPotentialLastSegment();
       }
     } catch (error) {
       // Ignore errors reading playlist (e.g. locked file)
@@ -761,6 +744,38 @@ class PumpfunRecorder {
     } finally {
         this.checkingPlaylist = false;
     }
+  }
+  
+  async checkPotentialLastSegment() {
+      const potentialLastSegmentIndex = this.lastSegmentNumber + 1;
+      const potentialLastSegmentName = `${this.segmentPrefix}${String(potentialLastSegmentIndex).padStart(5, '0')}.mp4`;
+      const potentialLastSegmentPath = path.join(this.outputDir, potentialLastSegmentName);
+      
+      if (!this.processedSegments.has(potentialLastSegmentPath) && fs.existsSync(potentialLastSegmentPath)) {
+         try {
+           const stats = await fs.promises.stat(potentialLastSegmentPath);
+           // Ignore segments smaller than 5KB
+           if (stats.size > 5 * 1024) {
+               log('Found final segment', { path: potentialLastSegmentPath, size: stats.size });
+               this.processedSegments.add(potentialLastSegmentPath);
+               this.emitEvent({
+                  type: 'segment_complete',
+                  mintId: this.mintId,
+                  sessionId: this.sessionId,
+                  segment: potentialLastSegmentIndex + 1,
+                  path: potentialLastSegmentPath,
+                  duration: this.segmentDurationSeconds, // Note: It might be shorter
+                });
+           } else {
+               log('Final segment found but too small', { path: potentialLastSegmentPath, size: stats.size });
+           }
+         } catch(e) {
+             console.error('[Recorder] Error checking final segment', e);
+         }
+      } else {
+        // Log if we expected a file but didn't find it
+        // log('No final segment found', { expectedPath: potentialLastSegmentPath });
+      }
   }
 
   extractSegmentNumber(filename) {
@@ -903,7 +918,6 @@ class PumpfunRecorder {
   }
 
   async stop() {
-    log('Stopping recorder...');
     this.running = false;
 
     if (this.playlistPoller) {
@@ -913,7 +927,6 @@ class PumpfunRecorder {
 
     // 1. Stop readers (Source) first to prevent new data
     // This prevents writing to encoder while it's closing
-    log('Cancelling readers...');
     if (this.audioReader) {
         this.audioReader.cancel().catch(e => console.error('[Recorder] Error cancelling audio reader', e));
         this.audioReader = null;
@@ -930,18 +943,13 @@ class PumpfunRecorder {
     }
 
     // 2. Stop encoder (Sink)
-    log('Stopping encoder...');
     await this.stopEncoderInternal();
-    log('Encoder stopped.');
 
     // 3. Check playlist for last segment
-    log('Checking playlist...');
     this.checkingPlaylist = false; 
     await this.checkPlaylist();
-    log('Playlist checked.');
 
     // 4. Disconnect LiveKit
-    log('Disconnecting LiveKit...');
     if (this.room) {
       try {
         // Timeout disconnect to prevent hanging
@@ -953,7 +961,7 @@ class PumpfunRecorder {
         console.warn('[Recorder] Error disconnecting LiveKit', error);
       }
     }
-    log('LiveKit disconnected.');
+    log('Finished stopping recorder.');
   }
 
   emitEvent(payload) {
@@ -976,8 +984,6 @@ async function main() {
     process.off('SIGINT', shutdown);
     process.off('SIGTERM', shutdown);
     process.stdin.off('data', onStdinData);
-
-    console.log(JSON.stringify({ type: 'log', message: 'Shutting down recorder...' }));
     
     // Force exit after 28 seconds if recorder.stop() hangs (must be less than Rust's 30s)
     const forceExitTimer = setTimeout(() => {

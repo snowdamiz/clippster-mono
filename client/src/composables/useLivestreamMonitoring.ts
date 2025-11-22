@@ -20,6 +20,7 @@ const POLL_INTERVAL_MS = 30_000;
 
 // Global State
 const activeSessions = ref<Map<string, LiveSession>>(new Map());
+const failedSessions = ref<Map<string, number>>(new Map()); // streamerId -> timestamp
 const monitoredStreamers = ref<
   Map<string, { streamer: MonitoredStreamer; options: { detectClips: boolean } }>
 >(new Map());
@@ -309,8 +310,17 @@ async function initializeListeners() {
     mintId: string;
     code: number | null;
   }>('recorder-exit', async (event) => {
-    const { streamerId } = event.payload;
+    const { streamerId, code } = event.payload;
     const session = activeSessions.value.get(streamerId);
+
+    console.log('[LiveMonitor] Recorder exit:', event.payload, 'Session active:', !!session);
+
+    if (code !== 0 && code !== null) {
+      // Mark as failed to prevent immediate restart
+      failedSessions.value.set(streamerId, Date.now());
+    } else {
+      failedSessions.value.delete(streamerId);
+    }
 
     // Only if we were stopping or monitoring this session
     if (session) {
@@ -320,6 +330,7 @@ async function initializeListeners() {
         activeSessions.value.delete(streamerId);
       } else {
         // If it exited unexpectedly (crashed), we should also clean up
+        console.warn('[LiveMonitor] Recorder exited unexpectedly for', streamerId);
         activeSessions.value.delete(streamerId);
       }
     }
@@ -427,6 +438,13 @@ export function useLivestreamMonitoring() {
       });
 
       const sessionActive = activeSessions.value.has(streamer.id);
+
+      // Check if failed recently
+      const failedAt = failedSessions.value.get(streamer.id);
+      if (failedAt && Date.now() - failedAt < 60_000) {
+        // Skip restart if failed recently (wait 1 minute)
+        continue;
+      }
 
       if (status.isLive && !sessionActive) {
         await handleStreamStart(streamer, status, config.options);
