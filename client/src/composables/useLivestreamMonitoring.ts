@@ -6,6 +6,9 @@ import {
   endLivestreamSession,
   updateMonitoredStreamer,
   getMonitoredStreamer,
+  deleteProject,
+  hasRawVideosForProject,
+  hasClipsForProject,
 } from '@/services/database';
 import type {
   LiveSession,
@@ -137,6 +140,25 @@ async function getStreamerInfo(streamerId: string): Promise<{
   };
 }
 
+// Helper to clean up empty session projects
+async function cleanupSessionProject(_sessionId: string, projectId: string) {
+  try {
+    // Check if project is empty (no videos, no clips)
+    const hasVideos = await hasRawVideosForProject(projectId);
+    const hasClips = await hasClipsForProject(projectId);
+
+    if (!hasVideos && !hasClips) {
+      console.log('[LiveMonitor] Cleaning up empty session project:', projectId);
+      await deleteProject(projectId);
+
+      // Notify UI to refresh projects list
+      window.dispatchEvent(new CustomEvent('refresh-clips-projects'));
+    }
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to cleanup session project', error);
+  }
+}
+
 async function handleStreamEnd(streamer: MonitoredStreamer) {
   const session = activeSessions.value.get(streamer.id);
   if (!session) return;
@@ -149,6 +171,11 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
 
   try {
     await endLivestreamSession(session.sessionId, Math.floor(Date.now() / 1000));
+
+    // Clean up the project if it's empty
+    if (session.projectId) {
+      await cleanupSessionProject(session.sessionId, session.projectId);
+    }
   } catch (error) {
     console.warn('[LiveMonitor] Failed to mark session ended', error);
   }
@@ -158,7 +185,9 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
     current_session_id: null,
   });
 
-  activeSessions.value.delete(streamer.id);
+  const newMap = new Map(activeSessions.value);
+  newMap.delete(streamer.id);
+  activeSessions.value = newMap;
 }
 
 async function initializeListeners() {
@@ -324,14 +353,14 @@ async function initializeListeners() {
 
     // Only if we were stopping or monitoring this session
     if (session) {
-      // This is the final signal that the process is dead.
-      // We can now safely remove it from activeSessions if it was stopping.
-      if (session.isStopping) {
-        activeSessions.value.delete(streamerId);
-      } else {
+      // Force reactivity update
+      const newMap = new Map(activeSessions.value);
+      newMap.delete(streamerId);
+      activeSessions.value = newMap;
+
+      if (!session.isStopping) {
         // If it exited unexpectedly (crashed), we should also clean up
         console.warn('[LiveMonitor] Recorder exited unexpectedly for', streamerId);
-        activeSessions.value.delete(streamerId);
       }
     }
   });
@@ -404,6 +433,17 @@ export function useLivestreamMonitoring() {
         const session = activeSessions.value.get(id);
         if (!session) return;
 
+        // Schedule fallback cleanup in case recorder-exit event is missed
+        setTimeout(() => {
+          const currentSession = activeSessions.value.get(id);
+          if (currentSession && currentSession.isStopping) {
+            console.warn('[LiveMonitor] Force removing session after timeout:', id);
+            const newMap = new Map(activeSessions.value);
+            newMap.delete(id);
+            activeSessions.value = newMap;
+          }
+        }, 35000); // 35 seconds (Rust process timeout is 30s)
+
         try {
           await invoke('stop_livestream_recording', { mintId: session.mintId });
         } catch (error) {
@@ -412,6 +452,11 @@ export function useLivestreamMonitoring() {
 
         try {
           await endLivestreamSession(session.sessionId, Math.floor(Date.now() / 1000));
+
+          // Clean up the project if it's empty
+          if (session.projectId) {
+            await cleanupSessionProject(session.sessionId, session.projectId);
+          }
         } catch (error) {
           console.warn('[LiveMonitor] Failed to close session', error);
         }

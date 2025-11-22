@@ -714,7 +714,6 @@ class PumpfunRecorder {
           const stats = await fs.promises.stat(fullPath);
           // Ignore segments smaller than 5KB (likely partial/empty)
           if (stats.size < 5 * 1024) {
-             log('Segment file too small, ignoring', { fullPath, size: stats.size });
              continue;
           }
         } catch (e) {
@@ -756,7 +755,6 @@ class PumpfunRecorder {
            const stats = await fs.promises.stat(potentialLastSegmentPath);
            // Ignore segments smaller than 5KB
            if (stats.size > 5 * 1024) {
-               log('Found final segment', { path: potentialLastSegmentPath, size: stats.size });
                this.processedSegments.add(potentialLastSegmentPath);
                this.emitEvent({
                   type: 'segment_complete',
@@ -767,7 +765,7 @@ class PumpfunRecorder {
                   duration: this.segmentDurationSeconds, // Note: It might be shorter
                 });
            } else {
-               log('Final segment found but too small', { path: potentialLastSegmentPath, size: stats.size });
+              //  log('Final segment found but too small', { path: potentialLastSegmentPath, size: stats.size });
            }
          } catch(e) {
              console.error('[Recorder] Error checking final segment', e);
@@ -894,7 +892,7 @@ class PumpfunRecorder {
         let result = await Promise.race([exitPromise, new Promise(resolve => setTimeout(() => resolve('soft-timeout'), 15000))]);
         
         if (result === 'soft-timeout') {
-             log('ffmpeg did not exit quickly, sending SIGINT');
+            //  log('ffmpeg did not exit quickly, sending SIGINT');
              try {
                  this.ffmpeg.kill('SIGINT');
              } catch (e) {}
@@ -902,7 +900,7 @@ class PumpfunRecorder {
         }
 
         if (result === 'timeout') {
-           log('encoder did not exit in time, forcing kill');
+          //  log('encoder did not exit in time, forcing kill');
            this.ffmpeg.kill('SIGKILL');
         } else {
            // Small delay to allow file system to flush
@@ -961,7 +959,6 @@ class PumpfunRecorder {
         console.warn('[Recorder] Error disconnecting LiveKit', error);
       }
     }
-    log('Finished stopping recorder.');
   }
 
   emitEvent(payload) {
