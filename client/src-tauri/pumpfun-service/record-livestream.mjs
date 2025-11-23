@@ -132,8 +132,8 @@ class AudioMixer {
         this.frameSize = frameSize;
         this.chunks = new Map(); // timeIndex -> Buffer
         this.lastFlushedIndex = -1;
-        // Buffer latency in frames (20ms each). 10 frames = 200ms
-        this.latencyBuffer = 10; 
+        // Buffer latency in frames (20ms each). 50 frames = 1000ms jitter buffer
+        this.latencyBuffer = 50; 
     }
 
     mixChunk(timeIndex, buffer) {
@@ -157,21 +157,29 @@ class AudioMixer {
 
     getReadyChunks(currentTimeIndex) {
         const ready = [];
-        // If this is the first flush, start from the earliest chunk we have
+        // If this is the first flush, start from the earliest chunk we have or currentTimeIndex
         if (this.lastFlushedIndex === -1) {
-            if (this.chunks.size === 0) return [];
-            const keys = Array.from(this.chunks.keys()).sort((a, b) => a - b);
-            this.lastFlushedIndex = keys[0] - 1;
+             // If we have chunks, start from the first one.
+             // If not, we just wait.
+             if (this.chunks.size > 0) {
+                 const keys = Array.from(this.chunks.keys()).sort((a, b) => a - b);
+                 this.lastFlushedIndex = keys[0] - 1;
+             } else {
+                 return [];
+             }
         }
 
+        // We want to flush up to (currentTime - latency)
         const targetIndex = currentTimeIndex - this.latencyBuffer;
         
         for (let i = this.lastFlushedIndex + 1; i <= targetIndex; i++) {
+            // Check if we have a chunk at this index
             if (this.chunks.has(i)) {
                 ready.push(this.chunks.get(i));
                 this.chunks.delete(i);
             } else {
-                // Implicit silence for gaps
+                // Gap detected: Fill with silence
+                // This ensures output audio is continuous and matches wall-clock duration
                 ready.push(Buffer.alloc(this.frameSize));
             }
             this.lastFlushedIndex = i;
@@ -209,7 +217,7 @@ class PumpfunRecorder {
     this.videoPipe = null;
     this.pendingVideo = [];
     this.videoInfo = null;
-    this.videoFps = 30;
+    this.videoFps = 30; // Deprecated but kept for compatibility
     this.segmentWatcher = null;
     this.playlistPoller = null;
     this.checkingPlaylist = false;
@@ -223,10 +231,13 @@ class PumpfunRecorder {
     
     this.firstAudioTime = null;
     this.firstVideoTime = null;
+    this.firstVideoTimestampUs = null;
+    this.audioSamplesWritten = 0;
     
     this.referenceTime = null;
     this.videoFramesWritten = 0;
-    this.lastVideoBuffer = null;
+    this.lastVideoFrame = null;
+    this.videoQueue = []; // { buffer, timestampUs } sorted
     
     this.pendingResChange = null;
     this.mixerInterval = null;
@@ -348,6 +359,8 @@ class PumpfunRecorder {
       this.audioReady = true;
       if (!this.encoderStarted) await this.startEncoderIfReady();
 
+      let lastAudioIndex = -1;
+
       while (this.running) {
         const { value, done } = await reader.read();
         if (done || !value) break;
@@ -367,12 +380,34 @@ class PumpfunRecorder {
               value.data.byteLength
             );
             
-            // Calculate index based on time since start
+            // Calculate relative time index
+            // We use arrivalTime but "snap" to grid to handle jitter while preserving large gaps
             const relativeTime = arrivalTime - this.referenceTime;
-            if (relativeTime >= 0) {
-                const timeIndex = Math.floor(relativeTime / 20);
-                this.audioMixer.mixChunk(timeIndex, buffer);
+            let timeIndex = Math.floor(relativeTime / 20);
+
+            // Jitter Snapping Logic:
+            // If the calculated index is very close to the expected next index (within 2 frames = 40ms),
+            // we snap it to be contiguous. This handles network jitter where packets arrive slightly late/early.
+            // If it's further away, we assume it's a real gap (DTX) and respect the gap (silence will be filled by mixer).
+            
+            if (lastAudioIndex !== -1) {
+                const diff = timeIndex - (lastAudioIndex + 1);
+                if (diff > 0 && diff <= 2) {
+                    // Small gap, probably jitter, snap to next
+                    timeIndex = lastAudioIndex + 1;
+                } else if (diff < 0 && diff >= -2) {
+                    // Packet arrived "early" or out of order but close, snap to next
+                    timeIndex = lastAudioIndex + 1;
+                }
             }
+
+            // Ensure we don't go backwards
+            if (timeIndex <= lastAudioIndex) {
+                 timeIndex = lastAudioIndex + 1;
+            }
+
+            this.audioMixer.mixChunk(timeIndex, buffer);
+            lastAudioIndex = timeIndex;
         }
       }
     } catch (error) {
@@ -391,8 +426,23 @@ class PumpfunRecorder {
         const { value, done } = await this.videoReader.read();
         if (done || !value) break;
         
-        const arrivalTime = Date.now();
+        let arrivalTime = Date.now();
         const frame = value.frame;
+        const timestampUs = value.timestampUs; // BigInt from LiveKit
+
+        if (!this.firstVideoTime) {
+            this.firstVideoTime = arrivalTime;
+            if (timestampUs !== undefined) {
+                this.firstVideoTimestampUs = timestampUs;
+            }
+        } else if (this.firstVideoTimestampUs !== null && timestampUs !== undefined) {
+            // Use presentation timestamp to calculate precise arrival time
+            // This prevents network jitter from affecting frame spacing
+            const diffUs = timestampUs - this.firstVideoTimestampUs;
+            // Convert BigInt us to Number ms
+            const diffMs = Number(diffUs) / 1000;
+            arrivalTime = this.firstVideoTime + diffMs;
+        }
         
         if (!this.fpsDetected) {
             this.fpsSamples.push(arrivalTime);
@@ -404,9 +454,7 @@ class PumpfunRecorder {
                 const duration = last - first;
                 
                 if (duration >= 1000) {
-                    const durationSec = duration / 1000;
-                    const calculatedFps = (count - 1) / durationSec;
-                    this.videoFps = Math.max(1, Math.min(120, Math.round(calculatedFps)));
+                    this.videoFps = 30; // Force 30fps for consistency
                     this.fpsDetected = true;
                     this.checkSyncAndStart();
                 }
@@ -422,53 +470,6 @@ class PumpfunRecorder {
         const height = converted.height;
         const effectiveWidth = width & ~1;
         const effectiveHeight = height & ~1;
-
-        if (this.encoderStarted) {
-            if (this.currentWidth !== 0 && (effectiveWidth !== this.currentWidth || effectiveHeight !== this.currentHeight)) {
-                if (!this.pendingResChange || 
-                    this.pendingResChange.width !== effectiveWidth || 
-                    this.pendingResChange.height !== effectiveHeight) {
-                    this.pendingResChange = {
-                        width: effectiveWidth,
-                        height: effectiveHeight,
-                        start: Date.now()
-                    };
-                    continue;
-                }
-                
-                if (Date.now() - this.pendingResChange.start > 2000) {
-                    log('Resolution change stable, restarting encoder', { 
-                        old: `${this.currentWidth}x${this.currentHeight}`,
-                        new: `${effectiveWidth}x${effectiveHeight}`
-                    });
-                    await this.restartEncoder(effectiveWidth, effectiveHeight);
-                    this.pendingResChange = null;
-                } else {
-                    continue;
-                }
-            } else {
-                if (this.pendingResChange) {
-                    this.pendingResChange = null;
-                }
-            }
-        } else if (this.currentWidth === 0) {
-             this.currentWidth = effectiveWidth;
-             this.currentHeight = effectiveHeight;
-             this.videoInfo = { width: effectiveWidth, height: effectiveHeight };
-        } else if (effectiveWidth !== this.currentWidth || effectiveHeight !== this.currentHeight) {
-             this.currentWidth = effectiveWidth;
-             this.currentHeight = effectiveHeight;
-             this.videoInfo = { width: effectiveWidth, height: effectiveHeight };
-        }
-
-        if (!this.videoInfo) {
-          this.currentWidth = effectiveWidth;
-          this.currentHeight = effectiveHeight;
-          this.videoInfo = { width: effectiveWidth, height: effectiveHeight };
-          if (this.fpsDetected) {
-            this.checkSyncAndStart();
-          }
-        }
 
         const yPlane = converted.getPlane(0);
         const uPlane = converted.getPlane(1);
@@ -510,7 +511,45 @@ class PumpfunRecorder {
 
         const buffer = Buffer.concat([yBuffer, uBuffer, vBuffer]);
 
-        await this.writeVideo(buffer, false, arrivalTime);
+        // Store in queue instead of writing immediately
+        if (this.firstVideoTimestampUs !== null && timestampUs !== undefined) {
+            this.videoQueue.push({ 
+                buffer, 
+                timestampUs,
+                width: effectiveWidth, 
+                height: effectiveHeight 
+            });
+            
+            // Limit queue size to prevent memory issues (keep last 5 seconds approx)
+            if (this.videoQueue.length > 150) {
+                this.videoQueue.shift();
+            }
+        }
+        
+        // Handle resolution changes (simplified)
+        if (!this.videoInfo) {
+             this.currentWidth = effectiveWidth;
+             this.currentHeight = effectiveHeight;
+             this.videoInfo = { width: effectiveWidth, height: effectiveHeight };
+             if (this.fpsDetected) {
+               this.checkSyncAndStart();
+             }
+        } else if (this.encoderStarted && (this.currentWidth !== effectiveWidth || this.currentHeight !== effectiveHeight)) {
+            // Check for stable resolution change
+             if (!this.pendingResChange || 
+                this.pendingResChange.width !== effectiveWidth || 
+                this.pendingResChange.height !== effectiveHeight) {
+                this.pendingResChange = {
+                    width: effectiveWidth,
+                    height: effectiveHeight,
+                    start: Date.now()
+                };
+            } else if (Date.now() - this.pendingResChange.start > 2000) {
+                 log('Resolution change detected', { old: `${this.currentWidth}x${this.currentHeight}`, new: `${effectiveWidth}x${effectiveHeight}` });
+                 await this.restartEncoder(effectiveWidth, effectiveHeight);
+                 this.pendingResChange = null;
+            }
+        }
       }
     } catch (error) {
       console.error('[Recorder] Video stream error', error);
@@ -541,10 +580,7 @@ class PumpfunRecorder {
     this.startEncoder();
     this.encoderStarted = true;
 
-    const pendingVideo = this.pendingVideo.splice(0);
-    for (const item of pendingVideo) {
-      await this.writeVideo(item.buffer, true, item.timestamp);
-    }
+    // No pending video flushing needed with new queue system
   }
 
   async startEncoder() {
@@ -566,8 +602,9 @@ class PumpfunRecorder {
       '-f', 'rawvideo',
       '-pix_fmt', 'yuv420p',
       '-s', `${width}x${height}`,
-      '-framerate', String(this.videoFps),
+      '-framerate', '30',
       '-i', 'pipe:3',
+      '-force_key_frames', 'expr:gte(t,n_forced*2)',
       ...encoderArgs,
       '-c:a', 'aac',
       '-b:a', '160k',
@@ -610,12 +647,15 @@ class PumpfunRecorder {
     
     try {
         await this.stopEncoderInternal();
-        this.lastVideoBuffer = null;
+        this.lastVideoFrame = null;
         this.referenceTime = null;
         this.videoFramesWritten = 0;
         this.firstAudioTime = null;
         this.firstVideoTime = null;
+        this.firstVideoTimestampUs = null;
+        this.audioSamplesWritten = 0;
         this.fpsDetected = false;
+        this.videoQueue = [];
         
         // Reset mixer state
         this.audioMixer.reset();
@@ -640,20 +680,109 @@ class PumpfunRecorder {
       const relativeTime = now - this.referenceTime;
       const currentTimeIndex = Math.floor(relativeTime / 20);
       
+      // Get chunks up to (now - 1000ms) to ensure we have buffered enough for jitter
+      // But actually, getReadyChunks handles the latencyBuffer logic (50 frames = 1000ms)
       const chunks = this.audioMixer.getReadyChunks(currentTimeIndex);
       
       if (chunks.length > 0) {
           for (const chunk of chunks) {
               if (this.audioPipe && !this.audioPipe.destroyed) {
                   if (!this.audioPipe.write(chunk)) {
-                      // We don't await drain in the interval to prevent blocking, 
-                      // but in a real-time scenario we just push.
+                      // backpressure handling if needed
                   }
+                  
+                  // Update total audio samples written to drive video sync
+                  this.audioSamplesWritten += (chunk.length / 4); // 2 bytes * 2 channels = 4 bytes per sample
               }
+          }
+          
+          // After writing audio, ensure video catches up
+          await this.syncVideoToAudio();
+      }
+  }
+
+  async syncVideoToAudio() {
+      if (!this.videoPipe || this.restarting || !this.firstVideoTimestampUs || !this.referenceTime) return;
+
+      // Calculate the offset between when we STARTED the reference clock and when the first video frame appeared.
+      // If referenceTime is later than firstVideoTime (e.g. waited for audio), we must skip the early video frames.
+      const videoStartOffsetMs = this.referenceTime - this.firstVideoTime;
+      const videoStartOffsetUs = BigInt(Math.max(0, videoStartOffsetMs) * 1000);
+      const effectiveFirstTimestampUs = this.firstVideoTimestampUs + videoStartOffsetUs;
+
+      // Calculate how many video frames we SHOULD have written to match audio duration
+      // Audio Sample Rate: 48000
+      // Video FPS: 30
+      // Target Frames = (Samples / 48000) * 30
+      const targetVideoFrames = Math.floor((this.audioSamplesWritten / 48000) * 30);
+      
+      while (this.videoFramesWritten < targetVideoFrames) {
+          // Determine the target timestamp for this specific frame
+          // Frame N corresponds to time N * 33333.33 microseconds from start
+          const frameTimeUs = BigInt(Math.floor(this.videoFramesWritten * 33333.33));
+          const targetTimestampUs = effectiveFirstTimestampUs + frameTimeUs;
+          
+          // Find the best matching frame in the queue
+          // We want the newest frame that is <= targetTimestampUs
+          // (Sample-and-Hold behavior)
+          
+          let bestFrame = null;
+          
+          // Iterate queue to find match
+          // Since queue is sorted by timestamp, we can iterate forward
+          let bestIndex = -1;
+          
+          for (let i = 0; i < this.videoQueue.length; i++) {
+              const item = this.videoQueue[i];
+              if (item.timestampUs <= targetTimestampUs) {
+                  bestFrame = item;
+                  bestIndex = i;
+              } else {
+                  // Found a frame in the future, stop searching
+                  break;
+              }
+          }
+          
+          // If we found a frame, use it. If not, reuse last frame (or black if none).
+          // If we use a frame from the queue, do we remove it?
+          // We can remove frames that are definitely older than current target time minus some safety margin.
+          // But for "Sample and Hold", we might re-use the same frame multiple times if input FPS < 30.
+          // So we should NOT remove the *bestFrame* yet, only frames strictly older than it that we won't need?
+          // Actually, if we use bestFrame, we can discard everything OLDER than bestFrame.
+          
+          if (bestFrame) {
+              this.lastVideoFrame = bestFrame.buffer;
+              
+              // Cleanup older frames from queue, but keep the bestFrame for potential reuse
+              if (bestIndex > 0) {
+                   this.videoQueue.splice(0, bestIndex);
+              }
+          }
+          
+          const bufferToWrite = this.lastVideoFrame || Buffer.alloc(this.videoInfo.width * this.videoInfo.height * 1.5); // Grey/Black
+          
+          if (this.videoPipe && !this.videoPipe.destroyed) {
+               if (!this.videoPipe.write(bufferToWrite)) {
+                   // await once(this.videoPipe, 'drain'); // Optional: avoid blocking main loop too much
+               }
+               this.videoFramesWritten++;
+          } else {
+              break;
           }
       }
   }
 
+  // Deprecated direct write
+  async writeVideo(buffer, flushing = false, arrivalTime = 0) {
+      if (flushing) {
+          // If flushing, just write directly
+           if (this.videoPipe && !this.videoPipe.destroyed) {
+                this.videoPipe.write(buffer);
+                this.videoFramesWritten++;
+           }
+      }
+  }
+  
   startSegmentWatcher() {
     this.segmentWatcher = fs.watch(this.outputDir, (event, filename) => {
       if (!filename || filename === 'playlist.csv') {
