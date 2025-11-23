@@ -186,6 +186,30 @@ class PumpfunRecorder {
     this.pendingResChange = null;
   }
 
+  getVideoEncoderArgs() {
+    const width = this.videoInfo?.width || 1280;
+    // Simple bitrate heuristic for hardware encoding
+    // 1080p+ -> 6Mbps, 720p -> 4Mbps, lower -> 2.5Mbps
+    let bitrate = '4000k';
+    if (width >= 1920) bitrate = '6000k';
+    else if (width < 1280) bitrate = '2500k';
+
+    if (process.platform === 'darwin') {
+      return [
+        '-c:v', 'h264_videotoolbox',
+        '-b:v', bitrate,
+        '-realtime', 'true',
+        '-allow_sw', '1'
+      ];
+    }
+    
+    return [
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-tune', 'zerolatency',
+    ];
+  }
+
   detectTimestampUnit(ts) {
     // Heuristic to detect if timestamp is in ns, us, or ms
     // based on magnitude relative to Date.now()
@@ -537,12 +561,7 @@ class PumpfunRecorder {
       String(this.videoFps),
       '-i',
       'pipe:3',
-      '-c:v',
-      'libx264',
-      '-preset',
-      'veryfast',
-      '-tune',
-      'zerolatency',
+      ...this.getVideoEncoderArgs(),
       '-c:a',
       'aac',
       '-b:a',

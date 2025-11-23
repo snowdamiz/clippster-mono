@@ -171,6 +171,7 @@ async fn run_cropdetect_analysis(
     let output = shell.sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
+            "-hwaccel", "auto",
             "-i", video_path,
             "-vf", &filter_string,
             "-f", "null",

@@ -195,9 +195,12 @@ pub async fn download_pumpfun_vod_segment(
             "-ss", &format!("{:.3}", start_time),  // Seek before input (efficient)
             "-i", &video_url,
             "-t", &format!("{:.3}", segment_duration),  // Duration
-            "-c:v", "copy",  // Copy video stream
-            "-c:a", "aac",   // Convert audio to AAC
-            "-b:a", "128k",  // Audio bitrate
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-map", "0:v:0?",
+            "-map", "0:a:0?",
             "-avoid_negative_ts", "make_zero",  // Fix timestamp issues for segments
             "-movflags", "+faststart",
             "-progress", "pipe:2",
@@ -328,8 +331,9 @@ pub async fn download_pumpfun_vod_segment(
         let thumbnail_result = match shell.sidecar("ffmpeg") {
             Ok(ffmpeg) => {
                 match ffmpeg.args([
-                    "-i", video_path.to_str().ok_or("Invalid video path")?,
+                    "-hwaccel", "auto",
                     "-ss", "00:00:01",  // Use 1 second into the segment (same as regular download)
+                    "-i", video_path.to_str().ok_or("Invalid video path")?,
                     "-vframes", "1",
                     "-vf", "scale=320:-1",
                     "-y",
@@ -639,9 +643,12 @@ pub async fn download_pumpfun_vod(
         let cmd = shell.sidecar("ffmpeg").map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?;
         let (mut rx, child) = cmd.args([
             "-i", &video_url,
-            "-c:v", "copy",
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
             "-c:a", "aac",
             "-b:a", "128k",
+            "-map", "0:v:0?",
+            "-map", "0:a:0?",
             "-movflags", "+faststart",
             "-progress", "pipe:2",
             "-v", "error",
@@ -768,8 +775,9 @@ pub async fn download_pumpfun_vod(
         let thumbnail_result = match shell.sidecar("ffmpeg") {
             Ok(ffmpeg) => {
                 match ffmpeg.args([
-                    "-i", video_path.to_str().ok_or("Invalid video path")?,
+                    "-hwaccel", "auto",
                     "-ss", "00:00:01",
+                    "-i", video_path.to_str().ok_or("Invalid video path")?,
                     "-vframes", "1",
                     "-vf", "scale=320:-1",
                     "-y",

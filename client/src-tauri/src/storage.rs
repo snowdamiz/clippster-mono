@@ -190,8 +190,9 @@ pub async fn generate_thumbnail(app: tauri::AppHandle, video_path: String) -> Re
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
-            "-i", &video_path,
+            "-hwaccel", "auto",
             "-ss", "00:00:01",
+            "-i", &video_path,
             "-vframes", "1",
             "-vf", "scale=320:-1",
             "-y",

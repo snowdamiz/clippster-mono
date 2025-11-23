@@ -18,8 +18,9 @@ pub async fn generate_clip_thumbnail_simple(
     let output = shell.sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
+            "-hwaccel", "auto", // Use hardware acceleration if available
+            "-ss", "00:00:01",  // Seek before input for fast seeking
             "-i", clip_path.to_str().ok_or("Invalid clip path")?,
-            "-ss", "00:00:01",  // Seek to 1 second
             "-vframes", "1",
             "-vf", "scale=320:-1",
             "-y",

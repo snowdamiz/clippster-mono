@@ -256,13 +256,14 @@ pub async fn build_single_segment_clip_with_settings(
     let fonts_dir = get_fonts_dir(app).ok();
 
     // Build video filter combining crop + subtitles in ONE PASS
-    // Force RGB24 for accurate subtitle color rendering before applying ASS
+    // Only Force RGB24 if using subtitles for accurate color rendering
     let mut vf_parts = vec![
-        format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y),
-        "format=rgb24".to_string()
+        format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y)
     ];
     
     if let Some(path) = subtitle_path {
+        vf_parts.push("format=rgb24".to_string());
+        
         let path_str = path.to_string_lossy().replace("\\", "/").replace(":", "\\:");
         // Add fonts directory parameter to ass filter
         if let Some(ref fdir) = fonts_dir {
