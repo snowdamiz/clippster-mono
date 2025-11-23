@@ -65,9 +65,6 @@ defmodule ClippsterServerWeb.Router do
     post "/clips/detect", ClipsController, :detect
     post "/clips/detect-chunked", ClipsController, :detect_chunked
 
-    # Handle OPTIONS for bug reports
-    options "/bug-reports", BugReportsController, :options
-
     # Bug report creation (requires authentication)
     post "/bug-reports", BugReportsController, :create
   end
