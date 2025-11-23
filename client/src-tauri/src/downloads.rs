@@ -4,7 +4,7 @@ use tauri::Emitter;
 use once_cell::sync::Lazy;
 
 use crate::ffmpeg_utils::{
-    parse_ffmpeg_time, get_video_info, extract_duration_from_ffmpeg_output
+    parse_ffmpeg_time, get_video_info, extract_duration_from_ffmpeg_output, detect_hardware_encoder
 };
 use crate::storage;
 
@@ -190,13 +190,17 @@ pub async fn download_pumpfun_vod_segment(
         // For HLS streams, we need additional flags for efficient seeking
         println!("[Rust] Spawning FFmpeg sidecar for segment with real-time progress...");
 
+        // Detect hardware encoder
+        let encoder = detect_hardware_encoder(&app_clone).await.unwrap_or_else(|| "libx264".to_string());
+        println!("[Rust] Using encoder: {}", encoder);
+
         let cmd = shell.sidecar("ffmpeg").map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?;
         let (mut rx, child) = cmd.args([
             "-ss", &format!("{:.3}", start_time),  // Seek before input (efficient)
             "-i", &video_url,
             "-t", &format!("{:.3}", segment_duration),  // Duration
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
+            "-c:v", &encoder,
+            "-preset", if encoder == "libx264" { "ultrafast" } else { "fast" }, // ultrafast for CPU, fast for GPU (usually default is fine but explicit is good)
             "-c:a", "aac",
             "-b:a", "128k",
             "-map", "0:v:0?",
@@ -643,8 +647,7 @@ pub async fn download_pumpfun_vod(
         let cmd = shell.sidecar("ffmpeg").map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?;
         let (mut rx, child) = cmd.args([
             "-i", &video_url,
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
+            "-c:v", "copy",
             "-c:a", "aac",
             "-b:a", "128k",
             "-map", "0:v:0?",

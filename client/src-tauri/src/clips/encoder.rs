@@ -44,6 +44,17 @@ pub async fn detect_hardware_encoder(app: &tauri::AppHandle, quality: &str) -> E
                 };
             }
             
+            // Check for AMD AMF
+            if encoders.contains("h264_amf") {
+                println!("[Rust] Hardware encoder detected: AMD AMF");
+                return EncoderConfig {
+                    codec: "h264_amf".to_string(),
+                    preset: Some("balanced".to_string()),
+                    quality_param: "-rc".to_string(),
+                    quality_value: "cqp".to_string(), // Use CQP mode for AMF if possible, or just default
+                };
+            }
+
             // Check for Intel Quick Sync
             if encoders.contains("h264_qsv") {
                 println!("[Rust] Hardware encoder detected: Intel Quick Sync");
@@ -71,6 +82,17 @@ pub async fn detect_hardware_encoder(app: &tauri::AppHandle, quality: &str) -> E
                     preset: None,
                     quality_param: "-b:v".to_string(),
                     quality_value: quality_value.to_string(),
+                };
+            }
+
+            // Check for VAAPI (Linux)
+            if encoders.contains("h264_vaapi") {
+                println!("[Rust] Hardware encoder detected: VAAPI");
+                return EncoderConfig {
+                    codec: "h264_vaapi".to_string(),
+                    preset: None,
+                    quality_param: "-qp".to_string(),
+                    quality_value: "20".to_string(), // Fixed QP for now
                 };
             }
         }

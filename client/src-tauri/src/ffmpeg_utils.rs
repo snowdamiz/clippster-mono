@@ -173,3 +173,48 @@ pub async fn get_video_info(app: &tauri::AppHandle, video_path: &std::path::Path
     let stderr = String::from_utf8_lossy(&output.stderr);
     parse_video_info_from_ffmpeg_output(&stderr)
 }
+
+/// Detect available hardware encoder
+pub async fn detect_hardware_encoder(app: &tauri::AppHandle) -> Option<String> {
+    use tauri_plugin_shell::ShellExt;
+
+    println!("[Rust] Detecting hardware encoders...");
+
+    let output = match app.shell().sidecar("ffmpeg") {
+        Ok(ffmpeg) => {
+            match ffmpeg.args(["-encoders"]).output().await {
+                Ok(out) => out,
+                Err(e) => {
+                    println!("[Rust] Failed to run ffmpeg -encoders: {}", e);
+                    return None;
+                }
+            }
+        }
+        Err(e) => {
+            println!("[Rust] Failed to get ffmpeg sidecar: {}", e);
+            return None;
+        }
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Order of preference for hardware encoders
+    let encoders = [
+        ("h264_nvenc", "NVIDIA NVENC"),
+        ("h264_amf", "AMD AMF"),
+        ("h264_qsv", "Intel QSV"),
+        ("h264_videotoolbox", "macOS VideoToolbox"),
+        ("h264_vaapi", "VAAPI"),
+    ];
+
+    for (encoder, name) in encoders.iter() {
+        // Look for the encoder in the output (format is usually " V..... encoder_name ")
+        if stdout.contains(encoder) {
+            println!("[Rust] Found hardware encoder: {} ({})", name, encoder);
+            return Some(encoder.to_string());
+        }
+    }
+
+    println!("[Rust] No hardware encoder found, falling back to software (libx264)");
+    None
+}

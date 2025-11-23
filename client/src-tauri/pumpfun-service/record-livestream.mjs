@@ -33,9 +33,6 @@ const segmentMinutes = Math.max(parseInt(segmentMinutesArg || '5', 10), 1);
 const segmentDurationSeconds = segmentMinutes * 60;
 const outputDir = path.resolve(outputDirArg);
 
-// Sync Offset: Positive = Fixes "Audio Ahead" (Drops Video). Negative = Fixes "Video Ahead" (Drops Audio).
-const AV_SYNC_OFFSET_MS = 0;
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -53,11 +50,8 @@ function resolveFfmpegBinary() {
   const binName = FFMPEG_BINARIES[process.platform];
   if (binName) {
     const candidates = [
-      // 1. Dev structure: ../binaries/<binName>
       path.resolve(__dirname, '../binaries', binName),
-      // 2. Production structure (sidecar next to executable): ../<binName>
       path.resolve(__dirname, '..', binName),
-      // 3. Just in case it's in the same folder
       path.resolve(__dirname, binName)
     ];
 
@@ -67,7 +61,6 @@ function resolveFfmpegBinary() {
       }
     }
     
-    // Fallback for macOS: If arm64 binary missing, try x86_64 (Rosetta)
     if (process.platform === 'darwin' && process.arch === 'arm64') {
        const x86Name = 'ffmpeg-x86_64-apple-darwin';
        const x86Candidates = [
@@ -133,6 +126,65 @@ function log(message, context = {}) {
   );
 }
 
+// Software audio mixer
+class AudioMixer {
+    constructor(frameSize = 3840) {
+        this.frameSize = frameSize;
+        this.chunks = new Map(); // timeIndex -> Buffer
+        this.lastFlushedIndex = -1;
+        // Buffer latency in frames (20ms each). 10 frames = 200ms
+        this.latencyBuffer = 10; 
+    }
+
+    mixChunk(timeIndex, buffer) {
+        if (!this.chunks.has(timeIndex)) {
+            // Allocate new zero-filled buffer (silence)
+            this.chunks.set(timeIndex, Buffer.alloc(this.frameSize));
+        }
+        
+        const target = this.chunks.get(timeIndex);
+        
+        // Mix (add with saturation)
+        for (let i = 0; i < target.length; i += 2) {
+            const val1 = target.readInt16LE(i);
+            const val2 = buffer.readInt16LE(i);
+            let sum = val1 + val2;
+            if (sum > 32767) sum = 32767;
+            if (sum < -32768) sum = -32768;
+            target.writeInt16LE(sum, i);
+        }
+    }
+
+    getReadyChunks(currentTimeIndex) {
+        const ready = [];
+        // If this is the first flush, start from the earliest chunk we have
+        if (this.lastFlushedIndex === -1) {
+            if (this.chunks.size === 0) return [];
+            const keys = Array.from(this.chunks.keys()).sort((a, b) => a - b);
+            this.lastFlushedIndex = keys[0] - 1;
+        }
+
+        const targetIndex = currentTimeIndex - this.latencyBuffer;
+        
+        for (let i = this.lastFlushedIndex + 1; i <= targetIndex; i++) {
+            if (this.chunks.has(i)) {
+                ready.push(this.chunks.get(i));
+                this.chunks.delete(i);
+            } else {
+                // Implicit silence for gaps
+                ready.push(Buffer.alloc(this.frameSize));
+            }
+            this.lastFlushedIndex = i;
+        }
+        return ready;
+    }
+    
+    reset() {
+        this.chunks.clear();
+        this.lastFlushedIndex = -1;
+    }
+}
+
 class PumpfunRecorder {
   constructor({ mintId, sessionId, outputDir, segmentDuration }) {
     this.mintId = mintId;
@@ -147,14 +199,14 @@ class PumpfunRecorder {
     this.restarting = false;
     this.room = null;
     this.ffmpeg = null;
-    this.audioReader = null;
+    this.audioMixer = new AudioMixer();
+    this.audioTracks = new Set(); // Set of active track SIDs
     this.videoReader = null;
     this.audioReady = false;
     this.videoReady = false;
     this.encoderStarted = false;
     this.audioPipe = null;
     this.videoPipe = null;
-    this.pendingAudio = [];
     this.pendingVideo = [];
     this.videoInfo = null;
     this.videoFps = 30;
@@ -171,38 +223,41 @@ class PumpfunRecorder {
     
     this.firstAudioTime = null;
     this.firstVideoTime = null;
-    this.syncStartTime = null;
-    this.syncedAudio = false;
-    this.syncedVideo = false;
     
-    this.isWritingAudio = false;
-    this.isWritingVideo = false;
-    
-    this.referenceTime = null; // Master Start Time (Max of first arrivals)
-    this.audioSamplesWritten = 0;
+    this.referenceTime = null;
     this.videoFramesWritten = 0;
     this.lastVideoBuffer = null;
     
     this.pendingResChange = null;
+    this.mixerInterval = null;
   }
 
-  getVideoEncoderArgs() {
-    const width = this.videoInfo?.width || 1280;
-    // Simple bitrate heuristic for hardware encoding
-    // 1080p+ -> 6Mbps, 720p -> 4Mbps, lower -> 2.5Mbps
-    let bitrate = '4000k';
-    if (width >= 1920) bitrate = '6000k';
-    else if (width < 1280) bitrate = '2500k';
+  async getHardwareEncoderArgs() {
+    try {
+      const { stdout } = await new Promise((resolve) => {
+        const p = spawn(this.ffmpegPath, ['-encoders']);
+        let out = '';
+        p.stdout.on('data', (d) => (out += d.toString()));
+        p.on('close', () => resolve({ stdout: out }));
+        p.on('error', () => resolve({ stdout: '' }));
+      });
 
-    if (process.platform === 'darwin') {
-      return [
-        '-c:v', 'h264_videotoolbox',
-        '-b:v', bitrate,
-        '-realtime', 'true',
-        '-allow_sw', '1'
-      ];
+      if (stdout.includes('h264_nvenc')) return ['-c:v', 'h264_nvenc', '-preset', 'p4', '-rc', 'vbr', '-cq', '19'];
+      if (stdout.includes('h264_amf')) return ['-c:v', 'h264_amf', '-usage', 'transcoding'];
+      if (stdout.includes('h264_qsv')) return ['-c:v', 'h264_qsv', '-global_quality', '20'];
+      if (process.platform === 'darwin' && stdout.includes('h264_videotoolbox')) {
+         const width = this.videoInfo?.width || 1280;
+         let bitrate = '4000k';
+         if (width >= 1920) bitrate = '6000k';
+         else if (width < 1280) bitrate = '2500k';
+         return ['-c:v', 'h264_videotoolbox', '-b:v', bitrate, '-realtime', 'true', '-allow_sw', '1'];
+      }
+      if (stdout.includes('h264_vaapi')) return ['-c:v', 'h264_vaapi'];
+
+    } catch (e) {
+      console.error('[Recorder] Failed to detect hardware encoder', e);
     }
-    
+
     return [
       '-c:v', 'libx264',
       '-preset', 'veryfast',
@@ -210,13 +265,8 @@ class PumpfunRecorder {
     ];
   }
 
-  detectTimestampUnit(ts) {
-    // Heuristic to detect if timestamp is in ns, us, or ms
-    // based on magnitude relative to Date.now()
-    if (ts > 1e16) return 1000000000; // ns
-    if (ts > 1e13) return 1000000; // us
-    if (ts > 1e10) return 1000; // ms
-    return 1000000; // Default to us if small (relative monotonic)
+  async getVideoEncoderArgs() {
+    return this.getHardwareEncoderArgs();
   }
 
   async start() {
@@ -245,6 +295,9 @@ class PumpfunRecorder {
 
     await this.startRoom(livekitUrl, token);
     this.startSegmentWatcher();
+    
+    // Start mixer flush loop
+    this.mixerInterval = setInterval(() => this.flushMixer(), 20);
   }
 
   async startRoom(url, token) {
@@ -252,75 +305,80 @@ class PumpfunRecorder {
     this.room
       .on(RoomEvent.TrackSubscribed, (track) => this.handleTrackSubscribed(track))
       .on(RoomEvent.Disconnected, () => {
-        // log('LiveKit disconnected');
         this.emitEvent({
           type: 'stream_ended',
           mintId: this.mintId,
           sessionId: this.sessionId,
         });
         this.stop().catch(() => {});
-      })
-      .on(RoomEvent.Connected, () => {
-        // log('LiveKit room connected successfully');
-      })
-      .on(RoomEvent.Reconnecting, () => {
-        // log('LiveKit reconnecting...');
-      })
-      .on(RoomEvent.Reconnected, () => {
-        // log('LiveKit reconnected');
       });
 
     await this.room.connect(url, token, { autoSubscribe: true });
   }
 
   handleTrackSubscribed(track) {
-    if (track.kind === TrackKind.KIND_AUDIO && !this.audioReader) {
+    if (track.kind === TrackKind.KIND_AUDIO) {
       this.bindAudioStream(track);
     } else if (track.kind === TrackKind.KIND_VIDEO && !this.videoReader) {
-      // Attempt to lock quality to HIGH to reduce resolution switching
       try {
           if (track.setVideoQuality) {
               track.setVideoQuality(VIDEO_QUALITY_HIGH);
           }
-      } catch(e) {
-          // Ignore if not supported
-      }
+      } catch(e) {}
       this.bindVideoStream(track);
     }
   }
 
   async bindAudioStream(track) {
+    const trackId = track.sid;
+    if (this.audioTracks.has(trackId)) return;
+    this.audioTracks.add(trackId);
+    
+    // log('Audio track subscribed', { trackId });
+
     try {
       const audioStream = new AudioStream(track, {
         sampleRate: 48000,
         numChannels: 2,
         frameSizeMs: 20,
       });
-      this.audioReader = audioStream.getReader();
+      const reader = audioStream.getReader();
+
+      // Just ensure we flag audio as ready so encoder can start
       this.audioReady = true;
-      await this.startEncoderIfReady();
+      if (!this.encoderStarted) await this.startEncoderIfReady();
 
       while (this.running) {
-        const { value, done } = await this.audioReader.read();
+        const { value, done } = await reader.read();
         if (done || !value) break;
         
-        // Use Wall Clock Arrival Time
         const arrivalTime = Date.now();
 
         if (!this.firstAudioTime) {
             this.firstAudioTime = arrivalTime;
             this.checkSyncAndStart();
         }
-
-        const buffer = Buffer.from(
-          value.data.buffer,
-          value.data.byteOffset,
-          value.data.byteLength
-        );
-        await this.writeAudio(buffer, false, arrivalTime);
+        
+        // If reference time is established, push to mixer
+        if (this.referenceTime) {
+            const buffer = Buffer.from(
+              value.data.buffer,
+              value.data.byteOffset,
+              value.data.byteLength
+            );
+            
+            // Calculate index based on time since start
+            const relativeTime = arrivalTime - this.referenceTime;
+            if (relativeTime >= 0) {
+                const timeIndex = Math.floor(relativeTime / 20);
+                this.audioMixer.mixChunk(timeIndex, buffer);
+            }
+        }
       }
     } catch (error) {
       console.error('[Recorder] Audio stream error', error);
+    } finally {
+        this.audioTracks.delete(trackId);
     }
   }
 
@@ -336,12 +394,10 @@ class PumpfunRecorder {
         const arrivalTime = Date.now();
         const frame = value.frame;
         
-        // Detect FPS from incoming frames using Wall Clock
         if (!this.fpsDetected) {
             this.fpsSamples.push(arrivalTime);
             const count = this.fpsSamples.length;
             
-            // Collect for at least 1 second
             if (count >= 2) {
                 const first = this.fpsSamples[0];
                 const last = arrivalTime;
@@ -364,17 +420,11 @@ class PumpfunRecorder {
         const converted = frame.convert(VideoBufferType.I420);
         const width = converted.width;
         const height = converted.height;
-
-        // Ensure even dimensions for YUV420p
         const effectiveWidth = width & ~1;
         const effectiveHeight = height & ~1;
 
-        // Resolution Change Debounce Logic
         if (this.encoderStarted) {
             if (this.currentWidth !== 0 && (effectiveWidth !== this.currentWidth || effectiveHeight !== this.currentHeight)) {
-                // Resolution mismatch detected
-                
-                // If this is a new change, start tracking it
                 if (!this.pendingResChange || 
                     this.pendingResChange.width !== effectiveWidth || 
                     this.pendingResChange.height !== effectiveHeight) {
@@ -383,37 +433,29 @@ class PumpfunRecorder {
                         height: effectiveHeight,
                         start: Date.now()
                     };
-                    // Drop this frame as it doesn't match encoder
                     continue;
                 }
                 
-                // Check if the change has persisted long enough (2 seconds)
                 if (Date.now() - this.pendingResChange.start > 2000) {
-                    // Stable change detected, restart encoder
                     log('Resolution change stable, restarting encoder', { 
                         old: `${this.currentWidth}x${this.currentHeight}`,
                         new: `${effectiveWidth}x${effectiveHeight}`
                     });
                     await this.restartEncoder(effectiveWidth, effectiveHeight);
                     this.pendingResChange = null;
-                    // Continue to process this frame (encoder restarted)
                 } else {
-                    // Still debouncing, drop frame
                     continue;
                 }
             } else {
-                // Resolution matches current, reset pending change if any
                 if (this.pendingResChange) {
                     this.pendingResChange = null;
                 }
             }
         } else if (this.currentWidth === 0) {
-             // Initial setup (not started yet)
              this.currentWidth = effectiveWidth;
              this.currentHeight = effectiveHeight;
              this.videoInfo = { width: effectiveWidth, height: effectiveHeight };
         } else if (effectiveWidth !== this.currentWidth || effectiveHeight !== this.currentHeight) {
-             // Encoder not started, but we have a resolution change? Just update.
              this.currentWidth = effectiveWidth;
              this.currentHeight = effectiveHeight;
              this.videoInfo = { width: effectiveWidth, height: effectiveHeight };
@@ -477,19 +519,12 @@ class PumpfunRecorder {
 
   async checkSyncAndStart() {
     if (this.encoderStarted) return;
-    
-    // Wait for both streams to be active
     if (!this.firstAudioTime || !this.firstVideoTime || !this.fpsDetected || !this.videoInfo) {
         return;
     }
     
     if (!this.referenceTime) {
-        // Trim Head Strategy: Start at the LATEST of the two arrival times.
-        // This discards the "tail" of the faster starting stream to ensure precise alignment at T=0.
         this.referenceTime = Math.max(this.firstAudioTime, this.firstVideoTime);
-        
-        // Reset counters for the new file
-        this.audioSamplesWritten = 0;
         this.videoFramesWritten = 0;
     }
 
@@ -499,87 +534,50 @@ class PumpfunRecorder {
   }
   
   async startEncoderIfReady() {
-    if (!this.running) return; // Do not start encoder if stopping
-
-    if (this.encoderStarted) {
-      return;
-    }
-
-    if (!this.audioReady || !this.videoReady || !this.videoInfo) {
-      return;
-    }
+    if (!this.running) return;
+    if (this.encoderStarted) return;
+    if (!this.audioReady || !this.videoReady || !this.videoInfo) return;
 
     this.startEncoder();
     this.encoderStarted = true;
 
-    // Flush buffered data - Sort by arrival time to maintain relative order if needed?
-    // Actually, audio and video pipes are independent. We just need to flush each queue in order.
-    // But since we are using Wall Clock Sync, we must flush them to apply the gap logic correctly.
-    
-    const pendingAudio = this.pendingAudio.splice(0);
     const pendingVideo = this.pendingVideo.splice(0);
-    
-    for (const item of pendingAudio) {
-      await this.writeAudio(item.buffer, true, item.timestamp);
-    }
     for (const item of pendingVideo) {
       await this.writeVideo(item.buffer, true, item.timestamp);
     }
   }
 
-  startEncoder() {
+  async startEncoder() {
     const outputPattern = path.join(this.outputDir, `${this.segmentPrefix}%05d.mp4`);
-
     const { width, height } = this.videoInfo || { width: 1280, height: 720 };
-    
-    // Determine start number based on last processed segment
     const startNumber = this.lastSegmentNumber + 1;
+    const encoderArgs = await this.getVideoEncoderArgs();
 
     const args = [
       '-loglevel',
       'warning',
       '-y',
-      '-probesize', // Add probesize
-      '100M',
-      '-analyzeduration', // Add analyzeduration
-      '100M',
-      '-f',
-      's16le',
-      '-ac',
-      '2',
-      '-ar',
-      '48000',
-      '-i',
-      'pipe:0',
-      '-f',
-      'rawvideo',
-      '-pix_fmt',
-      'yuv420p',
-      '-s',
-      `${width}x${height}`,
-      '-framerate', // Use -framerate for input to be explicit
-      String(this.videoFps),
-      '-i',
-      'pipe:3',
-      ...this.getVideoEncoderArgs(),
-      '-c:a',
-      'aac',
-      '-b:a',
-      '160k',
-      '-movflags',
-      '+faststart',
-      '-f',
-      'segment',
-      '-segment_time',
-      String(this.segmentDurationSeconds),
-      '-reset_timestamps',
-      '1',
-      '-segment_list',
-      this.playlistPath,
-      '-segment_list_type',
-      'csv',
-      '-segment_start_number',
-      String(startNumber),
+      '-probesize', '100M',
+      '-analyzeduration', '100M',
+      '-f', 's16le',
+      '-ac', '2',
+      '-ar', '48000',
+      '-i', 'pipe:0',
+      '-f', 'rawvideo',
+      '-pix_fmt', 'yuv420p',
+      '-s', `${width}x${height}`,
+      '-framerate', String(this.videoFps),
+      '-i', 'pipe:3',
+      ...encoderArgs,
+      '-c:a', 'aac',
+      '-b:a', '160k',
+      '-movflags', '+faststart',
+      '-f', 'segment',
+      '-segment_time', String(this.segmentDurationSeconds),
+      '-reset_timestamps', '1',
+      '-segment_list', this.playlistPath,
+      '-segment_list_type', 'csv',
+      '-segment_start_number', String(startNumber),
       outputPattern,
     ];
 
@@ -588,15 +586,10 @@ class PumpfunRecorder {
       cwd: this.outputDir,
     });
 
-    // Consume stdout/stderr to prevent blocking and avoid "null" file creation bug on Windows
     this.ffmpeg.stdout.on('data', () => {});
     this.ffmpeg.stderr.on('data', (data) => {
-      // Only log significant ffmpeg errors/warnings
       const msg = data.toString();
-      // Log all stderr from ffmpeg to help debugging, or filter if too noisy
-      if (msg.trim()) {
-         console.error(`[ffmpeg] ${msg}`);
-      }
+      if (msg.trim()) console.error(`[ffmpeg] ${msg}`);
     });
 
     this.audioPipe = this.ffmpeg.stdin;
@@ -606,55 +599,33 @@ class PumpfunRecorder {
       this.encoderStarted = false;
       if (this.running && !this.restarting) {
         console.error('[Recorder] ffmpeg exited unexpectedly', code);
-        // Prevent rapid restart loop or OOM if ffmpeg keeps failing
-        // For now, we just log it. The write loop will catch EPIPE errors.
-        // If we wanted to be aggressive, we could try to restart here.
-      } else {
-        // log('ffmpeg exited cleanly or as expected');
       }
     });
   }
 
   async restartEncoder(width, height) {
     if (this.restarting) return;
-    if (!this.running) return; // Do not restart if we are stopping
-    
+    if (!this.running) return; 
     this.restarting = true;
     
     try {
-        // 1. Stop current encoder cleanly
         await this.stopEncoderInternal();
-        
-        // Clear last video buffer to prevent resolution mismatch on next write
         this.lastVideoBuffer = null;
-        
-        // Reset Timeline state for the new file/segment
-        this.referenceTime = null; // Will be re-set on next packet arrival
-        this.audioSamplesWritten = 0;
+        this.referenceTime = null;
         this.videoFramesWritten = 0;
-        this.firstAudioTime = null; // Force re-sync
-        this.firstVideoTime = null; // Force re-sync
-        this.fpsDetected = false;   // Re-detect FPS? Maybe keep it. 
-        // Actually, if we reset firstAudioTime, checkSyncAndStart will wait again.
-        // This is safer to align the new segment.
+        this.firstAudioTime = null;
+        this.firstVideoTime = null;
+        this.fpsDetected = false;
         
-        if (!this.running) return; // Double check in case stop() was called while awaiting above
+        // Reset mixer state
+        this.audioMixer.reset();
         
-        // 2. Update dimensions
+        if (!this.running) return;
+        
         this.currentWidth = width;
         this.currentHeight = height;
         this.videoInfo = { width, height };
-        
-        // 3. Start new encoder
-        // Logic of startEncoderIfReady will start it and flush any pending buffers accumulated during stop
-        // But we need to make sure checkSyncAndStart is called again since we reset variables.
-        
-        // We don't call startEncoderIfReady here directly because we want checkSyncAndStart to handle the refTime.
-        // The next incoming packet loop will trigger checkSyncAndStart.
-        
-        // 4. Log resolution change
         log('Resolution changed', { width, height });
-        
     } catch (e) {
         console.error('Failed to restart encoder', e);
     } finally {
@@ -662,15 +633,33 @@ class PumpfunRecorder {
     }
   }
 
+  async flushMixer() {
+      if (!this.encoderStarted || !this.audioPipe || this.restarting || !this.referenceTime) return;
+      
+      const now = Date.now();
+      const relativeTime = now - this.referenceTime;
+      const currentTimeIndex = Math.floor(relativeTime / 20);
+      
+      const chunks = this.audioMixer.getReadyChunks(currentTimeIndex);
+      
+      if (chunks.length > 0) {
+          for (const chunk of chunks) {
+              if (this.audioPipe && !this.audioPipe.destroyed) {
+                  if (!this.audioPipe.write(chunk)) {
+                      // We don't await drain in the interval to prevent blocking, 
+                      // but in a real-time scenario we just push.
+                  }
+              }
+          }
+      }
+  }
+
   startSegmentWatcher() {
     this.segmentWatcher = fs.watch(this.outputDir, (event, filename) => {
-      // filename can be null or empty string on some platforms
       if (!filename || filename === 'playlist.csv') {
         this.checkPlaylist();
       }
     });
-    
-    // Fallback polling every 10 seconds to ensure we don't miss updates
     if (this.playlistPoller) clearInterval(this.playlistPoller);
     this.playlistPoller = setInterval(() => this.checkPlaylist(), 10000);
   }
@@ -678,14 +667,9 @@ class PumpfunRecorder {
   async checkPlaylist() {
     if (this.checkingPlaylist) return;
     this.checkingPlaylist = true;
-    
     try {
       if (!fs.existsSync(this.playlistPath)) {
-        // log('Playlist not found yet', { path: this.playlistPath });
-        // Even if playlist not found, we should check for the first segment if we are stopping
-        if (!this.running || this.restarting) {
-            await this.checkPotentialLastSegment();
-        }
+        if (!this.running || this.restarting) await this.checkPotentialLastSegment();
         return;
       }
       const content = await fs.promises.readFile(this.playlistPath, 'utf8');
@@ -694,41 +678,20 @@ class PumpfunRecorder {
       for (const line of lines) {
         const parts = line.split(',');
         if (parts.length < 1) continue;
-        
         const filename = parts[0];
         const fullPath = path.join(this.outputDir, filename);
-
         if (this.processedSegments.has(fullPath)) continue;
-        
         const segmentIndex = this.extractSegmentNumber(filename);
-        if (segmentIndex === null) {
-            // log('Could not extract segment number', { filename });
-            continue;
-        }
-        
-        // Update last seen segment number
-        if (segmentIndex > this.lastSegmentNumber) {
-            this.lastSegmentNumber = segmentIndex;
-        }
+        if (segmentIndex === null) continue;
+        if (segmentIndex > this.lastSegmentNumber) this.lastSegmentNumber = segmentIndex;
 
-        // Double check file existence and size
         try {
-          if (!fs.existsSync(fullPath)) {
-             // log('Segment file missing', { fullPath });
-             continue;
-          }
+          if (!fs.existsSync(fullPath)) continue;
           const stats = await fs.promises.stat(fullPath);
-          // Ignore segments smaller than 5KB (likely partial/empty)
-          if (stats.size < 5 * 1024) {
-             continue;
-          }
-        } catch (e) {
-          // log('Error checking segment file', { error: e.message, fullPath });
-          continue;
-        }
+          if (stats.size < 5 * 1024) continue;
+        } catch (e) { continue; }
 
         this.processedSegments.add(fullPath);
-                
         this.emitEvent({
           type: 'segment_complete',
           mintId: this.mintId,
@@ -738,13 +701,8 @@ class PumpfunRecorder {
           duration: this.segmentDurationSeconds,
         });
       }
-      
-      // After checking all lines in the playlist, also check for a potential "last" segment
-      if (!this.running || this.restarting) {
-          await this.checkPotentialLastSegment();
-      }
+      if (!this.running || this.restarting) await this.checkPotentialLastSegment();
     } catch (error) {
-      // Ignore errors reading playlist (e.g. locked file)
       console.warn('[Recorder] Failed to read playlist', error);
     } finally {
         this.checkingPlaylist = false;
@@ -759,7 +717,6 @@ class PumpfunRecorder {
       if (!this.processedSegments.has(potentialLastSegmentPath) && fs.existsSync(potentialLastSegmentPath)) {
          try {
            const stats = await fs.promises.stat(potentialLastSegmentPath);
-           // Ignore segments smaller than 5KB
            if (stats.size > 5 * 1024) {
                this.processedSegments.add(potentialLastSegmentPath);
                this.emitEvent({
@@ -768,17 +725,10 @@ class PumpfunRecorder {
                   sessionId: this.sessionId,
                   segment: potentialLastSegmentIndex + 1,
                   path: potentialLastSegmentPath,
-                  duration: this.segmentDurationSeconds, // Note: It might be shorter
+                  duration: this.segmentDurationSeconds,
                 });
-           } else {
-              //  log('Final segment found but too small', { path: potentialLastSegmentPath, size: stats.size });
            }
-         } catch(e) {
-             console.error('[Recorder] Error checking final segment', e);
-         }
-      } else {
-        // Log if we expected a file but didn't find it
-        // log('No final segment found', { expectedPath: potentialLastSegmentPath });
+         } catch(e) {}
       }
   }
 
@@ -788,94 +738,23 @@ class PumpfunRecorder {
     return parseInt(match[1], 10);
   }
 
-  async writeAudio(buffer, flushing = false, arrivalTime = 0) {
-    if (!flushing && (!this.encoderStarted || !this.audioPipe || this.restarting)) {
-      this.pendingAudio.push({ buffer, timestamp: arrivalTime });
-      // Don't trigger startEncoderIfReady if we are restarting, it will be handled by restartEncoder
-      if (!this.restarting) {
-          // await this.startEncoderIfReady(); // We wait for explicit sync
-          if (!this.encoderStarted) this.checkSyncAndStart();
-      }
-      return;
-    }
-
-    // Filter out packets that are older than our reference start time
-    if (arrivalTime < this.referenceTime) {
-        return;
-    }
-
-    // Audio Drift Correction (Silence Injection)
-    if (arrivalTime > 0 && this.referenceTime !== null) {
-        const elapsedMs = arrivalTime - this.referenceTime;
-        const elapsedSec = elapsedMs / 1000;
-        
-        const sampleRate = 48000;
-        const channels = 2;
-        const bytesPerSample = 2;
-        const bytesPerFrame = channels * bytesPerSample; // 4 bytes
-        
-        const targetSamples = Math.floor(elapsedSec * sampleRate);
-        const gapSamples = targetSamples - this.audioSamplesWritten;
-
-        // Threshold ~20ms (approx 1000 samples @ 48k)
-        if (gapSamples > 960) {
-             const maxSilence = 48000; // Max 1s silence per chunk
-             const fillSamples = Math.min(gapSamples, maxSilence);
-             const silenceBytes = fillSamples * bytesPerFrame;
-             
-             if (silenceBytes > 0) {
-                 try {
-                    // Allocate zero-filled buffer
-                    const silence = Buffer.alloc(silenceBytes);
-                    if (!this.audioPipe.write(silence)) {
-                        await once(this.audioPipe, 'drain');
-                    }
-                    this.audioSamplesWritten += fillSamples;
-                 } catch(e) { }
-             }
-             
-             // Prevent runaway filling on massive gaps
-             if (gapSamples > maxSilence) {
-                 this.audioSamplesWritten = targetSamples;
-             }
-        }
-    }
-
-    this.isWritingAudio = true;
-    try {
-        const bytesPerFrame = 4; // 2 channels * 2 bytes
-        if (!this.audioPipe.write(buffer)) {
-          await once(this.audioPipe, 'drain');
-        }
-        this.audioSamplesWritten += (buffer.length / bytesPerFrame);
-    } catch (e) {
-        if (this.restarting && !flushing) {
-            this.pendingAudio.push({ buffer, timestamp: arrivalTime });
-        }
-    } finally {
-        this.isWritingAudio = false;
-    }
-  }
+  // Note: Old writeAudio logic is removed in favor of mixer + flushMixer
 
   async writeVideo(buffer, flushing = false, arrivalTime = 0) {
-    // If shutting down, strictly do NOT write to avoid partial frames or writing to closing pipes
     if (!flushing && !this.running) return;
 
     if (!flushing && (!this.encoderStarted || !this.videoPipe || this.restarting)) {
       this.pendingVideo.push({ buffer, timestamp: arrivalTime });
       if (!this.restarting) {
-          // await this.startEncoderIfReady();
           if (!this.encoderStarted) this.checkSyncAndStart();
       }
       return;
     }
 
-    // Filter out packets that are older than our reference start time
     if (arrivalTime < this.referenceTime) {
         return;
     }
 
-    // Video VFR -> CFR Gap Filling
     if (arrivalTime > 0 && this.referenceTime !== null && this.videoFps > 0) {
         const elapsedMs = arrivalTime - this.referenceTime;
         const elapsedSec = elapsedMs / 1000;
@@ -884,14 +763,9 @@ class PumpfunRecorder {
         const gapFrames = targetFrames - this.videoFramesWritten;
         
         if (gapFrames > 0) {
-            const maxFill = this.videoFps; // Max 1s gap fill
+            const maxFill = this.videoFps;
             const fillCount = Math.min(gapFrames, maxFill);
-            
-            // Use last buffer for duplication
             const fillBuffer = this.lastVideoBuffer; 
-            
-            // SAFEGUARD: Only duplicate if we have a buffer AND it matches current resolution
-            // This prevents the green/purple artifacting from resolution mismatch
             if (fillBuffer && fillBuffer.length === buffer.length) {
                 for (let i = 0; i < fillCount; i++) {
                     try {
@@ -904,17 +778,13 @@ class PumpfunRecorder {
                     } catch(e) {}
                 }
             }
-            
-            // If gap was massive (e.g. paused stream), jump counter to avoid endless loop
             if (gapFrames > maxFill) {
                 this.videoFramesWritten = targetFrames;
             }
         }
     }
 
-    this.isWritingVideo = true;
     try {
-        // Extra safety check before write
         if (this.videoPipe && !this.videoPipe.destroyed && (flushing || this.running)) {
             if (!this.videoPipe.write(buffer)) {
                 await once(this.videoPipe, 'drain');
@@ -926,75 +796,39 @@ class PumpfunRecorder {
         if (this.restarting && !flushing) {
             this.pendingVideo.push({ buffer, timestamp: arrivalTime });
         }
-    } finally {
-        this.isWritingVideo = false;
     }
   }
   
   async stopEncoderInternal() {
       if (!this.ffmpeg) return;
-      
       this.encoderStarted = false;
       
-      // Wait for pending writes to finish/drain to prevent partial packets
       const startWait = Date.now();
-      while ((this.isWritingAudio || this.isWritingVideo) && Date.now() - startWait < 2000) {
+      while (Date.now() - startWait < 500) {
           await new Promise(r => setTimeout(r, 50));
       }
       
-      // Immediately mark pipes as unusable to prevent writes
       const vPipe = this.videoPipe;
       const aPipe = this.audioPipe;
       this.videoPipe = null;
       this.audioPipe = null;
       
       try {
-        // Wait for ffmpeg to exit after closing inputs
         const exitPromise = once(this.ffmpeg, 'exit');
-        
-        // Close inputs
-        // For stdin (audio), we must end it to signal EOF
-        try { 
-            if (this.ffmpeg.stdin && !this.ffmpeg.stdin.destroyed) {
-                this.ffmpeg.stdin.end(); 
-            }
-        } catch(e) {
-            console.error('[Recorder] Error closing audio pipe', e);
-        }
-        
-        // For video pipe (stdio[3]), we must also end it
-        if (vPipe) {
-          try { 
-            if (!vPipe.destroyed) {
-                vPipe.end(); 
-            }
-          } catch(e) {
-            console.error('[Recorder] Error closing video pipe', e);
-          }
-        }
+        try { if (this.ffmpeg.stdin && !this.ffmpeg.stdin.destroyed) this.ffmpeg.stdin.end(); } catch(e) {}
+        if (vPipe) try { if (!vPipe.destroyed) vPipe.end(); } catch(e) {}
 
-
-        // Wait up to 25 seconds for clean exit (increased to allow final segment flush + faststart)
-        // If it doesn't exit in 15 seconds, try SIGINT to encourage it.
-        
         const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), 25000));
-        
-        // Race against timeout
         let result = await Promise.race([exitPromise, new Promise(resolve => setTimeout(() => resolve('soft-timeout'), 15000))]);
         
         if (result === 'soft-timeout') {
-            //  log('ffmpeg did not exit quickly, sending SIGINT');
-             try {
-                 this.ffmpeg.kill('SIGINT');
-             } catch (e) {}
+             try { this.ffmpeg.kill('SIGINT'); } catch (e) {}
              result = await Promise.race([exitPromise, timeoutPromise]);
         }
 
         if (result === 'timeout') {
-          //  log('encoder did not exit in time, forcing kill');
            this.ffmpeg.kill('SIGKILL');
         } else {
-           // Small delay to allow file system to flush
            await new Promise(resolve => setTimeout(resolve, 1000));
         }
       } catch (error) {
@@ -1008,40 +842,20 @@ class PumpfunRecorder {
 
   async stop() {
     this.running = false;
-
-    if (this.playlistPoller) {
-      clearInterval(this.playlistPoller);
-      this.playlistPoller = null;
-    }
-
-    // 1. Stop readers (Source) first to prevent new data
-    // This prevents writing to encoder while it's closing
-    if (this.audioReader) {
-        this.audioReader.cancel().catch(e => console.error('[Recorder] Error cancelling audio reader', e));
-        this.audioReader = null;
-    }
-    
-    if (this.videoReader) {
-        this.videoReader.cancel().catch(e => console.error('[Recorder] Error cancelling video reader', e));
-        this.videoReader = null;
-    }
+    if (this.playlistPoller) clearInterval(this.playlistPoller);
+    if (this.mixerInterval) clearInterval(this.mixerInterval);
 
     if (this.segmentWatcher) {
       this.segmentWatcher.close();
       this.segmentWatcher = null;
     }
 
-    // 2. Stop encoder (Sink)
     await this.stopEncoderInternal();
-
-    // 3. Check playlist for last segment
     this.checkingPlaylist = false; 
     await this.checkPlaylist();
 
-    // 4. Disconnect LiveKit
     if (this.room) {
       try {
-        // Timeout disconnect to prevent hanging
         await Promise.race([
             this.room.disconnect(),
             new Promise(resolve => setTimeout(resolve, 2000))
@@ -1068,12 +882,10 @@ async function main() {
   await recorder.start();
 
   const shutdown = async () => {
-    // Remove listeners to prevent double handling
     process.off('SIGINT', shutdown);
     process.off('SIGTERM', shutdown);
     process.stdin.off('data', onStdinData);
     
-    // Force exit after 28 seconds if recorder.stop() hangs (must be less than Rust's 30s)
     const forceExitTimer = setTimeout(() => {
         console.error(JSON.stringify({ type: 'log', message: 'Shutdown timed out, forcing exit' }));
         process.exit(0);
@@ -1086,11 +898,6 @@ async function main() {
     }
     
     clearTimeout(forceExitTimer);
-    
-    // Emit a specific exit event via stdout for the Rust side to pick up if needed, 
-    // but usually process exit is enough.
-    // However, our Rust side listens for "stream_ended" which we emitted inside stop().
-    
     process.exit(0);
   };
 
