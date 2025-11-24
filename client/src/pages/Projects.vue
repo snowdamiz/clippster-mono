@@ -510,7 +510,12 @@
   const { success, error } = useToast();
   const { activeSessions } = useLivestreamMonitoring();
   const { processVideoFile } = useVideoOperations();
-  const { getActiveDownloads, getQueuedDownloads, initialize: initializeDownloads } = useDownloads();
+  const {
+    getActiveDownloads,
+    getQueuedDownloads,
+    getCompletedDownloads,
+    initialize: initializeDownloads,
+  } = useDownloads();
 
   // View state
   const viewMode = ref<'folders' | 'list'>('folders');
@@ -541,8 +546,10 @@
   const currentPage = ref(1);
   const projectsPerPage = 20;
 
-  async function loadProjects() {
-    loading.value = true;
+  async function loadProjects(isBackgroundRefresh = false) {
+    if (!isBackgroundRefresh) {
+      loading.value = true;
+    }
     try {
       projects.value = await getAllProjects();
 
@@ -556,6 +563,8 @@
         projectVideos.value[project.id] = videos;
 
         // Load project thumbnail or use first video's thumbnail
+        // If we're doing a background refresh, we might want to re-verify thumbnails for modified projects
+        // But checking !has() is usually enough if we clear the cache for modified projects before calling this
         if (!thumbnailCache.value.has(project.id)) {
           if (project.thumbnail_path) {
             // Use project's stored thumbnail if available
@@ -1096,13 +1105,38 @@
   }
 
   // Listen for video added events (to update project thumbnails)
-  function handleVideoAdded(_event: CustomEvent) {
+  function handleVideoAdded(event: Event) {
+    const customEvent = event as CustomEvent;
+    const detail = customEvent.detail;
+
+    // Clear thumbnail cache for this project and any parent to force refresh
+    if (detail && detail.projectId) {
+      thumbnailCache.value.delete(detail.projectId);
+
+      // Try to find parent project via completed downloads
+      // This is necessary because the new child project might not be in projects.value yet
+      // and we need to invalidate the parent's thumbnail cache so it can update
+      const completed = getCompletedDownloads();
+      const download = completed.find((d) => d.projectId === detail.projectId);
+
+      if (download && download.parentProjectId) {
+        thumbnailCache.value.delete(download.parentProjectId);
+      }
+
+      // Also fallback: check if we can find the project in current list (if it's an update)
+      const project = projects.value.find((p) => p.id === detail.projectId);
+      if (project && project.parent_id) {
+        thumbnailCache.value.delete(project.parent_id);
+      }
+    }
+
     // Wait a moment for the DB write to complete, then force a reload
     // Increased delay to ensure consistency especially for sequential segment completions
     setTimeout(async () => {
       // Force a full refresh including reloading active downloads state
       await initializeDownloads();
-      loadProjects();
+      // Pass true to avoid showing skeletons during background refresh
+      loadProjects(true);
     }, 1500);
   }
 
@@ -1115,12 +1149,12 @@
     // Add event listener for clip refresh events
     document.addEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener);
     // Add event listener for video added events
-    document.addEventListener('video-added', handleVideoAdded as EventListener);
+    window.addEventListener('video-added', handleVideoAdded as EventListener);
   });
 
   onUnmounted(() => {
     // Clean up event listener
     document.removeEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener);
-    document.removeEventListener('video-added', handleVideoAdded as EventListener);
+    window.removeEventListener('video-added', handleVideoAdded as EventListener);
   });
 </script>
