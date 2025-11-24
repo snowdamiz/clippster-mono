@@ -1,11 +1,6 @@
 <template>
   <div class="assets-page">
-    <PageLayout
-      title="Assets"
-      description="Manage your intros and outros"
-      :show-header="assets.length > 0"
-      :icon="Archive"
-    >
+    <PageLayout title="Assets" description="Manage your intros and outros" :show-header="true" :icon="Archive">
       <template #actions>
         <div class="flex items-center gap-2">
           <button
@@ -18,7 +13,7 @@
           <button
             @click="handleUpload"
             :disabled="uploading"
-            class="px-5 py-2.5 bg-gradient-to-r from-blue-500/80 via-purple-500/80 to-pink-500/80 hover:from-blue-500/90 hover:via-purple-500/90 hover:to-pink-500/90 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            class="px-5 py-2.5 bg-muted hover:bg-muted/80 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Upload class="h-5 w-5" />
             {{ uploading ? 'Uploading...' : 'Upload Asset' }}
@@ -174,8 +169,6 @@
           v-if="assets.length === 0 && !uploading"
           title="No assets yet"
           description="Upload your first intro or outro to get started"
-          button-text="Upload Asset"
-          @action="handleUpload()"
         >
           <template #icon>
             <Package class="h-16 w-16 text-muted-foreground" />

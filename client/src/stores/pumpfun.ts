@@ -1,11 +1,20 @@
 import { defineStore } from 'pinia';
-import { getPumpFunClips, extractMintId, type PumpFunClip } from '@/services/pumpfun';
+import {
+  getPumpFunClips,
+  extractMintId,
+  type PumpFunClip,
+  searchPumpFunTokens,
+  fetchTokenMetadataFromServer,
+} from '@/services/pumpfun';
 
 interface RecentSearch {
   mintId: string;
   displayText: string;
   timestamp: number;
   label?: string;
+  symbol?: string;
+  name?: string;
+  imageUrl?: string;
 }
 
 interface PumpFunState {
@@ -66,7 +75,12 @@ export const usePumpFunStore = defineStore('pumpfun', {
     },
 
     // Add a search to recent searches
-    addToRecentSearches(mintId: string, displayText: string, label?: string) {
+    addToRecentSearches(
+      mintId: string,
+      displayText: string,
+      label?: string,
+      metadata?: { symbol?: string; name?: string; imageUrl?: string }
+    ) {
       const existingIndex = this.recentSearches.findIndex((search) => search.mintId === mintId);
 
       if (existingIndex !== -1) {
@@ -77,6 +91,12 @@ export const usePumpFunStore = defineStore('pumpfun', {
         if (label !== undefined) {
           this.recentSearches[existingIndex].label = label;
         }
+        // Update metadata if provided
+        if (metadata) {
+          if (metadata.symbol) this.recentSearches[existingIndex].symbol = metadata.symbol;
+          if (metadata.name) this.recentSearches[existingIndex].name = metadata.name;
+          if (metadata.imageUrl) this.recentSearches[existingIndex].imageUrl = metadata.imageUrl;
+        }
       } else {
         // Add new entry at the beginning
         this.recentSearches.unshift({
@@ -84,6 +104,7 @@ export const usePumpFunStore = defineStore('pumpfun', {
           displayText,
           label,
           timestamp: Date.now(),
+          ...metadata,
         });
 
         // Limit to max recent searches
@@ -92,6 +113,20 @@ export const usePumpFunStore = defineStore('pumpfun', {
 
       // Save to localStorage
       this.saveRecentSearches();
+    },
+
+    // Update metadata for a recent search
+    updateRecentSearchMetadata(
+      mintId: string,
+      metadata: { symbol?: string; name?: string; imageUrl?: string }
+    ) {
+      const searchIndex = this.recentSearches.findIndex((search) => search.mintId === mintId);
+      if (searchIndex !== -1) {
+        if (metadata.symbol) this.recentSearches[searchIndex].symbol = metadata.symbol;
+        if (metadata.name) this.recentSearches[searchIndex].name = metadata.name;
+        if (metadata.imageUrl) this.recentSearches[searchIndex].imageUrl = metadata.imageUrl;
+        this.saveRecentSearches();
+      }
     },
 
     // Clear all recent searches
@@ -112,6 +147,42 @@ export const usePumpFunStore = defineStore('pumpfun', {
       if (searchIndex !== -1) {
         this.recentSearches[searchIndex].label = label.trim() || undefined;
         this.saveRecentSearches();
+      }
+    },
+
+    // Refresh metadata for all recent searches
+    async refreshRecentSearchesMetadata() {
+      for (const search of this.recentSearches) {
+        // Only fetch if missing key metadata
+        if (!search.symbol || !search.imageUrl) {
+          try {
+            // First try DexScreener
+            const results = await searchPumpFunTokens(search.mintId);
+            let match = null;
+
+            if (results && results.length > 0) {
+              match = results.find((r) => r.mint === search.mintId) || results[0];
+            }
+
+            // If no match or missing data, try server (Metaplex)
+            if (!match || !match.image) {
+              const serverMeta = await fetchTokenMetadataFromServer(search.mintId);
+              if (serverMeta) {
+                match = serverMeta;
+              }
+            }
+
+            if (match) {
+              this.updateRecentSearchMetadata(search.mintId, {
+                symbol: match.symbol,
+                name: match.name,
+                imageUrl: match.image,
+              });
+            }
+          } catch (error) {
+            // Silently fail
+          }
+        }
       }
     },
 
@@ -148,6 +219,34 @@ export const usePumpFunStore = defineStore('pumpfun', {
 
           // Save to recent searches on successful search, preserving existing label and order
           this.addToRecentSearches(extractedMintId, input, undefined);
+
+          // Trigger metadata fetch for this search
+          searchPumpFunTokens(extractedMintId)
+            .then(async (results) => {
+              let match = null;
+              if (results && results.length > 0) {
+                match = results.find((r) => r.mint === extractedMintId) || results[0];
+              }
+
+              // If no match or missing data, try server (Metaplex)
+              if (!match || !match.image) {
+                const serverMeta = await fetchTokenMetadataFromServer(extractedMintId);
+                if (serverMeta) {
+                  match = serverMeta;
+                }
+              }
+
+              if (match) {
+                this.updateRecentSearchMetadata(extractedMintId, {
+                  symbol: match.symbol,
+                  name: match.name,
+                  imageUrl: match.image,
+                });
+              }
+            })
+            .catch(() => {
+              // Ignore metadata fetch errors
+            });
 
           return {
             success: true,

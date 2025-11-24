@@ -2,10 +2,10 @@
   <PageLayout
     title="PumpFun"
     description="Download streams directly from PumpFun"
-    :show-header="pumpFunStore.clips.length > 0"
+    :show-header="true"
     icon="/capsule.svg"
   >
-    <template #actions v-if="pumpFunStore.clips.length > 0">
+    <template #actions>
       <div class="flex items-center gap-3">
         <!-- Recent Searches Dropdown -->
         <div class="relative" v-if="pumpFunStore.getRecentSearches.length > 0">
@@ -21,7 +21,7 @@
           <!-- Dropdown Menu -->
           <div
             v-if="showRecentDropdown"
-            class="absolute top-full left-0 mt-1 w-64 bg-card border border-border rounded-md shadow-lg z-20 max-h-64 overflow-y-auto"
+            class="absolute top-full left-0 mt-1 w-64 bg-card border border-border rounded-md shadow-lg z-[9999] max-h-64 overflow-y-auto"
             @click.stop
           >
             <div class="p-2">
@@ -32,56 +32,29 @@
                     handleRecentSearchClick(search);
                     showRecentDropdown = false;
                   "
-                  class="w-full text-left px-3 py-2 rounded-md hover:bg-muted/80 transition-colors flex items-center gap-2 cursor-pointer"
+                  class="w-full text-left px-3 py-2 rounded-md hover:bg-muted/80 transition-colors flex items-center gap-3 cursor-pointer"
                   :title="`Search: ${search.displayText}${search.label ? ` (${search.label})` : ''}`"
                 >
-                  <Clock class="h-3 w-3 text-muted-foreground group-hover:text-purple-400 flex-shrink-0" />
-                  <div class="flex-1 min-w-0">
-                    <div class="text-sm truncate">{{ search.displayText }}</div>
-                    <div v-if="search.label" class="text-xs text-purple-400 truncate" :title="`Label: ${search.label}`">
-                      {{ search.label }}
-                    </div>
-                  </div>
-                  <button
-                    @click.stop="startEditingLabel(search.mintId, search.label)"
-                    class="opacity-0 group-hover:opacity-100 p-1 hover:bg-muted/60 rounded transition-all"
-                    title="Edit label"
+                  <!-- Icon/Image -->
+                  <div
+                    class="w-8 h-8 rounded-full overflow-hidden bg-muted flex-shrink-0 border border-border/50 flex items-center justify-center"
                   >
-                    <Edit class="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                  </button>
-                </div>
+                    <img v-if="search.imageUrl" :src="search.imageUrl" class="w-full h-full object-cover" />
+                    <Clock v-else class="h-4 w-4 text-muted-foreground group-hover:text-purple-400" />
+                  </div>
 
-                <!-- Label editing row -->
-                <div
-                  v-if="editingLabel === search.mintId"
-                  class="px-2 py-1.5 bg-muted/50 border-t border-border"
-                  @click.stop
-                >
-                  <div class="flex items-center gap-1.5">
-                    <Tag class="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                    <input
-                      ref="labelInputRef"
-                      v-model="labelInput"
-                      @keydown="handleLabelKeydown($event, search.mintId)"
-                      @blur="saveLabel(search.mintId)"
-                      placeholder="Add label..."
-                      class="flex-1 min-w-0 px-1.5 py-0.5 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-purple-500/50"
-                      maxlength="30"
-                    />
-                    <button
-                      @click="saveLabel(search.mintId)"
-                      class="p-0.5 text-green-400 hover:text-green-300 transition-colors flex-shrink-0"
-                      title="Save"
-                    >
-                      <Check class="h-3 w-3" />
-                    </button>
-                    <button
-                      @click="cancelEditingLabel"
-                      class="p-0.5 text-red-400 hover:text-red-300 transition-colors flex-shrink-0"
-                      title="Cancel"
-                    >
-                      <X class="h-3 w-3" />
-                    </button>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                      <div class="font-medium text-sm text-foreground truncate">
+                        <template v-if="search.symbol">{{ search.symbol }}</template>
+                        <template v-else-if="search.label">{{ search.label }}</template>
+                        <template v-else>{{ truncateMint(search.mintId) }}</template>
+                      </div>
+                    </div>
+                    <div class="text-xs text-muted-foreground truncate">
+                      <template v-if="search.name">{{ search.name }}</template>
+                      <template v-else-if="search.symbol || search.label">{{ truncateMint(search.mintId) }}</template>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -98,27 +71,36 @@
             </div>
           </div>
         </div>
-        <SearchInput
-          v-model="mintId"
-          placeholder="Mint ID or PumpFun URL"
-          :loading="pumpFunStore.loading"
-          @search="handleSearch"
-          class="flex-1 max-w-md"
-        />
+        <div class="relative flex-1 max-w-md shadow-sm group">
+          <div
+            class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 pointer-events-none z-10"
+          >
+            <Search class="w-4 h-4 text-muted-foreground" />
+          </div>
+          <Input
+            v-model="mintId"
+            class="h-12 pl-11 pr-28 text-sm bg-background border-border/70 rounded-lg focus-visible:ring-primary/20 transition-all hover:border-primary/30 focus:border-primary/50 shadow-sm w-full"
+            placeholder="Mint ID or PumpFun URL"
+            :disabled="pumpFunStore.loading"
+            @keyup.enter="handleSearch"
+          />
+          <div class="absolute right-2 top-1/2 -translate-y-1/2">
+            <Button
+              size="sm"
+              class="h-8 px-4 rounded-sm font-medium transition-all text-xs"
+              :disabled="!mintId || pumpFunStore.loading"
+              @click="handleSearch"
+            >
+              <Loader2 v-if="pumpFunStore.loading" class="w-3.5 h-3.5 animate-spin" />
+              <Search v-else class="w-3.5 h-3.5" />
+              Search
+            </Button>
+          </div>
+        </div>
       </div>
     </template>
     <!-- Loading State -->
     <div v-if="pumpFunStore.loading" class="space-y-6">
-      <!-- Search Bar -->
-      <div class="flex justify-center">
-        <SearchInput
-          v-model="mintId"
-          placeholder="Mint ID or PumpFun URL"
-          :loading="true"
-          :disabled="true"
-          class="max-w-md"
-        />
-      </div>
       <!-- Skeleton Cards Grid -->
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         <!-- Show 6 skeleton cards during loading -->
@@ -249,115 +231,17 @@
         </div>
       </div>
     </div>
-    <!-- Empty State -->
-    <div v-else class="flex flex-col items-center justify-center min-h-[calc(100vh-16rem)]">
-      <!-- Empty State Component -->
-      <EmptyState title="Search VODs on Pump" description="Enter a mint ID or PumpFun URL to search for VODs">
-        <template #icon>
-          <Search class="h-16 w-16 text-muted-foreground" />
-        </template>
-        <template #action>
-          <div class="flex items-center gap-3 w-full max-w-md">
-            <!-- Recent Searches Dropdown -->
-            <div v-if="pumpFunStore.getRecentSearches.length > 0" class="relative">
-              <button
-                @click="showEmptyRecentDropdown = !showEmptyRecentDropdown"
-                class="h-12 px-3 bg-muted border border-border rounded-md text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all flex items-center gap-2"
-                title="Recent searches"
-              >
-                <Clock class="h-4 w-4" />
-                <span class="text-sm">Recent</span>
-                <ChevronDown class="h-3 w-3 transition-transform" :class="{ 'rotate-180': showEmptyRecentDropdown }" />
-              </button>
-              <!-- Dropdown Menu -->
-              <div
-                v-if="showEmptyRecentDropdown"
-                class="absolute top-full left-0 mt-1 w-64 bg-card border border-border rounded-md shadow-lg z-20 max-h-64 overflow-y-auto"
-                @click.stop
-              >
-                <div class="p-2">
-                  <div class="text-xs font-medium text-muted-foreground px-2 py-1 mb-1">Recent Searches</div>
-                  <div v-for="search in pumpFunStore.getRecentSearches.slice(0, 10)" :key="search.mintId" class="group">
-                    <div
-                      @click="
-                        handleRecentSearchClick(search);
-                        showEmptyRecentDropdown = false;
-                      "
-                      class="w-full text-left px-3 py-2 rounded-md hover:bg-muted/80 transition-colors flex items-center gap-2 cursor-pointer"
-                      :title="`Search: ${search.displayText}${search.label ? ` (${search.label})` : ''}`"
-                    >
-                      <Clock class="h-3 w-3 text-muted-foreground group-hover:text-purple-400 flex-shrink-0" />
-                      <div class="flex-1 min-w-0">
-                        <div class="text-sm truncate">{{ search.displayText }}</div>
-                        <div
-                          v-if="search.label"
-                          class="text-xs text-purple-400 truncate"
-                          :title="`Label: ${search.label}`"
-                        >
-                          {{ search.label }}
-                        </div>
-                      </div>
-                      <button
-                        @click.stop="startEditingLabel(search.mintId, search.label)"
-                        class="opacity-0 group-hover:opacity-100 p-1 hover:bg-muted/60 rounded transition-all"
-                        title="Edit label"
-                      >
-                        <Edit class="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                      </button>
-                    </div>
 
-                    <!-- Label editing row -->
-                    <div
-                      v-if="editingLabel === search.mintId"
-                      class="px-2 py-1.5 bg-muted/50 border-t border-border"
-                      @click.stop
-                    >
-                      <div class="flex items-center gap-1.5">
-                        <Tag class="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                        <input
-                          ref="labelInputRef"
-                          v-model="labelInput"
-                          @keydown="handleLabelKeydown($event, search.mintId)"
-                          @blur="saveLabel(search.mintId)"
-                          placeholder="Add label..."
-                          class="flex-1 min-w-0 px-1.5 py-0.5 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-purple-500/50"
-                          maxlength="30"
-                        />
-                        <button
-                          @click="saveLabel(search.mintId)"
-                          class="p-0.5 text-green-400 hover:text-green-300 transition-colors flex-shrink-0"
-                          title="Save"
-                        >
-                          <Check class="h-3 w-3" />
-                        </button>
-                        <button
-                          @click="cancelEditingLabel"
-                          class="p-0.5 text-red-400 hover:text-red-300 transition-colors flex-shrink-0"
-                          title="Cancel"
-                        >
-                          <X class="h-3 w-3" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    @click="
-                      pumpFunStore.clearRecentSearches();
-                      showEmptyRecentDropdown = false;
-                    "
-                    class="w-full text-left px-3 py-2 rounded-md hover:bg-red-500/10 text-red-400 text-xs transition-colors mt-1"
-                    title="Clear all recent searches"
-                  >
-                    Clear All
-                  </button>
-                </div>
-              </div>
-            </div>
-            <SearchInput v-model="mintId" placeholder="Mint ID or PumpFun URL" @search="handleSearch" class="flex-1" />
-          </div>
-        </template>
-      </EmptyState>
-    </div>
+    <EmptyState
+      v-if="pumpFunStore.clips.length === 0 && !pumpFunStore.loading && !pumpFunStore.error"
+      title="Search for VODs"
+      description="Search for VODs by Mint ID or PumpFun URL."
+    >
+      <template #icon>
+        <Video class="h-16 w-16 text-muted-foreground" />
+      </template>
+    </EmptyState>
+
     <!-- Download Confirmation Modal -->
     <Transition
       enter-active-class="transition duration-200 ease-out"
@@ -623,7 +507,8 @@
   import { useRouter } from 'vue-router';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
-  import SearchInput from '@/components/SearchInput.vue';
+  import { Button } from '@/components/ui/button';
+  import { Input } from '@/components/ui/input';
   import TimeRangePicker from '@/components/TimeRangePicker.vue';
   import PaginationFooter from '@/components/PaginationFooter.vue';
   import { type PumpFunClip } from '@/services/pumpfun';
@@ -656,7 +541,14 @@
   onMounted(() => {
     // Add click outside listener to close dropdown
     document.addEventListener('click', handleClickOutside);
+    // Refresh metadata for recent searches
+    pumpFunStore.refreshRecentSearchesMetadata();
   });
+
+  function truncateMint(mint: string) {
+    if (!mint || mint.length < 8) return mint;
+    return `${mint.slice(0, 4)}...${mint.slice(-4)}`;
+  }
 
   // Clean up event listener
   onUnmounted(() => {
@@ -852,6 +744,7 @@
           showError('No VODs Found', 'This mint ID has no available VODs');
         } else {
           success('VODs Loaded', `Found ${result.total} VOD${result.total !== 1 ? 's' : ''}`);
+          // Metadata fetch is handled automatically in the store
         }
       } else {
         showError('Search Failed', result.error || 'Failed to fetch VODs');

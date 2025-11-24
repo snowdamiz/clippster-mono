@@ -8,7 +8,7 @@
     <template #actions>
       <button
         @click="openCreateDialog"
-        class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all"
+        class="px-5 py-2.5 bg-muted hover:bg-muted/80 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all"
       >
         <Plus class="h-5 w-5" />
         New Project
@@ -26,7 +26,7 @@
       class="space-y-8"
     >
       <!-- Filter Toolbar -->
-      <div class="-mt-4 bg-card flex flex-col md:flex-row gap-4 items-center justify-between">
+      <div class="-mt-2 bg-card flex flex-col md:flex-row gap-4 items-center justify-between">
         <!-- Left: Search -->
         <div class="relative w-full md:w-72">
           <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -35,22 +35,33 @@
 
         <!-- Right: Filters & View Mode -->
         <div class="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 scrollbar-hide">
+          <!-- Reset Filters Button -->
+          <button
+            v-if="searchQuery || statusFilter !== 'all'"
+            @click="
+              searchQuery = '';
+              statusFilter = 'all';
+            "
+            class="text-xs px-2 py-1 text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-md transition-colors whitespace-nowrap font-medium flex items-center gap-1"
+          >
+            <X class="h-3 w-3" />
+            Reset
+          </button>
+
           <!-- Status Filter -->
           <CustomDropdown v-model="statusFilter" :options="statusOptions" placeholder="Status" class="w-[140px]" />
 
           <!-- Sort Filter -->
           <CustomDropdown v-model="sortBy" :options="sortOptions" placeholder="Sort By" class="w-[160px]" />
 
-          <div class="h-8 w-px bg-border mx-1"></div>
-
           <!-- View Mode -->
           <div
             class="bg-muted/50 rounded-md p-1 flex items-center gap-1 transition-opacity"
-            :class="{ 'opacity-50 pointer-events-none': searchQuery }"
+            :class="{ 'opacity-50 pointer-events-none': searchQuery || statusFilter === 'has_clips' }"
           >
             <button
               @click="viewMode = 'folders'"
-              :disabled="!!searchQuery"
+              :disabled="!!searchQuery || statusFilter === 'has_clips'"
               :class="[
                 'p-2 rounded transition-colors',
                 viewMode === 'folders'
@@ -63,7 +74,7 @@
             </button>
             <button
               @click="viewMode = 'list'"
-              :disabled="!!searchQuery"
+              :disabled="!!searchQuery || statusFilter === 'has_clips'"
               :class="[
                 'p-2 rounded transition-colors',
                 viewMode === 'list'
@@ -768,7 +779,8 @@
 
     // 1. Filter by View Mode (only if NOT searching)
     // If user is searching, we want to search across all projects regardless of folder structure
-    if (!searchQuery.value) {
+    // Also if filtering by "Has Clips", we want to show all matching projects regardless of hierarchy
+    if (!searchQuery.value && statusFilter.value !== 'has_clips') {
       if (viewMode.value === 'folders') {
         result = result.filter((p) => !p.parent_id);
       } else if (viewMode.value === 'list') {

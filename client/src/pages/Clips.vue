@@ -3,7 +3,7 @@
     <PageLayout
       title="Clips"
       description="Browse and manage all your video clips"
-      :show-header="clips.length > 0"
+      :show-header="true"
       :icon="LayoutGrid"
     >
       <template #actions>
@@ -23,95 +23,163 @@
       <!-- Content when not loading -->
 
       <div v-else>
-        <!-- Header with stats -->
-        <div v-if="clips.length > 0" class="flex items-center justify-between mb-4">
-          <p class="text-sm text-muted-foreground">{{ clips.length }} clip{{ clips.length !== 1 ? 's' : '' }}</p>
+        <!-- Filter Toolbar -->
+        <div class="mb-6 bg-card flex flex-col md:flex-row gap-4 items-center justify-between" v-if="clips.length > 0">
+          <!-- Left: Search -->
+          <div class="relative w-full md:w-72">
+            <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input v-model="searchQuery" placeholder="Search clips or projects..." class="pl-9 bg-background/50" />
+          </div>
+
+          <!-- Right: Filters -->
+          <div class="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 scrollbar-hide">
+            <!-- Reset Filters Button -->
+            <button
+              v-if="searchQuery || statusFilter !== 'all' || projectFilter !== 'all'"
+              @click="
+                searchQuery = '';
+                statusFilter = 'all';
+                projectFilter = 'all';
+              "
+              class="text-xs px-2 py-1 text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-md transition-colors whitespace-nowrap font-medium flex items-center gap-1"
+            >
+              <X class="h-3 w-3" />
+              Reset
+            </button>
+
+            <!-- Status Filter -->
+            <CustomDropdown v-model="statusFilter" :options="statusOptions" placeholder="Status" class="w-[140px]" />
+
+            <!-- Project Filter -->
+            <CustomDropdown v-model="projectFilter" :options="projectOptions" placeholder="Project" class="w-[160px]" />
+
+            <!-- Sort Filter -->
+            <CustomDropdown v-model="sortBy" :options="sortOptions" placeholder="Sort By" class="w-[170px]" />
+          </div>
         </div>
+
         <!-- Clips Grid -->
-        <div v-if="clips.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          <div
-            v-for="clip in paginatedClips"
-            :key="clip.id"
-            class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
-            @click="playClip(clip)"
-          >
-            <!-- Thumbnail background with vignette -->
-            <div
-              v-if="getThumbnailUrl(clip)"
-              class="absolute inset-0 z-0"
-              :style="{
-                backgroundImage: `url(${getThumbnailUrl(clip)})`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-                backgroundRepeat: 'no-repeat',
-              }"
-            >
-              <!-- Dark vignette overlay -->
-              <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60"></div>
-            </div>
-            <!-- Top right status badge -->
-            <div class="absolute top-4 right-4 z-5">
-              <span
-                :class="[
-                  'text-xs px-2 py-1 rounded-md border',
-                  getThumbnailUrl(clip)
-                    ? getClipStatusBadgeClass(clip.status)
-                    : 'text-muted-foreground bg-muted border-border',
-                ]"
-              >
-                {{ getClipStatusText(clip.status) }}
-              </span>
-            </div>
-            <!-- Bottom left title and description -->
-            <div class="absolute bottom-2 left-2 right-2 z-5 bg-black/40 backdrop-blur-sm p-2 rounded-md">
-              <h3
-                :class="[
-                  'text-md font-semibold mb-1 group-hover:transition-colors line-clamp-2',
-                  getThumbnailUrl(clip)
-                    ? 'text-white group-hover:text-white/80'
-                    : 'text-foreground group-hover:text-foreground/80',
-                ]"
-              >
-                {{ clip.name || 'Untitled Clip' }}
-              </h3>
+        <div v-if="filteredClips.length > 0" class="space-y-8">
+          <div v-for="group in groupedClips" :key="group.dateLabel" class="space-y-4">
+            <!-- Date Header -->
+            <h3 class="text-sm font-medium text-muted-foreground border-b border-border pb-2">
+              {{ group.dateLabel }}
+            </h3>
 
-              <p
-                :class="[
-                  'text-xs mb-1 line-clamp-1',
-                  getThumbnailUrl(clip) ? 'text-white/70' : 'text-muted-foreground/80',
-                ]"
-                v-if="clip.project_id && getProjectName(clip.project_id)"
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              <div
+                v-for="clip in group.clips"
+                :key="clip.id"
+                class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
+                @click="playClip(clip)"
               >
-                Project: {{ getProjectName(clip.project_id) }}
-              </p>
+                <!-- Thumbnail background with vignette -->
+                <div
+                  v-if="getThumbnailUrl(clip)"
+                  class="absolute inset-0 z-0"
+                  :style="{
+                    backgroundImage: `url(${getThumbnailUrl(clip)})`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                    backgroundRepeat: 'no-repeat',
+                  }"
+                >
+                  <!-- Dark vignette overlay -->
+                  <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60"></div>
+                </div>
+                <!-- Top right status badge -->
+                <div class="absolute top-4 right-4 z-5">
+                  <span
+                    :class="[
+                      'text-xs px-2 py-1 rounded-md border',
+                      getThumbnailUrl(clip)
+                        ? getClipStatusBadgeClass(clip.status)
+                        : 'text-muted-foreground bg-muted border-border',
+                    ]"
+                  >
+                    {{ getClipStatusText(clip.status) }}
+                  </span>
+                </div>
+                <!-- Bottom left title and description -->
+                <div class="absolute bottom-2 left-2 right-2 z-5 bg-black/40 backdrop-blur-sm p-2 rounded-md">
+                  <h3
+                    :class="[
+                      'text-md font-semibold mb-1 group-hover:transition-colors line-clamp-2',
+                      getThumbnailUrl(clip)
+                        ? 'text-white group-hover:text-white/80'
+                        : 'text-foreground group-hover:text-foreground/80',
+                    ]"
+                  >
+                    {{ clip.name || 'Untitled Clip' }}
+                  </h3>
 
-              <p :class="['text-sm line-clamp-1', getThumbnailUrl(clip) ? 'text-white/80' : 'text-muted-foreground']">
-                {{ getRelativeTime(clip.created_at) }}
-              </p>
-            </div>
-            <!-- Hover Overlay Buttons -->
-            <div
-              v-if="getThumbnailUrl(clip)"
-              class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-4"
-            >
-              <button
-                class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                :title="clip.status === 'detected' && !clip.file_path ? 'Clip not generated yet' : 'Play'"
-                @click.stop="playClip(clip)"
-                :disabled="clip.status === 'detected' && !clip.file_path"
-              >
-                <Play class="h-6 w-6" />
-              </button>
-              <button
-                class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                title="Delete"
-                @click.stop="confirmDelete(clip)"
-              >
-                <Trash2 class="h-6 w-6" />
-              </button>
+                  <p
+                    :class="[
+                      'text-xs mb-1 line-clamp-1',
+                      getThumbnailUrl(clip) ? 'text-white/70' : 'text-muted-foreground/80',
+                    ]"
+                    v-if="clip.project_id && getProjectName(clip.project_id)"
+                  >
+                    Project: {{ getProjectName(clip.project_id) }}
+                  </p>
+
+                  <p
+                    :class="['text-sm line-clamp-1', getThumbnailUrl(clip) ? 'text-white/80' : 'text-muted-foreground']"
+                  >
+                    {{ getRelativeTime(clip.created_at) }}
+                  </p>
+                </div>
+                <!-- Hover Overlay Buttons -->
+                <div
+                  v-if="getThumbnailUrl(clip)"
+                  class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-4"
+                >
+                  <button
+                    class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    :title="clip.status === 'detected' && !clip.file_path ? 'Clip not generated yet' : 'Play'"
+                    @click.stop="playClip(clip)"
+                    :disabled="clip.status === 'detected' && !clip.file_path"
+                  >
+                    <Play class="h-6 w-6" />
+                  </button>
+                  <button
+                    class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                    title="Delete"
+                    @click.stop="confirmDelete(clip)"
+                  >
+                    <Trash2 class="h-6 w-6" />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
+
+        <!-- No Results State -->
+        <div
+          v-if="clips.length > 0 && filteredClips.length === 0"
+          class="flex flex-col items-center justify-center py-16 text-center space-y-4"
+        >
+          <div class="bg-muted rounded-full p-4">
+            <Search class="h-8 w-8 text-muted-foreground" />
+          </div>
+          <div class="space-y-1">
+            <h3 class="font-semibold text-lg">No clips found</h3>
+            <p class="text-muted-foreground text-sm max-w-sm">
+              We couldn't find any clips matching your search filters. Try adjusting your search query or filters.
+            </p>
+          </div>
+          <button
+            @click="
+              searchQuery = '';
+              statusFilter = 'all';
+            "
+            class="text-primary hover:underline text-sm font-medium"
+          >
+            Clear filters
+          </button>
+        </div>
+
         <!-- Empty State -->
         <EmptyState
           v-if="clips.length === 0"
@@ -127,10 +195,10 @@
     </PageLayout>
     <!-- Pagination Footer -->
     <PaginationFooter
-      v-if="!loading && clips.length > 0"
+      v-if="!loading && filteredClips.length > 0"
       :current-page="currentPage"
       :total-pages="totalPages"
-      :total-items="clips.length"
+      :total-items="filteredClips.length"
       item-label="clip"
       @go-to-page="goToPage"
       @previous="previousPage"
@@ -156,10 +224,9 @@
   import { ref, onMounted, computed, watch } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
-  import { LayoutGrid, Folder, Play, Trash2, Video } from 'lucide-vue-next';
+  import { LayoutGrid, Folder, Play, Trash2, Video, Search, X, Calendar } from 'lucide-vue-next';
   import {
-    getGeneratedClips,
-    getDetectedClips,
+    getAllClips,
     deleteClip,
     getThumbnailByClipId,
     getProject,
@@ -176,6 +243,8 @@
   import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import PaginationFooter from '@/components/PaginationFooter.vue';
+  import { Input } from '@/components/ui/input';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
 
   const clips = ref<Clip[]>([]);
   const loading = ref(true);
@@ -188,6 +257,58 @@
   const projectCache = ref<Map<string, Project>>(new Map());
   const { getRelativeTime } = useFormatters();
 
+  // Filter state
+  const searchQuery = ref('');
+  const sortBy = ref('created-desc');
+  const statusFilter = ref('all');
+  const projectFilter = ref('all');
+
+  const statusOptions = [
+    { label: 'All Status', value: 'all' },
+    { label: 'Generated', value: 'generated' },
+    { label: 'Detected', value: 'detected' },
+    { label: 'Processing', value: 'processing' },
+  ];
+
+  const projectOptions = computed(() => {
+    const projects = new Map<string, string>();
+    // Collect all unique projects from clips
+    clips.value.forEach((clip) => {
+      if (clip.project_id) {
+        const project = projectCache.value.get(clip.project_id);
+        if (project) {
+          // Resolve to parent if available
+          let targetProject = project;
+          if (project.parent_id) {
+            const parent = projectCache.value.get(project.parent_id);
+            if (parent) {
+              targetProject = parent;
+            }
+          }
+          projects.set(targetProject.id, targetProject.name);
+        }
+      }
+    });
+
+    const options = Array.from(projects.entries())
+      .map(([id, name]) => ({
+        label: name,
+        value: id,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    return [{ label: 'All Projects', value: 'all' }, ...options];
+  });
+
+  const sortOptions = [
+    { label: 'Created: Newest', value: 'created-desc' },
+    { label: 'Created: Oldest', value: 'created-asc' },
+    { label: 'Name: A-Z', value: 'name-asc' },
+    { label: 'Name: Z-A', value: 'name-desc' },
+    { label: 'Duration: Longest', value: 'duration-desc' },
+    { label: 'Duration: Shortest', value: 'duration-asc' },
+  ];
+
   // Pagination state
   const currentPage = ref(1);
   const clipsPerPage = 20;
@@ -197,14 +318,122 @@
     return clips.value.some((clip) => clip.file_path && clip.file_path.trim() !== '');
   });
 
+  // Filtered clips
+  const filteredClips = computed(() => {
+    let result = clips.value;
+
+    // 1. Search Text
+    if (searchQuery.value) {
+      const query = searchQuery.value.toLowerCase();
+      result = result.filter(
+        (c) =>
+          (c.name && c.name.toLowerCase().includes(query)) ||
+          (c.project_id && getProjectName(c.project_id)?.toLowerCase().includes(query))
+      );
+    }
+
+    // 2. Status Filter
+    if (statusFilter.value !== 'all') {
+      result = result.filter((c) => c.status === statusFilter.value);
+    }
+
+    // 3. Project Filter
+    if (projectFilter.value !== 'all') {
+      result = result.filter((c) => {
+        if (!c.project_id) return false;
+        // Match if clip project ID is the selected ID (direct match)
+        if (c.project_id === projectFilter.value) return true;
+
+        // Match if clip project's parent ID is the selected ID (child match)
+        const project = projectCache.value.get(c.project_id);
+        return project?.parent_id === projectFilter.value;
+      });
+    }
+
+    // 4. Sorting
+    const [field, direction] = sortBy.value.split('-');
+    result = [...result].sort((a, b) => {
+      let valA: string | number = '';
+      let valB: string | number = '';
+
+      if (field === 'created') {
+        valA = a.created_at;
+        valB = b.created_at;
+      } else if (field === 'name') {
+        valA = (a.name || '').toLowerCase();
+        valB = (b.name || '').toLowerCase();
+      } else if (field === 'duration') {
+        valA = a.duration || 0;
+        valB = b.duration || 0;
+      }
+
+      if (valA < valB) return direction === 'asc' ? -1 : 1;
+      if (valA > valB) return direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  });
+
   // Pagination computed properties
-  const totalPages = computed(() => Math.ceil(clips.value.length / clipsPerPage));
+  const totalPages = computed(() => Math.ceil(filteredClips.value.length / clipsPerPage));
+
   const paginatedClips = computed(() => {
     const startIndex = (currentPage.value - 1) * clipsPerPage;
     const endIndex = startIndex + clipsPerPage;
-    const paginated = clips.value.slice(startIndex, endIndex);
-    return paginated;
+    return filteredClips.value.slice(startIndex, endIndex);
   });
+
+  // Group by date logic
+  const groupedClips = computed(() => {
+    // If we are sorting by name or duration, skip date grouping
+    if (sortBy.value.startsWith('name') || sortBy.value.startsWith('duration')) {
+      return [{ dateLabel: 'Clips', clips: paginatedClips.value }];
+    }
+
+    const groups: { dateLabel: string; clips: Clip[] }[] = [];
+    let currentLabel = '';
+    let currentClips: Clip[] = [];
+
+    const clipsToGroup = paginatedClips.value;
+
+    for (const clip of clipsToGroup) {
+      const label = getDateLabel(clip.created_at);
+
+      if (label !== currentLabel) {
+        if (currentLabel) {
+          groups.push({ dateLabel: currentLabel, clips: currentClips });
+        }
+        currentLabel = label;
+        currentClips = [clip];
+      } else {
+        currentClips.push(clip);
+      }
+    }
+
+    if (currentLabel) {
+      groups.push({ dateLabel: currentLabel, clips: currentClips });
+    } else if (clipsToGroup.length > 0 && groups.length === 0) {
+      groups.push({ dateLabel: 'Clips', clips: clipsToGroup });
+    }
+
+    return groups;
+  });
+
+  function getDateLabel(timestamp: number): string {
+    const d = new Date(timestamp * 1000);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const clipDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+    if (clipDate.getTime() === today.getTime()) return 'Today';
+    if (clipDate.getTime() === yesterday.getTime()) return 'Yesterday';
+
+    return d.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  }
 
   // Pagination functions
   function goToPage(page: number) {
@@ -225,19 +454,16 @@
     }
   }
 
-  // Reset to first page when clips change
-  watch(clips, () => {
+  // Reset to first page when clips change or filters change
+  watch([clips, searchQuery, sortBy, statusFilter, projectFilter], () => {
     currentPage.value = 1;
   });
 
   async function loadClips() {
     loading.value = true;
     try {
-      // Load both generated and detected clips
-      const [generatedClips, detectedClips] = await Promise.all([getGeneratedClips(), getDetectedClips()]);
-
-      // Combine and sort by created_at date
-      clips.value = [...generatedClips, ...detectedClips].sort((a, b) => b.created_at - a.created_at);
+      // Load all clips
+      clips.value = await getAllClips();
 
       // Load thumbnails, project info, and raw videos for all clips
       for (const clip of clips.value) {
@@ -332,6 +558,11 @@
       const project = await getProject(projectId);
       if (project) {
         projectCache.value.set(projectId, project);
+
+        // Recursively load parent if exists
+        if (project.parent_id) {
+          await getProjectInfo(project.parent_id);
+        }
       }
       return project;
     } catch (error) {
@@ -364,13 +595,14 @@
   function getClipStatusBadgeClass(status: string | null): string {
     switch (status) {
       case 'generated':
-        return 'bg-green-500/20 text-green-300 border-green-500/30';
+      case 'completed': // Handle potential 'completed' status same as generated
+        return 'bg-emerald-600 text-white border-emerald-500 shadow-sm font-medium';
       case 'detected':
-        return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30';
+        return 'bg-amber-400 text-black border-amber-500 shadow-sm font-medium';
       case 'processing':
-        return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
+        return 'bg-blue-600 text-white border-blue-500 shadow-sm font-medium';
       default:
-        return 'bg-gray-500/20 text-gray-300 border-gray-500/30';
+        return 'bg-gray-600 text-gray-100 border-gray-500 shadow-sm';
     }
   }
 
@@ -382,6 +614,7 @@
   function getClipStatusText(status: string | null): string {
     switch (status) {
       case 'generated':
+      case 'completed':
         return 'Generated';
       case 'detected':
         return 'Detected';

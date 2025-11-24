@@ -41,7 +41,7 @@
         <Input
           v-model="inputValue"
           class="h-14 pl-11 pr-30 text-sm bg-background border-border/70 rounded-lg focus-visible:ring-primary/20 transition-all hover:border-primary/30 focus:border-primary/50 shadow-sm w-full"
-          placeholder="Paste stream link..."
+          placeholder="Paste stream link or Mint ID..."
           @keyup.enter="addStreamer"
           @input="detectPlatform"
         />
@@ -53,7 +53,7 @@
             :disabled="!inputValue"
             @click="addStreamer"
           >
-            <Plus class="w-3.5 h-3.5 mr-1.5" />
+            <Plus class="w-3.5 h-3.5" />
             Track
           </Button>
         </div>
@@ -95,11 +95,11 @@
                     <img
                       v-if="streamer.profileImageUrl || streamer.streamThumbnailUrl"
                       :src="streamer.streamThumbnailUrl || streamer.profileImageUrl"
-                      class="w-full h-full object-cover absolute inset-0 z-20"
+                      class="w-full h-full object-cover absolute inset-0 z-20 rounded-2xl border border-border"
                     />
 
                     <!-- Solid Background Layer (Fallback) -->
-                    <div class="absolute inset-0" :class="getPlatformSolidBg(streamer.platform)"></div>
+                    <div v-else class="absolute inset-0" :class="getPlatformSolidBg(streamer.platform)"></div>
 
                     <!-- Icon Layer (Fallback) -->
                     <img
@@ -152,7 +152,7 @@
                         title="Start Auto-Detect"
                       >
                         <Sparkles class="w-3.5 h-3.5" />
-                        Auto
+                        Auto Detect
                       </button>
                     </div>
                   </template>
@@ -307,7 +307,12 @@
     deleteMonitoredStreamer,
     updateMonitoredStreamer,
   } from '@/services/database';
-  import { extractMintId, searchPumpFunTokens, type TokenSearchResult } from '@/services/pumpfun';
+  import {
+    extractMintId,
+    searchPumpFunTokens,
+    fetchTokenMetadataFromServer,
+    type TokenSearchResult,
+  } from '@/services/pumpfun';
   import type { MonitoredStreamer } from '@/types/livestream';
   import { useToast, useToastStore } from '@/composables/useToast';
 
@@ -363,26 +368,38 @@
     for (const streamer of needsUpdate) {
       try {
         // Use search to find token metadata
+        let match: TokenSearchResult | null = null;
+
+        // 1. Try DexScreener search first
         const results = await searchPumpFunTokens(streamer.mintId);
         if (results && results.length > 0) {
           // Find exact match if possible, or take first
-          const match = results.find((r) => r.mint === streamer.mintId) || results[0];
+          match = results.find((r) => r.mint === streamer.mintId) || results[0];
+        }
 
-          if (match) {
-            const updates: any = {};
-            if (streamer.displayName === streamer.mintId) {
-              updates.display_name = match.symbol; // Use symbol as display name
-            }
-            if (!streamer.profileImageUrl && match.image) {
-              updates.profile_image_url = match.image;
-            }
+        // 2. Fallback to server (Metaplex) if no match or missing image
+        if (!match || !match.image) {
+          const serverMeta = await fetchTokenMetadataFromServer(streamer.mintId);
+          if (serverMeta) {
+            // Use server metadata, potentially overriding DexScreener partial result
+            match = serverMeta;
+          }
+        }
 
-            if (Object.keys(updates).length > 0) {
-              await updateMonitoredStreamer(streamer.id, updates);
-              // Update local state
-              if (updates.display_name) streamer.displayName = updates.display_name;
-              if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
-            }
+        if (match) {
+          const updates: any = {};
+          if (streamer.displayName === streamer.mintId) {
+            updates.display_name = match.symbol; // Use symbol as display name
+          }
+          if (!streamer.profileImageUrl && match.image) {
+            updates.profile_image_url = match.image;
+          }
+
+          if (Object.keys(updates).length > 0) {
+            await updateMonitoredStreamer(streamer.id, updates);
+            // Update local state
+            if (updates.display_name) streamer.displayName = updates.display_name;
+            if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
           }
         }
       } catch (e) {
@@ -448,17 +465,20 @@
   }
 
   function detectPlatform() {
-    const val = inputValue.value.toLowerCase();
-    if (val.includes('pump.fun') || /^[1-9A-HJ-NP-Za-km-z]{43,44}$/.test(val)) {
+    const val = inputValue.value;
+
+    // Check PumpFun using the robust extractor first (handles URLs and Mint IDs)
+    if (extractMintId(val)) {
       detectedPlatform.value = 'PumpFun';
       return;
     }
 
-    if (val.includes('youtube.com') || val.includes('youtu.be')) {
+    const lowerVal = val.toLowerCase();
+    if (lowerVal.includes('youtube.com') || lowerVal.includes('youtu.be')) {
       detectedPlatform.value = 'Youtube';
-    } else if (val.includes('twitch.tv')) {
+    } else if (lowerVal.includes('twitch.tv')) {
       detectedPlatform.value = 'Twitch';
-    } else if (val.includes('kick.com')) {
+    } else if (lowerVal.includes('kick.com')) {
       detectedPlatform.value = 'Kick';
     } else {
       detectedPlatform.value = null;
@@ -556,8 +576,21 @@
       let profileImage = undefined;
 
       try {
+        let match: TokenSearchResult | null = null;
+        // 1. Try DexScreener search first
         const results = await searchPumpFunTokens(mintId);
-        const match = results.find((r) => r.mint === mintId) || results[0];
+        if (results && results.length > 0) {
+          match = results.find((r) => r.mint === mintId) || results[0];
+        }
+
+        // 2. Fallback to server (Metaplex) if no match or missing image
+        if (!match || !match.image) {
+          const serverMeta = await fetchTokenMetadataFromServer(mintId);
+          if (serverMeta) {
+            match = serverMeta;
+          }
+        }
+
         if (match) {
           displayName = match.symbol;
           profileImage = match.image;
@@ -592,6 +625,24 @@
       isSearching.value = false;
 
       if (results.length === 0) {
+        // Try to see if input value is a Mint ID but regex didn't catch it initially (unlikely if logic is correct but good fallback)
+        // OR if the user pasted a mint ID that DexScreener doesn't know yet.
+        // We can try to fetch metadata assuming it is a mint ID
+        if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(inputValue.value)) {
+          const serverMeta = await fetchTokenMetadataFromServer(inputValue.value);
+          if (serverMeta) {
+            addActivityLog({
+              streamerId: 'system',
+              streamerName: 'System',
+              platform: 'PumpFun',
+              message: `Found ${serverMeta.name} (${serverMeta.symbol}).`,
+              status: 'success',
+            });
+            await confirmAddStreamer(serverMeta.mint, serverMeta.symbol, serverMeta.image);
+            return;
+          }
+        }
+
         addActivityLog({
           streamerId: 'system',
           streamerName: 'System',

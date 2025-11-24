@@ -2,9 +2,9 @@
   <div class="w-full">
     <!-- Page Title and Actions -->
     <div v-if="showHeader" class="mb-8 -mt-2">
-      <div class="relative overflow-hidden rounded-lg bg-card border border-border p-3 shadow-sm">
+      <div class="relative rounded-lg bg-card border border-border p-3 shadow-sm">
         <!-- Gradient Background Decoration -->
-        <div class="absolute inset-0 bg-gradient-to-r from-primary/3 to-primary/1 pointer-events-none"></div>
+        <div class="absolute inset-0 bg-gradient-to-r from-primary/3 to-primary/1 pointer-events-none rounded-lg"></div>
 
         <div class="relative flex items-center justify-between">
           <div class="flex items-center gap-4">

@@ -56,6 +56,9 @@ defmodule ClippsterServerWeb.Router do
     get "/credits/balance", PaymentController, :get_balance
     post "/payments/quote", PaymentController, :get_quote
     post "/payments/confirm", PaymentController, :confirm_payment
+
+    # Metadata routes
+    get "/metadata/:mint_id", MetadataController, :fetch
   end
 
   # Protected routes (require authentication)

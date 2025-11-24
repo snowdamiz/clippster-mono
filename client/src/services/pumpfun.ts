@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import api from './api';
 
 /**
  * Extract mint ID from a PumpFun URL or return the input if it's already a mint ID
@@ -204,6 +205,32 @@ export interface TokenSearchResult {
   image?: string;
   marketCap?: number;
   pairAddress: string;
+}
+
+/**
+ * Fetch token metadata from server (using Metaplex)
+ */
+export async function fetchTokenMetadataFromServer(
+  mintId: string
+): Promise<TokenSearchResult | null> {
+  try {
+    const response = await api.get(`/metadata/${mintId}`);
+
+    if (response.data && response.data.success && response.data.metadata) {
+      const meta = response.data.metadata;
+      return {
+        name: meta.name,
+        symbol: meta.symbol,
+        mint: mintId,
+        image: meta.image,
+        pairAddress: '', // Not available from Metaplex directly, but not critical for display
+      };
+    }
+    return null;
+  } catch (e) {
+    console.error('[PumpFun] Server metadata fetch error:', e);
+    return null;
+  }
 }
 
 /**

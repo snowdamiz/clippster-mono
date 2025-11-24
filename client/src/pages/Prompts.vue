@@ -2,13 +2,13 @@
   <PageLayout
     title="Prompts"
     description="Manage your AI prompts and templates"
-    :show-header="!loading && prompts.length > 0"
+    :show-header="true"
     :icon="MessageSquare"
   >
     <template #actions>
       <button
         @click="navigateToNew"
-        class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all active:scale-95"
+        class="px-5 py-2.5 bg-muted hover:bg-muted/80 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all active:scale-95"
       >
         <Plus class="h-5 w-5" />
         New Prompt
