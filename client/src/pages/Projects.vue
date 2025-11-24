@@ -308,11 +308,13 @@
       >
         <!-- Header -->
         <div class="py-2 px-3 border-b border-border flex items-center justify-between bg-black/30">
-          <div class="flex items-center justify-center gap-2.5">
-            <div class="bg-primary/10 p-1.5 rounded-md">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <div class="bg-primary/10 p-1.5 rounded-md shrink-0">
               <FolderOpen class="h-4 w-4 text-primary" />
             </div>
-            <h2 class="text-md font-medium text-foreground -mt-1">{{ folderProject.name }}</h2>
+            <h2 class="text-md font-medium text-foreground -mt-1 truncate" :title="folderProject.name">
+              {{ folderProject.name }}
+            </h2>
           </div>
           <button
             @click="showFolderDialog = false"
@@ -358,17 +360,22 @@
                 </div>
               </div>
 
-              <!-- Time badge -->
-              <div class="absolute top-3 right-3 z-5">
-                <span class="text-xs px-2 py-1 rounded-md text-white/70 bg-black/40 backdrop-blur-sm">
-                  {{ getRelativeTime(project.updated_at) }}
+              <!-- Duration Badge -->
+              <div v-if="getProjectDuration(project.id)" class="absolute top-3 left-3 z-5">
+                <span
+                  class="text-xs px-2 py-1 rounded-md text-white bg-black/60 backdrop-blur-sm font-medium flex items-center gap-1.5"
+                >
+                  <Clock class="w-3 h-3" />
+                  {{ getProjectDuration(project.id) }}
                 </span>
               </div>
 
               <!-- Info -->
               <div class="absolute bottom-0 left-0 right-0 z-5 bg-black/60 backdrop-blur-sm p-3 rounded-b-md">
                 <h3 class="text-sm font-semibold text-white line-clamp-1">{{ project.name }}</h3>
-                <p class="text-xs text-white/70 line-clamp-1 mt-0.5">{{ project.description || 'No description' }}</p>
+                <p class="text-xs text-white/70 line-clamp-1 mt-0.5">
+                  {{ project.description || 'No description' }} • {{ getRelativeTime(project.updated_at) }}
+                </p>
               </div>
 
               <!-- Hover Overlay -->
@@ -465,7 +472,7 @@
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
-  import { Folder, Plus, Play, Edit, Trash2, Radio, List, FolderOpen, X, Search } from 'lucide-vue-next';
+  import { Folder, Plus, Play, Edit, Trash2, Radio, List, FolderOpen, X, Search, Clock } from 'lucide-vue-next';
   import {
     getAllProjects,
     getClipsWithVersionsByProjectId,
@@ -506,7 +513,7 @@
   const workspaceProject = ref<Project | null>(null);
   const projectVideos = ref<Record<string, RawVideo[]>>({});
   const thumbnailCache = ref<Map<string, string>>(new Map());
-  const { getRelativeTime } = useFormatters();
+  const { getRelativeTime, formatDuration } = useFormatters();
   const { success, error } = useToast();
   const { activeSessions } = useLivestreamMonitoring();
   const { processVideoFile } = useVideoOperations();
@@ -658,6 +665,17 @@
     } finally {
       loading.value = false;
     }
+  }
+
+  function getProjectDuration(projectId: string): string | null {
+    const videos = projectVideos.value[projectId];
+    if (videos && videos.length > 0) {
+      const duration = videos.reduce((acc, v) => acc + (v.duration || 0), 0);
+      if (duration > 0) {
+        return formatDuration(duration);
+      }
+    }
+    return null;
   }
 
   function getClipCount(projectId: string): number {

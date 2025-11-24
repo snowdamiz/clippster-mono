@@ -306,13 +306,57 @@
   // Initialize progress socket
   const {
     isConnected: progressConnected,
-    progress: clipProgress,
-    stage: clipStage,
-    message: clipMessage,
-    error: clipError,
+    progress: backendProgress,
+    stage: backendStage,
+    message: backendMessage,
+    error: backendError,
     setProjectId: setProgressProjectId,
     reset: resetProgress,
   } = useProgressSocket(props.project?.id || null);
+
+  // Frontend progress tracking (for chunked detection preparation)
+  const frontendProgress = ref(0);
+  const frontendStage = ref('');
+  const frontendMessage = ref('');
+  const frontendError = ref('');
+
+  // Combined progress computed properties
+  const clipProgress = computed(() => {
+    // If detection is completed, show 100%
+    if (frontendStage.value === 'completed' || backendStage.value === 'completed') {
+      return 100;
+    }
+
+    // If backend has started processing (progress > 0), map it to the 30-100% range
+    if (backendProgress.value > 0) {
+      return 30 + backendProgress.value * 0.7;
+    }
+
+    // Otherwise, show frontend progress mapped to 0-30% range
+    // Frontend progress usually goes 0 -> 100 during preparation
+    return Math.min(30, frontendProgress.value * 0.3);
+  });
+
+  const clipStage = computed(() => {
+    // Prefer backend stage if active
+    if (backendStage.value && backendStage.value !== 'starting') {
+      return backendStage.value;
+    }
+    return frontendStage.value || backendStage.value;
+  });
+
+  const clipMessage = computed(() => {
+    // Prefer backend message if active
+    if (backendMessage.value) {
+      return backendMessage.value;
+    }
+    return frontendMessage.value;
+  });
+
+  const clipError = computed(() => {
+    return backendError.value || frontendError.value;
+  });
+
   const {
     videoElement,
     videoSrc,
@@ -410,6 +454,10 @@
       clipGenerationInProgress.value = true;
       showProgress.value = false; // Show progress in the clips panel, not modal
       resetProgress();
+      frontendProgress.value = 0;
+      frontendStage.value = '';
+      frontendMessage.value = '';
+      frontendError.value = '';
       setProgressProjectId(props.project.id.toString());
 
       // Notify window close handlers that clip generation is starting
@@ -433,12 +481,12 @@
       const stopProgressWatch = watch(
         chunkedProgress,
         (newProgress) => {
-          clipProgress.value = newProgress.progress;
-          clipStage.value = newProgress.stage;
-          clipMessage.value = newProgress.message;
+          frontendProgress.value = newProgress.progress;
+          frontendStage.value = newProgress.stage;
+          frontendMessage.value = newProgress.message;
 
           if (newProgress.error) {
-            clipError.value = newProgress.error;
+            frontendError.value = newProgress.error;
           }
         },
         { immediate: true }
@@ -480,9 +528,9 @@
           }
 
           // Show success completion state
-          clipProgress.value = 100;
-          clipStage.value = 'completed';
-          clipMessage.value = 'Clip detection completed successfully!';
+          frontendProgress.value = 100;
+          frontendStage.value = 'completed';
+          frontendMessage.value = 'Clip detection completed successfully!';
           return;
         }
 
@@ -511,8 +559,8 @@
       }
 
       // Update progress UI to show error
-      clipError.value = errorMessage;
-      clipStage.value = 'error';
+      frontendError.value = errorMessage;
+      frontendStage.value = 'error';
 
       // Keep progress dialog open to show the error
     } finally {
