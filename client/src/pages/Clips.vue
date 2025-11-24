@@ -50,105 +50,116 @@
             <!-- Status Filter -->
             <CustomDropdown v-model="statusFilter" :options="statusOptions" placeholder="Status" class="w-[140px]" />
 
-            <!-- Project Filter -->
-            <CustomDropdown v-model="projectFilter" :options="projectOptions" placeholder="Project" class="w-[160px]" />
+            <!-- Project Filter (only in list view) -->
+            <CustomDropdown
+              v-if="viewMode === 'list'"
+              v-model="projectFilter"
+              :options="projectOptions"
+              placeholder="Project"
+              class="w-[160px]"
+            />
 
             <!-- Sort Filter -->
             <CustomDropdown v-model="sortBy" :options="sortOptions" placeholder="Sort By" class="w-[170px]" />
+
+            <!-- View Mode -->
+            <div class="bg-muted/50 rounded-md p-1 flex items-center gap-1">
+              <button
+                @click="viewMode = 'folders'"
+                :class="[
+                  'p-2 rounded transition-colors',
+                  viewMode === 'folders'
+                    ? 'bg-background shadow-sm text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                ]"
+                title="Folder View"
+              >
+                <Folder class="h-4 w-4" />
+              </button>
+              <button
+                @click="viewMode = 'list'"
+                :class="[
+                  'p-2 rounded transition-colors',
+                  viewMode === 'list'
+                    ? 'bg-background shadow-sm text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                ]"
+                title="List View"
+              >
+                <List class="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
 
         <!-- Clips Grid -->
         <div v-if="filteredClips.length > 0" class="space-y-8">
-          <div v-for="group in groupedClips" :key="group.dateLabel" class="space-y-4">
-            <!-- Date Header -->
-            <h3 class="text-sm font-medium text-muted-foreground border-b border-border pb-2">
-              {{ group.dateLabel }}
-            </h3>
+          <!-- List View -->
+          <div v-if="viewMode === 'list'" class="space-y-8">
+            <div v-for="group in groupedClips" :key="group.dateLabel" class="space-y-4">
+              <!-- Date Header -->
+              <h3 class="text-sm font-medium text-muted-foreground border-b border-border pb-2">
+                {{ group.dateLabel }}
+              </h3>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              <div
-                v-for="clip in group.clips"
-                :key="clip.id"
-                class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
-                @click="playClip(clip)"
-              >
-                <!-- Thumbnail background with vignette -->
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                <ClipCard
+                  v-for="clip in group.clips"
+                  :key="clip.id"
+                  :clip="clip"
+                  :thumbnail-url="getThumbnailUrl(clip)"
+                  :project-name="clip.project_id ? getProjectName(clip.project_id) : null"
+                  @play="playClip"
+                  @delete="confirmDelete"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Folder View -->
+          <div v-else-if="viewMode === 'folders'" class="space-y-8">
+            <div v-for="dateGroup in groupedFolderProjects" :key="dateGroup.dateLabel" class="space-y-4">
+              <h3 class="text-sm font-medium text-muted-foreground border-b border-border pb-2">
+                {{ dateGroup.dateLabel }}
+              </h3>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 <div
-                  v-if="getThumbnailUrl(clip)"
-                  class="absolute inset-0 z-0"
-                  :style="{
-                    backgroundImage: `url(${getThumbnailUrl(clip)})`,
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center',
-                    backgroundRepeat: 'no-repeat',
-                  }"
+                  v-for="group in dateGroup.folders"
+                  :key="group.id"
+                  class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all border border-border shadow-sm"
+                  @click="openFolder(group)"
                 >
-                  <!-- Dark vignette overlay -->
-                  <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60"></div>
-                </div>
-                <!-- Top right status badge -->
-                <div class="absolute top-4 right-4 z-5">
-                  <span
-                    :class="[
-                      'text-xs px-2 py-1 rounded-md border',
-                      getThumbnailUrl(clip)
-                        ? getClipStatusBadgeClass(clip.status)
-                        : 'text-muted-foreground bg-muted border-border',
-                    ]"
+                  <!-- Thumbnail -->
+                  <div
+                    v-if="group.clips.length > 0 && getThumbnailUrl(group.clips[0])"
+                    class="absolute inset-0 z-0"
+                    :style="{
+                      backgroundImage: `url(${getThumbnailUrl(group.clips[0])})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                      backgroundRepeat: 'no-repeat',
+                    }"
                   >
-                    {{ getClipStatusText(clip.status) }}
-                  </span>
-                </div>
-                <!-- Bottom left title and description -->
-                <div class="absolute bottom-2 left-2 right-2 z-5 bg-black/40 backdrop-blur-sm p-2 rounded-md">
-                  <h3
-                    :class="[
-                      'text-md font-semibold mb-1 group-hover:transition-colors line-clamp-2',
-                      getThumbnailUrl(clip)
-                        ? 'text-white group-hover:text-white/80'
-                        : 'text-foreground group-hover:text-foreground/80',
-                    ]"
-                  >
-                    {{ clip.name || 'Untitled Clip' }}
-                  </h3>
+                    <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60"></div>
+                  </div>
+                  <div v-else class="absolute inset-0 z-0 bg-muted flex items-center justify-center">
+                    <Folder class="h-16 w-16 text-muted-foreground/50" />
+                  </div>
 
-                  <p
-                    :class="[
-                      'text-xs mb-1 line-clamp-1',
-                      getThumbnailUrl(clip) ? 'text-white/70' : 'text-muted-foreground/80',
-                    ]"
-                    v-if="clip.project_id && getProjectName(clip.project_id)"
+                  <!-- Count Badge -->
+                  <div
+                    class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-blue-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm"
                   >
-                    Project: {{ getProjectName(clip.project_id) }}
-                  </p>
+                    <FolderOpen class="w-3 h-3" />
+                    <span>{{ group.clips.length }} Clips</span>
+                  </div>
 
-                  <p
-                    :class="['text-sm line-clamp-1', getThumbnailUrl(clip) ? 'text-white/80' : 'text-muted-foreground']"
-                  >
-                    {{ getRelativeTime(clip.created_at) }}
-                  </p>
-                </div>
-                <!-- Hover Overlay Buttons -->
-                <div
-                  v-if="getThumbnailUrl(clip)"
-                  class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-4"
-                >
-                  <button
-                    class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                    :title="clip.status === 'detected' && !clip.file_path ? 'Clip not generated yet' : 'Play'"
-                    @click.stop="playClip(clip)"
-                    :disabled="clip.status === 'detected' && !clip.file_path"
-                  >
-                    <Play class="h-6 w-6" />
-                  </button>
-                  <button
-                    class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                    title="Delete"
-                    @click.stop="confirmDelete(clip)"
-                  >
-                    <Trash2 class="h-6 w-6" />
-                  </button>
+                  <!-- Bottom Info -->
+                  <div class="absolute bottom-2 left-2 right-2 z-5 bg-black/40 backdrop-blur-sm p-2 rounded-md">
+                    <h3 class="text-md font-semibold text-white mb-1 line-clamp-1">{{ group.name }}</h3>
+                    <p class="text-xs text-white/80">Updated {{ getRelativeTime(group.updatedAt) }}</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -195,7 +206,7 @@
     </PageLayout>
     <!-- Pagination Footer -->
     <PaginationFooter
-      v-if="!loading && filteredClips.length > 0"
+      v-if="!loading && filteredClips.length > 0 && viewMode === 'list'"
       :current-page="currentPage"
       :total-pages="totalPages"
       :total-items="filteredClips.length"
@@ -204,6 +215,84 @@
       @previous="previousPage"
       @next="nextPage"
     />
+    <!-- Folder Contents Dialog -->
+    <div
+      v-if="showFolderDialog && folderProject"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+      @click.self="showFolderDialog = false"
+    >
+      <div
+        class="bg-card rounded-lg w-full mx-4 border border-border flex flex-col overflow-hidden shadow-2xl transition-all duration-200 max-h-[80vh]"
+        :class="{
+          'max-w-lg': paginatedFolderClips.length <= 1,
+          'max-w-3xl': paginatedFolderClips.length === 2,
+          'max-w-5xl': paginatedFolderClips.length >= 3,
+        }"
+      >
+        <!-- Header -->
+        <div class="py-2 px-3 border-b border-border flex items-center justify-between bg-black/30">
+          <div class="flex items-center justify-center gap-2.5">
+            <div class="bg-primary/10 p-1.5 rounded-md">
+              <FolderOpen class="h-4 w-4 text-primary" />
+            </div>
+            <h2 class="text-md font-medium text-foreground -mt-1">{{ folderProject.name }}</h2>
+          </div>
+          <button
+            @click="showFolderDialog = false"
+            class="p-2 hover:bg-muted rounded-md transition-colors text-muted-foreground hover:text-foreground"
+          >
+            <X class="h-5 w-5" />
+          </button>
+        </div>
+
+        <!-- Content -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-8">
+          <div v-for="group in groupedFolderClips" :key="group.dateLabel" class="space-y-4">
+            <!-- Date Header -->
+            <h3 class="text-sm font-medium text-muted-foreground border-b border-border pb-2">
+              {{ group.dateLabel }}
+            </h3>
+
+            <div
+              class="grid gap-5"
+              :class="{
+                'grid-cols-1': group.clips.length === 1 && groupedFolderClips.length === 1,
+                'grid-cols-1 md:grid-cols-2':
+                  (group.clips.length === 2 && groupedFolderClips.length === 1) ||
+                  (paginatedFolderClips.length > 1 && paginatedFolderClips.length <= 4),
+                'grid-cols-1 md:grid-cols-2 lg:grid-cols-3':
+                  paginatedFolderClips.length >= 5 || groupedFolderClips.length > 1,
+              }"
+            >
+              <ClipCard
+                v-for="clip in group.clips"
+                :key="clip.id"
+                :clip="clip"
+                :thumbnail-url="getThumbnailUrl(clip)"
+                :project-name="null"
+                @play="playClip"
+                @delete="confirmDelete"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer with Pagination -->
+        <div v-if="folderTotalPages > 1" class="bg-muted/10">
+          <PaginationFooter
+            :current-page="folderCurrentPage"
+            :total-pages="folderTotalPages"
+            :total-items="folderProject.clips.length"
+            item-label="clip"
+            mode="static"
+            @go-to-page="(page) => (folderCurrentPage = page)"
+            @previous="folderCurrentPage--"
+            @next="folderCurrentPage++"
+          />
+        </div>
+      </div>
+    </div>
+
     <!-- Video Player Dialog -->
     <VideoPlayerDialog :video="clipToPlay" :show-video-player="showVideoPlayer" @close="showVideoPlayer = false" />
     <!-- Delete Confirmation Modal -->
@@ -224,7 +313,7 @@
   import { ref, onMounted, computed, watch } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
-  import { LayoutGrid, Folder, Play, Trash2, Video, Search, X, Calendar } from 'lucide-vue-next';
+  import { LayoutGrid, Folder, Play, Trash2, Video, Search, X, List, FolderOpen } from 'lucide-vue-next';
   import {
     getAllClips,
     deleteClip,
@@ -243,6 +332,7 @@
   import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import PaginationFooter from '@/components/PaginationFooter.vue';
+  import ClipCard from '@/components/ClipCard.vue';
   import { Input } from '@/components/ui/input';
   import CustomDropdown from '@/components/CustomDropdown.vue';
 
@@ -256,6 +346,13 @@
   const rawVideoCache = ref<Map<string, (RawVideo & { thumbnail_path: string | null })[]>>(new Map());
   const projectCache = ref<Map<string, Project>>(new Map());
   const { getRelativeTime } = useFormatters();
+
+  // View state
+  const viewMode = ref<'folders' | 'list'>('folders');
+  const showFolderDialog = ref(false);
+  const folderProject = ref<{ id: string; name: string; clips: Clip[] } | null>(null);
+  const folderCurrentPage = ref(1);
+  const folderItemsPerPage = 12;
 
   // Filter state
   const searchQuery = ref('');
@@ -386,16 +483,18 @@
 
   // Group by date logic
   const groupedClips = computed(() => {
+    return groupClips(paginatedClips.value);
+  });
+
+  function groupClips(clipsToGroup: Clip[]) {
     // If we are sorting by name or duration, skip date grouping
     if (sortBy.value.startsWith('name') || sortBy.value.startsWith('duration')) {
-      return [{ dateLabel: 'Clips', clips: paginatedClips.value }];
+      return [{ dateLabel: 'Clips', clips: clipsToGroup }];
     }
 
     const groups: { dateLabel: string; clips: Clip[] }[] = [];
     let currentLabel = '';
     let currentClips: Clip[] = [];
-
-    const clipsToGroup = paginatedClips.value;
 
     for (const clip of clipsToGroup) {
       const label = getDateLabel(clip.created_at);
@@ -418,7 +517,142 @@
     }
 
     return groups;
+  }
+
+  const groupedByProject = computed(() => {
+    const groups = new Map<
+      string,
+      { id: string; name: string; project: Project | null; clips: Clip[]; updatedAt: number }
+    >();
+    const uncategorized: Clip[] = [];
+
+    // Use filteredClips so search/filter applies to folder contents/visibility
+    for (const clip of filteredClips.value) {
+      if (clip.project_id) {
+        // Resolve parent
+        let projectId = clip.project_id;
+        let project = projectCache.value.get(projectId);
+
+        if (project && project.parent_id) {
+          const parent = projectCache.value.get(project.parent_id);
+          if (parent) {
+            projectId = parent.id;
+            project = parent;
+          }
+        }
+
+        if (project) {
+          if (!groups.has(projectId)) {
+            groups.set(projectId, {
+              id: projectId,
+              name: project.name,
+              project: project,
+              clips: [],
+              updatedAt: project.updated_at,
+            });
+          }
+          groups.get(projectId)!.clips.push(clip);
+        } else {
+          uncategorized.push(clip);
+        }
+      } else {
+        uncategorized.push(clip);
+      }
+    }
+
+    const result = Array.from(groups.values());
+
+    // Determine sorting
+    const [field, direction] = sortBy.value.split('-');
+
+    // Add uncategorized if any
+    if (uncategorized.length > 0) {
+      // Find latest clip date for uncategorized to use as updatedAt
+      let maxDate = 0;
+      for (const c of uncategorized) {
+        if (c.created_at > maxDate) maxDate = c.created_at;
+      }
+
+      result.push({
+        id: 'uncategorized',
+        name: 'Uncategorized',
+        project: null,
+        clips: uncategorized,
+        updatedAt: maxDate,
+      });
+    }
+
+    // Sort projects
+    result.sort((a, b) => {
+      if (field === 'name') {
+        const res = a.name.localeCompare(b.name);
+        return direction === 'asc' ? res : -res;
+      } else {
+        // Default to date/duration sorting (using updatedAt for projects)
+        const timeA = a.updatedAt;
+        const timeB = b.updatedAt;
+        if (timeA < timeB) return direction === 'asc' ? -1 : 1;
+        if (timeA > timeB) return direction === 'asc' ? 1 : -1;
+        return 0;
+      }
+    });
+
+    return result;
   });
+
+  const groupedFolderProjects = computed(() => {
+    // If sorting by name, return single group
+    if (sortBy.value.startsWith('name')) {
+      return [{ dateLabel: 'Projects', folders: groupedByProject.value }];
+    }
+
+    const groups: { dateLabel: string; folders: typeof groupedByProject.value }[] = [];
+    let currentLabel = '';
+    let currentFolders: typeof groupedByProject.value = [];
+
+    for (const folder of groupedByProject.value) {
+      const label = getDateLabel(folder.updatedAt);
+
+      if (label !== currentLabel) {
+        if (currentLabel) {
+          groups.push({ dateLabel: currentLabel, folders: currentFolders });
+        }
+        currentLabel = label;
+        currentFolders = [folder];
+      } else {
+        currentFolders.push(folder);
+      }
+    }
+
+    if (currentLabel) {
+      groups.push({ dateLabel: currentLabel, folders: currentFolders });
+    } else if (groupedByProject.value.length > 0 && groups.length === 0) {
+      groups.push({ dateLabel: 'Projects', folders: groupedByProject.value });
+    }
+
+    return groups;
+  });
+
+  const paginatedFolderClips = computed(() => {
+    if (!folderProject.value) return [];
+    const startIndex = (folderCurrentPage.value - 1) * folderItemsPerPage;
+    return folderProject.value.clips.slice(startIndex, startIndex + folderItemsPerPage);
+  });
+
+  const groupedFolderClips = computed(() => {
+    return groupClips(paginatedFolderClips.value);
+  });
+
+  const folderTotalPages = computed(() => {
+    if (!folderProject.value) return 0;
+    return Math.ceil(folderProject.value.clips.length / folderItemsPerPage);
+  });
+
+  function openFolder(group: { id: string; name: string; clips: Clip[] }) {
+    folderProject.value = group;
+    folderCurrentPage.value = 1;
+    showFolderDialog.value = true;
+  }
 
   function getDateLabel(timestamp: number): string {
     const d = new Date(timestamp * 1000);

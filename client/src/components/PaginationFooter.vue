@@ -1,7 +1,10 @@
 <template>
   <footer
     v-if="totalPages > 1"
-    class="fixed bottom-0 left-64 right-0 h-16 px-8 flex items-center justify-between border-t border-border/40 bg-background/95 backdrop-blur-sm z-10"
+    :class="[
+      'flex items-center justify-between px-8 py-4 border-t border-border/40 bg-background/95',
+      mode === 'fixed' ? 'fixed bottom-0 left-64 right-0 h-16 backdrop-blur-sm z-10' : 'w-full rounded-b-lg',
+    ]"
   >
     <!-- Page info -->
 
@@ -109,6 +112,7 @@
     totalPages: number;
     totalItems: number;
     itemLabel?: string;
+    mode?: 'fixed' | 'static';
   }
 
   interface Emits {
@@ -119,6 +123,7 @@
 
   withDefaults(defineProps<Props>(), {
     itemLabel: 'item',
+    mode: 'fixed',
   });
 
   defineEmits<Emits>();
