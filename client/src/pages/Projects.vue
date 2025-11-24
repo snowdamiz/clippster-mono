@@ -6,43 +6,13 @@
     :icon="Folder"
   >
     <template #actions>
-      <div class="flex items-center gap-3">
-        <!-- View Mode Toggle -->
-        <div class="bg-muted border border-border rounded-md p-1 flex items-center gap-1">
-          <button
-            @click="viewMode = 'folders'"
-            :class="[
-              'p-2 rounded transition-colors',
-              viewMode === 'folders'
-                ? 'bg-background shadow-sm text-foreground'
-                : 'text-muted-foreground hover:text-foreground',
-            ]"
-            title="Folder View"
-          >
-            <Folder class="h-4 w-4" />
-          </button>
-          <button
-            @click="viewMode = 'list'"
-            :class="[
-              'p-2 rounded transition-colors',
-              viewMode === 'list'
-                ? 'bg-background shadow-sm text-foreground'
-                : 'text-muted-foreground hover:text-foreground',
-            ]"
-            title="List View"
-          >
-            <List class="h-4 w-4" />
-          </button>
-        </div>
-
-        <button
-          @click="openCreateDialog"
-          class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all"
-        >
-          <Plus class="h-5 w-5" />
-          New Project
-        </button>
-      </div>
+      <button
+        @click="openCreateDialog"
+        class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all"
+      >
+        <Plus class="h-5 w-5" />
+        New Project
+      </button>
     </template>
 
     <!-- Loading State -->
@@ -50,159 +20,240 @@
       <SkeletonGrid />
     </div>
 
-    <!-- Projects Grid Grouped by Date -->
-    <div v-else-if="filteredProjects.length > 0" class="space-y-8">
-      <div v-for="group in groupedProjects" :key="group.dateLabel" class="space-y-4">
-        <!-- Date Header -->
-        <h3 class="text-sm font-medium text-muted-foreground border-b border-border pb-2">{{ group.dateLabel }}</h3>
+    <!-- Projects Content -->
+    <div v-else-if="projects.length > 0" class="space-y-8">
+      <!-- Filter Toolbar -->
+      <div class="-mt-4 bg-card flex flex-col md:flex-row gap-4 items-center justify-between">
+        <!-- Left: Search -->
+        <div class="relative w-full md:w-72">
+          <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input v-model="searchQuery" placeholder="Search projects..." class="pl-9 bg-background/50" />
+        </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <!-- Right: Filters & View Mode -->
+        <div class="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 scrollbar-hide">
+          <!-- Status Filter -->
+          <CustomDropdown v-model="statusFilter" :options="statusOptions" placeholder="Status" class="w-[140px]" />
+
+          <!-- Sort Filter -->
+          <CustomDropdown v-model="sortBy" :options="sortOptions" placeholder="Sort By" class="w-[160px]" />
+
+          <div class="h-8 w-px bg-border mx-1"></div>
+
+          <!-- View Mode -->
           <div
-            v-for="project in group.projects"
-            :key="project.id"
-            class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
-            @click="handleProjectClick(project)"
+            class="bg-muted/50 border border-border rounded-md p-1 flex items-center gap-1 transition-opacity"
+            :class="{ 'opacity-50 pointer-events-none': searchQuery }"
           >
-            <!-- Live Badge -->
-            <div
-              v-if="isProjectLive(project.id)"
-              class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-red-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm animate-pulse"
+            <button
+              @click="viewMode = 'folders'"
+              :disabled="!!searchQuery"
+              :class="[
+                'p-2 rounded transition-colors',
+                viewMode === 'folders'
+                  ? 'bg-background shadow-sm text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              ]"
+              title="Folder View"
             >
-              <Radio class="w-3 h-3" />
-              <span>LIVE</span>
-            </div>
-
-            <!-- Folder Badge (if has children and in folder view) -->
-            <div
-              v-if="viewMode === 'folders' && hasChildren(project.id)"
-              class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-blue-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm"
+              <Folder class="h-4 w-4" />
+            </button>
+            <button
+              @click="viewMode = 'list'"
+              :disabled="!!searchQuery"
+              :class="[
+                'p-2 rounded transition-colors',
+                viewMode === 'list'
+                  ? 'bg-background shadow-sm text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              ]"
+              title="List View"
             >
-              <FolderOpen class="w-3 h-3" />
-              <span>{{ getChildCount(project.id) }} Parts</span>
-            </div>
+              <List class="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </div>
 
-            <!-- Thumbnail background with vignette -->
+      <!-- Projects Grid -->
+      <div v-if="filteredProjects.length > 0" class="space-y-8">
+        <div v-for="group in groupedProjects" :key="group.dateLabel" class="space-y-4">
+          <!-- Date Header -->
+          <h3 class="text-sm font-medium text-muted-foreground border-b border-border pb-2">{{ group.dateLabel }}</h3>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             <div
-              v-if="getThumbnailUrl(project.id)"
-              class="absolute inset-0 z-0"
-              :style="{
-                backgroundImage: `url(${getThumbnailUrl(project.id)})`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-                backgroundRepeat: 'no-repeat',
-              }"
+              v-for="project in group.projects"
+              :key="project.id"
+              class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
+              @click="handleProjectClick(project)"
             >
-              <!-- Dark vignette overlay -->
-              <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60"></div>
-            </div>
-            <!-- Fallback background for projects without thumbnails -->
-            <div v-else class="absolute inset-0 z-0 bg-muted">
-              <div class="absolute inset-0 bg-gradient-to-br from-black/20 via-transparent to-black/40"></div>
-
-              <!-- Live Empty State -->
+              <!-- Live Badge -->
               <div
                 v-if="isProjectLive(project.id)"
-                class="absolute inset-0 flex flex-col items-center justify-center gap-3 opacity-50"
+                class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-red-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm animate-pulse"
               >
-                <div class="relative">
-                  <div class="absolute inset-0 bg-red-500 rounded-full animate-ping opacity-20"></div>
-                  <Radio class="h-12 w-12 text-red-500 relative z-10" />
-                </div>
-                <span class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Monitoring</span>
+                <Radio class="w-3 h-3" />
+                <span>LIVE</span>
               </div>
-              <!-- Standard Empty State -->
-              <div v-else class="absolute inset-0 flex items-center justify-center opacity-20">
-                <Folder class="h-16 w-16 text-foreground" />
-              </div>
-            </div>
 
-            <!-- Top right time badge -->
-            <div class="absolute top-4 right-4 z-5">
-              <span
-                :class="[
-                  'text-xs px-2 py-1 rounded-md',
-                  getThumbnailUrl(project.id)
-                    ? 'text-white/70 bg-white/10 backdrop-blur-sm'
-                    : 'text-muted-foreground bg-muted',
-                ]"
-              >
-                {{ getRelativeTime(project.updated_at) }}
-              </span>
-            </div>
-            <!-- Bottom left title and description -->
-            <div class="absolute bottom-2 left-2 right-2 z-5 bg-black/40 backdrop-blur-sm p-2 rounded-md">
-              <h3
-                :class="[
-                  'text-md font-semibold mb-1 group-hover:transition-colors line-clamp-2',
-                  getThumbnailUrl(project.id)
-                    ? 'text-white group-hover:text-white/80'
-                    : 'text-foreground group-hover:text-foreground/80',
-                ]"
-              >
-                {{ project.name }}
-              </h3>
-
-              <p
-                v-if="!(viewMode === 'folders' && hasChildren(project.id))"
-                :class="[
-                  'text-xs line-clamp-2',
-                  getThumbnailUrl(project.id) ? 'text-white/80' : 'text-muted-foreground',
-                ]"
-              >
-                {{ project.description || 'No description' }} • {{ getClipCount(project.id) }} clips
-              </p>
-            </div>
-            <!-- Hover Overlay Buttons -->
-            <div
-              class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-4"
-            >
-              <button
+              <!-- Folder Badge (if has children and in folder view) -->
+              <div
                 v-if="viewMode === 'folders' && hasChildren(project.id)"
-                class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                title="View Folder"
-                @click.stop="handleProjectClick(project)"
+                class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-blue-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm"
               >
-                <FolderOpen class="h-6 w-6" />
-              </button>
-              <button
-                v-else
-                class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                title="Open Workspace"
-                @click.stop="openWorkspace(project)"
-              >
-                <Play class="h-6 w-6" />
-              </button>
+                <FolderOpen class="w-3 h-3" />
+                <span>{{ getChildCount(project.id) }} Parts</span>
+              </div>
 
-              <button
-                class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                title="Edit"
-                @click.stop="editProject(project)"
+              <!-- Thumbnail background with vignette -->
+              <div
+                v-if="getThumbnailUrl(project.id)"
+                class="absolute inset-0 z-0"
+                :style="{
+                  backgroundImage: `url(${getThumbnailUrl(project.id)})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                  backgroundRepeat: 'no-repeat',
+                }"
               >
-                <Edit class="h-6 w-6" />
-              </button>
-              <button
-                class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                title="Delete"
-                @click.stop="confirmDelete(project)"
+                <!-- Dark vignette overlay -->
+                <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60"></div>
+              </div>
+              <!-- Fallback background for projects without thumbnails -->
+              <div v-else class="absolute inset-0 z-0 bg-muted">
+                <div class="absolute inset-0 bg-gradient-to-br from-black/20 via-transparent to-black/40"></div>
+
+                <!-- Live Empty State -->
+                <div
+                  v-if="isProjectLive(project.id)"
+                  class="absolute inset-0 flex flex-col items-center justify-center gap-3 opacity-50"
+                >
+                  <div class="relative">
+                    <div class="absolute inset-0 bg-red-500 rounded-full animate-ping opacity-20"></div>
+                    <Radio class="h-12 w-12 text-red-500 relative z-10" />
+                  </div>
+                  <span class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Monitoring</span>
+                </div>
+                <!-- Standard Empty State -->
+                <div v-else class="absolute inset-0 flex items-center justify-center opacity-20">
+                  <Folder class="h-16 w-16 text-foreground" />
+                </div>
+              </div>
+
+              <!-- Top right time badge -->
+              <div class="absolute top-4 right-4 z-5">
+                <span
+                  :class="[
+                    'text-xs px-2 py-1 rounded-md',
+                    getThumbnailUrl(project.id)
+                      ? 'text-white/70 bg-white/10 backdrop-blur-sm'
+                      : 'text-muted-foreground bg-muted',
+                  ]"
+                >
+                  {{ getRelativeTime(project.updated_at) }}
+                </span>
+              </div>
+              <!-- Bottom left title and description -->
+              <div class="absolute bottom-2 left-2 right-2 z-5 bg-black/40 backdrop-blur-sm p-2 rounded-md">
+                <h3
+                  :class="[
+                    'text-md font-semibold mb-1 group-hover:transition-colors line-clamp-2',
+                    getThumbnailUrl(project.id)
+                      ? 'text-white group-hover:text-white/80'
+                      : 'text-foreground group-hover:text-foreground/80',
+                  ]"
+                >
+                  {{ project.name }}
+                </h3>
+
+                <p
+                  v-if="!(viewMode === 'folders' && hasChildren(project.id))"
+                  :class="[
+                    'text-xs line-clamp-2',
+                    getThumbnailUrl(project.id) ? 'text-white/80' : 'text-muted-foreground',
+                  ]"
+                >
+                  {{ project.description || 'No description' }} • {{ getClipCount(project.id) }} clips
+                </p>
+              </div>
+              <!-- Hover Overlay Buttons -->
+              <div
+                class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-4"
               >
-                <Trash2 class="h-6 w-6" />
-              </button>
+                <button
+                  v-if="viewMode === 'folders' && hasChildren(project.id)"
+                  class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                  title="View Folder"
+                  @click.stop="handleProjectClick(project)"
+                >
+                  <FolderOpen class="h-6 w-6" />
+                </button>
+                <button
+                  v-else
+                  class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                  title="Open Workspace"
+                  @click.stop="openWorkspace(project)"
+                >
+                  <Play class="h-6 w-6" />
+                </button>
+
+                <button
+                  class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                  title="Edit"
+                  @click.stop="editProject(project)"
+                >
+                  <Edit class="h-6 w-6" />
+                </button>
+                <button
+                  class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                  title="Delete"
+                  @click.stop="confirmDelete(project)"
+                >
+                  <Trash2 class="h-6 w-6" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
+      <!-- Pagination Footer -->
+      <PaginationFooter
+        v-if="!loading && filteredProjects.length > 0"
+        :current-page="currentPage"
+        :total-pages="totalPages"
+        :total-items="filteredProjects.length"
+        item-label="project"
+        @go-to-page="goToPage"
+        @previous="previousPage"
+        @next="nextPage"
+      />
+      <!-- No Results State -->
+      <div
+        v-if="filteredProjects.length === 0"
+        class="flex flex-col items-center justify-center py-16 text-center space-y-4"
+      >
+        <div class="bg-muted rounded-full p-4">
+          <Search class="h-8 w-8 text-muted-foreground" />
+        </div>
+        <div class="space-y-1">
+          <h3 class="font-semibold text-lg">No projects found</h3>
+          <p class="text-muted-foreground text-sm max-w-sm">
+            We couldn't find any projects matching your search filters. Try adjusting your search query or filters.
+          </p>
+        </div>
+        <button
+          @click="
+            searchQuery = '';
+            statusFilter = 'all';
+          "
+          class="text-primary hover:underline text-sm font-medium"
+        >
+          Clear filters
+        </button>
+      </div>
     </div>
-    <!-- Pagination Footer -->
-    <PaginationFooter
-      v-if="!loading && filteredProjects.length > 0"
-      :current-page="currentPage"
-      :total-pages="totalPages"
-      :total-items="filteredProjects.length"
-      item-label="project"
-      @go-to-page="goToPage"
-      @previous="previousPage"
-      @next="nextPage"
-    />
+
     <!-- Empty State -->
     <EmptyState
       v-else
@@ -222,15 +273,20 @@
       @click.self="showFolderDialog = false"
     >
       <div
-        class="bg-card rounded-lg w-full max-w-5xl max-h-[80vh] mx-4 border border-border flex flex-col overflow-hidden shadow-2xl"
+        class="bg-card rounded-lg w-full mx-4 border border-border flex flex-col overflow-hidden shadow-2xl transition-all duration-200 max-h-[80vh]"
+        :class="{
+          'max-w-lg': getFolderChildren(folderProject.id).length <= 1,
+          'max-w-3xl': getFolderChildren(folderProject.id).length === 2,
+          'max-w-5xl': getFolderChildren(folderProject.id).length >= 3,
+        }"
       >
         <!-- Header -->
         <div class="py-2 px-3 border-b border-border flex items-center justify-between bg-black/30">
-          <div class="flex items-center justify-center gap-3">
-            <div class="bg-primary/10 p-2 rounded-md">
-              <FolderOpen class="h-3 w-3 text-primary" />
+          <div class="flex items-center justify-center gap-2.5">
+            <div class="bg-primary/10 p-1.5 rounded-md">
+              <FolderOpen class="h-4 w-4 text-primary" />
             </div>
-            <h2 class="text-lg font-bold text-foreground -mt-1">{{ folderProject.name }}</h2>
+            <h2 class="text-md font-medium text-foreground -mt-1">{{ folderProject.name }}</h2>
           </div>
           <button
             @click="showFolderDialog = false"
@@ -242,7 +298,14 @@
 
         <!-- Content -->
         <div class="flex-1 overflow-y-auto p-6">
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div
+            class="grid gap-5"
+            :class="{
+              'grid-cols-1': getFolderChildren(folderProject.id).length <= 1,
+              'grid-cols-1 md:grid-cols-2': getFolderChildren(folderProject.id).length === 2,
+              'grid-cols-1 md:grid-cols-2 lg:grid-cols-3': getFolderChildren(folderProject.id).length >= 3,
+            }"
+          >
             <div
               v-for="project in getFolderChildren(folderProject.id)"
               :key="project.id"
@@ -252,7 +315,7 @@
               <!-- Thumbnail background -->
               <div
                 v-if="getThumbnailUrl(project.id)"
-                class="absolute inset-0 z-0"
+                class="absolute inset-0 z-0 rounded-md"
                 :style="{
                   backgroundImage: `url(${getThumbnailUrl(project.id)})`,
                   backgroundSize: 'cover',
@@ -277,7 +340,7 @@
               </div>
 
               <!-- Info -->
-              <div class="absolute bottom-0 left-0 right-0 z-5 bg-black/60 backdrop-blur-sm p-3">
+              <div class="absolute bottom-0 left-0 right-0 z-5 bg-black/60 backdrop-blur-sm p-3 rounded-b-md">
                 <h3 class="text-sm font-semibold text-white line-clamp-1">{{ project.name }}</h3>
                 <p class="text-xs text-white/70 line-clamp-1 mt-0.5">{{ project.description || 'No description' }}</p>
               </div>
@@ -363,7 +426,7 @@
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
-  import { Folder, Plus, Play, Edit, Trash2, Radio, List, FolderOpen, X } from 'lucide-vue-next';
+  import { Folder, Plus, Play, Edit, Trash2, Radio, List, FolderOpen, X, Search } from 'lucide-vue-next';
   import {
     getAllProjects,
     getClipsWithVersionsByProjectId,
@@ -371,7 +434,6 @@
     createProject,
     updateProject,
     getRawVideosByProjectId,
-    updateRawVideo,
     hasRawVideosForProject,
     hasClipsForProject,
     type Project,
@@ -380,12 +442,15 @@
   import { useFormatters } from '@/composables/useFormatters';
   import { useToast } from '@/composables/useToast';
   import { useLivestreamMonitoring } from '@/composables/useLivestreamMonitoring';
+  import { useVideoOperations } from '@/composables/useVideoOperations';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
   import SkeletonGrid from '@/components/SkeletonGrid.vue';
   import ProjectDialog, { type ProjectFormData } from '@/components/ProjectDialog.vue';
   import ProjectWorkspaceDialog from '@/components/ProjectWorkspaceDialog.vue';
   import PaginationFooter from '@/components/PaginationFooter.vue';
+  import { Input } from '@/components/ui/input';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
 
   const projects = ref<Project[]>([]);
   const loading = ref(true);
@@ -403,11 +468,32 @@
   const { getRelativeTime } = useFormatters();
   const { success, error } = useToast();
   const { activeSessions } = useLivestreamMonitoring();
+  const { processVideoFile } = useVideoOperations();
 
   // View state
   const viewMode = ref<'folders' | 'list'>('folders');
   const showFolderDialog = ref(false);
   const folderProject = ref<Project | null>(null);
+
+  // Filter state
+  const searchQuery = ref('');
+  const sortBy = ref('updated-desc');
+  const statusFilter = ref('all');
+
+  const statusOptions = [
+    { label: 'All Status', value: 'all' },
+    { label: 'Live Now', value: 'live' },
+    { label: 'Has Clips', value: 'has_clips' },
+  ];
+
+  const sortOptions = [
+    { label: 'Updated: Newest', value: 'updated-desc' },
+    { label: 'Updated: Oldest', value: 'updated-asc' },
+    { label: 'Created: Newest', value: 'created-desc' },
+    { label: 'Created: Oldest', value: 'created-asc' },
+    { label: 'Name: A-Z', value: 'name-asc' },
+    { label: 'Name: Z-A', value: 'name-desc' },
+  ];
 
   // Pagination state
   const currentPage = ref(1);
@@ -515,16 +601,72 @@
     }
   }
 
-  // Filter projects based on view mode
+  // Filter projects based on view mode and filters
   const filteredProjects = computed(() => {
-    if (viewMode.value === 'list') {
-      // In list view, hide folders (projects containing other projects)
-      // We only want to show leaf nodes (actual clips/segments)
-      return projects.value.filter((p) => !hasChildren(p.id));
+    let result = projects.value;
+
+    // 1. Filter by View Mode (only if NOT searching)
+    // If user is searching, we want to search across all projects regardless of folder structure
+    if (!searchQuery.value) {
+      if (viewMode.value === 'folders') {
+        result = result.filter((p) => !p.parent_id);
+      } else if (viewMode.value === 'list') {
+        // In list view, hide "parent" projects (folders) - show only leaf nodes
+        result = result.filter((p) => !hasChildren(p.id));
+      }
     }
 
-    // Folder view - only top-level projects
-    return projects.value.filter((p) => !p.parent_id);
+    // 2. Search Text
+    if (searchQuery.value) {
+      const query = searchQuery.value.toLowerCase();
+      result = result.filter(
+        (p) => p.name.toLowerCase().includes(query) || (p.description && p.description.toLowerCase().includes(query))
+      );
+    }
+
+    // 3. Status Filter
+    if (statusFilter.value !== 'all') {
+      switch (statusFilter.value) {
+        case 'live':
+          result = result.filter((p) => isProjectLive(p.id));
+          break;
+        case 'has_clips':
+          result = result.filter((p) => getClipCount(p.id) > 0);
+          break;
+        case 'has_videos':
+          result = result.filter((p) => (projectVideos.value[p.id]?.length || 0) > 0);
+          break;
+        case 'empty':
+          result = result.filter((p) => getClipCount(p.id) === 0 && (projectVideos.value[p.id]?.length || 0) === 0);
+          break;
+      }
+    }
+
+    // 4. Sorting
+    // Note: projects are already sorted by updated_at desc from DB, but we apply client side sort here
+    const [field, direction] = sortBy.value.split('-');
+
+    result = [...result].sort((a, b) => {
+      let valA: string | number = '';
+      let valB: string | number = '';
+
+      if (field === 'updated') {
+        valA = a.updated_at;
+        valB = b.updated_at;
+      } else if (field === 'created') {
+        valA = a.created_at;
+        valB = b.created_at;
+      } else if (field === 'name') {
+        valA = a.name.toLowerCase();
+        valB = b.name.toLowerCase();
+      }
+
+      if (valA < valB) return direction === 'asc' ? -1 : 1;
+      if (valA > valB) return direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return result;
   });
 
   // Pagination logic
@@ -538,16 +680,24 @@
 
   // Group by date logic
   const groupedProjects = computed(() => {
+    // If we are sorting by name, or filtering specifically, we might want to skip grouping or adjust it.
+    // For now, if sorting by name, we skip date grouping.
+    if (sortBy.value.startsWith('name')) {
+      return [{ dateLabel: 'Projects', projects: paginatedProjects.value }];
+    }
+
     const groups: { dateLabel: string; projects: Project[] }[] = [];
 
     let currentLabel = '';
     let currentProjects: Project[] = [];
 
-    // Sort projects by date descending first (should already be sorted by updated_at desc from DB)
-    const sortedProjects = [...paginatedProjects.value].sort((a, b) => b.updated_at - a.updated_at);
+    // Use paginatedProjects which are already sorted by filteredProjects
+    const projectsToGroup = paginatedProjects.value;
 
-    for (const project of sortedProjects) {
-      const label = getDateLabel(project.updated_at);
+    for (const project of projectsToGroup) {
+      // Determine which date to use for grouping
+      const timestamp = sortBy.value.startsWith('created') ? project.created_at : project.updated_at;
+      const label = getDateLabel(timestamp);
 
       if (label !== currentLabel) {
         if (currentLabel) {
@@ -562,6 +712,9 @@
 
     if (currentLabel) {
       groups.push({ dateLabel: currentLabel, projects: currentProjects });
+    } else if (projectsToGroup.length > 0 && groups.length === 0) {
+      // Fallback if loop didn't produce groups (shouldn't happen if list not empty)
+      groups.push({ dateLabel: 'Projects', projects: projectsToGroup });
     }
 
     return groups;
@@ -609,8 +762,8 @@
     }
   }
 
-  // Reset to first page when projects change or view mode changes
-  watch([projects, viewMode], () => {
+  // Reset to first page when projects change or filters change
+  watch([projects, viewMode, searchQuery, sortBy, statusFilter], () => {
     currentPage.value = 1;
   });
 
@@ -636,60 +789,46 @@
         // Update existing project
         await updateProject(selectedProject.value.id, data.name, data.description || undefined);
 
-        if (data.selectedVideoId !== undefined || (data.selectedVideoIds && data.selectedVideoIds.length > 0)) {
-          // First, remove existing video associations for this project
-          const existingVideos = await getRawVideosByProjectId(selectedProject.value.id);
-          for (const video of existingVideos) {
-            await updateRawVideo(video.id, { project_id: null });
-          }
-
-          // Then associate the new video(s)
-          if (data.selectedVideoIds && data.selectedVideoIds.length > 0) {
-            // Multiple videos selected
-            for (const videoId of data.selectedVideoIds) {
-              await updateRawVideo(videoId, { project_id: selectedProject.value.id });
-            }
-          } else if (data.selectedVideoId) {
-            // Single video selected (legacy)
-            await updateRawVideo(data.selectedVideoId, { project_id: selectedProject.value.id });
+        // Add newly selected videos if any
+        if (data.selectedVideoPaths && data.selectedVideoPaths.length > 0) {
+          for (const path of data.selectedVideoPaths) {
+            await processVideoFile(path, selectedProject.value.id);
           }
         }
 
         success('Project updated', `"${data.name}" has been updated successfully`);
       } else {
         // Create new project
-        // Check if multiple videos are selected
-        if (data.selectedVideoIds && data.selectedVideoIds.length > 1) {
-          // Create a parent project
-          const parentProjectId = await createProject(data.name, data.description || undefined);
 
-          // Create sub-projects for each video
-          // We'll use the video names for sub-projects or name them sequentially
-          let index = 1;
-          for (const videoId of data.selectedVideoIds) {
-            // Fetch video details to get a good name
-            // We need to get available videos to find this one, or fetch it
-            // Since we don't have easy access to fetch video by ID here without importing,
-            // let's look it up in our local cache or just use generic names.
-            // Better approach: The dialog should probably pass video details or we fetch them.
-            // For now, let's just use generic names "Part X"
+        // Check if we have multiple videos - if so, create a parent project with child projects
+        if (data.selectedVideoPaths && data.selectedVideoPaths.length > 1) {
+          // Create parent project
+          const parentId = await createProject(data.name, data.description || undefined);
 
-            const subProjectName = `${data.name} Part ${index}`;
-            const subProjectId = await createProject(subProjectName, undefined, parentProjectId);
-            await updateRawVideo(videoId, { project_id: subProjectId });
-            index++;
+          // Create child projects for each video
+          for (const path of data.selectedVideoPaths) {
+            // Use filename as child project name
+            const filename = path.split(/[\\/]/).pop() || 'Part';
+            // Remove extension
+            const childName = filename.replace(/\.[^/.]+$/, '');
+
+            // Create child project
+            const childId = await createProject(childName, data.description || undefined, parentId);
+
+            // Process video and associate with child project
+            await processVideoFile(path, childId);
           }
 
-          success('Project created', `"${data.name}" has been created with ${data.selectedVideoIds.length} parts`);
+          success('Project created', `"${data.name}" has been created with ${data.selectedVideoPaths.length} parts`);
         } else {
-          // Single video or no video - standard project
-          // Note: New projects are always top-level (no parent_id) in this dialog
+          // Standard creation for single video or no video
           const projectId = await createProject(data.name, data.description || undefined);
 
-          // Associate the selected video with the new project
-          const videoId = data.selectedVideoId || (data.selectedVideoIds && data.selectedVideoIds[0]);
-          if (videoId) {
-            await updateRawVideo(videoId, { project_id: projectId });
+          // Import and associate selected video (if any)
+          if (data.selectedVideoPaths && data.selectedVideoPaths.length > 0) {
+            for (const path of data.selectedVideoPaths) {
+              await processVideoFile(path, projectId);
+            }
           }
 
           success('Project created', `"${data.name}" has been created successfully`);
@@ -700,11 +839,22 @@
       await loadProjects();
 
       if (!selectedProject.value) {
-        // For new projects, find the newly created project and open workspace
+        // For new projects, find the newly created project
         const newProject = projects.value.find((p) => p.name === data.name);
+
         if (newProject) {
-          workspaceProject.value = newProject;
-          showWorkspaceDialog.value = true;
+          // Check if it's a folder project (has children)
+          const isFolder = hasChildren(newProject.id);
+
+          if (isFolder) {
+            // If it's a folder, open the folder view
+            folderProject.value = newProject;
+            showFolderDialog.value = true;
+          } else {
+            // If it's a regular project, open the workspace
+            workspaceProject.value = newProject;
+            showWorkspaceDialog.value = true;
+          }
         }
       }
 

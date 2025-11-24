@@ -49,18 +49,6 @@ const router = createRouter({
       ],
     },
     {
-      path: '/videos',
-      name: 'videos',
-      component: () => import('@/layouts/DashboardLayout.vue'),
-      children: [
-        {
-          path: '',
-          name: 'videos-home',
-          component: () => import('@/pages/Videos.vue'),
-        },
-      ],
-    },
-    {
       path: '/assets',
       name: 'assets',
       component: () => import('@/layouts/DashboardLayout.vue'),

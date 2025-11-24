@@ -40,80 +40,53 @@
           <!-- Video Selection -->
           <div>
             <label class="block text-sm font-medium text-foreground mb-2">
-              Raw Video
-              <span class="text-red-500">*</span>
+              Source Videos
+              <span class="text-red-500" v-if="!isEdit">*</span>
             </label>
-            <!-- Warning message when project has detected/generated clips -->
-            <div
-              v-if="isEdit && hasDetectedOrGeneratedClipsLocked"
-              class="mb-3 p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-md"
-            >
-              <div class="flex items-start gap-2">
-                <AlertTriangle class="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p class="text-sm font-medium text-amber-800 dark:text-amber-200">Video selection locked</p>
-                  <p class="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                    This project contains detected or generated clips, so the raw video cannot be changed.
-                  </p>
-                </div>
-              </div>
-            </div>
-            <!-- Selected Video Display -->
-            <div class="space-y-2">
+
+            <!-- Warning message when project has detected/generated clips (only relevant if we were replacing videos, but we are appending now, so maybe less critical, but good to know) -->
+
+            <!-- Selected Videos List -->
+            <div v-if="selectedVideoPaths.length > 0" class="mb-3 space-y-2 max-h-40 overflow-y-auto">
               <div
-                v-for="video in selectedVideos"
-                :key="video.id"
-                class="p-3 bg-muted/50 rounded-md border border-border flex items-center gap-3"
+                v-for="(path, index) in selectedVideoPaths"
+                :key="index"
+                class="p-2 bg-muted/50 rounded-md border border-border flex items-center justify-between gap-2"
               >
-                <div class="w-20 h-12 bg-muted rounded overflow-hidden flex-shrink-0">
-                  <img
-                    v-if="getThumbnailUrl(video)"
-                    :src="getThumbnailUrl(video)!"
-                    :alt="video.original_filename || 'Video thumbnail'"
-                    class="w-full h-full object-cover"
-                  />
-                  <div v-else class="w-full h-full flex items-center justify-center">
-                    <Video class="h-6 w-6 text-muted-foreground/40" />
-                  </div>
-                </div>
-
-                <div class="flex-1 min-w-0">
-                  <p class="text-sm font-medium text-foreground truncate">
-                    {{ video.original_filename || video.file_path.split(/[\\\/]/).pop() || 'Untitled Video' }}
-                  </p>
-
-                  <p class="text-xs text-muted-foreground" v-if="video.duration">
-                    Duration: {{ formatDuration(video.duration) }}
-                  </p>
+                <div class="flex items-center gap-2 min-w-0">
+                  <Video class="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <span class="text-sm truncate text-foreground" :title="path">
+                    {{ getFileName(path) }}
+                  </span>
                 </div>
                 <button
                   type="button"
-                  @click="removeVideoSelection(video)"
-                  class="p-1 hover:bg-muted rounded"
-                  title="Remove selection"
-                  :disabled="isEdit && hasDetectedOrGeneratedClipsLocked"
-                  :class="{ 'opacity-50 cursor-not-allowed': isEdit && hasDetectedOrGeneratedClipsLocked }"
+                  @click="removeVideo(index)"
+                  class="p-1 hover:bg-muted rounded text-muted-foreground hover:text-red-500 transition-colors"
+                  title="Remove"
                 >
-                  <X class="h-4 w-4 text-muted-foreground" />
+                  <X class="h-4 w-4" />
                 </button>
               </div>
             </div>
+
             <!-- Select Video Button -->
             <button
               type="button"
-              @click="showVideoSelector = true"
-              class="w-full mt-3 px-4 py-3 bg-muted hover:bg-muted/80 border rounded-md text-foreground transition-all flex items-center justify-center gap-2"
+              @click="openVideoSelector"
+              class="w-full px-4 py-3 bg-muted hover:bg-muted/80 border rounded-md text-foreground transition-all flex items-center justify-center gap-2"
               :class="{
-                'border-red-500': errors.selectedVideoId,
-                'opacity-50 cursor-not-allowed': isEdit && hasDetectedOrGeneratedClipsLocked,
+                'border-red-500': errors.selectedVideoPaths,
               }"
-              :disabled="isEdit && hasDetectedOrGeneratedClipsLocked"
             >
-              <Video class="h-5 w-5" />
-              {{ selectedVideos.length > 0 ? 'Add More Videos' : 'Select from Video Library' }}
+              <Upload class="h-5 w-5" />
+              {{ selectedVideoPaths.length > 0 ? 'Add More Videos' : 'Select Videos from Computer' }}
             </button>
-            <p v-if="errors.selectedVideoId" class="mt-1 text-sm text-red-500">
-              {{ errors.selectedVideoId }}
+            <p v-if="errors.selectedVideoPaths" class="mt-1 text-sm text-red-500">
+              {{ errors.selectedVideoPaths }}
+            </p>
+            <p class="mt-2 text-xs text-muted-foreground">
+              Selected videos will be imported into the project workspace.
             </p>
           </div>
           <!-- Action Buttons -->
@@ -137,209 +110,19 @@
         </form>
       </div>
     </div>
-    <!-- Video Selector Modal -->
-    <div
-      v-if="showVideoSelector"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]"
-      @click.self="showVideoSelector = false"
-    >
-      <div
-        class="bg-card rounded-lg p-6 max-w-4xl w-full mx-4 border border-border max-h-[80vh] flex flex-col relative"
-      >
-        <!-- Close Button (Top Right) -->
-        <button
-          @click="showVideoSelector = false"
-          class="absolute top-6 right-6 z-30 p-2 bg-black/40 hover:bg-black/60 backdrop-blur-sm rounded-md transition-colors"
-          title="Close"
-        >
-          <X class="h-5 w-5 text-white" />
-        </button>
-        <h3 class="text-xl font-bold mb-4">Select a Video</h3>
-        <!-- Videos Grid -->
-        <div class="flex-1 overflow-y-auto">
-          <!-- Header with video count -->
-          <div v-if="availableVideos.length > 0" class="flex items-center justify-between mb-4">
-            <p class="text-sm text-muted-foreground">
-              {{ videoCountInfo }}
-              <span v-if="totalPages > 1">• Page {{ currentPage }} of {{ totalPages }}</span>
-            </p>
-          </div>
-
-          <div v-if="availableVideos.length > 0" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            <button
-              v-for="video in paginatedVideos"
-              :key="video.id"
-              type="button"
-              @click="selectVideoFromLibrary(video)"
-              class="group relative bg-card border-2 rounded-md overflow-hidden transition-all"
-              :class="[
-                selectedVideos.some((v) => v.id === video.id) ? 'border-purple-500' : 'border-border',
-                isVideoAvailable(video) ? 'hover:border-foreground/20' : 'opacity-60 cursor-not-allowed',
-              ]"
-              :disabled="!isVideoAvailable(video)"
-            >
-              <!-- Thumbnail -->
-              <div class="aspect-video bg-muted/50 relative">
-                <img
-                  v-if="getThumbnailUrl(video)"
-                  :src="getThumbnailUrl(video)!"
-                  :alt="video.original_filename || 'Video thumbnail'"
-                  class="w-full h-full object-cover"
-                  :class="{ 'filter brightness-75': !isVideoAvailable(video) }"
-                />
-                <div
-                  v-else
-                  class="absolute inset-0 flex items-center justify-center"
-                  :class="{ 'opacity-50': !isVideoAvailable(video) }"
-                >
-                  <Video class="h-8 w-8 text-muted-foreground/40" />
-                </div>
-                <!-- Status Badge -->
-                <div class="absolute top-2 left-2">
-                  <span
-                    class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium backdrop-blur-sm"
-                    :class="[
-                      isVideoAvailable(video)
-                        ? 'bg-green-500/80 text-white'
-                        : video.project_id === props.project?.id
-                          ? 'bg-blue-500/80 text-white'
-                          : 'bg-orange-500/80 text-white',
-                    ]"
-                  >
-                    {{ getVideoStatusText(video) }}
-                  </span>
-                </div>
-                <!-- Selected Indicator -->
-                <div
-                  v-if="selectedVideos.some((v) => v.id === video.id)"
-                  class="absolute inset-0 bg-purple-500/20 flex items-center justify-center"
-                >
-                  <div class="bg-purple-600 rounded-full p-1">
-                    <CheckCircle class="h-5 w-5 text-white" />
-                  </div>
-                </div>
-              </div>
-              <!-- Info -->
-              <div class="p-2">
-                <p class="text-xs font-medium text-foreground truncate">
-                  {{ video.original_filename || video.file_path.split(/[\\\/]/).pop() || 'Video' }}
-                </p>
-
-                <p class="text-xs text-muted-foreground" v-if="video.duration">
-                  {{ formatDuration(video.duration) }}
-                </p>
-              </div>
-            </button>
-          </div>
-          <!-- Empty State -->
-          <div v-else class="py-12 text-center">
-            <Video class="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-            <p class="text-muted-foreground">{{ emptyStateMessage }}</p>
-          </div>
-        </div>
-        <!-- Pagination Controls (shown when there are multiple pages) -->
-        <div v-if="totalPages > 1" class="mt-6 pt-5 px-5 -mx-6 border-t border-border">
-          <div class="flex items-center justify-between">
-            <!-- Page info -->
-            <div class="text-sm text-muted-foreground">Page {{ currentPage }} of {{ totalPages }}</div>
-            <!-- Pagination Controls -->
-            <div class="flex items-center gap-2 rounded-md">
-              <!-- Previous Button -->
-              <button
-                @click="previousPage"
-                :disabled="currentPage === 1"
-                class="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-all text-sm"
-                title="Previous page"
-              >
-                <ChevronLeft class="h-3.5 w-3.5" />
-                Previous
-              </button>
-              <!-- Page Numbers -->
-              <div class="flex items-center gap-1">
-                <!-- Generate page numbers with smart ellipsis -->
-                <template v-for="page in totalPages" :key="page">
-                  <!-- Show first page -->
-                  <button
-                    v-if="page === 1"
-                    @click="goToPage(page)"
-                    :class="[
-                      'px-2.5 py-1.5 rounded-md transition-all text-sm font-medium',
-                      currentPage === page ? 'text-purple-500' : 'hover:bg-muted/80 text-foreground',
-                    ]"
-                  >
-                    {{ page }}
-                  </button>
-                  <!-- Show ellipsis before current page range -->
-                  <span v-else-if="page === currentPage - 2 && page > 2" class="px-1.5 text-muted-foreground text-sm">
-                    ...
-                  </span>
-                  <!-- Show pages around current -->
-                  <button
-                    v-else-if="page >= currentPage - 1 && page <= currentPage + 1"
-                    @click="goToPage(page)"
-                    :class="[
-                      'px-2.5 py-1.5 rounded-md transition-all text-sm font-medium',
-                      currentPage === page ? 'text-purple-500' : 'hover:bg-muted/80 text-foreground',
-                    ]"
-                  >
-                    {{ page }}
-                  </button>
-                  <!-- Show ellipsis after current page range -->
-                  <span
-                    v-else-if="page === currentPage + 2 && page < totalPages - 1"
-                    class="px-1.5 text-muted-foreground text-sm"
-                  >
-                    ...
-                  </span>
-                  <!-- Show last page -->
-                  <button
-                    v-else-if="page === totalPages && totalPages > 1"
-                    @click="goToPage(page)"
-                    :class="[
-                      'px-2.5 py-1.5 rounded-md transition-all text-sm font-medium',
-                      currentPage === page ? 'bg-purple-500 text-white' : 'hover:bg-muted/80 text-foreground',
-                    ]"
-                  >
-                    {{ page }}
-                  </button>
-                </template>
-              </div>
-              <!-- Next Button -->
-              <button
-                @click="nextPage"
-                :disabled="currentPage === totalPages"
-                class="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-all text-sm"
-                title="Next page"
-              >
-                Next
-                <ChevronRight class="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
   </Teleport>
 </template>
 
 <script setup lang="ts">
-  import { ref, watch, reactive, computed } from 'vue';
-  import { invoke } from '@tauri-apps/api/core';
-  import {
-    getAllRawVideos,
-    getProject,
-    hasDetectedOrGeneratedClips,
-    type Project,
-    type RawVideo,
-  } from '@/services/database';
-  import { useFormatters } from '@/composables/useFormatters';
-  import { AlertTriangle, Video, X, ChevronLeft, ChevronRight, CheckCircle } from 'lucide-vue-next';
+  import { ref, watch, reactive } from 'vue';
+  import { open } from '@tauri-apps/plugin-dialog';
+  import { getProject, type Project } from '@/services/database';
+  import { Video, X, Upload } from 'lucide-vue-next';
 
   export interface ProjectFormData {
     name: string;
     description: string;
-    selectedVideoId?: string;
-    selectedVideoIds?: string[]; // Support multiple video selection
+    selectedVideoPaths: string[];
   }
 
   const props = defineProps<{
@@ -354,88 +137,16 @@
 
   const loading = ref(false);
   const isEdit = ref(false);
-  const hasDetectedOrGeneratedClipsLocked = ref(false);
-  const formData = reactive<ProjectFormData>({
+  const formData = reactive<{
+    name: string;
+    description: string;
+  }>({
     name: '',
     description: '',
-    selectedVideoId: '',
-    selectedVideoIds: [],
   });
 
+  const selectedVideoPaths = ref<string[]>([]);
   const errors = reactive<Partial<Record<keyof ProjectFormData, string>>>({});
-  const showVideoSelector = ref(false);
-  const availableVideos = ref<RawVideo[]>([]);
-  const selectedVideo = ref<RawVideo | null>(null);
-  const selectedVideos = ref<RawVideo[]>([]); // Support multiple video selection
-  const thumbnailCache = ref<Map<string, string>>(new Map());
-  const projectCache = ref<Map<string, string>>(new Map());
-  const { formatDuration } = useFormatters();
-
-  // Pagination state
-  const currentPage = ref(1);
-  const videosPerPage = 8;
-
-  // Pagination computed properties
-  const totalPages = computed(() => Math.ceil(availableVideos.value.length / videosPerPage));
-  const paginatedVideos = computed(() => {
-    const startIndex = (currentPage.value - 1) * videosPerPage;
-    const endIndex = startIndex + videosPerPage;
-    return availableVideos.value.slice(startIndex, endIndex);
-  });
-
-  // Computed property for empty state message
-  const emptyStateMessage = computed(() => {
-    return 'No videos found. Upload some videos to get started.';
-  });
-
-  // Computed property for video count breakdown
-  const videoCountInfo = computed(() => {
-    const total = availableVideos.value.length;
-    const available = availableVideos.value.filter((v) => isVideoAvailable(v)).length;
-    const unavailable = total - available;
-
-    if (unavailable > 0) {
-      return `${total} video${total !== 1 ? 's' : ''} (${available} available, ${unavailable} in projects)`;
-    }
-    return `${total} video${total !== 1 ? 's' : ''} available`;
-  });
-
-  // Pagination functions
-  function goToPage(page: number) {
-    if (page >= 1 && page <= totalPages.value) {
-      currentPage.value = page;
-    }
-  }
-
-  function nextPage() {
-    if (currentPage.value < totalPages.value) {
-      currentPage.value++;
-    }
-  }
-
-  function previousPage() {
-    if (currentPage.value > 1) {
-      currentPage.value--;
-    }
-  }
-
-  // Reset to first page when available videos change
-  watch(availableVideos, () => {
-    currentPage.value = 1;
-  });
-
-  // Check if project has detected or generated clips when editing
-  async function checkProjectClips() {
-    if (isEdit.value && props.project) {
-      try {
-        hasDetectedOrGeneratedClipsLocked.value = await hasDetectedOrGeneratedClips(props.project.id);
-      } catch (error) {
-        hasDetectedOrGeneratedClipsLocked.value = false;
-      }
-    } else {
-      hasDetectedOrGeneratedClipsLocked.value = false;
-    }
-  }
 
   // Watch for project prop changes to populate form for editing
   watch(
@@ -445,19 +156,9 @@
         isEdit.value = true;
         formData.name = newProject.name;
         formData.description = newProject.description || '';
-        // Check if project has detected or generated clips
-        await checkProjectClips();
-        // Try to find a video associated with this project
-        if (availableVideos.value.length > 0) {
-          const matchingVideo = availableVideos.value.find((v) => v.project_id === newProject.id);
-          if (matchingVideo) {
-            selectedVideo.value = matchingVideo;
-            selectedVideos.value = [matchingVideo];
-          }
-        }
+        selectedVideoPaths.value = []; // Don't preload existing videos for now, as we only support adding new ones
       } else {
         isEdit.value = false;
-        hasDetectedOrGeneratedClipsLocked.value = false;
         resetForm();
       }
     },
@@ -469,7 +170,6 @@
     () => props.modelValue,
     (isOpen) => {
       if (isOpen) {
-        loadAvailableVideos();
         if (!props.project) {
           resetForm();
         }
@@ -480,8 +180,7 @@
   function resetForm() {
     formData.name = '';
     formData.description = '';
-    selectedVideo.value = null;
-    selectedVideos.value = [];
+    selectedVideoPaths.value = [];
     Object.keys(errors).forEach((key) => delete errors[key as keyof ProjectFormData]);
   }
 
@@ -498,9 +197,9 @@
       return false;
     }
 
-    // Require video selection for new projects (not when editing)
-    if (!isEdit.value && selectedVideos.value.length === 0) {
-      errors.selectedVideoId = 'At least one video file is required';
+    // Require video selection for new projects
+    if (!isEdit.value && selectedVideoPaths.value.length === 0) {
+      errors.selectedVideoPaths = 'At least one video is required for new projects';
       return false;
     }
 
@@ -512,165 +211,54 @@
 
     loading.value = true;
     try {
-      // If editing, use single video ID for backward compatibility
-      // If creating and multiple videos selected, pass the array
-      const submitData: ProjectFormData = {
+      emit('submit', {
         name: formData.name.trim(),
         description: formData.description.trim(),
-      };
-
-      if (isEdit.value) {
-        submitData.selectedVideoId = selectedVideo.value?.id;
-      } else {
-        if (selectedVideos.value.length === 1) {
-          submitData.selectedVideoId = selectedVideos.value[0].id;
-        } else {
-          submitData.selectedVideoIds = selectedVideos.value.map((v) => v.id);
-        }
-      }
-
-      emit('submit', submitData);
+        selectedVideoPaths: [...selectedVideoPaths.value],
+      });
     } finally {
       loading.value = false;
     }
   }
 
-  function selectVideoFromLibrary(video: RawVideo) {
-    if (!isVideoAvailable(video)) {
-      return; // Don't allow selection of videos that are already associated with other projects
-    }
-
-    if (isEdit.value) {
-      // Single selection for edit mode
-      selectedVideo.value = video;
-      selectedVideos.value = [video];
-      showVideoSelector.value = false;
-    } else {
-      // Multi-selection for create mode
-      const index = selectedVideos.value.findIndex((v) => v.id === video.id);
-      if (index === -1) {
-        selectedVideos.value.push(video);
-      } else {
-        selectedVideos.value.splice(index, 1);
-      }
-      // Update single selection for compatibility
-      selectedVideo.value = selectedVideos.value.length > 0 ? selectedVideos.value[0] : null;
-    }
-  }
-
-  function removeVideoSelection(video: RawVideo) {
-    const index = selectedVideos.value.findIndex((v) => v.id === video.id);
-    if (index !== -1) {
-      selectedVideos.value.splice(index, 1);
-      selectedVideo.value = selectedVideos.value.length > 0 ? selectedVideos.value[0] : null;
-    }
-  }
-
-  function clearVideoSelection() {
-    selectedVideo.value = null;
-    selectedVideos.value = [];
-  }
-
-  function getThumbnailUrl(video: RawVideo): string | null {
-    const cachedUrl = thumbnailCache.value.get(video.id);
-    if (cachedUrl) {
-      return cachedUrl;
-    }
-
-    // If no cached thumbnail, return error SVG as fallback
-    return '/download_error.svg';
-  }
-
-  function isVideoAvailable(video: RawVideo): boolean {
-    // Video is available if it has no project association
-    // or if editing and it's associated with the current project
-    if (isEdit.value && props.project && video.project_id === props.project.id) {
-      return true;
-    }
-    return video.project_id === null;
-  }
-
-  async function getProjectName(projectId: string): Promise<string> {
-    // Check cache first
-    if (projectCache.value.has(projectId)) {
-      return projectCache.value.get(projectId)!;
-    }
-
+  async function openVideoSelector() {
     try {
-      const project = await getProject(projectId);
-      const projectName = project?.name || 'Unknown Project';
-      projectCache.value.set(projectId, projectName);
-      return projectName;
-    } catch (error) {
-      const fallbackName = 'Unknown Project';
-      projectCache.value.set(projectId, fallbackName);
-      return fallbackName;
-    }
-  }
+      const selected = await open({
+        multiple: true,
+        filters: [
+          {
+            name: 'Video',
+            extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v'],
+          },
+        ],
+      });
 
-  function getVideoStatusText(video: RawVideo): string {
-    if (isEdit.value && props.project && video.project_id === props.project.id) {
-      return 'Current Project';
-    }
-    if (video.project_id) {
-      const projectName = projectCache.value.get(video.project_id);
-      return projectName ? `In: ${projectName}` : 'In Project';
-    }
-    return 'Available';
-  }
-
-  async function loadAvailableVideos() {
-    try {
-      const allVideos = await getAllRawVideos();
-      // Show all videos, but indicate which ones are available
-      availableVideos.value = allVideos;
-
-      // Load thumbnails and project names
-      for (const video of availableVideos.value) {
-        // Load thumbnails with fallback logic
-        if (!thumbnailCache.value.has(video.id)) {
-          if (video.thumbnail_path) {
-            try {
-              const fileExists = await invoke<boolean>('check_file_exists', {
-                path: video.thumbnail_path,
-              });
-
-              if (fileExists) {
-                try {
-                  const dataUrl = await invoke<string>('read_file_as_data_url', {
-                    filePath: video.thumbnail_path,
-                  });
-                  thumbnailCache.value.set(video.id, dataUrl);
-                } catch (error) {
-                  // Use error SVG as fallback
-                  thumbnailCache.value.set(video.id, '/download_error.svg');
-                }
-              } else {
-                // Use error SVG as fallback
-                thumbnailCache.value.set(video.id, '/download_error.svg');
-              }
-            } catch (error) {
-              // Use error SVG as fallback
-              thumbnailCache.value.set(video.id, '/download_error.svg');
-            }
-          } else {
-            // No thumbnail path, use error SVG as fallback
-            thumbnailCache.value.set(video.id, '/download_error.svg');
+      if (selected) {
+        if (Array.isArray(selected)) {
+          // Append unique paths
+          const uniquePaths = new Set([...selectedVideoPaths.value, ...selected]);
+          selectedVideoPaths.value = Array.from(uniquePaths);
+        } else {
+          if (!selectedVideoPaths.value.includes(selected)) {
+            selectedVideoPaths.value.push(selected);
           }
         }
-
-        // Load project names for videos that have project associations
-        if (video.project_id && !projectCache.value.has(video.project_id)) {
-          try {
-            await getProjectName(video.project_id);
-          } catch (error) {
-            console.warn('Failed to load project name for video:', video.id, error);
-          }
+        // Clear error if any
+        if (errors.selectedVideoPaths) {
+          delete errors.selectedVideoPaths;
         }
       }
-    } catch (error) {
-      console.error('Failed to load available videos:', error);
+    } catch (err) {
+      console.error('Failed to open file dialog:', err);
     }
+  }
+
+  function removeVideo(index: number) {
+    selectedVideoPaths.value.splice(index, 1);
+  }
+
+  function getFileName(path: string): string {
+    return path.split(/[\\/]/).pop() || path;
   }
 
   function close() {

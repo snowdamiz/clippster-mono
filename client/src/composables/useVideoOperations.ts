@@ -81,6 +81,57 @@ export function useVideoOperations() {
     }
   }
 
+  async function processVideoFile(filePath: string, projectId?: string) {
+    try {
+      // Copy video to storage directory
+      const result = await invoke<{ destination_path: string; original_filename: string }>(
+        'copy_video_to_storage',
+        {
+          sourcePath: filePath,
+        }
+      );
+
+      // Generate thumbnail
+      let thumbnailPath: string | undefined;
+      try {
+        thumbnailPath = await invoke<string>('generate_thumbnail', {
+          videoPath: result.destination_path,
+        });
+
+        // Verify the thumbnail was actually created
+        if (thumbnailPath) {
+          const thumbnailExists = await invoke<boolean>('check_file_exists', {
+            path: thumbnailPath,
+          });
+          if (!thumbnailExists) {
+            thumbnailPath = undefined;
+          }
+        }
+      } catch (error) {
+        thumbnailPath = undefined;
+      }
+
+      // Create raw_videos record with original filename and thumbnail
+      const videoId = await createRawVideo(result.destination_path, {
+        originalFilename: result.original_filename,
+        thumbnailPath,
+        projectId,
+      });
+
+      return {
+        success: true,
+        video: {
+          id: videoId,
+          destination_path: result.destination_path,
+          original_filename: result.original_filename,
+          thumbnail_path: thumbnailPath,
+        },
+      };
+    } catch (err) {
+      return { success: false, error: err };
+    }
+  }
+
   async function deleteVideo(video: RawVideo) {
     const deletedVideoName =
       video.original_filename || video.file_path.split(/[\\\/]/).pop() || 'Video';
@@ -209,5 +260,6 @@ export function useVideoOperations() {
     prepareVideoForPlayback,
     prepareVideoForChunking,
     getVideoDuration,
+    processVideoFile,
   };
 }

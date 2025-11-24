@@ -29,11 +29,6 @@ export const navigationItems: NavigationItem[] = [
     icon: Folder,
   },
   {
-    name: 'Raw Videos',
-    path: '/videos',
-    icon: Video,
-  },
-  {
     name: 'Assets',
     path: '/assets',
     icon: Archive,
