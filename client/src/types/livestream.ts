@@ -62,6 +62,7 @@ export interface SegmentJob {
   filePath: string;
   projectId: string;
   detectClips?: boolean;
+  duration?: number;
 }
 
 export interface ActivityLog {

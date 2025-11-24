@@ -2,7 +2,7 @@
   <div class="flex items-center justify-between mb-3 pr-1 flex-shrink-0">
     <div class="flex items-center gap-2">
       <!-- Timeline Toolbar -->
-      <div class="flex items-center gap-1 bg-muted/30 rounded-md">
+      <div class="flex items-center gap-1 bg-muted/40 rounded-sm p-0.5">
         <!-- Cut Button -->
         <button
           @click="$emit('toggleCutTool')"
@@ -74,7 +74,7 @@
         </button>
       </div>
       <!-- Zoom Slider -->
-      <div class="flex items-center gap-2 bg-muted/30 rounded-md px-2.5 py-1.5">
+      <div class="flex items-center gap-2 bg-muted/40 rounded-sm px-2.5 py-1.5">
         <ZoomIn :size="13" class="text-muted-foreground/70" />
         <input
           ref="zoomSlider"

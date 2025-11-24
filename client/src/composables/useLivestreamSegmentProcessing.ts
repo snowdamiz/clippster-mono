@@ -69,6 +69,7 @@ export function useLivestreamSegmentProcessing() {
       filePath: payload.path,
       projectId: session.project_id,
       detectClips,
+      duration: payload.duration,
       onProgress,
     });
 
@@ -132,6 +133,7 @@ export function useLivestreamSegmentProcessing() {
         isSegment: true,
         segmentNumber: job.segmentNumber,
         originalProjectId: job.projectId, // Track the parent project
+        duration: job.duration,
       });
 
       // Notify other components that a new video is available
@@ -156,6 +158,9 @@ export function useLivestreamSegmentProcessing() {
         formData.append('project_id', segmentProjectId);
         formData.append('prompt', DEFAULT_LIVE_PROMPT);
         formData.append('audio', audioFile, audioFile.name);
+        if (job.duration) {
+          formData.append('duration', job.duration.toString());
+        }
 
         job.onProgress?.('Transcribing audio & Detecting Clips');
         const response = await api.post('/clips/detect', formData, {

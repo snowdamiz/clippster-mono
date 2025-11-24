@@ -557,12 +557,12 @@ const closeMobileMenu = () => {
             <div class="p-6 flex-1 flex flex-col">
               <h3 class="text-2xl font-bold mb-3">Starter</h3>
               <div class="mb-4">
-                <span class="text-5xl font-bold text-foreground">5</span>
+                <span class="text-5xl font-bold text-foreground">4</span>
                 <span class="text-lg text-muted-foreground ml-2">hours</span>
               </div>
               <div class="mb-6 pb-6 border-b border-border/50">
                 <div class="text-4xl font-bold mb-1">$10</div>
-                <div class="text-sm text-muted-foreground mt-1">$2.00 per hour</div>
+                <div class="text-sm text-muted-foreground mt-1">$2.50 per hour</div>
               </div>
               <ul class="space-y-3 mb-8 flex-1">
                 <li class="flex items-start gap-3 text-sm text-muted-foreground/90">
@@ -594,12 +594,12 @@ const closeMobileMenu = () => {
               <div class="relative p-6 flex-1 flex flex-col">
                 <h3 class="text-2xl font-bold mb-3 text-purple-300">Creator</h3>
                 <div class="mb-4">
-                  <span class="text-5xl font-bold text-foreground">15</span>
+                  <span class="text-5xl font-bold text-foreground">12</span>
                   <span class="text-lg text-muted-foreground ml-2">hours</span>
                 </div>
                 <div class="mb-6 pb-6 border-b border-purple-500/30">
                   <div class="text-4xl font-bold mb-1">$20</div>
-                  <div class="text-sm text-purple-300 mt-1">$1.33 per hour</div>
+                  <div class="text-sm text-purple-300 mt-1">$1.67 per hour</div>
                 </div>
                 <ul class="space-y-3 mb-8 flex-1">
                   <li class="flex items-start gap-3 text-sm text-muted-foreground/90">
@@ -627,12 +627,12 @@ const closeMobileMenu = () => {
             <div class="p-6 flex-1 flex flex-col">
               <h3 class="text-2xl font-bold mb-3">Pro</h3>
               <div class="mb-4">
-                <span class="text-5xl font-bold text-foreground">50</span>
+                <span class="text-5xl font-bold text-foreground">40</span>
                 <span class="text-lg text-muted-foreground ml-2">hours</span>
               </div>
               <div class="mb-6 pb-6 border-b border-border/50">
                 <div class="text-4xl font-bold mb-1">$50</div>
-                <div class="text-sm text-muted-foreground mt-1">$1.00 per hour</div>
+                <div class="text-sm text-muted-foreground mt-1">$1.25 per hour</div>
               </div>
               <ul class="space-y-3 mb-8 flex-1">
                 <li class="flex items-start gap-3 text-sm text-muted-foreground/90">
@@ -662,12 +662,12 @@ const closeMobileMenu = () => {
             <div class="p-6 flex-1 flex flex-col">
               <h3 class="text-2xl font-bold mb-3">Studio</h3>
               <div class="mb-4">
-                <span class="text-5xl font-bold text-foreground">250</span>
+                <span class="text-5xl font-bold text-foreground">200</span>
                 <span class="text-lg text-muted-foreground ml-2">hours</span>
               </div>
               <div class="mb-6 pb-6 border-b border-border/50">
                 <div class="text-4xl font-bold mb-1">$200</div>
-                <div class="text-sm text-muted-foreground mt-1">$0.80 per hour</div>
+                <div class="text-sm text-muted-foreground mt-1">$1.00 per hour</div>
               </div>
               <ul class="space-y-3 mb-8 flex-1">
                 <li class="flex items-start gap-3 text-sm text-muted-foreground/90">

@@ -155,6 +155,7 @@
   <ClipDetectionConfirmDialog
     :model-value="showDetectConfirmDialog"
     :video-duration="duration"
+    :has-transcript="!!transcriptData"
     @update:model-value="showDetectConfirmDialog = $event"
     @confirm="onDetectClipsConfirmed"
   />

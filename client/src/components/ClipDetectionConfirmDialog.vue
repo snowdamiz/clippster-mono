@@ -117,6 +117,7 @@
   const props = defineProps<{
     modelValue: boolean;
     videoDuration: number;
+    hasTranscript?: boolean;
   }>();
 
   const emit = defineEmits<{
@@ -156,7 +157,9 @@
     }
 
     const hoursToCharge = props.videoDuration / 3600; // Convert seconds to hours
-    const creditsToCharge = hoursToCharge; // 1 credit = 1 hour
+    // 1 credit = 1 hour for fresh processing, 0.75 credits = 1 hour for cached transcript (re-run)
+    const rateMultiplier = props.hasTranscript ? 0.75 : 1.0;
+    const creditsToCharge = hoursToCharge * rateMultiplier;
 
     if (hoursRemaining.value === 0) {
       return `No credits remaining. This operation requires ${creditsToCharge.toFixed(2)} credits.`;
@@ -225,7 +228,8 @@
     // Check credits for non-admin users
     if (!isAdmin.value && hoursRemaining.value !== null && !creditError.value) {
       const hoursToCharge = props.videoDuration / 3600;
-      const creditsToCharge = hoursToCharge;
+      const rateMultiplier = props.hasTranscript ? 0.75 : 1.0;
+      const creditsToCharge = hoursToCharge * rateMultiplier;
 
       if (hoursRemaining.value !== 'unlimited' && hoursRemaining.value < creditsToCharge) {
         error.value = 'Insufficient credits for this operation';

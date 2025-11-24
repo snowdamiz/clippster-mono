@@ -162,7 +162,7 @@
                     title="Build clip"
                     @click.stop="onBuildClip(clip)"
                   >
-                    <WrenchIcon class="h-4 w-4" />
+                    <Hammer class="h-4 w-4" />
                   </button>
                   <button
                     v-else-if="clip.build_status === 'completed' && clip.built_file_path"
@@ -305,7 +305,7 @@
     ActivityIcon,
     MicIcon,
     ClockIcon,
-    WrenchIcon,
+    Hammer,
     DownloadIcon,
     LoaderIcon,
     CheckIcon,

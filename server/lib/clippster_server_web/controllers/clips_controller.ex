@@ -1316,6 +1316,26 @@ defmodule ClippsterServerWeb.ClipsController do
   # Calculate audio duration in hours from various sources
   defp calculate_audio_duration_hours(source) when is_map(source) do
     cond do
+      # For explicit duration passed from frontend (most accurate for uploads)
+      Map.has_key?(source, "duration") ->
+        case Float.parse(to_string(source["duration"])) do
+          {duration_seconds, _} ->
+            duration_hours = duration_seconds / 3600.0
+            IO.puts("[ClipsController] Duration from params: #{Float.round(duration_hours, 3)} hours (#{duration_seconds}s)")
+            duration_hours
+          :error ->
+            IO.puts("[ClipsController] Warning: Could not parse duration param")
+            # Fallback to other methods if parsing fails
+            estimate_duration_from_other_sources(source)
+        end
+
+      true ->
+        estimate_duration_from_other_sources(source)
+    end
+  end
+
+  defp estimate_duration_from_other_sources(source) do
+    cond do
       # For audio uploads, extract duration from the filename or use default estimation
       Map.has_key?(source, "audio") ->
         audio_upload = source["audio"]
@@ -1422,7 +1442,7 @@ defmodule ClippsterServerWeb.ClipsController do
   # Deduct credits based on processing type and duration
   defp deduct_credits_for_processing(user_id, duration_hours, is_first_run) do
     # Determine credit rate based on processing type
-    credit_rate = if is_first_run, do: 1.0, else: 0.7
+    credit_rate = if is_first_run, do: 1.0, else: 0.75
 
     credits_to_deduct = duration_hours * credit_rate
 

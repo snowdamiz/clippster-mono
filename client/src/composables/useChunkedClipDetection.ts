@@ -340,6 +340,9 @@ export function useChunkedClipDetection() {
       formData.append('prompt', prompt);
       formData.append('using_cached_transcript', 'false');
       formData.append('audio', audioFile, audioFile.name);
+      if (projectVideo.duration) {
+        formData.append('duration', projectVideo.duration.toString());
+      }
 
       const response = await api.post('/clips/detect', formData, {
         headers: {
@@ -414,6 +417,9 @@ export function useChunkedClipDetection() {
       formData.append('project_id', projectId.toString());
       formData.append('prompt', prompt);
       formData.append('using_cached_transcript', 'false');
+      if (projectVideo.duration) {
+        formData.append('duration', projectVideo.duration.toString());
+      }
 
       progress.value = {
         stage: 'detecting_clips',

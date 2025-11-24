@@ -108,7 +108,7 @@
                 </div>
                 <div v-else class="credit-value-wrapper">
                   <span class="credit-value">
-                    {{ hoursRemaining }}
+                    {{ typeof hoursRemaining === 'number' ? hoursRemaining.toFixed(2) : hoursRemaining }}
                   </span>
                   <span class="credit-unit">{{ hoursRemaining === 1 ? 'hr' : 'hrs' }}</span>
                 </div>
@@ -241,10 +241,7 @@
       const response = await api.get('/credits/balance');
 
       if (response.data.success) {
-        hoursRemaining.value =
-          response.data.balance.hours_remaining === 'unlimited'
-            ? 'unlimited'
-            : parseFloat(response.data.balance.hours_remaining.toFixed(1));
+        hoursRemaining.value = response.data.balance.hours_remaining;
       }
     } catch (error) {
       console.error('Failed to fetch balance:', error);

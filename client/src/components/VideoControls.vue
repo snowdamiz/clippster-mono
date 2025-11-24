@@ -7,34 +7,30 @@
         <!-- Go to Beginning Button -->
         <button
           @click="goToBeginning"
-          class="p-2.5 bg-white/5 hover:bg-white/10 rounded-md transition-all duration-200 backdrop-blur-sm"
+          class="p-3 bg-white/5 hover:bg-white/10 rounded-md transition-all duration-200 backdrop-blur-sm"
           title="Go to Beginning"
         >
-          <SkipBack class="h-4 w-4 text-white" />
+          <SkipBack class="h-3.5 w-3.5 text-white" />
         </button>
         <!-- Play/Pause Button -->
         <button
           @click="togglePlayPause"
-          class="p-2.5 bg-white/5 hover:bg-white/10 rounded-md transition-all duration-200 backdrop-blur-sm"
+          class="p-3 bg-white/5 hover:bg-white/10 rounded-md transition-all duration-200 backdrop-blur-sm"
           title="Play/Pause"
         >
-          <Play v-if="!isPlaying" class="h-4 w-4 text-white" />
-          <Pause v-else class="h-4 w-4 text-white" />
+          <Play v-if="!isPlaying" class="h-3.5 w-3.5 text-white" />
+          <Pause v-else class="h-3.5 w-3.5 text-white" />
         </button>
         <!-- Time Display -->
-        <div class="text-white text-sm font-mono font-medium bg-white/5 px-4 py-2 rounded-md backdrop-blur-sm">
+        <div class="text-white text-sm bg-white/5 px-4 py-[9px] rounded-md backdrop-blur-sm">
           {{ formatDuration(currentTime) }} / {{ formatDuration(duration) }}
         </div>
       </div>
       <!-- Right Controls -->
-      <div class="flex items-center gap-2">
+      <div class="pr-3.5 flex items-center gap-2 bg-muted/40 rounded-sm">
         <!-- Volume Control -->
         <div class="flex items-center gap-1.5">
-          <button
-            @click="toggleMute"
-            class="p-3 rounded-md transition-all duration-200 backdrop-blur-sm"
-            title="Mute/Unmute"
-          >
+          <button @click="toggleMute" class="p-2.5 rounded-md transition-all duration-200" title="Mute/Unmute">
             <VolumeX v-if="isMuted || volume === 0" class="h-5 w-5 text-white" />
             <Volume2 v-else class="h-5 w-5 text-white" />
           </button>
