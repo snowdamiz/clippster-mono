@@ -21,7 +21,10 @@
     </div>
 
     <!-- Projects Content -->
-    <div v-else-if="projects.length > 0" class="space-y-8">
+    <div
+      v-else-if="projects.length > 0 || getActiveDownloads().length > 0 || getQueuedDownloads().length > 0"
+      class="space-y-8"
+    >
       <!-- Filter Toolbar -->
       <div class="-mt-4 bg-card flex flex-col md:flex-row gap-4 items-center justify-between">
         <!-- Left: Search -->
@@ -75,6 +78,18 @@
         </div>
       </div>
 
+      <!-- Active Downloads Section -->
+      <div v-if="getActiveDownloads().length > 0 || getQueuedDownloads().length > 0" class="space-y-4">
+        <h3 class="text-sm font-medium text-muted-foreground border-b border-border pb-2">Active Downloads</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <DownloadCard
+            v-for="download in [...getActiveDownloads(), ...getQueuedDownloads()]"
+            :key="download.id"
+            :download="download"
+          />
+        </div>
+      </div>
+
       <!-- Projects Grid -->
       <div v-if="filteredProjects.length > 0" class="space-y-8">
         <div v-for="group in groupedProjects" :key="group.dateLabel" class="space-y-4">
@@ -99,7 +114,7 @@
 
               <!-- Folder Badge (if has children and in folder view) -->
               <div
-                v-if="viewMode === 'folders' && hasChildren(project.id)"
+                v-if="viewMode === 'folders' && hasChildren(project.id) && getChildCount(project.id) > 1"
                 class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-blue-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm"
               >
                 <FolderOpen class="w-3 h-3" />
@@ -182,7 +197,7 @@
                 class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-4"
               >
                 <button
-                  v-if="viewMode === 'folders' && hasChildren(project.id)"
+                  v-if="viewMode === 'folders' && hasChildren(project.id) && getChildCount(project.id) > 1"
                   class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
                   title="View Folder"
                   @click.stop="handleProjectClick(project)"
@@ -456,6 +471,7 @@
   import { useToast } from '@/composables/useToast';
   import { useLivestreamMonitoring } from '@/composables/useLivestreamMonitoring';
   import { useVideoOperations } from '@/composables/useVideoOperations';
+  import { useDownloads } from '@/composables/useDownloads';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
   import SkeletonGrid from '@/components/SkeletonGrid.vue';
@@ -464,6 +480,7 @@
   import PaginationFooter from '@/components/PaginationFooter.vue';
   import { Input } from '@/components/ui/input';
   import CustomDropdown from '@/components/CustomDropdown.vue';
+  import DownloadCard from '@/components/DownloadCard.vue';
 
   const projects = ref<Project[]>([]);
   const loading = ref(true);
@@ -482,6 +499,7 @@
   const { success, error } = useToast();
   const { activeSessions } = useLivestreamMonitoring();
   const { processVideoFile } = useVideoOperations();
+  const { getActiveDownloads, getQueuedDownloads, initialize: initializeDownloads } = useDownloads();
 
   // View state
   const viewMode = ref<'folders' | 'list'>('folders');
@@ -541,6 +559,9 @@
           } else if (videos.length > 0 && videos[0].thumbnail_path) {
             // Fall back to first video's thumbnail
             try {
+              // Update the project object in memory
+              project.thumbnail_path = videos[0].thumbnail_path;
+
               const dataUrl = await invoke<string>('read_file_as_data_url', {
                 filePath: videos[0].thumbnail_path,
               });
@@ -550,6 +571,64 @@
               await updateProject(project.id, undefined, undefined, videos[0].thumbnail_path);
             } catch (error) {
               console.warn('Failed to load video thumbnail for project:', project.id, error);
+            }
+          } else {
+            // Check if it's a parent project and try to get thumbnail from children
+            // This handles auto-segmented projects that have child projects but no direct videos yet
+            try {
+              // We can find children from the already loaded projects list if available,
+              // or we might need to check if we have child projects that are segments
+              // Since projects is already populated with all projects, let's check for children
+              // But we are inside the loop populating it.
+              // Let's try to find any project with parent_id === project.id
+              const children = projects.value.filter((p) => p.parent_id === project.id);
+              if (children.length > 0) {
+                // Found children, try to get a thumbnail from one of them
+                for (const child of children) {
+                  // Try to find thumbnail from child project directly
+                  let childThumb = child.thumbnail_path;
+
+                  // If not on project, check if we have videos for this child already loaded
+                  if (!childThumb && projectVideos.value[child.id]?.length > 0) {
+                    childThumb = projectVideos.value[child.id][0].thumbnail_path;
+                  }
+
+                  if (childThumb) {
+                    // Set thumbnail on the parent project object in memory
+                    project.thumbnail_path = childThumb;
+
+                    const dataUrl = await invoke<string>('read_file_as_data_url', {
+                      filePath: childThumb,
+                    });
+                    thumbnailCache.value.set(project.id, dataUrl);
+
+                    // Save to parent in DB if not already set
+                    await updateProject(project.id, undefined, undefined, childThumb);
+                    break;
+                  } else {
+                    // Force fetch child videos if not yet loaded (rare race condition fallback)
+                    try {
+                      const childVideos = await getRawVideosByProjectId(child.id);
+                      projectVideos.value[child.id] = childVideos;
+
+                      if (childVideos.length > 0 && childVideos[0].thumbnail_path) {
+                        childThumb = childVideos[0].thumbnail_path;
+                        project.thumbnail_path = childThumb;
+                        const dataUrl = await invoke<string>('read_file_as_data_url', {
+                          filePath: childThumb,
+                        });
+                        thumbnailCache.value.set(project.id, dataUrl);
+                        await updateProject(project.id, undefined, undefined, childThumb);
+                        break;
+                      }
+                    } catch (e) {
+                      console.warn('Failed to fetch child videos for thumbnail propagation', e);
+                    }
+                  }
+                }
+              }
+            } catch (error) {
+              console.warn('Failed to load thumbnail from children for project:', project.id, error);
             }
           }
         }
@@ -622,10 +701,23 @@
 
   function handleProjectClick(project: Project) {
     if (viewMode.value === 'folders' && hasChildren(project.id)) {
-      // Open folder dialog
-      folderProject.value = project;
-      folderCurrentPage.value = 1; // Reset to first page
-      showFolderDialog.value = true;
+      if (getChildCount(project.id) > 1) {
+        // Open folder dialog if more than 1 child
+        folderProject.value = project;
+        folderCurrentPage.value = 1; // Reset to first page
+        showFolderDialog.value = true;
+      } else {
+        // If only 1 child, open that child directly (or the parent workspace if that's preferred logic)
+        // The user requested "looks like normal project card" if 1 segment.
+        // But structurally it's Parent -> Child.
+        // If we click Parent, we probably want to see the content of the Child.
+        const children = getFolderChildren(project.id);
+        if (children.length > 0) {
+          openWorkspace(children[0]);
+        } else {
+          openWorkspace(project);
+        }
+      }
     } else {
       openWorkspace(project);
     }
@@ -634,6 +726,45 @@
   // Filter projects based on view mode and filters
   const filteredProjects = computed(() => {
     let result = projects.value;
+
+    // 0. Filter out empty active download parent projects
+    const activeList = getActiveDownloads();
+    const queuedList = getQueuedDownloads();
+    const activeDownloadParents = new Set([...activeList, ...queuedList].map((d) => d.parentProjectId).filter(Boolean));
+
+    result = result.filter((p) => {
+      // If it's a parent project for an active/queued download
+      if (activeDownloadParents.has(p.id)) {
+        // Only show if it has content (videos or clips) or children projects
+        // Since childrenMap is computed from 'projects' (which is what we are filtering),
+        // we can check childrenMap.
+        // Note: childrenMap is based on the full 'projects' list, so it's safe to use here.
+        const hasChildren = (childrenMap.value.get(p.id)?.length || 0) > 0;
+        // Also check direct videos or clips
+        const hasVideos = (projectVideos.value[p.id]?.length || 0) > 0;
+        const hasClips = getClipCount(p.id) > 0;
+
+        // IMPORTANT: For auto-segmented downloads, we want to show the project ONLY after
+        // the first segment is complete.
+
+        // If a parent project has children, it means at least one segment has completed downloading
+        // (because we only create child projects upon segment completion in useDownloads.ts).
+        // Therefore, if hasChildren is true, we can safely show the project.
+        // We don't need to check for videos inside the children, as the child project's existence
+        // guarantees content is ready (or will be momentarily).
+        // This avoids race conditions where loadProjects() has fetched the project list (so hasChildren is true)
+        // but hasn't finished fetching the video lists for those children yet.
+
+        if (hasChildren) return true;
+
+        // Check direct content (single segment flow or full stream)
+        if (hasVideos || hasClips) return true;
+
+        // If no content found, hide it
+        return false;
+      }
+      return true;
+    });
 
     // 1. Filter by View Mode (only if NOT searching)
     // If user is searching, we want to search across all projects regardless of folder structure
@@ -954,11 +1085,20 @@
 
   // Listen for video added events (to update project thumbnails)
   function handleVideoAdded(_event: CustomEvent) {
-    loadProjects();
+    // Wait a moment for the DB write to complete, then force a reload
+    // Increased delay to ensure consistency especially for sequential segment completions
+    setTimeout(async () => {
+      // Force a full refresh including reloading active downloads state
+      await initializeDownloads();
+      loadProjects();
+    }, 1500);
   }
 
-  onMounted(() => {
-    loadProjects();
+  onMounted(async () => {
+    // Initialize downloads state from persistence
+    await initializeDownloads();
+
+    await loadProjects();
 
     // Add event listener for clip refresh events
     document.addEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener);

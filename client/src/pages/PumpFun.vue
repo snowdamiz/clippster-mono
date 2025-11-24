@@ -379,10 +379,9 @@
           class="relative flex flex-col w-full max-w-lg overflow-hidden transition-all transform bg-card border border-border shadow-2xl rounded-xl max-h-[90vh]"
         >
           <!-- Header -->
-          <div class="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/30">
+          <div class="flex items-center justify-between px-3 py-1 border-b border-border/60 bg-black/30">
             <div>
-              <h2 class="text-lg font-semibold text-foreground">Download Options</h2>
-              <p class="text-xs text-muted-foreground">Configure your download settings</p>
+              <h2 class="text-md font-semibold text-foreground">Download Options</h2>
             </div>
             <button
               @click="closeDownloadDialog()"
@@ -395,7 +394,7 @@
           <!-- Content -->
           <div class="flex-1 p-6 overflow-y-auto custom-scrollbar">
             <!-- Video Info Card -->
-            <div class="flex gap-4 p-4 mb-6 border rounded-lg bg-muted/30 border-border/50">
+            <div class="flex gap-4 p-4 mb-6 border rounded-lg bg-muted/20 border-border/50">
               <div
                 class="relative flex-shrink-0 overflow-hidden rounded bg-black/40 w-28 aspect-video border border-border/50"
               >
@@ -531,17 +530,53 @@
               </div>
             </div>
 
-            <!-- Download Estimation -->
-            <div
-              v-else
-              class="p-4 text-sm border border-dashed rounded-lg bg-muted/20 border-border/50 text-muted-foreground animate-in fade-in duration-200"
-            >
-              <div class="flex flex-col gap-2">
-                <div class="flex items-center gap-2">
-                  <Info class="w-4 h-4 text-blue-400" />
-                  <span>Downloads are processed in the background.</span>
+            <!-- Download Estimation & Options -->
+            <div v-else class="space-y-4 animate-in fade-in duration-200">
+              <!-- Auto Segmentation Options -->
+              <div
+                v-if="clipToDownload?.duration && clipToDownload.duration > 900"
+                class="p-4 border border-border rounded-xl bg-card shadow-sm"
+              >
+                <div class="flex items-center justify-between mb-3">
+                  <label class="text-sm font-medium text-foreground flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      v-model="autoSegment"
+                      class="w-4 h-4 rounded border-muted-foreground text-purple-600 focus:ring-purple-500 bg-transparent"
+                    />
+                    <span>Auto-segment stream</span>
+                  </label>
                 </div>
-                <div class="pl-6 text-xs opacity-70">Estimated download time: {{ estimatedDownloadTime }}</div>
+
+                <div v-if="autoSegment" class="space-y-3 pl-1">
+                  <div class="flex justify-between items-center">
+                    <span class="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                      Segment Duration
+                    </span>
+                    <span
+                      class="text-xs font-medium bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded-full border border-purple-500/20"
+                    >
+                      {{ autoSegmentDuration }} min
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    v-model.number="autoSegmentDuration"
+                    min="15"
+                    max="60"
+                    step="5"
+                    class="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/30"
+                  />
+                  <div class="flex justify-between text-[10px] text-muted-foreground/70 px-0.5">
+                    <span>15m</span>
+                    <span>30m</span>
+                    <span>45m</span>
+                    <span>60m</span>
+                  </div>
+                  <p class="text-[10px] text-muted-foreground mt-1">
+                    Split into ~{{ Math.ceil((clipToDownload.duration || 0) / (autoSegmentDuration * 60)) }} parts
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -653,6 +688,10 @@
   const useSegmentDownload = ref(false);
   const selectedTimeRange = ref({ startTime: 0, endTime: 0 });
   const nextSegmentNumber = ref(1); // Default to 1
+
+  // Auto-segmentation options
+  const autoSegment = ref(true);
+  const autoSegmentDuration = ref(60); // Minutes
 
   // Pagination state
   const currentPage = ref(1);
@@ -868,18 +907,27 @@
         : undefined;
 
       // Start the download
-      await startDownload(clip.title, videoUrl, pumpFunStore.currentMintId, segmentRange, clip.clipId, clip.duration);
+      await startDownload(clip.title, videoUrl, pumpFunStore.currentMintId, segmentRange, clip.clipId, clip.duration, {
+        autoSegment: autoSegment.value,
+        segmentDuration: autoSegmentDuration.value * 60,
+      });
 
       // Show success toast
       let downloadType = useSegmentDownload.value ? 'segment' : 'full stream';
       let downloadMessage = `Downloading ${downloadType} of "${clip.title}". You'll be notified when it completes.`;
 
       // Check if auto-segmentation will be applied
-      if (!useSegmentDownload.value && clip.duration && clip.duration > 3600) {
-        const numberOfSegments = Math.ceil(clip.duration / 3600);
-        const segmentDuration = Math.round(clip.duration / numberOfSegments / 60);
+      if (
+        !useSegmentDownload.value &&
+        clip.duration &&
+        autoSegment.value &&
+        clip.duration > autoSegmentDuration.value * 60
+      ) {
+        const durationSeconds = autoSegmentDuration.value * 60;
+        const numberOfSegments = Math.ceil(clip.duration / durationSeconds);
+        const actualSegmentDuration = Math.round(clip.duration / numberOfSegments / 60);
         downloadType = 'auto-segmented stream';
-        downloadMessage = `Splitting "${clip.title}" into ${numberOfSegments} equal parts (~${segmentDuration} min each). Downloads will process one at a time.`;
+        downloadMessage = `Splitting "${clip.title}" into ${numberOfSegments} equal parts (~${actualSegmentDuration} min each). Downloads will process one at a time.`;
       }
 
       success('Download Started', downloadMessage);
@@ -891,7 +939,7 @@
       setTimeout(() => {
         downloadStarting.value = false;
         // Navigate to Videos page to see progress
-        router.push('/videos');
+        router.push('/projects');
       }, 500);
     } catch (err) {
       showError('Download Failed', `Failed to download "${clip.title}": ${err}`);

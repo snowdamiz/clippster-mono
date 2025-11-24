@@ -1,45 +1,51 @@
 <template>
-  <div class="group relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20">
-    <!-- Thumbnail with progress overlay -->
-    <div class="aspect-video bg-muted/50 relative">
-      <div class="absolute inset-0 flex items-center justify-center">
+  <div
+    class="group relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-default"
+  >
+    <!-- Thumbnail background/placeholder -->
+    <div class="aspect-video bg-muted/20 relative">
+      <!-- Background for processing/queued states -->
+      <div class="absolute inset-0 bg-gradient-to-br from-black/40 via-black/20 to-black/40"></div>
+
+      <!-- Content overlay -->
+      <div class="relative z-10 h-full flex flex-col items-center justify-center p-4">
+        <!-- Loading/Queued State -->
         <div class="flex flex-col items-center gap-3">
-          <Loader2 class="animate-spin h-8 w-8 text-purple-500" />
-          <span
-            v-if="download.progress.current_time && download.progress.total_time"
-            class="text-xs text-muted-foreground"
-          >
-            {{ formatDuration(download.progress.current_time) }} / {{ formatDuration(download.progress.total_time) }}
-          </span>
+          <div v-if="download.isQueued" class="flex flex-col items-center gap-2">
+            <div class="h-8 w-8 rounded-full border-2 border-dashed border-muted-foreground/50"></div>
+            <span class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Queued</span>
+          </div>
+          <div v-else class="flex flex-col items-center gap-3">
+            <Loader2 class="animate-spin h-8 w-8 text-purple-500" />
+            <span
+              v-if="download.progress.current_time && download.progress.total_time"
+              class="text-xs text-white/70 font-mono"
+            >
+              {{ formatDuration(download.progress.current_time) }} / {{ formatDuration(download.progress.total_time) }}
+            </span>
+          </div>
         </div>
       </div>
-      <!-- Progress bar at bottom of thumbnail -->
-      <div class="absolute bottom-0 left-0 right-0 h-1 bg-black/20">
+
+      <!-- Progress bar at bottom -->
+      <div v-if="!download.isQueued" class="absolute bottom-0 left-0 right-0 h-1 bg-white/10">
         <div
           class="h-full bg-gradient-to-r from-purple-500 to-indigo-500 transition-all duration-300 ease-out"
           :style="{ width: `${download.progress.progress}%` }"
         ></div>
       </div>
-      <!-- Hover overlay -->
-      <div
-        class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-      >
-        <div class="text-center">
-          <DownloadCloud class="h-12 w-12 text-white mx-auto mb-2" />
-          <p class="text-white text-sm font-medium">Downloading...</p>
-
-          <p class="text-white/80 text-xs">{{ Math.round(download.progress.progress) }}% complete</p>
-        </div>
-      </div>
     </div>
-    <!-- Download info -->
-    <div class="p-4">
-      <h4 class="font-semibold text-foreground truncate mb-1">{{ download.title }}</h4>
 
-      <div class="flex items-center justify-between">
-        <p class="text-xs text-muted-foreground">PumpFun Stream</p>
-
-        <p class="text-xs text-purple-400 font-medium">{{ Math.round(download.progress.progress) }}%</p>
+    <!-- Info Section (Matching Project/Vod Card Style) -->
+    <div class="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 via-black/60 to-transparent">
+      <h4 class="text-sm font-semibold text-white truncate mb-1" :title="download.title">{{ download.title }}</h4>
+      <div class="flex items-center justify-between text-xs">
+        <span class="text-white/70">
+          {{ download.isQueued ? 'Waiting...' : 'Downloading...' }}
+        </span>
+        <span class="font-medium" :class="download.isQueued ? 'text-muted-foreground' : 'text-purple-400'">
+          {{ Math.round(download.progress.progress) }}%
+        </span>
       </div>
     </div>
   </div>

@@ -44,10 +44,12 @@ export interface ActiveDownload {
   sourceClipId?: string;
   segmentNumber?: number;
   isSegment?: boolean;
+  isAutoSegmented?: boolean;
   segmentStartTime?: number;
   segmentEndTime?: number;
   // Queue and video info
   videoUrl?: string;
+  isQueued?: boolean;
   // Project grouping
   projectId?: string;
   parentProjectId?: string;
@@ -61,18 +63,83 @@ const isInitialized = ref(false);
 const MAX_CONCURRENT_DOWNLOADS = 1;
 const activeDownloadIds = reactive<Set<string>>(new Set());
 
+// Persistence keys
+const ACTIVE_DOWNLOADS_KEY = 'clippster_active_downloads';
+const QUEUED_DOWNLOADS_KEY = 'clippster_queued_downloads';
+
+function saveState() {
+  try {
+    const activeList = Array.from(activeDownloads.values());
+    const queuedList = Array.from(queuedDownloads.values());
+
+    localStorage.setItem(ACTIVE_DOWNLOADS_KEY, JSON.stringify(activeList));
+    localStorage.setItem(QUEUED_DOWNLOADS_KEY, JSON.stringify(queuedList));
+  } catch (e) {
+    console.warn('Failed to save downloads state:', e);
+  }
+}
+
+function loadState() {
+  try {
+    const activeJson = localStorage.getItem(ACTIVE_DOWNLOADS_KEY);
+    const queuedJson = localStorage.getItem(QUEUED_DOWNLOADS_KEY);
+
+    // Clear current state first to avoid duplicates if called multiple times
+    activeDownloads.clear();
+    activeDownloadIds.clear();
+    queuedDownloads.clear();
+
+    if (activeJson) {
+      const list = JSON.parse(activeJson) as ActiveDownload[];
+      list.forEach((d) => {
+        // Reset status if it looks like it was interrupted
+        // If it has a result, it might be a completed download we're keeping around for a bit
+        if (!d.result) {
+          d.progress.status = 'Resuming...';
+        }
+        activeDownloads.set(d.id, d);
+
+        // Only add to active ids if not completed
+        if (!d.result || !d.result.success) {
+          activeDownloadIds.add(d.id);
+        }
+      });
+    }
+
+    if (queuedJson) {
+      const list = JSON.parse(queuedJson) as ActiveDownload[];
+      list.forEach((d) => queuedDownloads.set(d.id, d));
+    }
+
+    console.log(
+      `[Downloads] State loaded. Active: ${activeDownloads.size}, Queued: ${queuedDownloads.size}`
+    );
+  } catch (e) {
+    console.warn('Failed to load downloads state:', e);
+  }
+}
+
 export function useDownloads() {
   async function initialize() {
     if (isInitialized.value) {
       return;
     }
 
+    // Load state BEFORE setting up listeners so we don't miss immediate updates
+    // if the backend is already sending them (though unlikely on strict reload)
+    loadState();
+
     // Listen for download progress updates
     await listen<DownloadProgress>('download-progress', (event) => {
       const download = activeDownloads.get(event.payload.download_id);
       if (download) {
         download.progress = event.payload;
+        saveState(); // Save progress updates
       } else {
+        // If we receive progress for a download we don't know about (e.g. after hard refresh),
+        // we could try to recover it if the backend sent full info, but progress event is partial.
+        // For now, just log it.
+        // Ideally backend would provide a "sync state" command.
         console.warn(
           '[Downloads] Received progress for unknown download:',
           event.payload.download_id
@@ -85,6 +152,7 @@ export function useDownloads() {
       const download = activeDownloads.get(event.payload.download_id);
       if (download) {
         download.result = event.payload;
+        saveState(); // Save result
 
         // If download was successful, validate the video and thumbnail before creating database record
         if (event.payload.success && event.payload.file_path) {
@@ -110,11 +178,7 @@ export function useDownloads() {
                   );
                 } catch (error) {
                   console.warn('[Downloads] Failed to create child project for segment:', error);
-                  // Fallback to parent project or no project?
-                  // If failed, maybe just attach to parent?
-                  // But raw_videos only has one project_id.
-                  // If we use parentProjectId as projectId, it works but flattening the structure.
-                  // Let's try to use parentProjectId as fallback if sub-project creation fails.
+                  // Fallback to parent project
                   finalProjectId = download.parentProjectId;
                 }
               }
@@ -139,6 +203,30 @@ export function useDownloads() {
                 segmentEndTime: download.segmentEndTime,
                 originalProjectId: download.parentProjectId,
               });
+
+              // If we just added a video to a project, we should make sure the project's updated_at is refreshed
+              // and maybe set a thumbnail if it doesn't have one
+              if (finalProjectId) {
+                try {
+                  const { updateProject } = await import('@/services/database');
+                  // Update timestamp
+                  await updateProject(finalProjectId, undefined, undefined);
+
+                  // Also update parent project if it exists
+                  if (download.parentProjectId && download.parentProjectId !== finalProjectId) {
+                    await updateProject(download.parentProjectId, undefined, undefined);
+                  }
+
+                  // Notify UI to refresh projects
+                  window.dispatchEvent(
+                    new CustomEvent('video-added', {
+                      detail: { rawVideoId, projectId: finalProjectId },
+                    })
+                  );
+                } catch (e) {
+                  console.warn('Failed to update project timestamp:', e);
+                }
+              }
 
               download.rawVideoId = rawVideoId;
 
@@ -216,10 +304,19 @@ export function useDownloads() {
           }
         }
 
+        saveState(); // Save state after completion
+
         // Process next in queue
         processQueue();
+      } else {
+        // Even if it wasn't in active downloads (maybe lost sync), try to save state just in case
+        // though likely we can't do much if we lost the record
+        saveState();
       }
     });
+
+    // Process queue on initialize
+    processQueue();
 
     isInitialized.value = true;
   }
@@ -230,20 +327,29 @@ export function useDownloads() {
     mintId: string,
     segmentRange?: { startTime: number; endTime: number },
     sourceClipId?: string,
-    totalDuration?: number
+    totalDuration?: number,
+    options: { autoSegment?: boolean; segmentDuration?: number } = {}
   ): Promise<string> {
     await initialize();
 
     // If this is a full stream download and we have duration info, check if we need auto-segmentation
-    if (!segmentRange && totalDuration && totalDuration > 3600) {
-      // Auto-segment into equal chunks, no larger than 1 hour each
-      console.log(`[Downloads] Auto-segmenting ${totalDuration}s video into 1-hour max chunks`);
+    const shouldAutoSegment = options.autoSegment !== false; // Default to true
+    const segmentDuration = options.segmentDuration || 3600; // Default to 1 hour
+
+    if (!segmentRange && totalDuration && totalDuration > segmentDuration && shouldAutoSegment) {
+      // Auto-segment into equal chunks, no larger than segmentDuration each
+      console.log(
+        `[Downloads] Auto-segmenting ${totalDuration}s video into ${
+          segmentDuration / 60
+        }-minute max chunks`
+      );
       return await startAutoSegmentedDownload(
         title,
         videoUrl,
         mintId,
         sourceClipId || mintId,
-        totalDuration
+        totalDuration,
+        segmentDuration
       );
     }
 
@@ -334,6 +440,7 @@ export function useDownloads() {
     };
 
     activeDownloads.set(downloadId, download);
+    saveState(); // Save new download
 
     try {
       // Determine which download command to use
@@ -379,12 +486,12 @@ export function useDownloads() {
     videoUrl: string,
     mintId: string,
     sourceClipId: string,
-    totalDuration: number
+    totalDuration: number,
+    maxSegmentDuration: number = 3600
   ): Promise<string> {
     await initialize();
 
-    // Calculate equal segments, no larger than 1 hour (3600 seconds) each
-    const maxSegmentDuration = 3600;
+    // Calculate equal segments, no larger than maxSegmentDuration each
     const numberOfSegments = Math.ceil(totalDuration / maxSegmentDuration);
     const segmentDuration = totalDuration / numberOfSegments;
 
@@ -471,6 +578,7 @@ export function useDownloads() {
           // Remove from active downloads if failed to start
           activeDownloads.delete(downloadId);
           activeDownloadIds.delete(downloadId);
+          saveState();
           // Start next in queue
           processQueue();
         });
@@ -485,6 +593,8 @@ export function useDownloads() {
       allDownloadIds.push(downloadId);
     }
 
+    saveState(); // Save initial queue state
+
     console.log(
       `[Downloads] Started ${Math.min(numberOfSegments, MAX_CONCURRENT_DOWNLOADS)} immediate downloads, queued ${Math.max(0, numberOfSegments - MAX_CONCURRENT_DOWNLOADS)} with group ID: ${groupId}`
     );
@@ -496,7 +606,16 @@ export function useDownloads() {
   // Process queued downloads
   function processQueue() {
     if (queuedDownloads.size === 0) return;
-    if (activeDownloadIds.size >= MAX_CONCURRENT_DOWNLOADS) return;
+
+    // Re-count active downloads from the reactive set to be sure
+    const currentActiveCount = activeDownloadIds.size;
+
+    if (currentActiveCount >= MAX_CONCURRENT_DOWNLOADS) {
+      console.log(
+        `[Downloads] Queue waiting. Active: ${currentActiveCount}/${MAX_CONCURRENT_DOWNLOADS}`
+      );
+      return;
+    }
 
     // Get the next download from queue (FIFO)
     const nextQueuedId = queuedDownloads.keys().next().value;
@@ -510,6 +629,8 @@ export function useDownloads() {
     activeDownloads.set(nextQueuedId, queuedDownload);
     activeDownloadIds.add(nextQueuedId);
 
+    saveState(); // Save state after moving from queue
+
     // Update status
     queuedDownload.progress.status = 'Initializing...';
     (queuedDownload as any).isQueued = false;
@@ -520,7 +641,9 @@ export function useDownloads() {
       endTime: queuedDownload.segmentEndTime!,
     };
 
-    console.log(`[Downloads] Starting queued download: ${queuedDownload.title}`);
+    console.log(
+      `[Downloads] Starting queued download: ${queuedDownload.title} (ID: ${nextQueuedId})`
+    );
 
     // Start the download
     invoke('download_pumpfun_vod_segment', {
@@ -531,9 +654,11 @@ export function useDownloads() {
       startTime: segmentRange.startTime,
       endTime: segmentRange.endTime,
     }).catch((_error) => {
+      console.error(`[Downloads] Failed to start queued download ${nextQueuedId}:`, _error);
       // Remove from active downloads if failed to start
       activeDownloads.delete(nextQueuedId);
       activeDownloadIds.delete(nextQueuedId);
+      saveState();
       // Start next in queue
       processQueue();
     });
