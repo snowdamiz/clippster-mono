@@ -49,6 +49,7 @@ export interface Project {
   name: string;
   description: string | null;
   thumbnail_path: string | null;
+  parent_id: string | null;
   created_at: number;
   updated_at: number;
 }

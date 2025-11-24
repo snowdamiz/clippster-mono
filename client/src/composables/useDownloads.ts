@@ -1,7 +1,12 @@
 import { ref, reactive } from 'vue';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
-import { createRawVideo, getNextSegmentNumber } from '@/services/database';
+import {
+  createRawVideo,
+  getNextSegmentNumber,
+  createProject,
+  getDatabase,
+} from '@/services/database';
 import { generateId } from '@/services/database';
 
 // Event emitter for download completion notifications
@@ -43,6 +48,9 @@ export interface ActiveDownload {
   segmentEndTime?: number;
   // Queue and video info
   videoUrl?: string;
+  // Project grouping
+  projectId?: string;
+  parentProjectId?: string;
 }
 
 const activeDownloads = reactive<Map<string, ActiveDownload>>(new Map());
@@ -89,8 +97,31 @@ export function useDownloads() {
             );
 
             if (validationResult.isValid) {
+              // Determine project ID
+              let finalProjectId = download.projectId;
+
+              // If this is a child segment (has parent project), create a sub-project for it
+              if (download.parentProjectId && !finalProjectId) {
+                try {
+                  finalProjectId = await createProject(
+                    download.title,
+                    undefined,
+                    download.parentProjectId
+                  );
+                } catch (error) {
+                  console.warn('[Downloads] Failed to create child project for segment:', error);
+                  // Fallback to parent project or no project?
+                  // If failed, maybe just attach to parent?
+                  // But raw_videos only has one project_id.
+                  // If we use parentProjectId as projectId, it works but flattening the structure.
+                  // Let's try to use parentProjectId as fallback if sub-project creation fails.
+                  finalProjectId = download.parentProjectId;
+                }
+              }
+
               // Video is valid, create database record
               const rawVideoId = await createRawVideo(event.payload.file_path, {
+                projectId: finalProjectId,
                 originalFilename: download.title,
                 thumbnailPath: validationResult.thumbnailPath || event.payload.thumbnail_path,
                 duration: event.payload.duration,
@@ -106,6 +137,7 @@ export function useDownloads() {
                 isSegment: download.isSegment || false,
                 segmentStartTime: download.segmentStartTime,
                 segmentEndTime: download.segmentEndTime,
+                originalProjectId: download.parentProjectId,
               });
 
               download.rawVideoId = rawVideoId;
@@ -238,6 +270,50 @@ export function useDownloads() {
       }
     }
 
+    // Create a project for this download
+    let projectId: string | undefined;
+    let parentProjectId: string | undefined;
+
+    try {
+      if (isSegmentDownload) {
+        // For segments, try to find an existing parent project for this stream
+        const db = await getDatabase();
+
+        // Search for a project with the same name as the stream title (without "Segment X")
+        // and that is a top-level project (no parent_id)
+        // We also want to make sure it's related to this Mint ID if possible, but we don't store mint_id on projects directly.
+        // Checking description or if it has matching videos would be safer, but name matching is a good start.
+        // Let's search by name first.
+        const existingProjects = await db.select<{ id: string }[]>(
+          'SELECT id FROM projects WHERE name = ? AND parent_id IS NULL',
+          [title]
+        );
+
+        if (existingProjects.length > 0) {
+          // Found an existing parent project
+          parentProjectId = existingProjects[0].id;
+        } else {
+          // Create a new parent project
+          parentProjectId = await createProject(
+            title,
+            `Manual downloads from PumpFun (Mint: ${mintId})`
+          );
+        }
+
+        // Create the child project for this specific segment
+        projectId = await createProject(
+          finalTitle,
+          `Segment ${segmentNumber} of ${title}`,
+          parentProjectId
+        );
+      } else {
+        // Full stream download - create a standard project
+        projectId = await createProject(finalTitle, `Downloaded from PumpFun (Mint: ${mintId})`);
+      }
+    } catch (error) {
+      console.warn('[Downloads] Failed to create project structure for download:', error);
+    }
+
     const download: ActiveDownload = {
       id: downloadId,
       title: finalTitle,
@@ -253,6 +329,8 @@ export function useDownloads() {
       isSegment: isSegmentDownload,
       segmentStartTime: segmentRange?.startTime,
       segmentEndTime: segmentRange?.endTime,
+      projectId,
+      parentProjectId,
     };
 
     activeDownloads.set(downloadId, download);
@@ -330,6 +408,20 @@ export function useDownloads() {
     const groupId = generateId();
     const allDownloadIds: string[] = [];
 
+    // Create a parent project for the auto-segmented download
+    let parentProjectId: string | undefined;
+    try {
+      parentProjectId = await createProject(
+        title,
+        `Auto-segmented download from PumpFun (Mint: ${mintId}). ${numberOfSegments} parts.`
+      );
+    } catch (error) {
+      console.warn(
+        '[Downloads] Failed to create parent project for auto-segmented download:',
+        error
+      );
+    }
+
     // Process segments with queue system
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
@@ -352,6 +444,7 @@ export function useDownloads() {
         segmentStartTime: segment.startTime,
         segmentEndTime: segment.endTime,
         videoUrl: videoUrl,
+        parentProjectId,
       };
 
       // Add group metadata

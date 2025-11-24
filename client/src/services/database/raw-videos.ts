@@ -21,6 +21,7 @@ export async function createRawVideo(
     isSegment?: boolean;
     segmentStartTime?: number;
     segmentEndTime?: number;
+    originalProjectId?: string;
   }
 ): Promise<string> {
   const db = await getDatabase();
@@ -29,7 +30,7 @@ export async function createRawVideo(
 
   try {
     await db.execute(
-      'INSERT INTO raw_videos (id, project_id, file_path, original_filename, thumbnail_path, duration, width, height, frame_rate, codec, file_size, created_at, updated_at, source_clip_id, source_mint_id, segment_number, is_segment, segment_start_time, segment_end_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO raw_videos (id, project_id, file_path, original_filename, thumbnail_path, duration, width, height, frame_rate, codec, file_size, created_at, updated_at, source_clip_id, source_mint_id, segment_number, is_segment, segment_start_time, segment_end_time, original_project_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         id,
         options?.projectId || null,
@@ -50,6 +51,7 @@ export async function createRawVideo(
         options?.isSegment || false,
         options?.segmentStartTime || null,
         options?.segmentEndTime || null,
+        options?.originalProjectId || null,
       ]
     );
 

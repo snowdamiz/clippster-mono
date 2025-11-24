@@ -10,12 +10,10 @@ import {
   getLivestreamSession,
   persistClipDetectionResults,
   getClipsByDetectionSession,
-  updateClipBuildStatus,
   createProject,
   getProject,
 } from '@/services/database';
 import type { SegmentEventPayload, SegmentJob } from '@/types/livestream';
-import type { ClipWithVersion, SubtitleSettings } from '@/services/database';
 
 const DEFAULT_LIVE_PROMPT =
   'Detect the most viral, high-energy PumpFun livestream moments suitable for short-form clips.';
@@ -108,7 +106,11 @@ export function useLivestreamSegmentProcessing() {
         ? `${parentProject.name} (Part ${job.segmentNumber})`
         : `Livestream Segment ${job.segmentNumber}`;
 
-      const segmentProjectId = await createProject(segmentProjectName, parentProject?.description);
+      const segmentProjectId = await createProject(
+        segmentProjectName,
+        parentProject?.description || undefined,
+        job.projectId
+      );
 
       // Generate thumbnail for the segment video
       let thumbnailPath: string | undefined;

@@ -3,7 +3,7 @@
     <PageLayout
       title="Raw Videos"
       description="Browse and manage your raw video files"
-      :show-header="videos.length > 0"
+      :show-header="videos.length > 0 || uploading || activeDownloads.length > 0 || queuedDownloads.length > 0"
       :icon="Video"
     >
       <template #actions>

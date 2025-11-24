@@ -2,14 +2,18 @@ import { getDatabase, timestamp, generateId } from './core';
 import type { Project } from './types';
 
 // Project queries
-export async function createProject(name: string, description?: string): Promise<string> {
+export async function createProject(
+  name: string,
+  description?: string,
+  parentId?: string
+): Promise<string> {
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
 
   await db.execute(
-    'INSERT INTO projects (id, name, description, thumbnail_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-    [id, name, description || null, null, now, now]
+    'INSERT INTO projects (id, name, description, thumbnail_path, parent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [id, name, description || null, null, parentId || null, now, now]
   );
 
   return id;
@@ -69,6 +73,13 @@ export async function deleteProject(id: string): Promise<void> {
     await db.execute('UPDATE raw_videos SET project_id = NULL WHERE project_id = ?', [id]);
   } catch (error) {
     console.warn('[Database] raw_videos project_id column update failed:', error);
+  }
+
+  try {
+    // Disassociate child projects (has parent_id)
+    await db.execute('UPDATE projects SET parent_id = NULL WHERE parent_id = ?', [id]);
+  } catch (error) {
+    console.warn('[Database] projects parent_id column update failed:', error);
   }
 
   try {

@@ -671,6 +671,16 @@
     }
 
     await startMonitoring([streamer], { detectClips });
+
+    // Move to top of the list
+    const index = streamers.value.findIndex((s) => s.id === streamer.id);
+    if (index > 0) {
+      const [movedStreamer] = streamers.value.splice(index, 1);
+      streamers.value.unshift(movedStreamer);
+    }
+
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   async function stopStreamer(streamer: ExtendedStreamer) {

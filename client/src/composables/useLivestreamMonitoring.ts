@@ -221,8 +221,9 @@ async function initializeListeners() {
     }
 
     // 2. Log next segment starting
-    // Only if session is still active, otherwise we don't expect a next segment
-    if (activeSessions.value.has(payload.streamerId)) {
+    // Only if session is still active and NOT STOPPING, otherwise we don't expect a next segment
+    const session = activeSessions.value.get(payload.streamerId);
+    if (session && !session.isStopping) {
       const nextSegment = payload.segment + 1;
       const id = addActivityLog({
         streamerId: payload.streamerId,
@@ -248,7 +249,6 @@ async function initializeListeners() {
     });
 
     // Process the segment
-    const session = activeSessions.value.get(payload.streamerId);
     // Use session config for detection
     const detectClips = session?.detectClips ?? true;
 

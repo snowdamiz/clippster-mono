@@ -59,49 +59,50 @@
               </div>
             </div>
             <!-- Selected Video Display -->
-            <div
-              v-if="selectedVideo"
-              class="mb-3 p-3 bg-muted/50 rounded-md border border-border flex items-center gap-3"
-            >
-              <div class="w-20 h-12 bg-muted rounded overflow-hidden flex-shrink-0">
-                <img
-                  v-if="getThumbnailUrl(selectedVideo)"
-                  :src="getThumbnailUrl(selectedVideo)!"
-                  :alt="selectedVideo.original_filename || 'Video thumbnail'"
-                  class="w-full h-full object-cover"
-                />
-                <div v-else class="w-full h-full flex items-center justify-center">
-                  <Video class="h-6 w-6 text-muted-foreground/40" />
-                </div>
-              </div>
-
-              <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-foreground truncate">
-                  {{
-                    selectedVideo.original_filename || selectedVideo.file_path.split(/[\\\/]/).pop() || 'Untitled Video'
-                  }}
-                </p>
-
-                <p class="text-xs text-muted-foreground" v-if="selectedVideo.duration">
-                  Duration: {{ formatDuration(selectedVideo.duration) }}
-                </p>
-              </div>
-              <button
-                type="button"
-                @click="clearVideoSelection"
-                class="p-1 hover:bg-muted rounded"
-                title="Remove selection"
-                :disabled="isEdit && hasDetectedOrGeneratedClipsLocked"
-                :class="{ 'opacity-50 cursor-not-allowed': isEdit && hasDetectedOrGeneratedClipsLocked }"
+            <div class="space-y-2">
+              <div
+                v-for="video in selectedVideos"
+                :key="video.id"
+                class="p-3 bg-muted/50 rounded-md border border-border flex items-center gap-3"
               >
-                <X class="h-4 w-4 text-muted-foreground" />
-              </button>
+                <div class="w-20 h-12 bg-muted rounded overflow-hidden flex-shrink-0">
+                  <img
+                    v-if="getThumbnailUrl(video)"
+                    :src="getThumbnailUrl(video)!"
+                    :alt="video.original_filename || 'Video thumbnail'"
+                    class="w-full h-full object-cover"
+                  />
+                  <div v-else class="w-full h-full flex items-center justify-center">
+                    <Video class="h-6 w-6 text-muted-foreground/40" />
+                  </div>
+                </div>
+
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium text-foreground truncate">
+                    {{ video.original_filename || video.file_path.split(/[\\\/]/).pop() || 'Untitled Video' }}
+                  </p>
+
+                  <p class="text-xs text-muted-foreground" v-if="video.duration">
+                    Duration: {{ formatDuration(video.duration) }}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  @click="removeVideoSelection(video)"
+                  class="p-1 hover:bg-muted rounded"
+                  title="Remove selection"
+                  :disabled="isEdit && hasDetectedOrGeneratedClipsLocked"
+                  :class="{ 'opacity-50 cursor-not-allowed': isEdit && hasDetectedOrGeneratedClipsLocked }"
+                >
+                  <X class="h-4 w-4 text-muted-foreground" />
+                </button>
+              </div>
             </div>
             <!-- Select Video Button -->
             <button
               type="button"
               @click="showVideoSelector = true"
-              class="w-full px-4 py-3 bg-muted hover:bg-muted/80 border rounded-md text-foreground transition-all flex items-center justify-center gap-2"
+              class="w-full mt-3 px-4 py-3 bg-muted hover:bg-muted/80 border rounded-md text-foreground transition-all flex items-center justify-center gap-2"
               :class="{
                 'border-red-500': errors.selectedVideoId,
                 'opacity-50 cursor-not-allowed': isEdit && hasDetectedOrGeneratedClipsLocked,
@@ -109,7 +110,7 @@
               :disabled="isEdit && hasDetectedOrGeneratedClipsLocked"
             >
               <Video class="h-5 w-5" />
-              Select from Video Library
+              {{ selectedVideos.length > 0 ? 'Add More Videos' : 'Select from Video Library' }}
             </button>
             <p v-if="errors.selectedVideoId" class="mt-1 text-sm text-red-500">
               {{ errors.selectedVideoId }}
@@ -172,7 +173,7 @@
               @click="selectVideoFromLibrary(video)"
               class="group relative bg-card border-2 rounded-md overflow-hidden transition-all"
               :class="[
-                selectedVideo?.id === video.id ? 'border-purple-500' : 'border-border',
+                selectedVideos.some((v) => v.id === video.id) ? 'border-purple-500' : 'border-border',
                 isVideoAvailable(video) ? 'hover:border-foreground/20' : 'opacity-60 cursor-not-allowed',
               ]"
               :disabled="!isVideoAvailable(video)"
@@ -210,7 +211,7 @@
                 </div>
                 <!-- Selected Indicator -->
                 <div
-                  v-if="selectedVideo?.id === video.id"
+                  v-if="selectedVideos.some((v) => v.id === video.id)"
                   class="absolute inset-0 bg-purple-500/20 flex items-center justify-center"
                 >
                   <div class="bg-purple-600 rounded-full p-1">
@@ -338,6 +339,7 @@
     name: string;
     description: string;
     selectedVideoId?: string;
+    selectedVideoIds?: string[]; // Support multiple video selection
   }
 
   const props = defineProps<{
@@ -357,12 +359,14 @@
     name: '',
     description: '',
     selectedVideoId: '',
+    selectedVideoIds: [],
   });
 
   const errors = reactive<Partial<Record<keyof ProjectFormData, string>>>({});
   const showVideoSelector = ref(false);
   const availableVideos = ref<RawVideo[]>([]);
   const selectedVideo = ref<RawVideo | null>(null);
+  const selectedVideos = ref<RawVideo[]>([]); // Support multiple video selection
   const thumbnailCache = ref<Map<string, string>>(new Map());
   const projectCache = ref<Map<string, string>>(new Map());
   const { formatDuration } = useFormatters();
@@ -448,6 +452,7 @@
           const matchingVideo = availableVideos.value.find((v) => v.project_id === newProject.id);
           if (matchingVideo) {
             selectedVideo.value = matchingVideo;
+            selectedVideos.value = [matchingVideo];
           }
         }
       } else {
@@ -476,6 +481,7 @@
     formData.name = '';
     formData.description = '';
     selectedVideo.value = null;
+    selectedVideos.value = [];
     Object.keys(errors).forEach((key) => delete errors[key as keyof ProjectFormData]);
   }
 
@@ -493,8 +499,8 @@
     }
 
     // Require video selection for new projects (not when editing)
-    if (!isEdit.value && !selectedVideo.value) {
-      errors.selectedVideoId = 'Video file is required';
+    if (!isEdit.value && selectedVideos.value.length === 0) {
+      errors.selectedVideoId = 'At least one video file is required';
       return false;
     }
 
@@ -506,11 +512,24 @@
 
     loading.value = true;
     try {
-      emit('submit', {
+      // If editing, use single video ID for backward compatibility
+      // If creating and multiple videos selected, pass the array
+      const submitData: ProjectFormData = {
         name: formData.name.trim(),
         description: formData.description.trim(),
-        selectedVideoId: selectedVideo.value?.id,
-      });
+      };
+
+      if (isEdit.value) {
+        submitData.selectedVideoId = selectedVideo.value?.id;
+      } else {
+        if (selectedVideos.value.length === 1) {
+          submitData.selectedVideoId = selectedVideos.value[0].id;
+        } else {
+          submitData.selectedVideoIds = selectedVideos.value.map((v) => v.id);
+        }
+      }
+
+      emit('submit', submitData);
     } finally {
       loading.value = false;
     }
@@ -520,12 +539,36 @@
     if (!isVideoAvailable(video)) {
       return; // Don't allow selection of videos that are already associated with other projects
     }
-    selectedVideo.value = video;
-    showVideoSelector.value = false;
+
+    if (isEdit.value) {
+      // Single selection for edit mode
+      selectedVideo.value = video;
+      selectedVideos.value = [video];
+      showVideoSelector.value = false;
+    } else {
+      // Multi-selection for create mode
+      const index = selectedVideos.value.findIndex((v) => v.id === video.id);
+      if (index === -1) {
+        selectedVideos.value.push(video);
+      } else {
+        selectedVideos.value.splice(index, 1);
+      }
+      // Update single selection for compatibility
+      selectedVideo.value = selectedVideos.value.length > 0 ? selectedVideos.value[0] : null;
+    }
+  }
+
+  function removeVideoSelection(video: RawVideo) {
+    const index = selectedVideos.value.findIndex((v) => v.id === video.id);
+    if (index !== -1) {
+      selectedVideos.value.splice(index, 1);
+      selectedVideo.value = selectedVideos.value.length > 0 ? selectedVideos.value[0] : null;
+    }
   }
 
   function clearVideoSelection() {
     selectedVideo.value = null;
+    selectedVideos.value = [];
   }
 
   function getThumbnailUrl(video: RawVideo): string | null {

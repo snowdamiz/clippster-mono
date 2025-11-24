@@ -222,6 +222,12 @@ pub fn run() {
                             sql: include_str!("../migrations/033_add_monitored_streamer_thumbnails.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 34,
+                            description: "add_project_parent_id",
+                            sql: include_str!("../migrations/034_add_project_parent_id.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

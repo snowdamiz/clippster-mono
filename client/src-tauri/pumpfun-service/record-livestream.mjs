@@ -15,6 +15,10 @@ import {
 } from '@livekit/rtc-node';
 
 const VIDEO_QUALITY_HIGH = 2;
+// Audio offset in milliseconds. 
+// Positive value (e.g. 1000): DELAY audio (fills start with silence). Use when Audio is Ahead of Video.
+// Negative value (e.g. -1000): ADVANCE audio (skips/crops start). Use when Video is Ahead of Audio.
+const AUDIO_OFFSET_MS = 1000;
 
 const args = process.argv.slice(2);
 const [mintId, sessionId, outputDirArg, segmentMinutesArg] = args;
@@ -162,8 +166,15 @@ class AudioMixer {
              // If we have chunks, start from the first one.
              // If not, we just wait.
              if (this.chunks.size > 0) {
-                 const keys = Array.from(this.chunks.keys()).sort((a, b) => a - b);
-                 this.lastFlushedIndex = keys[0] - 1;
+                 // Always start flushing from timeIndex 0.
+                 // Positive offset (keys[0] > 0): fills 0..keys[0]-1 with silence (DELAY audio)
+                 // Negative offset (keys[0] < 0): skips keys[0]..-1 (ADVANCE audio/Crop)
+                 this.lastFlushedIndex = -1;
+                 
+                 // Cleanup negative chunks we are skipping
+                 for (const key of this.chunks.keys()) {
+                     if (key < 0) this.chunks.delete(key);
+                 }
              } else {
                  return [];
              }
@@ -194,11 +205,12 @@ class AudioMixer {
 }
 
 class PumpfunRecorder {
-  constructor({ mintId, sessionId, outputDir, segmentDuration }) {
+  constructor({ mintId, sessionId, outputDir, segmentDuration, audioOffset }) {
     this.mintId = mintId;
     this.sessionId = sessionId;
     this.outputDir = outputDir;
     this.segmentDurationSeconds = segmentDuration;
+    this.audioOffset = audioOffset || 0;
     this.ffmpegPath = resolveFfmpegBinary();
     this.segmentPrefix = `${this.mintId}_${this.sessionId}_segment_`;
     this.playlistPath = path.join(this.outputDir, 'playlist.csv');
@@ -382,7 +394,8 @@ class PumpfunRecorder {
             
             // Calculate relative time index
             // We use arrivalTime but "snap" to grid to handle jitter while preserving large gaps
-            const relativeTime = arrivalTime - this.referenceTime;
+            // Apply audioOffset to shift audio relative to video (positive = delay audio)
+            const relativeTime = arrivalTime - this.referenceTime + this.audioOffset;
             let timeIndex = Math.floor(relativeTime / 20);
 
             // Jitter Snapping Logic:
@@ -1006,6 +1019,7 @@ async function main() {
     sessionId,
     outputDir,
     segmentDuration: segmentDurationSeconds,
+    audioOffset: AUDIO_OFFSET_MS,
   });
 
   await recorder.start();
