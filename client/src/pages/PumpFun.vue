@@ -359,189 +359,216 @@
       </EmptyState>
     </div>
     <!-- Download Confirmation Modal -->
-    <div
-      v-if="showDownloadDialog"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-      @click.self="closeDownloadDialog()"
+    <Transition
+      enter-active-class="transition duration-200 ease-out"
+      enter-from-class="opacity-0 scale-95"
+      enter-to-class="opacity-100 scale-100"
+      leave-active-class="transition duration-150 ease-in"
+      leave-from-class="opacity-100 scale-100"
+      leave-to-class="opacity-0 scale-95"
     >
-      <div
-        class="bg-card rounded-lg p-6 max-w-lg w-full mx-4 border border-border max-h-[90vh] overflow-y-auto shadow-2xl"
-      >
-        <!-- Header -->
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-xl font-bold text-foreground">Download Stream</h2>
-          <button
-            @click="closeDownloadDialog()"
-            class="p-1.5 hover:bg-muted rounded-md transition-colors"
-            :disabled="downloadStarting"
-          >
-            <X class="h-4 w-4 text-muted-foreground" />
-          </button>
-        </div>
+      <div v-if="showDownloadDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+        <!-- Backdrop -->
+        <div
+          class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+          @click="closeDownloadDialog()"
+        ></div>
 
-        <!-- Content -->
-        <div class="space-y-4">
-          <!-- Selected Video Info -->
-          <div class="bg-muted/30 rounded-md p-3 border border-border/50">
-            <div class="flex items-center gap-2">
-              <div
-                class="w-8 h-8 bg-gradient-to-br from-purple-500/20 to-indigo-500/20 rounded-md flex items-center justify-center flex-shrink-0"
-              >
-                <Video class="h-4 w-4 text-purple-500" />
-              </div>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-foreground truncate">{{ downloadTitle }}</p>
-                <p class="text-xs text-muted-foreground truncate">{{ clipToDownload?.clipId }}</p>
-              </div>
+        <!-- Modal Panel -->
+        <div
+          class="relative flex flex-col w-full max-w-lg overflow-hidden transition-all transform bg-card border border-border shadow-2xl rounded-xl max-h-[90vh]"
+        >
+          <!-- Header -->
+          <div class="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/30">
+            <div>
+              <h2 class="text-lg font-semibold text-foreground">Download Options</h2>
+              <p class="text-xs text-muted-foreground">Configure your download settings</p>
             </div>
+            <button
+              @click="closeDownloadDialog()"
+              class="p-2 transition-colors rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+            >
+              <X class="w-5 h-5" />
+            </button>
           </div>
 
-          <!-- Download Type Selection -->
-          <div class="space-y-2">
-            <label class="text-sm font-medium text-foreground">Download Type:</label>
-            <div class="grid grid-cols-2 gap-2">
-              <button
-                @click="useSegmentDownload = false"
-                :class="[
-                  'relative p-3 rounded-md border-2 transition-all text-left',
-                  !useSegmentDownload
-                    ? 'border-purple-500 bg-purple-500/10'
-                    : 'border-border bg-card hover:bg-muted/50',
-                ]"
+          <!-- Content -->
+          <div class="flex-1 p-6 overflow-y-auto custom-scrollbar">
+            <!-- Video Info Card -->
+            <div class="flex gap-4 p-4 mb-6 border rounded-lg bg-muted/30 border-border/50">
+              <div
+                class="relative flex-shrink-0 overflow-hidden rounded bg-black/40 w-28 aspect-video border border-border/50"
               >
-                <div class="flex items-center gap-2">
+                <img
+                  v-if="clipToDownload?.thumbnailUrl"
+                  :src="clipToDownload.thumbnailUrl"
+                  class="object-cover w-full h-full"
+                />
+                <div v-else class="flex items-center justify-center w-full h-full text-muted-foreground">
+                  <Video class="w-8 h-8 opacity-50" />
+                </div>
+              </div>
+              <div class="flex flex-col justify-center flex-1 min-w-0">
+                <h3
+                  class="mb-1.5 text-sm font-medium leading-snug text-foreground line-clamp-2"
+                  :title="clipToDownload?.title"
+                >
+                  {{ clipToDownload?.title }}
+                </h3>
+                <div class="flex items-center gap-3 text-xs text-muted-foreground">
+                  <span class="flex items-center gap-1">
+                    <Clock class="w-3 h-3" />
+                    {{ formatDuration(clipToDownload?.duration) }}
+                  </span>
+                  <span class="text-border">|</span>
+                  <span>{{ formatRelativeTime(clipToDownload?.createdAt) }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Download Format Selection -->
+            <div class="mb-6 space-y-3">
+              <label class="text-xs font-semibold tracking-wider uppercase text-muted-foreground">
+                Download Format
+              </label>
+              <div class="grid grid-cols-2 gap-4 mt-2">
+                <!-- Full Stream Option -->
+                <button
+                  type="button"
+                  @click="useSegmentDownload = false"
+                  class="relative flex flex-col items-center gap-3 p-4 text-center transition-all duration-200 border-2 rounded-xl group"
+                  :class="[
+                    !useSegmentDownload
+                      ? 'border-purple-500 bg-purple-500/5 ring-1 ring-purple-500/20'
+                      : 'border-border bg-card hover:border-purple-500/30 hover:bg-muted/30',
+                  ]"
+                >
                   <div
-                    :class="[
-                      'w-6 h-6 rounded flex items-center justify-center transition-colors flex-shrink-0',
-                      !useSegmentDownload ? 'bg-purple-500 text-white' : 'bg-muted text-muted-foreground',
-                    ]"
+                    class="p-2.5 rounded-full transition-colors duration-200"
+                    :class="
+                      !useSegmentDownload
+                        ? 'bg-purple-500/20 text-purple-400'
+                        : 'bg-muted text-muted-foreground group-hover:bg-purple-500/10 group-hover:text-purple-400'
+                    "
                   >
-                    <Download class="h-3 w-3" />
+                    <Download class="w-5 h-5" />
                   </div>
-                  <div class="flex-1 min-w-0">
-                    <h4
-                      :class="[
-                        'font-medium text-xs truncate',
-                        !useSegmentDownload ? 'text-purple-400' : 'text-foreground',
-                      ]"
+                  <div>
+                    <div
+                      class="text-sm font-medium"
+                      :class="!useSegmentDownload ? 'text-purple-400' : 'text-foreground'"
                     >
                       Full Stream
-                    </h4>
+                    </div>
+                    <div class="text-[10px] text-muted-foreground mt-0.5">Download entire video</div>
                   </div>
-                  <div v-if="!useSegmentDownload" class="flex-shrink-0">
-                    <div class="w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center">
-                      <Check class="h-2.5 w-2.5 text-white" />
+
+                  <!-- Active Indicator -->
+                  <div v-if="!useSegmentDownload" class="absolute top-3 right-3">
+                    <div class="bg-purple-500 rounded-full p-0.5 shadow-sm">
+                      <Check class="w-2.5 h-2.5 text-white" />
                     </div>
                   </div>
-                </div>
-              </button>
+                </button>
 
-              <button
-                @click="useSegmentDownload = true"
-                :class="[
-                  'relative p-3 rounded-md border-2 transition-all text-left',
-                  useSegmentDownload ? 'border-purple-500 bg-purple-500/10' : 'border-border bg-card hover:bg-muted/50',
-                ]"
-              >
-                <div class="flex items-center gap-2">
+                <!-- Segment Option -->
+                <button
+                  type="button"
+                  @click="useSegmentDownload = true"
+                  class="relative flex flex-col items-center gap-3 p-4 text-center transition-all duration-200 border-2 rounded-xl group"
+                  :class="[
+                    useSegmentDownload
+                      ? 'border-purple-500 bg-purple-500/5 ring-1 ring-purple-500/20'
+                      : 'border-border bg-card hover:border-purple-500/30 hover:bg-muted/30',
+                  ]"
+                >
                   <div
-                    :class="[
-                      'w-6 h-6 rounded flex items-center justify-center transition-colors flex-shrink-0',
-                      useSegmentDownload ? 'bg-purple-500 text-white' : 'bg-muted text-muted-foreground',
-                    ]"
+                    class="p-2.5 rounded-full transition-colors duration-200"
+                    :class="
+                      useSegmentDownload
+                        ? 'bg-purple-500/20 text-purple-400'
+                        : 'bg-muted text-muted-foreground group-hover:bg-purple-500/10 group-hover:text-purple-400'
+                    "
                   >
-                    <Clock class="h-3 w-3" />
+                    <Scissors class="w-5 h-5" />
                   </div>
-                  <div class="flex-1 min-w-0">
-                    <h4
-                      :class="[
-                        'font-medium text-xs truncate',
-                        useSegmentDownload ? 'text-purple-400' : 'text-foreground',
-                      ]"
+                  <div>
+                    <div
+                      class="text-sm font-medium"
+                      :class="useSegmentDownload ? 'text-purple-400' : 'text-foreground'"
                     >
-                      Custom Segment
-                    </h4>
+                      Segment
+                    </div>
+                    <div class="text-[10px] text-muted-foreground mt-0.5">Trim and download</div>
                   </div>
-                  <div v-if="useSegmentDownload" class="flex-shrink-0">
-                    <div class="w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center">
-                      <Check class="h-2.5 w-2.5 text-white" />
+
+                  <!-- Active Indicator -->
+                  <div v-if="useSegmentDownload" class="absolute top-3 right-3">
+                    <div class="bg-purple-500 rounded-full p-0.5 shadow-sm">
+                      <Check class="w-2.5 h-2.5 text-white" />
                     </div>
                   </div>
-                </div>
-              </button>
-            </div>
-          </div>
-
-          <!-- Time Range Picker (shown only for segment downloads) -->
-          <div v-if="useSegmentDownload" class="space-y-2">
-            <label class="text-sm font-medium text-foreground flex items-center gap-1.5">
-              <Clock class="h-3.5 w-3.5 text-purple-400" />
-              Select Time Range:
-            </label>
-            <div class="bg-muted/20 rounded-md p-3 border border-border/50">
-              <TimeRangePicker
-                v-model="selectedTimeRange"
-                :total-duration="clipToDownload?.duration || 0"
-                @change="handleTimeRangeChange"
-              />
-            </div>
-          </div>
-
-          <!-- Stream Details -->
-          <div class="bg-muted/30 rounded-md p-3 border border-border/50">
-            <div class="space-y-2">
-              <div class="flex items-center justify-between text-sm">
-                <span class="text-muted-foreground">Duration:</span>
-                <span class="font-medium text-foreground">{{ formatDuration(clipToDownload?.duration) }}</span>
+                </button>
               </div>
+            </div>
 
-              <div v-if="useSegmentDownload" class="flex items-center justify-between text-sm">
-                <span class="text-muted-foreground">Selected:</span>
-                <span class="font-medium text-purple-400">
-                  {{ formatDuration(selectedTimeRange.endTime - selectedTimeRange.startTime) }}
+            <!-- Time Range Picker -->
+            <div v-if="useSegmentDownload" class="space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+              <div class="flex items-center justify-between">
+                <label class="text-xs font-semibold tracking-wider uppercase text-muted-foreground">Trim Segment</label>
+                <span
+                  class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20"
+                >
+                  Segment {{ nextSegmentNumber }}
                 </span>
               </div>
+              <div class="p-4 border shadow-sm bg-card border-border rounded-xl">
+                <TimeRangePicker
+                  v-model="selectedTimeRange"
+                  :total-duration="clipToDownload?.duration || 0"
+                  @change="handleTimeRangeChange"
+                />
+              </div>
+            </div>
 
-              <div class="flex items-center justify-between text-sm">
-                <span class="text-muted-foreground">Est. Time:</span>
-                <span class="font-medium text-green-400">{{ estimatedDownloadTime }}</span>
+            <!-- Download Estimation -->
+            <div
+              v-else
+              class="p-4 text-sm border border-dashed rounded-lg bg-muted/20 border-border/50 text-muted-foreground animate-in fade-in duration-200"
+            >
+              <div class="flex flex-col gap-2">
+                <div class="flex items-center gap-2">
+                  <Info class="w-4 h-4 text-blue-400" />
+                  <span>Downloads are processed in the background.</span>
+                </div>
+                <div class="pl-6 text-xs opacity-70">Estimated download time: {{ estimatedDownloadTime }}</div>
               </div>
             </div>
           </div>
 
-          <!-- Action Buttons -->
-          <div class="space-y-2 pt-5 border-t border-border">
+          <!-- Footer Actions -->
+          <div class="flex items-center justify-end gap-3 px-6 py-4 border-t bg-muted/30 border-border">
             <button
-              class="w-full py-2.5 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-md font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl disabled:shadow-none"
+              class="px-4 py-2 text-sm font-medium transition-colors rounded-lg text-foreground hover:bg-muted"
+              @click="closeDownloadDialog()"
+              :disabled="downloadStarting"
+            >
+              Cancel
+            </button>
+            <button
+              class="flex items-center gap-2 px-6 py-2 text-sm font-semibold text-white transition-all shadow-md rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-purple-500/20"
               @click="downloadClipConfirmed"
               :disabled="
                 downloadStarting || (useSegmentDownload && selectedTimeRange.endTime <= selectedTimeRange.startTime)
               "
             >
-              <span v-if="downloadStarting" class="flex items-center justify-center gap-2">
-                <Loader2 class="animate-spin h-4 w-4" />
-                {{ useSegmentDownload ? 'Starting Segment Download...' : 'Starting Download...' }}
-              </span>
-              <span v-else class="flex items-center justify-center gap-2">
-                <Download class="h-4 w-4" />
-                {{ useSegmentDownload ? 'Download Segment' : 'Download Full Stream' }}
-              </span>
-            </button>
-
-            <button
-              class="w-full py-2.5 px-4 bg-muted/50 text-muted-foreground rounded-md font-semibold hover:bg-muted transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-border/50 hover:border-border"
-              @click="closeDownloadDialog()"
-              :disabled="downloadStarting"
-            >
-              <span class="flex items-center justify-center gap-2">
-                <X class="h-4 w-4" />
-                Cancel
-              </span>
+              <Loader2 v-if="downloadStarting" class="w-4 h-4 animate-spin" />
+              <span>{{ downloadStarting ? 'Starting...' : 'Start Download' }}</span>
             </button>
           </div>
         </div>
       </div>
-    </div>
+    </Transition>
     <!-- Pagination Footer -->
     <PaginationFooter
       v-if="pumpFunStore.clips.length > 0"
@@ -581,6 +608,8 @@
     Video,
     Search,
     Loader2,
+    Scissors,
+    Info,
   } from 'lucide-vue-next';
 
   const { success, error: showError } = useToast();
@@ -628,19 +657,6 @@
   // Pagination state
   const currentPage = ref(1);
   const clipsPerPage = 20;
-
-  // Reactive computed property for download title
-  const downloadTitle = computed(() => {
-    if (!clipToDownload.value) return '';
-
-    if (useSegmentDownload.value && clipToDownload.value.clipId) {
-      // Show the actual segment number that will be used
-      const baseTitle = clipToDownload.value.title;
-      return `${baseTitle} (will be named "${baseTitle} Segment ${nextSegmentNumber.value}")`;
-    }
-
-    return clipToDownload.value.title;
-  });
 
   // Computed properties for dialog
   const formatDuration = (duration?: number) => {
