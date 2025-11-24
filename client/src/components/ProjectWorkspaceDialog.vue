@@ -585,6 +585,27 @@
     }
   }
 
+  // Helper to scroll timeline to a specific clip
+  function scrollToClipInTimeline(clipId: string) {
+    const isFirstClip = timelineClips.value.length > 0 && timelineClips.value[0].id === clipId;
+
+    if (timelineRef.value) {
+      if (isFirstClip) {
+        // Scroll timeline to the very top with smooth animation
+        const timelineContainer = (timelineRef.value as any).$el?.querySelector('.overflow-y-auto');
+        if (timelineContainer) {
+          timelineContainer.scrollTo({
+            top: 0,
+            behavior: 'smooth',
+          });
+        }
+      } else {
+        // Scroll to the corresponding timeline clip
+        timelineRef.value.scrollTimelineClipIntoView(clipId);
+      }
+    }
+  }
+
   // Clip hover event handlers
   function onClipHover(clipId: string) {
     // If a clip is currently playing and user selects a different clip, stop playback
@@ -600,24 +621,8 @@
     // Then set the new state
     hoveredClipId.value = clipId;
 
-    // Check if this is the first clip - if so, scroll timeline to top
-    const isFirstClip = timelineClips.value.length > 0 && timelineClips.value[0].id === clipId;
-
-    if (timelineRef.value) {
-      if (isFirstClip) {
-        // Scroll timeline to the very top with smooth animation
-        const timelineContainer = timelineRef.value.$el?.querySelector('.overflow-y-auto');
-        if (timelineContainer) {
-          timelineContainer.scrollTo({
-            top: 0,
-            behavior: 'smooth',
-          });
-        }
-      } else {
-        // Scroll to the corresponding timeline clip
-        timelineRef.value.scrollTimelineClipIntoView(clipId);
-      }
-    }
+    // Scroll to the clip
+    scrollToClipInTimeline(clipId);
   }
 
   // Timeline clip hover/click event handler
@@ -832,6 +837,9 @@
 
     // Track the currently playing clip
     currentlyPlayingClipId.value = clip.id;
+
+    // Scroll timeline to the clip
+    scrollToClipInTimeline(clip.id);
 
     // Get segments from the clip
     let segments: any[] = [];
