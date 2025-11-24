@@ -117,7 +117,6 @@
           v-if="clips.length === 0"
           title="No clips yet"
           description="Generate or detect your first video clip to get started"
-          button-text="Upload Clip"
         >
           <template #icon>
             <Video class="h-16 w-16 text-muted-foreground" />

@@ -42,7 +42,7 @@
 
           <!-- View Mode -->
           <div
-            class="bg-muted/50 border border-border rounded-md p-1 flex items-center gap-1 transition-opacity"
+            class="bg-muted/50 rounded-md p-1 flex items-center gap-1 transition-opacity"
             :class="{ 'opacity-50 pointer-events-none': searchQuery }"
           >
             <button
@@ -118,11 +118,11 @@
                 }"
               >
                 <!-- Dark vignette overlay -->
-                <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60"></div>
+                <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/40 to-black/60"></div>
               </div>
               <!-- Fallback background for projects without thumbnails -->
               <div v-else class="absolute inset-0 z-0 bg-muted">
-                <div class="absolute inset-0 bg-gradient-to-br from-black/20 via-transparent to-black/40"></div>
+                <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/40 to-black/50"></div>
 
                 <!-- Live Empty State -->
                 <div
@@ -301,13 +301,13 @@
           <div
             class="grid gap-5"
             :class="{
-              'grid-cols-1': getFolderChildren(folderProject.id).length <= 1,
-              'grid-cols-1 md:grid-cols-2': getFolderChildren(folderProject.id).length === 2,
-              'grid-cols-1 md:grid-cols-2 lg:grid-cols-3': getFolderChildren(folderProject.id).length >= 3,
+              'grid-cols-1': paginatedFolderChildren.length <= 1,
+              'grid-cols-1 md:grid-cols-2': paginatedFolderChildren.length === 2,
+              'grid-cols-1 md:grid-cols-2 lg:grid-cols-3': paginatedFolderChildren.length >= 3,
             }"
           >
             <div
-              v-for="project in getFolderChildren(folderProject.id)"
+              v-for="project in paginatedFolderChildren"
               :key="project.id"
               class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all border border-border shadow-sm"
               @click="openWorkspace(project)"
@@ -366,6 +366,19 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Footer with Pagination -->
+        <div v-if="folderTotalPages > 1" class="px-6 py-4 border-t border-border bg-muted/10 flex justify-center">
+          <PaginationFooter
+            :current-page="folderCurrentPage"
+            :total-pages="folderTotalPages"
+            :total-items="getFolderChildren(folderProject.id).length"
+            item-label="part"
+            @go-to-page="(page) => (folderCurrentPage = page)"
+            @previous="folderCurrentPage--"
+            @next="folderCurrentPage++"
+          />
         </div>
       </div>
     </div>
@@ -587,14 +600,31 @@
     return childrenMap.value.get(projectId)?.length || 0;
   }
 
+  // Folder dialog pagination
+  const folderCurrentPage = ref(1);
+  const folderItemsPerPage = 6;
+
   function getFolderChildren(projectId: string): Project[] {
     return childrenMap.value.get(projectId) || [];
   }
+
+  const paginatedFolderChildren = computed(() => {
+    if (!folderProject.value) return [];
+    const children = getFolderChildren(folderProject.value.id);
+    const startIndex = (folderCurrentPage.value - 1) * folderItemsPerPage;
+    return children.slice(startIndex, startIndex + folderItemsPerPage);
+  });
+
+  const folderTotalPages = computed(() => {
+    if (!folderProject.value) return 0;
+    return Math.ceil(getFolderChildren(folderProject.value.id).length / folderItemsPerPage);
+  });
 
   function handleProjectClick(project: Project) {
     if (viewMode.value === 'folders' && hasChildren(project.id)) {
       // Open folder dialog
       folderProject.value = project;
+      folderCurrentPage.value = 1; // Reset to first page
       showFolderDialog.value = true;
     } else {
       openWorkspace(project);

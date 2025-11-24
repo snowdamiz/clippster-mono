@@ -189,7 +189,7 @@
           <!-- Empty State -->
           <div
             v-if="streamers.length === 0"
-            class="flex flex-col items-center justify-center py-20 text-center opacity-50 border-2 border-dashed border-border/30 rounded-[2.5rem]"
+            class="-mt-4 flex flex-col items-center justify-center py-20 text-center border-2 border-dashed border-border/30 rounded-lg"
           >
             <div class="w-24 h-24 bg-muted/20 rounded-full flex items-center justify-center mb-6">
               <Radio class="w-12 h-12 text-muted-foreground" />

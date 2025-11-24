@@ -23,7 +23,7 @@
       <div
         v-for="prompt in prompts"
         :key="prompt.id"
-        class="group relative flex flex-col h-[340px] rounded-xl border border-border bg-card hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 overflow-hidden cursor-pointer"
+        class="group relative flex flex-col h-[340px] rounded-xl border border-border bg-card hover:border-primary/40 hover:shadow-primary/5 transition-all duration-300 overflow-hidden cursor-pointer"
         @click="editPrompt(prompt)"
       >
         <div class="flex flex-col h-full p-5">
