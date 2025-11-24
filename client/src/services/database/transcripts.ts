@@ -23,9 +23,10 @@ export async function createTranscript(
 
 export async function getTranscriptByRawVideoId(rawVideoId: string): Promise<Transcript | null> {
   const db = await getDatabase();
-  const result = await db.select<Transcript[]>('SELECT * FROM transcripts WHERE raw_video_id = ?', [
-    rawVideoId,
-  ]);
+  const result = await db.select<Transcript[]>(
+    'SELECT * FROM transcripts WHERE raw_video_id = ? ORDER BY created_at DESC, id ASC',
+    [rawVideoId]
+  );
   return result[0] || null;
 }
 
@@ -34,7 +35,8 @@ export async function getTranscriptByProjectId(projectId: string): Promise<Trans
   const result = await db.select<Transcript[]>(
     `SELECT t.* FROM transcripts t
      JOIN raw_videos rv ON t.raw_video_id = rv.id
-     WHERE rv.project_id = ?`,
+     WHERE rv.project_id = ?
+     ORDER BY t.created_at DESC, t.id ASC`,
     [projectId]
   );
   return result[0] || null;

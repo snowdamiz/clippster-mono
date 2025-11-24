@@ -102,188 +102,183 @@ defmodule ClippsterServerWeb.ClipsController do
 
   # Separate function to handle the actual chunked clip detection process
   defp process_chunked_clip_detection(conn, project_id, user_prompt, chunks_metadata, processing_mode, user_id, credits_deducted, is_admin) do
-    try do
-      # Broadcast initial progress
-      ProgressChannel.broadcast_progress(project_id, "starting", 0, "Initializing chunked clip detection...")
+    operation = fn ->
+      execute_chunked_clip_detection(project_id, user_prompt, chunks_metadata, processing_mode)
+    end
 
-      # Process chunks based on their content type
-      {chunk_transcripts, successful_chunks, failed_chunks} = case processing_mode do
-        :pre_transcribed ->
-          process_pre_transcribed_chunks(chunks_metadata, project_id)
-        :raw_audio ->
-          process_raw_audio_chunks(chunks_metadata, project_id)
-      end
+    case retry_with_backoff(operation, 3, project_id) do
+      {:ok, result_map} ->
+        # Get updated user balance after credit deduction (or show unlimited for admins)
+        remaining_credits = if is_admin do
+          %{
+            hours_remaining: :unlimited,
+            hours_used: 0.0
+          }
+        else
+          {:ok, updated_balance} = Credits.get_user_balance(user_id)
+          %{
+            hours_remaining: Decimal.to_float(updated_balance.hours_remaining),
+            hours_used: Decimal.to_float(updated_balance.hours_used)
+          }
+        end
 
-      IO.puts("[ClipsController] All chunks processed. #{length(chunk_transcripts)} results received")
+        # Add credit info to result map
+        final_result = result_map
+        |> put_in([:processing_info, :credits_charged], credits_deducted)
+        |> put_in([:processing_info, :remaining_credits], remaining_credits)
 
-      if length(failed_chunks) > 0 do
-        IO.puts("[ClipsController] Warning: #{length(failed_chunks)} chunks failed to process")
-        failed_chunks |> Enum.each(fn {:error, reason} ->
-          IO.puts("[ClipsController] Failed chunk: #{inspect(reason)}")
-        end)
-      end
+        json(conn, final_result)
 
-      if length(successful_chunks) == 0 do
-        throw {:error, "All chunks failed to process"}
-      end
+      {:error, reason} ->
+        # Refund credits
+        refund_credits(user_id, credits_deducted, is_admin)
 
-      # Reconstruct timeline from chunks
-      IO.puts("[ClipsController] Reconstructing timeline from #{length(chunk_transcripts)} successful chunks...")
-      ProgressChannel.broadcast_progress(project_id, "analyzing", 85, "Reconstructing timeline and detecting clips...")
+        error_msg = case reason do
+          %RuntimeError{message: msg} -> msg
+          s when is_binary(s) -> s
+          _ -> inspect(reason)
+        end
 
-      reconstructed_transcript = reconstruct_timeline_from_chunks(chunk_transcripts)
+        ProgressChannel.broadcast_progress(project_id, "error", 0, "Failed after retries: #{error_msg}. Credits have been refunded.")
 
-      # Send to OpenRouter API with reconstructed transcript
-      IO.puts("[ClipsController] Sending reconstructed transcript to OpenRouter API...")
-      system_prompt = SystemPrompt.get()
-
-      ai_result = OpenRouterAPI.generate_clips(reconstructed_transcript, system_prompt, user_prompt, project_id)
-      IO.puts("[ClipsController] OpenRouter API call completed")
-
-      case ai_result do
-        {:ok, ai_response} ->
-          IO.puts("[ClipsController] AI response received from OpenRouter")
-
-          # The OpenRouter API now handles validation and retry internally
-          # The response should already be validated and complete
-          IO.puts("[ClipsController] AI response validation successful (handled by API)")
-
-          # Enhanced validation using original chunk data
-          IO.puts("[ClipsController] Starting enhanced clip validation with chunk data...")
-          ProgressChannel.broadcast_progress(project_id, "validating", 90, "Validating clips with chunk timing data...")
-
-          # Use the first successful chunk's original data for validation (most complete)
-          first_successful_result = hd(successful_chunks)
-          validation_chunk = case first_successful_result do
-            {:ok, chunk_result} -> chunk_result
-            _ -> throw {:error, "Invalid successful chunk structure"}
-          end
-          case ClipValidation.validate_and_correct_clips(ai_response["clips"], validation_chunk.original_whisper_response, true) do
-            {:ok, validation_result} ->
-              IO.puts("[ClipsController] Enhanced validation completed")
-              IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
-
-              # Replace clips with validated and corrected versions
-              enhanced_response = ai_response
-              |> Map.put("clips", validation_result.validatedClips)
-              |> Map.put("validation_metadata", %{
-                "qualityScore" => validation_result.qualityScore,
-                "issuesCount" => length(validation_result.issues),
-                "correctionsCount" => length(validation_result.corrections),
-                "validatedAt" => DateTime.utc_now() |> DateTime.to_iso8601(),
-                "chunksProcessed" => length(successful_chunks),
-                "chunksFailed" => length(failed_chunks)
-              })
-
-              # Step 6: Return enhanced response with chunk processing data
-              total_processed = length(successful_chunks) + length(failed_chunks)
-              ProgressChannel.broadcast_progress(project_id, "completed", 100,
-                "Chunked clip detection completed! Processed #{length(successful_chunks)}/#{total_processed} chunks successfully.")
-
-              # Get updated user balance after credit deduction (or show unlimited for admins)
-              remaining_credits = if is_admin do
-                %{
-                  hours_remaining: :unlimited,
-                  hours_used: 0.0
-                }
-              else
-                {:ok, updated_balance} = Credits.get_user_balance(user_id)
-                %{
-                  hours_remaining: Decimal.to_float(updated_balance.hours_remaining),
-                  hours_used: Decimal.to_float(updated_balance.hours_used)
-                }
-              end
-
-              json(conn, %{
-                success: true,
-                clips: enhanced_response,
-                transcript: reconstructed_transcript,
-                processing_info: %{
-                  used_chunked_processing: true,
-                  total_chunks: total_processed,
-                  successful_chunks: length(successful_chunks),
-                  failed_chunks: length(failed_chunks),
-                  completion_message: "Clip detection completed using chunked processing!",
-                  credits_charged: credits_deducted,
-                  remaining_credits: remaining_credits
-                },
-                validation: %{
-                  qualityScore: validation_result.qualityScore,
-                  issues: validation_result.issues,
-                  corrections: validation_result.corrections,
-                  clipsProcessed: length(validation_result.validatedClips)
-                }
-              })
-
-            _ ->
-              IO.puts("[ClipsController] Enhanced validation failed, using original clips")
-              # Fall back to original clips if enhanced validation fails
-              total_processed = length(successful_chunks) + length(failed_chunks)
-              ProgressChannel.broadcast_progress(project_id, "completed", 100,
-                "Chunked clip detection completed! Processed #{length(successful_chunks)}/#{total_processed} chunks.")
-
-              # Get updated user balance after credit deduction (or show unlimited for admins)
-              remaining_credits = if is_admin do
-                %{
-                  hours_remaining: :unlimited,
-                  hours_used: 0.0
-                }
-              else
-                {:ok, updated_balance} = Credits.get_user_balance(user_id)
-                %{
-                  hours_remaining: Decimal.to_float(updated_balance.hours_remaining),
-                  hours_used: Decimal.to_float(updated_balance.hours_used)
-                }
-              end
-
-              json(conn, %{
-                success: true,
-                clips: ai_response,
-                transcript: reconstructed_transcript,
-                processing_info: %{
-                  used_chunked_processing: true,
-                  total_chunks: total_processed,
-                  successful_chunks: length(successful_chunks),
-                  failed_chunks: length(failed_chunks),
-                  completion_message: "Clip detection completed using chunked processing!",
-                  credits_charged: credits_deducted,
-                  remaining_credits: remaining_credits
-                },
-                validation: %{
-                  qualityScore: 0.0,
-                  issues: ["Enhanced validation failed"],
-                  corrections: []
-                }
-              })
-          end
-
-        {:error, reason} ->
-          IO.puts("[ClipsController] OpenRouter API failed: #{inspect(reason)}")
-          # Broadcast error to frontend
-          ProgressChannel.broadcast_progress(project_id, "error", 0, "AI analysis failed. No credits were charged.")
-          conn
-          |> put_status(500)
-          |> json(%{
-            success: false,
-            error: "AI clip generation failed",
-            details: reason,
-            noCreditsCharged: true
-          })
-      end
-
-    rescue
-      error ->
-        IO.puts("[ClipsController] Error in detect_chunked: #{inspect(error)}")
-        # Broadcast error to frontend
-        ProgressChannel.broadcast_progress(project_id, "error", 0, "Chunked clip detection failed. No credits were charged.")
         conn
         |> put_status(500)
         |> json(%{
           success: false,
-          error: "Chunked clip detection failed",
-          details: Exception.message(error),
-          noCreditsCharged: true
+          error: "Clip detection failed",
+          details: error_msg,
+          creditsRefunded: true
         })
+    end
+  end
+
+  defp execute_chunked_clip_detection(project_id, user_prompt, chunks_metadata, processing_mode) do
+    # Broadcast initial progress
+    ProgressChannel.broadcast_progress(project_id, "starting", 0, "Initializing chunked clip detection...")
+
+    # Process chunks based on their content type
+    {chunk_transcripts, successful_chunks, failed_chunks} = case processing_mode do
+      :pre_transcribed ->
+        process_pre_transcribed_chunks(chunks_metadata, project_id)
+      :raw_audio ->
+        process_raw_audio_chunks(chunks_metadata, project_id)
+    end
+
+    IO.puts("[ClipsController] All chunks processed. #{length(chunk_transcripts)} results received")
+
+    if length(failed_chunks) > 0 do
+      IO.puts("[ClipsController] Warning: #{length(failed_chunks)} chunks failed to process")
+      failed_chunks |> Enum.each(fn {:error, reason} ->
+        IO.puts("[ClipsController] Failed chunk: #{inspect(reason)}")
+      end)
+    end
+
+    if length(successful_chunks) == 0 do
+      raise "All chunks failed to process"
+    end
+
+    # Reconstruct timeline from chunks
+    IO.puts("[ClipsController] Reconstructing timeline from #{length(chunk_transcripts)} successful chunks...")
+    ProgressChannel.broadcast_progress(project_id, "analyzing", 85, "Reconstructing timeline and detecting clips...")
+
+    reconstructed_transcript = reconstruct_timeline_from_chunks(chunk_transcripts)
+
+    # Send to OpenRouter API with reconstructed transcript
+    IO.puts("[ClipsController] Sending reconstructed transcript to OpenRouter API...")
+    system_prompt = SystemPrompt.get()
+
+    ai_result = OpenRouterAPI.generate_clips(reconstructed_transcript, system_prompt, user_prompt, project_id)
+    IO.puts("[ClipsController] OpenRouter API call completed")
+
+    case ai_result do
+      {:ok, ai_response} ->
+        IO.puts("[ClipsController] AI response received from OpenRouter")
+
+        # The OpenRouter API now handles validation and retry internally
+        # The response should already be validated and complete
+        IO.puts("[ClipsController] AI response validation successful (handled by API)")
+
+        # Enhanced validation using original chunk data
+        IO.puts("[ClipsController] Starting enhanced clip validation with chunk data...")
+        ProgressChannel.broadcast_progress(project_id, "validating", 90, "Validating clips with chunk timing data...")
+
+        # Use the first successful chunk's original data for validation (most complete)
+        first_successful_result = hd(successful_chunks)
+        validation_chunk = case first_successful_result do
+          {:ok, chunk_result} -> chunk_result
+          _ -> raise "Invalid successful chunk structure"
+        end
+        
+        case ClipValidation.validate_and_correct_clips(ai_response["clips"], validation_chunk.original_whisper_response, true) do
+          {:ok, validation_result} ->
+            IO.puts("[ClipsController] Enhanced validation completed")
+            IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
+
+            # Replace clips with validated and corrected versions
+            enhanced_response = ai_response
+            |> Map.put("clips", validation_result.validatedClips)
+            |> Map.put("validation_metadata", %{
+              "qualityScore" => validation_result.qualityScore,
+              "issuesCount" => length(validation_result.issues),
+              "correctionsCount" => length(validation_result.corrections),
+              "validatedAt" => DateTime.utc_now() |> DateTime.to_iso8601(),
+              "chunksProcessed" => length(successful_chunks),
+              "chunksFailed" => length(failed_chunks)
+            })
+
+            # Step 6: Return enhanced response with chunk processing data
+            total_processed = length(successful_chunks) + length(failed_chunks)
+            ProgressChannel.broadcast_progress(project_id, "completed", 100,
+              "Chunked clip detection completed! Processed #{length(successful_chunks)}/#{total_processed} chunks successfully.")
+
+            {:ok, %{
+              success: true,
+              clips: enhanced_response,
+              transcript: reconstructed_transcript,
+              processing_info: %{
+                used_chunked_processing: true,
+                total_chunks: total_processed,
+                successful_chunks: length(successful_chunks),
+                failed_chunks: length(failed_chunks),
+                completion_message: "Clip detection completed using chunked processing!"
+              },
+              validation: %{
+                qualityScore: validation_result.qualityScore,
+                issues: validation_result.issues,
+                corrections: validation_result.corrections,
+                clipsProcessed: length(validation_result.validatedClips)
+              }
+            }}
+
+          _ ->
+            IO.puts("[ClipsController] Enhanced validation failed, using original clips")
+            # Fall back to original clips if enhanced validation fails
+            total_processed = length(successful_chunks) + length(failed_chunks)
+            ProgressChannel.broadcast_progress(project_id, "completed", 100,
+              "Chunked clip detection completed! Processed #{length(successful_chunks)}/#{total_processed} chunks.")
+
+            {:ok, %{
+              success: true,
+              clips: ai_response,
+              transcript: reconstructed_transcript,
+              processing_info: %{
+                used_chunked_processing: true,
+                total_chunks: total_processed,
+                successful_chunks: length(successful_chunks),
+                failed_chunks: length(failed_chunks),
+                completion_message: "Clip detection completed using chunked processing!"
+              },
+              validation: %{
+                qualityScore: 0.0,
+                issues: ["Enhanced validation failed"],
+                corrections: []
+              }
+            }}
+        end
+
+      {:error, reason} ->
+        IO.puts("[ClipsController] OpenRouter API failed: #{inspect(reason)}")
+        raise "AI clip generation failed: #{inspect(reason)}"
     end
   end
 
@@ -364,269 +359,249 @@ defmodule ClippsterServerWeb.ClipsController do
 
   # Separate function to handle the actual clip detection process
   defp process_clip_detection(conn, params, user_id, credits_deducted, is_admin) do
-    %{"project_id" => project_id, "prompt" => user_prompt} = params
-    using_cached_transcript = Map.get(params, "using_cached_transcript", "false") == "true"
+    %{"project_id" => project_id} = params
 
-    try do
-      # Broadcast initial progress
-      ProgressChannel.broadcast_progress(project_id, "starting", 0, "Initializing clip detection...")
+    operation = fn ->
+      execute_clip_detection(params, user_id, is_admin)
+    end
 
-      # Step 1: Get transcript data (either from cache or transcribe fresh audio)
-      {whisper_result, processing_type} = cond do
-        using_cached_transcript and Map.has_key?(params, "transcript") ->
-          IO.puts("[ClipsController] Using cached transcript data...")
-          ProgressChannel.broadcast_progress(project_id, "transcribing", 40, "Using cached transcript...")
+    case retry_with_backoff(operation, 3, project_id) do
+      {:ok, result_map} ->
+        # Get updated user balance after credit deduction (or show unlimited for admins)
+        remaining_credits = if is_admin do
+          %{
+            hours_remaining: :unlimited,
+            hours_used: 0.0
+          }
+        else
+          {:ok, updated_balance} = Credits.get_user_balance(user_id)
+          %{
+            hours_remaining: Decimal.to_float(updated_balance.hours_remaining),
+            hours_used: Decimal.to_float(updated_balance.hours_used)
+          }
+        end
 
-          # Parse cached transcript data
-          transcript_data = Jason.decode!(params["transcript"])
-          # raw_response is already a JSON string from the database
-          cached_whisper_response = Jason.decode!(transcript_data["raw_response"])
-          IO.puts("[ClipsController] Cached transcript parsed successfully")
-          {{:ok, cached_whisper_response}, "cached"}
+        # Add credit info to result map
+        final_result = result_map
+        |> put_in([:processing_info, :credits_charged], credits_deducted)
+        |> put_in([:processing_info, :remaining_credits], remaining_credits)
 
-        Map.has_key?(params, "audio") ->
-          audio_upload = params["audio"]
-          IO.puts("[ClipsController] Audio filename: #{audio_upload.filename}")
-          IO.puts("[ClipsController] Audio content type: #{audio_upload.content_type}")
+        json(conn, final_result)
 
-          # Forward audio to Whisper API
-          IO.puts("[ClipsController] Sending audio to Whisper API...")
-          ProgressChannel.broadcast_progress(project_id, "transcribing", 10, "Transcribing audio with Whisper...")
-          whisper_result = WhisperAPI.transcribe(audio_upload)
-          IO.puts("[ClipsController] WhisperAPI call completed")
-          ProgressChannel.broadcast_progress(project_id, "transcribing", 40, "Audio transcription completed")
-          {whisper_result, "fresh"}
+      {:error, reason} ->
+        # Refund credits
+        refund_credits(user_id, credits_deducted, is_admin)
 
-        true ->
-          throw {:error, "Either audio file or transcript data must be provided"}
-      end
+        error_msg = case reason do
+          %RuntimeError{message: msg} -> msg
+          s when is_binary(s) -> s
+          _ -> inspect(reason)
+        end
 
-      case whisper_result do
-        {:ok, whisper_response} ->
-          IO.puts("[ClipsController] Whisper response received")
-          IO.puts("[ClipsController] Whisper response keys: #{inspect(Map.keys(whisper_response))}")
+        ProgressChannel.broadcast_progress(project_id, "error", 0, "Failed after retries: #{error_msg}. Credits have been refunded.")
 
-          # Debug: Check if word-level data is available
-          words_available = try do
-            words = extract_words_from_response(whisper_response)
-            case words do
-              nil ->
-                IO.puts("[ClipsController] extract_words_from_response returned nil")
-                false
-              [] ->
-                IO.puts("[ClipsController] No words found in response")
-                false
-              words when is_list(words) ->
-                IO.puts("[ClipsController] Word-level data available: #{length(words)} words")
-                if length(words) > 0 do
-                  first_word = hd(words)
-                  IO.puts("[ClipsController] First word sample: #{inspect(first_word)}")
-                end
-                true
-              _ ->
-                IO.puts("[ClipsController] extract_words_from_response returned unexpected type: #{inspect(words)}")
-                false
-            end
-          rescue
-            error ->
-              IO.puts("[ClipsController] Error during word extraction: #{inspect(error)}")
-              IO.puts("[ClipsController] Error type: #{inspect(Exception.format(:error, error, []))}")
-              false
-          end
-
-          IO.puts("[ClipsController] Word-level timestamps available: #{words_available}")
-
-          # Step 2: Process verbose_json response - create optimized version for AI, keep full data for validation
-          IO.puts("[ClipsController] Processing Whisper response with enhanced timing...")
-          # Keep full enhanced response for validation
-          full_enhanced_transcript = process_whisper_response_enhanced(whisper_response)
-          # Create optimized version for AI (words stripped)
-          ai_transcript = process_whisper_response_for_ai(full_enhanced_transcript)
-
-          IO.puts("[ClipsController] Full enhanced transcript keys: #{inspect(Map.keys(full_enhanced_transcript))}")
-          if full_enhanced_transcript["segments"] do
-            IO.puts("[ClipsController] First segment keys: #{inspect(Map.keys(hd(full_enhanced_transcript["segments"])))}")
-          end
-
-          IO.puts("[ClipsController] AI transcript keys: #{inspect(Map.keys(ai_transcript))}")
-          if ai_transcript["segments"] do
-            IO.puts("[ClipsController] AI first segment keys: #{inspect(Map.keys(hd(ai_transcript["segments"])))}")
-          end
-
-          # Step 3: Send to OpenRouter API with system prompt using optimized transcript
-          IO.puts("[ClipsController] Sending optimized transcript to OpenRouter API...")
-          ProgressChannel.broadcast_progress(project_id, "analyzing", 50, "Analyzing transcript for clip-worthy moments...")
-          system_prompt = SystemPrompt.get()
-
-          ai_result = OpenRouterAPI.generate_clips(ai_transcript, system_prompt, user_prompt, project_id)
-          IO.puts("[ClipsController] OpenRouter API call completed")
-          ProgressChannel.broadcast_progress(project_id, "analyzing", 80, "AI analysis completed")
-
-          case ai_result do
-            {:ok, ai_response} ->
-              IO.puts("[ClipsController] AI response received from OpenRouter")
-              IO.puts("[ClipsController] AI response structure: #{inspect(Map.keys(ai_response))}")
-
-              # Step 4: Validate AI response structure
-              case validate_ai_response(ai_response) do
-                :ok ->
-                  IO.puts("[ClipsController] AI response validation successful")
-
-                  # Step 5: Enhanced validation and correction using original Whisper response with word-level data
-                  IO.puts("[ClipsController] Starting enhanced clip validation...")
-                  IO.puts("[ClipsController] Using original Whisper response for validation...")
-                  ProgressChannel.broadcast_progress(project_id, "validating", 85, "Validating and correcting clip timestamps...")
-                  case ClipValidation.validate_and_correct_clips(ai_response["clips"], whisper_response, false) do
-                    {:ok, validation_result} ->
-                      IO.puts("[ClipsController] Enhanced validation completed")
-                      IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
-
-                      # Replace clips with validated and corrected versions
-                      enhanced_response = ai_response
-                      |> Map.put("clips", validation_result.validatedClips)
-                      |> Map.put("validation_metadata", %{
-                        "qualityScore" => validation_result.qualityScore,
-                        "issuesCount" => length(validation_result.issues),
-                        "correctionsCount" => length(validation_result.corrections),
-                        "validatedAt" => DateTime.utc_now() |> DateTime.to_iso8601()
-                      })
-
-                      # Step 6: Return enhanced response with validation data
-                      ProgressChannel.broadcast_progress(project_id, "completed", 100, "Clip detection completed successfully!")
-                      completion_message = if processing_type == "cached" do
-                        "Clip detection completed using cached transcript!"
-                      else
-                        "Clip detection completed successfully!"
-                      end
-
-                      # Get updated user balance after credit deduction (or show unlimited for admins)
-                      remaining_credits = if is_admin do
-                        %{
-                          hours_remaining: :unlimited,
-                          hours_used: 0.0
-                        }
-                      else
-                        {:ok, updated_balance} = Credits.get_user_balance(user_id)
-                        %{
-                          hours_remaining: Decimal.to_float(updated_balance.hours_remaining),
-                          hours_used: Decimal.to_float(updated_balance.hours_used)
-                        }
-                      end
-
-                      json(conn, %{
-                        success: true,
-                        clips: enhanced_response,
-                        transcript: whisper_response,
-                        processing_info: %{
-                          used_cached_transcript: processing_type == "cached",
-                          processing_type: processing_type,
-                          completion_message: completion_message,
-                          credits_charged: credits_deducted,
-                          remaining_credits: remaining_credits
-                        },
-                        validation: %{
-                          qualityScore: validation_result.qualityScore,
-                          issues: validation_result.issues,
-                          corrections: validation_result.corrections,
-                          clipsProcessed: length(validation_result.validatedClips)
-                        }
-                      })
-
-                    _ ->
-                      IO.puts("[ClipsController] Enhanced validation failed, using original clips")
-                      # Fall back to original clips if enhanced validation fails
-                      completion_message = if processing_type == "cached" do
-                        "Clip detection completed using cached transcript!"
-                      else
-                        "Clip detection completed successfully!"
-                      end
-
-                      # Get updated user balance after credit deduction (or show unlimited for admins)
-                      remaining_credits = if is_admin do
-                        %{
-                          hours_remaining: :unlimited,
-                          hours_used: 0.0
-                        }
-                      else
-                        {:ok, updated_balance} = Credits.get_user_balance(user_id)
-                        %{
-                          hours_remaining: Decimal.to_float(updated_balance.hours_remaining),
-                          hours_used: Decimal.to_float(updated_balance.hours_used)
-                        }
-                      end
-
-                      json(conn, %{
-                        success: true,
-                        clips: ai_response,
-                        transcript: whisper_response,
-                        processing_info: %{
-                          used_cached_transcript: processing_type == "cached",
-                          processing_type: processing_type,
-                          completion_message: completion_message,
-                          credits_charged: credits_deducted,
-                          remaining_credits: remaining_credits
-                        },
-                        validation: %{
-                          qualityScore: 0.0,
-                          issues: ["Enhanced validation failed"],
-                          corrections: []
-                        }
-                      })
-                  end
-
-                {:error, reason} ->
-                  IO.puts("[ClipsController] AI response validation failed: #{reason}")
-                  conn
-                  |> put_status(500)
-                  |> json(%{
-                    success: false,
-                    error: "Invalid AI response structure",
-                    details: reason
-                  })
-              end
-
-            {:error, reason} ->
-              IO.puts("[ClipsController] OpenRouter API failed: #{inspect(reason)}")
-              # Broadcast error to frontend
-              ProgressChannel.broadcast_progress(project_id, "error", 0, "AI analysis failed. No credits were charged.")
-              conn
-              |> put_status(500)
-              |> json(%{
-                success: false,
-                error: "AI clip generation failed",
-                details: reason,
-                noCreditsCharged: true
-              })
-          end
-
-        {:error, reason} ->
-          IO.puts("[ClipsController] Whisper API failed: #{inspect(reason)}")
-          # Broadcast error to frontend
-          ProgressChannel.broadcast_progress(project_id, "error", 0, "Audio transcription failed. No credits were charged.")
-          conn
-          |> put_status(500)
-          |> json(%{
-            success: false,
-            error: "Whisper transcription failed",
-            details: reason,
-            noCreditsCharged: true
-          })
-      end
-
-    rescue
-      error ->
-        IO.puts("[ClipsController] Error in detect: #{inspect(error)}")
-        IO.puts("[ClipsController] Error type: #{inspect(Exception.format(:error, error, []))}")
-        # Broadcast error to frontend
-        ProgressChannel.broadcast_progress(project_id, "error", 0, "Clip detection failed. No credits were charged.")
         conn
         |> put_status(500)
         |> json(%{
           success: false,
           error: "Clip detection failed",
-          details: Exception.message(error),
-          noCreditsCharged: true
+          details: error_msg,
+          creditsRefunded: true
         })
+    end
+  end
+
+  defp execute_clip_detection(params, user_id, is_admin) do
+    %{"project_id" => project_id, "prompt" => user_prompt} = params
+    using_cached_transcript = Map.get(params, "using_cached_transcript", "false") == "true"
+
+    # Broadcast initial progress
+    ProgressChannel.broadcast_progress(project_id, "starting", 0, "Initializing clip detection...")
+
+    # Step 1: Get transcript data (either from cache or transcribe fresh audio)
+    {whisper_result, processing_type} = cond do
+      using_cached_transcript and Map.has_key?(params, "transcript") ->
+        IO.puts("[ClipsController] Using cached transcript data...")
+        ProgressChannel.broadcast_progress(project_id, "transcribing", 40, "Using cached transcript...")
+
+        # Parse cached transcript data
+        transcript_data = Jason.decode!(params["transcript"])
+        # raw_response is already a JSON string from the database
+        cached_whisper_response = Jason.decode!(transcript_data["raw_response"])
+        IO.puts("[ClipsController] Cached transcript parsed successfully")
+        {{:ok, cached_whisper_response}, "cached"}
+
+      Map.has_key?(params, "audio") ->
+        audio_upload = params["audio"]
+        IO.puts("[ClipsController] Audio filename: #{audio_upload.filename}")
+        IO.puts("[ClipsController] Audio content type: #{audio_upload.content_type}")
+
+        # Forward audio to Whisper API
+        IO.puts("[ClipsController] Sending audio to Whisper API...")
+        ProgressChannel.broadcast_progress(project_id, "transcribing", 10, "Transcribing audio with Whisper...")
+        whisper_result = WhisperAPI.transcribe(audio_upload)
+        IO.puts("[ClipsController] WhisperAPI call completed")
+        ProgressChannel.broadcast_progress(project_id, "transcribing", 40, "Audio transcription completed")
+        {whisper_result, "fresh"}
+
+      true ->
+        raise "Either audio file or transcript data must be provided"
+    end
+
+    case whisper_result do
+      {:ok, whisper_response} ->
+        IO.puts("[ClipsController] Whisper response received")
+        IO.puts("[ClipsController] Whisper response keys: #{inspect(Map.keys(whisper_response))}")
+
+        # Debug: Check if word-level data is available
+        words_available = try do
+          words = extract_words_from_response(whisper_response)
+          case words do
+            nil ->
+              IO.puts("[ClipsController] extract_words_from_response returned nil")
+              false
+            [] ->
+              IO.puts("[ClipsController] No words found in response")
+              false
+            words when is_list(words) ->
+              IO.puts("[ClipsController] Word-level data available: #{length(words)} words")
+              if length(words) > 0 do
+                first_word = hd(words)
+                IO.puts("[ClipsController] First word sample: #{inspect(first_word)}")
+              end
+              true
+            _ ->
+              IO.puts("[ClipsController] extract_words_from_response returned unexpected type: #{inspect(words)}")
+              false
+          end
+        rescue
+          error ->
+            IO.puts("[ClipsController] Error during word extraction: #{inspect(error)}")
+            IO.puts("[ClipsController] Error type: #{inspect(Exception.format(:error, error, []))}")
+            false
+        end
+
+        IO.puts("[ClipsController] Word-level timestamps available: #{words_available}")
+
+        # Step 2: Process verbose_json response - create optimized version for AI, keep full data for validation
+        IO.puts("[ClipsController] Processing Whisper response with enhanced timing...")
+        # Keep full enhanced response for validation
+        full_enhanced_transcript = process_whisper_response_enhanced(whisper_response)
+        # Create optimized version for AI (words stripped)
+        ai_transcript = process_whisper_response_for_ai(full_enhanced_transcript)
+
+        IO.puts("[ClipsController] Full enhanced transcript keys: #{inspect(Map.keys(full_enhanced_transcript))}")
+        if full_enhanced_transcript["segments"] do
+          IO.puts("[ClipsController] First segment keys: #{inspect(Map.keys(hd(full_enhanced_transcript["segments"])))}")
+        end
+
+        IO.puts("[ClipsController] AI transcript keys: #{inspect(Map.keys(ai_transcript))}")
+        if ai_transcript["segments"] do
+          IO.puts("[ClipsController] AI first segment keys: #{inspect(Map.keys(hd(ai_transcript["segments"])))}")
+        end
+
+        # Step 3: Send to OpenRouter API with system prompt using optimized transcript
+        IO.puts("[ClipsController] Sending optimized transcript to OpenRouter API...")
+        ProgressChannel.broadcast_progress(project_id, "analyzing", 50, "Analyzing transcript for clip-worthy moments...")
+        system_prompt = SystemPrompt.get()
+
+        ai_result = OpenRouterAPI.generate_clips(ai_transcript, system_prompt, user_prompt, project_id)
+        IO.puts("[ClipsController] OpenRouter API call completed")
+        ProgressChannel.broadcast_progress(project_id, "analyzing", 80, "AI analysis completed")
+
+        case ai_result do
+          {:ok, ai_response} ->
+            IO.puts("[ClipsController] AI response received from OpenRouter")
+            IO.puts("[ClipsController] AI response structure: #{inspect(Map.keys(ai_response))}")
+
+            # Step 4: Validate AI response structure
+            case validate_ai_response(ai_response) do
+              :ok ->
+                IO.puts("[ClipsController] AI response validation successful")
+
+                # Step 5: Enhanced validation and correction using original Whisper response with word-level data
+                IO.puts("[ClipsController] Starting enhanced clip validation...")
+                IO.puts("[ClipsController] Using original Whisper response for validation...")
+                ProgressChannel.broadcast_progress(project_id, "validating", 85, "Validating and correcting clip timestamps...")
+                case ClipValidation.validate_and_correct_clips(ai_response["clips"], whisper_response, false) do
+                  {:ok, validation_result} ->
+                    IO.puts("[ClipsController] Enhanced validation completed")
+                    IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
+
+                    # Replace clips with validated and corrected versions
+                    enhanced_response = ai_response
+                    |> Map.put("clips", validation_result.validatedClips)
+                    |> Map.put("validation_metadata", %{
+                      "qualityScore" => validation_result.qualityScore,
+                      "issuesCount" => length(validation_result.issues),
+                      "correctionsCount" => length(validation_result.corrections),
+                      "validatedAt" => DateTime.utc_now() |> DateTime.to_iso8601()
+                    })
+
+                    # Step 6: Return enhanced response with validation data
+                    ProgressChannel.broadcast_progress(project_id, "completed", 100, "Clip detection completed successfully!")
+                    completion_message = if processing_type == "cached" do
+                      "Clip detection completed using cached transcript!"
+                    else
+                      "Clip detection completed successfully!"
+                    end
+
+                    {:ok, %{
+                      success: true,
+                      clips: enhanced_response,
+                      transcript: whisper_response,
+                      processing_info: %{
+                        used_cached_transcript: processing_type == "cached",
+                        processing_type: processing_type,
+                        completion_message: completion_message
+                      },
+                      validation: %{
+                        qualityScore: validation_result.qualityScore,
+                        issues: validation_result.issues,
+                        corrections: validation_result.corrections,
+                        clipsProcessed: length(validation_result.validatedClips)
+                      }
+                    }}
+
+                  _ ->
+                    IO.puts("[ClipsController] Enhanced validation failed, using original clips")
+                    # Fall back to original clips if enhanced validation fails
+                    completion_message = if processing_type == "cached" do
+                      "Clip detection completed using cached transcript!"
+                    else
+                      "Clip detection completed successfully!"
+                    end
+
+                    {:ok, %{
+                      success: true,
+                      clips: ai_response,
+                      transcript: whisper_response,
+                      processing_info: %{
+                        used_cached_transcript: processing_type == "cached",
+                        processing_type: processing_type,
+                        completion_message: completion_message
+                      },
+                      validation: %{
+                        qualityScore: 0.0,
+                        issues: ["Enhanced validation failed"],
+                        corrections: []
+                      }
+                    }}
+                end
+
+              {:error, reason} ->
+                IO.puts("[ClipsController] AI response validation failed: #{reason}")
+                raise "Invalid AI response structure: #{reason}"
+            end
+
+          {:error, reason} ->
+            IO.puts("[ClipsController] OpenRouter API failed: #{inspect(reason)}")
+            raise "AI clip generation failed: #{inspect(reason)}"
+        end
+
+      {:error, reason} ->
+        IO.puts("[ClipsController] Whisper API failed: #{inspect(reason)}")
+        raise "Whisper transcription failed: #{inspect(reason)}"
     end
   end
 
@@ -1442,7 +1417,7 @@ defmodule ClippsterServerWeb.ClipsController do
   # Deduct credits based on processing type and duration
   defp deduct_credits_for_processing(user_id, duration_hours, is_first_run) do
     # Determine credit rate based on processing type
-    credit_rate = if is_first_run, do: 1.0, else: 0.75
+    credit_rate = if is_first_run, do: 1.0, else: 0.7
 
     credits_to_deduct = duration_hours * credit_rate
 
@@ -1549,5 +1524,49 @@ defmodule ClippsterServerWeb.ClipsController do
     IO.puts("[ClipsController]   Total words: #{length(all_words)}")
 
     reconstructed_transcript
+  end
+
+  # Helper functions for retry and refund
+
+  defp retry_with_backoff(fun, retries, project_id) do
+    try do
+      fun.()
+    rescue
+      e ->
+        handle_retry(e, fun, retries, project_id)
+    catch
+      :throw, {:error, reason} ->
+        handle_retry(reason, fun, retries, project_id)
+      kind, reason ->
+        handle_retry("#{inspect(kind)}: #{inspect(reason)}", fun, retries, project_id)
+    end
+  end
+
+  defp handle_retry(reason, fun, retries, project_id) do
+    error_msg = case reason do
+      %RuntimeError{message: msg} -> msg
+      s when is_binary(s) -> s
+      _ -> inspect(reason)
+    end
+
+    if retries > 0 do
+      IO.puts("[ClipsController] Error: #{error_msg}. Retrying... (#{retries} attempts left)")
+      ProgressChannel.broadcast_progress(project_id, "retrying", 0, "Error: #{error_msg}. Auto-retrying in 2s... (#{retries} attempts left)")
+      Process.sleep(2000)
+      retry_with_backoff(fun, retries - 1, project_id)
+    else
+      # Failed after all retries
+      {:error, reason}
+    end
+  end
+
+  defp refund_credits(user_id, amount, is_admin) do
+    if !is_admin and amount > 0 do
+      IO.puts("[ClipsController] Refunding #{amount} credits to user #{user_id}")
+      case Credits.add_credits(user_id, amount) do
+        {:ok, _} -> IO.puts("[ClipsController] Refund successful")
+        {:error, e} -> IO.puts("[ClipsController] Refund failed: #{inspect(e)}")
+      end
+    end
   end
 end

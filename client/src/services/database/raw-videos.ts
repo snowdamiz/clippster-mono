@@ -63,7 +63,7 @@ export async function createRawVideo(
 
 export async function getAllRawVideos(): Promise<RawVideo[]> {
   const db = await getDatabase();
-  return await db.select<RawVideo[]>('SELECT * FROM raw_videos ORDER BY created_at DESC');
+  return await db.select<RawVideo[]>('SELECT * FROM raw_videos ORDER BY created_at DESC, id ASC');
 }
 
 // Check if segment tracking columns exist in the database
@@ -110,7 +110,7 @@ export async function getRawVideo(id: string): Promise<RawVideo | null> {
 export async function getRawVideosByProjectId(projectId: string): Promise<RawVideo[]> {
   const db = await getDatabase();
   return await db.select<RawVideo[]>(
-    'SELECT * FROM raw_videos WHERE project_id = ? ORDER BY created_at DESC',
+    'SELECT * FROM raw_videos WHERE project_id = ? ORDER BY created_at DESC, id ASC',
     [projectId]
   );
 }

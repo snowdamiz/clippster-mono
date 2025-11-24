@@ -155,7 +155,7 @@
   <ClipDetectionConfirmDialog
     :model-value="showDetectConfirmDialog"
     :video-duration="duration"
-    :has-transcript="!!transcriptData"
+    :is-transcribed="isTranscribed"
     @update:model-value="showDetectConfirmDialog = $event"
     @confirm="onDetectClipsConfirmed"
   />
@@ -286,6 +286,14 @@
 
   // Use transcript data composable for subtitles
   const { transcriptData } = useTranscriptData(computed(() => props.project?.id || null));
+
+  const isTranscribed = computed(() => {
+    return !!(
+      transcriptData.value &&
+      transcriptData.value.whisperSegments &&
+      transcriptData.value.whisperSegments.length > 0
+    );
+  });
 
   // Computed property for dialog height
   const dialogHeight = computed(() => {
