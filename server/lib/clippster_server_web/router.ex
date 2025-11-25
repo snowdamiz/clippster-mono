@@ -70,6 +70,7 @@ defmodule ClippsterServerWeb.Router do
 
     post "/clips/detect", ClipsController, :detect
     post "/clips/detect-chunked", ClipsController, :detect_chunked
+    post "/clips/transcribe", ClipsController, :transcribe
 
     # Bug report creation (requires authentication)
     post "/bug-reports", BugReportsController, :create

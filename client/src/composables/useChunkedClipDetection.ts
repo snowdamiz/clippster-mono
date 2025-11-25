@@ -3,6 +3,7 @@ import {
   getRawVideosByProjectId,
   persistClipDetectionResults,
   getTranscriptByRawVideoId,
+  getTranscriptChunks,
   type RawVideo,
 } from '@/services/database';
 import { useChunkedTranscriptCache } from './useChunkedTranscriptCache';
@@ -10,6 +11,8 @@ import { useVideoOperations } from './useVideoOperations';
 import { useToast } from '@/composables/useToast';
 import { useFocalPointDetection } from '@/composables/useFocalPointDetection';
 import api from '@/services/api';
+
+import { type AudioChunk } from './useAudioChunking';
 
 export interface ChunkedDetectionOptions {
   chunkDurationMinutes?: number;
@@ -128,8 +131,32 @@ export function useChunkedClipDetection() {
         throw new Error(sessionResult.error || 'Failed to initialize chunked transcript session');
       }
 
-      // For now, fall back to traditional detection with audio extraction
-      // TODO: Implement full chunked processing when server endpoint is ready
+      // Process chunks if available
+      if (sessionResult.chunks && sessionResult.chunks.length > 0) {
+        // If chunks came from an existing session, we may need to skip those already transcribed.
+        // sessionResult.chunks contains AudioChunk[] which is raw audio.
+
+        // Check if we have transcribed chunks for this session
+        const { getCachedChunkMetadata } = useChunkedTranscriptCache();
+        const cached = await getCachedChunkMetadata(projectVideo.id);
+
+        // Filter out chunks that are already transcribed if we are resuming?
+        // But sessionResult usually returns fresh chunks from audio extraction if it ran extraction.
+        // If initializeChunkedTranscriptSession found existing chunks, it returns them.
+
+        // Let's assume processWithChunks handles checks or we force re-process if we are here.
+        // Actually, if we just extracted them, we need to transcribe.
+
+        return await processWithChunks(
+          projectId,
+          sessionResult.sessionId,
+          prompt,
+          sessionResult.chunks,
+          projectVideo
+        );
+      }
+
+      // Fallback to traditional detection with audio extraction if no chunks
       progress.value = {
         stage: 'detecting_clips',
         progress: 50,
@@ -151,6 +178,92 @@ export function useChunkedClipDetection() {
       return { success: false, error: errorMessage };
     } finally {
       isProcessing.value = false;
+    }
+  }
+
+  async function processWithChunks(
+    projectId: string,
+    sessionId: string,
+    prompt: string,
+    chunks: AudioChunk[],
+    projectVideo: RawVideo
+  ): Promise<{ success: boolean; sessionId?: string; error?: string }> {
+    try {
+      progress.value = {
+        stage: 'transcribing_chunks',
+        progress: 30,
+        message: `Transcribing ${chunks.length} chunks...`,
+      };
+
+      // Check for already transcribed chunks to avoid re-work
+      const existingChunks = await getTranscriptChunks(sessionId);
+      const transcribedChunkIds = new Set(existingChunks.map((c) => c.chunk_id));
+
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = chunks[i];
+
+        if (transcribedChunkIds.has(chunk.chunk_id)) {
+          console.log(`Chunk ${chunk.chunk_id} already transcribed, skipping.`);
+          continue;
+        }
+
+        progress.value = {
+          stage: 'transcribing_chunks',
+          progress: 30 + (i / totalChunks) * 20, // 30% to 50%
+          message: `Transcribing chunk ${i + 1}/${totalChunks}...`,
+        };
+
+        // Convert base64 to Blob/File
+        const binaryString = atob(chunk.base64_data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let j = 0; j < binaryString.length; j++) {
+          bytes[j] = binaryString.charCodeAt(j);
+        }
+        const blob = new Blob([bytes], { type: 'audio/ogg' });
+        const audioFile = new File([blob], chunk.filename, { type: 'audio/ogg' });
+
+        // Prepare upload
+        const formData = new FormData();
+        formData.append('project_id', projectId);
+        formData.append('audio', audioFile);
+        formData.append('duration', chunk.duration.toString());
+
+        // Send to transcribe endpoint
+        const response = await api.post('/clips/transcribe', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+
+        if (!response.data.success) {
+          throw new Error(response.data.error || `Failed to transcribe chunk ${i + 1}`);
+        }
+
+        const transcript = response.data.transcript;
+
+        // Store result
+        await storeChunkTranscription(
+          sessionId,
+          i, // chunkIndex (using array index)
+          chunk.chunk_id,
+          transcript
+        );
+      }
+
+      // All chunks transcribed. Now use cached metadata flow.
+      progress.value = {
+        stage: 'transcribing_chunks',
+        progress: 50,
+        message: 'All chunks transcribed. Preparing detection...',
+      };
+
+      const cachedMetadata = await getCachedChunkMetadata(projectVideo.id);
+      if (!cachedMetadata) {
+        throw new Error('Failed to retrieve cached metadata after transcription');
+      }
+
+      return await processWithCachedChunks(projectId, prompt, cachedMetadata, projectVideo);
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      throw new Error(errorMessage);
     }
   }
 

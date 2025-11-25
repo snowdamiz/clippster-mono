@@ -56,9 +56,32 @@ export function useChunkedTranscriptCache() {
 
       // Check if chunked transcript already exists
       const existingChunked = await getChunkedTranscriptByRawVideoId(rawVideoId);
-      if (existingChunked && existingChunked.is_complete) {
-        showSuccess('Transcript cached', 'Using existing chunked transcript for this video');
-        return { success: true, sessionId: existingChunked.id };
+      if (existingChunked) {
+        // Only return if complete, or if partial but we want to continue?
+        // For now, let's assume if it exists we want to check for chunks.
+        const existingChunks = await getTranscriptChunks(existingChunked.id);
+
+        // If we have some chunks but not all, we might need to re-process or resume.
+        // But for initialization, if we have a record, let's return it.
+        // If it's complete, return success.
+        if (existingChunked.is_complete) {
+          showSuccess('Transcript cached', 'Using existing chunked transcript for this video');
+          return { success: true, sessionId: existingChunked.id };
+        }
+
+        // If not complete, we might want to resume or overwrite.
+        // If we have 0 chunks, we can treat it as fresh.
+        if (existingChunks.length > 0) {
+          // We have partial chunks.
+          // If we are calling initialize, it implies we might want to start fresh or resume.
+          // However, useChunkedClipDetection calls this when "no cache found" logic flow is active
+          // OR it should have been caught by getCachedChunkMetadata earlier.
+
+          // If we are here, it means getCachedChunkMetadata returned null or insufficient data.
+          // Let's create a NEW session or overwrite.
+          // For simplicity and robustness, let's proceed to create a new one if the old one is incomplete/broken.
+          console.log('Found incomplete chunked transcript, proceeding to re-chunk/re-initialize');
+        }
       }
 
       // Get raw video record to access file path

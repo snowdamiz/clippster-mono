@@ -74,6 +74,10 @@ export function useAudioChunking() {
       overlapSeconds = 30, // Default 30-second overlap
     } = options;
 
+    if (chunkDurationMinutes > 30) {
+      return { success: false, error: 'Chunk duration cannot exceed 30 minutes.' };
+    }
+
     try {
       isExtracting.value = true;
       error.value = null;

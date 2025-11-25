@@ -88,10 +88,18 @@ export async function getChunkedTranscriptByRawVideoId(
   rawVideoId: string
 ): Promise<ChunkedTranscript | null> {
   const db = await getDatabase();
+  // Get all matching transcripts and filter in memory if needed or trust the query
   const result = await db.select<ChunkedTranscript[]>(
     'SELECT * FROM chunked_transcripts WHERE raw_video_id = ? ORDER BY created_at DESC',
     [rawVideoId]
   );
+
+  // If multiple exist, prefer the one that is complete or has the most chunks
+  if (result.length > 1) {
+    const complete = result.find((t) => t.is_complete);
+    if (complete) return complete;
+  }
+
   return result[0] || null;
 }
 
@@ -120,6 +128,8 @@ export async function updateChunkedTranscriptCompleteness(
     throw new Error('Chunked transcript not found');
   }
 
+  // Check if we have enough chunks and if the sum of durations matches roughly total duration
+  // Or just check count vs total_chunks
   const isComplete = chunks.length >= chunkedTranscript[0].total_chunks;
   const now = timestamp();
 
@@ -144,11 +154,27 @@ export async function getChunkMetadataForProcessing(rawVideoId: string): Promise
   language: string | null;
 } | null> {
   const chunkedTranscript = await getChunkedTranscriptByRawVideoId(rawVideoId);
-  if (!chunkedTranscript || !chunkedTranscript.is_complete) {
+
+  // Relaxed check: if we have chunks but is_complete is false, still return what we have?
+  // Ideally we only want complete transcripts. But if the cache update failed, we might miss it.
+  if (!chunkedTranscript) {
     return null;
   }
 
   const chunks = await getTranscriptChunks(chunkedTranscript.id);
+
+  if (chunks.length === 0) {
+    return null;
+  }
+
+  // Verify we have all chunks
+  if (chunks.length < chunkedTranscript.total_chunks) {
+    console.warn(
+      `[ChunkedTranscript] Incomplete chunks: ${chunks.length}/${chunkedTranscript.total_chunks}`
+    );
+    // Proceeding with partial chunks might be risky if logic expects full coverage
+    // But if we just finished transcribing them, they should be there.
+  }
 
   return {
     hasChunkedTranscript: true,

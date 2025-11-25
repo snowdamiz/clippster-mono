@@ -293,6 +293,68 @@ defmodule ClippsterServerWeb.ClipsController do
     end
   end
 
+  def transcribe(conn, %{"project_id" => project_id} = params) do
+    IO.puts("[ClipsController] Starting transcription only for project #{project_id}")
+
+    case get_user_id_from_token(conn) do
+      {:ok, user_id, is_admin} ->
+        if Map.has_key?(params, "audio") do
+          audio_upload = params["audio"]
+          
+          duration_hours = calculate_audio_duration_hours(params)
+          
+          credits_deducted = if is_admin do
+            0.0
+          else
+            case deduct_credits_for_transcription(user_id, duration_hours) do
+              {:ok, credits} -> credits
+              {:error, :insufficient_credits, remaining, needed} ->
+                 conn
+                 |> put_status(402)
+                 |> json(%{
+                   success: false, 
+                   error: "Insufficient credits",
+                   details: "Need #{Float.round(needed, 3)} credits, have #{Float.round(remaining, 3)}"
+                 })
+                 |> then(&{:halt, &1})
+              {:error, _reason, _} ->
+                 conn
+                 |> put_status(500)
+                 |> json(%{success: false, error: "Credit deduction failed"})
+                 |> then(&{:halt, &1})
+            end
+          end
+
+          case credits_deducted do
+            {:halt, response} -> response
+            credits ->
+              case WhisperAPI.transcribe(audio_upload) do
+                {:ok, response} ->
+                   duration = Map.get(response, "duration", 0)
+                   AI.log_usage(%{
+                      user_id: user_id,
+                      project_id: project_id,
+                      provider: "whisper",
+                      model: "whisper-1", 
+                      duration_seconds: Decimal.new(to_string(duration)),
+                      operation_type: "transcription_only"
+                   })
+                   json(conn, %{success: true, transcript: response})
+                {:error, reason} ->
+                   refund_credits(user_id, credits, is_admin)
+                   conn
+                   |> put_status(500)
+                   |> json(%{success: false, error: "Transcription failed: #{inspect(reason)}"})
+              end
+          end
+        else
+          conn |> put_status(400) |> json(%{success: false, error: "No audio file provided"})
+        end
+      {:error, _} ->
+        conn |> put_status(401) |> json(%{success: false, error: "Unauthorized"})
+    end
+  end
+
   def detect(conn, %{"project_id" => project_id, "prompt" => user_prompt} = params) do
     IO.puts("[ClipsController] Starting clip detection for project #{project_id}")
     IO.puts("[ClipsController] User prompt: #{String.slice(user_prompt, 0, 100)}...")
@@ -1461,6 +1523,26 @@ defmodule ClippsterServerWeb.ClipsController do
       _ ->
         IO.puts("[ClipsController] Warning: Could not get file size")
         0.0
+    end
+  end
+
+  # Deduct credits for transcription only (0.3 rate)
+  defp deduct_credits_for_transcription(user_id, duration_hours) do
+    credit_rate = 0.3
+    credits_to_deduct = duration_hours * credit_rate
+
+    case Credits.get_user_balance(user_id) do
+      {:ok, %{hours_remaining: remaining}} when remaining != :unlimited ->
+        remaining_hours = Decimal.to_float(remaining)
+        if remaining_hours < credits_to_deduct do
+          {:error, :insufficient_credits, remaining_hours, credits_to_deduct}
+        else
+          case Credits.deduct_credits(user_id, credits_to_deduct) do
+            {:ok, _} -> {:ok, credits_to_deduct}
+            {:error, reason} -> {:error, :deduction_failed, reason}
+          end
+        end
+      {:ok, %{hours_remaining: :unlimited}} -> {:ok, 0.0}
     end
   end
 
