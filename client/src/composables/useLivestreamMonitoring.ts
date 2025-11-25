@@ -18,6 +18,7 @@ import type {
   SegmentEventPayload,
 } from '@/types/livestream';
 import { useLivestreamSegmentProcessing } from './useLivestreamSegmentProcessing';
+import { useCreditBalance } from './useCreditBalance';
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -193,6 +194,8 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
 async function initializeListeners() {
   if (listenersInitialized) return;
 
+  const { fetchBalance, hoursRemaining } = useCreditBalance();
+
   const segmentUnlisten = await listen<SegmentEventPayload>('segment-ready', async (event) => {
     if (!isMonitoring.value && activeSessions.value.size === 0) return;
 
@@ -250,7 +253,24 @@ async function initializeListeners() {
 
     // Process the segment
     // Use session config for detection
-    const detectClips = session?.detectClips ?? true;
+    let detectClips = session?.detectClips ?? true;
+
+    if (detectClips) {
+      await fetchBalance();
+      const balance = hoursRemaining.value;
+      if (balance !== 'unlimited' && typeof balance === 'number' && balance <= 0) {
+        detectClips = false;
+        addActivityLog({
+          streamerId: payload.streamerId,
+          streamerName: info.displayName,
+          platform: info.platform,
+          mintId: payload.mintId,
+          message: 'Detection skipped: Insufficient credits. Recording only.',
+          status: 'info',
+          profileImageUrl: info.profileImageUrl,
+        });
+      }
+    }
 
     await handleSegmentReady(payload.sessionId, payload, detectClips, (status) => {
       const isSuccess = status.includes('Found') || status.includes('Detection skipped');
@@ -331,6 +351,38 @@ async function initializeListeners() {
       status: 'info',
       profileImageUrl: info.profileImageUrl,
     });
+  });
+
+  // Handle credit exhaustion event from segment processor
+  window.addEventListener('livestream-credit-exhausted', async (e: Event) => {
+    const detail = (e as CustomEvent).detail;
+    const { streamerId } = detail;
+
+    const session = activeSessions.value.get(streamerId);
+    const monitored = monitoredStreamers.value.get(streamerId);
+
+    if (session) {
+      // Update session state to stop trying to detect clips
+      session.detectClips = false;
+      activeSessions.value.set(streamerId, { ...session });
+
+      const info = await getStreamerInfo(streamerId);
+
+      addActivityLog({
+        streamerId,
+        streamerName: info.displayName,
+        platform: info.platform,
+        message: 'Credits exhausted. Switching to recording only.',
+        status: 'info',
+        profileImageUrl: info.profileImageUrl,
+      });
+    }
+
+    if (monitored) {
+      // Update monitored options too so it persists if stream restarts
+      monitored.options.detectClips = false;
+      monitoredStreamers.value.set(streamerId, monitored);
+    }
   });
 
   // 4. Process terminated log

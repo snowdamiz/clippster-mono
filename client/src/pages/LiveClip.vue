@@ -288,6 +288,18 @@
           </div>
         </DialogContent>
       </Dialog>
+
+      <!-- Credit Warning Dialog -->
+      <ConfirmationModal
+        :show="showCreditWarningDialog"
+        title="Low Credits Warning"
+        message="You have less than 1 hour of credits remaining. If you run out of credits, detection will automatically stop and only recording will continue."
+        confirm-text="Continue"
+        close-text="Cancel"
+        :show-cannot-undone-text="false"
+        @close="showCreditWarningDialog = false"
+        @confirm="confirmCreditWarning"
+      />
     </div>
   </PageLayout>
 </template>
@@ -299,6 +311,7 @@
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+  import ConfirmationModal from '@/components/ConfirmationModal.vue';
   // import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
   import { useLivestreamMonitoring } from '@/composables/useLivestreamMonitoring';
   import {
@@ -315,6 +328,7 @@
   } from '@/services/pumpfun';
   import type { MonitoredStreamer } from '@/types/livestream';
   import { useToast, useToastStore } from '@/composables/useToast';
+  import { useCreditBalance } from '@/composables/useCreditBalance';
 
   type Platform = 'Youtube' | 'Twitch' | 'Kick' | 'PumpFun';
 
@@ -347,8 +361,13 @@
 
   const { toast } = useToast();
   const { removeToast } = useToastStore();
+  const { hoursRemaining, fetchBalance } = useCreditBalance();
 
   const isDetectingAny = computed(() => monitoredStreamers.value.size > 0 || activeSessions.value.size > 0);
+
+  // Credit warning state
+  const showCreditWarningDialog = ref(false);
+  const pendingStreamerStart = ref<{ streamer: ExtendedStreamer; detectClips: boolean } | null>(null);
 
   onMounted(async () => {
     await loadStreamers();
@@ -715,6 +734,30 @@
   }
 
   async function startStreamer(streamer: ExtendedStreamer, detectClips: boolean) {
+    if (detectClips) {
+      await fetchBalance();
+      const balance = hoursRemaining.value;
+
+      // Check if balance is low (under 1 hour) and not unlimited
+      if (balance !== 'unlimited' && typeof balance === 'number' && balance < 1) {
+        pendingStreamerStart.value = { streamer, detectClips };
+        showCreditWarningDialog.value = true;
+        return;
+      }
+    }
+
+    await executeStartStreamer(streamer, detectClips);
+  }
+
+  function confirmCreditWarning() {
+    if (pendingStreamerStart.value) {
+      executeStartStreamer(pendingStreamerStart.value.streamer, pendingStreamerStart.value.detectClips);
+      pendingStreamerStart.value = null;
+    }
+    showCreditWarningDialog.value = false;
+  }
+
+  async function executeStartStreamer(streamer: ExtendedStreamer, detectClips: boolean) {
     // Clear logs if we are starting detection for the first time on this page view
     // and nothing else is currently running.
     if (!isDetectingAny.value) {

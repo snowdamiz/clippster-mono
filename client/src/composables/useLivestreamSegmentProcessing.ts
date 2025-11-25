@@ -163,37 +163,61 @@ export function useLivestreamSegmentProcessing() {
         }
 
         job.onProgress?.('Transcribing audio & Detecting Clips');
-        const response = await api.post('/clips/detect', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        try {
+          const response = await api.post('/clips/detect', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
 
-        if (response.data?.success) {
-          const detectionSessionId = await persistClipDetectionResults(
-            segmentProjectId,
-            DEFAULT_LIVE_PROMPT,
-            response.data,
-            {
-              processingTimeMs: 0,
-              detectionModel: 'pumpfun-live-segment',
-              serverResponseId: response.data?.jobId || null,
-              videoFilePath: job.filePath,
-              rawVideoId: rawVideoId,
+          if (response.data?.success) {
+            const detectionSessionId = await persistClipDetectionResults(
+              segmentProjectId,
+              DEFAULT_LIVE_PROMPT,
+              response.data,
+              {
+                processingTimeMs: 0,
+                detectionModel: 'pumpfun-live-segment',
+                serverResponseId: response.data?.jobId || null,
+                videoFilePath: job.filePath,
+                rawVideoId: rawVideoId,
+              }
+            );
+
+            const clips = await getClipsByDetectionSession(detectionSessionId);
+            job.onProgress?.(`Found ${clips.length} clips`);
+
+            if (clips.length > 0) {
+              await updateLivestreamSegment(job.segmentId, { clips_detected: clips.length });
             }
-          );
 
-          const clips = await getClipsByDetectionSession(detectionSessionId);
-          job.onProgress?.(`Found ${clips.length} clips`);
+            await updateSegmentStatus(job.segmentId, 'completed');
+            await updateLivestreamSessionProgress(job.sessionId, { processedSegmentsDelta: 1 });
+          } else {
+            throw new Error(response.data?.error || 'Clip detection failed');
+          }
+        } catch (apiError: any) {
+          // Handle 402 Payment Required (Insufficient Credits) gracefully
+          if (apiError.response && apiError.response.status === 402) {
+            console.warn(
+              '[LiveSegments] Insufficient credits for detection. Switching to recording only.'
+            );
 
-          if (clips.length > 0) {
-            await updateLivestreamSegment(job.segmentId, { clips_detected: clips.length });
-            // Clips are stored in the database as detected, but not built yet.
-            // User can build them later from the project dashboard.
+            // Mark this segment as completed (recorded only) instead of error
+            job.onProgress?.('Insufficient credits - Detection skipped');
+            await updateSegmentStatus(job.segmentId, 'completed');
+            await updateLivestreamSessionProgress(job.sessionId, { processedSegmentsDelta: 1 });
+
+            // Update the session status via event so the main monitor knows to stop trying to detect
+            window.dispatchEvent(
+              new CustomEvent('livestream-credit-exhausted', {
+                detail: { sessionId: job.sessionId, streamerId: job.streamerId },
+              })
+            );
+
+            return;
           }
 
-          await updateSegmentStatus(job.segmentId, 'completed');
-          await updateLivestreamSessionProgress(job.sessionId, { processedSegmentsDelta: 1 });
-        } else {
-          throw new Error(response.data?.error || 'Clip detection failed');
+          // Re-throw other errors to be handled by the outer catch block
+          throw apiError;
         }
       } else {
         job.onProgress?.('Segment recorded (Detection skipped)');
