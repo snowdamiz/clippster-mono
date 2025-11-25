@@ -43,6 +43,9 @@ export function useChunkedClipDetection() {
   });
   const { success: showSuccess, error: showError } = useToast();
 
+  // Shared transcript cache instance to maintain session state across functions
+  const transcriptCache = useChunkedTranscriptCache();
+
   async function detectClipsWithChunking(
     projectId: string,
     prompt: string,
@@ -86,8 +89,7 @@ export function useChunkedClipDetection() {
         message: 'Checking for cached chunks...',
       };
 
-      const { initializeChunkedTranscriptSession, getCachedChunkMetadata } =
-        useChunkedTranscriptCache();
+      const { initializeChunkedTranscriptSession, getCachedChunkMetadata } = transcriptCache;
 
       // Check for existing cached chunks unless forcing reprocess
       if (!forceReprocess) {
@@ -137,7 +139,7 @@ export function useChunkedClipDetection() {
         // sessionResult.chunks contains AudioChunk[] which is raw audio.
 
         // Check if we have transcribed chunks for this session
-        const { getCachedChunkMetadata } = useChunkedTranscriptCache();
+        const { getCachedChunkMetadata } = transcriptCache;
         const cached = await getCachedChunkMetadata(projectVideo.id);
 
         // Filter out chunks that are already transcribed if we are resuming?
@@ -198,7 +200,7 @@ export function useChunkedClipDetection() {
       // Check for already transcribed chunks to avoid re-work
       const existingChunks = await getTranscriptChunks(sessionId);
       const transcribedChunkIds = new Set(existingChunks.map((c) => c.chunk_id));
-      const { storeChunkTranscription, getCachedChunkMetadata } = useChunkedTranscriptCache();
+      const { storeChunkTranscription, getCachedChunkMetadata } = transcriptCache;
       const totalChunks = chunks.length;
 
       for (let i = 0; i < totalChunks; i++) {
@@ -242,12 +244,16 @@ export function useChunkedClipDetection() {
         const transcript = response.data.transcript;
 
         // Store result
-        await storeChunkTranscription(
+        const storeResult = await storeChunkTranscription(
           sessionId,
           i, // chunkIndex (using array index)
           chunk.chunk_id,
           transcript
         );
+
+        if (!storeResult.success) {
+          throw new Error(storeResult.error || `Failed to store chunk ${i + 1} transcription`);
+        }
       }
 
       // All chunks transcribed. Now use cached metadata flow.
