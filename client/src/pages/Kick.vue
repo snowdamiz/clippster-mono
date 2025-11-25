@@ -165,37 +165,35 @@
               backgroundRepeat: 'no-repeat',
             }"
           >
-            <!-- Dark vignette overlay -->
-            <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60"></div>
+            <!-- Dark vignette overlay handled by bottom gradient now, but keep subtle global one -->
+            <div class="absolute inset-0 bg-black/10"></div>
           </div>
-          <!-- Top right duration -->
-          <div class="absolute top-4 right-4 z-5">
-            <span
-              :class="[
-                'text-xs px-2 py-1 rounded-md',
-                clip.thumbnailUrl ? 'text-white/70 bg-muted/20 backdrop-blur-sm' : 'text-muted-foreground bg-muted',
-              ]"
-            >
-              {{ formatDuration(clip.duration) }}
-            </span>
-          </div>
-          <!-- Bottom left title and description -->
-          <div class="absolute bottom-2 left-2 right-2 z-5 bg-black/40 backdrop-blur-sm p-2 rounded-md">
+
+          <!-- Bottom Overlay with Info -->
+          <div
+            class="absolute bottom-0 left-0 right-0 z-5 bg-gradient-to-t from-black via-black/80 to-transparent p-4 pt-28 flex flex-col gap-1.5"
+          >
+            <!-- Title -->
             <h3
-              :class="[
-                'text-md font-semibold mb-0.5 group-hover:transition-colors line-clamp-2',
-                clip.thumbnailUrl
-                  ? 'text-white group-hover:text-white/80'
-                  : 'text-foreground group-hover:text-foreground/80',
-              ]"
+              class="text-base font-bold text-white leading-tight line-clamp-1 group-hover:text-white/90 transition-colors"
             >
               {{ clip.title }}
             </h3>
 
-            <p :class="['text-xs line-clamp-2', clip.thumbnailUrl ? 'text-white/80' : 'text-muted-foreground']">
-              {{ clip.createdAt ? formatRelativeTime(clip.createdAt) : 'No timestamp available' }}
-            </p>
+            <!-- Metadata Row -->
+            <div class="flex items-center gap-2 text-xs text-white/70 font-medium">
+              <span>
+                {{ formatDuration(clip.duration) }}
+              </span>
+
+              <span class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
+
+              <span class="truncate">
+                {{ clip.createdAt ? formatRelativeTime(clip.createdAt) : 'No timestamp available' }}
+              </span>
+            </div>
           </div>
+
           <!-- Hover Overlay Buttons -->
           <div
             v-if="clip.thumbnailUrl"

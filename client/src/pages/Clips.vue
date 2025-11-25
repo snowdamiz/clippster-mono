@@ -144,7 +144,8 @@
                       backgroundRepeat: 'no-repeat',
                     }"
                   >
-                    <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60"></div>
+                    <!-- Dark vignette overlay handled by bottom gradient now, but keep subtle global one -->
+                    <div class="absolute inset-0 bg-black/10"></div>
                   </div>
                   <div v-else class="absolute inset-0 z-0 bg-muted flex items-center justify-center">
                     <Folder class="h-16 w-16 text-muted-foreground/50" />
@@ -159,9 +160,15 @@
                   </div>
 
                   <!-- Bottom Info -->
-                  <div class="absolute bottom-2 left-2 right-2 z-5 bg-black/40 backdrop-blur-sm p-2 rounded-md">
-                    <h3 class="text-md font-semibold text-white mb-1 line-clamp-1">{{ group.name }}</h3>
-                    <p class="text-xs text-white/80">Updated {{ getRelativeTime(group.updatedAt) }}</p>
+                  <div
+                    class="absolute bottom-0 left-0 right-0 z-5 bg-gradient-to-t from-black via-black/80 to-transparent p-4 pt-28 flex flex-col gap-1.5"
+                  >
+                    <h3
+                      class="text-base font-bold text-white leading-tight line-clamp-1 group-hover:text-white/90 transition-colors"
+                    >
+                      {{ group.name }}
+                    </h3>
+                    <p class="text-xs text-white/70 font-medium">Updated {{ getRelativeTime(group.updatedAt) }}</p>
                   </div>
                 </div>
               </div>

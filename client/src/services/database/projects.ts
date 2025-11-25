@@ -5,15 +5,16 @@ import type { Project } from './types';
 export async function createProject(
   name: string,
   description?: string,
-  parentId?: string
+  parentId?: string,
+  platform?: 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual'
 ): Promise<string> {
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
 
   await db.execute(
-    'INSERT INTO projects (id, name, description, thumbnail_path, parent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [id, name, description || null, null, parentId || null, now, now]
+    'INSERT INTO projects (id, name, description, thumbnail_path, parent_id, platform, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, name, description || null, null, parentId || null, platform || null, now, now]
   );
 
   return id;
@@ -34,7 +35,8 @@ export async function updateProject(
   id: string,
   name?: string,
   description?: string,
-  thumbnailPath?: string
+  thumbnailPath?: string,
+  platform?: 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual'
 ): Promise<void> {
   const db = await getDatabase();
   const now = timestamp();
@@ -53,6 +55,10 @@ export async function updateProject(
   if (thumbnailPath !== undefined) {
     updates.push('thumbnail_path = ?');
     values.push(thumbnailPath);
+  }
+  if (platform !== undefined) {
+    updates.push('platform = ?');
+    values.push(platform);
   }
 
   updates.push('updated_at = ?');

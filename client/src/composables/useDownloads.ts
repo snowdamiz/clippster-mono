@@ -405,7 +405,9 @@ export function useDownloads() {
           const sourceLabel = provider === 'kick' ? `Channel: ${mintId}` : `Mint: ${mintId}`;
           parentProjectId = await createProject(
             title,
-            `Manual downloads from ${provider === 'kick' ? 'Kick' : 'PumpFun'} (${sourceLabel})`
+            `Manual downloads from ${provider === 'kick' ? 'Kick' : 'PumpFun'} (${sourceLabel})`,
+            undefined,
+            provider === 'kick' ? 'Kick' : 'PumpFun'
           );
         }
 
@@ -413,14 +415,17 @@ export function useDownloads() {
         projectId = await createProject(
           finalTitle,
           `Segment ${segmentNumber} of ${title}`,
-          parentProjectId
+          parentProjectId,
+          provider === 'kick' ? 'Kick' : 'PumpFun'
         );
       } else {
         // Full stream download - create a standard project
         const sourceLabel = provider === 'kick' ? `Channel: ${mintId}` : `Mint: ${mintId}`;
         projectId = await createProject(
           finalTitle,
-          `Downloaded from ${provider === 'kick' ? 'Kick' : 'PumpFun'} (${sourceLabel})`
+          `Downloaded from ${provider === 'kick' ? 'Kick' : 'PumpFun'} (${sourceLabel})`,
+          undefined,
+          provider === 'kick' ? 'Kick' : 'PumpFun'
         );
       }
     } catch (error) {
@@ -513,7 +518,8 @@ export function useDownloads() {
     mintId: string,
     sourceClipId: string,
     totalDuration: number,
-    maxSegmentDuration: number = 3600
+    maxSegmentDuration: number = 3600,
+    provider: 'pumpfun' | 'kick' = 'pumpfun'
   ): Promise<string> {
     await initialize();
 
@@ -546,7 +552,9 @@ export function useDownloads() {
     try {
       parentProjectId = await createProject(
         title,
-        `Auto-segmented download from PumpFun (Mint: ${mintId}). ${numberOfSegments} parts.`
+        `Auto-segmented download from ${provider === 'kick' ? 'Kick' : 'PumpFun'} (${provider === 'kick' ? 'Channel' : 'Mint'}: ${mintId}). ${numberOfSegments} parts.`,
+        undefined,
+        provider === 'kick' ? 'Kick' : 'PumpFun'
       );
     } catch (error) {
       console.warn(

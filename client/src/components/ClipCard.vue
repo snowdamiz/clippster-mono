@@ -14,8 +14,8 @@
         backgroundRepeat: 'no-repeat',
       }"
     >
-      <!-- Dark vignette overlay -->
-      <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60"></div>
+      <!-- Dark vignette overlay handled by bottom gradient now, but keep subtle global one -->
+      <div class="absolute inset-0 bg-black/10"></div>
     </div>
     <!-- Top right status badge -->
     <div class="absolute top-4 right-4 z-5">
@@ -28,27 +28,25 @@
         {{ getClipStatusText(clip.status) }}
       </span>
     </div>
-    <!-- Bottom left title and description -->
-    <div class="absolute bottom-2 left-2 right-2 z-5 bg-black/40 backdrop-blur-sm p-2 rounded-md">
-      <h3
-        :class="[
-          'text-md font-semibold mb-1 group-hover:transition-colors line-clamp-2',
-          thumbnailUrl ? 'text-white group-hover:text-white/80' : 'text-foreground group-hover:text-foreground/80',
-        ]"
-      >
+    <!-- Bottom Overlay with Info -->
+    <div
+      class="absolute bottom-0 left-0 right-0 z-5 bg-gradient-to-t from-black via-black/80 to-transparent p-4 pt-28 flex flex-col gap-1.5"
+    >
+      <h3 class="text-base font-bold text-white leading-tight line-clamp-1 group-hover:text-white/90 transition-colors">
         {{ clip.name || 'Untitled Clip' }}
       </h3>
 
-      <p
-        :class="['text-xs mb-1 line-clamp-1', thumbnailUrl ? 'text-white/70' : 'text-muted-foreground/80']"
-        v-if="projectName"
-      >
-        Project: {{ projectName }}
-      </p>
+      <div class="flex items-center gap-2 text-xs text-white/70 font-medium">
+        <p class="line-clamp-1 max-w-[50%]" v-if="projectName">
+          {{ projectName }}
+        </p>
 
-      <p :class="['text-sm line-clamp-1', thumbnailUrl ? 'text-white/80' : 'text-muted-foreground']">
-        {{ formattedDate }}
-      </p>
+        <span v-if="projectName" class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
+
+        <p class="line-clamp-1">
+          {{ formattedDate }}
+        </p>
+      </div>
     </div>
     <!-- Hover Overlay Buttons -->
     <div

@@ -6,6 +6,7 @@ export interface Project {
   description: string | null;
   thumbnail_path: string | null;
   parent_id: string | null;
+  platform: 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual' | null;
   created_at: number;
   updated_at: number;
 }

@@ -114,14 +114,8 @@
               class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
               @click="handleProjectClick(project)"
             >
-              <!-- Live Badge -->
-              <div
-                v-if="isProjectLive(project.id)"
-                class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-red-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm animate-pulse"
-              >
-                <Radio class="w-3 h-3" />
-                <span>LIVE</span>
-              </div>
+              <!-- Live Badge (kept if needed for clear visibility, but simplified) -->
+              <!-- Moving inside bottom overlay as per request to simplify -->
 
               <!-- Folder Badge (if has children and in folder view) -->
               <div
@@ -143,8 +137,8 @@
                   backgroundRepeat: 'no-repeat',
                 }"
               >
-                <!-- Dark vignette overlay -->
-                <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/40 to-black/60"></div>
+                <!-- Dark vignette overlay handled by bottom gradient now, but keep subtle global one -->
+                <div class="absolute inset-0 bg-black/10"></div>
               </div>
               <!-- Fallback background for projects without thumbnails -->
               <div v-else class="absolute inset-0 z-0 bg-muted">
@@ -167,42 +161,86 @@
                 </div>
               </div>
 
-              <!-- Top right time badge -->
-              <div class="absolute top-4 right-4 z-5">
-                <span
-                  :class="[
-                    'text-xs px-2 py-1 rounded-md',
-                    getThumbnailUrl(project.id)
-                      ? 'text-white/70 bg-white/10 backdrop-blur-sm'
-                      : 'text-muted-foreground bg-muted',
-                  ]"
-                >
-                  {{ getRelativeTime(project.updated_at) }}
-                </span>
-              </div>
-              <!-- Bottom left title and description -->
-              <div class="absolute bottom-2 left-2 right-2 z-5 bg-black/40 backdrop-blur-sm p-2 rounded-md">
+              <!-- Bottom Overlay with Info -->
+              <div
+                class="absolute bottom-0 left-0 right-0 z-5 bg-gradient-to-t from-black via-black/80 to-transparent p-4 pt-28 flex flex-col gap-1.5"
+              >
+                <!-- Title -->
                 <h3
-                  :class="[
-                    'text-md font-semibold mb-1 group-hover:transition-colors line-clamp-2',
-                    getThumbnailUrl(project.id)
-                      ? 'text-white group-hover:text-white/80'
-                      : 'text-foreground group-hover:text-foreground/80',
-                  ]"
+                  class="text-base font-bold text-white leading-tight line-clamp-1 group-hover:text-white/90 transition-colors"
+                  :title="project.name"
                 >
                   {{ project.name }}
                 </h3>
 
-                <p
-                  v-if="!(viewMode === 'folders' && hasChildren(project.id))"
-                  :class="[
-                    'text-xs line-clamp-2',
-                    getThumbnailUrl(project.id) ? 'text-white/80' : 'text-muted-foreground',
-                  ]"
-                >
-                  {{ project.description || 'No description' }} • {{ getClipCount(project.id) }} clips
-                </p>
+                <!-- Metadata Row -->
+                <div class="flex items-center gap-2 text-xs text-white/70 font-medium">
+                  <!-- Platform Icon -->
+                  <div
+                    v-if="getProjectPlatform(project) === 'Youtube'"
+                    class="w-4 h-4 bg-red-600 rounded flex items-center justify-center shadow-sm shrink-0"
+                    title="YouTube"
+                  >
+                    <img src="/youtube.svg" class="w-2.5 h-2.5 invert brightness-200" />
+                  </div>
+                  <div
+                    v-else-if="getProjectPlatform(project) === 'Twitch'"
+                    class="w-4 h-4 bg-[#9146FF] rounded flex items-center justify-center shadow-sm shrink-0"
+                    title="Twitch"
+                  >
+                    <img src="/twitch.svg" class="w-2.5 h-2.5 invert brightness-200" />
+                  </div>
+                  <div
+                    v-else-if="getProjectPlatform(project) === 'Kick'"
+                    class="w-4 h-4 bg-[#53FC18] rounded flex items-center justify-center shadow-sm shrink-0"
+                    title="Kick"
+                  >
+                    <img src="/kick.svg" class="w-2.5 h-2.5" />
+                  </div>
+                  <div
+                    v-else-if="getProjectPlatform(project) === 'PumpFun'"
+                    class="w-4 h-4 bg-emerald-500 rounded flex items-center justify-center shadow-sm shrink-0"
+                    title="PumpFun"
+                  >
+                    <img src="/capsule.svg" class="w-2.5 h-2.5 brightness-200" />
+                  </div>
+                  <div
+                    v-else-if="getProjectPlatform(project) === 'Manual'"
+                    class="w-4 h-4 bg-slate-700 rounded flex items-center justify-center shadow-sm shrink-0 text-white"
+                    title="Manual"
+                  >
+                    <Monitor class="w-2.5 h-2.5" />
+                  </div>
+
+                  <!-- Live Indicator -->
+                  <div
+                    v-if="isProjectLive(project.id)"
+                    class="flex items-center gap-1.5 text-red-500 font-bold px-1.5 py-0.5 bg-red-500/10 rounded-full border border-red-500/20"
+                  >
+                    <span class="relative flex h-1.5 w-1.5">
+                      <span
+                        class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"
+                      ></span>
+                      <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500"></span>
+                    </span>
+                    <span class="text-[10px] uppercase tracking-wider">Live</span>
+                  </div>
+
+                  <span
+                    v-if="!isProjectLive(project.id) && getProjectPlatform(project)"
+                    class="w-0.5 h-0.5 rounded-full bg-white/40"
+                  ></span>
+
+                  <!-- Time -->
+                  <span class="truncate">{{ getRelativeTime(project.updated_at) }}</span>
+
+                  <span class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
+
+                  <!-- Clip Count -->
+                  <span class="truncate">{{ getClipCount(project.id) }} clips</span>
+                </div>
               </div>
+
               <!-- Hover Overlay Buttons -->
               <div
                 class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-4"
@@ -472,7 +510,20 @@
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
-  import { Folder, Plus, Play, Edit, Trash2, Radio, List, FolderOpen, X, Search, Clock } from 'lucide-vue-next';
+  import {
+    Folder,
+    Plus,
+    Play,
+    Edit,
+    Trash2,
+    Radio,
+    List,
+    FolderOpen,
+    X,
+    Search,
+    Clock,
+    Monitor,
+  } from 'lucide-vue-next';
   import {
     getAllProjects,
     getClipsWithVersionsByProjectId,
@@ -485,6 +536,7 @@
     type Project,
     type RawVideo,
   } from '@/services/database';
+  import { extractMintId } from '@/services/pumpfun';
   import { useFormatters } from '@/composables/useFormatters';
   import { useToast } from '@/composables/useToast';
   import { useLivestreamMonitoring } from '@/composables/useLivestreamMonitoring';
@@ -678,8 +730,57 @@
     return null;
   }
 
+  function getProjectPlatform(project: Project): 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual' | null {
+    // 0. Check explicit platform field
+    if (project.platform) {
+      return project.platform;
+    }
+
+    // 1. Check description for explicit source
+    if (project.description) {
+      const desc = project.description.toLowerCase();
+      if (desc.includes('kick')) return 'Kick';
+      if (desc.includes('pumpfun')) return 'PumpFun';
+      if (desc.includes('youtube')) return 'Youtube';
+      if (desc.includes('twitch')) return 'Twitch';
+    }
+
+    // 2. Check videos
+    const videos = projectVideos.value[project.id];
+    if (videos && videos.length > 0) {
+      // Check first video
+      const v = videos[0];
+      if (v.source_mint_id) {
+        // Try to guess from ID format if description failed
+        // Note: extractMintId is very permissive and matches simple words like "games" (Kick slug)
+        // so we check length to differentiate Mint IDs (long) from slugs (short)
+        const isLikelyMintId = v.source_mint_id.length >= 32 && extractMintId(v.source_mint_id);
+
+        if (isLikelyMintId) return 'PumpFun';
+        return 'Kick';
+      } else {
+        return 'Manual';
+      }
+    }
+
+    // 3. Check children if folder
+    if (hasChildren(project.id)) {
+      const children = getFolderChildren(project.id);
+      if (children.length > 0) return getProjectPlatform(children[0]);
+    }
+
+    return null;
+  }
+
   function getClipCount(projectId: string): number {
-    return clipCounts.value[projectId] || 0;
+    const ownCount = clipCounts.value[projectId] || 0;
+    const children = childrenMap.value.get(projectId);
+
+    if (children && children.length > 0) {
+      return children.reduce((acc, child) => acc + (clipCounts.value[child.id] || 0), ownCount);
+    }
+
+    return ownCount;
   }
 
   function getThumbnailUrl(projectId: string): string | null {
@@ -1003,7 +1104,7 @@
         // Check if we have multiple videos - if so, create a parent project with child projects
         if (data.selectedVideoPaths && data.selectedVideoPaths.length > 1) {
           // Create parent project
-          const parentId = await createProject(data.name, data.description || undefined);
+          const parentId = await createProject(data.name, data.description || undefined, undefined, 'Manual');
 
           // Create child projects for each video
           for (const path of data.selectedVideoPaths) {
@@ -1013,7 +1114,7 @@
             const childName = filename.replace(/\.[^/.]+$/, '');
 
             // Create child project
-            const childId = await createProject(childName, data.description || undefined, parentId);
+            const childId = await createProject(childName, data.description || undefined, parentId, 'Manual');
 
             // Process video and associate with child project
             await processVideoFile(path, childId);
@@ -1022,7 +1123,7 @@
           success('Project created', `"${data.name}" has been created with ${data.selectedVideoPaths.length} parts`);
         } else {
           // Standard creation for single video or no video
-          const projectId = await createProject(data.name, data.description || undefined);
+          const projectId = await createProject(data.name, data.description || undefined, undefined, 'Manual');
 
           // Import and associate selected video (if any)
           if (data.selectedVideoPaths && data.selectedVideoPaths.length > 0) {

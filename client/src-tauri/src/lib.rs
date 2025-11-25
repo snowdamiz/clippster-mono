@@ -228,6 +228,12 @@ pub fn run() {
                             sql: include_str!("../migrations/034_add_project_parent_id.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 35,
+                            description: "add_project_platform",
+                            sql: include_str!("../migrations/035_add_project_platform.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
