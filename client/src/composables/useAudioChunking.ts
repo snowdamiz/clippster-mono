@@ -70,7 +70,7 @@ export function useAudioChunking() {
     }
 
     const {
-      chunkDurationMinutes = 30, // Default 30-minute chunks
+      chunkDurationMinutes = 15, // Default 15-minute chunks
       overlapSeconds = 30, // Default 30-second overlap
     } = options;
 
@@ -146,7 +146,7 @@ export function useAudioChunking() {
   // Estimate chunk count before processing (for UI planning)
   function estimateChunkCount(
     videoDurationSeconds: number,
-    chunkDurationMinutes: number = 30
+    chunkDurationMinutes: number = 15
   ): number {
     const chunkDurationSeconds = chunkDurationMinutes * 60;
     return Math.ceil(videoDurationSeconds / chunkDurationSeconds);
@@ -155,7 +155,7 @@ export function useAudioChunking() {
   // Get file size estimates
   function getFileSizeEstimates(
     videoDurationMinutes: number,
-    chunkDurationMinutes: number = 30
+    chunkDurationMinutes: number = 15
   ): {
     estimatedTotalSizeMB: number;
     estimatedChunkSizeMB: number;

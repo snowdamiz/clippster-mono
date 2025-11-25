@@ -646,12 +646,14 @@ pub async fn download_pumpfun_vod(
 
         let cmd = shell.sidecar("ffmpeg").map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?;
         let (mut rx, child) = cmd.args([
+            "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
+            "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
             "-i", &video_url,
-            "-c:v", "copy",
-            "-c:a", "aac",
-            "-b:a", "128k",
+            "-c", "copy",
+            "-bsf:a", "aac_adtstoasc",
             "-map", "0:v:0?",
             "-map", "0:a:0?",
+            "-avoid_negative_ts", "make_zero",
             "-movflags", "+faststart",
             "-progress", "pipe:2",
             "-v", "error",
@@ -1514,6 +1516,7 @@ pub async fn download_kick_vod(
             "-progress", "pipe:2",
             "-v", "error",
             "-y",
+            "-bsf:a", "aac_adtstoasc",
             video_path.to_str().ok_or("Invalid video path")?,
         ]).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
 

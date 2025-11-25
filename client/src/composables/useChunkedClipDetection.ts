@@ -56,7 +56,7 @@ export function useChunkedClipDetection() {
         message: 'Initializing clip detection...',
       };
 
-      const { chunkDurationMinutes = 30, overlapSeconds = 30, forceReprocess = false } = options;
+      const { chunkDurationMinutes = 15, overlapSeconds = 30, forceReprocess = false } = options;
 
       // Get project video
       const rawVideos = await getRawVideosByProjectId(projectId);
@@ -198,6 +198,8 @@ export function useChunkedClipDetection() {
       // Check for already transcribed chunks to avoid re-work
       const existingChunks = await getTranscriptChunks(sessionId);
       const transcribedChunkIds = new Set(existingChunks.map((c) => c.chunk_id));
+      const { storeChunkTranscription, getCachedChunkMetadata } = useChunkedTranscriptCache();
+      const totalChunks = chunks.length;
 
       for (let i = 0; i < totalChunks; i++) {
         const chunk = chunks[i];

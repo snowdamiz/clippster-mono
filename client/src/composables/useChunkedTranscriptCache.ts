@@ -47,7 +47,7 @@ export function useChunkedTranscriptCache() {
 
   async function initializeChunkedTranscriptSession(
     rawVideoId: string,
-    chunkDurationMinutes: number = 30,
+    chunkDurationMinutes: number = 15,
     overlapSeconds: number = 30
   ): Promise<{ success: boolean; sessionId?: string; chunks?: AudioChunk[]; error?: string }> {
     try {

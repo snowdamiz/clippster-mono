@@ -495,7 +495,7 @@
       try {
         // Perform enhanced clip detection
         const result = await detectClipsWithChunking(props.project.id, promptContent, {
-          chunkDurationMinutes: 30,
+          chunkDurationMinutes: 15,
           overlapSeconds: 30,
           forceReprocess: false,
         });
