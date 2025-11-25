@@ -53,6 +53,7 @@ export interface ActiveDownload {
   // Project grouping
   projectId?: string;
   parentProjectId?: string;
+  provider?: 'pumpfun' | 'kick';
 }
 
 const activeDownloads = reactive<Map<string, ActiveDownload>>(new Map());
@@ -328,9 +329,11 @@ export function useDownloads() {
     segmentRange?: { startTime: number; endTime: number },
     sourceClipId?: string,
     totalDuration?: number,
-    options: { autoSegment?: boolean; segmentDuration?: number } = {}
+    options: { autoSegment?: boolean; segmentDuration?: number; provider?: 'pumpfun' | 'kick' } = {}
   ): Promise<string> {
     await initialize();
+
+    const provider = options.provider || 'pumpfun';
 
     // If this is a full stream download and we have duration info, check if we need auto-segmentation
     const shouldAutoSegment = options.autoSegment !== false; // Default to true
@@ -349,7 +352,8 @@ export function useDownloads() {
         mintId,
         sourceClipId || mintId,
         totalDuration,
-        segmentDuration
+        segmentDuration,
+        provider
       );
     }
 
@@ -387,9 +391,7 @@ export function useDownloads() {
 
         // Search for a project with the same name as the stream title (without "Segment X")
         // and that is a top-level project (no parent_id)
-        // We also want to make sure it's related to this Mint ID if possible, but we don't store mint_id on projects directly.
-        // Checking description or if it has matching videos would be safer, but name matching is a good start.
-        // Let's search by name first.
+        // We also want to make sure it's related to this Mint ID/Channel if possible.
         const existingProjects = await db.select<{ id: string }[]>(
           'SELECT id FROM projects WHERE name = ? AND parent_id IS NULL',
           [title]
@@ -400,9 +402,10 @@ export function useDownloads() {
           parentProjectId = existingProjects[0].id;
         } else {
           // Create a new parent project
+          const sourceLabel = provider === 'kick' ? `Channel: ${mintId}` : `Mint: ${mintId}`;
           parentProjectId = await createProject(
             title,
-            `Manual downloads from PumpFun (Mint: ${mintId})`
+            `Manual downloads from ${provider === 'kick' ? 'Kick' : 'PumpFun'} (${sourceLabel})`
           );
         }
 
@@ -414,7 +417,11 @@ export function useDownloads() {
         );
       } else {
         // Full stream download - create a standard project
-        projectId = await createProject(finalTitle, `Downloaded from PumpFun (Mint: ${mintId})`);
+        const sourceLabel = provider === 'kick' ? `Channel: ${mintId}` : `Mint: ${mintId}`;
+        projectId = await createProject(
+          finalTitle,
+          `Downloaded from ${provider === 'kick' ? 'Kick' : 'PumpFun'} (${sourceLabel})`
+        );
       }
     } catch (error) {
       console.warn('[Downloads] Failed to create project structure for download:', error);
@@ -437,39 +444,58 @@ export function useDownloads() {
       segmentEndTime: segmentRange?.endTime,
       projectId,
       parentProjectId,
+      provider,
     };
 
     activeDownloads.set(downloadId, download);
     saveState(); // Save new download
 
     try {
-      // Determine which download command to use
-      if (isSegmentDownload) {
-        // Start the segment download without waiting for it to complete
-        invoke('download_pumpfun_vod_segment', {
-          downloadId,
-          title: finalTitle,
-          videoUrl,
-          mintId,
-          startTime: segmentRange.startTime,
-          endTime: segmentRange.endTime,
-        }).catch((_error) => {
-          // Remove from active downloads if failed to start
-          activeDownloads.delete(downloadId);
-          // We can't throw here since the async operation has already returned
-        });
+      if (provider === 'kick') {
+        if (isSegmentDownload) {
+          invoke('download_kick_vod_segment', {
+            downloadId,
+            title: finalTitle,
+            videoUrl,
+            channelSlug: mintId,
+            startTime: segmentRange.startTime,
+            endTime: segmentRange.endTime,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        } else {
+          invoke('download_kick_vod', {
+            downloadId,
+            title: finalTitle,
+            videoUrl,
+            channelSlug: mintId,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        }
       } else {
-        // Start the full download without waiting for it to complete
-        invoke('download_pumpfun_vod', {
-          downloadId,
-          title: finalTitle,
-          videoUrl,
-          mintId,
-        }).catch((_error) => {
-          // Remove from active downloads if failed to start
-          activeDownloads.delete(downloadId);
-          // We can't throw here since the async operation has already returned
-        });
+        // PumpFun (default)
+        if (isSegmentDownload) {
+          invoke('download_pumpfun_vod_segment', {
+            downloadId,
+            title: finalTitle,
+            videoUrl,
+            mintId,
+            startTime: segmentRange.startTime,
+            endTime: segmentRange.endTime,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        } else {
+          invoke('download_pumpfun_vod', {
+            downloadId,
+            title: finalTitle,
+            videoUrl,
+            mintId,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        }
       }
     } catch (error) {
       // Remove from active downloads if failed to start
@@ -602,7 +628,6 @@ export function useDownloads() {
     // Return the first download ID as the primary identifier
     return allDownloadIds[0];
   }
-
   // Process queued downloads
   function processQueue() {
     if (queuedDownloads.size === 0) return;

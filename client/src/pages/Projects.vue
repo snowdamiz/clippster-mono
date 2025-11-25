@@ -219,7 +219,7 @@
                   v-else
                   class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
                   title="Open Workspace"
-                  @click.stop="openWorkspace(project)"
+                  @click.stop="handleProjectClick(project)"
                 >
                   <Play class="h-6 w-6" />
                 </button>

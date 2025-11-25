@@ -329,6 +329,8 @@ pub fn run() {
             // Download commands
             downloads::download_pumpfun_vod,
             downloads::download_pumpfun_vod_segment,
+            downloads::download_kick_vod,
+            downloads::download_kick_vod_segment,
 
             // Audio commands
             audio::extract_audio_from_video,

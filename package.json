@@ -15,7 +15,9 @@
     "format:check": "cd client && prettier --check \"src/**/*.{vue,js,ts,json,css,scss,md}\"",
     "format:all": "prettier --write \"client/**/*.{vue,js,ts,json,css,scss,md}\"",
     "format:staged": "cd client && prettier --write",
-    "type-check": "cd client && vue-tsc --noEmit"
+    "type-check": "cd client && vue-tsc --noEmit",
+    "api-demo": "node server.js",
+    "api-test": "node kick_api_demo_node.js"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

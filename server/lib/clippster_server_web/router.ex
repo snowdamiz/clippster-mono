@@ -59,6 +59,9 @@ defmodule ClippsterServerWeb.Router do
 
     # Metadata routes
     get "/metadata/:mint_id", MetadataController, :fetch
+
+    # Kick routes
+    get "/kick/channels/:channel_slug/videos", KickController, :get_clips
   end
 
   # Protected routes (require authentication)
