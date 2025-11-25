@@ -336,7 +336,7 @@ export function useDownloads() {
     const provider = options.provider || 'pumpfun';
 
     // If this is a full stream download and we have duration info, check if we need auto-segmentation
-    const shouldAutoSegment = options.autoSegment !== false; // Default to true
+    const shouldAutoSegment = options.autoSegment === true; // Default to false, only segment if explicitly requested
     const segmentDuration = options.segmentDuration || 3600; // Default to 1 hour
 
     if (!segmentRange && totalDuration && totalDuration > segmentDuration && shouldAutoSegment) {

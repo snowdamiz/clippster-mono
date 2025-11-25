@@ -644,13 +644,17 @@ pub async fn download_pumpfun_vod(
 
         println!("[Rust] Spawning FFmpeg sidecar with real-time progress...");
 
+        // Detect hardware encoder
+        let encoder = detect_hardware_encoder(&app_clone).await.unwrap_or_else(|| "libx264".to_string());
+        println!("[Rust] Using encoder: {}", encoder);
+
         let cmd = shell.sidecar("ffmpeg").map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?;
         let (mut rx, child) = cmd.args([
-            "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
-            "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
             "-i", &video_url,
-            "-c", "copy",
-            "-bsf:a", "aac_adtstoasc",
+            "-c:v", &encoder,
+            "-preset", if encoder == "libx264" { "ultrafast" } else { "fast" },
+            "-c:a", "aac",
+            "-b:a", "128k",
             "-map", "0:v:0?",
             "-map", "0:a:0?",
             "-avoid_negative_ts", "make_zero",
