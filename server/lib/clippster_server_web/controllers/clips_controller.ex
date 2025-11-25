@@ -206,22 +206,22 @@ defmodule ClippsterServerWeb.ClipsController do
        
        # Call AI for this chunk
        case OpenRouterAPI.generate_clips(ai_transcript, system_prompt, user_prompt, project_id) do
-         {:ok, ai_response, usage} ->
+      {:ok, ai_response, usage} ->
             clips = ai_response["clips"] || []
             IO.puts("[ClipsController] Chunk #{index + 1}: Found #{length(clips)} clips")
-            
+        
             # Log usage for this chunk
-            AI.log_usage(%{
-              user_id: user_id,
-              project_id: project_id,
-              provider: "openrouter",
-              model: Map.get(usage, "model") || System.get_env("OPENROUTER_MODEL", "openai/gpt-4o-mini"),
-              input_tokens: Map.get(usage, "prompt_tokens"),
-              output_tokens: Map.get(usage, "completion_tokens"),
-              total_tokens: Map.get(usage, "total_tokens"),
+        AI.log_usage(%{
+          user_id: user_id,
+          project_id: project_id,
+          provider: "openrouter",
+          model: Map.get(usage, "model") || System.get_env("OPENROUTER_MODEL", "openai/gpt-4o-mini"),
+          input_tokens: Map.get(usage, "prompt_tokens"),
+          output_tokens: Map.get(usage, "completion_tokens"),
+          total_tokens: Map.get(usage, "total_tokens"),
               operation_type: "clip_generation_chunk"
-            })
-            
+        })
+
             total_tokens = Map.get(usage, "total_tokens", 0)
             
             {acc_clips ++ clips, acc_tokens + total_tokens}
@@ -239,62 +239,62 @@ defmodule ClippsterServerWeb.ClipsController do
     # Validation step - using the aggregated clips and the reconstructed full transcript
     IO.puts("[ClipsController] Starting enhanced clip validation with full timeline data...")
     ProgressChannel.broadcast_progress(project_id, "validating", 95, "Validating clips with timeline data...")
-    
+
     # Validate all clips against the reconstructed transcript
     case ClipValidation.validate_and_correct_clips(all_clips, reconstructed_transcript, true) do
-      {:ok, validation_result} ->
-        IO.puts("[ClipsController] Enhanced validation completed")
-        IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
+          {:ok, validation_result} ->
+            IO.puts("[ClipsController] Enhanced validation completed")
+            IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
 
         # Prepare final response
-        total_processed = length(successful_chunks) + length(failed_chunks)
-        ProgressChannel.broadcast_progress(project_id, "completed", 100,
+            total_processed = length(successful_chunks) + length(failed_chunks)
+            ProgressChannel.broadcast_progress(project_id, "completed", 100,
           "Chunked clip detection completed! Found #{length(validation_result.validatedClips)} clips.")
 
-        {:ok, %{
-          success: true,
+            {:ok, %{
+              success: true,
           clips: %{"clips" => validation_result.validatedClips},
-          transcript: reconstructed_transcript,
-          processing_info: %{
-            used_chunked_processing: true,
-            total_chunks: total_processed,
-            successful_chunks: length(successful_chunks),
-            failed_chunks: length(failed_chunks),
+              transcript: reconstructed_transcript,
+              processing_info: %{
+                used_chunked_processing: true,
+                total_chunks: total_processed,
+                successful_chunks: length(successful_chunks),
+                failed_chunks: length(failed_chunks),
             completion_message: "Clip detection completed using chunked AI processing!"
-          },
-          validation: %{
-            qualityScore: validation_result.qualityScore,
-            issues: validation_result.issues,
-            corrections: validation_result.corrections,
-            clipsProcessed: length(validation_result.validatedClips)
-          }
-        }}
+              },
+              validation: %{
+                qualityScore: validation_result.qualityScore,
+                issues: validation_result.issues,
+                corrections: validation_result.corrections,
+                clipsProcessed: length(validation_result.validatedClips)
+              }
+            }}
 
-      _ ->
-        IO.puts("[ClipsController] Enhanced validation failed, using original clips")
+          _ ->
+            IO.puts("[ClipsController] Enhanced validation failed, using original clips")
         
-        total_processed = length(successful_chunks) + length(failed_chunks)
-        ProgressChannel.broadcast_progress(project_id, "completed", 100,
+            total_processed = length(successful_chunks) + length(failed_chunks)
+            ProgressChannel.broadcast_progress(project_id, "completed", 100,
           "Chunked clip detection completed! Found #{length(all_clips)} clips.")
 
-        {:ok, %{
-          success: true,
+            {:ok, %{
+              success: true,
           clips: %{"clips" => all_clips},
-          transcript: reconstructed_transcript,
-          processing_info: %{
-            used_chunked_processing: true,
-            total_chunks: total_processed,
-            successful_chunks: length(successful_chunks),
-            failed_chunks: length(failed_chunks),
+              transcript: reconstructed_transcript,
+              processing_info: %{
+                used_chunked_processing: true,
+                total_chunks: total_processed,
+                successful_chunks: length(successful_chunks),
+                failed_chunks: length(failed_chunks),
             completion_message: "Clip detection completed using chunked AI processing!"
-          },
-          validation: %{
-            qualityScore: 0.0,
-            issues: ["Enhanced validation failed"],
-            corrections: []
-          }
-        }}
-    end
+              },
+              validation: %{
+                qualityScore: 0.0,
+                issues: ["Enhanced validation failed"],
+                corrections: []
+              }
+            }}
+        end
   end
 
   def transcribe(conn, %{"project_id" => project_id} = params) do
@@ -344,7 +344,7 @@ defmodule ClippsterServerWeb.ClipsController do
                       operation_type: "transcription_only"
                    })
                    json(conn, %{success: true, transcript: response})
-                {:error, reason} ->
+      {:error, reason} ->
                    refund_credits(user_id, credits, is_admin)
                    conn
                    |> put_status(500)

@@ -54,6 +54,9 @@ export interface ActiveDownload {
   projectId?: string;
   parentProjectId?: string;
   provider?: 'pumpfun' | 'kick';
+  groupId?: string;
+  totalSegments?: number;
+  currentSegmentIndex?: number;
 }
 
 const activeDownloads = reactive<Map<string, ActiveDownload>>(new Map());
@@ -93,17 +96,23 @@ function loadState() {
     if (activeJson) {
       const list = JSON.parse(activeJson) as ActiveDownload[];
       list.forEach((d) => {
-        // Reset status if it looks like it was interrupted
-        // If it has a result, it might be a completed download we're keeping around for a bit
+        // If it has a result, it's completed.
+        // If it doesn't have a result, it WAS active.
+
         if (!d.result) {
-          d.progress.status = 'Resuming...';
+          // It was active.
+          // We'll mark it as 'Interrupted' and NOT add to activeDownloadIds immediately.
+          d.progress.status = 'Interrupted';
+          // We intentionally do NOT add to activeDownloadIds here.
+          // If the download is actually running, we'll receive a progress event,
+          // and the listener will add it to activeDownloadIds then.
         }
+
         activeDownloads.set(d.id, d);
 
-        // Only add to active ids if not completed
-        if (!d.result || !d.result.success) {
-          activeDownloadIds.add(d.id);
-        }
+        // Note: We only add to activeDownloadIds if we are SURE it is running.
+        // On reload, we assume nothing is running until proven otherwise (via progress event)
+        // or unless we implement a backend check.
       });
     }
 
@@ -135,6 +144,13 @@ export function useDownloads() {
       const download = activeDownloads.get(event.payload.download_id);
       if (download) {
         download.progress = event.payload;
+
+        // Ensure it's marked as active if we get progress
+        // This recovers "Interrupted" downloads that are actually still running
+        if (!download.result && !activeDownloadIds.has(download.id)) {
+          activeDownloadIds.add(download.id);
+        }
+
         saveState(); // Save progress updates
       } else {
         // If we receive progress for a download we don't know about (e.g. after hard refresh),
@@ -589,11 +605,11 @@ export function useDownloads() {
       };
 
       // Add group metadata
-      (download as any).groupId = groupId;
-      (download as any).totalSegments = numberOfSegments;
-      (download as any).currentSegmentIndex = i;
-      (download as any).isAutoSegmented = true;
-      (download as any).isQueued = i >= MAX_CONCURRENT_DOWNLOADS;
+      download.groupId = groupId;
+      download.totalSegments = numberOfSegments;
+      download.currentSegmentIndex = i;
+      download.isAutoSegmented = true;
+      download.isQueued = i >= MAX_CONCURRENT_DOWNLOADS;
 
       // Add to appropriate queue
       if (i < MAX_CONCURRENT_DOWNLOADS) {
@@ -601,14 +617,26 @@ export function useDownloads() {
         activeDownloadIds.add(downloadId);
 
         // Start the download immediately
-        invoke('download_pumpfun_vod_segment', {
-          downloadId,
-          title: segmentTitle,
-          videoUrl,
-          mintId,
-          startTime: segment.startTime,
-          endTime: segment.endTime,
-        }).catch((_error) => {
+        const startPromise =
+          provider === 'kick'
+            ? invoke('download_kick_vod_segment', {
+                downloadId,
+                title: segmentTitle,
+                videoUrl,
+                channelSlug: mintId,
+                startTime: segment.startTime,
+                endTime: segment.endTime,
+              })
+            : invoke('download_pumpfun_vod_segment', {
+                downloadId,
+                title: segmentTitle,
+                videoUrl,
+                mintId,
+                startTime: segment.startTime,
+                endTime: segment.endTime,
+              });
+
+        startPromise.catch((_error) => {
           // Remove from active downloads if failed to start
           activeDownloads.delete(downloadId);
           activeDownloadIds.delete(downloadId);
@@ -638,7 +666,20 @@ export function useDownloads() {
   }
   // Process queued downloads
   function processQueue() {
-    if (queuedDownloads.size === 0) return;
+    // Clean up stale active downloads to prevent queue blocking
+    // This removes any IDs from the active set that are not actually active (completed or interrupted)
+    for (const id of activeDownloadIds) {
+      const d = activeDownloads.get(id);
+      if (!d || d.result || d.progress.status === 'Interrupted') {
+        activeDownloadIds.delete(id);
+      }
+    }
+
+    console.log('[Downloads] Processing queue...');
+    if (queuedDownloads.size === 0) {
+      console.log('[Downloads] Queue empty');
+      return;
+    }
 
     // Re-count active downloads from the reactive set to be sure
     const currentActiveCount = activeDownloadIds.size;
@@ -666,7 +707,7 @@ export function useDownloads() {
 
     // Update status
     queuedDownload.progress.status = 'Initializing...';
-    (queuedDownload as any).isQueued = false;
+    queuedDownload.isQueued = false;
 
     // Get segment info
     const segmentRange = {
@@ -678,15 +719,28 @@ export function useDownloads() {
       `[Downloads] Starting queued download: ${queuedDownload.title} (ID: ${nextQueuedId})`
     );
 
+    const provider = queuedDownload.provider || 'pumpfun';
+    const startPromise =
+      provider === 'kick'
+        ? invoke('download_kick_vod_segment', {
+            downloadId: nextQueuedId,
+            title: queuedDownload.title,
+            videoUrl: queuedDownload.videoUrl!,
+            channelSlug: queuedDownload.mintId,
+            startTime: segmentRange.startTime,
+            endTime: segmentRange.endTime,
+          })
+        : invoke('download_pumpfun_vod_segment', {
+            downloadId: nextQueuedId,
+            title: queuedDownload.title,
+            videoUrl: queuedDownload.videoUrl!,
+            mintId: queuedDownload.mintId,
+            startTime: segmentRange.startTime,
+            endTime: segmentRange.endTime,
+          });
+
     // Start the download
-    invoke('download_pumpfun_vod_segment', {
-      downloadId: nextQueuedId,
-      title: queuedDownload.title,
-      videoUrl: queuedDownload.videoUrl!,
-      mintId: queuedDownload.mintId,
-      startTime: segmentRange.startTime,
-      endTime: segmentRange.endTime,
-    }).catch((_error) => {
+    startPromise.catch((_error) => {
       console.error(`[Downloads] Failed to start queued download ${nextQueuedId}:`, _error);
       // Remove from active downloads if failed to start
       activeDownloads.delete(nextQueuedId);
@@ -781,10 +835,20 @@ export function useDownloads() {
         cancelled = true;
       }
 
+      saveState();
       return cancelled;
     } catch (error) {
       console.error('[Downloads] Error canceling download:', error);
       return false;
+    }
+  }
+
+  // Cancel all downloads in a group
+  async function cancelGroup(groupId: string): Promise<void> {
+    const downloads = getAllDownloads().filter((d) => d.groupId === groupId);
+    console.log(`[Downloads] Canceling group ${groupId} with ${downloads.length} downloads`);
+    for (const d of downloads) {
+      await cancelDownload(d.id);
     }
   }
 
@@ -897,6 +961,7 @@ export function useDownloads() {
     clearCompleted,
     cleanupOldDownloads,
     cancelDownload,
+    cancelGroup,
     onDownloadComplete,
     validateDownloadedVideo,
     cleanupCorruptedDownload,
