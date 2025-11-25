@@ -1,177 +1,218 @@
 <template>
   <PageLayout title="Admin" description="Admin panel and user management" :show-header="true" :icon="Settings">
     <template #actions>
+      <!-- Dynamic Actions based on Active Tab -->
       <button
+        v-if="activeTab === 'users'"
         @click="fetchUsers"
         :disabled="loading"
-        class="px-5 py-2.5 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        class="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md flex items-center gap-2 text-sm font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        <RefreshCw v-if="!loading" class="h-5 w-5" />
-        <Loader2 v-else class="h-5 w-5 animate-spin" />
+        <RefreshCw v-if="!loading" class="h-4 w-4" />
+        <Loader2 v-else class="h-4 w-4 animate-spin" />
         Refresh Users
+      </button>
+
+      <button
+        v-if="activeTab === 'bugs'"
+        @click="fetchBugReports"
+        class="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md flex items-center gap-2 text-sm font-medium shadow-sm transition-all"
+      >
+        <RefreshCw class="h-4 w-4" />
+        Refresh Bugs
+      </button>
+
+      <button
+        v-if="activeTab === 'ai'"
+        @click="fetchAiStats"
+        class="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md flex items-center gap-2 text-sm font-medium shadow-sm transition-all"
+      >
+        <RefreshCw class="h-4 w-4" />
+        Refresh Stats
       </button>
     </template>
 
-    <!-- Loading State -->
-    <div v-if="loading && !users.length" class="flex items-center justify-center py-12">
-      <div class="text-center">
-        <Loader2 class="h-8 w-8 animate-spin mx-auto mb-4" />
-        <p class="text-muted-foreground">Loading users...</p>
-      </div>
-    </div>
-
-    <!-- Error State -->
-    <div
-      v-else-if="error"
-      class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-6 text-center"
-    >
-      <AlertTriangle class="h-8 w-8 text-red-500 mx-auto mb-4" />
-      <p class="text-red-600 dark:text-red-400 font-medium mb-2">Failed to load users</p>
-      <p class="text-red-500 dark:text-red-300 text-sm mb-4">{{ error }}</p>
+    <!-- Tabs Navigation -->
+    <div class="flex border-b border-border mb-6 overflow-x-auto scrollbar-hide">
       <button
-        @click="fetchUsers"
-        class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-md text-sm font-medium transition-all"
+        v-for="tab in tabs"
+        :key="tab.id"
+        @click="activeTab = tab.id"
+        class="px-4 py-3 text-sm font-medium border-b-2 transition-all flex items-center whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-primary/20 rounded-t-sm"
+        :class="[
+          activeTab === tab.id
+            ? 'border-primary text-primary'
+            : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border/50',
+        ]"
       >
-        Try Again
+        <component :is="tab.icon" class="w-4 h-4 mr-2" />
+        {{ tab.label }}
       </button>
     </div>
 
-    <!-- Users Table -->
-    <div v-else-if="users.length > 0" class="space-y-4">
-      <!-- Stats -->
-      <div class="bg-card">
-        <div class="flex items-center justify-between">
-          <h2 class="text-lg font-semibold text-foreground">User Management</h2>
-          <span class="text-sm text-muted-foreground">
-            {{ users.length }} user{{ users.length !== 1 ? 's' : '' }} total
-          </span>
+    <!-- Users Tab -->
+    <div v-if="activeTab === 'users'" class="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <!-- Loading State -->
+      <div v-if="loading && !users.length" class="flex items-center justify-center py-12">
+        <div class="text-center">
+          <Loader2 class="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+          <p class="text-muted-foreground">Loading users...</p>
         </div>
       </div>
 
-      <!-- Table -->
-      <div class="bg-card border border-border rounded-md shadow-sm overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full">
-            <thead class="bg-muted/30">
-              <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  ID
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Wallet Address
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Role
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Credits
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Created
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody class="bg-card divide-y divide-border">
-              <tr v-for="user in users" :key="user.id" class="hover:bg-muted/20 transition-colors">
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-foreground">#{{ user.id }}</td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <div class="flex items-center">
-                    <code class="text-xs bg-muted px-2 py-1 rounded font-mono text-primary">
-                      {{ formatWalletAddress(user.wallet_address) }}
-                    </code>
-                    <button
-                      @click="copyToClipboard(user.wallet_address)"
-                      class="ml-2 text-muted-foreground hover:text-foreground transition-colors"
-                      :title="`Copy ${user.wallet_address}`"
-                    >
-                      <Copy class="h-4 w-4" />
-                    </button>
-                  </div>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <span
-                    v-if="user.is_admin"
-                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r from-purple-500/20 to-indigo-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30"
-                  >
-                    <Shield class="h-3 w-3 mr-1" />
-                    Admin
-                  </span>
-                  <span
-                    v-else
-                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground"
-                  >
-                    <User class="h-3 w-3 mr-1" />
-                    User
-                  </span>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm">
-                  <div class="flex flex-col space-y-1">
+      <!-- Error State -->
+      <div
+        v-else-if="error"
+        class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-6 text-center"
+      >
+        <AlertTriangle class="h-8 w-8 text-red-500 mx-auto mb-4" />
+        <p class="text-red-600 dark:text-red-400 font-medium mb-2">Failed to load users</p>
+        <p class="text-red-500 dark:text-red-300 text-sm mb-4">{{ error }}</p>
+        <button
+          @click="fetchUsers"
+          class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-md text-sm font-medium transition-all"
+        >
+          Try Again
+        </button>
+      </div>
+
+      <!-- Users Table -->
+      <div v-else-if="users.length > 0" class="space-y-4">
+        <!-- Stats -->
+        <div class="bg-card p-4 rounded-lg border border-border shadow-sm">
+          <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-foreground">User Management</h2>
+            <span class="text-sm text-muted-foreground">
+              {{ users.length }} user{{ users.length !== 1 ? 's' : '' }} total
+            </span>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <div class="bg-card border border-border rounded-md shadow-sm overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full">
+              <thead class="bg-muted/30">
+                <tr>
+                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    ID
+                  </th>
+                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Wallet Address
+                  </th>
+                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Role
+                  </th>
+                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Credits
+                  </th>
+                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Created
+                  </th>
+                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="bg-card divide-y divide-border">
+                <tr v-for="user in users" :key="user.id" class="hover:bg-muted/20 transition-colors">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-foreground">#{{ user.id }}</td>
+                  <td class="px-6 py-4 whitespace-nowrap">
                     <div class="flex items-center">
-                      <CreditCard class="h-3 w-3 mr-1 text-green-500" />
-                      <span class="font-medium text-foreground">
-                        {{ formatCredits(user.credits?.hours_remaining || 0) }}
-                      </span>
-                      <span class="text-muted-foreground ml-1">hours</span>
+                      <code class="text-xs bg-muted px-2 py-1 rounded font-mono text-primary">
+                        {{ formatWalletAddress(user.wallet_address) }}
+                      </code>
+                      <button
+                        @click="copyToClipboard(user.wallet_address)"
+                        class="ml-2 text-muted-foreground hover:text-foreground transition-colors"
+                        :title="`Copy ${user.wallet_address}`"
+                      >
+                        <Copy class="h-4 w-4" />
+                      </button>
                     </div>
-                    <div class="flex items-center text-xs text-muted-foreground">
-                      <span>{{ formatCredits(user.credits?.hours_used || 0) }} used</span>
-                    </div>
-                  </div>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
-                  {{ formatDate(user.created_at) }}
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm">
-                  <div class="flex items-center gap-2">
-                    <button
-                      v-if="!user.is_admin"
-                      @click="confirmPromoteUser(user)"
-                      :disabled="promotingUserId === user.id"
-                      class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white text-xs font-medium rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Loader2 v-if="promotingUserId === user.id" class="h-3 w-3 mr-1 animate-spin" />
-                      <Shield v-else class="h-3 w-3 mr-1" />
-                      Promote
-                    </button>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap">
                     <span
-                      v-else
-                      class="inline-flex items-center px-2 py-1 text-xs font-medium text-muted-foreground bg-muted rounded-md"
+                      v-if="user.is_admin"
+                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r from-purple-500/20 to-indigo-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30"
                     >
-                      <Check class="h-3 w-3 mr-1 text-green-500" />
+                      <Shield class="h-3 w-3 mr-1" />
                       Admin
                     </span>
-                    <button
-                      v-if="!user.is_admin"
-                      @click="openCreditDialog(user)"
-                      :disabled="updatingCreditsUserId === user.id"
-                      class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-green-500/80 to-emerald-500/80 hover:from-green-500/90 hover:to-emerald-500/90 text-white text-xs font-medium rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    <span
+                      v-else
+                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground"
                     >
-                      <Loader2 v-if="updatingCreditsUserId === user.id" class="h-3 w-3 mr-1 animate-spin" />
-                      <CreditCard v-else class="h-3 w-3 mr-1" />
-                      Add Credits
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                      <User class="h-3 w-3 mr-1" />
+                      User
+                    </span>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm">
+                    <div class="flex flex-col space-y-1">
+                      <div class="flex items-center">
+                        <CreditCard class="h-3 w-3 mr-1 text-green-500" />
+                        <span class="font-medium text-foreground">
+                          {{ formatCredits(user.credits?.hours_remaining || 0) }}
+                        </span>
+                        <span class="text-muted-foreground ml-1">hours</span>
+                      </div>
+                      <div class="flex items-center text-xs text-muted-foreground">
+                        <span>{{ formatCredits(user.credits?.hours_used || 0) }} used</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
+                    {{ formatDate(user.created_at) }}
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm">
+                    <div class="flex items-center gap-2">
+                      <button
+                        v-if="!user.is_admin"
+                        @click="confirmPromoteUser(user)"
+                        :disabled="promotingUserId === user.id"
+                        class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white text-xs font-medium rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Loader2 v-if="promotingUserId === user.id" class="h-3 w-3 mr-1 animate-spin" />
+                        <Shield v-else class="h-3 w-3 mr-1" />
+                        Promote
+                      </button>
+                      <span
+                        v-else
+                        class="inline-flex items-center px-2 py-1 text-xs font-medium text-muted-foreground bg-muted rounded-md"
+                      >
+                        <Check class="h-3 w-3 mr-1 text-green-500" />
+                        Admin
+                      </span>
+                      <button
+                        v-if="!user.is_admin"
+                        @click="openCreditDialog(user)"
+                        :disabled="updatingCreditsUserId === user.id"
+                        class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-green-500/80 to-emerald-500/80 hover:from-green-500/90 hover:to-emerald-500/90 text-white text-xs font-medium rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Loader2 v-if="updatingCreditsUserId === user.id" class="h-3 w-3 mr-1 animate-spin" />
+                        <CreditCard v-else class="h-3 w-3 mr-1" />
+                        Add Credits
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Bug Reports Section -->
-    <div v-if="users.length > 0" class="mt-8 space-y-4">
-      <div class="bg-card">
-        <div class="flex items-center justify-between">
+    <!-- Bug Reports Tab -->
+    <div v-if="activeTab === 'bugs'" class="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <div class="bg-card p-4 rounded-lg border border-border shadow-sm">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <h2 class="text-lg font-semibold text-foreground">Bug Reports</h2>
-          <div class="flex items-center gap-4">
+          <div class="flex items-center gap-4 w-full sm:w-auto">
             <select
               v-model="bugReportFilters.status"
               @change="fetchBugReports"
-              class="px-3 py-1 text-sm bg-background border border-input rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+              class="px-3 py-1.5 text-sm bg-background border border-input rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent w-full sm:w-auto"
             >
               <option value="">All Status</option>
               <option value="open">Open</option>
@@ -182,7 +223,7 @@
             <select
               v-model="bugReportFilters.severity"
               @change="fetchBugReports"
-              class="px-3 py-1 text-sm bg-background border border-input rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+              class="px-3 py-1.5 text-sm bg-background border border-input rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent w-full sm:w-auto"
             >
               <option value="">All Severity</option>
               <option value="low">Low</option>
@@ -190,8 +231,8 @@
               <option value="high">High</option>
               <option value="critical">Critical</option>
             </select>
-            <span class="text-sm text-muted-foreground">
-              {{ bugReports.length }} report{{ bugReports.length !== 1 ? 's' : '' }} total
+            <span class="text-sm text-muted-foreground whitespace-nowrap hidden sm:inline">
+              {{ bugReports.length }} report{{ bugReports.length !== 1 ? 's' : '' }}
             </span>
           </div>
         </div>
@@ -314,14 +355,12 @@
       </div>
     </div>
 
-    <!-- AI Usage Stats Section -->
-    <div v-if="users.length > 0" class="mt-8 space-y-4">
-      <div class="bg-card">
+    <!-- AI Usage Stats Tab -->
+    <div v-if="activeTab === 'ai'" class="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <div class="bg-card p-4 rounded-lg border border-border shadow-sm">
         <div class="flex items-center justify-between">
           <h2 class="text-lg font-semibold text-foreground">AI Usage Stats</h2>
-          <button @click="fetchAiStats" class="text-sm text-primary hover:text-primary/80 transition-colors">
-            Refresh
-          </button>
+          <!-- Refresh moved to header actions -->
         </div>
       </div>
 
@@ -493,9 +532,9 @@
       </div>
     </div>
 
-    <!-- UI Overrides Section -->
-    <div v-if="users.length > 0" class="mt-8 space-y-4">
-      <div class="bg-card">
+    <!-- UI Overrides Tab -->
+    <div v-if="activeTab === 'settings'" class="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <div class="bg-card p-4 rounded-lg border border-border shadow-sm">
         <div class="flex items-center justify-between">
           <h2 class="text-lg font-semibold text-foreground">UI Overrides</h2>
           <span class="text-sm text-muted-foreground">Test UI behavior across different platforms</span>
@@ -679,6 +718,8 @@
     Check,
     Trash2,
     FileText,
+    Activity,
+    Monitor,
   } from 'lucide-vue-next';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import api from '@/services/api';
@@ -772,6 +813,15 @@
     hours_to_add: 0,
   });
   const creditError = ref<string | null>(null);
+
+  // Tabs
+  const activeTab = ref('users');
+  const tabs = [
+    { id: 'users', label: 'Users', icon: User },
+    { id: 'bugs', label: 'Bug Reports', icon: FileText },
+    { id: 'ai', label: 'AI Usage', icon: Activity },
+    { id: 'settings', label: 'Settings', icon: Monitor },
+  ];
 
   // Bug reports state
   const bugReports = ref<BugReport[]>([]);
