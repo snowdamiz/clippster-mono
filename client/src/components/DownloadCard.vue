@@ -9,6 +9,15 @@
 
       <!-- Content overlay -->
       <div class="relative z-10 h-full flex flex-col items-center justify-center p-4">
+        <!-- Cancel Button -->
+        <button
+          @click.stop="handleCancel"
+          class="absolute top-2 right-2 p-1.5 rounded-full bg-black/40 text-white/70 hover:bg-red-500 hover:text-white transition-all opacity-0 group-hover:opacity-100 backdrop-blur-sm z-50"
+          title="Cancel Download (Shift+Click to cancel all segments)"
+        >
+          <X class="h-4 w-4" />
+        </button>
+
         <!-- Loading/Queued State -->
         <div class="flex flex-col items-center gap-3">
           <div v-if="download.isQueued" class="flex flex-col items-center gap-2">
@@ -48,18 +57,70 @@
         </span>
       </div>
     </div>
+
+    <!-- Confirmation Modal -->
+    <ConfirmationModal
+      :show="showConfirm"
+      :title="confirmTitle"
+      :message="confirmMessage"
+      confirm-text="Yes, Cancel"
+      suffix=""
+      @close="showConfirm = false"
+      @confirm="confirmAction"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-  import type { ActiveDownload } from '@/composables/useDownloads';
-  import { Loader2, DownloadCloud } from 'lucide-vue-next';
+  import { ref } from 'vue';
+  import { useDownloads, type ActiveDownload } from '@/composables/useDownloads';
+  import { Loader2, X } from 'lucide-vue-next';
+  import ConfirmationModal from './ConfirmationModal.vue';
+
+  const { cancelDownload, cancelGroup } = useDownloads();
 
   interface Props {
     download: ActiveDownload;
   }
 
-  defineProps<Props>();
+  const props = defineProps<Props>();
+
+  // Confirmation state
+  const showConfirm = ref(false);
+  const confirmTitle = ref('');
+  const confirmMessage = ref('');
+  const pendingAction = ref<(() => Promise<void>) | null>(null);
+
+  async function handleCancel(event: MouseEvent) {
+    if (props.download.groupId) {
+      // Check if Shift is held to cancel ALL segments
+      if (event.shiftKey) {
+        confirmTitle.value = 'Cancel Download Series';
+        confirmMessage.value = `This download is part of a series (Segment ${
+          props.download.segmentNumber || '?'
+        }). Cancel ALL segments in this group?`;
+        pendingAction.value = async () => await cancelGroup(props.download.groupId!);
+      } else {
+        // Default: Cancel ONLY this segment
+        confirmTitle.value = 'Cancel Segment';
+        confirmMessage.value = `Are you sure you want to cancel just this segment ("${props.download.title}")? The other segments in the queue will continue processing.`;
+        pendingAction.value = async () => await cancelDownload(props.download.id);
+      }
+    } else {
+      confirmTitle.value = 'Cancel Download';
+      confirmMessage.value = `Are you sure you want to cancel "${props.download.title}"?`;
+      pendingAction.value = async () => await cancelDownload(props.download.id);
+    }
+    showConfirm.value = true;
+  }
+
+  async function confirmAction() {
+    if (pendingAction.value) {
+      await pendingAction.value();
+    }
+    showConfirm.value = false;
+    pendingAction.value = null;
+  }
 
   // Helper function to format duration in seconds to human readable format
   function formatDuration(seconds: number): string {
