@@ -254,7 +254,7 @@ export async function getClipsWithVersionsByProjectId(
      LEFT JOIN clip_versions cv ON c.current_version_id = cv.id
      LEFT JOIN clip_detection_sessions s ON c.detection_session_id = s.id
      WHERE c.project_id = ?
-     ORDER BY s.created_at DESC, c.created_at DESC`,
+     ORDER BY COALESCE(cv.start_time, c.start_time) ASC`,
     [projectId, projectId]
   );
 
@@ -328,7 +328,7 @@ export async function getClipsByDetectionSession(sessionId: string): Promise<Cli
      LEFT JOIN clip_versions cv ON c.current_version_id = cv.id
      LEFT JOIN clip_detection_sessions s ON c.detection_session_id = s.id
      WHERE c.detection_session_id = ?
-     ORDER BY c.created_at ASC`,
+     ORDER BY COALESCE(cv.start_time, c.start_time) ASC`,
     [sessionId]
   );
 

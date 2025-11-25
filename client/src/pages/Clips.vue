@@ -24,7 +24,10 @@
 
       <div v-else>
         <!-- Filter Toolbar -->
-        <div class="mb-6 bg-card flex flex-col md:flex-row gap-4 items-center justify-between" v-if="clips.length > 0">
+        <div
+          class="mb-6 -mt-2 bg-card flex flex-col md:flex-row gap-4 items-center justify-between"
+          v-if="clips.length > 0"
+        >
           <!-- Left: Search -->
           <div class="relative w-full md:w-72">
             <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

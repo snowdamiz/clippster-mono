@@ -1,7 +1,7 @@
 <template>
   <div class="max-w-6xl mx-auto">
     <!-- Header -->
-    <div class="text-center mb-12">
+    <div class="text-center mb-16 mt-4">
       <div class="flex justify-center items-center gap-3 mb-4">
         <div class="p-2 bg-muted rounded-md">
           <CreditCard class="h-6 w-6 text-foreground" />
@@ -137,7 +137,7 @@
       </div>
     </div>
     <!-- Info Section -->
-    <div class="mt-20 relative">
+    <div class="mt-10 relative">
       <!-- Background decoration -->
       <div
         class="absolute inset-0 bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-purple-500/10 rounded-xl blur-3xl"
