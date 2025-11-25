@@ -80,6 +80,7 @@ defmodule ClippsterServerWeb.Router do
     pipe_through :api_admin
 
     get "/admin/users", AdminController, :list_users
+    get "/admin/ai-usage", AdminController, :get_ai_usage_stats
     post "/admin/users/:user_id/promote", AdminController, :promote_user
     put "/admin/users/:user_id/credits", AdminController, :update_user_credits
 

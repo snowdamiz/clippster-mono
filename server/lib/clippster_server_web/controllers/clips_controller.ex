@@ -1,5 +1,6 @@
 defmodule ClippsterServerWeb.ClipsController do
   use ClippsterServerWeb, :controller
+  alias ClippsterServer.AI
   alias ClippsterServer.AI.WhisperAPI
   alias ClippsterServer.AI.OpenRouterAPI
   alias ClippsterServer.AI.SystemPrompt
@@ -103,7 +104,7 @@ defmodule ClippsterServerWeb.ClipsController do
   # Separate function to handle the actual chunked clip detection process
   defp process_chunked_clip_detection(conn, project_id, user_prompt, chunks_metadata, processing_mode, user_id, credits_deducted, is_admin) do
     operation = fn ->
-      execute_chunked_clip_detection(project_id, user_prompt, chunks_metadata, processing_mode)
+      execute_chunked_clip_detection(project_id, user_prompt, chunks_metadata, processing_mode, user_id)
     end
 
     case retry_with_backoff(operation, 3, project_id) do
@@ -152,7 +153,7 @@ defmodule ClippsterServerWeb.ClipsController do
     end
   end
 
-  defp execute_chunked_clip_detection(project_id, user_prompt, chunks_metadata, processing_mode) do
+  defp execute_chunked_clip_detection(project_id, user_prompt, chunks_metadata, processing_mode, user_id) do
     # Broadcast initial progress
     ProgressChannel.broadcast_progress(project_id, "starting", 0, "Initializing chunked clip detection...")
 
@@ -161,7 +162,7 @@ defmodule ClippsterServerWeb.ClipsController do
       :pre_transcribed ->
         process_pre_transcribed_chunks(chunks_metadata, project_id)
       :raw_audio ->
-        process_raw_audio_chunks(chunks_metadata, project_id)
+        process_raw_audio_chunks(chunks_metadata, project_id, user_id)
     end
 
     IO.puts("[ClipsController] All chunks processed. #{length(chunk_transcripts)} results received")
@@ -191,11 +192,21 @@ defmodule ClippsterServerWeb.ClipsController do
     IO.puts("[ClipsController] OpenRouter API call completed")
 
     case ai_result do
-      {:ok, ai_response} ->
+      {:ok, ai_response, usage} ->
         IO.puts("[ClipsController] AI response received from OpenRouter")
+        
+        # Log AI usage
+        AI.log_usage(%{
+          user_id: user_id,
+          project_id: project_id,
+          provider: "openrouter",
+          model: Map.get(usage, "model") || System.get_env("OPENROUTER_MODEL", "openai/gpt-4o-mini"),
+          input_tokens: Map.get(usage, "prompt_tokens"),
+          output_tokens: Map.get(usage, "completion_tokens"),
+          total_tokens: Map.get(usage, "total_tokens"),
+          operation_type: "clip_generation"
+        })
 
-        # The OpenRouter API now handles validation and retry internally
-        # The response should already be validated and complete
         IO.puts("[ClipsController] AI response validation successful (handled by API)")
 
         # Enhanced validation using original chunk data
@@ -440,6 +451,22 @@ defmodule ClippsterServerWeb.ClipsController do
         IO.puts("[ClipsController] Sending audio to Whisper API...")
         ProgressChannel.broadcast_progress(project_id, "transcribing", 10, "Transcribing audio with Whisper...")
         whisper_result = WhisperAPI.transcribe(audio_upload)
+        
+        # Log Whisper usage if successful
+        case whisper_result do
+          {:ok, response} ->
+             duration = Map.get(response, "duration")
+             AI.log_usage(%{
+                user_id: user_id,
+                project_id: project_id,
+                provider: "whisper",
+                model: "whisper-1", 
+                duration_seconds: Decimal.new(to_string(duration)),
+                operation_type: "transcription"
+             })
+          _ -> :ok
+        end
+
         IO.puts("[ClipsController] WhisperAPI call completed")
         ProgressChannel.broadcast_progress(project_id, "transcribing", 40, "Audio transcription completed")
         {whisper_result, "fresh"}
@@ -510,9 +537,21 @@ defmodule ClippsterServerWeb.ClipsController do
         ProgressChannel.broadcast_progress(project_id, "analyzing", 80, "AI analysis completed")
 
         case ai_result do
-          {:ok, ai_response} ->
+          {:ok, ai_response, usage} ->
             IO.puts("[ClipsController] AI response received from OpenRouter")
             IO.puts("[ClipsController] AI response structure: #{inspect(Map.keys(ai_response))}")
+
+            # Log AI usage
+            AI.log_usage(%{
+              user_id: user_id,
+              project_id: project_id,
+              provider: "openrouter",
+              model: Map.get(usage, "model") || System.get_env("OPENROUTER_MODEL", "openai/gpt-4o-mini"),
+              input_tokens: Map.get(usage, "prompt_tokens"),
+              output_tokens: Map.get(usage, "completion_tokens"),
+              total_tokens: Map.get(usage, "total_tokens"),
+              operation_type: "clip_generation"
+            })
 
             # Step 4: Validate AI response structure
             case validate_ai_response(ai_response) do
@@ -657,7 +696,7 @@ defmodule ClippsterServerWeb.ClipsController do
   end
 
   # Process raw audio chunks (contains base64_data, needs transcription)
-  defp process_raw_audio_chunks(chunks_metadata, project_id) do
+  defp process_raw_audio_chunks(chunks_metadata, project_id, user_id) do
     total_chunks = length(chunks_metadata)
     IO.puts("[ClipsController] Processing #{total_chunks} raw audio chunks")
     ProgressChannel.broadcast_progress(project_id, "transcribing", 10, "Transcribing #{total_chunks} audio chunks...")
@@ -684,7 +723,7 @@ defmodule ClippsterServerWeb.ClipsController do
         ProgressChannel.broadcast_progress(project_id, "transcribing", trunc(chunk_progress),
           "Transcribing chunk #{chunk_index + 1}/#{total_chunks}...")
 
-        process_single_chunk(chunk_metadata, chunk_index, project_id)
+        process_single_chunk(chunk_metadata, chunk_index, project_id, user_id)
       end)
     end)
 
@@ -1191,7 +1230,7 @@ defmodule ClippsterServerWeb.ClipsController do
   end
 
   # Process a single chunk and return transcribed result with timing adjustment
-  defp process_single_chunk(chunk_metadata, chunk_index, _project_id) do
+  defp process_single_chunk(chunk_metadata, chunk_index, project_id, user_id) do
     try do
       chunk_id = Map.get(chunk_metadata, "chunk_id")
       base64_data = Map.get(chunk_metadata, "base64_data")
@@ -1214,6 +1253,17 @@ defmodule ClippsterServerWeb.ClipsController do
       case WhisperAPI.transcribe_binary(audio_data, chunk_upload) do
         {:ok, whisper_response} ->
           IO.puts("[ClipsController] Chunk #{chunk_index} transcription successful")
+          
+          # Log Whisper usage
+          duration = Map.get(whisper_response, "duration")
+          AI.log_usage(%{
+             user_id: user_id,
+             project_id: project_id,
+             provider: "whisper",
+             model: "whisper-1", 
+             duration_seconds: Decimal.new(to_string(duration)),
+             operation_type: "transcription_chunk"
+          })
 
           # Adjust timestamps in the response by chunk start_time
           adjusted_response = adjust_timestamps_for_chunk(whisper_response, start_time)

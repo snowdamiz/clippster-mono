@@ -103,7 +103,8 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
                 case validate_clips_response(clips) do
                   :ok ->
                     IO.puts("[OpenRouterAPI] Clips validation passed")
-                    {:ok, clips}
+                    usage = Map.get(response, "usage", %{})
+                    {:ok, clips, usage}
 
                   {:error, new_missing_fields} when attempt < max_attempts - 1 ->
                     IO.puts("[OpenRouterAPI] Validation failed, missing fields: #{inspect(new_missing_fields)}")

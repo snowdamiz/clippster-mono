@@ -314,6 +314,185 @@
       </div>
     </div>
 
+    <!-- AI Usage Stats Section -->
+    <div v-if="users.length > 0" class="mt-8 space-y-4">
+      <div class="bg-card">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-foreground">AI Usage Stats</h2>
+          <button @click="fetchAiStats" class="text-sm text-primary hover:text-primary/80 transition-colors">
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- Stats Cards -->
+      <div v-if="aiStats" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-card border border-border rounded-lg p-4 shadow-sm">
+          <h3 class="text-sm font-medium text-muted-foreground">Total Tokens</h3>
+          <p class="text-2xl font-bold text-foreground mt-2">{{ formatNumber(aiStats.stats.total_tokens) }}</p>
+        </div>
+        <div class="bg-card border border-border rounded-lg p-4 shadow-sm">
+          <h3 class="text-sm font-medium text-muted-foreground">Total Duration</h3>
+          <p class="text-2xl font-bold text-foreground mt-2">{{ formatDuration(aiStats.stats.total_duration) }}</p>
+        </div>
+        <div class="bg-card border border-border rounded-lg p-4 shadow-sm">
+          <h3 class="text-sm font-medium text-muted-foreground">Active Providers</h3>
+          <p class="text-2xl font-bold text-foreground mt-2">{{ aiStats.stats.provider_stats.length }}</p>
+        </div>
+      </div>
+
+      <!-- Breakdown Section -->
+      <div v-if="aiStats" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <!-- Models Breakdown -->
+        <div class="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
+          <div class="px-4 py-3 bg-muted/30 border-b border-border">
+            <h3 class="text-sm font-medium text-foreground">Usage by Model</h3>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full">
+              <thead class="bg-muted/10">
+                <tr>
+                  <th class="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Model</th>
+                  <th class="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Requests</th>
+                  <th class="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Tokens</th>
+                  <th class="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Duration</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-border">
+                <tr v-if="aiStats.stats.model_stats.length === 0">
+                  <td colspan="4" class="px-4 py-4 text-center text-sm text-muted-foreground">
+                    No usage data available
+                  </td>
+                </tr>
+                <tr v-for="stat in aiStats.stats.model_stats" :key="stat.model" class="hover:bg-muted/20">
+                  <td class="px-4 py-2 text-sm">
+                    <div class="flex flex-col">
+                      <span class="font-medium text-foreground">{{ stat.model }}</span>
+                      <span class="text-xs text-muted-foreground capitalize">{{ stat.provider }}</span>
+                    </div>
+                  </td>
+                  <td class="px-4 py-2 text-sm text-right font-mono">{{ formatNumber(stat.count) }}</td>
+                  <td class="px-4 py-2 text-sm text-right font-mono">
+                    {{ stat.total_tokens ? formatNumber(stat.total_tokens) : '-' }}
+                  </td>
+                  <td class="px-4 py-2 text-sm text-right font-mono">
+                    {{
+                      stat.total_duration && parseFloat(stat.total_duration) > 0
+                        ? formatDuration(stat.total_duration)
+                        : '-'
+                    }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Operations Breakdown -->
+        <div class="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
+          <div class="px-4 py-3 bg-muted/30 border-b border-border">
+            <h3 class="text-sm font-medium text-foreground">Usage by Operation</h3>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full">
+              <thead class="bg-muted/10">
+                <tr>
+                  <th class="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Operation</th>
+                  <th class="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Requests</th>
+                  <th class="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Tokens</th>
+                  <th class="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Duration</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-border">
+                <tr v-if="aiStats.stats.operation_stats.length === 0">
+                  <td colspan="4" class="px-4 py-4 text-center text-sm text-muted-foreground">
+                    No usage data available
+                  </td>
+                </tr>
+                <tr v-for="stat in aiStats.stats.operation_stats" :key="stat.operation" class="hover:bg-muted/20">
+                  <td class="px-4 py-2 text-sm font-medium text-foreground capitalize">
+                    {{ stat.operation.replace(/_/g, ' ') }}
+                  </td>
+                  <td class="px-4 py-2 text-sm text-right font-mono">{{ formatNumber(stat.count) }}</td>
+                  <td class="px-4 py-2 text-sm text-right font-mono">
+                    {{ stat.total_tokens ? formatNumber(stat.total_tokens) : '-' }}
+                  </td>
+                  <td class="px-4 py-2 text-sm text-right font-mono">
+                    {{
+                      stat.total_duration && parseFloat(stat.total_duration) > 0
+                        ? formatDuration(stat.total_duration)
+                        : '-'
+                    }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Logs Table -->
+      <div
+        v-if="aiStats && aiStats.recent_logs.length > 0"
+        class="bg-card border border-border rounded-lg shadow-sm overflow-hidden"
+      >
+        <div class="overflow-x-auto">
+          <table class="w-full">
+            <thead class="bg-muted/30">
+              <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Time
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  User
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Operation
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Provider/Model
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Usage
+                </th>
+              </tr>
+            </thead>
+            <tbody class="bg-card divide-y divide-border">
+              <tr v-for="log in aiStats.recent_logs" :key="log.id" class="hover:bg-muted/20 transition-colors">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
+                  {{ formatDate(log.created_at) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <code class="text-xs bg-muted px-2 py-1 rounded font-mono text-primary">
+                    {{ formatWalletAddress(log.user_wallet) }}
+                  </code>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span
+                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+                  >
+                    {{ log.operation }}
+                  </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                  <div class="flex flex-col">
+                    <span class="font-medium capitalize">{{ log.provider }}</span>
+                    <span class="text-xs text-muted-foreground">{{ log.model }}</span>
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                  <div v-if="log.tokens" class="text-foreground">{{ formatNumber(log.tokens) }} tokens</div>
+                  <div v-if="log.duration" class="text-foreground">
+                    {{ formatDuration(log.duration) }}
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- UI Overrides Section -->
     <div v-if="users.length > 0" class="mt-8 space-y-4">
       <div class="bg-card">
@@ -541,10 +720,48 @@
     count: number;
   }
 
+  interface AiUsageStats {
+    stats: {
+      total_tokens: number;
+      total_duration: string;
+      provider_stats: Array<{
+        provider: string;
+        count: number;
+        total_tokens: number;
+        total_duration: string;
+      }>;
+      model_stats: Array<{
+        provider: string;
+        model: string;
+        count: number;
+        total_tokens: number;
+        total_duration: string;
+      }>;
+      operation_stats: Array<{
+        operation: string;
+        count: number;
+        total_tokens: number;
+        total_duration: string;
+      }>;
+    };
+    recent_logs: Array<{
+      id: number;
+      user_wallet: string;
+      project_id: string;
+      provider: string;
+      model: string;
+      tokens: number;
+      duration: string;
+      operation: string;
+      created_at: string;
+    }>;
+  }
+
   const authStore = useAuthStore();
   const users = ref<User[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  const aiStats = ref<AiUsageStats | null>(null);
   const promotingUserId = ref<number | null>(null);
   const showPromoteDialog = ref(false);
   const userToPromote = ref<User | null>(null);
@@ -624,6 +841,18 @@
     if (credits === 'unlimited') return '∞';
     if (!credits || credits === 0) return '0.00';
     return credits.toFixed(2);
+  };
+
+  const formatNumber = (num: number) => {
+    return new Intl.NumberFormat('en-US').format(num || 0);
+  };
+
+  const formatDuration = (seconds: string | number) => {
+    const secs = Number(seconds) || 0;
+    if (secs < 60) return `${secs.toFixed(1)}s`;
+    const mins = Math.floor(secs / 60);
+    const remainingSecs = (secs % 60).toFixed(0);
+    return `${mins}m ${remainingSecs}s`;
   };
 
   const copyToClipboard = async (text: string) => {
@@ -812,6 +1041,20 @@
     } catch (err) {
       console.error('🔐 Admin - Error fetching bug reports:', err);
       error.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    }
+  };
+
+  const fetchAiStats = async () => {
+    try {
+      console.log('🔐 Admin - Fetching AI stats...');
+      const response = await api.get('/admin/ai-usage');
+
+      if (response.data.success) {
+        aiStats.value = response.data;
+        console.log('🔐 Admin - AI stats loaded:', response.data);
+      }
+    } catch (err) {
+      console.error('🔐 Admin - Error fetching AI stats:', err);
     }
   };
 
@@ -1008,6 +1251,7 @@
   onMounted(() => {
     fetchUsers();
     fetchBugReports();
+    fetchAiStats();
     loadPlatformOverride();
   });
 </script>

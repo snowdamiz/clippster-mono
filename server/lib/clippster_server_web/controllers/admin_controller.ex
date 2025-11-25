@@ -2,6 +2,38 @@ defmodule ClippsterServerWeb.AdminController do
   use ClippsterServerWeb, :controller
   alias ClippsterServer.Accounts
   alias ClippsterServer.Credits
+  alias ClippsterServer.AI
+
+  def get_ai_usage_stats(conn, _params) do
+    stats = AI.get_usage_stats()
+
+    # Transform logs for JSON response
+    recent_logs_data = Enum.map(stats.recent_logs, fn log ->
+      %{
+        id: log.id,
+        user_wallet: log.user.wallet_address,
+        project_id: log.project_id,
+        provider: log.provider,
+        model: log.model,
+        tokens: log.total_tokens,
+        duration: log.duration_seconds,
+        operation: log.operation_type,
+        created_at: log.inserted_at
+      }
+    end)
+
+    json(conn, %{
+      success: true,
+      stats: %{
+        total_tokens: stats.total_tokens,
+        total_duration: stats.total_duration,
+        provider_stats: stats.provider_stats,
+        model_stats: stats.model_stats,
+        operation_stats: stats.operation_stats
+      },
+      recent_logs: recent_logs_data
+    })
+  end
 
   def list_users(conn, _params) do
     users = Accounts.list_users()
