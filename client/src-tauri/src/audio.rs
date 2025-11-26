@@ -208,14 +208,47 @@ pub async fn extract_and_chunk_audio(
         return Err("Invalid video duration".to_string());
     }
 
-    // Determine if we should use the cached OGG file or the original video
-    // If the video is short enough (one chunk), using the OGG file might be faster/easier
-    // However, for chunking, FFmpeg needs random access.
+    // Determine if we should use the cached audio file or the original video
+    // First, validate that the cached audio has the correct duration
     
     let use_cached_audio = if let Ok(ref cached_path) = cached_audio_path_result {
         if cached_path.exists() {
-            println!("[Rust] Found cached audio file, will use for chunking: {:?}", cached_path);
-            true
+            println!("[Rust] Found cached audio file, validating duration: {:?}", cached_path);
+            
+            // Validate cached audio duration matches video duration
+            let cache_duration_output = shell.sidecar("ffmpeg")
+                .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+                .args([
+                    "-i", cached_path.to_str().ok_or("Invalid cached path")?,
+                    "-f", "null",
+                    "-"
+                ])
+                .output()
+                .await
+                .map_err(|e| format!("Failed to check cached audio duration: {}", e))?;
+            
+            let cache_stderr = String::from_utf8_lossy(&cache_duration_output.stderr);
+            let cached_duration = parse_duration_from_ffmpeg_output(&cache_stderr).unwrap_or(0.0);
+            
+            println!("[Rust] Cached audio duration: {:.2}s, Video duration: {:.2}s", cached_duration, video_duration);
+            
+            // Allow 5% tolerance for duration mismatch due to encoding differences
+            let duration_diff = (cached_duration - video_duration).abs();
+            let tolerance = video_duration * 0.05;
+            
+            if duration_diff <= tolerance {
+                println!("[Rust] Cached audio duration is valid, using cache");
+                true
+            } else {
+                println!("[Rust] WARNING: Cached audio duration mismatch ({:.2}s vs {:.2}s), skipping cache", cached_duration, video_duration);
+                // Delete the corrupted cache file
+                if let Err(e) = std::fs::remove_file(cached_path) {
+                    eprintln!("[Rust] Warning: Failed to remove corrupted cache file: {}", e);
+                } else {
+                    println!("[Rust] Deleted corrupted cache file");
+                }
+                false
+            }
         } else {
             false
         }

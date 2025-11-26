@@ -143,7 +143,9 @@ export function useChunkedTranscriptCache() {
     sessionId: string,
     chunkIndex: number,
     chunkId: string,
-    transcriptionResult: any
+    transcriptionResult: any,
+    chunkStartTime: number,
+    chunkEndTime: number
   ): Promise<{ success: boolean; error?: string }> {
     try {
       if (!currentSession.value || currentSession.value.id !== sessionId) {
@@ -167,12 +169,14 @@ export function useChunkedTranscriptCache() {
       const chunkLanguage = transcriptionResult.language || 'english';
       const chunkSize = JSON.stringify(transcriptionResult).length;
 
+      // Use the original chunk timing from the audio chunking, not the Whisper duration
+      // chunkStartTime/chunkEndTime represent where this chunk exists in the original video
       await storeTranscriptChunk(
         chunkedTranscript.id,
         chunkIndex,
         chunkId,
-        transcriptionResult.duration || 0,
-        (transcriptionResult.duration || 0) + (transcriptionResult.start_time || 0),
+        chunkStartTime,
+        chunkEndTime,
         JSON.stringify(transcriptionResult),
         chunkText,
         chunkSize,

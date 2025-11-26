@@ -245,12 +245,15 @@ export function useChunkedClipDetection() {
 
         const transcript = response.data.transcript;
 
-        // Store result
+        // Store result with the original chunk timing from audio chunking
+        // chunk.start_time and chunk.end_time represent where this chunk exists in the original video
         const storeResult = await storeChunkTranscription(
           sessionId,
           i, // chunkIndex (using array index)
           chunk.chunk_id,
-          transcript
+          transcript,
+          chunk.start_time,
+          chunk.end_time
         );
 
         if (!storeResult.success) {
