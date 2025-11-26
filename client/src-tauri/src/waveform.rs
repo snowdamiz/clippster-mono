@@ -260,7 +260,6 @@ pub async fn extract_audio_waveform(
     // Check/Generate cached OGG audio file first (shared with clip detection)
     let cached_audio_path = get_audio_cache_file_path(&video_path_hash)?;
     let audio_source_path: std::path::PathBuf;
-    let mut cleanup_audio_source = false;
 
     if cached_audio_path.exists() {
         println!("[Rust] Found cached audio file: {:?}", cached_audio_path);
@@ -320,7 +319,7 @@ pub async fn extract_audio_waveform(
         .map_err(|e| format!("Failed to decode to WAV: {}", e))?;
 
     if !decode_output.status.success() {
-        let stderr = String::from_utf8_lossy(&decode_output.stderr);
+        let _stderr = String::from_utf8_lossy(&decode_output.stderr);
         // If decoding fails, maybe try extracting from original video directly as fallback?
         println!("[Rust] Failed to decode cached MP3, trying direct extraction from video...");
 

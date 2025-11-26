@@ -327,7 +327,6 @@
     type TokenSearchResult,
   } from '@/services/pumpfun';
   import type { MonitoredStreamer } from '@/types/livestream';
-  import { useToast, useToastStore } from '@/composables/useToast';
   import { useCreditBalance } from '@/composables/useCreditBalance';
 
   type Platform = 'Youtube' | 'Twitch' | 'Kick' | 'PumpFun';
@@ -353,14 +352,11 @@
     monitoredStreamers,
     startMonitoring,
     stopMonitoring,
-    isMonitoring,
     activityLogs,
     addActivityLog,
     clearLogs,
   } = useLivestreamMonitoring();
 
-  const { toast } = useToast();
-  const { removeToast } = useToastStore();
   const { hoursRemaining, fetchBalance } = useCreditBalance();
 
   const isDetectingAny = computed(() => monitoredStreamers.value.size > 0 || activeSessions.value.size > 0);

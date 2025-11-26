@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use rand;
 use std::sync::Mutex;
 
 // Cache for storage paths to avoid repeated initialization

@@ -488,7 +488,7 @@ defmodule ClippsterServerWeb.ClipsController do
     end
   end
 
-  defp execute_clip_detection(params, user_id, is_admin) do
+  defp execute_clip_detection(params, user_id, _is_admin) do
     %{"project_id" => project_id, "prompt" => user_prompt} = params
     using_cached_transcript = Map.get(params, "using_cached_transcript", "false") == "true"
 

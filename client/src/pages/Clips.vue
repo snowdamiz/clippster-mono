@@ -323,7 +323,7 @@
   import { ref, onMounted, computed, watch } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
-  import { LayoutGrid, Folder, Play, Trash2, Video, Search, X, List, FolderOpen } from 'lucide-vue-next';
+  import { LayoutGrid, Folder, Video, Search, X, List, FolderOpen } from 'lucide-vue-next';
   import {
     getAllClips,
     deleteClip,
@@ -836,37 +836,9 @@
     return null;
   }
 
-  function getClipStatusBadgeClass(status: string | null): string {
-    switch (status) {
-      case 'generated':
-      case 'completed': // Handle potential 'completed' status same as generated
-        return 'bg-emerald-600 text-white border-emerald-500 shadow-sm font-medium';
-      case 'detected':
-        return 'bg-amber-400 text-black border-amber-500 shadow-sm font-medium';
-      case 'processing':
-        return 'bg-blue-600 text-white border-blue-500 shadow-sm font-medium';
-      default:
-        return 'bg-gray-600 text-gray-100 border-gray-500 shadow-sm';
-    }
-  }
-
   function getProjectName(projectId: string): string | null {
     const project = projectCache.value.get(projectId);
     return project?.name || null;
-  }
-
-  function getClipStatusText(status: string | null): string {
-    switch (status) {
-      case 'generated':
-      case 'completed':
-        return 'Generated';
-      case 'detected':
-        return 'Detected';
-      case 'processing':
-        return 'Processing';
-      default:
-        return 'Unknown';
-    }
   }
 
   async function openClipsFolder() {

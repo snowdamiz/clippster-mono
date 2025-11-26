@@ -116,7 +116,7 @@
 <script setup lang="ts">
   import { ref, watch, reactive } from 'vue';
   import { open } from '@tauri-apps/plugin-dialog';
-  import { getProject, type Project } from '@/services/database';
+  import { type Project } from '@/services/database';
   import { Video, X, Upload } from 'lucide-vue-next';
 
   export interface ProjectFormData {

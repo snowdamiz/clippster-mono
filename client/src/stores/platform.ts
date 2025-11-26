@@ -3,11 +3,10 @@ import { type PlatformId, platformConfigs } from '@/config/platforms';
 import {
   getPumpFunClips,
   extractMintId,
-  type PumpFunClip,
   searchPumpFunTokens,
   fetchTokenMetadataFromServer,
 } from '@/services/pumpfun';
-import { getKickClips, extractChannelSlug, type KickClip } from '@/services/kick';
+import { getKickClips, extractChannelSlug } from '@/services/kick';
 
 // Unified clip type that works across platforms
 export interface PlatformClip {

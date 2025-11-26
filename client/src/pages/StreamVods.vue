@@ -516,10 +516,9 @@
   import { Input } from '@/components/ui/input';
   import TimeRangePicker from '@/components/TimeRangePicker.vue';
   import PaginationFooter from '@/components/PaginationFooter.vue';
-  import { usePlatformStore, type PlatformClip, type RecentSearch } from '@/stores/platform';
+  import { usePlatformStore, type PlatformClip } from '@/stores/platform';
   import { platformConfigs, type PlatformId } from '@/config/platforms';
   import { extractMintId } from '@/services/pumpfun';
-  import { extractChannelSlug } from '@/services/kick';
   import { useToast } from '@/composables/useToast';
   import { useDownloads } from '@/composables/useDownloads';
   import { getNextSegmentNumber } from '@/services/database';
@@ -650,7 +649,7 @@
     return colors[platform] || '#6b7280';
   }
 
-  function getPlatformFallbackIcon(platform: PlatformId) {
+  function getPlatformFallbackIcon(_platform: PlatformId) {
     // Return a component or default to Clock
     return Clock;
   }
@@ -810,7 +809,7 @@
         {
           autoSegment: autoSegment.value,
           segmentDuration: autoSegmentDuration.value * 60,
-          provider: currentPlatformConfig.value.provider,
+          provider: currentPlatformConfig.value.provider as 'pumpfun' | 'kick',
         }
       );
 

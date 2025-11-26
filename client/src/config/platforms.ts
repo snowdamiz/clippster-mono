@@ -1,6 +1,3 @@
-import type { Component } from 'vue';
-import { Video } from 'lucide-vue-next';
-
 export type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube';
 
 export interface PlatformConfig {

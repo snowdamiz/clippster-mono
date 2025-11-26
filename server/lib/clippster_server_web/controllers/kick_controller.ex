@@ -30,7 +30,7 @@ defmodule ClippsterServerWeb.KickController do
             %{"data" => data} when is_list(data) -> data
             list when is_list(list) -> list
             _ -> 
-              Logger.warn("Kick API response body format unexpected: #{inspect(body)}")
+              Logger.warning("Kick API response body format unexpected: #{inspect(body)}")
               []
           end
 

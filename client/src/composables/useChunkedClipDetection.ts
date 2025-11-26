@@ -138,10 +138,6 @@ export function useChunkedClipDetection() {
         // If chunks came from an existing session, we may need to skip those already transcribed.
         // sessionResult.chunks contains AudioChunk[] which is raw audio.
 
-        // Check if we have transcribed chunks for this session
-        const { getCachedChunkMetadata } = transcriptCache;
-        const cached = await getCachedChunkMetadata(projectVideo.id);
-
         // Filter out chunks that are already transcribed if we are resuming?
         // But sessionResult usually returns fresh chunks from audio extraction if it ran extraction.
         // If initializeChunkedTranscriptSession found existing chunks, it returns them.

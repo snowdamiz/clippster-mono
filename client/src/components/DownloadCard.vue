@@ -89,7 +89,7 @@
   const showConfirm = ref(false);
   const confirmTitle = ref('');
   const confirmMessage = ref('');
-  const pendingAction = ref<(() => Promise<void>) | null>(null);
+  const pendingAction = ref<(() => Promise<void | boolean>) | null>(null);
 
   async function handleCancel(event: MouseEvent) {
     if (props.download.groupId) {
