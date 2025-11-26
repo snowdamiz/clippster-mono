@@ -137,3 +137,12 @@ export async function hasDetectedOrGeneratedClips(projectId: string): Promise<bo
   );
   return (result[0]?.count || 0) > 0;
 }
+
+export async function hasChildProjects(projectId: string): Promise<boolean> {
+  const db = await getDatabase();
+  const result = await db.select<{ count: number }[]>(
+    'SELECT COUNT(*) as count FROM projects WHERE parent_id = ?',
+    [projectId]
+  );
+  return (result[0]?.count || 0) > 0;
+}

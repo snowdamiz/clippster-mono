@@ -9,6 +9,7 @@ import {
   deleteProject,
   hasRawVideosForProject,
   hasClipsForProject,
+  hasChildProjects,
 } from '@/services/database';
 import type {
   LiveSession,
@@ -144,11 +145,12 @@ async function getStreamerInfo(streamerId: string): Promise<{
 // Helper to clean up empty session projects
 async function cleanupSessionProject(_sessionId: string, projectId: string) {
   try {
-    // Check if project is empty (no videos, no clips)
+    // Check if project is empty (no videos, no clips, AND no child projects)
     const hasVideos = await hasRawVideosForProject(projectId);
     const hasClips = await hasClipsForProject(projectId);
+    const hasChildren = await hasChildProjects(projectId);
 
-    if (!hasVideos && !hasClips) {
+    if (!hasVideos && !hasClips && !hasChildren) {
       console.log('[LiveMonitor] Cleaning up empty session project:', projectId);
       await deleteProject(projectId);
 

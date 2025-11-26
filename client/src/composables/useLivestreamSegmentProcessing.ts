@@ -110,7 +110,8 @@ export function useLivestreamSegmentProcessing() {
       const segmentProjectId = await createProject(
         segmentProjectName,
         parentProject?.description || undefined,
-        job.projectId
+        job.projectId,
+        'PumpFun'
       );
 
       // Generate thumbnail for the segment video
@@ -137,7 +138,9 @@ export function useLivestreamSegmentProcessing() {
       });
 
       // Notify other components that a new video is available
-      window.dispatchEvent(new CustomEvent('video-added', { detail: { rawVideoId } }));
+      window.dispatchEvent(
+        new CustomEvent('video-added', { detail: { rawVideoId, projectId: segmentProjectId } })
+      );
 
       await updateLivestreamSegment(job.segmentId, { raw_video_id: rawVideoId });
 

@@ -129,9 +129,29 @@ export async function createLivestreamSession(
   const now = timestamp();
   const startTime = streamStartTime ?? now;
 
-  const projectName = `${displayName || mintId.slice(0, 6)} Live ${new Date().toLocaleString()}`;
-  const projectDescription = `PumpFun livestream for ${displayName} (${mintId})`;
-  const projectId = await createProject(projectName, projectDescription);
+  // Try to find an existing parent project for this streamer from a recent session (within last 24 hours)
+  // This ensures segments from reconnects/multiple sessions are grouped together
+  const recentCutoff = now - 86400; // 24 hours ago
+  const existingSession = await db.select<{ project_id: string }[]>(
+    `SELECT project_id FROM livestream_sessions 
+     WHERE monitored_streamer_id = ? AND project_id IS NOT NULL AND created_at > ?
+     ORDER BY created_at DESC LIMIT 1`,
+    [monitoredStreamerId, recentCutoff]
+  );
+
+  let projectId: string;
+
+  if (existingSession.length > 0 && existingSession[0].project_id) {
+    // Reuse existing parent project
+    projectId = existingSession[0].project_id;
+    console.log('[LiveMonitor] Reusing existing parent project:', projectId);
+  } else {
+    // Create a new parent project for this streamer
+    const projectName = `${displayName || mintId.slice(0, 6)} Live ${new Date().toLocaleString()}`;
+    const projectDescription = `PumpFun livestream for ${displayName} (${mintId})`;
+    projectId = await createProject(projectName, projectDescription, undefined, 'PumpFun');
+    console.log('[LiveMonitor] Created new parent project:', projectId);
+  }
 
   await db.execute(
     'INSERT INTO livestream_sessions (id, monitored_streamer_id, mint_id, stream_start_time, stream_end_time, is_recording, total_segments, processed_segments, created_at, updated_at, project_id) VALUES (?, ?, ?, ?, NULL, 1, 0, 0, ?, ?, ?)',

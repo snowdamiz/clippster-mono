@@ -86,6 +86,7 @@ export {
   hasRawVideosForProject,
   hasClipsForProject,
   hasDetectedOrGeneratedClips,
+  hasChildProjects,
 } from './database/projects';
 
 // Re-export prompt functions
