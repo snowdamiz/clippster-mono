@@ -94,53 +94,39 @@ const router = createRouter({
         },
       ],
     },
+    // Unified VODs page for all streaming platforms
     {
-      path: '/pumpfun',
-      name: 'pumpfun',
+      path: '/vods',
+      name: 'vods',
       component: () => import('@/layouts/DashboardLayout.vue'),
       children: [
         {
           path: '',
-          name: 'pumpfun-home',
-          component: () => import('@/pages/PumpFun.vue'),
+          name: 'vods-home',
+          component: () => import('@/pages/StreamVods.vue'),
         },
       ],
+    },
+    // Legacy redirects for old platform routes
+    {
+      path: '/pumpfun',
+      redirect: '/vods',
     },
     {
       path: '/kick',
-      name: 'kick',
-      component: () => import('@/layouts/DashboardLayout.vue'),
-      children: [
-        {
-          path: '',
-          name: 'kick-home',
-          component: () => import('@/pages/Kick.vue'),
-        },
-      ],
+      redirect: '/vods',
     },
     {
       path: '/twitch',
-      name: 'twitch',
-      component: () => import('@/layouts/DashboardLayout.vue'),
-      children: [
-        {
-          path: '',
-          name: 'twitch-home',
-          component: () => import('@/pages/Twitch.vue'),
-        },
-      ],
+      redirect: '/vods',
     },
     {
       path: '/youtube',
-      name: 'youtube',
-      component: () => import('@/layouts/DashboardLayout.vue'),
-      children: [
-        {
-          path: '',
-          name: 'youtube-home',
-          component: () => import('@/pages/YouTube.vue'),
-        },
-      ],
+      redirect: '/vods',
+    },
+    {
+      path: '/platform/:platform',
+      redirect: '/vods',
     },
     {
       path: '/admin',

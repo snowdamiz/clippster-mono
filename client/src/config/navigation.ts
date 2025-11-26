@@ -29,30 +29,29 @@ export const navigationItems: NavigationItem[] = [
     icon: Folder,
   },
   {
-    name: 'Assets',
-    path: '/assets',
-    icon: Archive,
-  },
-  {
     name: 'My Clips',
     path: '/clips',
     icon: LayoutGrid,
   },
   {
-    name: 'Live Clip',
+    name: 'Clip Live',
     path: '/live-clip',
     icon: Radio,
+  },
+  {
+    name: 'Stream VODs',
+    path: '/vods',
+    icon: Video,
+  },
+  {
+    name: 'Assets',
+    path: '/assets',
+    icon: Archive,
   },
   {
     name: 'Prompts',
     path: '/prompts',
     icon: MessageSquare,
-  },
-  {
-    name: 'Bug Report',
-    path: '/bug-report',
-    icon: Bug,
-    action: 'dialog',
   },
   {
     name: 'Admin',
@@ -61,31 +60,9 @@ export const navigationItems: NavigationItem[] = [
     adminOnly: true,
   },
   {
-    name: 'PumpFun',
-    path: '/pumpfun',
-    icon: '/capsule.svg', // Keep SVG file for PumpFun as it was already using this
-    category: 'Stream Vods',
-    useImage: true,
-  },
-  {
-    name: 'Kick',
-    path: '/kick',
-    icon: '/kick.svg',
-    category: 'Stream Vods',
-    useImage: true,
-  },
-  {
-    name: 'Twitch',
-    path: '/twitch',
-    icon: '/twitch.svg',
-    category: 'Stream Vods',
-    useImage: true,
-  },
-  {
-    name: 'YouTube',
-    path: '/youtube',
-    icon: '/youtube.svg',
-    category: 'Stream Vods',
-    useImage: true,
+    name: 'Bug Report',
+    path: '/bug-report',
+    icon: Bug,
+    action: 'dialog',
   },
 ];
