@@ -112,7 +112,7 @@
 
 <script setup lang="ts">
   import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
-  import { listen } from '@tauri-apps/api/event';
+  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import {
     getClipDetectionSessionsByProjectId,
     getAllPrompts,
@@ -162,6 +162,9 @@
 
   // Ref for TranscriptPanel component
   const transcriptPanelRef = ref<InstanceType<typeof TranscriptPanel> | null>(null);
+
+  // Store unlisten functions for cleanup
+  const unlistenFunctions = ref<UnlistenFn[]>([]);
 
   // Use transcript data composable
   const { transcriptData } = useTranscriptData(computed(() => props.projectId || null));
@@ -243,8 +246,12 @@
 
     // Add event listeners for clip build events using Tauri API
     try {
-      await listen('clip-build-progress', handleClipBuildProgress);
-      await listen('clip-build-complete', handleClipBuildComplete);
+      const progressUnlisten = await listen('clip-build-progress', handleClipBuildProgress);
+      const completeUnlisten = await listen('clip-build-complete', handleClipBuildComplete);
+
+      // Store unlisten functions for cleanup on unmount
+      unlistenFunctions.value = [progressUnlisten, completeUnlisten];
+
       console.log('[MediaPanel] Tauri event listeners for clip build events set up successfully');
     } catch (error) {
       console.error('[MediaPanel] Failed to set up Tauri event listeners:', error);
@@ -254,6 +261,17 @@
   onUnmounted(() => {
     // Remove event listener to prevent memory leaks
     document.removeEventListener('refresh-clips', handleRefreshEvent as EventListener);
+
+    // Clean up Tauri event listeners
+    unlistenFunctions.value.forEach((unlisten) => {
+      try {
+        unlisten();
+      } catch (error) {
+        console.error('[MediaPanel] Error cleaning up Tauri listener:', error);
+      }
+    });
+    unlistenFunctions.value = [];
+
     console.log('[MediaPanel] Component unmounted, event listeners cleaned up');
   });
 
@@ -390,9 +408,34 @@
   // Handle clip build completion events
   function handleClipBuildComplete(event: any) {
     const payload = event.payload || event.detail;
+
+    if (!payload) {
+      console.error('[MediaPanel] Received clip-build-complete event with no payload');
+      return;
+    }
+
     const { clip_id, success, output_path, thumbnail_path, duration, file_size, error } = payload;
 
-    console.log(`[MediaPanel] Received clip build complete event for: ${clip_id}`);
+    console.log(`[MediaPanel] Received clip build complete event for: ${clip_id}`, { success, output_path });
+
+    // Immediately update local state for instant UI feedback
+    const clip = clips.value.find((c) => c.id === clip_id);
+    if (clip) {
+      if (success) {
+        clip.build_status = 'completed';
+        clip.build_progress = 100;
+        clip.built_file_path = output_path;
+        clip.built_thumbnail_path = thumbnail_path;
+        clip.built_duration = duration;
+        clip.built_file_size = file_size;
+        console.log(`[MediaPanel] Local state updated immediately for clip: ${clip_id}`);
+      } else {
+        clip.build_status = 'failed';
+        clip.build_error = error || 'Unknown build error';
+      }
+    } else {
+      console.warn(`[MediaPanel] Clip ${clip_id} not found in local state, will refresh from database`);
+    }
 
     if (success) {
       console.log(`[MediaPanel] Clip build SUCCEEDED: ${clip_id}`);
@@ -411,6 +454,8 @@
         })
         .catch((dbError) => {
           console.error('[MediaPanel] Failed to update clip build completion:', dbError);
+          // Still refresh to try to get consistent state
+          refreshClips();
         });
     } else {
       console.log(`[MediaPanel] Clip build FAILED: ${clip_id} - ${error}`);
@@ -424,6 +469,8 @@
         })
         .catch((dbError) => {
           console.error('[MediaPanel] Failed to update clip build failure:', dbError);
+          // Still refresh to try to get consistent state
+          refreshClips();
         });
     }
   }

@@ -167,8 +167,8 @@
                   <button
                     v-else-if="clip.build_status === 'completed' && clip.built_file_path"
                     class="p-1.5 hover:bg-green-500/15 rounded-md transition-colors text-green-500/80 hover:text-green-400"
-                    title="Open built clip"
-                    @click.stop="onOpenBuiltClip(clip)"
+                    title="Save clip to..."
+                    @click.stop="onSaveBuiltClip(clip)"
                   >
                     <DownloadIcon class="h-4 w-4" />
                   </button>
@@ -700,19 +700,51 @@
     }
   }
 
-  async function onOpenBuiltClip(clip: ClipWithVersion) {
+  async function onSaveBuiltClip(clip: ClipWithVersion) {
     if (!clip.built_file_path) {
       console.error('[ClipsTab] No built file path available');
       return;
     }
 
     try {
-      const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
-      await revealItemInDir(clip.built_file_path);
-      console.log('[ClipsTab] Opened built clip:', clip.built_file_path);
+      const { save } = await import('@tauri-apps/plugin-dialog');
+      const { invoke } = await import('@tauri-apps/api/core');
+
+      // Extract the filename from the source path
+      const sourcePath = clip.built_file_path;
+      const fileName = sourcePath.split(/[/\\]/).pop() || 'clip.mp4';
+
+      // Open save dialog so user can choose where to save
+      const destinationPath = await save({
+        title: 'Save Clip As',
+        defaultPath: fileName,
+        filters: [
+          { name: 'Video Files', extensions: ['mp4', 'mov'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      });
+
+      // User cancelled the dialog
+      if (!destinationPath) {
+        console.log('[ClipsTab] Save dialog cancelled');
+        return;
+      }
+
+      // Copy the clip to the selected destination
+      await invoke('copy_clip_to_destination', {
+        sourcePath: sourcePath,
+        destinationPath: destinationPath,
+      });
+
+      console.log('[ClipsTab] Clip saved to:', destinationPath);
+
+      // Show success message
+      const toastComposable = await import('@/composables/useToast');
+      const { success: showSuccessToast } = toastComposable.useToast();
+      showSuccessToast('Clip Saved', `Clip saved to ${destinationPath}`);
     } catch (error) {
-      console.error('[ClipsTab] Failed to open built clip:', error);
-      showError('Failed to Open', 'Could not open the built clip file. Please check if the file still exists.');
+      console.error('[ClipsTab] Failed to save clip:', error);
+      showError('Failed to Save', 'Could not save the clip file. Please try again.');
     }
   }
 

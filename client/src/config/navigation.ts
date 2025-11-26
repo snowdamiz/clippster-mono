@@ -34,7 +34,7 @@ export const navigationItems: NavigationItem[] = [
     icon: Archive,
   },
   {
-    name: 'Clips',
+    name: 'My Clips',
     path: '/clips',
     icon: LayoutGrid,
   },

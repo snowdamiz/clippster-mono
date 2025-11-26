@@ -351,6 +351,7 @@ pub fn run() {
             storage::get_storage_paths,
             storage::copy_video_to_storage,
             storage::copy_asset_to_storage,
+            storage::copy_clip_to_destination,
             storage::delete_asset_file,
             storage::generate_thumbnail,
             storage::save_temp_file,

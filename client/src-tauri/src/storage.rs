@@ -475,3 +475,35 @@ pub async fn get_video_duration(app: tauri::AppHandle, video_path: String) -> Re
 
     Err("Could not determine video duration".to_string())
 }
+
+/// Tauri command to copy a clip file to a user-specified destination
+/// This is used when the user wants to "download" (export) a clip to a custom location
+#[tauri::command]
+pub async fn copy_clip_to_destination(source_path: String, destination_path: String) -> Result<String, String> {
+    use std::fs;
+    use std::path::Path;
+
+    let source = Path::new(&source_path);
+    let destination = Path::new(&destination_path);
+
+    // Validate source file exists
+    if !source.exists() {
+        return Err("Source clip file does not exist".to_string());
+    }
+
+    // Create destination directory if it doesn't exist
+    if let Some(parent) = destination.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create destination directory: {}", e))?;
+        }
+    }
+
+    // Copy the file (don't move, just copy)
+    fs::copy(source, destination)
+        .map_err(|e| format!("Failed to copy clip: {}", e))?;
+
+    println!("[Rust] Copied clip from {} to {}", source_path, destination_path);
+    
+    Ok(destination.to_string_lossy().to_string())
+}

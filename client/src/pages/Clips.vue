@@ -1,8 +1,8 @@
 <template>
   <div class="clips-page">
     <PageLayout
-      title="Clips"
-      description="Browse and manage all your video clips"
+      title="My Clips"
+      description="Browse and manage your generated video clips"
       :show-header="true"
       :icon="LayoutGrid"
     >
@@ -203,9 +203,9 @@
 
         <!-- Empty State -->
         <EmptyState
-          v-if="clips.length === 0"
+          v-if="filteredClips.length === 0 && clips.length === 0"
           title="No clips yet"
-          description="Generate or detect your first video clip to get started"
+          description="Generate your first video clip from a project to see it here"
         >
           <template #icon>
             <Video class="h-16 w-16 text-muted-foreground" />
@@ -373,7 +373,6 @@
   const statusOptions = [
     { label: 'All Status', value: 'all' },
     { label: 'Generated', value: 'generated' },
-    { label: 'Detected', value: 'detected' },
     { label: 'Processing', value: 'processing' },
   ];
 
@@ -420,14 +419,15 @@
   const currentPage = ref(1);
   const clipsPerPage = 20;
 
-  // Computed property to check if any clips have actual files
+  // Computed property to check if any generated clips have actual files
   const hasAnyClipsWithFiles = computed(() => {
-    return clips.value.some((clip) => clip.file_path && clip.file_path.trim() !== '');
+    return filteredClips.value.some((clip) => clip.file_path && clip.file_path.trim() !== '');
   });
 
   // Filtered clips
   const filteredClips = computed(() => {
-    let result = clips.value;
+    // First, filter out detected-only clips - only show generated/processing clips
+    let result = clips.value.filter((c) => c.status !== 'detected');
 
     // 1. Search Text
     if (searchQuery.value) {
@@ -821,8 +821,8 @@
       return clipThumbnail;
     }
 
-    // If no clip thumbnail and this is a detected clip, try to use raw video thumbnail
-    if (clip.status === 'detected' && clip.project_id) {
+    // If no clip thumbnail and clip has a project, try to use raw video thumbnail as fallback
+    if (clip.project_id) {
       const rawVideos = rawVideoCache.value.get(clip.project_id);
       if (rawVideos && rawVideos.length > 0) {
         // Use the first raw video's thumbnail as fallback
