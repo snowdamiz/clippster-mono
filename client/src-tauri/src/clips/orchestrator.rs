@@ -35,6 +35,46 @@ fn sanitize_clip_name(name: &str) -> String {
     sanitized
 }
 
+// Helper function to convert clip name to snake_case for filenames
+// e.g., "Epic Victory Trash Talk" -> "epic_victory_trash_talk"
+fn clip_name_to_snake_case(name: &str) -> String {
+    // First, sanitize for filesystem
+    let invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*', '.'];
+    let mut result = name.to_lowercase();
+    
+    for ch in invalid_chars {
+        result = result.replace(ch, "");
+    }
+    
+    // Replace spaces and multiple underscores/hyphens with single underscore
+    result = result
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect::<String>();
+    
+    // Collapse multiple underscores into one
+    while result.contains("__") {
+        result = result.replace("__", "_");
+    }
+    
+    // Trim underscores from start/end
+    result = result.trim_matches('_').to_string();
+    
+    // Limit length to avoid filesystem issues
+    if result.len() > 80 {
+        result.truncate(80);
+        // Make sure we don't end with an underscore after truncation
+        result = result.trim_end_matches('_').to_string();
+    }
+    
+    // If empty after sanitization, use a default name
+    if result.is_empty() {
+        result = "clip".to_string();
+    }
+    
+    result
+}
+
 // Helper function to get or create the run folder for a project using database-tracked run numbers
 // If run_number is None (manually generated clips), uses a special "manual" folder
 fn get_or_create_run_folder(
@@ -137,6 +177,9 @@ pub async fn build_clip_internal_simple(
     let total_ratios = aspect_ratios.len();
     println!("[Rust] Building {} aspect ratios in parallel...", total_ratios);
     
+    // Convert clip name to snake_case for the filename (e.g., "Epic Victory" -> "epic_victory")
+    let snake_case_clip_name = clip_name_to_snake_case(clip_name);
+    
     let build_tasks: Vec<_> = aspect_ratios.iter().enumerate().map(|(ratio_idx, aspect_ratio_str)| {
         let app = app.clone();
         let video_path = video_path.to_string();
@@ -153,6 +196,7 @@ pub async fn build_clip_internal_simple(
         let video_info = video_info.clone();
         let intro_outro_cache = intro_outro_cache.clone();
         let aspect_ratio_str = aspect_ratio_str.clone();
+        let snake_case_name = snake_case_clip_name.clone();
         
         async move {
             println!("[Rust] Building clip for aspect ratio: {}", aspect_ratio_str);
@@ -170,9 +214,10 @@ pub async fn build_clip_internal_simple(
             // Parse aspect ratio string (e.g., "16:9")
             let aspect_ratio = parse_aspect_ratio(&aspect_ratio_str)?;
             
-            // Create filename with aspect ratio (replace : with -) and selected format (mp4/mov)
+            // Create filename using the AI-generated clip name in snake_case
+            // e.g., "Epic Victory Trash Talk" with 16:9 -> "epic_victory_trash_talk_16-9.mp4"
             let ratio_suffix = aspect_ratio_str.replace(":", "-");
-            let output_filename = format!("clip_{}.{}", ratio_suffix, output_format);
+            let output_filename = format!("{}_{}.{}", snake_case_name, ratio_suffix, output_format);
             let output_path = clip_base_dir.join(&output_filename);
 
             // Generate subtitle file if needed for this aspect ratio
