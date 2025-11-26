@@ -817,15 +817,20 @@ defmodule ClippsterServerWeb.ClipsController do
         {:ok, whisper_response} ->
           IO.puts("[ClipsController] Chunk #{chunk_index} JSON parsed successfully")
 
+          # Adjust timestamps in the Whisper response by the chunk's start_time
+          # Whisper returns timestamps relative to chunk start (0-based), but we need
+          # absolute video timestamps for clip detection to work correctly
+          adjusted_response = adjust_timestamps_for_chunk(whisper_response, start_time)
+
           # Create result structure consistent with raw audio processing
           chunk_result = %{
             chunk_id: chunk_id,
             chunk_index: chunk_index,
             start_time: start_time,
             end_time: end_time,
-            adjusted_whisper_response: whisper_response,  # Already has correct timestamps
+            adjusted_whisper_response: adjusted_response,
             original_whisper_response: whisper_response,
-            transcription: whisper_response
+            transcription: adjusted_response
           }
 
           {:ok, chunk_result}

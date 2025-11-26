@@ -494,6 +494,15 @@ export async function persistClipDetectionResults(
         } else if (usedCachedTranscript) {
           console.log('[Database] Using cached transcript segments, no segment storage needed');
         }
+
+        // Fire transcript-updated event to notify UI components
+        console.log('[Database] Firing transcript-updated event for project:', projectId);
+        setTimeout(() => {
+          const refreshEvent = new CustomEvent('transcript-updated', {
+            detail: { projectId: projectId },
+          });
+          document.dispatchEvent(refreshEvent);
+        }, 300);
       }
     } catch (error) {
       console.error('[Database] Failed to store transcript:', error);

@@ -99,18 +99,37 @@ export function useTranscriptData(projectId: Ref<string | null>) {
 
   // Load transcript data for enhanced tooltips
   async function loadTranscriptData(projectId: string | null) {
+    console.log('[useTranscriptData] loadTranscriptData called with projectId:', projectId);
+
     if (!projectId) {
+      console.log('[useTranscriptData] No projectId, clearing data');
       transcriptData.value = null;
       return;
     }
 
     try {
+      console.log('[useTranscriptData] Fetching transcript from database...');
       const { transcript, segments } = await getTranscriptWithSegmentsByProjectId(projectId);
+
+      console.log('[useTranscriptData] Database response:', {
+        hasTranscript: !!transcript,
+        transcriptId: transcript?.id,
+        hasRawJson: !!transcript?.raw_json,
+        rawJsonLength: transcript?.raw_json?.length,
+        segmentsCount: segments?.length,
+      });
 
       if (transcript && transcript.raw_json) {
         // Parse the raw JSON to extract word-level timing and segments
         const words = parseTranscriptToWords(transcript.raw_json);
         const whisperSegments = parseWhisperSegments(transcript.raw_json);
+
+        console.log('[useTranscriptData] Parsed transcript:', {
+          wordsCount: words.length,
+          whisperSegmentsCount: whisperSegments.length,
+          firstWord: words[0],
+          lastWord: words[words.length - 1],
+        });
 
         transcriptData.value = {
           transcript,
@@ -121,11 +140,14 @@ export function useTranscriptData(projectId: Ref<string | null>) {
 
         // Clear cache when new transcript data is loaded
         wordSearchCache.value.clear();
+        console.log('[useTranscriptData] Transcript data set successfully');
       } else {
+        console.log('[useTranscriptData] No transcript or raw_json found, clearing data');
         transcriptData.value = null;
         wordSearchCache.value.clear();
       }
     } catch (error) {
+      console.error('[useTranscriptData] Error loading transcript:', error);
       transcriptData.value = null;
       wordSearchCache.value.clear();
     }
@@ -214,7 +236,8 @@ export function useTranscriptData(projectId: Ref<string | null>) {
   // Watch for projectId changes
   watch(
     projectId,
-    (newProjectId) => {
+    (newProjectId, oldProjectId) => {
+      console.log('[useTranscriptData] projectId watch triggered:', { newProjectId, oldProjectId });
       loadTranscriptData(newProjectId || null);
     },
     { immediate: true }

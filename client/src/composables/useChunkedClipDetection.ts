@@ -223,13 +223,15 @@ export function useChunkedClipDetection() {
         for (let j = 0; j < binaryString.length; j++) {
           bytes[j] = binaryString.charCodeAt(j);
         }
-        const blob = new Blob([bytes], { type: 'audio/ogg' });
-        const audioFile = new File([blob], chunk.filename, { type: 'audio/ogg' });
+
+        // Use audio/mpeg for MP3 compatibility
+        const blob = new Blob([bytes], { type: 'audio/mpeg' });
+        const audioFile = new File([blob], chunk.filename, { type: 'audio/mpeg' });
 
         // Prepare upload
         const formData = new FormData();
         formData.append('project_id', projectId);
-        formData.append('audio', audioFile);
+        formData.append('audio', audioFile); // This uses the File object which includes filename
         formData.append('duration', chunk.duration.toString());
 
         // Send to transcribe endpoint
@@ -243,12 +245,15 @@ export function useChunkedClipDetection() {
 
         const transcript = response.data.transcript;
 
-        // Store result
+        // Store result with the original chunk timing from audio chunking
+        // chunk.start_time and chunk.end_time represent where this chunk exists in the original video
         const storeResult = await storeChunkTranscription(
           sessionId,
           i, // chunkIndex (using array index)
           chunk.chunk_id,
-          transcript
+          transcript,
+          chunk.start_time,
+          chunk.end_time
         );
 
         if (!storeResult.success) {
@@ -330,6 +335,111 @@ export function useChunkedClipDetection() {
         detectionModel: 'claude-3.5-sonnet-chunked',
         serverResponseId: result.jobId || null,
       });
+
+      // IMPORTANT: When using cached chunks, the full transcript isn't part of the response.
+      // We need to stitch the chunked transcripts together and save it as the project transcript
+      // so the TranscriptPanel can display it.
+
+      const { createTranscript, createTranscriptSegment, getTranscriptByProjectId } = await import(
+        '@/services/database'
+      );
+      const existingTranscript = await getTranscriptByProjectId(projectId);
+
+      if (!existingTranscript) {
+        try {
+          // Fetch all chunks from the database
+          const { getTranscriptChunks, getChunkedTranscriptByRawVideoId } = await import(
+            '@/services/database'
+          );
+          const rawVideos = await getRawVideosByProjectId(projectId);
+
+          if (rawVideos.length > 0) {
+            const chunkedTranscript = await getChunkedTranscriptByRawVideoId(rawVideos[0].id);
+
+            if (chunkedTranscript) {
+              const chunks = await getTranscriptChunks(chunkedTranscript.id);
+
+              // Combine chunks into a full transcript
+              let fullText = '';
+              let combinedSegments: any[] = [];
+              let combinedWords: any[] = [];
+
+              for (const chunk of chunks) {
+                try {
+                  const chunkData = JSON.parse(chunk.raw_json);
+                  if (chunkData.text) fullText += chunkData.text + ' ';
+
+                  if (chunkData.segments && Array.isArray(chunkData.segments)) {
+                    // Adjust segment times by chunk start time
+                    const adjustedSegments = chunkData.segments.map((seg: any) => ({
+                      ...seg,
+                      start: (seg.start || 0) + chunk.start_time,
+                      end: (seg.end || 0) + chunk.start_time,
+                      // Adjust word times if available
+                      words: seg.words?.map((w: any) => ({
+                        ...w,
+                        start: (w.start || 0) + chunk.start_time,
+                        end: (w.end || 0) + chunk.start_time,
+                      })),
+                    }));
+                    combinedSegments.push(...adjustedSegments);
+
+                    // Also extract all words for flat structure if needed
+                    adjustedSegments.forEach((seg: any) => {
+                      if (seg.words) combinedWords.push(...seg.words);
+                    });
+                  }
+                } catch (e) {
+                  console.warn('Failed to parse chunk JSON', e);
+                }
+              }
+
+              // Construct minimal Whisper-compatible JSON for the full transcript
+              const fullTranscriptJson = {
+                text: fullText.trim(),
+                segments: combinedSegments,
+                language: chunkedTranscript.language || 'english',
+                duration: chunkedTranscript.total_duration,
+              };
+
+              // Save to database
+              const transcriptId = await createTranscript(
+                rawVideos[0].id,
+                JSON.stringify(fullTranscriptJson),
+                fullText.trim(),
+                chunkedTranscript.language || 'english',
+                chunkedTranscript.total_duration
+              );
+
+              // Create segments
+              for (let i = 0; i < combinedSegments.length; i++) {
+                const seg = combinedSegments[i];
+                await createTranscriptSegment(transcriptId, seg.start, seg.end, seg.text, i);
+              }
+
+              console.log('[ChunkedDetection] Successfully created full transcript from chunks');
+
+              // Trigger a refresh of transcript data in the UI
+              setTimeout(() => {
+                // Emit a custom event that TranscriptPanel and Timeline can listen to
+                // Or just rely on reactivity if the project ID is the same
+                // If using database service, we might need to invalidate queries?
+                // Usually reloading data in components works.
+
+                // Force a UI refresh of the transcript panel by re-fetching data
+                // Since useTranscriptData watches projectId, maybe we don't need anything extra
+                // but if it's already loaded as null, we need to trigger a reload.
+                const refreshEvent = new CustomEvent('transcript-updated', {
+                  detail: { projectId: projectId },
+                });
+                document.dispatchEvent(refreshEvent);
+              }, 500);
+            }
+          }
+        } catch (err) {
+          console.error('[ChunkedDetection] Failed to create full transcript from chunks:', err);
+        }
+      }
 
       showSuccess(
         'Clips detected',
