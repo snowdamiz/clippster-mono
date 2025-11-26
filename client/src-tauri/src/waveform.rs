@@ -46,8 +46,14 @@ pub fn generate_video_path_hash(video_path: &str) -> String {
     use std::hash::{Hash, Hasher};
     use std::collections::hash_map::DefaultHasher;
 
+    // Try to normalize to local path if possible
+    let path_to_hash = match extract_local_path_from_url(video_path) {
+        Ok(local_path) => local_path,
+        Err(_) => video_path.to_string(), // Fallback to hashing the original string (e.g. remote URL)
+    };
+
     let mut hasher = DefaultHasher::new();
-    video_path.hash(&mut hasher);
+    path_to_hash.hash(&mut hasher);
     format!("{:x}", hasher.finish())
 }
 
@@ -102,6 +108,14 @@ pub fn get_waveform_cache_file_path(video_path_hash: &str) -> Result<std::path::
         .map_err(|e| format!("Failed to get storage paths: {}", e))?;
 
     Ok(paths.temp.join(format!("waveform_cache_{}.json", video_path_hash)))
+}
+
+// Get cache file path for audio data (shared with clip detection)
+pub fn get_audio_cache_file_path(video_path_hash: &str) -> Result<std::path::PathBuf, String> {
+    let paths = storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+
+    Ok(paths.temp.join(format!("audio_cache_{}.mp3", video_path_hash)))
 }
 
 // Save waveform data to file cache
@@ -231,6 +245,9 @@ pub async fn extract_audio_waveform(
         ("extreme", 8000), // 8000 peaks - very zoomed in
     ];
 
+    // Generate a hash for the video path for consistent lookup
+    let video_path_hash = generate_video_path_hash(&video_path);
+
     // Get storage paths for temporary files
     let paths = storage::init_storage_dirs()
         .map_err(|e| {
@@ -238,17 +255,95 @@ pub async fn extract_audio_waveform(
             format!("Failed to get storage paths: {}", e)
         })?;
 
-    // Create unique temporary audio file
-    let temp_audio_path = paths.videos.join(format!("temp_waveform_{}.wav",
+    let shell = app.shell();
+
+    // Check/Generate cached OGG audio file first (shared with clip detection)
+    let cached_audio_path = get_audio_cache_file_path(&video_path_hash)?;
+    let audio_source_path: std::path::PathBuf;
+    let mut cleanup_audio_source = false;
+
+    if cached_audio_path.exists() {
+        println!("[Rust] Found cached audio file: {:?}", cached_audio_path);
+        audio_source_path = cached_audio_path.clone();
+    } else {
+        println!("[Rust] Generating cached audio file (MP3) for shared use...");
+        // Extract audio as MP3 (libmp3lame) - same as used in clip detection
+        let extract_output = shell.sidecar("ffmpeg")
+            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+            .args([
+                "-i", &video_path,
+                "-vn",                    // No video
+                "-c:a", "libmp3lame",     // MP3 codec
+                "-q:a", "8",              // Quality level 8 (~85kbps, optimal for speech transcription)
+                "-y",                     // Overwrite output
+                cached_audio_path.to_str().ok_or("Invalid cached audio path")?,
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("Failed to extract audio: {}", e))?;
+
+        if !extract_output.status.success() {
+            let stderr = String::from_utf8_lossy(&extract_output.stderr);
+            return Err(format!("FFmpeg audio extraction failed: {}", stderr));
+        }
+        
+        println!("[Rust] Cached audio file generated successfully");
+        audio_source_path = cached_audio_path.clone();
+    }
+
+    // Now we need a WAV file for waveform processing. 
+    // We can decode the MP3 we just found/created to a temp WAV.
+    
+    // Create unique temporary WAV file path
+    let temp_wav_path = paths.videos.join(format!("temp_waveform_{}.wav",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| format!("Failed to get timestamp: {}", e))?
             .as_secs()
     ));
 
-    println!("[Rust] Temporary audio path: {}", temp_audio_path.display());
+    println!("[Rust] Decoding to temporary WAV for waveform analysis: {}", temp_wav_path.display());
 
-    let shell = app.shell();
+    // Decode MP3 to WAV (PCM s16le, 44100, mono)
+    let decode_output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args([
+            "-i", audio_source_path.to_str().ok_or("Invalid audio source path")?,
+            "-acodec", "pcm_s16le",   // 16-bit PCM
+            "-ar", "44100",           // 44.1kHz sample rate
+            "-ac", "1",               // Mono
+            "-y",                     // Overwrite output
+            temp_wav_path.to_str().ok_or("Invalid temporary WAV path")?,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to decode to WAV: {}", e))?;
+
+    if !decode_output.status.success() {
+        let stderr = String::from_utf8_lossy(&decode_output.stderr);
+        // If decoding fails, maybe try extracting from original video directly as fallback?
+        println!("[Rust] Failed to decode cached MP3, trying direct extraction from video...");
+
+        let extract_output = shell.sidecar("ffmpeg")
+            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+            .args([
+                "-i", &video_path,
+                "-vn",                    // No video
+                "-acodec", "pcm_s16le",   // 16-bit PCM
+                "-ar", "44100",           // 44.1kHz sample rate
+                "-ac", "1",               // Mono
+                "-y",                     // Overwrite output
+                temp_wav_path.to_str().ok_or("Invalid temporary WAV path")?,
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("Failed to extract audio: {}", e))?;
+
+        if !extract_output.status.success() {
+            let stderr = String::from_utf8_lossy(&extract_output.stderr);
+            return Err(format!("FFmpeg direct audio extraction failed: {}", stderr));
+        }
+    }
 
     // First, get video duration using FFmpeg
     println!("[Rust] Getting video duration...");
@@ -274,39 +369,15 @@ pub async fn extract_audio_waveform(
         return Err("Invalid video duration".to_string());
     }
 
-    // Extract audio as WAV for processing (16-bit PCM, mono)
-    println!("[Rust] Extracting audio as WAV...");
-    let extract_output = shell.sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args([
-            "-i", &video_path,
-            "-vn",                    // No video
-            "-acodec", "pcm_s16le",   // 16-bit PCM
-            "-ar", "44100",           // 44.1kHz sample rate
-            "-ac", "1",               // Mono
-            "-y",                     // Overwrite output
-            temp_audio_path.to_str().ok_or("Invalid temporary audio path")?,
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to extract audio: {}", e))?;
-
-    if !extract_output.status.success() {
-        let stderr = String::from_utf8_lossy(&extract_output.stderr);
-        return Err(format!("FFmpeg audio extraction failed: {}", stderr));
-    }
-
-    println!("[Rust] Audio extracted successfully");
-
     // Process the WAV file to extract multi-resolution waveform data
-    let waveform_data = process_wav_file_multi_resolution(&temp_audio_path, &resolution_levels, video_duration)
+    let waveform_data = process_wav_file_multi_resolution(&temp_wav_path, &resolution_levels, video_duration)
         .map_err(|e| format!("Failed to process WAV file: {}", e))?;
 
-    // Clean up temporary file
-    if let Err(e) = std::fs::remove_file(&temp_audio_path) {
-        eprintln!("[Rust] Warning: Failed to remove temporary audio file {}: {}", temp_audio_path.display(), e);
+    // Clean up temporary WAV file
+    if let Err(e) = std::fs::remove_file(&temp_wav_path) {
+        eprintln!("[Rust] Warning: Failed to remove temporary WAV file {}: {}", temp_wav_path.display(), e);
     } else {
-        println!("[Rust] Cleaned up temporary audio file");
+        println!("[Rust] Cleaned up temporary WAV file");
     }
 
     let total_peaks: u32 = waveform_data.resolutions.values()
@@ -316,7 +387,7 @@ pub async fn extract_audio_waveform(
              total_peaks, waveform_data.resolutions.len());
 
     // Save to cache for future use
-    let raw_video_id = format!("waveform_{}", generate_video_path_hash(&video_path));
+    let raw_video_id = format!("waveform_{}", video_path_hash);
     if let Err(e) = save_waveform_to_cache(video_path.clone(), raw_video_id, waveform_data.clone()).await {
         eprintln!("[Rust] Warning: Failed to cache waveform data: {}", e);
     }

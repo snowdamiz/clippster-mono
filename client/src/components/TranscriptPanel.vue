@@ -88,9 +88,9 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
+  import { ref, computed, watch, nextTick, onUnmounted, onMounted } from 'vue';
   import { useTranscriptData } from '../composables/useTranscriptData';
-  import { Loader2, FileText, Search, ChevronDown } from 'lucide-vue-next';
+  import { Loader2, FileText, Search } from 'lucide-vue-next';
 
   interface Props {
     projectId?: string | null;
@@ -632,11 +632,55 @@
     { immediate: true }
   );
 
+  // Listen for transcript updates
+  onMounted(() => {
+    const refreshListener = async (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const eventProjectId = customEvent.detail?.projectId;
+      const currentProjectId = props.projectId;
+
+      console.log('[TranscriptPanel] Received transcript-updated event', {
+        eventProjectId,
+        currentProjectId,
+        match: String(eventProjectId) === String(currentProjectId),
+      });
+
+      // Use string comparison to handle any type coercion issues
+      if (eventProjectId && currentProjectId && String(eventProjectId) === String(currentProjectId)) {
+        console.log('[TranscriptPanel] Project ID matches, reloading transcript data...');
+        loadingTranscript.value = true;
+        try {
+          await loadTranscriptData(currentProjectId);
+          console.log(
+            '[TranscriptPanel] Transcript data reloaded, words count:',
+            transcriptData.value?.words?.length || 0
+          );
+        } catch (error) {
+          console.error('[TranscriptPanel] Failed to reload transcript data:', error);
+        } finally {
+          loadingTranscript.value = false;
+        }
+      }
+    };
+
+    document.addEventListener('transcript-updated', refreshListener);
+
+    // Store listener reference for cleanup
+    (window as any)._transcriptRefreshListener = refreshListener;
+  });
+
   // Cleanup refs on unmount
   onUnmounted(() => {
     if (transcriptContent.value) {
       transcriptContent.value.removeEventListener('scroll', handleScroll);
     }
+
+    // Remove transcript update listener
+    if ((window as any)._transcriptRefreshListener) {
+      document.removeEventListener('transcript-updated', (window as any)._transcriptRefreshListener);
+      (window as any)._transcriptRefreshListener = null;
+    }
+
     wordElements.value.clear();
 
     // Clear debounce timeout

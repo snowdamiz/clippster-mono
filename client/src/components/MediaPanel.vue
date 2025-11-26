@@ -89,9 +89,10 @@
     <!-- Audio Tab Content -->
     <AudioTab v-if="activeTab === 'audio'" :project-id="projectId" />
 
-    <!-- Transcript Tab Content -->
+    <!-- Transcript Tab Content - use v-show to keep mounted so it receives events -->
     <TranscriptPanel
-      v-if="activeTab === 'transcript'"
+      v-show="activeTab === 'transcript'"
+      ref="transcriptPanelRef"
       :project-id="projectId"
       :current-time="currentTime || undefined"
       :duration="videoDuration || undefined"
@@ -158,6 +159,9 @@
 
   // Ref for ClipsTab component
   const clipsTabRef = ref<InstanceType<typeof ClipsTab> | null>(null);
+
+  // Ref for TranscriptPanel component
+  const transcriptPanelRef = ref<InstanceType<typeof TranscriptPanel> | null>(null);
 
   // Use transcript data composable
   const { transcriptData } = useTranscriptData(computed(() => props.projectId || null));

@@ -33,17 +33,56 @@ pub async fn extract_audio_from_video(
             format!("Failed to get storage paths: {}", e)
         })?;
 
-    // Create a unique temporary audio file path - OGG format for better compression
-    let temp_audio_path = paths.videos.join(format!("temp_audio_{}_audio_only.ogg",
+    // Check if we have a cached audio file from waveform generation
+    let video_path_hash = crate::waveform::generate_video_path_hash(&video_path);
+    let cached_path_result = crate::waveform::get_audio_cache_file_path(&video_path_hash);
+    
+    if let Ok(ref cached_path) = cached_path_result {
+        if cached_path.exists() {
+            println!("[Rust] Found cached audio file for clip detection: {:?}", cached_path);
+            
+            // Read the cached file
+            let audio_bytes = std::fs::read(cached_path)
+                .map_err(|e| {
+                    println!("[Rust] Failed to read cached audio file: {}", e);
+                    format!("Failed to read audio file: {}", e)
+                })?;
+
+            println!("[Rust] Read {} bytes from cached audio file", audio_bytes.len());
+
+            // Encode to base64
+            use base64::{Engine as _, engine::general_purpose};
+            let base64_data = general_purpose::STANDARD.encode(&audio_bytes);
+
+            // Get filename for return
+            let filename = cached_path.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("audio.mp3");
+                
+            return Ok((filename.to_string(), base64_data));
+        }
+    }
+
+    println!("[Rust] No cached audio file found, generating fresh...");
+
+    // Determine output path - prefer cache path, fallback to temp
+    let (target_path, is_cache_file) = if let Ok(path) = cached_path_result {
+        println!("[Rust] Will save to cache path: {:?}", path);
+        (path, true)
+    } else {
+        let temp_path = paths.videos.join(format!("temp_audio_{}_audio_only.mp3",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| format!("Failed to get timestamp: {}", e))?
             .as_secs()
     ));
+        println!("[Rust] Will save to temp path: {:?}", temp_path);
+        (temp_path, false)
+    };
 
-    println!("[Rust] Temporary audio path: {}", temp_audio_path.display());
+    println!("[Rust] Target audio path: {}", target_path.display());
 
-    // Use FFmpeg to extract audio as OGG Vorbis - optimized for transcription
+    // Use FFmpeg to extract audio as MP3 - optimized for transcription
     let shell = app.shell();
     println!("[Rust] Running FFmpeg to extract audio...");
 
@@ -51,11 +90,11 @@ pub async fn extract_audio_from_video(
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
             "-i", &video_path,
-            "-c:a", "libvorbis",  // OGG Vorbis codec (better compression)
-            "-q:a", "1",          // Quality level 1 (~64-96k MP3 equivalent, optimal for transcription)
+            "-c:a", "libmp3lame", // MP3 codec
+            "-q:a", "8",          // Quality level 8 (~85kbps)
             "-vn",               // No video
             "-y",                // Overwrite output file
-            temp_audio_path.to_str().ok_or("Invalid temporary audio path")?,
+            target_path.to_str().ok_or("Invalid target audio path")?,
         ])
         .output()
         .await
@@ -78,11 +117,11 @@ pub async fn extract_audio_from_video(
 
     println!("[Rust] FFmpeg extraction completed successfully");
 
-    // Read the MP3 file and return as base64 encoded data
-    println!("[Rust] Reading MP3 file for base64 encoding...");
-    let audio_bytes = std::fs::read(&temp_audio_path)
+    // Read the file and return as base64 encoded data
+    println!("[Rust] Reading audio file for base64 encoding...");
+    let audio_bytes = std::fs::read(&target_path)
         .map_err(|e| {
-            println!("[Rust] Failed to read temporary audio file: {}", e);
+            println!("[Rust] Failed to read audio file: {}", e);
             format!("Failed to read audio file: {}", e)
         })?;
 
@@ -94,15 +133,19 @@ pub async fn extract_audio_from_video(
     println!("[Rust] Encoded {} bytes to {} chars of base64", audio_bytes.len(), base64_data.len());
 
     // Get filename for return
-    let filename = temp_audio_path.file_name()
+    let filename = target_path.file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or("audio.ogg");
+        .unwrap_or("audio.mp3");
 
-    // Clean up the temporary file
-    if let Err(e) = std::fs::remove_file(&temp_audio_path) {
-        eprintln!("[Rust] Warning: Failed to remove temporary audio file {}: {}", temp_audio_path.display(), e);
+    // Clean up only if it's a temporary file (not cached)
+    if !is_cache_file {
+        if let Err(e) = std::fs::remove_file(&target_path) {
+            eprintln!("[Rust] Warning: Failed to remove temporary audio file {}: {}", target_path.display(), e);
     } else {
         println!("[Rust] Cleaned up temporary audio file");
+        }
+    } else {
+        println!("[Rust] Kept cached audio file: {:?}", target_path);
     }
 
     println!("[Rust] Audio extraction completed successfully");
@@ -132,9 +175,14 @@ pub async fn extract_and_chunk_audio(
             format!("Failed to get storage paths: {}", e)
         })?;
 
+    // Declare variables before they are used
     let chunk_duration_secs = chunk_duration_minutes as f64 * 60.0;
     let overlap_secs = overlap_seconds as f64;
     let shell = app.shell();
+
+    // Check if we have a cached audio file from waveform generation (shared cache)
+    let video_path_hash = crate::waveform::generate_video_path_hash(&video_path);
+    let cached_audio_path_result = crate::waveform::get_audio_cache_file_path(&video_path_hash);
 
     // First, get video duration using FFmpeg
     println!("[Rust] Getting video duration...");
@@ -160,6 +208,29 @@ pub async fn extract_and_chunk_audio(
         return Err("Invalid video duration".to_string());
     }
 
+    // Determine if we should use the cached OGG file or the original video
+    // If the video is short enough (one chunk), using the OGG file might be faster/easier
+    // However, for chunking, FFmpeg needs random access.
+    
+    let use_cached_audio = if let Ok(ref cached_path) = cached_audio_path_result {
+        if cached_path.exists() {
+            println!("[Rust] Found cached audio file, will use for chunking: {:?}", cached_path);
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    let source_path = if use_cached_audio {
+        cached_audio_path_result.as_ref().unwrap().to_str().ok_or("Invalid cached path")?
+    } else {
+        &video_path
+    };
+
+    println!("[Rust] Using source for chunking: {}", source_path);
+
     // Calculate number of chunks needed
     let mut chunks = Vec::new();
     let mut current_start = 0.0;
@@ -179,22 +250,47 @@ pub async fn extract_and_chunk_audio(
                 chunk_index, current_start, current_end, actual_duration);
 
         // Create chunk file path
-        let chunk_filename = format!("{}_chunk_{:03}.ogg", project_id, chunk_index);
+        let chunk_filename = format!("{}_chunk_{:03}.mp3", project_id, chunk_index);
         let chunk_path = paths.videos.join(&chunk_filename);
 
         // Extract chunk using FFmpeg
+        // If using cached MP3, we are just slicing the audio file
+        // If using video, we are extracting and slicing
+        let mut args = vec![
+            "-i".to_string(), source_path.to_string(),
+            "-ss".to_string(), format!("{:.3}", current_start),
+            "-t".to_string(), format!("{:.3}", actual_duration),
+        ];
+
+        if use_cached_audio {
+            // Re-encoding is still safer to ensure correct boundaries and format, 
+            // but since input is already MP3, it should be fast.
+            // We can also try stream copying if codecs match, but slicing with -c copy can be imprecise.
+            // Let's stick to re-encoding to quality 8 MP3 for consistency.
+            // NOTE: Removed -y flag from here since it should be last
+            args.extend_from_slice(&[
+                "-c:a".to_string(), "libmp3lame".to_string(),
+                "-q:a".to_string(), "8".to_string(),
+            ]);
+        } else {
+            // Extracting from video
+            // NOTE: Removed -y flag from here since it should be last
+            args.extend_from_slice(&[
+                "-vn".to_string(),
+                "-c:a".to_string(), "libmp3lame".to_string(),
+                "-q:a".to_string(), "8".to_string(),
+            ]);
+        }
+
+        // Add output path and overwrite flag last
+        args.extend_from_slice(&[
+            "-y".to_string(),
+            chunk_path.to_str().ok_or("Invalid chunk path")?.to_string(),
+        ]);
+
         let chunk_output = shell.sidecar("ffmpeg")
             .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-            .args([
-                "-i", &video_path,
-                "-ss", &format!("{:.3}", current_start),
-                "-t", &format!("{:.3}", actual_duration),
-                "-c:a", "libvorbis",  // OGG Vorbis codec (better compression)
-                "-q:a", "1",          // Quality level 1 (~64-96k MP3 equivalent, optimal for transcription)
-                "-vn",               // No video
-                "-y",                // Overwrite output file
-                chunk_path.to_str().ok_or("Invalid chunk path")?,
-            ])
+            .args(&args)
             .output()
             .await
             .map_err(|e| format!("Failed to run ffmpeg for chunk {}: {}", chunk_index, e))?;
