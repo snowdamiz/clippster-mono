@@ -48,6 +48,8 @@
                 :transcript-words="transcriptData?.words || []"
                 :transcript-segments="transcriptData?.whisperSegments || []"
                 :current-time="currentTime"
+                :watermark-settings="watermarkSettings"
+                :watermark-data="currentWatermarkData"
                 @togglePlayPause="togglePlayPause"
                 @timeUpdate="onTimeUpdate"
                 @loadedMetadata="onLoadedMetadata"
@@ -99,6 +101,7 @@
                 @playClip="onPlayClip"
                 @seekVideo="onSeekVideo"
                 @subtitleSettingsChanged="onSubtitleSettingsChanged"
+                @watermarkSettingsChanged="onWatermarkSettingsChanged"
               />
             </div>
           </div>
@@ -182,9 +185,17 @@
 
 <script setup lang="ts">
   import { ref, watch, computed } from 'vue';
-  import { type Project, type ClipWithVersion, getClipsWithVersionsByProjectId, deleteClip } from '@/services/database';
+  import {
+    type Project,
+    type ClipWithVersion,
+    getClipsWithVersionsByProjectId,
+    deleteClip,
+    getWatermarkImage,
+    type WatermarkImage,
+  } from '@/services/database';
   import { X } from 'lucide-vue-next';
-  import type { SubtitleSettings } from '@/types';
+  import { invoke } from '@tauri-apps/api/core';
+  import type { SubtitleSettings, WatermarkSettings } from '@/types';
   import VideoPlayer from './VideoPlayer.vue';
   import VideoControls from './VideoControls.vue';
   import MediaPanel from './MediaPanel.vue';
@@ -280,6 +291,19 @@
     borderRadius: 8,
     wordSpacing: 0.35,
   });
+
+  // Watermark settings state
+  const watermarkSettings = ref<WatermarkSettings>({
+    enabled: false,
+    watermarkId: null,
+    positionX: 90,
+    positionY: 90,
+    opacity: 80,
+    scale: 15,
+  });
+
+  // Current watermark image data (for VideoPlayer)
+  const currentWatermarkData = ref<{ dataUrl: string; width?: number; height?: number } | null>(null);
 
   // Use video player composable
   const projectRef = computed(() => props.project);
@@ -869,6 +893,34 @@
   // Handle subtitle settings change
   function onSubtitleSettingsChanged(settings: SubtitleSettings) {
     subtitleSettings.value = settings;
+  }
+
+  // Handle watermark settings change
+  async function onWatermarkSettingsChanged(settings: WatermarkSettings) {
+    watermarkSettings.value = settings;
+
+    // Load watermark data if we have a watermark ID
+    if (settings.watermarkId && settings.enabled) {
+      try {
+        const watermark = await getWatermarkImage(settings.watermarkId);
+        if (watermark) {
+          // Load the image as data URL
+          const dataUrl = await invoke<string>('read_file_as_data_url', {
+            filePath: watermark.file_path,
+          });
+          currentWatermarkData.value = {
+            dataUrl,
+            width: watermark.width || undefined,
+            height: watermark.height || undefined,
+          };
+        }
+      } catch (error) {
+        console.error('[ProjectWorkspaceDialog] Failed to load watermark:', error);
+        currentWatermarkData.value = null;
+      }
+    } else {
+      currentWatermarkData.value = null;
+    }
   }
 
   // Function to handle clip playback

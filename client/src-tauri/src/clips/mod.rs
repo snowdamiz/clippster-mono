@@ -42,7 +42,8 @@ pub async fn build_clip_from_segments(
     intro_path: Option<String>,
     intro_duration: Option<f64>,
     outro_path: Option<String>,
-    outro_duration: Option<f64>
+    outro_duration: Option<f64>,
+    watermark_settings: Option<WatermarkSettings>
 ) -> Result<(), String> {
 
     println!("[Rust] build_clip_from_segments called with:");
@@ -60,6 +61,7 @@ pub async fn build_clip_from_segments(
     println!("[Rust]   run_number: {:?}", run_number);
     println!("[Rust]   intro_path: {:?}", intro_path);
     println!("[Rust]   outro_path: {:?}", outro_path);
+    println!("[Rust]   watermark enabled: {}", watermark_settings.as_ref().map(|w| w.enabled).unwrap_or(false));
 
     // Check if clip is already being built
     {
@@ -85,6 +87,7 @@ pub async fn build_clip_from_segments(
     let output_format_clone = output_format.clone();
     let intro_path_clone = intro_path.clone();
     let outro_path_clone = outro_path.clone();
+    let watermark_settings_clone = watermark_settings.clone();
 
     // Send initial progress
     let _ = app.emit("clip-build-progress", ClipBuildProgress {
@@ -119,7 +122,8 @@ pub async fn build_clip_from_segments(
             intro_path_clone.as_deref(),
             intro_duration,
             outro_path_clone.as_deref(),
-            outro_duration
+            outro_duration,
+            watermark_settings_clone
         ).await {
             Ok(result) => {
                 println!("[Rust] Clip build completed successfully for: {}", clip_id_clone);

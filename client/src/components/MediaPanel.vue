@@ -56,6 +56,21 @@
           class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"
         ></div>
       </button>
+      <button
+        @click="activeTab = 'watermark'"
+        :class="[
+          'px-4 py-2.5 text-sm font-medium transition-all relative',
+          activeTab === 'watermark'
+            ? 'text-foreground bg-muted/30'
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted/20',
+        ]"
+      >
+        Watermark
+        <div
+          v-if="activeTab === 'watermark'"
+          class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"
+        ></div>
+      </button>
     </div>
 
     <!-- Clips Tab Content -->
@@ -77,6 +92,7 @@
       :transcript-data="transcriptData"
       :subtitle-settings="subtitleSettings"
       :max-words-for-aspect-ratio="maxWordsForAspectRatio"
+      :watermark-settings="watermarkSettings"
       @detect-clips="handleDetectClips"
       @delete-clip="onDeleteClip"
       @play-clip="onPlayClip"
@@ -107,6 +123,16 @@
       :aspect-ratio="aspectRatio"
       @settings-changed="onSubtitleSettingsChanged"
     />
+
+    <!-- Watermark Tab Content -->
+    <WatermarkTab
+      v-if="activeTab === 'watermark'"
+      ref="watermarkTabRef"
+      :project-id="projectId"
+      :settings="watermarkSettings"
+      :aspect-ratio="aspectRatio"
+      @settings-changed="onWatermarkSettingsChanged"
+    />
   </div>
 </template>
 
@@ -122,11 +148,12 @@
     type ClipDetectionSession,
     type Prompt,
   } from '@/services/database';
-  import type { MediaPanelProps, MediaPanelEmits, SubtitleSettings } from '../types';
+  import type { MediaPanelProps, MediaPanelEmits, SubtitleSettings, WatermarkSettings } from '../types';
   import ClipsTab from './ClipsTab.vue';
   import AudioTab from './AudioTab.vue';
   import TranscriptPanel from './TranscriptPanel.vue';
   import SubtitlesTab from './SubtitlesTab.vue';
+  import WatermarkTab from './WatermarkTab.vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
 
   const props = withDefaults(defineProps<MediaPanelProps>(), {
@@ -162,6 +189,9 @@
 
   // Ref for TranscriptPanel component
   const transcriptPanelRef = ref<InstanceType<typeof TranscriptPanel> | null>(null);
+
+  // Ref for WatermarkTab component
+  const watermarkTabRef = ref<InstanceType<typeof WatermarkTab> | null>(null);
 
   // Store unlisten functions for cleanup
   const unlistenFunctions = ref<UnlistenFn[]>([]);
@@ -216,6 +246,18 @@
 
   const subtitleSettings = ref<SubtitleSettings>(getDefaultSubtitleSettings());
 
+  // Watermark state
+  const getDefaultWatermarkSettings = (): WatermarkSettings => ({
+    enabled: false,
+    watermarkId: null,
+    positionX: 90,
+    positionY: 90,
+    opacity: 80,
+    scale: 15,
+  });
+
+  const watermarkSettings = ref<WatermarkSettings>(getDefaultWatermarkSettings());
+
   onMounted(async () => {
     // Load prompts for name matching
     await loadPrompts();
@@ -239,6 +281,22 @@
       }
     } catch (error) {
       console.error('[MediaPanel] Failed to load subtitle settings:', error);
+    }
+
+    // Load watermark settings from localStorage
+    try {
+      const savedWatermark = localStorage.getItem('watermark-settings');
+      if (savedWatermark) {
+        const parsed = JSON.parse(savedWatermark);
+        watermarkSettings.value = {
+          ...getDefaultWatermarkSettings(),
+          ...parsed,
+          enabled: false, // Always start with watermark preview off
+        };
+        emit('watermarkSettingsChanged', watermarkSettings.value);
+      }
+    } catch (error) {
+      console.error('[MediaPanel] Failed to load watermark settings:', error);
     }
 
     // Add event listener for refresh events
@@ -312,6 +370,19 @@
     { deep: true }
   );
 
+  // Watch for watermark settings changes and save to localStorage
+  watch(
+    watermarkSettings,
+    (newSettings) => {
+      try {
+        localStorage.setItem('watermark-settings', JSON.stringify(newSettings));
+      } catch (error) {
+        console.error('[MediaPanel] Failed to save watermark settings:', error);
+      }
+    },
+    { deep: true }
+  );
+
   // Load prompts for name matching
   async function loadPrompts() {
     try {
@@ -372,6 +443,11 @@
   function onSubtitleSettingsChanged(settings: SubtitleSettings) {
     subtitleSettings.value = settings;
     emit('subtitleSettingsChanged', settings);
+  }
+
+  function onWatermarkSettingsChanged(settings: WatermarkSettings) {
+    watermarkSettings.value = settings;
+    emit('watermarkSettingsChanged', settings);
   }
 
   // Event listener for fallback refresh mechanism
@@ -481,6 +557,8 @@
     scrollClipIntoView: (clipId: string) => {
       clipsTabRef.value?.scrollClipIntoView(clipId);
     },
+    getWatermarkSettings: () => watermarkSettings.value,
+    getWatermarkTabRef: () => watermarkTabRef.value,
   });
 </script>
 

@@ -76,6 +76,7 @@ pub fn init_storage_dirs() -> Result<StoragePaths, String> {
         assets: base_dir.join("assets"),
         intros: base_dir.join("intros"), // Keep for backwards compatibility
         outros: base_dir.join("outros"), // Keep for backwards compatibility
+        watermarks: base_dir.join("watermarks"),
         temp: base_dir.join("temp"),
     };
 
@@ -92,6 +93,8 @@ pub fn init_storage_dirs() -> Result<StoragePaths, String> {
         .map_err(|e| format!("Failed to create intros directory: {}", e))?;
     std::fs::create_dir_all(&paths.outros)
         .map_err(|e| format!("Failed to create outros directory: {}", e))?;
+    std::fs::create_dir_all(&paths.watermarks)
+        .map_err(|e| format!("Failed to create watermarks directory: {}", e))?;
     std::fs::create_dir_all(&paths.temp)
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
 
@@ -103,6 +106,7 @@ pub fn init_storage_dirs() -> Result<StoragePaths, String> {
     println!("  Assets: {}", paths.assets.display());
     println!("  Intros: {}", paths.intros.display());
     println!("  Outros: {}", paths.outros.display());
+    println!("  Watermarks: {}", paths.watermarks.display());
     println!("  Temp: {}", paths.temp.display());
 
     *cache = Some(paths.clone());
@@ -119,6 +123,7 @@ pub struct StoragePaths {
     pub assets: PathBuf,
     pub intros: PathBuf,
     pub outros: PathBuf,
+    pub watermarks: PathBuf,
     pub temp: PathBuf,
 }
 
@@ -135,6 +140,7 @@ pub fn get_storage_paths() -> Result<StoragePathsResponse, String> {
         assets: paths.assets.to_string_lossy().to_string(),
         intros: paths.intros.to_string_lossy().to_string(),
         outros: paths.outros.to_string_lossy().to_string(),
+        watermarks: paths.watermarks.to_string_lossy().to_string(),
         temp: paths.temp.to_string_lossy().to_string(),
     })
 }
@@ -149,6 +155,7 @@ pub struct StoragePathsResponse {
     pub assets: String,
     pub intros: String,
     pub outros: String,
+    pub watermarks: String,
     pub temp: String,
 }
 
@@ -505,4 +512,165 @@ pub async fn copy_clip_to_destination(source_path: String, destination_path: Str
     println!("[Rust] Copied clip from {} to {}", source_path, destination_path);
     
     Ok(destination.to_string_lossy().to_string())
+}
+
+/// Response structure for copy_watermark_to_storage
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CopyWatermarkResponse {
+    pub destination_path: String,
+    pub original_filename: String,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub file_size: Option<u64>,
+}
+
+/// Tauri command to copy a watermark image file to storage
+#[tauri::command]
+pub async fn copy_watermark_to_storage(source_path: String, app: tauri::AppHandle) -> Result<CopyWatermarkResponse, String> {
+    use std::fs;
+    use std::path::Path;
+    use tauri_plugin_shell::ShellExt;
+
+    let source = Path::new(&source_path);
+
+    // Validate source file exists
+    if !source.exists() {
+        return Err("Source file does not exist".to_string());
+    }
+
+    // Get original filename
+    let original_filename = source
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("Failed to get filename")?;
+
+    // Get file extension
+    let extension = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .ok_or("File has no extension")?
+        .to_lowercase();
+
+    // Validate it's an image file
+    let valid_extensions = ["png", "jpg", "jpeg", "webp", "gif"];
+    if !valid_extensions.contains(&extension.as_str()) {
+        return Err(format!("Invalid image format. Supported: {}", valid_extensions.join(", ")));
+    }
+
+    // Get file size
+    let file_size = fs::metadata(&source)
+        .map(|m| m.len())
+        .ok();
+
+    // Generate unique filename using timestamp and random component
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get timestamp: {}", e))?
+        .as_secs();
+
+    let random_suffix: u32 = rand::random();
+    let filename = format!("watermark_{}_{}.{}", timestamp, random_suffix, extension);
+
+    // Get storage paths
+    let paths = init_storage_dirs()?;
+    let destination = paths.watermarks.join(&filename);
+
+    // Copy the file
+    fs::copy(source, &destination)
+        .map_err(|e| format!("Failed to copy file: {}", e))?;
+
+    // Try to get image dimensions using FFmpeg
+    // This is optional - if it fails, we just won't have dimensions
+    let mut width: Option<u32> = None;
+    let mut height: Option<u32> = None;
+
+    // Use ffmpeg to get image info (reads from stderr)
+    if let Ok(output) = app.shell()
+        .sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args([
+            "-i", destination.to_str().unwrap_or(""),
+            "-f", "null",
+            "-",
+        ])
+        .output()
+        .await
+    {
+        // FFmpeg outputs info to stderr
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        
+        // Parse dimensions from output like "Stream #0:0: Video: png, rgba, 1920x1080"
+        // or "Stream #0:0(und): Video: mjpeg, yuvj420p, 1920x1080"
+        for line in stderr.lines() {
+            if line.contains("Stream") && line.contains("Video:") {
+                // Look for pattern like "1920x1080" or "1920x1080,"
+                let parts: Vec<&str> = line.split(',').collect();
+                for part in parts {
+                    let trimmed = part.trim();
+                    // Check if this looks like dimensions (e.g., "1920x1080")
+                    if trimmed.contains('x') && !trimmed.contains("0x") {
+                        let dim_parts: Vec<&str> = trimmed.split('x').collect();
+                        if dim_parts.len() == 2 {
+                            if let (Ok(w), Ok(h)) = (
+                                dim_parts[0].trim().parse::<u32>(),
+                                dim_parts[1].split(|c: char| !c.is_numeric()).next().unwrap_or("").parse::<u32>()
+                            ) {
+                                if w > 0 && h > 0 && w < 100000 && h < 100000 {
+                                    width = Some(w);
+                                    height = Some(h);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                if width.is_some() {
+                    break;
+                }
+            }
+        }
+    }
+
+    println!("[Rust] Watermark copied to storage: {}", destination.display());
+    if let (Some(w), Some(h)) = (width, height) {
+        println!("[Rust] Watermark dimensions: {}x{}", w, h);
+    } else {
+        println!("[Rust] Could not determine watermark dimensions (this is OK)");
+    }
+
+    Ok(CopyWatermarkResponse {
+        destination_path: destination.to_string_lossy().to_string(),
+        original_filename: original_filename.to_string(),
+        width,
+        height,
+        file_size,
+    })
+}
+
+/// Tauri command to delete a watermark file from the filesystem
+#[tauri::command]
+pub fn delete_watermark_file(file_path: String) -> Result<(), String> {
+    use std::fs;
+    use std::path::Path;
+
+    let path = Path::new(&file_path);
+
+    // Validate the file path is in the watermarks directory
+    let paths = init_storage_dirs()?;
+
+    if !path.starts_with(&paths.watermarks) {
+        return Err("File path is not in the watermarks directory".to_string());
+    }
+
+    // Check if file exists
+    if !path.exists() {
+        return Err("File does not exist".to_string());
+    }
+
+    // Delete the file
+    fs::remove_file(path)
+        .map_err(|e| format!("Failed to delete file: {}", e))?;
+
+    println!("[Rust] Watermark deleted: {}", file_path);
+    Ok(())
 }

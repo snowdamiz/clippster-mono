@@ -203,6 +203,16 @@ export interface SubtitlePreset {
   settings: SubtitleSettings;
 }
 
+// Watermark Types
+export interface WatermarkSettings {
+  enabled: boolean;
+  watermarkId: string | null;
+  positionX: number; // 0-100 (percentage from left)
+  positionY: number; // 0-100 (percentage from top)
+  opacity: number; // 0-100
+  scale: number; // 0-100 (percentage of video width)
+}
+
 export interface MediaPanelProps {
   transcriptCollapsed: boolean;
   clipsCollapsed: boolean;
@@ -229,6 +239,7 @@ export interface MediaPanelEmits {
   (e: 'playClip', clip: any): void; // Using any for ClipWithVersion for now
   (e: 'seekVideo', time: number): void;
   (e: 'subtitleSettingsChanged', settings: SubtitleSettings): void;
+  (e: 'watermarkSettingsChanged', settings: WatermarkSettings): void;
 }
 
 export interface TimelinePlayheadProps {

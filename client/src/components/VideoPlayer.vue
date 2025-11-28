@@ -167,6 +167,20 @@
         </div>
       </div>
 
+      <!-- Watermark Overlay -->
+      <div
+        v-if="watermarkSettings?.enabled && watermarkData && videoSrc && !videoLoading"
+        class="absolute pointer-events-none z-15"
+        :style="getWatermarkOverlayStyle"
+      >
+        <img
+          :src="getWatermarkSrc"
+          alt="Watermark"
+          class="max-w-full max-h-full object-contain drop-shadow-lg"
+          :style="{ opacity: (watermarkSettings?.opacity || 100) / 100 }"
+        />
+      </div>
+
       <!-- Focal Point Debug Indicator -->
       <div
         v-if="videoSrc && !videoLoading"
@@ -212,7 +226,13 @@
   import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
   import { Loader2, Video, AlertTriangle, Play, Pause } from 'lucide-vue-next';
 
-  import type { WhisperSegment } from '@/types';
+  import type { WhisperSegment, WatermarkSettings } from '@/types';
+
+  interface WatermarkData {
+    dataUrl: string; // Data URL for display
+    width?: number;
+    height?: number;
+  }
 
   interface Props {
     videoSrc: string | null;
@@ -225,6 +245,8 @@
     transcriptWords?: WordInfo[];
     transcriptSegments?: WhisperSegment[];
     currentTime?: number;
+    watermarkSettings?: WatermarkSettings;
+    watermarkData?: WatermarkData | null;
   }
 
   interface WordInfo {
@@ -298,6 +320,15 @@
     transcriptWords: () => [],
     transcriptSegments: () => [],
     currentTime: 0,
+    watermarkSettings: () => ({
+      enabled: false,
+      watermarkId: null,
+      positionX: 90,
+      positionY: 90,
+      opacity: 80,
+      scale: 15,
+    }),
+    watermarkData: null,
   });
 
   interface Emits {
@@ -514,6 +545,26 @@
       fontFamily: `"${settings.fontFamily}", Arial, sans-serif`,
       fontWeight: settings.fontWeight,
       fontSize: `${adjustedFontSize}px`,
+    };
+  });
+
+  // Watermark overlay computed properties
+  const getWatermarkSrc = computed(() => {
+    return props.watermarkData?.dataUrl || '';
+  });
+
+  const getWatermarkOverlayStyle = computed(() => {
+    if (!props.watermarkSettings) return {};
+
+    const settings = props.watermarkSettings;
+    // Scale is percentage of video width
+    const sizePercent = settings.scale || 15;
+
+    return {
+      width: `${sizePercent}%`,
+      left: `${settings.positionX}%`,
+      top: `${settings.positionY}%`,
+      transform: 'translate(-50%, -50%)',
     };
   });
 

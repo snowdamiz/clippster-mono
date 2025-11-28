@@ -83,6 +83,19 @@ pub struct AspectRatio {
     pub height: f32,
 }
 
+// Watermark settings structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatermarkSettings {
+    pub enabled: bool,
+    pub watermark_id: String,
+    pub file_path: String,
+    pub position_x: u32, // 0-100 (percentage from left)
+    pub position_y: u32, // 0-100 (percentage from top)
+    pub opacity: u32, // 0-100
+    pub scale: u32, // percentage of video width (5-50)
+}
+
 // Build settings structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

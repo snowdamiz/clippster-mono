@@ -23,6 +23,8 @@ export type {
   MonitoredStreamerRecord,
   LivestreamSessionRecord,
   LivestreamSegmentRecord,
+  WatermarkImage,
+  WatermarkSettings,
 } from './database/types';
 
 // Re-export intro/outro functions
@@ -197,3 +199,12 @@ export {
   updateLivestreamSegment,
   updateSegmentStatus,
 } from './database/livestream-monitoring';
+
+// Watermark exports
+export {
+  createWatermarkImage,
+  getAllWatermarkImages,
+  getWatermarkImage,
+  updateWatermarkImage,
+  deleteWatermarkImage,
+} from './database/watermarks';

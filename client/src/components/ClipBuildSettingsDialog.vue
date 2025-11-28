@@ -549,12 +549,13 @@
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
   import { WrenchIcon, CheckIcon, X, ChevronDown } from 'lucide-vue-next';
-  import type { ClipWithVersion } from '@/services/database';
+  import type { ClipWithVersion, WatermarkSettings } from '@/services/database';
   import { getAllIntroOutros, type IntroOutro } from '@/services/database';
 
   const props = defineProps<{
     modelValue: boolean;
     clip: ClipWithVersion | null;
+    watermarkSettings?: WatermarkSettings | null;
   }>();
 
   const emit = defineEmits<{
@@ -570,6 +571,7 @@
     includeSubtitles: boolean;
     intro: IntroOutro | null;
     outro: IntroOutro | null;
+    watermark: WatermarkSettings | null;
   }
 
   // State
@@ -739,7 +741,7 @@
       intros.value = allAssets.filter((a) => a.type === 'intro');
       outros.value = allAssets.filter((a) => a.type === 'outro');
     } catch (error) {
-      console.error('Failed to load intro/outros:', error);
+      console.error('Failed to load assets:', error);
     } finally {
       loadingAssets.value = false;
     }
@@ -779,6 +781,11 @@
   function confirmBuild() {
     if (selectedRatios.value.length === 0) return;
 
+    // Use watermark settings from props (configured in WatermarkTab)
+    const watermarkSettings: WatermarkSettings | null = props.watermarkSettings?.enabled
+      ? props.watermarkSettings
+      : null;
+
     const settings: BuildSettings = {
       aspectRatios: selectedRatios.value,
       quality: quality.value,
@@ -787,6 +794,7 @@
       includeSubtitles: includeSubtitles.value,
       intro: selectedIntro.value,
       outro: selectedOutro.value,
+      watermark: watermarkSettings,
     };
 
     emit('confirm', settings);

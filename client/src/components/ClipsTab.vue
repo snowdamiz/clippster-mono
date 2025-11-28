@@ -290,7 +290,12 @@
     </div>
 
     <!-- Build Settings Dialog -->
-    <ClipBuildSettingsDialog v-model="showBuildSettingsDialog" :clip="clipToBuild" @confirm="onBuildConfirm" />
+    <ClipBuildSettingsDialog
+      v-model="showBuildSettingsDialog"
+      :clip="clipToBuild"
+      :watermark-settings="watermarkSettings"
+      @confirm="onBuildConfirm"
+    />
   </div>
 </template>
 
@@ -316,7 +321,7 @@
     Flame,
   } from 'lucide-vue-next';
   import ClipBuildSettingsDialog, { type BuildSettings } from './ClipBuildSettingsDialog.vue';
-  import type { SubtitleSettings } from '@/types';
+  import type { SubtitleSettings, WatermarkSettings } from '@/types';
 
   // Props
   interface ClipsTabProps {
@@ -335,6 +340,7 @@
     transcriptData: any;
     subtitleSettings: SubtitleSettings;
     maxWordsForAspectRatio: number;
+    watermarkSettings?: WatermarkSettings | null;
   }
 
   const props = withDefaults(defineProps<ClipsTabProps>(), {
@@ -351,6 +357,7 @@
     videoDuration: 0,
     prompts: () => [],
     maxWordsForAspectRatio: 3,
+    watermarkSettings: null,
   });
 
   // Emits
@@ -625,7 +632,7 @@
     try {
       console.log('[ClipsTab] Starting clip build for:', clip.id, 'with settings:', settings);
 
-      const { updateClipBuildStatus, getRawVideosByProjectId } = await import('@/services/database');
+      const { updateClipBuildStatus, getRawVideosByProjectId, getWatermarkImage } = await import('@/services/database');
 
       // Update database status to building
       await updateClipBuildStatus(clip.id, 'building', { progress: 0 });
@@ -654,6 +661,23 @@
       const transcriptWords = props.transcriptData?.words || [];
       const transcriptSegments = props.transcriptData?.whisperSegments || [];
 
+      // Prepare watermark settings if enabled
+      let watermarkSettings = null;
+      if (settings.watermark && settings.watermark.enabled && settings.watermark.watermarkId) {
+        const watermarkImage = await getWatermarkImage(settings.watermark.watermarkId);
+        if (watermarkImage) {
+          watermarkSettings = {
+            enabled: true,
+            watermarkId: settings.watermark.watermarkId,
+            filePath: watermarkImage.file_path,
+            positionX: settings.watermark.positionX,
+            positionY: settings.watermark.positionY,
+            opacity: settings.watermark.opacity,
+            scale: settings.watermark.scale,
+          };
+        }
+      }
+
       // Pass all build settings to the backend
       await invoke('build_clip_from_segments', {
         projectId: props.projectId,
@@ -676,6 +700,7 @@
         introDuration: settings.intro?.duration || null,
         outroPath: settings.outro?.file_path || null,
         outroDuration: settings.outro?.duration || null,
+        watermarkSettings: watermarkSettings,
       });
 
       console.log('[ClipsTab] Clip build started successfully');

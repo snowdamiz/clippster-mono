@@ -7,6 +7,7 @@ export interface StoragePaths {
   thumbnails: string;
   intros: string;
   outros: string;
+  watermarks: string;
   temp: string;
 }
 

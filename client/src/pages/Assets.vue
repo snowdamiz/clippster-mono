@@ -1,6 +1,11 @@
 <template>
   <div class="assets-page">
-    <PageLayout title="Assets" description="Manage your intros and outros" :show-header="true" :icon="Archive">
+    <PageLayout
+      title="Assets"
+      description="Manage your intros, outros, and watermarks"
+      :show-header="true"
+      :icon="Archive"
+    >
       <template #actions>
         <div class="flex items-center gap-2">
           <button
@@ -29,18 +34,25 @@
       <!-- Content when not loading -->
       <div v-else>
         <!-- Header with stats -->
-        <div v-if="assets.length > 0 || showSkeletonCard" class="flex items-center justify-between mb-4">
+        <div v-if="allAssets.length > 0 || showSkeletonCard" class="flex items-center justify-between mb-4">
           <p class="text-sm text-muted-foreground">
             <span v-if="showSkeletonCard">
               Uploading...
-              <span v-if="assets.length > 0">• {{ assets.length }} asset{{ assets.length !== 1 ? 's' : '' }}</span>
+              <span v-if="allAssets.length > 0">
+                • {{ allAssets.length }} asset{{ allAssets.length !== 1 ? 's' : '' }}
+              </span>
             </span>
-            <span v-else-if="assets.length > 0">{{ assets.length }} asset{{ assets.length !== 1 ? 's' : '' }}</span>
+            <span v-else-if="allAssets.length > 0">
+              {{ allAssets.length }} asset{{ allAssets.length !== 1 ? 's' : '' }}
+            </span>
           </p>
         </div>
 
         <!-- Assets Grid -->
-        <div v-if="assets.length > 0 || showSkeletonCard" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div
+          v-if="allAssets.length > 0 || showSkeletonCard"
+          class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
+        >
           <!-- Upload progress card -->
           <div
             v-if="showSkeletonCard"
@@ -71,17 +83,18 @@
             v-for="asset in paginatedAssets"
             :key="asset.id"
             class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
-            @click="playAsset(asset)"
+            @click="asset.assetType !== 'watermark' ? playAsset(asset as IntroOutro) : null"
           >
             <!-- Thumbnail background with vignette -->
             <div
-              v-if="getAssetThumbnailUrl(asset)"
+              v-if="getThumbnailUrl(asset)"
               class="absolute inset-0 z-0"
               :style="{
-                backgroundImage: `url(${getAssetThumbnailUrl(asset)})`,
-                backgroundSize: 'cover',
+                backgroundImage: `url(${getThumbnailUrl(asset)})`,
+                backgroundSize: asset.assetType === 'watermark' ? 'contain' : 'cover',
                 backgroundPosition: 'center',
                 backgroundRepeat: 'no-repeat',
+                backgroundColor: asset.assetType === 'watermark' ? '#1a1a1a' : 'transparent',
               }"
             >
               <!-- Dark vignette overlay handled by bottom gradient now, but keep subtle global one -->
@@ -93,15 +106,17 @@
               <span
                 :class="[
                   'text-xs px-2 py-1 rounded-md flex items-center gap-1',
-                  getAssetThumbnailUrl(asset)
+                  getThumbnailUrl(asset)
                     ? 'text-white/70 bg-white/10 backdrop-blur-sm'
-                    : asset.type === 'intro'
+                    : asset.assetType === 'intro'
                       ? 'text-white/70 bg-blue-500/20 backdrop-blur-sm'
-                      : 'text-white/70 bg-purple-500/20 backdrop-blur-sm',
+                      : asset.assetType === 'outro'
+                        ? 'text-white/70 bg-purple-500/20 backdrop-blur-sm'
+                        : 'text-white/70 bg-amber-500/20 backdrop-blur-sm',
                 ]"
               >
-                <Package class="h-3 w-3" />
-                {{ asset.type === 'intro' ? 'Intro' : 'Outro' }}
+                <component :is="asset.assetType === 'watermark' ? ImageIcon : Package" class="h-3 w-3" />
+                {{ asset.assetType === 'intro' ? 'Intro' : asset.assetType === 'outro' ? 'Outro' : 'Watermark' }}
               </span>
             </div>
 
@@ -119,8 +134,15 @@
 
               <!-- Metadata Row -->
               <div class="flex items-center gap-2 text-xs text-white/70 font-medium">
-                <!-- Duration -->
-                <span>{{ formatDuration(asset.duration || undefined) }}</span>
+                <!-- Duration for video assets, dimensions for watermarks -->
+                <span v-if="asset.assetType === 'watermark'">
+                  {{
+                    (asset as WatermarkImage).width && (asset as WatermarkImage).height
+                      ? `${(asset as WatermarkImage).width}×${(asset as WatermarkImage).height}`
+                      : 'Image'
+                  }}
+                </span>
+                <span v-else>{{ formatDuration((asset as IntroOutro).duration || undefined) }}</span>
 
                 <span class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
 
@@ -133,10 +155,12 @@
             <div
               class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-4"
             >
+              <!-- Play button only for video assets -->
               <button
+                v-if="asset.assetType !== 'watermark'"
                 class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
                 title="Play"
-                @click.stop="playAsset(asset)"
+                @click.stop="playAsset(asset as IntroOutro)"
               >
                 <Play class="h-6 w-6" />
               </button>
@@ -153,9 +177,9 @@
 
         <!-- Empty State -->
         <EmptyState
-          v-if="assets.length === 0 && !uploading"
+          v-if="allAssets.length === 0 && !uploading"
           title="No assets yet"
-          description="Upload your first intro or outro to get started"
+          description="Upload your first intro, outro, or watermark to get started"
         >
           <template #icon>
             <Package class="h-16 w-16 text-muted-foreground" />
@@ -173,7 +197,7 @@
       :show="showDeleteDialog"
       title="Delete Asset"
       message="Are you sure you want to delete"
-      :item-name="assetToDelete?.name || assetToDelete?.file_path.split(/[\\\\/]/).pop()"
+      :item-name="assetToDelete?.name || (assetToDelete as any)?.file_path?.split(/[\\\\/]/).pop()"
       suffix="?"
       confirm-text="Delete"
       @close="handleDeleteDialogClose"
@@ -182,10 +206,10 @@
 
     <!-- Pagination Footer -->
     <PaginationFooter
-      v-if="!loading && assets.length > 0"
+      v-if="!loading && allAssets.length > 0"
       :current-page="currentPage"
       :total-pages="totalPages"
-      :total-items="assets.length"
+      :total-items="allAssets.length"
       item-label="asset"
       @go-to-page="goToPage"
       @previous="previousPage"
@@ -199,10 +223,11 @@
 
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
-  import { getAllIntroOutros, type IntroOutro } from '@/services/database';
-  import { Archive, Folder, Upload, Play, Trash2, Package } from 'lucide-vue-next';
+  import { getAllIntroOutros, getAllWatermarkImages, type IntroOutro, type WatermarkImage } from '@/services/database';
+  import { Archive, Folder, Upload, Play, Trash2, Package, Image as ImageIcon } from 'lucide-vue-next';
   import { useToast } from '@/composables/useToast';
   import { useAssetOperations } from '@/composables/useAssetOperations';
+  import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
   import { getStoragePath } from '@/services/storage';
   import { invoke } from '@tauri-apps/api/core';
@@ -214,10 +239,14 @@
   import PaginationFooter from '@/components/PaginationFooter.vue';
   import AssetUploadDialog from '@/components/AssetUploadDialog.vue';
 
+  // Combined asset type for display
+  type DisplayAsset = (IntroOutro & { assetType: 'intro' | 'outro' }) | (WatermarkImage & { assetType: 'watermark' });
+
   const assets = ref<IntroOutro[]>([]);
+  const watermarks = ref<WatermarkImage[]>([]);
   const loading = ref(true);
   const showDeleteDialog = ref(false);
-  const assetToDelete = ref<IntroOutro | null>(null);
+  const assetToDelete = ref<DisplayAsset | null>(null);
   const showAssetPlayer = ref(false);
   const assetToPlay = ref<IntroOutro | null>(null);
   const showUploadDialog = ref(false);
@@ -225,9 +254,18 @@
   const { error } = useToast();
 
   let unregisterUploadCallback: (() => void) | null = null;
+  let unregisterWatermarkCallback: (() => void) | null = null;
 
   // Asset operations composable
   const { uploading, showSkeletonCard, deleteAsset, onUploadComplete } = useAssetOperations();
+  const { deleteWatermark, onUploadComplete: onWatermarkUploadComplete } = useWatermarkOperations();
+
+  // Combined assets for display
+  const allAssets = computed<DisplayAsset[]>(() => {
+    const introOutros: DisplayAsset[] = assets.value.map((a) => ({ ...a, assetType: a.type as 'intro' | 'outro' }));
+    const wms: DisplayAsset[] = watermarks.value.map((w) => ({ ...w, assetType: 'watermark' as const }));
+    return [...introOutros, ...wms];
+  });
 
   // Pagination state
   const currentPage = ref(1);
@@ -310,11 +348,11 @@
   }
 
   // Pagination computed properties
-  const totalPages = computed(() => Math.ceil(assets.value.length / assetsPerPage));
+  const totalPages = computed(() => Math.ceil(allAssets.value.length / assetsPerPage));
   const paginatedAssets = computed(() => {
     const startIndex = (currentPage.value - 1) * assetsPerPage;
     const endIndex = startIndex + assetsPerPage;
-    const paginated = assets.value.slice(startIndex, endIndex);
+    const paginated = allAssets.value.slice(startIndex, endIndex);
     return paginated;
   });
 
@@ -338,26 +376,52 @@
   }
 
   // Reset to first page when assets change
-  watch(assets, () => {
+  watch(allAssets, () => {
     currentPage.value = 1;
   });
 
   async function loadAssets() {
     loading.value = true;
     try {
-      assets.value = await getAllIntroOutros();
+      // Load both intro/outros and watermarks
+      const [introOutros, wms] = await Promise.all([getAllIntroOutros(), getAllWatermarkImages()]);
+
+      assets.value = introOutros;
+      watermarks.value = wms;
 
       // Reset pagination to first page when loading new assets
       currentPage.value = 1;
 
-      // Load thumbnails for existing assets
+      // Load thumbnails for existing video assets
       for (const asset of assets.value) {
         await loadAssetThumbnail(asset);
       }
-    } catch (error) {
-      console.error('Failed to load assets:', error);
+
+      // Load thumbnails for watermarks (they are images, so use them directly)
+      for (const wm of watermarks.value) {
+        await loadWatermarkThumbnail(wm);
+      }
+    } catch (err) {
+      console.error('Failed to load assets:', err);
     } finally {
       loading.value = false;
+    }
+  }
+
+  async function loadWatermarkThumbnail(watermark: WatermarkImage) {
+    if (!thumbnailCache.value.has(watermark.id)) {
+      try {
+        const dataUrl = await invoke<string>('read_file_as_data_url', {
+          filePath: watermark.file_path,
+        });
+        thumbnailCache.value.set(watermark.id, dataUrl);
+      } catch (err) {
+        console.warn('Failed to load watermark thumbnail:', watermark.id, err);
+        // Use a default watermark icon
+        const defaultIcon =
+          'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiB2aWV3Qm94PSIwIDAgMjAwIDEyMCIgZmlsbD0ibm9uZSI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiBmaWxsPSIjNzg1MDAwIi8+CjxjaXJjbGUgY3g9IjEwMCIgY3k9IjUwIiByPSIyMCIgZmlsbD0iI0Y1OUUwQiIvPgo8dGV4dCB4PSIxMDAiIHk9Ijk1IiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiNGRkZGRkYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPldhdGVybWFyazwvdGV4dD4KPC9zdmc+';
+        thumbnailCache.value.set(watermark.id, defaultIcon);
+      }
     }
   }
 
@@ -423,6 +487,19 @@
     return defaultIcon;
   }
 
+  // Get thumbnail URL for any asset type (DisplayAsset)
+  function getThumbnailUrl(asset: DisplayAsset): string | null {
+    const cached = thumbnailCache.value.get(asset.id);
+    if (cached) return cached;
+
+    if (asset.assetType === 'watermark') {
+      // Watermarks should have been loaded in loadWatermarkThumbnail
+      return null;
+    }
+
+    return getAssetThumbnailUrl(asset as IntroOutro);
+  }
+
   function handleUpload() {
     showUploadDialog.value = true;
   }
@@ -451,7 +528,7 @@
     }, 100);
   }
 
-  function confirmDelete(asset: IntroOutro) {
+  function confirmDelete(asset: DisplayAsset) {
     assetToDelete.value = asset;
     showDeleteDialog.value = true;
   }
@@ -464,7 +541,12 @@
   async function deleteAssetConfirmed() {
     if (!assetToDelete.value) return;
 
-    const result = await deleteAsset(assetToDelete.value);
+    let result;
+    if (assetToDelete.value.assetType === 'watermark') {
+      result = await deleteWatermark(assetToDelete.value as WatermarkImage);
+    } else {
+      result = await deleteAsset(assetToDelete.value as IntroOutro);
+    }
 
     if (result.success) {
       await loadAssets();
@@ -481,9 +563,9 @@
       const assetsPath = basePath + '\\assets';
 
       // Use the first asset file if available, otherwise use a dummy path
-      if (assets.value.length > 0) {
+      if (allAssets.value.length > 0) {
         // Reveal the first asset file, which will open the assets folder
-        await revealItemInDir(assets.value[0].file_path);
+        await revealItemInDir(allAssets.value[0].file_path);
       } else {
         // If no assets, append a dummy filename to open the assets folder
         // The file doesn't need to exist, revealItemInDir will still open the parent folder
@@ -504,13 +586,22 @@
       loadAssets();
     });
 
+    // Register for watermark upload completion events
+    unregisterWatermarkCallback = onWatermarkUploadComplete(() => {
+      // Reload assets list when watermark upload completes
+      loadAssets();
+    });
+
     // Assets will appear automatically when upload completes
   });
 
   onUnmounted(() => {
-    // Cleanup upload callback
+    // Cleanup upload callbacks
     if (unregisterUploadCallback) {
       unregisterUploadCallback();
+    }
+    if (unregisterWatermarkCallback) {
+      unregisterWatermarkCallback();
     }
   });
 </script>

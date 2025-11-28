@@ -330,3 +330,23 @@ export interface SubtitleSettings {
   wordSpacing: number;
   selectedPresetId?: string | null;
 }
+
+export interface WatermarkImage {
+  id: string;
+  name: string;
+  file_path: string;
+  width: number | null;
+  height: number | null;
+  file_size: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface WatermarkSettings {
+  enabled: boolean;
+  watermarkId: string | null;
+  positionX: number; // 0-100 (percentage from left)
+  positionY: number; // 0-100 (percentage from top)
+  opacity: number; // 0-100
+  scale: number; // 0-100 (percentage of video width)
+}

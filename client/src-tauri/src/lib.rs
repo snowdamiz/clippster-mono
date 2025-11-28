@@ -234,6 +234,12 @@ pub fn run() {
                             sql: include_str!("../migrations/035_add_project_platform.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 36,
+                            description: "add_watermark_images",
+                            sql: include_str!("../migrations/036_add_watermark_images.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -358,6 +364,8 @@ pub fn run() {
             storage::read_file_as_data_url,
             storage::delete_video_file,
             storage::get_video_duration,
+            storage::copy_watermark_to_storage,
+            storage::delete_watermark_file,
 
             // Assets commands
             assets::upload_asset_async,

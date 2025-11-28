@@ -2,10 +2,119 @@ use tauri_plugin_shell::ShellExt;
 use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 
-use super::types::AspectRatio;
+use super::types::{AspectRatio, WatermarkSettings};
 use super::encoder::{detect_hardware_encoder, get_quality_settings};
 use super::video_info::{get_video_info, calculate_crop_params, calculate_crop_position, IntroOutroCache};
 use super::font_manager::get_fonts_dir;
+
+// Helper function to calculate watermark position for FFmpeg overlay filter
+// position_x and position_y are percentages (0-100) from top-left corner
+// The position is calculated so the watermark center is at the specified percentage
+fn get_watermark_overlay_position(position_x: u32, position_y: u32) -> String {
+    // Calculate position based on percentage, centering the watermark on the point
+    // This matches the CSS behavior: left: X%, top: Y%, transform: translate(-50%, -50%)
+    // 
+    // Formula: position = (video_size * percentage / 100) - (overlay_size / 2)
+    // This centers the watermark on the percentage point
+    let x_expr = format!("main_w*{}/100-overlay_w/2", position_x);
+    let y_expr = format!("main_h*{}/100-overlay_h/2", position_y);
+    format!("x={}:y={}", x_expr, y_expr)
+}
+
+// Helper function to apply watermark to a video file
+async fn apply_watermark_to_video(
+    app: &tauri::AppHandle,
+    input_path: &std::path::Path,
+    watermark: &WatermarkSettings,
+    quality: &str,
+) -> Result<(), String> {
+    if !watermark.enabled {
+        return Ok(());
+    }
+
+    let shell = app.shell();
+    
+    // Get video info for calculating watermark size
+    let video_info = get_video_info(app, input_path.to_str().ok_or("Invalid input path")?).await?;
+    
+    // Calculate watermark width based on scale percentage of video width
+    let wm_width = (video_info.width as f32 * (watermark.scale as f32 / 100.0)) as u32;
+    
+    // Build the position string using X/Y percentages
+    let position = get_watermark_overlay_position(watermark.position_x, watermark.position_y);
+    
+    // Calculate opacity (FFmpeg uses 0-1 range)
+    let opacity = watermark.opacity as f32 / 100.0;
+    
+    // Create temporary output path
+    let temp_output = input_path.with_extension("watermarked.mp4");
+    
+    // Detect hardware encoder
+    let encoder = detect_hardware_encoder(app, quality).await;
+    
+    // Build the filter_complex for watermark overlay
+    // [1:v] is the watermark input
+    // scale: resize watermark to percentage of video width
+    // colorchannelmixer: apply opacity
+    // overlay: position the watermark
+    let filter_complex = format!(
+        "[1:v]scale={}:-1,format=rgba,colorchannelmixer=aa={}[wm];[0:v][wm]overlay={}",
+        wm_width, opacity, position
+    );
+    
+    println!("[Rust] Watermark position: x={}%, y={}%", watermark.position_x, watermark.position_y);
+    
+    // Build encoder-specific args
+    let mut args = vec![
+        "-i".to_string(), input_path.to_string_lossy().to_string(),
+        "-i".to_string(), watermark.file_path.clone(),
+        "-filter_complex".to_string(), filter_complex,
+        "-c:v".to_string(), encoder.codec.clone(),
+    ];
+    
+    // Add preset if applicable
+    if let Some(preset) = &encoder.preset {
+        args.push("-preset".to_string());
+        args.push(preset.clone());
+    }
+    
+    // Add quality parameter
+    args.push(encoder.quality_param.clone());
+    args.push(encoder.quality_value.clone());
+    
+    // Add common parameters
+    args.extend_from_slice(&[
+        "-c:a".to_string(), "copy".to_string(),
+        "-pix_fmt".to_string(), "yuv420p".to_string(),
+        "-movflags".to_string(), "+faststart".to_string(),
+        "-y".to_string(),
+        temp_output.to_string_lossy().to_string(),
+    ]);
+    
+    println!("[Rust] Applying watermark to video...");
+    
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to apply watermark: {}", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("FFmpeg watermark failed: {}", stderr));
+    }
+    
+    // Replace original file with watermarked version
+    std::fs::remove_file(input_path)
+        .map_err(|e| format!("Failed to remove original file: {}", e))?;
+    std::fs::rename(&temp_output, input_path)
+        .map_err(|e| format!("Failed to rename watermarked file: {}", e))?;
+    
+    println!("[Rust] Watermark applied successfully");
+    
+    Ok(())
+}
 
 // Build single-segment clip with aspect ratio and quality settings
 // Note: output_format is unused here because the path already has the correct extension
@@ -21,7 +130,8 @@ pub async fn build_single_segment_clip_with_settings(
     _output_format: &str,  // Format already applied in output_path extension
     intro_path: Option<&str>,
     outro_path: Option<&str>,
-    intro_outro_cache: Arc<Mutex<IntroOutroCache>>
+    intro_outro_cache: Arc<Mutex<IntroOutroCache>>,
+    watermark_settings: Option<&WatermarkSettings>
 ) -> Result<(), String> {
     let shell = app.shell();
     let start_time: f64 = segment["start_time"].as_f64().ok_or("Invalid start_time")?;
@@ -245,6 +355,13 @@ pub async fn build_single_segment_clip_with_settings(
         // Clean up temporary files
         let _ = std::fs::remove_dir_all(&temp_dir);
 
+        // Apply watermark if enabled (after all other processing)
+        if let Some(wm) = watermark_settings {
+            if wm.enabled {
+                apply_watermark_to_video(app, output_path, wm, quality).await?;
+            }
+        }
+
         return Ok(());
     }
 
@@ -325,6 +442,13 @@ pub async fn build_single_segment_clip_with_settings(
         return Err(format!("FFmpeg failed: {}", stderr));
     }
 
+    // Apply watermark if enabled (after all other processing)
+    if let Some(wm) = watermark_settings {
+        if wm.enabled {
+            apply_watermark_to_video(app, output_path, wm, quality).await?;
+        }
+    }
+
     Ok(())
 }
 
@@ -342,7 +466,8 @@ pub async fn build_multi_segment_clip_with_settings(
     _output_format: &str,  // Format already applied in output_path extension
     intro_path: Option<&str>,
     outro_path: Option<&str>,
-    intro_outro_cache: Arc<Mutex<IntroOutroCache>>
+    intro_outro_cache: Arc<Mutex<IntroOutroCache>>,
+    watermark_settings: Option<&WatermarkSettings>
 ) -> Result<(), String> {
     let shell = app.shell();
 
@@ -593,6 +718,13 @@ pub async fn build_multi_segment_clip_with_settings(
     // Clean up temporary files
     let _ = std::fs::remove_dir_all(&temp_dir);
     println!("[Rust] Multi-segment build successful, cleaned up temp files");
+
+    // Apply watermark if enabled (after all other processing)
+    if let Some(wm) = watermark_settings {
+        if wm.enabled {
+            apply_watermark_to_video(app, output_path, wm, quality).await?;
+        }
+    }
 
     Ok(())
 }

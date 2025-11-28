@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 use tauri::Emitter;
 
-use super::types::{SubtitleSettings, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult};
+use super::types::{SubtitleSettings, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings};
 use super::video_info::{get_video_info, parse_aspect_ratio, IntroOutroCache};
 use super::subtitle::generate_ass_file;
 use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings};
@@ -131,7 +131,8 @@ pub async fn build_clip_internal_simple(
     intro_path: Option<&str>,
     intro_duration: Option<f64>,
     outro_path: Option<&str>,
-    _outro_duration: Option<f64>
+    _outro_duration: Option<f64>,
+    watermark_settings: Option<WatermarkSettings>
 ) -> Result<ClipBuildResult, String> {
 
     // Emit progress
@@ -197,6 +198,7 @@ pub async fn build_clip_internal_simple(
         let intro_outro_cache = intro_outro_cache.clone();
         let aspect_ratio_str = aspect_ratio_str.clone();
         let snake_case_name = snake_case_clip_name.clone();
+        let watermark_settings = watermark_settings.clone();
         
         async move {
             println!("[Rust] Building clip for aspect ratio: {}", aspect_ratio_str);
@@ -266,7 +268,8 @@ pub async fn build_clip_internal_simple(
                     &output_format,
                     intro_path.as_deref(),
                     outro_path.as_deref(),
-                    intro_outro_cache.clone()
+                    intro_outro_cache.clone(),
+                    watermark_settings.as_ref()
                 ).await?;
             } else {
                 println!("[Rust] Building multi-segment clip for {} with {} segments", aspect_ratio_str, segments.len());
@@ -282,7 +285,8 @@ pub async fn build_clip_internal_simple(
                     &output_format,
                     intro_path.as_deref(),
                     outro_path.as_deref(),
-                    intro_outro_cache.clone()
+                    intro_outro_cache.clone(),
+                    watermark_settings.as_ref()
                 ).await?;
             }
 
