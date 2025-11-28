@@ -427,13 +427,13 @@
             <div class="relative h-2 bg-muted-foreground/30 rounded-md">
               <div
                 class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                :style="{ width: `${((localSettings.scale - 5) / (50 - 5)) * 100}%` }"
+                :style="{ width: `${((localSettings.scale - 5) / (450 - 5)) * 100}%` }"
               ></div>
               <input
                 type="range"
                 v-model.number="localSettings.scale"
                 min="5"
-                max="50"
+                max="450"
                 step="1"
                 class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
               />
