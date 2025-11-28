@@ -41,322 +41,501 @@
       </div>
     </div>
 
+    <!-- Sub-tabs -->
+    <div class="flex items-center py-2 bg-background/50 border-b border-border/30">
+      <div class="flex items-center gap-1">
+        <button
+          @click="activeSubTab = 'settings'"
+          :class="[
+            'px-3 py-1.5 text-xs font-semibold rounded-md transition-all',
+            activeSubTab === 'settings'
+              ? 'text-primary bg-primary/10 border border-primary/30'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted/30',
+          ]"
+        >
+          Settings
+        </button>
+        <button
+          @click="activeSubTab = 'presets'"
+          :class="[
+            'px-3 py-1.5 text-xs font-semibold rounded-md transition-all',
+            activeSubTab === 'presets'
+              ? 'text-primary bg-primary/10 border border-primary/30'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted/30',
+          ]"
+        >
+          Presets
+        </button>
+      </div>
+    </div>
+
     <!-- Content -->
     <div class="flex-1 overflow-y-auto py-4 custom-scrollbar space-y-4">
-      <!-- Watermark Selection -->
-      <div class="space-y-2">
-        <label class="text-xs font-semibold text-foreground uppercase tracking-wide">Image</label>
-        <div class="relative">
+      <!-- Presets Tab -->
+      <template v-if="activeSubTab === 'presets'">
+        <!-- Save Buttons -->
+        <div class="flex items-center gap-2">
           <button
-            ref="dropdownButtonRef"
-            @click="toggleDropdown"
-            class="w-full px-3 py-2.5 bg-muted/50 border border-border/40 rounded-lg text-left flex items-center justify-between hover:border-border hover:bg-muted/60 transition-all text-sm text-foreground"
+            @click="openSaveDialog('new')"
+            class="flex-1 py-2 px-3 rounded-lg transition-all flex items-center justify-center gap-2 bg-muted/40 hover:bg-muted/60 border border-border/50 hover:border-border text-foreground/80 hover:text-foreground"
+            title="Save as a new preset"
           >
-            <div class="flex items-center gap-3">
-              <!-- Watermark thumbnail preview -->
+            <Plus class="h-3.5 w-3.5" />
+            <span class="text-xs font-medium">New</span>
+          </button>
+          <button
+            v-if="selectedPreset"
+            @click="openSaveDialog('update')"
+            class="flex-1 py-2 px-3 rounded-lg transition-all flex items-center justify-center gap-2 bg-muted/40 hover:bg-muted/60 border border-border/50 hover:border-border text-foreground/80 hover:text-foreground"
+            :title="`Update ${selectedPreset.name}`"
+          >
+            <Upload class="h-3.5 w-3.5" />
+            <span class="text-xs font-medium">Update</span>
+          </button>
+        </div>
+
+        <!-- Empty State -->
+        <div v-if="presets.length === 0" class="py-12 text-center">
+          <div
+            class="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-primary/10 to-primary/5 rounded-lg flex items-center justify-center border border-primary/20"
+          >
+            <Star class="h-8 w-8 text-primary/60" />
+          </div>
+          <p class="text-sm text-muted-foreground mb-1">No presets saved yet</p>
+          <p class="text-xs text-muted-foreground/70">Customize settings and save them as presets</p>
+        </div>
+
+        <!-- Preset List -->
+        <div v-else class="space-y-2">
+          <button
+            v-for="preset in presets"
+            :key="preset.id"
+            @click="applyPreset(preset)"
+            class="w-full p-3 rounded-lg border transition-all text-left group"
+            :class="
+              selectedPreset?.id === preset.id
+                ? 'bg-primary/10 border-primary/30'
+                : 'bg-muted/20 border-border/50 hover:bg-muted/40 hover:border-border'
+            "
+          >
+            <div class="flex items-start justify-between">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-medium text-foreground truncate">{{ preset.name }}</span>
+                  <CheckCircle v-if="selectedPreset?.id === preset.id" class="h-3.5 w-3.5 text-primary flex-shrink-0" />
+                </div>
+                <p v-if="preset.description" class="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                  {{ preset.description }}
+                </p>
+                <p class="text-[10px] text-muted-foreground/60 mt-1">
+                  Position: {{ preset.position_x }}%, {{ preset.position_y }}% • Opacity: {{ preset.opacity }}% • Size:
+                  {{ preset.scale }}%
+                </p>
+              </div>
+              <button
+                @click.stop="deletePreset(preset)"
+                class="p-1.5 rounded-md opacity-0 group-hover:opacity-100 hover:bg-red-500/20 transition-all"
+                title="Delete preset"
+              >
+                <Trash2 class="h-3.5 w-3.5 text-red-400" />
+              </button>
+            </div>
+          </button>
+        </div>
+      </template>
+
+      <!-- Settings Tab -->
+      <template v-if="activeSubTab === 'settings'">
+        <!-- Watermark Selection -->
+        <div class="space-y-2">
+          <label class="text-xs font-semibold text-foreground uppercase tracking-wide">Image</label>
+          <div class="relative">
+            <button
+              ref="dropdownButtonRef"
+              @click="toggleDropdown"
+              class="w-full px-3 py-2.5 bg-muted/50 border border-border/40 rounded-lg text-left flex items-center justify-between hover:border-border hover:bg-muted/60 transition-all text-sm text-foreground"
+            >
+              <div class="flex items-center gap-3">
+                <!-- Watermark thumbnail preview -->
+                <div
+                  v-if="selectedWatermark && getWatermarkUrl(selectedWatermark)"
+                  class="w-8 h-8 rounded bg-muted/50 border border-border/30 flex items-center justify-center overflow-hidden"
+                >
+                  <img
+                    :src="getWatermarkUrl(selectedWatermark)"
+                    :alt="selectedWatermark.name"
+                    class="max-w-full max-h-full object-contain"
+                  />
+                </div>
+                <div
+                  v-else
+                  class="w-8 h-8 rounded bg-muted/30 border border-border/30 flex items-center justify-center"
+                >
+                  <ImageIcon class="w-4 h-4 text-muted-foreground/50" />
+                </div>
+                <span class="truncate">
+                  {{ selectedWatermark ? selectedWatermark.name : 'Select a watermark...' }}
+                </span>
+              </div>
+              <ChevronDown
+                class="h-4 w-4 text-muted-foreground transition-transform flex-shrink-0 ml-2"
+                :class="{ 'rotate-180': showDropdown }"
+              />
+            </button>
+
+            <!-- Dropdown -->
+            <Teleport to="body">
+              <div
+                v-if="showDropdown"
+                ref="dropdownRef"
+                class="fixed bg-card border border-border rounded-lg shadow-xl z-[9999] overflow-y-auto custom-scrollbar"
+                :style="{
+                  top: dropdownPosition.top,
+                  left: dropdownPosition.left,
+                  width: dropdownPosition.width,
+                  maxHeight: dropdownPosition.maxHeight,
+                }"
+                @click.stop
+              >
+                <button
+                  @click="selectWatermark(null)"
+                  class="w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm border-b border-border/30 flex items-center gap-3"
+                  :class="{ 'bg-primary/10 text-primary': !selectedWatermark }"
+                >
+                  <div class="w-8 h-8 rounded bg-muted/30 border border-border/30 flex items-center justify-center">
+                    <X class="w-4 h-4 text-muted-foreground/50" />
+                  </div>
+                  <span>None</span>
+                </button>
+                <button
+                  v-for="wm in watermarks"
+                  :key="wm.id"
+                  @click="selectWatermark(wm)"
+                  class="w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm flex items-center gap-3"
+                  :class="{ 'bg-primary/10 text-primary': selectedWatermark?.id === wm.id }"
+                >
+                  <div
+                    class="w-8 h-8 rounded bg-muted/50 border border-border/30 flex items-center justify-center overflow-hidden"
+                  >
+                    <img
+                      v-if="getWatermarkUrl(wm)"
+                      :src="getWatermarkUrl(wm)"
+                      :alt="wm.name"
+                      class="max-w-full max-h-full object-contain"
+                    />
+                    <ImageIcon v-else class="w-4 h-4 text-muted-foreground/50" />
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <span class="truncate block">{{ wm.name }}</span>
+                    <span v-if="wm.width && wm.height" class="text-[10px] text-muted-foreground">
+                      {{ wm.width }}×{{ wm.height }}
+                    </span>
+                  </div>
+                </button>
+                <div v-if="loading" class="px-3 py-4 text-sm text-center text-muted-foreground">
+                  <Loader2 class="h-4 w-4 animate-spin mx-auto mb-2" />
+                  Loading...
+                </div>
+                <div v-if="!loading && watermarks.length === 0" class="px-3 py-6 text-center">
+                  <ImageIcon class="h-8 w-8 mx-auto mb-2 text-muted-foreground/30" />
+                  <p class="text-sm text-muted-foreground">No watermarks available</p>
+                  <p class="text-xs text-muted-foreground/70 mt-1">Upload watermarks in Assets</p>
+                </div>
+              </div>
+            </Teleport>
+          </div>
+        </div>
+
+        <!-- Settings (only when watermark selected) -->
+        <template v-if="selectedWatermark && localSettings.enabled">
+          <!-- Position Controls -->
+          <div class="space-y-3">
+            <label class="text-xs font-semibold text-foreground uppercase tracking-wide">Position</label>
+
+            <!-- Draggable Preview Area -->
+            <div
+              ref="previewAreaRef"
+              class="relative bg-gradient-to-br from-muted/40 to-muted/20 rounded-lg border border-border/50 overflow-hidden cursor-crosshair"
+              :style="{ aspectRatio: `${aspectRatio.width}/${aspectRatio.height}` }"
+              @mousedown="startDrag"
+              @touchstart.prevent="startDrag"
+            >
+              <!-- Grid lines -->
+              <div class="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none opacity-30">
+                <div class="border-r border-b border-border/50"></div>
+                <div class="border-r border-b border-border/50"></div>
+                <div class="border-b border-border/50"></div>
+                <div class="border-r border-b border-border/50"></div>
+                <div class="border-r border-b border-border/50"></div>
+                <div class="border-b border-border/50"></div>
+                <div class="border-r border-border/50"></div>
+                <div class="border-r border-border/50"></div>
+                <div></div>
+              </div>
+
+              <!-- Watermark preview indicator -->
               <div
                 v-if="selectedWatermark && getWatermarkUrl(selectedWatermark)"
-                class="w-8 h-8 rounded bg-muted/50 border border-border/30 flex items-center justify-center overflow-hidden"
+                class="absolute transition-all duration-75 pointer-events-none"
+                :style="getWatermarkPreviewStyle"
               >
                 <img
                   :src="getWatermarkUrl(selectedWatermark)"
                   :alt="selectedWatermark.name"
-                  class="max-w-full max-h-full object-contain"
+                  class="max-w-full max-h-full object-contain drop-shadow-lg"
+                  :style="{ opacity: localSettings.opacity / 100 }"
                 />
               </div>
-              <div v-else class="w-8 h-8 rounded bg-muted/30 border border-border/30 flex items-center justify-center">
-                <ImageIcon class="w-4 h-4 text-muted-foreground/50" />
-              </div>
-              <span class="truncate">
-                {{ selectedWatermark ? selectedWatermark.name : 'Select a watermark...' }}
-              </span>
-            </div>
-            <ChevronDown
-              class="h-4 w-4 text-muted-foreground transition-transform flex-shrink-0 ml-2"
-              :class="{ 'rotate-180': showDropdown }"
-            />
-          </button>
+              <!-- Fallback indicator when image not loaded -->
+              <div
+                v-else-if="selectedWatermark"
+                class="absolute w-6 h-6 bg-amber-500/80 rounded border-2 border-amber-400 shadow-lg transition-all duration-75 pointer-events-none"
+                :style="{
+                  left: `${isDragging ? dragPositionX : localSettings.positionX}%`,
+                  top: `${isDragging ? dragPositionY : localSettings.positionY}%`,
+                  transform: 'translate(-50%, -50%)',
+                }"
+              ></div>
 
-          <!-- Dropdown -->
-          <Teleport to="body">
-            <div
-              v-if="showDropdown"
-              ref="dropdownRef"
-              class="fixed bg-card border border-border rounded-lg shadow-xl z-[9999] overflow-y-auto custom-scrollbar"
-              :style="{
-                top: dropdownPosition.top,
-                left: dropdownPosition.left,
-                width: dropdownPosition.width,
-                maxHeight: dropdownPosition.maxHeight,
-              }"
-              @click.stop
-            >
-              <button
-                @click="selectWatermark(null)"
-                class="w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm border-b border-border/30 flex items-center gap-3"
-                :class="{ 'bg-primary/10 text-primary': !selectedWatermark }"
+              <!-- Center crosshair for reference -->
+              <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-20">
+                <div class="w-4 h-px bg-foreground"></div>
+                <div class="w-px h-4 bg-foreground absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+              </div>
+
+              <!-- Drag hint -->
+              <div
+                class="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] text-muted-foreground/50 pointer-events-none"
               >
-                <div class="w-8 h-8 rounded bg-muted/30 border border-border/30 flex items-center justify-center">
-                  <X class="w-4 h-4 text-muted-foreground/50" />
-                </div>
-                <span>None</span>
-              </button>
-              <button
-                v-for="wm in watermarks"
-                :key="wm.id"
-                @click="selectWatermark(wm)"
-                class="w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm flex items-center gap-3"
-                :class="{ 'bg-primary/10 text-primary': selectedWatermark?.id === wm.id }"
-              >
-                <div
-                  class="w-8 h-8 rounded bg-muted/50 border border-border/30 flex items-center justify-center overflow-hidden"
-                >
-                  <img
-                    v-if="getWatermarkUrl(wm)"
-                    :src="getWatermarkUrl(wm)"
-                    :alt="wm.name"
-                    class="max-w-full max-h-full object-contain"
-                  />
-                  <ImageIcon v-else class="w-4 h-4 text-muted-foreground/50" />
-                </div>
-                <div class="flex-1 min-w-0">
-                  <span class="truncate block">{{ wm.name }}</span>
-                  <span v-if="wm.width && wm.height" class="text-[10px] text-muted-foreground">
-                    {{ wm.width }}×{{ wm.height }}
+                Drag to position
+              </div>
+            </div>
+
+            <!-- Position Sliders -->
+            <div class="grid grid-cols-2 gap-4">
+              <!-- Horizontal -->
+              <div class="space-y-1.5">
+                <div class="flex items-center justify-between">
+                  <label class="text-xs text-muted-foreground">Horizontal</label>
+                  <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-1.5 py-0.5 rounded">
+                    {{ localSettings.positionX }}%
                   </span>
                 </div>
+                <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
+                  <div
+                    class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                    :style="{ width: `${localSettings.positionX}%` }"
+                  ></div>
+                  <input
+                    type="range"
+                    v-model.number="localSettings.positionX"
+                    min="0"
+                    max="100"
+                    step="1"
+                    class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                  />
+                </div>
+                <div class="flex justify-between text-[9px] text-muted-foreground/40">
+                  <span>Left</span>
+                  <span>Right</span>
+                </div>
+              </div>
+
+              <!-- Vertical -->
+              <div class="space-y-1.5">
+                <div class="flex items-center justify-between">
+                  <label class="text-xs text-muted-foreground">Vertical</label>
+                  <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-1.5 py-0.5 rounded">
+                    {{ localSettings.positionY }}%
+                  </span>
+                </div>
+                <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
+                  <div
+                    class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                    :style="{ width: `${localSettings.positionY}%` }"
+                  ></div>
+                  <input
+                    type="range"
+                    v-model.number="localSettings.positionY"
+                    min="0"
+                    max="100"
+                    step="1"
+                    class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                  />
+                </div>
+                <div class="flex justify-between text-[9px] text-muted-foreground/40">
+                  <span>Top</span>
+                  <span>Bottom</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Quick Position Presets -->
+            <div class="flex flex-wrap gap-1.5">
+              <button
+                v-for="preset in positionPresets"
+                :key="preset.name"
+                @click="applyPositionPreset(preset)"
+                class="px-2 py-1 text-[10px] font-medium rounded transition-all"
+                :class="
+                  isPresetActive(preset)
+                    ? 'bg-primary/20 text-primary border border-primary/30'
+                    : 'bg-muted/40 text-muted-foreground hover:bg-muted/60 border border-transparent'
+                "
+              >
+                {{ preset.name }}
               </button>
-              <div v-if="loading" class="px-3 py-4 text-sm text-center text-muted-foreground">
-                <Loader2 class="h-4 w-4 animate-spin mx-auto mb-2" />
-                Loading...
-              </div>
-              <div v-if="!loading && watermarks.length === 0" class="px-3 py-6 text-center">
-                <ImageIcon class="h-8 w-8 mx-auto mb-2 text-muted-foreground/30" />
-                <p class="text-sm text-muted-foreground">No watermarks available</p>
-                <p class="text-xs text-muted-foreground/70 mt-1">Upload watermarks in Assets</p>
-              </div>
             </div>
-          </Teleport>
-        </div>
-      </div>
+          </div>
 
-      <!-- Settings (only when watermark selected) -->
-      <template v-if="selectedWatermark && localSettings.enabled">
-        <!-- Position Controls -->
-        <div class="space-y-3">
-          <label class="text-xs font-semibold text-foreground uppercase tracking-wide">Position</label>
-
-          <!-- Draggable Preview Area -->
-          <div
-            ref="previewAreaRef"
-            class="relative bg-gradient-to-br from-muted/40 to-muted/20 rounded-lg border border-border/50 overflow-hidden cursor-crosshair"
-            :style="{ aspectRatio: `${aspectRatio.width}/${aspectRatio.height}` }"
-            @mousedown="startDrag"
-            @touchstart.prevent="startDrag"
-          >
-            <!-- Grid lines -->
-            <div class="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none opacity-30">
-              <div class="border-r border-b border-border/50"></div>
-              <div class="border-r border-b border-border/50"></div>
-              <div class="border-b border-border/50"></div>
-              <div class="border-r border-b border-border/50"></div>
-              <div class="border-r border-b border-border/50"></div>
-              <div class="border-b border-border/50"></div>
-              <div class="border-r border-border/50"></div>
-              <div class="border-r border-border/50"></div>
-              <div></div>
+          <!-- Opacity -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <label class="text-xs font-semibold text-foreground uppercase tracking-wide">Opacity</label>
+              <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+                {{ localSettings.opacity }}%
+              </span>
             </div>
-
-            <!-- Watermark preview indicator -->
-            <div
-              v-if="selectedWatermark && getWatermarkUrl(selectedWatermark)"
-              class="absolute transition-all duration-75 pointer-events-none"
-              :style="getWatermarkPreviewStyle"
-            >
-              <img
-                :src="getWatermarkUrl(selectedWatermark)"
-                :alt="selectedWatermark.name"
-                class="max-w-full max-h-full object-contain drop-shadow-lg"
-                :style="{ opacity: localSettings.opacity / 100 }"
+            <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+              <div
+                class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                :style="{ width: `${((localSettings.opacity - 10) / (100 - 10)) * 100}%` }"
+              ></div>
+              <input
+                type="range"
+                v-model.number="localSettings.opacity"
+                min="10"
+                max="100"
+                step="5"
+                class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
               />
             </div>
-            <!-- Fallback indicator when image not loaded -->
-            <div
-              v-else-if="selectedWatermark"
-              class="absolute w-6 h-6 bg-amber-500/80 rounded border-2 border-amber-400 shadow-lg transition-all duration-75 pointer-events-none"
-              :style="{
-                left: `${isDragging ? dragPositionX : localSettings.positionX}%`,
-                top: `${isDragging ? dragPositionY : localSettings.positionY}%`,
-                transform: 'translate(-50%, -50%)',
-              }"
-            ></div>
-
-            <!-- Center crosshair for reference -->
-            <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-20">
-              <div class="w-4 h-px bg-foreground"></div>
-              <div class="w-px h-4 bg-foreground absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
-            </div>
-
-            <!-- Drag hint -->
-            <div
-              class="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] text-muted-foreground/50 pointer-events-none"
-            >
-              Drag to position
+            <div class="flex justify-between text-[9px] text-muted-foreground/40">
+              <span>Subtle</span>
+              <span>Full</span>
             </div>
           </div>
 
-          <!-- Position Sliders -->
-          <div class="grid grid-cols-2 gap-4">
-            <!-- Horizontal -->
-            <div class="space-y-1.5">
-              <div class="flex items-center justify-between">
-                <label class="text-xs text-muted-foreground">Horizontal</label>
-                <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-1.5 py-0.5 rounded">
-                  {{ localSettings.positionX }}%
-                </span>
-              </div>
-              <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
-                <div
-                  class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                  :style="{ width: `${localSettings.positionX}%` }"
-                ></div>
-                <input
-                  type="range"
-                  v-model.number="localSettings.positionX"
-                  min="0"
-                  max="100"
-                  step="1"
-                  class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-                />
-              </div>
-              <div class="flex justify-between text-[9px] text-muted-foreground/40">
-                <span>Left</span>
-                <span>Right</span>
-              </div>
+          <!-- Scale -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <label class="text-xs font-semibold text-foreground uppercase tracking-wide">Size</label>
+              <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+                {{ localSettings.scale }}%
+              </span>
             </div>
-
-            <!-- Vertical -->
-            <div class="space-y-1.5">
-              <div class="flex items-center justify-between">
-                <label class="text-xs text-muted-foreground">Vertical</label>
-                <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-1.5 py-0.5 rounded">
-                  {{ localSettings.positionY }}%
-                </span>
-              </div>
-              <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
-                <div
-                  class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                  :style="{ width: `${localSettings.positionY}%` }"
-                ></div>
-                <input
-                  type="range"
-                  v-model.number="localSettings.positionY"
-                  min="0"
-                  max="100"
-                  step="1"
-                  class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-                />
-              </div>
-              <div class="flex justify-between text-[9px] text-muted-foreground/40">
-                <span>Top</span>
-                <span>Bottom</span>
-              </div>
+            <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+              <div
+                class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+                :style="{ width: `${((localSettings.scale - 5) / (50 - 5)) * 100}%` }"
+              ></div>
+              <input
+                type="range"
+                v-model.number="localSettings.scale"
+                min="5"
+                max="50"
+                step="1"
+                class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+              />
+            </div>
+            <div class="flex justify-between text-[9px] text-muted-foreground/40">
+              <span>Small</span>
+              <span>Large</span>
             </div>
           </div>
+        </template>
 
-          <!-- Quick Position Presets -->
-          <div class="flex flex-wrap gap-1.5">
+        <!-- Empty State when no watermark selected but enabled -->
+        <div v-if="localSettings.enabled && !selectedWatermark" class="py-8 text-center">
+          <div
+            class="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-amber-500/10 to-orange-500/10 rounded-lg flex items-center justify-center border border-amber-500/20"
+          >
+            <ImageIcon class="h-8 w-8 text-amber-500/60" />
+          </div>
+          <p class="text-sm text-muted-foreground mb-1">Select a watermark image</p>
+          <p class="text-xs text-muted-foreground/70">Choose from your uploaded watermarks above</p>
+        </div>
+      </template>
+    </div>
+
+    <!-- Save Preset Dialog -->
+    <Teleport to="body">
+      <div
+        v-if="showSaveDialog"
+        class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999]"
+        @click.self="closeSaveDialog"
+      >
+        <div class="bg-card rounded-xl w-full max-w-sm mx-4 border border-border shadow-2xl">
+          <div class="px-4 py-3 border-b border-border/50">
+            <h3 class="text-sm font-semibold text-foreground">
+              {{ saveDialogMode === 'new' ? 'Save New Preset' : 'Update Preset' }}
+            </h3>
+          </div>
+          <div class="p-4 space-y-3">
+            <div>
+              <label class="text-xs font-medium text-muted-foreground">Name</label>
+              <input
+                v-model="presetName"
+                type="text"
+                placeholder="My Watermark Preset"
+                class="w-full mt-1 px-3 py-2 bg-muted/50 border border-border/40 rounded-lg text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50"
+              />
+            </div>
+            <div>
+              <label class="text-xs font-medium text-muted-foreground">Description (optional)</label>
+              <input
+                v-model="presetDescription"
+                type="text"
+                placeholder="Bottom right corner, semi-transparent"
+                class="w-full mt-1 px-3 py-2 bg-muted/50 border border-border/40 rounded-lg text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50"
+              />
+            </div>
+          </div>
+          <div class="px-4 py-3 border-t border-border/50 flex justify-end gap-2">
             <button
-              v-for="preset in positionPresets"
-              :key="preset.name"
-              @click="applyPositionPreset(preset)"
-              class="px-2 py-1 text-[10px] font-medium rounded transition-all"
-              :class="
-                isPresetActive(preset)
-                  ? 'bg-primary/20 text-primary border border-primary/30'
-                  : 'bg-muted/40 text-muted-foreground hover:bg-muted/60 border border-transparent'
-              "
+              @click="closeSaveDialog"
+              class="px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
             >
-              {{ preset.name }}
+              Cancel
+            </button>
+            <button
+              @click="savePreset"
+              :disabled="!presetName.trim()"
+              class="px-4 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {{ saveDialogMode === 'new' ? 'Save' : 'Update' }}
             </button>
           </div>
         </div>
-
-        <!-- Opacity -->
-        <div class="space-y-2">
-          <div class="flex items-center justify-between">
-            <label class="text-xs font-semibold text-foreground uppercase tracking-wide">Opacity</label>
-            <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
-              {{ localSettings.opacity }}%
-            </span>
-          </div>
-          <div class="relative h-2 bg-muted-foreground/30 rounded-md">
-            <div
-              class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-              :style="{ width: `${((localSettings.opacity - 10) / (100 - 10)) * 100}%` }"
-            ></div>
-            <input
-              type="range"
-              v-model.number="localSettings.opacity"
-              min="10"
-              max="100"
-              step="5"
-              class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-            />
-          </div>
-          <div class="flex justify-between text-[9px] text-muted-foreground/40">
-            <span>Subtle</span>
-            <span>Full</span>
-          </div>
-        </div>
-
-        <!-- Scale -->
-        <div class="space-y-2">
-          <div class="flex items-center justify-between">
-            <label class="text-xs font-semibold text-foreground uppercase tracking-wide">Size</label>
-            <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
-              {{ localSettings.scale }}%
-            </span>
-          </div>
-          <div class="relative h-2 bg-muted-foreground/30 rounded-md">
-            <div
-              class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-              :style="{ width: `${((localSettings.scale - 5) / (50 - 5)) * 100}%` }"
-            ></div>
-            <input
-              type="range"
-              v-model.number="localSettings.scale"
-              min="5"
-              max="50"
-              step="1"
-              class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-            />
-          </div>
-          <div class="flex justify-between text-[9px] text-muted-foreground/40">
-            <span>Small</span>
-            <span>Large</span>
-          </div>
-        </div>
-      </template>
-
-      <!-- Empty State when no watermark selected but enabled -->
-      <div v-if="localSettings.enabled && !selectedWatermark" class="py-8 text-center">
-        <div
-          class="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-amber-500/10 to-orange-500/10 rounded-lg flex items-center justify-center border border-amber-500/20"
-        >
-          <ImageIcon class="h-8 w-8 text-amber-500/60" />
-        </div>
-        <p class="text-sm text-muted-foreground mb-1">Select a watermark image</p>
-        <p class="text-xs text-muted-foreground/70">Choose from your uploaded watermarks above</p>
       </div>
-    </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
   import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
-  import { RotateCcw, ChevronDown, X, Loader2, Image as ImageIcon } from 'lucide-vue-next';
-  import { getAllWatermarkImages, type WatermarkImage } from '@/services/database';
+  import {
+    RotateCcw,
+    ChevronDown,
+    X,
+    Loader2,
+    Image as ImageIcon,
+    Plus,
+    Upload,
+    Star,
+    CheckCircle,
+    Trash2,
+  } from 'lucide-vue-next';
+  import {
+    getAllWatermarkImages,
+    type WatermarkImage,
+    getAllWatermarkPresets,
+    createWatermarkPreset,
+    updateWatermarkPreset,
+    deleteWatermarkPreset as deletePresetFromDb,
+    presetToWatermarkSettings,
+    type WatermarkPreset,
+  } from '@/services/database';
   import type { WatermarkSettings } from '@/types';
   import { invoke } from '@tauri-apps/api/core';
 
@@ -391,6 +570,17 @@
   const selectedWatermark = ref<WatermarkImage | null>(null);
   const loading = ref(false);
   const watermarkThumbnailCache = ref<Map<string, string>>(new Map());
+
+  // Sub-tab state
+  const activeSubTab = ref<'settings' | 'presets'>('settings');
+
+  // Preset state
+  const presets = ref<WatermarkPreset[]>([]);
+  const selectedPreset = ref<WatermarkPreset | null>(null);
+  const showSaveDialog = ref(false);
+  const saveDialogMode = ref<'new' | 'update'>('new');
+  const presetName = ref('');
+  const presetDescription = ref('');
 
   // Dropdown state
   const showDropdown = ref(false);
@@ -663,8 +853,109 @@
     }
   );
 
+  // Load presets
+  async function loadPresets() {
+    try {
+      presets.value = await getAllWatermarkPresets();
+    } catch (error) {
+      console.error('[WatermarkTab] Failed to load presets:', error);
+    }
+  }
+
+  // Apply a preset
+  function applyPreset(preset: WatermarkPreset) {
+    selectedPreset.value = preset;
+    const settings = presetToWatermarkSettings(preset);
+
+    // Apply settings but keep enabled state and find the watermark
+    localSettings.value = {
+      ...settings,
+      enabled: localSettings.value.enabled,
+    };
+
+    // Update selected watermark if preset has one
+    if (preset.watermark_id) {
+      const found = watermarks.value.find((w) => w.id === preset.watermark_id);
+      if (found) {
+        selectedWatermark.value = found;
+      }
+    }
+
+    emitSettings();
+  }
+
+  // Open save dialog
+  function openSaveDialog(mode: 'new' | 'update') {
+    saveDialogMode.value = mode;
+    if (mode === 'update' && selectedPreset.value) {
+      presetName.value = selectedPreset.value.name;
+      presetDescription.value = selectedPreset.value.description || '';
+    } else {
+      presetName.value = '';
+      presetDescription.value = '';
+    }
+    showSaveDialog.value = true;
+  }
+
+  // Close save dialog
+  function closeSaveDialog() {
+    showSaveDialog.value = false;
+    presetName.value = '';
+    presetDescription.value = '';
+  }
+
+  // Save preset
+  async function savePreset() {
+    if (!presetName.value.trim()) return;
+
+    try {
+      if (saveDialogMode.value === 'new') {
+        const id = await createWatermarkPreset(
+          presetName.value.trim(),
+          presetDescription.value.trim() || null,
+          localSettings.value
+        );
+        await loadPresets();
+        // Select the newly created preset
+        const newPreset = presets.value.find((p) => p.id === id);
+        if (newPreset) {
+          selectedPreset.value = newPreset;
+        }
+      } else if (selectedPreset.value) {
+        await updateWatermarkPreset(
+          selectedPreset.value.id,
+          presetName.value.trim(),
+          presetDescription.value.trim() || null,
+          localSettings.value
+        );
+        await loadPresets();
+        // Update selected preset reference
+        const updated = presets.value.find((p) => p.id === selectedPreset.value?.id);
+        if (updated) {
+          selectedPreset.value = updated;
+        }
+      }
+      closeSaveDialog();
+    } catch (error) {
+      console.error('[WatermarkTab] Failed to save preset:', error);
+    }
+  }
+
+  // Delete preset
+  async function deletePreset(preset: WatermarkPreset) {
+    try {
+      await deletePresetFromDb(preset.id);
+      if (selectedPreset.value?.id === preset.id) {
+        selectedPreset.value = null;
+      }
+      await loadPresets();
+    } catch (error) {
+      console.error('[WatermarkTab] Failed to delete preset:', error);
+    }
+  }
+
   onMounted(async () => {
-    await loadWatermarks();
+    await Promise.all([loadWatermarks(), loadPresets()]);
     document.addEventListener('click', handleClickOutside);
   });
 

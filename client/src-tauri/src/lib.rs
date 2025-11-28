@@ -240,6 +240,12 @@ pub fn run() {
                             sql: include_str!("../migrations/036_add_watermark_images.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 37,
+                            description: "add_watermark_presets",
+                            sql: include_str!("../migrations/037_add_watermark_presets.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

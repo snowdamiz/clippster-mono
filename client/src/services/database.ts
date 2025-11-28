@@ -208,3 +208,14 @@ export {
   updateWatermarkImage,
   deleteWatermarkImage,
 } from './database/watermarks';
+
+// Watermark preset exports
+export {
+  createWatermarkPreset,
+  getAllWatermarkPresets,
+  getWatermarkPreset,
+  updateWatermarkPreset,
+  deleteWatermarkPreset,
+  presetToWatermarkSettings,
+  type WatermarkPreset,
+} from './database/watermark-presets';
