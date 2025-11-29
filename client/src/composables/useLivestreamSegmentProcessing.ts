@@ -150,7 +150,7 @@ export function useLivestreamSegmentProcessing() {
           'extract_audio_from_video',
           {
             videoPath: job.filePath,
-            outputPath: `segment_${job.segmentId}_audio.ogg`,
+            outputPath: `segment_${job.segmentId}_audio.mp3`,
           }
         );
 

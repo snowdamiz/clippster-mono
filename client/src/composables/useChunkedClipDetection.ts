@@ -541,7 +541,7 @@ export function useChunkedClipDetection() {
       const { invoke } = await import('@tauri-apps/api/core');
       const [filename, base64Data] = await invoke<[string, string]>('extract_audio_from_video', {
         videoPath: projectVideo.file_path,
-        outputPath: 'temp_audio_audio_only.ogg',
+        outputPath: 'temp_audio_audio_only.mp3',
       });
 
       // Convert base64 back to binary

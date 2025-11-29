@@ -1317,7 +1317,7 @@ defmodule ClippsterServerWeb.ClipsController do
       chunk_upload = %{
         filename: Map.get(chunk_metadata, "filename"),
         content_type: "audio/ogg",
-        path: "/tmp/chunk_#{chunk_id}.ogg"
+        path: "/tmp/chunk_#{chunk_id}.mp3"
       }
 
       # Transcribe chunk using Whisper API
