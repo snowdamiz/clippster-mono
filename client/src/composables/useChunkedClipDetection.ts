@@ -59,7 +59,7 @@ export function useChunkedClipDetection() {
         message: 'Initializing clip detection...',
       };
 
-      const { chunkDurationMinutes = 15, overlapSeconds = 30, forceReprocess = false } = options;
+      const { chunkDurationMinutes = 10, overlapSeconds = 30, forceReprocess = false } = options;
 
       // Get project video
       const rawVideos = await getRawVideosByProjectId(projectId);
