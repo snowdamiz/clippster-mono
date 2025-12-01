@@ -422,10 +422,16 @@
   const stageIcon = computed(() => {
     switch (props.generationStage) {
       case 'starting':
+      case 'initializing':
+      case 'checking_cache':
         return PlayIcon;
+      case 'extracting_chunks':
+        return ActivityIcon;
       case 'transcribing':
+      case 'transcribing_chunks':
         return MicIcon;
       case 'analyzing':
+      case 'detecting_clips':
         return BrainIcon;
       case 'validating':
         return ActivityIcon;
@@ -441,10 +447,16 @@
   const stageIconClass = computed(() => {
     switch (props.generationStage) {
       case 'starting':
+      case 'initializing':
+      case 'checking_cache':
         return 'text-blue-500';
+      case 'extracting_chunks':
+        return 'text-cyan-500';
       case 'transcribing':
+      case 'transcribing_chunks':
         return 'text-yellow-500';
       case 'analyzing':
+      case 'detecting_clips':
         return 'text-purple-500';
       case 'validating':
         return 'text-orange-500';
@@ -460,10 +472,17 @@
   const stageTitle = computed(() => {
     switch (props.generationStage) {
       case 'starting':
-        return 'Separating Audio';
+      case 'initializing':
+        return 'Initializing';
+      case 'checking_cache':
+        return 'Checking Cache';
+      case 'extracting_chunks':
+        return 'Extracting Audio';
       case 'transcribing':
+      case 'transcribing_chunks':
         return 'Transcribing Audio';
       case 'analyzing':
+      case 'detecting_clips':
         return 'Detecting Clips';
       case 'validating':
         return 'Validating Results';
@@ -472,17 +491,24 @@
       case 'error':
         return 'Error';
       default:
-        return 'Separating Audio';
+        return 'Processing';
     }
   });
 
   const stageDescription = computed(() => {
     switch (props.generationStage) {
       case 'starting':
-        return 'Separating audio from vidoe...';
+      case 'initializing':
+        return 'Preparing clip detection...';
+      case 'checking_cache':
+        return 'Checking for cached transcripts...';
+      case 'extracting_chunks':
+        return 'Extracting audio chunks from video...';
       case 'transcribing':
+      case 'transcribing_chunks':
         return 'Converting audio to text using AI...';
       case 'analyzing':
+      case 'detecting_clips':
         return 'Analyzing transcript for clip-worthy moments...';
       case 'validating':
         return 'Validating timestamps and refining clips...';
@@ -491,7 +517,7 @@
       case 'error':
         return 'An error occurred during processing.';
       default:
-        return 'Separating audio from vidoe...';
+        return 'Processing video...';
     }
   });
 
@@ -533,10 +559,17 @@
   function getLoadingMessage(): string {
     switch (props.generationStage) {
       case 'starting':
+      case 'initializing':
         return 'Initializing detection...';
+      case 'checking_cache':
+        return 'Checking for cached data...';
+      case 'extracting_chunks':
+        return 'Extracting audio chunks...';
       case 'transcribing':
+      case 'transcribing_chunks':
         return 'Transcribing audio...';
       case 'analyzing':
+      case 'detecting_clips':
         return 'Analyzing for clips...';
       case 'validating':
         return 'Validating results...';
@@ -593,17 +626,29 @@
   }
 
   function getTimeEstimate(): string {
-    const estimates = {
-      starting: 'This usually takes about 30 seconds',
-      transcribing: getTranscriptionEstimate(),
-      analyzing: 'This typically takes 1-2 minutes',
-      validating: 'Almost done... 30 seconds remaining',
-      completed: 'Finishing up...',
-      error: 'Please try again',
-      default: 'This may take a few minutes depending on video length',
-    };
-
-    return estimates[props.generationStage as keyof typeof estimates] || estimates.default;
+    switch (props.generationStage) {
+      case 'starting':
+      case 'initializing':
+        return 'This usually takes about 30 seconds';
+      case 'checking_cache':
+        return 'Checking for existing data...';
+      case 'extracting_chunks':
+        return 'This usually takes 1-2 minutes';
+      case 'transcribing':
+      case 'transcribing_chunks':
+        return getTranscriptionEstimate();
+      case 'analyzing':
+      case 'detecting_clips':
+        return 'This typically takes 1-2 minutes';
+      case 'validating':
+        return 'Almost done... 30 seconds remaining';
+      case 'completed':
+        return 'Finishing up...';
+      case 'error':
+        return 'Please try again';
+      default:
+        return 'This may take a few minutes depending on video length';
+    }
   }
 
   function getTranscriptionEstimate(): string {

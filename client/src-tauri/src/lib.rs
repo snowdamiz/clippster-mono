@@ -34,7 +34,7 @@ pub fn run() {
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations(
-                    "sqlite:clippster_v21.db",
+                    "sqlite:clippster_v22.db",
                     vec![
                         tauri_plugin_sql::Migration {
                             version: 1,
@@ -244,6 +244,12 @@ pub fn run() {
                             version: 37,
                             description: "add_watermark_presets",
                             sql: include_str!("../migrations/037_add_watermark_presets.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 41,
+                            description: "fix_clips_cascade_deletion",
+                            sql: include_str!("../migrations/041_fix_clips_cascade_deletion.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                     ],
