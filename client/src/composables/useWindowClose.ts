@@ -1,13 +1,19 @@
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { useClipDetectionTracking } from './useClipDetectionTracking';
 
 const showCloseDialog = ref(false);
 const activeDownloadsCount = ref(0);
-const clipGenerationInProgress = ref(false);
 
 export function useWindowClose() {
+  // Use global detection tracking for accurate multi-project detection status
+  const { hasAnyActiveDetection } = useClipDetectionTracking();
+
+  // Computed property that checks global tracking
+  const clipGenerationInProgress = computed(() => hasAnyActiveDetection.value);
+
   async function initializeWindowCloseHandler() {
     // Listen for window close events from Tauri
     await listen<number>('window-close-requested', (event) => {
@@ -39,8 +45,10 @@ export function useWindowClose() {
     activeDownloadsCount.value = 0;
   }
 
-  function setClipGenerationInProgress(isInProgress: boolean) {
-    clipGenerationInProgress.value = isInProgress;
+  // Legacy function - kept for backwards compatibility but no longer needed
+  // as clipGenerationInProgress now uses global tracking directly
+  function setClipGenerationInProgress(_isInProgress: boolean) {
+    // No-op - state is now managed by useClipDetectionTracking
   }
 
   return {

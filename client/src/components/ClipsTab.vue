@@ -1,7 +1,7 @@
 <template>
   <div class="flex-1 flex flex-col overflow-hidden">
-    <!-- Header with Detect More button and count -->
-    <div v-if="clips.length > 0 && !isGenerating" class="flex items-center justify-between py-3 px-1 mt-2">
+    <!-- Header with Detect More button/progress and count -->
+    <div v-if="clips.length > 0" class="flex items-center justify-between py-3 px-1 mt-2">
       <div class="flex items-center gap-2">
         <span class="text-sm font-medium text-foreground/90">
           {{ clips.length }} Clip{{ clips.length !== 1 ? 's' : '' }}
@@ -9,7 +9,30 @@
         <span class="text-xs text-muted-foreground">•</span>
         <span class="text-xs text-muted-foreground">Click to preview on timeline</span>
       </div>
+
+      <!-- Compact Progress Bar (when detecting more clips) -->
+      <div v-if="isGenerating" class="flex items-center gap-3 min-w-[180px]">
+        <div class="flex-1 space-y-1">
+          <div class="h-1.5 w-full bg-secondary/30 rounded-full overflow-hidden">
+            <div
+              class="h-full bg-primary transition-all duration-500 ease-out"
+              :class="{ 'animate-pulse': generationProgress === 0 }"
+              :style="{ width: `${Math.max(generationProgress, 5)}%` }"
+            ></div>
+          </div>
+          <div class="flex justify-between items-center text-[10px] text-muted-foreground">
+            <span class="flex items-center gap-1">
+              <LoaderIcon class="w-2.5 h-2.5 animate-spin" />
+              <span class="truncate max-w-[100px]">{{ getCompactMessage() }}</span>
+            </span>
+            <span class="font-mono">{{ Math.round(generationProgress) }}%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detect More Button (when not detecting) -->
       <button
+        v-else
         @click="handleDetectClips"
         class="group flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted/30 hover:bg-muted/50 border border-border hover:border-foreground/40 rounded-md transition-all duration-200"
         title="Run clip detection again to find more clips"
@@ -20,8 +43,8 @@
     </div>
 
     <div class="flex-1 overflow-y-auto">
-      <!-- Progress State -->
-      <div v-if="isGenerating" class="h-full flex flex-col items-center justify-center px-8">
+      <!-- Progress State (only when no clips exist yet) -->
+      <div v-if="isGenerating && clips.length === 0" class="h-full flex flex-col items-center justify-center px-8">
         <div class="w-full max-w-xs space-y-6">
           <!-- Icon & Status -->
           <div class="text-center space-y-3">
@@ -90,14 +113,14 @@
       </div>
       <!-- Clips List State -->
       <div
-        v-else-if="clips.length > 0 && !isGenerating"
+        v-else-if="clips.length > 0"
         class="w-full flex-1 overflow-y-auto pr-2 custom-scrollbar"
         ref="clipsScrollContainer"
       >
         <!-- Clips Grid -->
         <div class="space-y-3 pb-4">
           <div
-            v-for="(clip, index) in clips"
+            v-for="(clip, index) in sortedClips"
             :key="clip.id"
             :ref="(el) => setClipRef(el, clip.id)"
             :class="[
@@ -378,6 +401,23 @@
   const showBuildSettingsDialog = ref(false);
   const clipToBuild = ref<ClipWithVersion | null>(null);
 
+  // Sorted clips: by run_number descending (newest first), then by virality descending
+  const sortedClips = computed(() => {
+    return [...props.clips].sort((a, b) => {
+      // First sort by run_number descending (newest run first)
+      const runA = a.run_number || 0;
+      const runB = b.run_number || 0;
+      if (runB !== runA) {
+        return runB - runA;
+      }
+
+      // Then sort by virality score descending (highest first)
+      const viralityA = a.current_version_virality_score || 0;
+      const viralityB = b.current_version_virality_score || 0;
+      return viralityB - viralityA;
+    });
+  });
+
   // Computed properties for progress display
   const stageIcon = computed(() => {
     switch (props.generationStage) {
@@ -506,6 +546,33 @@
         return 'Something went wrong';
       default:
         return 'Processing...';
+    }
+  }
+
+  // Compact message for inline progress bar
+  function getCompactMessage(): string {
+    switch (props.generationStage) {
+      case 'starting':
+      case 'initializing':
+        return 'Starting...';
+      case 'checking_cache':
+        return 'Checking...';
+      case 'extracting_chunks':
+        return 'Extracting...';
+      case 'transcribing':
+      case 'transcribing_chunks':
+        return 'Transcribing...';
+      case 'analyzing':
+      case 'detecting_clips':
+        return 'Analyzing...';
+      case 'validating':
+        return 'Validating...';
+      case 'completed':
+        return 'Done!';
+      case 'error':
+        return 'Error';
+      default:
+        return 'Detecting...';
     }
   }
 

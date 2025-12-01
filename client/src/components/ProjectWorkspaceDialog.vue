@@ -210,12 +210,21 @@
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useVideoFocalPoint } from '@/composables/useVideoFocalPoint';
   import { useTranscriptData } from '@/composables/useTranscriptData';
+  import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
   import { useAuthStore } from '@/stores/auth';
   import { getRawVideosByProjectId } from '@/services/database';
 
   const authStore = useAuthStore();
   const { error: showError } = useToast();
   const { setClipGenerationInProgress } = useWindowClose();
+  const {
+    startDetection,
+    updateProgress: updateGlobalProgress,
+    completeDetection,
+    isDetectionActive,
+    getDetectionState,
+    hasAnyActiveDetection,
+  } = useClipDetectionTracking();
 
   const props = defineProps<{
     modelValue: boolean;
@@ -473,8 +482,10 @@
       return;
     }
 
+    const projectId = props.project.id;
+
     try {
-      // Initialize progress tracking
+      // Initialize progress tracking (both local and global)
       clipGenerationInProgress.value = true;
       showProgress.value = false; // Show progress in the clips panel, not modal
       resetProgress();
@@ -482,7 +493,10 @@
       frontendStage.value = '';
       frontendMessage.value = '';
       frontendError.value = '';
-      setProgressProjectId(props.project.id.toString());
+      setProgressProjectId(projectId.toString());
+
+      // Start global tracking for this project
+      startDetection(projectId);
 
       // Notify window close handlers that clip generation is starting
       setClipGenerationInProgress(true);
@@ -501,16 +515,30 @@
       const { useChunkedClipDetection } = await import('@/composables/useChunkedClipDetection');
       const { detectClipsWithChunking, progress: chunkedProgress } = useChunkedClipDetection();
 
-      // Watch chunked detection progress and update UI
+      // Watch chunked detection progress and update global state
+      // Only update local refs if this is still the active project being viewed
       const stopProgressWatch = watch(
         chunkedProgress,
         (newProgress) => {
-          frontendProgress.value = newProgress.progress;
-          frontendStage.value = newProgress.stage;
-          frontendMessage.value = newProgress.message;
+          // Always update global tracking (this persists across navigation)
+          updateGlobalProgress(
+            projectId,
+            newProgress.progress,
+            newProgress.stage,
+            newProgress.message,
+            newProgress.error || ''
+          );
 
-          if (newProgress.error) {
-            frontendError.value = newProgress.error;
+          // Only update local UI refs if the user is still viewing THIS project
+          // This prevents other project's progress from overwriting the current view
+          if (props.project?.id === projectId) {
+            frontendProgress.value = newProgress.progress;
+            frontendStage.value = newProgress.stage;
+            frontendMessage.value = newProgress.message;
+
+            if (newProgress.error) {
+              frontendError.value = newProgress.error;
+            }
           }
         },
         { immediate: true }
@@ -518,7 +546,7 @@
 
       try {
         // Perform enhanced clip detection
-        const result = await detectClipsWithChunking(props.project.id, promptContent, {
+        const result = await detectClipsWithChunking(projectId, promptContent, {
           chunkDurationMinutes: 15,
           overlapSeconds: 30,
           forceReprocess: false,
@@ -527,34 +555,37 @@
         if (result.success) {
           console.log('[ProjectWorkspaceDialog] Enhanced clip detection successful');
 
+          // Mark detection as complete in global tracking
+          completeDetection(projectId);
+
           // Trigger UI refresh for successful detection
-          if (props.project) {
-            setTimeout(() => {
-              const clipsPanel = document.querySelector('[data-clips-panel]') as any;
-              if (clipsPanel && clipsPanel.__vueParentComponent && clipsPanel.__vueParentComponent.exposed) {
-                clipsPanel.__vueParentComponent.exposed.refreshClips?.();
-              } else {
-                const refreshEvent = new CustomEvent('refresh-clips', {
-                  detail: { projectId: props.project!.id },
-                });
-                document.dispatchEvent(refreshEvent);
-              }
-
-              const projectsRefreshEvent = new CustomEvent('refresh-clips-projects', {
-                detail: { projectId: props.project!.id },
+          setTimeout(() => {
+            const clipsPanel = document.querySelector('[data-clips-panel]') as any;
+            if (clipsPanel && clipsPanel.__vueParentComponent && clipsPanel.__vueParentComponent.exposed) {
+              clipsPanel.__vueParentComponent.exposed.refreshClips?.();
+            } else {
+              const refreshEvent = new CustomEvent('refresh-clips', {
+                detail: { projectId },
               });
-              document.dispatchEvent(projectsRefreshEvent);
+              document.dispatchEvent(refreshEvent);
+            }
 
-              if (timelineRef.value && timelineRef.value.loadTranscriptData) {
-                timelineRef.value.loadTranscriptData(props.project!.id);
-              }
-            }, 1000);
+            const projectsRefreshEvent = new CustomEvent('refresh-clips-projects', {
+              detail: { projectId },
+            });
+            document.dispatchEvent(projectsRefreshEvent);
+
+            if (timelineRef.value && timelineRef.value.loadTranscriptData) {
+              timelineRef.value.loadTranscriptData(projectId);
+            }
+          }, 1000);
+
+          // Show success completion state only if still viewing this project
+          if (props.project?.id === projectId) {
+            frontendProgress.value = 100;
+            frontendStage.value = 'completed';
+            frontendMessage.value = 'Clip detection completed successfully!';
           }
-
-          // Show success completion state
-          frontendProgress.value = 100;
-          frontendStage.value = 'completed';
-          frontendMessage.value = 'Clip detection completed successfully!';
           return;
         }
 
@@ -582,24 +613,33 @@
         showError('Clip Detection Failed', `${errorMessage}. No credits were charged.`, 8000);
       }
 
-      // Update progress UI to show error
-      frontendError.value = errorMessage;
-      frontendStage.value = 'error';
+      // Mark detection as failed in global tracking
+      completeDetection(projectId, errorMessage);
+
+      // Update progress UI to show error only if still viewing this project
+      if (props.project?.id === projectId) {
+        frontendError.value = errorMessage;
+        frontendStage.value = 'error';
+      }
 
       // Keep progress dialog open to show the error
     } finally {
       // Don't immediately hide progress - let the user see the completion/error state
       setTimeout(async () => {
-        clipGenerationInProgress.value = false;
-        // Notify window close handlers that clip generation has ended
-        setClipGenerationInProgress(false);
+        // Only update local state if still viewing this project
+        if (props.project?.id === projectId) {
+          clipGenerationInProgress.value = false;
+        }
 
-        // Also clear backend state
+        // Update window close warning based on global tracking
+        setClipGenerationInProgress(hasAnyActiveDetection.value);
+
+        // Also update backend state
         try {
           const { invoke } = await import('@tauri-apps/api/core');
-          await invoke('set_clip_generation_in_progress', { inProgress: false });
+          await invoke('set_clip_generation_in_progress', { inProgress: hasAnyActiveDetection.value });
         } catch (error) {
-          console.error('[ProjectWorkspaceDialog] Failed to clear backend clip generation state:', error);
+          console.error('[ProjectWorkspaceDialog] Failed to update backend clip generation state:', error);
         }
       }, 1000);
     }
@@ -1008,6 +1048,16 @@
         // Load timeline clips when dialog opens
         if (props.project) {
           await loadTimelineClips(props.project.id);
+
+          // Check if this project has active detection and restore state
+          const detectionState = getDetectionState(props.project.id);
+          if (detectionState && detectionState.isActive) {
+            clipGenerationInProgress.value = true;
+            frontendProgress.value = detectionState.progress;
+            frontendStage.value = detectionState.stage;
+            frontendMessage.value = detectionState.message;
+            frontendError.value = detectionState.error;
+          }
         }
       } else {
         // Reset video state when dialog closes
@@ -1015,6 +1065,15 @@
         showProgress.value = false;
         // Clear timeline clips
         timelineClips.value = [];
+        // Reset LOCAL clip generation state (global tracking persists)
+        clipGenerationInProgress.value = false;
+        // Reset frontend progress tracking
+        frontendProgress.value = 0;
+        frontendStage.value = '';
+        frontendMessage.value = '';
+        frontendError.value = '';
+        // Reset backend progress tracking
+        resetProgress();
       }
     }
   );
@@ -1022,11 +1081,32 @@
   // Watch for project changes
   watch(
     () => props.project?.id,
-    (newProjectId) => {
+    (newProjectId, oldProjectId) => {
       if (newProjectId) {
         setProgressProjectId(newProjectId.toString());
       } else {
         setProgressProjectId(null);
+      }
+
+      // When switching projects, restore state from global tracking if available
+      if (newProjectId && newProjectId !== oldProjectId) {
+        const detectionState = getDetectionState(newProjectId);
+        if (detectionState && detectionState.isActive) {
+          // Restore active detection state for this project
+          clipGenerationInProgress.value = true;
+          frontendProgress.value = detectionState.progress;
+          frontendStage.value = detectionState.stage;
+          frontendMessage.value = detectionState.message;
+          frontendError.value = detectionState.error;
+        } else {
+          // No active detection - start with clean slate
+          clipGenerationInProgress.value = false;
+          frontendProgress.value = 0;
+          frontendStage.value = '';
+          frontendMessage.value = '';
+          frontendError.value = '';
+          resetProgress();
+        }
       }
     }
   );
@@ -1040,6 +1120,32 @@
         setProgressProjectId(null);
       }
     }
+  );
+
+  // Watch global detection state for this project and sync to local state
+  // This ensures UI updates when detection progresses (even if dialog was closed and reopened)
+  watch(
+    () => (props.project?.id ? getDetectionState(props.project.id) : null),
+    (newState) => {
+      if (!props.modelValue || !props.project) return; // Only sync when dialog is open
+
+      if (newState && newState.isActive) {
+        // Detection is active - sync state
+        clipGenerationInProgress.value = true;
+        frontendProgress.value = newState.progress;
+        frontendStage.value = newState.stage;
+        frontendMessage.value = newState.message;
+        frontendError.value = newState.error;
+      } else if (newState && !newState.isActive && clipGenerationInProgress.value) {
+        // Detection just completed - update local state
+        clipGenerationInProgress.value = false;
+        frontendProgress.value = newState.progress;
+        frontendStage.value = newState.stage;
+        frontendMessage.value = newState.message;
+        frontendError.value = newState.error;
+      }
+    },
+    { deep: true }
   );
 
   // Watch for progress socket errors and show toasts
