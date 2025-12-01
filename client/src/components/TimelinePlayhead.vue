@@ -1,14 +1,15 @@
 <template>
   <div
     v-if="videoSrc && duration > 0"
-    class="fixed z-60 transition-all duration-100"
+    class="fixed z-50 transition-all duration-100"
     :style="{
-      left: `${position - 1}px`,
+      left: `${position - 8}px`,
       top: `${timelineBoundsTop}px`,
       height: `${timelineBoundsBottom - timelineBoundsTop}px`,
-      width: '2px',
+      width: '16px',
       cursor: isDragging ? 'grabbing' : 'col-resize',
       'pointer-events': isDraggingToZoom ? 'none' : 'auto',
+      clipPath: `inset(0 0 0 ${Math.max(0, timelineBoundsLeft - position + 8)}px)`,
     }"
     @mouseenter="onMouseEnter"
     @mouseleave="onMouseLeave"
@@ -22,7 +23,7 @@
         'shadow-xl': isHovered || isDragging,
       }"
       :style="{
-        left: '0',
+        left: '7px',
         width: '2px',
         'pointer-events': 'none',
       }"

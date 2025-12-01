@@ -97,6 +97,7 @@
         :position="timelineHoverLinePosition"
         :timelineBoundsTop="timelineBounds.top"
         :timelineBoundsBottom="timelineBounds.bottom"
+        :timelineBoundsLeft="timelineBounds.left"
         :isPanning="isPanning"
         :isDragging="isDragging"
         :isCutToolActive="isCutToolActive"
@@ -110,6 +111,7 @@
         :position="globalPlayheadPosition"
         :timelineBoundsTop="timelineBounds.top"
         :timelineBoundsBottom="timelineBounds.bottom"
+        :timelineBoundsLeft="timelineBounds.left"
         :isCutToolActive="isCutToolActive"
         :isDraggingToZoom="isDragging"
         @playheadDragStart="onPlayheadDragStart"
@@ -476,6 +478,10 @@
   const seekInterval = ref<NodeJS.Timeout | null>(null);
   const currentSeekTime = ref(0); // Track our current seek position for continuous seeking
 
+  // Auto-pan state
+  const isAutoPanEnabled = ref(true); // Enable auto-pan by default
+  const autoPanMargin = 0.15; // 15% margin from edge before panning
+
   // Segment keyboard movement state
   const isMovingSegment = ref(false);
   const segmentMoveDirection = ref<'left' | 'right' | null>(null);
@@ -798,7 +804,7 @@
 
     // Update timeline bounds - either immediately if stable, or set them when stability is achieved
     if (isTimelineStable.value) {
-      setTimelineBoundsWhenStable(rect.top, rect.bottom);
+      setTimelineBoundsWhenStable(rect.top, rect.bottom, rect.left + TRACK_DIMENSIONS.LABEL_WIDTH);
     } else {
       // If timeline isn't stable yet, set bounds but they might be incorrect
       // This will be corrected when timeline becomes stable
@@ -936,12 +942,68 @@
     isPlayheadInitialized.value = true;
   }
 
+  // Auto-pan the timeline to keep playhead visible when zoomed in
+  function autoPanToPlayhead() {
+    if (!isAutoPanEnabled.value || !timelineScrollContainer.value || !props.duration || !isTimelineStable.value) {
+      return;
+    }
+
+    // Don't auto-pan if user is interacting with the timeline
+    if (
+      isDragging.value ||
+      isDraggingSegment.value ||
+      isResizingSegment.value ||
+      isDraggingPlayhead.value ||
+      isPanning.value
+    ) {
+      return;
+    }
+
+    const container = timelineScrollContainer.value;
+    const containerRect = container.getBoundingClientRect();
+    const containerWidth = containerRect.width;
+
+    // Calculate the playhead's position relative to the content
+    const timePercent = props.currentTime / props.duration;
+    const contentWidth = containerWidth * zoomLevel.value;
+    const playheadPositionInContent = timePercent * contentWidth;
+
+    // Account for the track label width
+    const labelWidth = TRACK_DIMENSIONS.LABEL_WIDTH;
+    const visibleStart = container.scrollLeft;
+    const visibleEnd = visibleStart + containerWidth - labelWidth;
+
+    // Calculate margin (area where we should start panning)
+    const visibleWidth = containerWidth - labelWidth;
+    const marginPixels = visibleWidth * autoPanMargin;
+
+    // Check if playhead is near the right edge (need to scroll right)
+    const rightThreshold = visibleEnd - marginPixels;
+    if (playheadPositionInContent > rightThreshold) {
+      // Scroll to keep playhead at the margin from right edge
+      const targetScrollLeft = playheadPositionInContent - visibleWidth + marginPixels;
+      container.scrollLeft = Math.min(targetScrollLeft, contentWidth - containerWidth + labelWidth);
+    }
+
+    // Check if playhead is near the left edge (need to scroll left)
+    const leftThreshold = visibleStart + marginPixels;
+    if (playheadPositionInContent < leftThreshold && container.scrollLeft > 0) {
+      // Scroll to keep playhead at the margin from left edge
+      const targetScrollLeft = playheadPositionInContent - marginPixels;
+      container.scrollLeft = Math.max(0, targetScrollLeft);
+    }
+  }
+
   // Watch for changes that affect global playhead position and slider
   watch(
     [() => props.currentTime, () => props.duration, () => props.videoSrc, zoomLevel],
     () => {
       updateGlobalPlayheadPosition();
       updateSliderProgress(zoomSlider.value);
+      // Auto-pan when zoomed in (only auto-pan if zoom level > 1)
+      if (zoomLevel.value > 1) {
+        autoPanToPlayhead();
+      }
     },
     { immediate: true }
   );
@@ -1105,7 +1167,7 @@
         // Update timeline bounds if timeline is stable
         if (isTimelineStable.value) {
           const rect = container.getBoundingClientRect();
-          setTimelineBoundsWhenStable(rect.top, rect.bottom);
+          setTimelineBoundsWhenStable(rect.top, rect.bottom, rect.left + TRACK_DIMENSIONS.LABEL_WIDTH);
 
           // Update global playhead position
           updateGlobalPlayheadPosition();
@@ -1119,7 +1181,7 @@
       waitForTimelineStability(() => {
         // Set final bounds after timeline is stable
         const rect = container.getBoundingClientRect();
-        setTimelineBoundsWhenStable(rect.top, rect.bottom);
+        setTimelineBoundsWhenStable(rect.top, rect.bottom, rect.left + TRACK_DIMENSIONS.LABEL_WIDTH);
 
         // Initialize playhead position with stable timeline
         nextTick(() => {

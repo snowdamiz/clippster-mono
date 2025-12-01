@@ -248,6 +248,7 @@ export interface TimelinePlayheadProps {
   position: number;
   timelineBoundsTop: number;
   timelineBoundsBottom: number;
+  timelineBoundsLeft: number;
   isCutToolActive?: boolean;
   isDraggingToZoom?: boolean;
 }
@@ -273,6 +274,7 @@ export interface TimelineHoverLineProps {
   position: number;
   timelineBoundsTop: number;
   timelineBoundsBottom: number;
+  timelineBoundsLeft: number;
   isPanning: boolean;
   isDragging: boolean;
   isCutToolActive: boolean;

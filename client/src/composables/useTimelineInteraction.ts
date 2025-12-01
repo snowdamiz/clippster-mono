@@ -67,7 +67,7 @@ export function useTimelineInteraction(
   });
 
   // Timeline bounds for constraining interactions
-  const timelineBounds = ref({ top: 0, bottom: 0 });
+  const timelineBounds = ref({ top: 0, bottom: 0, left: 0 });
 
   // Zoom functions
   function setZoomLevel(newZoom: number) {
@@ -214,10 +214,11 @@ export function useTimelineInteraction(
       dragSelectionState.value.dragEndPercent = dragSelectionState.value.dragStartPercent;
     }
 
-    // Update timeline bounds for selection area
+    // Update timeline bounds for selection area (include left with label offset)
     timelineBounds.value = {
       top: rect.top,
       bottom: rect.bottom,
+      left: rect.left + 72, // 72px label width (w-18 = 4.5rem)
     };
 
     event.preventDefault();
@@ -365,13 +366,14 @@ export function useTimelineInteraction(
       timelineBounds.value = {
         top: rect.top,
         bottom: rect.bottom,
+        left: rect.left + 72, // 72px label width (w-18 = 4.5rem)
       };
     }
   }
 
   // Set timeline bounds only when timeline is stable (to be called from parent)
-  function setTimelineBoundsWhenStable(top: number, bottom: number) {
-    timelineBounds.value = { top, bottom };
+  function setTimelineBoundsWhenStable(top: number, bottom: number, left?: number) {
+    timelineBounds.value = { top, bottom, left: left ?? timelineBounds.value.left };
   }
 
   return {
