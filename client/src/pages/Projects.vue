@@ -292,9 +292,9 @@
         @previous="previousPage"
         @next="nextPage"
       />
-      <!-- No Results State -->
+      <!-- No Results State (only show if no active downloads) -->
       <div
-        v-if="filteredProjects.length === 0"
+        v-if="filteredProjects.length === 0 && getActiveDownloads().length === 0 && getQueuedDownloads().length === 0"
         class="flex flex-col items-center justify-center py-16 text-center space-y-4"
       >
         <div class="bg-muted rounded-full p-4">
@@ -483,17 +483,77 @@
             "
             <span class="font-semibold text-foreground">{{ projectToDelete?.name }}</span>
             "?
-            <span v-if="hasChildren(projectToDelete?.id || '')" class="block mt-2 text-red-400">
-              Warning: This project contains {{ getChildCount(projectToDelete?.id || '') }} sub-projects (segments).
-              They will be un-grouped but not deleted.
-            </span>
             <span class="block mt-1">This action cannot be undone.</span>
           </p>
+
+          <!-- Segments deletion option - only show if more than 1 segment -->
+          <div
+            v-if="hasChildren(projectToDelete?.id || '') && getChildCount(projectToDelete?.id || '') > 1"
+            class="bg-muted/50 rounded-lg p-4 border border-border"
+          >
+            <p class="text-sm text-muted-foreground mb-3">
+              This project contains
+              <span class="font-semibold text-foreground">{{ getChildCount(projectToDelete?.id || '') }} segments</span>
+              . What would you like to do with them?
+            </p>
+            <div class="space-y-2">
+              <label
+                class="flex items-center gap-3 p-3 rounded-md cursor-pointer transition-colors"
+                :class="!deleteSegmentsToo ? 'bg-primary/10 border border-primary/30' : 'hover:bg-muted'"
+              >
+                <input
+                  type="radio"
+                  :value="false"
+                  v-model="deleteSegmentsToo"
+                  class="w-4 h-4 text-primary accent-primary"
+                />
+                <div>
+                  <span class="text-sm font-medium text-foreground">Keep segments</span>
+                  <p class="text-xs text-muted-foreground">Segments will be un-grouped and remain in your library</p>
+                </div>
+              </label>
+              <label
+                class="flex items-center gap-3 p-3 rounded-md cursor-pointer transition-colors"
+                :class="deleteSegmentsToo ? 'bg-red-500/10 border border-red-500/30' : 'hover:bg-muted'"
+              >
+                <input
+                  type="radio"
+                  :value="true"
+                  v-model="deleteSegmentsToo"
+                  class="w-4 h-4 text-red-500 accent-red-500"
+                />
+                <div>
+                  <span class="text-sm font-medium text-foreground">Delete all segments</span>
+                  <p class="text-xs text-muted-foreground">
+                    All {{ getChildCount(projectToDelete?.id || '') }} segments will be permanently deleted
+                  </p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Single segment notice - auto-deleted with parent -->
+          <div
+            v-else-if="hasChildren(projectToDelete?.id || '') && getChildCount(projectToDelete?.id || '') === 1"
+            class="bg-muted/50 rounded-lg p-4 border border-border"
+          >
+            <p class="text-sm text-muted-foreground">
+              This project contains
+              <span class="font-semibold text-foreground">1 segment</span>
+              which will also be deleted along with its video files.
+            </p>
+          </div>
           <button
             class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
             @click="deleteProjectConfirmed"
           >
-            Delete Project
+            {{
+              deleteSegmentsToo && hasChildren(projectToDelete?.id || '')
+                ? getChildCount(projectToDelete?.id || '') === 1
+                  ? 'Delete Project & Segment'
+                  : `Delete Project & ${getChildCount(projectToDelete?.id || '')} Segments`
+                : 'Delete Project'
+            }}
           </button>
           <button
             class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
@@ -561,6 +621,7 @@
   const projectToDelete = ref<Project | null>(null);
   const projectHasVideos = ref(false);
   const projectHasClips = ref(false);
+  const deleteSegmentsToo = ref(false);
   const showWorkspaceDialog = ref(false);
   const workspaceProject = ref<Project | null>(null);
   const projectVideos = ref<Record<string, RawVideo[]>>({});
@@ -866,41 +927,19 @@
   const filteredProjects = computed(() => {
     let result = projects.value;
 
-    // 0. Filter out empty active download parent projects
+    // 0. Filter out projects associated with active downloads that don't have thumbnails yet
     const activeList = getActiveDownloads();
     const queuedList = getQueuedDownloads();
-    const activeDownloadParents = new Set([...activeList, ...queuedList].map((d) => d.parentProjectId).filter(Boolean));
+    const allActiveDownloads = [...activeList, ...queuedList];
+    const activeDownloadProjectIds = new Set(
+      allActiveDownloads.flatMap((d) => [d.projectId, d.parentProjectId].filter(Boolean))
+    );
 
     result = result.filter((p) => {
-      // If it's a parent project for an active/queued download
-      if (activeDownloadParents.has(p.id)) {
-        // Only show if it has content (videos or clips) or children projects
-        // Since childrenMap is computed from 'projects' (which is what we are filtering),
-        // we can check childrenMap.
-        // Note: childrenMap is based on the full 'projects' list, so it's safe to use here.
-        const hasChildren = (childrenMap.value.get(p.id)?.length || 0) > 0;
-        // Also check direct videos or clips
-        const hasVideos = (projectVideos.value[p.id]?.length || 0) > 0;
-        const hasClips = getClipCount(p.id) > 0;
-
-        // IMPORTANT: For auto-segmented downloads, we want to show the project ONLY after
-        // the first segment is complete.
-
-        // If a parent project has children, it means at least one segment has completed downloading
-        // (because we only create child projects upon segment completion in useDownloads.ts).
-        // Therefore, if hasChildren is true, we can safely show the project.
-        // We don't need to check for videos inside the children, as the child project's existence
-        // guarantees content is ready (or will be momentarily).
-        // This avoids race conditions where loadProjects() has fetched the project list (so hasChildren is true)
-        // but hasn't finished fetching the video lists for those children yet.
-
-        if (hasChildren) return true;
-
-        // Check direct content (single segment flow or full stream)
-        if (hasVideos || hasClips) return true;
-
-        // If no content found, hide it
-        return false;
+      // If it's a project associated with an active/queued download
+      if (activeDownloadProjectIds.has(p.id)) {
+        // Only show if it has a thumbnail (meaning content has been processed)
+        return thumbnailCache.value.has(p.id);
       }
       return true;
     });
@@ -1177,6 +1216,13 @@
     try {
       projectHasVideos.value = await hasRawVideosForProject(project.id);
       projectHasClips.value = await hasClipsForProject(project.id);
+
+      // Auto-select delete segments if there's only 1 child (single segment projects)
+      const childCount = getChildCount(project.id);
+      if (childCount === 1) {
+        deleteSegmentsToo.value = true;
+      }
+
       showDeleteDialog.value = true;
     } catch (err) {
       // If we can't check, proceed with normal deletion
@@ -1190,21 +1236,63 @@
     showDeleteDialog.value = false;
     projectHasVideos.value = false;
     projectHasClips.value = false;
+    deleteSegmentsToo.value = false;
     projectToDelete.value = null;
+  }
+
+  // Helper function to delete a project and its associated video files from the filesystem
+  async function deleteProjectWithFiles(projectId: string): Promise<void> {
+    // Get all raw videos for this project
+    const videos = await getRawVideosByProjectId(projectId);
+
+    // Delete each video file from the filesystem
+    for (const video of videos) {
+      try {
+        await invoke('delete_video_file', {
+          filePath: video.file_path,
+          thumbnailPath: video.thumbnail_path || null,
+        });
+      } catch (err) {
+        console.warn(`Failed to delete video file: ${video.file_path}`, err);
+        // Continue deleting other files even if one fails
+      }
+    }
+
+    // Now delete the project from the database
+    await deleteProject(projectId);
   }
 
   async function deleteProjectConfirmed() {
     if (!projectToDelete.value) return;
 
     const deletedProjectName = projectToDelete.value.name;
+    const projectId = projectToDelete.value.id;
+    const childCount = getChildCount(projectId);
 
     try {
-      await deleteProject(projectToDelete.value.id);
-      success('Project deleted', `"${deletedProjectName}" has been deleted successfully`);
+      // If user chose to delete segments too (or single segment auto-delete), delete all child projects first
+      if (deleteSegmentsToo.value && hasChildren(projectId)) {
+        const children = getFolderChildren(projectId);
+        for (const child of children) {
+          // Delete child project with its files
+          await deleteProjectWithFiles(child.id);
+        }
+      }
+
+      // Delete the main project (just the DB record, files were in children for segmented projects)
+      // For non-segmented projects, also delete any direct video files
+      await deleteProjectWithFiles(projectId);
+
+      const message =
+        deleteSegmentsToo.value && childCount > 0
+          ? `"${deletedProjectName}" and ${childCount} segment${childCount > 1 ? 's' : ''} have been deleted successfully`
+          : `"${deletedProjectName}" has been deleted successfully`;
+
+      success('Project deleted', message);
       await loadProjects();
 
       // If we deleted the currently open folder project, close the dialog
-      if (folderProject.value && folderProject.value.id === projectToDelete.value.id) {
+      if (folderProject.value && folderProject.value.id === projectId) {
         showFolderDialog.value = false;
         folderProject.value = null;
       }
@@ -1214,6 +1302,7 @@
       showDeleteDialog.value = false;
       projectHasVideos.value = false;
       projectHasClips.value = false;
+      deleteSegmentsToo.value = false;
       projectToDelete.value = null;
     }
   }

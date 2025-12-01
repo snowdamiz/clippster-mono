@@ -71,6 +71,10 @@ export async function updateProject(
 export async function deleteProject(id: string): Promise<void> {
   const db = await getDatabase();
 
+  // Get the project name before deleting so we can preserve it on clips
+  const project = await getProject(id);
+  const projectName = project?.name || null;
+
   // First, disassociate all associated content by setting project_id to NULL
   // This preserves the content while removing the project association
 
@@ -89,6 +93,14 @@ export async function deleteProject(id: string): Promise<void> {
   }
 
   try {
+    // Preserve the project name on clips before disassociating
+    // This allows clips to still be displayed under their original project name
+    if (projectName) {
+      await db.execute(
+        'UPDATE clips SET project_name = ? WHERE project_id = ? AND (project_name IS NULL OR project_name = "")',
+        [projectName, id]
+      );
+    }
     // Disassociate clips from this project (has project_id)
     await db.execute('UPDATE clips SET project_id = NULL WHERE project_id = ?', [id]);
   } catch (error) {

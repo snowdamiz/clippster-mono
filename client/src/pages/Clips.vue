@@ -111,7 +111,7 @@
                   :key="clip.id"
                   :clip="clip"
                   :thumbnail-url="getThumbnailUrl(clip)"
-                  :project-name="clip.project_id ? getProjectName(clip.project_id) : null"
+                  :project-name="getClipProjectName(clip)"
                   @play="playClip"
                   @delete="confirmDelete"
                 />
@@ -378,7 +378,7 @@
 
   const projectOptions = computed(() => {
     const projects = new Map<string, string>();
-    // Collect all unique projects from clips
+    // Collect all unique projects from clips (including deleted projects via project_name)
     clips.value.forEach((clip) => {
       if (clip.project_id) {
         const project = projectCache.value.get(clip.project_id);
@@ -392,7 +392,15 @@
             }
           }
           projects.set(targetProject.id, targetProject.name);
+        } else if (clip.project_name) {
+          // Project no longer exists, use stored project_name
+          const deletedProjectKey = `deleted:${clip.project_name}`;
+          projects.set(deletedProjectKey, clip.project_name);
         }
+      } else if (clip.project_name) {
+        // Clip has stored project_name from a deleted project
+        const deletedProjectKey = `deleted:${clip.project_name}`;
+        projects.set(deletedProjectKey, clip.project_name);
       }
     });
 
@@ -435,7 +443,8 @@
       result = result.filter(
         (c) =>
           (c.name && c.name.toLowerCase().includes(query)) ||
-          (c.project_id && getProjectName(c.project_id)?.toLowerCase().includes(query))
+          (c.project_id && getProjectName(c.project_id)?.toLowerCase().includes(query)) ||
+          (c.project_name && c.project_name.toLowerCase().includes(query))
       );
     }
 
@@ -447,6 +456,12 @@
     // 3. Project Filter
     if (projectFilter.value !== 'all') {
       result = result.filter((c) => {
+        // Handle deleted project filter (starts with "deleted:")
+        if (projectFilter.value.startsWith('deleted:')) {
+          const deletedProjectName = projectFilter.value.substring(8); // Remove "deleted:" prefix
+          return c.project_name === deletedProjectName;
+        }
+
         if (!c.project_id) return false;
         // Match if clip project ID is the selected ID (direct match)
         if (c.project_id === projectFilter.value) return true;
@@ -532,7 +547,7 @@
   const groupedByProject = computed(() => {
     const groups = new Map<
       string,
-      { id: string; name: string; project: Project | null; clips: Clip[]; updatedAt: number }
+      { id: string; name: string; project: Project | null; clips: Clip[]; updatedAt: number; isDeleted?: boolean }
     >();
     const uncategorized: Clip[] = [];
 
@@ -563,8 +578,49 @@
           }
           groups.get(projectId)!.clips.push(clip);
         } else {
-          uncategorized.push(clip);
+          // Project no longer exists in cache, check if clip has stored project_name
+          if (clip.project_name) {
+            // Use stored project_name to create a group for this deleted project
+            const deletedProjectKey = `deleted:${clip.project_name}`;
+            if (!groups.has(deletedProjectKey)) {
+              groups.set(deletedProjectKey, {
+                id: deletedProjectKey,
+                name: clip.project_name,
+                project: null,
+                clips: [],
+                updatedAt: clip.created_at,
+                isDeleted: true,
+              });
+            }
+            // Update the group's updatedAt to the latest clip date
+            const group = groups.get(deletedProjectKey)!;
+            if (clip.created_at > group.updatedAt) {
+              group.updatedAt = clip.created_at;
+            }
+            group.clips.push(clip);
+          } else {
+            uncategorized.push(clip);
+          }
         }
+      } else if (clip.project_name) {
+        // Clip has no project_id but has a stored project_name (project was deleted)
+        const deletedProjectKey = `deleted:${clip.project_name}`;
+        if (!groups.has(deletedProjectKey)) {
+          groups.set(deletedProjectKey, {
+            id: deletedProjectKey,
+            name: clip.project_name,
+            project: null,
+            clips: [],
+            updatedAt: clip.created_at,
+            isDeleted: true,
+          });
+        }
+        // Update the group's updatedAt to the latest clip date
+        const group = groups.get(deletedProjectKey)!;
+        if (clip.created_at > group.updatedAt) {
+          group.updatedAt = clip.created_at;
+        }
+        group.clips.push(clip);
       } else {
         uncategorized.push(clip);
       }
@@ -839,6 +895,19 @@
   function getProjectName(projectId: string): string | null {
     const project = projectCache.value.get(projectId);
     return project?.name || null;
+  }
+
+  // Get project name for a clip, with fallback to stored project_name for deleted projects
+  function getClipProjectName(clip: Clip): string | null {
+    // First try to get from live project cache
+    if (clip.project_id) {
+      const project = projectCache.value.get(clip.project_id);
+      if (project) {
+        return project.name;
+      }
+    }
+    // Fallback to stored project_name (for deleted projects)
+    return clip.project_name || null;
   }
 
   async function openClipsFolder() {

@@ -7,6 +7,7 @@ import {
   createTranscriptSegment,
 } from './transcripts';
 import { getRawVideosByProjectId } from './raw-videos';
+import { getProject } from './projects';
 import type { ClipWithVersion, ClipSegment } from './types';
 
 // Manual migration fallback function - kept here as it's specifically for clip versioning
@@ -162,15 +163,21 @@ export async function createVersionedClip(
   const clipId = generateId();
   const now = timestamp();
 
+  // Look up the project name to store it on the clip
+  // This preserves the project name even if the project is later deleted
+  const project = await getProject(projectId);
+  const projectName = project?.name || null;
+
   // Create the clip record first
   await db.execute(
     `INSERT INTO clips (
-      id, project_id, name, file_path, start_time, end_time,
+      id, project_id, project_name, name, file_path, start_time, end_time,
       detection_session_id, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       clipId,
       projectId,
+      projectName,
       clipData.name,
       filePath || '',
       clipData.startTime,

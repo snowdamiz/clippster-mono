@@ -84,6 +84,7 @@ export interface IntroOutro {
 export interface Clip {
   id: string;
   project_id: string | null;
+  project_name: string | null;
   name: string | null;
   file_path: string;
   duration: number | null;
