@@ -32,6 +32,8 @@ export interface TimelineInteractionOptions {
   zoomStep?: number;
   onZoomChange?: (zoomLevel: number) => void;
   onDragSelection?: (startPercent: number, endPercent: number) => void;
+  /** When this returns true, drag selection will skip zooming and just call onDragSelection */
+  skipZoom?: () => boolean;
 }
 
 export function useTimelineInteraction(
@@ -39,7 +41,14 @@ export function useTimelineInteraction(
   duration: Ref<number>,
   options: TimelineInteractionOptions = {}
 ) {
-  const { minZoom = 1.0, maxZoom = 10.0, zoomStep = 0.1, onZoomChange, onDragSelection } = options;
+  const {
+    minZoom = 1.0,
+    maxZoom = 10.0,
+    zoomStep = 0.1,
+    onZoomChange,
+    onDragSelection,
+    skipZoom,
+  } = options;
 
   // Zoom state
   const zoomState = ref<ZoomState>({
@@ -172,11 +181,18 @@ export function useTimelineInteraction(
   }
 
   // Drag selection handlers
-  function startDragSelection(event: MouseEvent) {
-    // Only start drag with left mouse button and not on clips
+  function startDragSelection(event: MouseEvent, forceStart: boolean = false) {
+    // Only start drag with left mouse button
+    if (event.button !== 0) {
+      return;
+    }
+
+    // Skip clip segment check if forceStart is true (e.g., add clip mode)
+    // This allows drag to start even when clicking on clip segments
     if (
-      event.button !== 0 ||
-      (event.target instanceof HTMLElement && event.target.closest('.clip-segment'))
+      !forceStart &&
+      event.target instanceof HTMLElement &&
+      event.target.closest('.clip-segment')
     ) {
       return;
     }
@@ -273,68 +289,80 @@ export function useTimelineInteraction(
     );
     const selectionDuration = endPercent - startPercent;
 
-    // Track if we actually performed a zoom
-    let didPerformZoom = false;
+    // Track if we actually performed a zoom or other action
+    let didPerformAction = false;
 
-    // Only zoom if the selection is meaningful (at least 5% of timeline)
-    if (selectionDuration >= 0.05 && duration.value > 0) {
-      didPerformZoom = true;
+    // Check if we should skip zooming (e.g., for clip creation mode)
+    const shouldSkipZoom = skipZoom?.() ?? false;
 
-      // Calculate new zoom level to fit the selection
-      const targetZoom = Math.min(maxZoom, Math.max(minZoom, 1.0 / selectionDuration));
+    // Use lower threshold for clip creation mode (1% of timeline, ~0.5s for a 50s video)
+    // vs standard 5% for zoom mode
+    const minThreshold = shouldSkipZoom ? 0.01 : 0.05;
 
-      // Update zoom level first
-      setZoomLevel(targetZoom);
+    // Only process if the selection is meaningful
+    if (selectionDuration >= minThreshold && duration.value > 0) {
+      didPerformAction = true;
 
-      // Wait for the zoom to be applied and DOM to update, then set scroll position
-      nextTick(() => {
-        if (timelineContainer.value) {
-          const container = timelineContainer.value;
-          const timelineContent = container.querySelector('.timeline-content-wrapper');
-          if (timelineContent) {
-            const contentWidth = container.scrollWidth; // This will be updated after zoom
-            const containerWidth = container.clientWidth;
-            const maxScrollLeft = contentWidth - containerWidth;
+      if (shouldSkipZoom) {
+        // Just call the callback without zooming
+        onDragSelection?.(startPercent, endPercent);
+      } else {
+        // Calculate new zoom level to fit the selection
+        const targetZoom = Math.min(maxZoom, Math.max(minZoom, 1.0 / selectionDuration));
 
-            // Account for track label width in calculations
-            const trackLabelWidth = 72; // Slightly wider to match actual visual width
-            const timelineContentAreaWidth = contentWidth - trackLabelWidth;
+        // Update zoom level first
+        setZoomLevel(targetZoom);
 
-            // Calculate the position of the selection in the zoomed content
-            // Since percentages are already calculated relative to timeline content area,
-            // we need to add trackLabelWidth to get the absolute position in the full content
-            const selectionStartPositionInContent =
-              trackLabelWidth + startPercent * timelineContentAreaWidth;
-            const selectionWidthInContent = selectionDuration * timelineContentAreaWidth;
+        // Wait for the zoom to be applied and DOM to update, then set scroll position
+        nextTick(() => {
+          if (timelineContainer.value) {
+            const container = timelineContainer.value;
+            const timelineContent = container.querySelector('.timeline-content-wrapper');
+            if (timelineContent) {
+              const contentWidth = container.scrollWidth; // This will be updated after zoom
+              const containerWidth = container.clientWidth;
+              const maxScrollLeft = contentWidth - containerWidth;
 
-            // Calculate the target scroll position to show the selection
-            let targetScrollLeft: number;
-            if (selectionWidthInContent >= containerWidth) {
-              // Selection is wider than container, show it starting from left
-              // When dragging to the very left (startPercent ≈ 0), show the beginning of timeline content
-              // The scroll position should be 0 to show from the very beginning (including track labels)
-              targetScrollLeft = Math.max(
-                0,
-                Math.min(maxScrollLeft, selectionStartPositionInContent - 20)
-              ); // 20px padding
-            } else {
-              // Center the selection in the viewport
-              const centerOfSelection =
-                selectionStartPositionInContent + selectionWidthInContent / 2;
+              // Account for track label width in calculations
+              const trackLabelWidth = 72; // Slightly wider to match actual visual width
+              const timelineContentAreaWidth = contentWidth - trackLabelWidth;
 
-              // When dragging to the very left, we want to show the beginning including track labels
-              targetScrollLeft = Math.max(
-                0,
-                Math.min(maxScrollLeft, centerOfSelection - containerWidth / 2)
-              );
+              // Calculate the position of the selection in the zoomed content
+              // Since percentages are already calculated relative to timeline content area,
+              // we need to add trackLabelWidth to get the absolute position in the full content
+              const selectionStartPositionInContent =
+                trackLabelWidth + startPercent * timelineContentAreaWidth;
+              const selectionWidthInContent = selectionDuration * timelineContentAreaWidth;
+
+              // Calculate the target scroll position to show the selection
+              let targetScrollLeft: number;
+              if (selectionWidthInContent >= containerWidth) {
+                // Selection is wider than container, show it starting from left
+                // When dragging to the very left (startPercent ≈ 0), show the beginning of timeline content
+                // The scroll position should be 0 to show from the very beginning (including track labels)
+                targetScrollLeft = Math.max(
+                  0,
+                  Math.min(maxScrollLeft, selectionStartPositionInContent - 20)
+                ); // 20px padding
+              } else {
+                // Center the selection in the viewport
+                const centerOfSelection =
+                  selectionStartPositionInContent + selectionWidthInContent / 2;
+
+                // When dragging to the very left, we want to show the beginning including track labels
+                targetScrollLeft = Math.max(
+                  0,
+                  Math.min(maxScrollLeft, centerOfSelection - containerWidth / 2)
+                );
+              }
+
+              container.scrollLeft = targetScrollLeft;
             }
-
-            container.scrollLeft = targetScrollLeft;
           }
-        }
-      });
+        });
 
-      onDragSelection?.(startPercent, endPercent);
+        onDragSelection?.(startPercent, endPercent);
+      }
     }
 
     // Reset drag state
@@ -344,9 +372,9 @@ export function useTimelineInteraction(
     dragSelectionState.value.dragStartPercent = 0;
     dragSelectionState.value.dragEndPercent = 0;
 
-    // Only set the flag to prevent seeking if we actually performed a zoom
+    // Only set the flag to prevent seeking if we actually performed an action
     // This allows simple clicks to work normally
-    if (didPerformZoom) {
+    if (didPerformAction) {
       dragSelectionState.value.justFinishedDragging = true;
 
       // Clear the flag after a short delay to allow normal clicking again

@@ -404,7 +404,14 @@
   // Sorted clips: by run_number descending (newest first), then by virality descending
   const sortedClips = computed(() => {
     return [...props.clips].sort((a, b) => {
-      // First sort by run_number descending (newest run first)
+      // First, put manual clips at the bottom
+      const aIsManual = a.session_prompt === 'Manual clip creation';
+      const bIsManual = b.session_prompt === 'Manual clip creation';
+      if (aIsManual !== bIsManual) {
+        return aIsManual ? 1 : -1; // Manual clips go to the bottom
+      }
+
+      // For non-manual clips: sort by run_number descending (newest run first)
       const runA = a.run_number || 0;
       const runB = b.run_number || 0;
       if (runB !== runA) {

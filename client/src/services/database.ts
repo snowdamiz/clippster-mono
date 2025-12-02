@@ -219,3 +219,6 @@ export {
   presetToWatermarkSettings,
   type WatermarkPreset,
 } from './database/watermark-presets';
+
+// Manual clip creation exports
+export { createManualClip, extractTranscriptForTimeRange } from './database/manual-clips';

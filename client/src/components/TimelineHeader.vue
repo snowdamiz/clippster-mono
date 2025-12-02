@@ -3,6 +3,30 @@
     <div class="flex items-center gap-2">
       <!-- Timeline Toolbar -->
       <div class="flex items-center gap-1 bg-muted/40 rounded-sm p-0.5">
+        <!-- Add Clip Button -->
+        <button
+          @click="$emit('toggleAddClipMode')"
+          :disabled="!canAddClip"
+          :class="[
+            'p-1.5 rounded transition-all duration-150',
+            isAddClipModeActive
+              ? 'text-green-600 bg-green-100/20 hover:bg-green-100/30'
+              : canAddClip
+                ? 'text-muted-foreground hover:text-green-600 hover:bg-green-100/10'
+                : 'text-muted-foreground opacity-50 cursor-not-allowed',
+          ]"
+          :title="
+            isAddClipModeActive
+              ? 'Add clip mode active - drag to select range'
+              : canAddClip
+                ? 'Add new clip (drag to select range)'
+                : 'Load a video to add clips'
+          "
+        >
+          <Plus :size="13" />
+        </button>
+        <!-- Separator -->
+        <div class="w-px h-4 bg-border/50 mx-0.5"></div>
         <!-- Cut Button -->
         <button
           @click="$emit('toggleCutTool')"
@@ -98,10 +122,12 @@
 
 <script setup lang="ts">
   import { ref, watch } from 'vue';
-  import { Scissors, Merge, Rewind, FastForward, ZoomIn } from 'lucide-vue-next';
+  import { Plus, Scissors, Merge, Rewind, FastForward, ZoomIn } from 'lucide-vue-next';
 
   interface Props {
     isCutToolActive: boolean;
+    isAddClipModeActive: boolean;
+    canAddClip: boolean;
     isSeeking: boolean;
     seekDirection: 'forward' | 'reverse' | null;
     zoomLevel: number;
@@ -116,6 +142,7 @@
 
   const emit = defineEmits<{
     toggleCutTool: [];
+    toggleAddClipMode: [];
     startContinuousSeeking: [direction: 'forward' | 'reverse'];
     stopContinuousSeeking: [];
     zoomChanged: [zoomLevel: number];

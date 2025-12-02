@@ -9,6 +9,8 @@
       <!-- Timeline Header -->
       <TimelineHeader
         :isCutToolActive="isCutToolActive"
+        :isAddClipModeActive="isAddClipModeActive"
+        :canAddClip="canAddClip"
         :isSeeking="isSeeking"
         :seekDirection="seekDirection"
         :zoomLevel="zoomLevel"
@@ -18,6 +20,7 @@
         :clipCount="displayClips.length"
         :canMergeSegments="canMergeSegments"
         @toggleCutTool="toggleCutTool"
+        @toggleAddClipMode="toggleAddClipMode"
         @startContinuousSeeking="startContinuousSeeking"
         @stopContinuousSeeking="stopContinuousSeeking"
         @zoomChanged="onZoomSliderChange"
@@ -43,7 +46,10 @@
         <!-- Timeline Content Wrapper - handles zoom width -->
         <div
           class="timeline-content-wrapper"
-          :class="{ dragging: isDragging }"
+          :class="{
+            dragging: isDragging,
+            'add-clip-mode': isAddClipModeActive,
+          }"
           :style="{ width: `${100 * zoomLevel}%` }"
         >
           <!-- Shared Timestamp Ruler -->
@@ -127,6 +133,7 @@
         :timelineBoundsTop="timelineBounds.top"
         :timelineBoundsBottom="timelineBounds.bottom"
         :duration="duration"
+        :isAddClipMode="isAddClipModeActive"
       />
 
       <!-- Custom Timeline Tooltip -->
@@ -194,6 +201,15 @@
       @confirm="mergeSegmentsConfirmed"
       @close="cancelMergeSegments"
     />
+
+    <!-- Create Clip Dialog -->
+    <CreateClipDialog
+      :show="showCreateClipDialog"
+      :startTime="createClipStartTime"
+      :endTime="createClipEndTime"
+      @close="cancelCreateClip"
+      @create="confirmCreateClip"
+    />
   </div>
 </template>
 
@@ -210,12 +226,14 @@
   import TimelinePlayhead from './TimelinePlayhead.vue';
   import TimelineHoverLine from './TimelineHoverLine.vue';
   import ConfirmationModal from './ConfirmationModal.vue';
+  import CreateClipDialog from './CreateClipDialog.vue';
   import {
     updateClipSegment,
     getAdjacentClipSegments,
     realignClipSegment,
     splitClipSegment,
     deleteClipSegment,
+    createManualClip,
   } from '../services/database';
   import { debounce, throttle } from '../utils/timelineUtils';
   import { createSeekEvent } from '../utils/videoSeekUtils';
@@ -320,9 +338,16 @@
     computed(() => props.duration),
     {
       onZoomChange: (zoomLevel) => emit('zoomChanged', zoomLevel),
-      onDragSelection: () => {
-        // Handle drag selection zoom if needed
+      onDragSelection: (startPercent: number, endPercent: number) => {
+        // When in add clip mode, open the create clip dialog
+        if (isAddClipModeActive.value && props.duration > 0) {
+          const startTime = startPercent * props.duration;
+          const endTime = endPercent * props.duration;
+          openCreateClipDialog(startTime, endTime);
+        }
       },
+      // Skip zoom when in add clip mode - we want to create a clip instead
+      skipZoom: () => isAddClipModeActive.value,
     }
   );
 
@@ -343,11 +368,18 @@
   // Timeline bounds for constraining interactions
   // timelineBounds is now managed by useTimelineInteraction composable
 
-  // Helper function to sort clips: by run_number descending (newest first), then by virality descending
+  // Helper function to sort clips: manual clips at bottom, then by run_number descending, then by virality descending
   // IMPORTANT: This must match the sorting in ClipsTab.vue exactly for consistent clip ordering
   function sortClips(clips: Clip[]): Clip[] {
     return [...clips].sort((a, b) => {
-      // First sort by run_number descending (newest run first)
+      // First, put manual clips at the bottom
+      const aIsManual = (a as any).session_prompt === 'Manual clip creation';
+      const bIsManual = (b as any).session_prompt === 'Manual clip creation';
+      if (aIsManual !== bIsManual) {
+        return aIsManual ? 1 : -1; // Manual clips go to the bottom
+      }
+
+      // For non-manual clips: sort by run_number descending (newest run first)
       const runA = a.run_number || 0;
       const runB = b.run_number || 0;
       if (runB !== runA) {
@@ -473,6 +505,15 @@
   // Cut tool state
   const isCutToolActive = ref(false);
   const cutHoverInfo = ref<CutHoverInfo | null>(null);
+
+  // Add clip mode state
+  const isAddClipModeActive = ref(false);
+  const showCreateClipDialog = ref(false);
+  const createClipStartTime = ref(0);
+  const createClipEndTime = ref(0);
+
+  // Computed: Can add clip (only when video is loaded)
+  const canAddClip = computed(() => !!props.videoSrc && props.duration > 0);
 
   // Continuous seeking state
   const isSeeking = ref(false);
@@ -717,6 +758,12 @@
 
   // Event handler wrappers that call composable functions
   function onTimelineWheel(event: WheelEvent) {
+    // Disable all wheel actions when in add clip mode for cleaner selection
+    if (isAddClipModeActive.value) {
+      event.preventDefault();
+      return;
+    }
+
     // Check if Ctrl/Cmd key is pressed for horizontal scrolling
     const isCtrlPressed = event.ctrlKey || event.metaKey; // metaKey is Cmd on Mac
 
@@ -751,6 +798,12 @@
 
   // Ruler wheel handler - handles zoom functionality
   function onRulerWheel(event: WheelEvent) {
+    // Disable zoom when in add clip mode
+    if (isAddClipModeActive.value) {
+      event.preventDefault();
+      return;
+    }
+
     // Check if Ctrl/Cmd key is pressed for horizontal scrolling
     const isCtrlPressed = event.ctrlKey || event.metaKey; // metaKey is Cmd on Mac
 
@@ -789,14 +842,16 @@
     // Hide tooltip when dragging starts
     showTimelineTooltip.value = false;
     clearTooltipData();
-    startDragSelection(event);
+    // Force start drag selection when in add clip mode (allows clicking on segments)
+    startDragSelection(event, isAddClipModeActive.value);
     // Hide hover line during drag
     showTimelineHoverLine.value = false;
   }
 
   // Timeline hover line handlers
   function onTimelineMouseMove(event: MouseEvent) {
-    if (isPanning.value || isDragging.value || isCutToolActive.value) return;
+    // Don't show hover effects when in add clip mode or other active states
+    if (isPanning.value || isDragging.value || isCutToolActive.value || isAddClipModeActive.value) return;
 
     const container = timelineScrollContainer.value;
     if (!container) return;
@@ -1089,10 +1144,22 @@
       }
     }
 
+    // Toggle add clip mode when 'n' key is pressed (n for "new clip")
+    if ((event.key === 'n' || event.key === 'N') && canAddClip.value) {
+      event.preventDefault();
+      toggleAddClipMode();
+    }
+
     // Deactivate cut tool when Escape key is pressed
     if (event.key === 'Escape' && isCutToolActive.value) {
       event.preventDefault();
       toggleCutTool();
+    }
+
+    // Deactivate add clip mode when Escape key is pressed
+    if (event.key === 'Escape' && isAddClipModeActive.value) {
+      event.preventDefault();
+      isAddClipModeActive.value = false;
     }
 
     // Handle merge segments when 'j' key is pressed
@@ -2215,6 +2282,9 @@
 
     // Clear timeline hover states when activating
     if (isCutToolActive.value) {
+      // Deactivate add clip mode if it was active
+      isAddClipModeActive.value = false;
+
       showTimelineHoverLine.value = false;
       showTimelineTooltip.value = false;
       clearTooltipData();
@@ -2273,6 +2343,95 @@
     } catch (error) {
       // Show error feedback to user (could add a toast/notification here)
       alert(`Failed to split segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Manual clip creation functions
+
+  // Toggle add clip mode
+  function toggleAddClipMode() {
+    isAddClipModeActive.value = !isAddClipModeActive.value;
+    console.log(`[Timeline] Add clip mode: ${isAddClipModeActive.value ? 'activated' : 'deactivated'}`);
+
+    if (isAddClipModeActive.value) {
+      // Deactivate cut tool if add clip mode is activated
+      if (isCutToolActive.value) {
+        isCutToolActive.value = false;
+        cutHoverInfo.value = null;
+      }
+
+      // Clear any existing hover/selection states
+      showTimelineHoverLine.value = false;
+      showTimelineTooltip.value = false;
+      clearTooltipData();
+
+      // Clear segment selection to avoid confusion
+      selectedSegmentKeys.value.clear();
+
+      // Clear any segment hover states
+      hoveredSegmentKey.value = null;
+    }
+  }
+
+  // Open create clip dialog with selected time range
+  function openCreateClipDialog(startTime: number, endTime: number) {
+    // Ensure start is before end
+    createClipStartTime.value = Math.min(startTime, endTime);
+    createClipEndTime.value = Math.max(startTime, endTime);
+    showCreateClipDialog.value = true;
+
+    // Deactivate add clip mode while dialog is open
+    isAddClipModeActive.value = false;
+
+    console.log(
+      `[Timeline] Opening create clip dialog: ${createClipStartTime.value.toFixed(2)}s - ${createClipEndTime.value.toFixed(2)}s`
+    );
+  }
+
+  // Cancel create clip
+  function cancelCreateClip() {
+    showCreateClipDialog.value = false;
+    createClipStartTime.value = 0;
+    createClipEndTime.value = 0;
+  }
+
+  // Confirm create clip
+  async function confirmCreateClip(data: { name: string; description: string }) {
+    if (!props.projectId) {
+      console.error('[Timeline] Cannot create clip: no project ID');
+      showWarning('Cannot create clip: no project selected');
+      cancelCreateClip();
+      return;
+    }
+
+    try {
+      console.log('[Timeline] Creating manual clip:', {
+        name: data.name,
+        startTime: createClipStartTime.value,
+        endTime: createClipEndTime.value,
+        projectId: props.projectId,
+      });
+
+      // Create the clip in the database
+      const clipId = await createManualClip(props.projectId, {
+        name: data.name,
+        startTime: createClipStartTime.value,
+        endTime: createClipEndTime.value,
+        description: data.description,
+      });
+
+      console.log('[Timeline] Manual clip created successfully:', clipId);
+
+      // Close the dialog
+      showCreateClipDialog.value = false;
+      createClipStartTime.value = 0;
+      createClipEndTime.value = 0;
+
+      // Refresh clips data to show the new clip
+      emit('refreshClipsData');
+    } catch (error) {
+      console.error('[Timeline] Error creating manual clip:', error);
+      showWarning(`Failed to create clip: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 </script>
@@ -2397,6 +2556,15 @@
 
   .timeline-content-wrapper.dragging {
     cursor: crosshair;
+  }
+
+  /* Add clip mode - show crosshair cursor to indicate selection mode */
+  .timeline-content-wrapper.add-clip-mode {
+    cursor: crosshair;
+  }
+
+  .timeline-content-wrapper.add-clip-mode * {
+    cursor: crosshair !important;
   }
 
   /* Prevent text selection during drag */

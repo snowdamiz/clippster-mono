@@ -883,7 +883,7 @@
         const clipType = segments.length > 1 ? 'spliced' : 'continuous';
 
         // Transform to Timeline's Clip interface
-        // IMPORTANT: Include current_version_virality_score to match ClipsTab sorting
+        // IMPORTANT: Include current_version_virality_score and session_prompt to match ClipsTab sorting
         return {
           id: clip.id,
           title: version.name || clip.name || 'Untitled Clip',
@@ -898,6 +898,7 @@
           socialMediaPost: `${version.name || 'Clip'} - ${version.description || 'Interesting moment'}`,
           run_number: clip.run_number,
           run_color: clip.session_run_color,
+          session_prompt: clip.session_prompt, // Include for sorting (manual clips detection)
         };
       })
       .filter(Boolean); // Remove any null entries
