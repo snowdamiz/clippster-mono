@@ -312,7 +312,7 @@
                 </button>
 
                 <button
-                  v-if="canDetectClips(project.id)"
+                  v-if="canDetectClips(project.id) && !isProjectDetecting(project.id)"
                   class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
                   title="Detect Clips"
                   @click.stop="startProjectDetection(project)"
@@ -477,7 +477,7 @@
             >
               <!-- Selection Checkbox (visible on hover or when selected) -->
               <div
-                class="absolute top-3 right-3 z-30 transition-opacity"
+                class="absolute top-4 right-4 z-30 transition-opacity"
                 :class="isFolderChildSelected(project.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
                 @click.stop="toggleFolderChildSelection(project.id)"
               >
@@ -496,7 +496,7 @@
               <!-- Thumbnail background -->
               <div
                 v-if="getThumbnailUrl(project.id)"
-                class="absolute inset-0 z-0 rounded-md"
+                class="absolute inset-0 z-0"
                 :style="{
                   backgroundImage: `url(${getThumbnailUrl(project.id)})`,
                   backgroundSize: 'cover',
@@ -504,38 +504,40 @@
                   backgroundRepeat: 'no-repeat',
                 }"
               >
-                <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60"></div>
+                <div class="absolute inset-0 bg-black/10"></div>
               </div>
-              <div v-else class="absolute inset-0 z-0 bg-muted">
-                <div class="absolute inset-0 bg-gradient-to-br from-black/20 via-transparent to-black/40"></div>
-                <div class="absolute inset-0 flex items-center justify-center opacity-20">
-                  <Play class="h-12 w-12 text-foreground" />
-                </div>
+              <div v-else class="absolute inset-0 z-0 bg-muted flex items-center justify-center">
+                <Play class="h-16 w-16 text-muted-foreground/50" />
               </div>
 
               <!-- Detection Progress Indicator (for individual segment) -->
               <div
                 v-if="isDetectionActive(project.id)"
-                class="absolute top-3 left-3 z-10 flex items-center gap-1.5 bg-purple-600/90 text-white px-2 py-1 rounded-md text-xs font-bold shadow-sm backdrop-blur-sm"
+                class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-purple-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm"
               >
                 <Loader2 class="w-3 h-3 animate-spin" />
                 <span>Detecting...</span>
               </div>
               <!-- Duration Badge (only show if not detecting) -->
-              <div v-else-if="getProjectDuration(project.id)" class="absolute top-3 left-3 z-5">
-                <span
-                  class="text-xs px-2 py-1 rounded-md text-white bg-black/60 backdrop-blur-sm font-medium flex items-center gap-1.5"
-                >
-                  <Clock class="w-3 h-3" />
-                  {{ getProjectDuration(project.id) }}
-                </span>
+              <div
+                v-else-if="getProjectDuration(project.id)"
+                class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-black/70 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm"
+              >
+                <Clock class="w-3 h-3" />
+                <span>{{ getProjectDuration(project.id) }}</span>
               </div>
 
-              <!-- Info -->
-              <div class="absolute bottom-0 left-0 right-0 z-5 bg-black/60 backdrop-blur-sm p-3 rounded-b-md">
-                <h3 class="text-sm font-semibold text-white line-clamp-1">{{ project.name }}</h3>
-                <p class="text-xs text-white/70 line-clamp-1 mt-0.5">
-                  {{ project.description || 'No description' }} • {{ getRelativeTime(project.updated_at) }}
+              <!-- Bottom Info -->
+              <div
+                class="absolute bottom-0 left-0 right-0 z-5 bg-gradient-to-t from-black via-black/80 to-transparent p-4 pt-28 flex flex-col gap-1.5"
+              >
+                <h3
+                  class="text-base font-bold text-white leading-tight line-clamp-1 group-hover:text-white/90 transition-colors"
+                >
+                  {{ project.name }}
+                </h3>
+                <p class="text-xs text-white/70 font-medium">
+                  {{ getClipCount(project.id) }} clips • {{ getRelativeTime(project.updated_at) }}
                 </p>
               </div>
 
