@@ -1,4 +1,4 @@
-import { reactive, readonly } from 'vue';
+import { reactive } from 'vue';
 
 export interface Toast {
   id: string;
@@ -71,7 +71,8 @@ function info(title: string, description?: string, duration?: number) {
 
 export function useToastStore() {
   return {
-    toasts: readonly(state.toasts),
+    // Note: toasts is NOT readonly because Toast.vue needs to mutate toast.open via v-model
+    toasts: state.toasts,
     addToast,
     removeToast,
     clearAllToasts,

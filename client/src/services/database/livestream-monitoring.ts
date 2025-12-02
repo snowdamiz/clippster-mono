@@ -142,9 +142,26 @@ export async function createLivestreamSession(
   let projectId: string;
 
   if (existingSession.length > 0 && existingSession[0].project_id) {
-    // Reuse existing parent project
-    projectId = existingSession[0].project_id;
-    console.log('[LiveMonitor] Reusing existing parent project:', projectId);
+    // Verify the project still exists before reusing (it might have been cleaned up)
+    const existingProject = await db.select<{ id: string }[]>(
+      'SELECT id FROM projects WHERE id = ?',
+      [existingSession[0].project_id]
+    );
+
+    if (existingProject.length > 0) {
+      // Reuse existing parent project
+      projectId = existingSession[0].project_id;
+      console.log('[LiveMonitor] Reusing existing parent project:', projectId);
+    } else {
+      // Project was deleted, create a new one
+      const projectName = `${displayName || mintId.slice(0, 6)} Live ${new Date().toLocaleString()}`;
+      const projectDescription = `PumpFun livestream for ${displayName} (${mintId})`;
+      projectId = await createProject(projectName, projectDescription, undefined, 'PumpFun');
+      console.log(
+        '[LiveMonitor] Previous project was deleted, created new parent project:',
+        projectId
+      );
+    }
   } else {
     // Create a new parent project for this streamer
     const projectName = `${displayName || mintId.slice(0, 6)} Live ${new Date().toLocaleString()}`;

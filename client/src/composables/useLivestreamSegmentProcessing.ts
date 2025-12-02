@@ -8,6 +8,7 @@ import {
   updateLivestreamSessionProgress,
   createRawVideo,
   getLivestreamSession,
+  getLivestreamSegment,
   persistClipDetectionResults,
   getClipsByDetectionSession,
   createProject,
@@ -49,16 +50,35 @@ export function useLivestreamSegmentProcessing() {
   ) {
     const session = await getLivestreamSession(sessionId);
     if (!session || !session.project_id) {
-      console.error('[LiveSegments] Missing project for session', sessionId);
+      console.warn(
+        '[LiveSegments] Session no longer exists or missing project, skipping segment',
+        sessionId
+      );
       return;
     }
 
-    const segmentId = await createLivestreamSegment(sessionId, {
-      segmentNumber: payload.segment,
-      startTimeOffset: (payload.segment - 1) * payload.duration,
-      duration: payload.duration,
-      status: 'ready',
-    });
+    // Also check that the parent project still exists
+    const parentProject = await getProject(session.project_id);
+    if (!parentProject) {
+      console.warn(
+        '[LiveSegments] Parent project no longer exists, skipping segment',
+        session.project_id
+      );
+      return;
+    }
+
+    let segmentId: string;
+    try {
+      segmentId = await createLivestreamSegment(sessionId, {
+        segmentNumber: payload.segment,
+        startTimeOffset: (payload.segment - 1) * payload.duration,
+        duration: payload.duration,
+        status: 'ready',
+      });
+    } catch (err) {
+      console.warn('[LiveSegments] Failed to create segment (session may have been deleted):', err);
+      return;
+    }
 
     queue.value.push({
       sessionId,
@@ -97,8 +117,30 @@ export function useLivestreamSegmentProcessing() {
   }
 
   async function processSegment(job: ProcessingJob) {
+    // Check if the segment still exists (it might have been deleted during cleanup)
+    const segment = await getLivestreamSegment(job.segmentId);
+    if (!segment) {
+      console.warn(`[LiveSegments] Segment ${job.segmentId} no longer exists, skipping processing`);
+      return;
+    }
+
+    // Also check if the parent project still exists
+    const parentProject = await getProject(job.projectId);
+    if (!parentProject) {
+      console.warn(
+        `[LiveSegments] Parent project ${job.projectId} no longer exists, skipping processing`
+      );
+      return;
+    }
+
     job.onProgress?.('Processing started');
-    await updateSegmentStatus(job.segmentId, 'processing');
+
+    try {
+      await updateSegmentStatus(job.segmentId, 'processing');
+    } catch (err) {
+      console.warn('[LiveSegments] Failed to update segment status (may have been deleted):', err);
+      return;
+    }
 
     try {
       // Create a new project for this segment to avoid raw_videos unique constraint

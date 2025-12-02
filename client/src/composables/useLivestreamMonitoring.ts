@@ -10,6 +10,7 @@ import {
   hasRawVideosForProject,
   hasClipsForProject,
   hasChildProjects,
+  getSegmentsBySession,
 } from '@/services/database';
 import type {
   LiveSession,
@@ -143,8 +144,15 @@ async function getStreamerInfo(streamerId: string): Promise<{
 }
 
 // Helper to clean up empty session projects
-async function cleanupSessionProject(_sessionId: string, projectId: string) {
+async function cleanupSessionProject(sessionId: string, projectId: string) {
   try {
+    // Check if there are any segments for this session (still being processed)
+    const segments = await getSegmentsBySession(sessionId);
+    if (segments.length > 0) {
+      console.log('[LiveMonitor] Session has segments, skipping cleanup:', projectId);
+      return;
+    }
+
     // Check if project is empty (no videos, no clips, AND no child projects)
     const hasVideos = await hasRawVideosForProject(projectId);
     const hasClips = await hasClipsForProject(projectId);
@@ -175,9 +183,14 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
   try {
     await endLivestreamSession(session.sessionId, Math.floor(Date.now() / 1000));
 
-    // Clean up the project if it's empty
+    // Delay cleanup to allow in-flight segment events to arrive and be processed
+    // The segment-ready events from the backend may be slightly delayed
     if (session.projectId) {
-      await cleanupSessionProject(session.sessionId, session.projectId);
+      const sessionId = session.sessionId;
+      const projectId = session.projectId;
+      setTimeout(async () => {
+        await cleanupSessionProject(sessionId, projectId);
+      }, 5000); // 5 second delay
     }
   } catch (error) {
     console.warn('[LiveMonitor] Failed to mark session ended', error);
@@ -507,9 +520,13 @@ export function useLivestreamMonitoring() {
         try {
           await endLivestreamSession(session.sessionId, Math.floor(Date.now() / 1000));
 
-          // Clean up the project if it's empty
+          // Delay cleanup to allow in-flight segment events to arrive
           if (session.projectId) {
-            await cleanupSessionProject(session.sessionId, session.projectId);
+            const sessionId = session.sessionId;
+            const projectId = session.projectId;
+            setTimeout(async () => {
+              await cleanupSessionProject(sessionId, projectId);
+            }, 5000); // 5 second delay
           }
         } catch (error) {
           console.warn('[LiveMonitor] Failed to close session', error);
