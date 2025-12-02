@@ -264,6 +264,12 @@ pub fn run() {
                             sql: include_str!("../migrations/043_add_clip_builds_table.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 44,
+                            description: "add_creator_profiles",
+                            sql: include_str!("../migrations/044_add_creator_profiles.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

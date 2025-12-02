@@ -378,3 +378,31 @@ export interface WatermarkSettings {
   opacity: number; // 0-100
   scale: number; // 0-100 (percentage of video width)
 }
+
+export interface CreatorProfile {
+  id: string;
+  name: string;
+  description: string | null;
+  profile_image_path: string | null;
+  intro_id: string | null;
+  outro_id: string | null;
+  watermark_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CreatorPlatformLink {
+  id: string;
+  creator_profile_id: string;
+  platform: 'pumpfun' | 'kick' | 'twitch' | 'youtube';
+  platform_id: string;
+  display_name: string | null;
+  profile_image_url: string | null;
+  monitored_streamer_id: string | null;
+  is_primary: number | boolean;
+  created_at: number;
+}
+
+export interface CreatorProfileWithLinks extends CreatorProfile {
+  platform_links: CreatorPlatformLink[];
+}

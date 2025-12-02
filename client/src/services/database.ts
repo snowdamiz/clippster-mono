@@ -26,6 +26,9 @@ export type {
   LivestreamSegmentRecord,
   WatermarkImage,
   WatermarkSettings,
+  CreatorProfile,
+  CreatorPlatformLink,
+  CreatorProfileWithLinks,
 } from './database/types';
 
 // Re-export intro/outro functions
@@ -236,3 +239,20 @@ export {
   addSegmentToClip,
   extractTranscriptForTimeRange,
 } from './database/manual-clips';
+
+// Creator profiles exports
+export {
+  getAllCreatorProfiles,
+  getCreatorProfile,
+  createCreatorProfile,
+  updateCreatorProfile,
+  deleteCreatorProfile,
+  addPlatformLink,
+  updatePlatformLink,
+  deletePlatformLink,
+  getPlatformLinksByCreator,
+  getPlatformLinkByPlatformId,
+  linkMonitoredStreamer,
+  unlinkMonitoredStreamer,
+  getCreatorProfileByMonitoredStreamer,
+} from './database/creator-profiles';

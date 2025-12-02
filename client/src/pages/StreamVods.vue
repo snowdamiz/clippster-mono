@@ -509,7 +509,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
-  import { useRouter } from 'vue-router';
+  import { useRouter, useRoute } from 'vue-router';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
   import { Button } from '@/components/ui/button';
@@ -536,6 +536,7 @@
   } from 'lucide-vue-next';
 
   const router = useRouter();
+  const route = useRoute();
   const { success, error: showError } = useToast();
   const { startDownload } = useDownloads();
   const platformStore = usePlatformStore();
@@ -592,9 +593,29 @@
   }
 
   // Initialize
-  onMounted(() => {
+  onMounted(async () => {
     document.addEventListener('click', handleClickOutside);
     platformStore.refreshRecentSearchesMetadata();
+
+    // Check for query params (from Creator Profiles navigation)
+    const queryPlatform = route.query.platform as string | undefined;
+    const querySearch = route.query.search as string | undefined;
+
+    if (queryPlatform && querySearch) {
+      // Set the platform and search from query params
+      const validPlatforms = ['pumpfun', 'kick', 'twitch', 'youtube'] as const;
+      if (validPlatforms.includes(queryPlatform as any)) {
+        detectedPlatform.value = queryPlatform as PlatformId;
+        searchInput.value = querySearch;
+
+        // Clear query params from URL to prevent re-search on navigation
+        router.replace({ path: route.path, query: {} });
+
+        // Trigger search
+        await handleSearch();
+        return;
+      }
+    }
 
     // Restore platform state if clips are already loaded (e.g., returning from another page)
     if (platformStore.clips.length > 0) {

@@ -94,6 +94,19 @@ const router = createRouter({
         },
       ],
     },
+    // Creator Profiles page
+    {
+      path: '/creators',
+      name: 'creators',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      children: [
+        {
+          path: '',
+          name: 'creators-home',
+          component: () => import('@/pages/CreatorProfiles.vue'),
+        },
+      ],
+    },
     // Unified VODs page for all streaming platforms
     {
       path: '/vods',
