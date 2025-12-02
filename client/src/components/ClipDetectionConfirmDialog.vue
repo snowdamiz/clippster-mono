@@ -283,6 +283,12 @@
     () => props.modelValue,
     (isOpen) => {
       if (isOpen) {
+        // Reset prompt selection state so user can choose fresh each time
+        selectedPromptId.value = '';
+        selectedPromptName.value = '';
+        selectedPromptContent.value = '';
+        showPromptDropdown.value = false;
+
         loadUserCredits();
         loadPrompts();
         error.value = '';
