@@ -333,17 +333,54 @@ export function useChunkedClipDetection() {
         formData.append('audio', audioFile); // This uses the File object which includes filename
         formData.append('duration', chunk.duration.toString());
 
-        // Send to transcribe endpoint with abort signal
-        const response = await api.post('/clips/transcribe', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-          signal: abortController?.signal,
-        });
+        // Send to transcribe endpoint with abort signal and retry logic
+        const maxRetries = 3;
+        let lastError: Error | null = null;
+        let transcript: any = null;
 
-        if (!response.data.success) {
-          throw new Error(response.data.error || `Failed to transcribe chunk ${i + 1}`);
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+          try {
+            checkCancelled();
+            
+            const response = await api.post('/clips/transcribe', formData, {
+              headers: { 'Content-Type': 'multipart/form-data' },
+              signal: abortController?.signal,
+            });
+
+            if (!response.data.success) {
+              throw new Error(response.data.error || `Failed to transcribe chunk ${i + 1}`);
+            }
+
+            transcript = response.data.transcript;
+            break; // Success, exit retry loop
+          } catch (err: any) {
+            lastError = err instanceof Error ? err : new Error(String(err));
+            
+            // Don't retry if cancelled or if it's a non-retryable error (4xx)
+            if (err?.name === 'CanceledError' || err?.response?.status === 402) {
+              throw err;
+            }
+
+            // Retry on 5xx errors or network errors
+            const isRetryable = !err?.response || err?.response?.status >= 500;
+            if (isRetryable && attempt < maxRetries - 1) {
+              const delay = Math.min(2000 * Math.pow(2, attempt), 10000); // 2s, 4s, 8s (max 10s)
+              console.log(`[ChunkTranscribe] Chunk ${i + 1} failed (attempt ${attempt + 1}/${maxRetries}), retrying in ${delay}ms...`);
+              progress.value = {
+                stage: 'transcribing_chunks',
+                progress: 30 + (i / totalChunks) * 20,
+                message: `Chunk ${i + 1} failed, retrying (${attempt + 2}/${maxRetries})...`,
+              };
+              await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+              throw lastError;
+            }
+          }
         }
 
-        const transcript = response.data.transcript;
+        if (!transcript) {
+          throw lastError || new Error(`Failed to transcribe chunk ${i + 1} after ${maxRetries} attempts`);
+        }
 
         // Store result with the original chunk timing from audio chunking
         // chunk.start_time and chunk.end_time represent where this chunk exists in the original video
@@ -414,11 +451,13 @@ export function useChunkedClipDetection() {
       checkCancelled();
 
       // Call the chunked detection endpoint with abort signal
+      // Use extended timeout (20 minutes) since AI processing each chunk can take 1-2 min
       const response = await api.post('/clips/detect-chunked', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
         signal: abortController?.signal,
+        timeout: 1200000, // 20 minutes - chunked AI detection is very long-running
       });
 
       const result = response.data;
@@ -601,6 +640,7 @@ export function useChunkedClipDetection() {
           'Content-Type': 'multipart/form-data',
         },
         signal: abortController?.signal,
+        timeout: 900000, // 15 minutes for AI detection
       });
 
       const result = response.data;
@@ -699,6 +739,7 @@ export function useChunkedClipDetection() {
           'Content-Type': 'multipart/form-data',
         },
         signal: abortController?.signal,
+        timeout: 900000, // 15 minutes for AI detection
       });
 
       const result = response.data;
@@ -794,6 +835,7 @@ export function useChunkedClipDetection() {
           'Content-Type': 'multipart/form-data',
         },
         signal: abortController?.signal,
+        timeout: 900000, // 15 minutes for AI detection
       });
 
       const result = response.data;

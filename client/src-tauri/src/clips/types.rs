@@ -96,9 +96,10 @@ pub struct WatermarkSettings {
     pub scale: u32, // percentage of video width (5-50)
 }
 
-// Build settings structure
+// Build settings structure (reserved for future use)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct BuildSettings {
     pub aspect_ratios: Vec<String>,
     pub quality: String,

@@ -206,6 +206,17 @@ defmodule ClippsterServer.AI.WhisperAPI do
     true
   end
   
+  # TLS/SSL errors - these are transient network issues that should be retried
+  # Includes: bad_record_mac, handshake_failure, unexpected_message, etc.
+  defp retryable_error?(%Mint.TransportError{reason: {:tls_alert, _}}) do
+    true
+  end
+  
+  # Generic SSL/TLS closed errors
+  defp retryable_error?(%Mint.TransportError{reason: {:ssl_closed, _}}) do
+    true
+  end
+  
   # Mint HTTP errors (protocol level)
   defp retryable_error?(%Mint.HTTPError{reason: reason}) 
     when reason in [:closed, :timeout] do

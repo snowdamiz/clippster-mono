@@ -211,6 +211,7 @@ export function useLivestreamSegmentProcessing() {
         try {
           const response = await api.post('/clips/detect', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
+            timeout: 900000, // 15 minutes for AI detection
           });
 
           if (response.data?.success) {
