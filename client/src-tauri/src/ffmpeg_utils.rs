@@ -5,6 +5,7 @@ pub struct VideoInfo {
     pub width: u32,
     pub height: u32,
     pub codec: String,
+    pub duration: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,8 +100,11 @@ pub fn parse_video_info_from_ffmpeg_output(output: &str) -> Result<VideoInfo, St
         }
     }
 
+    // Also extract duration from the output
+    let duration = extract_duration_from_ffmpeg_output(output);
+
     match (width, height, codec) {
-        (Some(w), Some(h), Some(c)) => Ok(VideoInfo { width: w, height: h, codec: c }),
+        (Some(w), Some(h), Some(c)) => Ok(VideoInfo { width: w, height: h, codec: c, duration }),
         _ => Err("Could not parse video info".to_string()),
     }
 }

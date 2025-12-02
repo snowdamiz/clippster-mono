@@ -203,6 +203,7 @@ export {
   deleteMonitoredStreamer,
   createLivestreamSession,
   getLivestreamSession,
+  getLivestreamSessionByProjectId,
   getActiveLivestreamSessions,
   endLivestreamSession,
   updateLivestreamSessionProgress,
@@ -255,4 +256,5 @@ export {
   linkMonitoredStreamer,
   unlinkMonitoredStreamer,
   getCreatorProfileByMonitoredStreamer,
+  getCreatorProfileByProjectId,
 } from './database/creator-profiles';

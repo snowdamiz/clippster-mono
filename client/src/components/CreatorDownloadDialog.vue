@@ -24,7 +24,83 @@
         </div>
 
         <!-- Content -->
-        <div class="flex-1 p-6 overflow-y-auto custom-scrollbar">
+        <div class="flex-1 p-6 overflow-y-auto custom-scrollbar" @click="showPlatformDropdown = false">
+          <!-- Platform Selector (when multiple platforms) -->
+          <div v-if="creator && creator.platform_links.length > 1" class="mb-6">
+            <label class="block text-sm font-medium text-muted-foreground mb-2">Select Platform</label>
+            <div class="relative">
+              <button
+                type="button"
+                @click.stop="showPlatformDropdown = !showPlatformDropdown"
+                class="w-full flex items-center gap-3 px-3 py-2.5 bg-muted border border-border rounded-lg text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+              >
+                <div
+                  class="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0"
+                  :style="{ backgroundColor: getPlatformColor(creator.platform_links[selectedPlatformIndex].platform) }"
+                >
+                  <img
+                    :src="getPlatformIcon(creator.platform_links[selectedPlatformIndex].platform)"
+                    class="w-4 h-4 brightness-200"
+                  />
+                </div>
+                <div class="flex-1 text-left">
+                  <span class="text-sm font-medium">
+                    {{ getPlatformName(creator.platform_links[selectedPlatformIndex].platform) }}
+                  </span>
+                  <span class="text-xs text-muted-foreground ml-2">
+                    {{
+                      creator.platform_links[selectedPlatformIndex].display_name ||
+                      truncateId(creator.platform_links[selectedPlatformIndex].platform_id)
+                    }}
+                  </span>
+                </div>
+                <ChevronDown
+                  class="w-4 h-4 text-muted-foreground transition-transform"
+                  :class="{ 'rotate-180': showPlatformDropdown }"
+                />
+              </button>
+
+              <!-- Platform Dropdown -->
+              <div
+                v-if="showPlatformDropdown"
+                class="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden"
+                @click.stop
+              >
+                <div class="p-1">
+                  <button
+                    v-for="(link, index) in creator.platform_links"
+                    :key="link.id"
+                    type="button"
+                    @click="selectPlatform(index)"
+                    class="w-full text-left px-3 py-2.5 rounded-md transition-colors flex items-center gap-3 hover:bg-muted/80 cursor-pointer"
+                    :class="{ 'bg-muted': selectedPlatformIndex === index }"
+                  >
+                    <div
+                      class="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0"
+                      :style="{ backgroundColor: getPlatformColor(link.platform) }"
+                    >
+                      <img :src="getPlatformIcon(link.platform)" class="w-4 h-4 brightness-200" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <span class="text-sm font-medium text-foreground">
+                        {{ getPlatformName(link.platform) }}
+                      </span>
+                      <span class="text-xs text-muted-foreground ml-2 truncate">
+                        {{ link.display_name || truncateId(link.platform_id) }}
+                      </span>
+                    </div>
+                    <span
+                      v-if="link.is_primary"
+                      class="text-[10px] px-1.5 py-0.5 bg-primary/20 text-primary rounded-full"
+                    >
+                      Primary
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Loading State -->
           <div v-if="loading" class="flex flex-col items-center justify-center py-12">
             <Loader2 class="w-8 h-8 animate-spin text-primary mb-4" />
@@ -222,7 +298,18 @@
   import { useDownloads } from '@/composables/useDownloads';
   import { useToast } from '@/composables/useToast';
   import { platformConfigs } from '@/config/platforms';
-  import { X, Loader2, AlertTriangle, RefreshCw, Video, Clock, Download, Scissors, Check } from 'lucide-vue-next';
+  import {
+    X,
+    Loader2,
+    AlertTriangle,
+    RefreshCw,
+    Video,
+    Clock,
+    Download,
+    Scissors,
+    Check,
+    ChevronDown,
+  } from 'lucide-vue-next';
 
   interface Props {
     show: boolean;
@@ -248,13 +335,19 @@
   const autoSegment = ref(true);
   const autoSegmentDuration = ref(60);
   const downloading = ref(false);
-  const currentPlatformLink = ref<{ platform: string; platformId: string } | null>(null);
+  const currentPlatformLink = ref<{ platform: string; platformId: string; displayName?: string } | null>(null);
+  const selectedPlatformIndex = ref(0);
+  const showPlatformDropdown = ref(false);
 
   // Watch for dialog open
   watch(
     () => props.show,
     async (show) => {
       if (show && props.creator) {
+        // Find the primary platform index, or default to first
+        const primaryIndex = props.creator.platform_links.findIndex((l) => l.is_primary);
+        selectedPlatformIndex.value = primaryIndex >= 0 ? primaryIndex : 0;
+        showPlatformDropdown.value = false;
         await fetchLatestVod();
       } else {
         // Reset state
@@ -262,9 +355,53 @@
         error.value = '';
         useSegmentDownload.value = false;
         selectedTimeRange.value = { startTime: 0, endTime: 0 };
+        selectedPlatformIndex.value = 0;
+        showPlatformDropdown.value = false;
       }
     }
   );
+
+  // Platform helpers
+  function getPlatformIcon(platform: string): string {
+    const icons: Record<string, string> = {
+      pumpfun: '/capsule.svg',
+      kick: '/kick.svg',
+      twitch: '/twitch.svg',
+      youtube: '/youtube.svg',
+    };
+    return icons[platform] || '/capsule.svg';
+  }
+
+  function getPlatformColor(platform: string): string {
+    const colors: Record<string, string> = {
+      pumpfun: '#10b981',
+      kick: '#53FC18',
+      twitch: '#9146FF',
+      youtube: '#dc2626',
+    };
+    return colors[platform] || '#6b7280';
+  }
+
+  function getPlatformName(platform: string): string {
+    const names: Record<string, string> = {
+      pumpfun: 'PumpFun',
+      kick: 'Kick',
+      twitch: 'Twitch',
+      youtube: 'YouTube',
+    };
+    return names[platform] || platform;
+  }
+
+  function truncateId(id: string): string {
+    if (!id || id.length < 12) return id;
+    return `${id.slice(0, 6)}...${id.slice(-4)}`;
+  }
+
+  async function selectPlatform(index: number) {
+    selectedPlatformIndex.value = index;
+    showPlatformDropdown.value = false;
+    await fetchLatestVod();
+  }
 
   async function fetchLatestVod() {
     if (!props.creator) return;
@@ -274,33 +411,33 @@
     latestVod.value = null;
 
     try {
-      // Get the primary platform link (or first one)
-      const primaryLink = props.creator.platform_links.find((l) => l.is_primary) || props.creator.platform_links[0];
+      // Get the selected platform link
+      const selectedLink = props.creator.platform_links[selectedPlatformIndex.value];
 
       console.log('[CreatorDownload] Creator:', props.creator.name);
       console.log('[CreatorDownload] Platform links:', props.creator.platform_links);
-      console.log('[CreatorDownload] Primary link:', primaryLink);
+      console.log('[CreatorDownload] Selected link:', selectedLink);
 
-      if (!primaryLink) {
+      if (!selectedLink) {
         error.value = 'No platform links configured for this creator';
         return;
       }
 
       // Check if platform is supported
-      const config = platformConfigs[primaryLink.platform as keyof typeof platformConfigs];
+      const config = platformConfigs[selectedLink.platform as keyof typeof platformConfigs];
       if (config?.isComingSoon) {
         error.value = `${config.name} VOD downloads are not yet available`;
         return;
       }
 
       // Validate the platform ID
-      let validatedId = primaryLink.platform_id;
+      let validatedId = selectedLink.platform_id;
 
-      if (primaryLink.platform === 'pumpfun') {
+      if (selectedLink.platform === 'pumpfun') {
         const { extractMintId } = await import('@/services/pumpfun');
-        const mintId = extractMintId(primaryLink.platform_id);
+        const mintId = extractMintId(selectedLink.platform_id);
         if (!mintId) {
-          console.error('[CreatorDownload] Invalid mint ID:', primaryLink.platform_id);
+          console.error('[CreatorDownload] Invalid mint ID:', selectedLink.platform_id);
           error.value = `Invalid PumpFun mint ID stored for this creator. Please edit the creator and re-enter the mint ID.`;
           return;
         }
@@ -308,15 +445,16 @@
       }
 
       currentPlatformLink.value = {
-        platform: primaryLink.platform,
+        platform: selectedLink.platform,
         platformId: validatedId,
+        displayName: selectedLink.display_name || undefined,
       };
 
       console.log('[CreatorDownload] Searching for VODs with platform_id:', validatedId);
 
       // Set platform and search - request more clips to ensure we get one that passes the duration filter
       // The platform store filters out clips < 3 minutes, so we need to fetch more to find a valid one
-      platformStore.setActivePlatform(primaryLink.platform as any);
+      platformStore.setActivePlatform(selectedLink.platform as any);
       const result = await platformStore.searchClips(validatedId, 20);
 
       console.log('[CreatorDownload] Search result:', result);

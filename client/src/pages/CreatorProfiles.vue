@@ -336,6 +336,110 @@
       @close="startMonitoringWithMode(false)"
       @confirm="startMonitoringWithMode(true)"
     />
+
+    <!-- Platform Selection Dialog for Monitoring -->
+    <Transition
+      enter-active-class="transition duration-200 ease-out"
+      enter-from-class="opacity-0 scale-95"
+      enter-to-class="opacity-100 scale-100"
+      leave-active-class="transition duration-150 ease-in"
+      leave-from-class="opacity-100 scale-100"
+      leave-to-class="opacity-0 scale-95"
+    >
+      <div
+        v-if="showPlatformSelectDialog && creatorToMonitor"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4"
+      >
+        <div
+          class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+          @click="
+            showPlatformSelectDialog = false;
+            creatorToMonitor = null;
+          "
+        ></div>
+        <div class="relative w-full max-w-md bg-card border border-border shadow-2xl rounded-xl overflow-hidden">
+          <!-- Header -->
+          <div class="flex items-center justify-between px-5 py-4 border-b border-border/60 bg-muted/30">
+            <div>
+              <h2 class="text-base font-semibold text-foreground">
+                {{ platformSelectMode === 'detect' ? 'Auto-Detect Clips' : 'Record Stream' }}
+              </h2>
+              <p class="text-xs text-muted-foreground mt-0.5">Select which platform to monitor</p>
+            </div>
+            <button
+              @click="
+                showPlatformSelectDialog = false;
+                creatorToMonitor = null;
+              "
+              class="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <X class="w-4 h-4" />
+            </button>
+          </div>
+
+          <!-- Platform Options -->
+          <div class="p-4 space-y-2">
+            <button
+              v-for="link in creatorToMonitor.platform_links"
+              :key="link.id"
+              @click="
+                link.platform === 'pumpfun' &&
+                selectPlatformForMonitoring(creatorToMonitor!.platform_links.findIndex((l) => l.id === link.id))
+              "
+              class="w-full flex items-center gap-3 p-3 rounded-lg border transition-all group"
+              :class="[
+                link.platform === 'pumpfun'
+                  ? 'border-border/50 bg-muted/20 hover:bg-muted/50 hover:border-primary/30 cursor-pointer'
+                  : 'border-border/30 bg-muted/10 opacity-60 cursor-not-allowed',
+              ]"
+            >
+              <!-- Profile Image -->
+              <div
+                class="w-10 h-10 rounded-lg overflow-hidden bg-muted border border-border/50 flex items-center justify-center flex-shrink-0"
+              >
+                <img v-if="link.profile_image_url" :src="link.profile_image_url" class="w-full h-full object-cover" />
+                <Users v-else class="w-5 h-5 text-muted-foreground" />
+              </div>
+
+              <!-- Platform Info -->
+              <div class="flex-1 min-w-0 text-left">
+                <div class="flex items-center gap-2">
+                  <div
+                    class="w-5 h-5 rounded flex items-center justify-center flex-shrink-0"
+                    :style="{ backgroundColor: getPlatformColor(link.platform) }"
+                  >
+                    <img :src="getPlatformIcon(link.platform)" class="w-3 h-3 brightness-200" />
+                  </div>
+                  <span
+                    class="text-sm font-medium truncate"
+                    :class="link.platform === 'pumpfun' ? 'text-foreground' : 'text-muted-foreground'"
+                  >
+                    {{ link.display_name || truncateId(link.platform_id) }}
+                  </span>
+                  <span
+                    v-if="link.is_primary"
+                    class="text-[10px] px-1.5 py-0.5 bg-primary/20 text-primary rounded-full flex-shrink-0"
+                  >
+                    Primary
+                  </span>
+                </div>
+                <p class="text-xs text-muted-foreground mt-0.5 truncate font-mono">
+                  {{ link.platform_id }}
+                </p>
+              </div>
+
+              <!-- Status indicator -->
+              <div v-if="link.platform === 'pumpfun'">
+                <ChevronRight class="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+              </div>
+              <span v-else class="text-[10px] px-2 py-1 bg-amber-500/20 text-amber-400 rounded-full flex-shrink-0">
+                Coming Soon
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -368,6 +472,8 @@
     Activity,
     Loader2,
     Check,
+    X,
+    ChevronRight,
   } from 'lucide-vue-next';
 
   const router = useRouter();
@@ -389,6 +495,9 @@
   const creatorToDownload = ref<CreatorProfileWithLinks | null>(null);
   const showMonitoringModeDialog = ref(false);
   const creatorToMonitor = ref<CreatorProfileWithLinks | null>(null);
+  const showPlatformSelectDialog = ref(false);
+  const platformSelectMode = ref<'record' | 'detect'>('record');
+  const selectedPlatformLinkIndex = ref(0);
 
   // Load creators on mount
   onMounted(async () => {
@@ -572,77 +681,104 @@
   }
 
   // Monitoring controls
-  async function startCreatorMonitoringDirect(creator: CreatorProfileWithLinks, detectClips: boolean) {
+  function startCreatorMonitoringDirect(creator: CreatorProfileWithLinks, detectClips: boolean) {
     creatorToMonitor.value = creator;
-    await startMonitoringWithMode(detectClips);
+    platformSelectMode.value = detectClips ? 'detect' : 'record';
+
+    // Find monitorable links (currently only PumpFun)
+    const monitorableLinks = creator.platform_links.filter((l) => l.platform === 'pumpfun');
+
+    if (monitorableLinks.length === 0) {
+      showError('No Supported Platforms', 'Live monitoring is currently only available for PumpFun streams');
+      creatorToMonitor.value = null;
+      return;
+    }
+
+    // If multiple platforms configured, show selection dialog (for future integration)
+    if (creator.platform_links.length > 1) {
+      // Default to first monitorable platform
+      selectedPlatformLinkIndex.value = creator.platform_links.findIndex((l) => l.id === monitorableLinks[0].id);
+      showPlatformSelectDialog.value = true;
+    } else {
+      // Only one platform, start directly
+      selectedPlatformLinkIndex.value = 0;
+      startMonitoringSelectedPlatform();
+    }
   }
 
-  async function startMonitoringWithMode(detectClips: boolean) {
-    showMonitoringModeDialog.value = false;
+  function selectPlatformForMonitoring(index: number) {
+    selectedPlatformLinkIndex.value = index;
+    showPlatformSelectDialog.value = false;
+    startMonitoringSelectedPlatform();
+  }
 
+  async function startMonitoringSelectedPlatform() {
     if (!creatorToMonitor.value) return;
 
     const creator = creatorToMonitor.value;
+    const link = creator.platform_links[selectedPlatformLinkIndex.value];
+    const detectClips = platformSelectMode.value === 'detect';
+
     creatorToMonitor.value = null;
 
-    // Find PumpFun links that can be monitored
-    const pumpfunLinks = creator.platform_links.filter((l) => l.platform === 'pumpfun');
-
-    if (pumpfunLinks.length === 0) {
-      showError('No PumpFun Links', 'Live monitoring is currently only available for PumpFun streams');
+    if (!link || link.platform !== 'pumpfun') {
+      showError('Invalid Platform', 'Selected platform does not support live monitoring');
       return;
     }
 
     try {
-      // For each PumpFun link, ensure we have a monitored streamer and start monitoring
-      for (const link of pumpfunLinks) {
-        let streamerId = link.monitored_streamer_id;
+      let streamerId = link.monitored_streamer_id;
 
-        // If no monitored streamer linked, create one
-        if (!streamerId) {
-          const { createMonitoredStreamer, updatePlatformLink } = await import('@/services/database');
-          streamerId = await createMonitoredStreamer(
-            link.platform_id,
-            link.display_name || creator.name,
-            link.profile_image_url || undefined
-          );
-          // Link the monitored streamer to this platform link
-          await updatePlatformLink(link.id, { monitored_streamer_id: streamerId });
-          // Update local state
-          link.monitored_streamer_id = streamerId;
-        }
-
-        // Get the monitored streamer record
-        const { getMonitoredStreamer } = await import('@/services/database');
-        const streamer = await getMonitoredStreamer(streamerId);
-
-        if (streamer) {
-          await startMonitoring(
-            [
-              {
-                id: streamer.id,
-                mintId: streamer.mint_id,
-                displayName: streamer.display_name,
-                platform: 'PumpFun',
-                lastCheckTimestamp: streamer.last_check_timestamp,
-                isCurrentlyLive: Boolean(streamer.is_currently_live),
-                currentSessionId: streamer.current_session_id,
-                selected: false,
-                isDetecting: false,
-                profileImageUrl: streamer.profile_image_url || undefined,
-                streamThumbnailUrl: streamer.stream_thumbnail_url || undefined,
-              },
-            ],
-            { detectClips }
-          );
-        }
+      // If no monitored streamer linked, create one
+      if (!streamerId) {
+        const { createMonitoredStreamer, updatePlatformLink } = await import('@/services/database');
+        streamerId = await createMonitoredStreamer(
+          link.platform_id,
+          link.display_name || creator.name,
+          link.profile_image_url || undefined
+        );
+        // Link the monitored streamer to this platform link
+        await updatePlatformLink(link.id, { monitored_streamer_id: streamerId });
+        // Update local state
+        link.monitored_streamer_id = streamerId;
       }
 
-      success('Monitoring Started', `Now monitoring "${creator.name}"`);
+      // Get the monitored streamer record
+      const { getMonitoredStreamer } = await import('@/services/database');
+      const streamer = await getMonitoredStreamer(streamerId);
+
+      if (streamer) {
+        await startMonitoring(
+          [
+            {
+              id: streamer.id,
+              mintId: streamer.mint_id,
+              displayName: streamer.display_name,
+              platform: 'PumpFun',
+              lastCheckTimestamp: streamer.last_check_timestamp,
+              isCurrentlyLive: Boolean(streamer.is_currently_live),
+              currentSessionId: streamer.current_session_id,
+              selected: false,
+              isDetecting: false,
+              profileImageUrl: streamer.profile_image_url || undefined,
+              streamThumbnailUrl: streamer.stream_thumbnail_url || undefined,
+            },
+          ],
+          { detectClips }
+        );
+      }
+
+      success('Monitoring Started', `Now monitoring "${creator.name}" on ${link.display_name || link.platform_id}`);
     } catch (err) {
       console.error('Failed to start monitoring:', err);
       showError('Monitoring Failed', 'Failed to start monitoring');
     }
+  }
+
+  async function startMonitoringWithMode(detectClips: boolean) {
+    showMonitoringModeDialog.value = false;
+    platformSelectMode.value = detectClips ? 'detect' : 'record';
+    startMonitoringSelectedPlatform();
   }
 
   async function stopCreatorMonitoring(creator: CreatorProfileWithLinks) {

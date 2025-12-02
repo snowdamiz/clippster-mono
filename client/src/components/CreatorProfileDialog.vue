@@ -209,7 +209,7 @@
           </div>
 
           <!-- Assets Section -->
-          <div class="space-y-4">
+          <div class="space-y-4" @click.stop="openAssetDropdown = null">
             <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Default Assets</h3>
             <p class="text-xs text-muted-foreground -mt-2">
               Configure default intro, outro, and watermark for this creator's content.
@@ -220,15 +220,60 @@
               <div>
                 <label class="block text-sm font-medium mb-2">Intro</label>
                 <div class="flex gap-2">
-                  <select
-                    v-model="form.introId"
-                    class="flex-1 bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  >
-                    <option :value="null">No intro</option>
-                    <option v-for="intro in intros" :key="intro.id" :value="intro.id">
-                      {{ intro.name }}
-                    </option>
-                  </select>
+                  <div class="relative flex-1">
+                    <button
+                      type="button"
+                      @click.stop="toggleAssetDropdown('intro')"
+                      class="w-full flex items-center gap-2 px-3 py-2 bg-muted border border-border rounded-md text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                    >
+                      <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-blue-500">
+                        <Play class="w-3.5 h-3.5 text-white" />
+                      </div>
+                      <span class="text-sm font-medium flex-1 text-left truncate">
+                        {{ getSelectedIntroName() }}
+                      </span>
+                      <ChevronDown
+                        class="w-3.5 h-3.5 text-muted-foreground transition-transform flex-shrink-0"
+                        :class="{ 'rotate-180': openAssetDropdown === 'intro' }"
+                      />
+                    </button>
+
+                    <!-- Intro Dropdown -->
+                    <div
+                      v-if="openAssetDropdown === 'intro'"
+                      class="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-50 overflow-hidden"
+                      @click.stop
+                    >
+                      <div class="p-1 max-h-48 overflow-y-auto custom-scrollbar">
+                        <button
+                          type="button"
+                          @click="selectIntro(null)"
+                          class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-muted/80 cursor-pointer"
+                          :class="{ 'bg-muted': form.introId === null }"
+                        >
+                          <div
+                            class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-muted-foreground/20"
+                          >
+                            <X class="w-3.5 h-3.5 text-muted-foreground" />
+                          </div>
+                          <span class="text-sm text-muted-foreground">No intro</span>
+                        </button>
+                        <button
+                          v-for="intro in intros"
+                          :key="intro.id"
+                          type="button"
+                          @click="selectIntro(intro.id)"
+                          class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-muted/80 cursor-pointer"
+                          :class="{ 'bg-muted': form.introId === intro.id }"
+                        >
+                          <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-blue-500">
+                            <Play class="w-3.5 h-3.5 text-white" />
+                          </div>
+                          <span class="text-sm text-foreground truncate">{{ intro.name }}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                   <Button variant="outline" size="sm" @click="handleAssetUpload('intro')" :disabled="uploading">
                     <Upload class="w-4 h-4" />
                   </Button>
@@ -239,15 +284,60 @@
               <div>
                 <label class="block text-sm font-medium mb-2">Outro</label>
                 <div class="flex gap-2">
-                  <select
-                    v-model="form.outroId"
-                    class="flex-1 bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  >
-                    <option :value="null">No outro</option>
-                    <option v-for="outro in outros" :key="outro.id" :value="outro.id">
-                      {{ outro.name }}
-                    </option>
-                  </select>
+                  <div class="relative flex-1">
+                    <button
+                      type="button"
+                      @click.stop="toggleAssetDropdown('outro')"
+                      class="w-full flex items-center gap-2 px-3 py-2 bg-muted border border-border rounded-md text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                    >
+                      <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-purple-500">
+                        <SkipForward class="w-3.5 h-3.5 text-white" />
+                      </div>
+                      <span class="text-sm font-medium flex-1 text-left truncate">
+                        {{ getSelectedOutroName() }}
+                      </span>
+                      <ChevronDown
+                        class="w-3.5 h-3.5 text-muted-foreground transition-transform flex-shrink-0"
+                        :class="{ 'rotate-180': openAssetDropdown === 'outro' }"
+                      />
+                    </button>
+
+                    <!-- Outro Dropdown -->
+                    <div
+                      v-if="openAssetDropdown === 'outro'"
+                      class="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-50 overflow-hidden"
+                      @click.stop
+                    >
+                      <div class="p-1 max-h-48 overflow-y-auto custom-scrollbar">
+                        <button
+                          type="button"
+                          @click="selectOutro(null)"
+                          class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-muted/80 cursor-pointer"
+                          :class="{ 'bg-muted': form.outroId === null }"
+                        >
+                          <div
+                            class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-muted-foreground/20"
+                          >
+                            <X class="w-3.5 h-3.5 text-muted-foreground" />
+                          </div>
+                          <span class="text-sm text-muted-foreground">No outro</span>
+                        </button>
+                        <button
+                          v-for="outro in outros"
+                          :key="outro.id"
+                          type="button"
+                          @click="selectOutro(outro.id)"
+                          class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-muted/80 cursor-pointer"
+                          :class="{ 'bg-muted': form.outroId === outro.id }"
+                        >
+                          <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-purple-500">
+                            <SkipForward class="w-3.5 h-3.5 text-white" />
+                          </div>
+                          <span class="text-sm text-foreground truncate">{{ outro.name }}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                   <Button variant="outline" size="sm" @click="handleAssetUpload('outro')" :disabled="uploading">
                     <Upload class="w-4 h-4" />
                   </Button>
@@ -258,15 +348,60 @@
               <div>
                 <label class="block text-sm font-medium mb-2">Watermark</label>
                 <div class="flex gap-2">
-                  <select
-                    v-model="form.watermarkId"
-                    class="flex-1 bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  >
-                    <option :value="null">No watermark</option>
-                    <option v-for="wm in watermarks" :key="wm.id" :value="wm.id">
-                      {{ wm.name }}
-                    </option>
-                  </select>
+                  <div class="relative flex-1">
+                    <button
+                      type="button"
+                      @click.stop="toggleAssetDropdown('watermark')"
+                      class="w-full flex items-center gap-2 px-3 py-2 bg-muted border border-border rounded-md text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                    >
+                      <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-amber-500">
+                        <ImageIcon class="w-3.5 h-3.5 text-white" />
+                      </div>
+                      <span class="text-sm font-medium flex-1 text-left truncate">
+                        {{ getSelectedWatermarkName() }}
+                      </span>
+                      <ChevronDown
+                        class="w-3.5 h-3.5 text-muted-foreground transition-transform flex-shrink-0"
+                        :class="{ 'rotate-180': openAssetDropdown === 'watermark' }"
+                      />
+                    </button>
+
+                    <!-- Watermark Dropdown -->
+                    <div
+                      v-if="openAssetDropdown === 'watermark'"
+                      class="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-50 overflow-hidden"
+                      @click.stop
+                    >
+                      <div class="p-1 max-h-48 overflow-y-auto custom-scrollbar">
+                        <button
+                          type="button"
+                          @click="selectWatermark(null)"
+                          class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-muted/80 cursor-pointer"
+                          :class="{ 'bg-muted': form.watermarkId === null }"
+                        >
+                          <div
+                            class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-muted-foreground/20"
+                          >
+                            <X class="w-3.5 h-3.5 text-muted-foreground" />
+                          </div>
+                          <span class="text-sm text-muted-foreground">No watermark</span>
+                        </button>
+                        <button
+                          v-for="wm in watermarks"
+                          :key="wm.id"
+                          type="button"
+                          @click="selectWatermark(wm.id)"
+                          class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-muted/80 cursor-pointer"
+                          :class="{ 'bg-muted': form.watermarkId === wm.id }"
+                        >
+                          <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-amber-500">
+                            <ImageIcon class="w-3.5 h-3.5 text-white" />
+                          </div>
+                          <span class="text-sm text-foreground truncate">{{ wm.name }}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                   <Button variant="outline" size="sm" @click="handleAssetUpload('watermark')" :disabled="uploading">
                     <Upload class="w-4 h-4" />
                   </Button>
@@ -279,9 +414,11 @@
         <!-- Footer -->
         <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-border bg-muted/30">
           <Button variant="outline" @click="$emit('close')" :disabled="saving">Cancel</Button>
-          <Button @click="saveCreator" :disabled="!isValid || saving">
-            <Loader2 v-if="saving" class="w-4 h-4 animate-spin mr-2" />
-            {{ saving ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Creator' }}
+          <Button @click="saveCreator" :disabled="!isValid || saving || fetchingProfileImage">
+            <Loader2 v-if="saving || fetchingProfileImage" class="w-4 h-4 animate-spin mr-2" />
+            {{
+              saving ? 'Saving...' : fetchingProfileImage ? 'Loading...' : isEditing ? 'Save Changes' : 'Create Creator'
+            }}
           </Button>
         </div>
       </div>
@@ -311,7 +448,18 @@
   import { useAssetOperations } from '@/composables/useAssetOperations';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
   import { type PlatformId } from '@/config/platforms';
-  import { X, Plus, Trash2, Upload, Loader2, ChevronDown, Users } from 'lucide-vue-next';
+  import {
+    X,
+    Plus,
+    Trash2,
+    Upload,
+    Loader2,
+    ChevronDown,
+    Users,
+    Play,
+    SkipForward,
+    Image as ImageIcon,
+  } from 'lucide-vue-next';
 
   interface PlatformLinkForm {
     id?: string;
@@ -340,10 +488,12 @@
   // State
   const saving = ref(false);
   const uploading = ref(false);
+  const fetchingProfileImage = ref(false);
   const intros = ref<IntroOutro[]>([]);
   const outros = ref<IntroOutro[]>([]);
   const watermarks = ref<WatermarkImage[]>([]);
   const openPlatformDropdown = ref<number | null>(null);
+  const openAssetDropdown = ref<'intro' | 'outro' | 'watermark' | null>(null);
 
   // Available platforms
   const availablePlatforms = [
@@ -368,7 +518,19 @@
     if (!form.value.name.trim()) return false;
     // At least one platform link with a platform ID
     const validLinks = form.value.platformLinks.filter((l) => l.platformId.trim());
-    return validLinks.length > 0;
+    if (validLinks.length === 0) return false;
+    // Don't allow save while fetching profile image
+    if (fetchingProfileImage.value) return false;
+    // For new creators with PumpFun links, require at least one profile image to be loaded
+    if (!isEditing.value) {
+      const pumpfunLinks = validLinks.filter((l) => l.platform === 'pumpfun');
+      if (pumpfunLinks.length > 0) {
+        // Need at least one profile image from any link
+        const hasAnyProfileImage = form.value.platformLinks.some((l) => l.profileImageUrl);
+        if (!hasAnyProfileImage) return false;
+      }
+    }
+    return true;
   });
 
   // Watch for dialog open/close to reset form
@@ -466,10 +628,59 @@
     link.platform = platformId;
     openPlatformDropdown.value = null;
 
-    // If switching to PumpFun and we have a platform ID, fetch the profile image
+    // If switching to PumpFun and we have a platform ID, handle profile image
     if (platformId === 'pumpfun' && link.platformId.trim()) {
-      await extractPlatformId(link);
+      // Check if we already have a profile image from another link
+      const existingProfileImage = form.value.platformLinks.find(
+        (l) => l !== link && l.profileImageUrl
+      )?.profileImageUrl;
+
+      if (existingProfileImage) {
+        // Reuse existing profile image
+        link.profileImageUrl = existingProfileImage;
+      } else {
+        // Fetch the profile image
+        await extractPlatformId(link);
+      }
     }
+  }
+
+  // Asset dropdown helpers
+  function toggleAssetDropdown(type: 'intro' | 'outro' | 'watermark') {
+    openAssetDropdown.value = openAssetDropdown.value === type ? null : type;
+  }
+
+  function getSelectedIntroName(): string {
+    if (!form.value.introId) return 'No intro';
+    const intro = intros.value.find((i) => i.id === form.value.introId);
+    return intro?.name || 'No intro';
+  }
+
+  function getSelectedOutroName(): string {
+    if (!form.value.outroId) return 'No outro';
+    const outro = outros.value.find((o) => o.id === form.value.outroId);
+    return outro?.name || 'No outro';
+  }
+
+  function getSelectedWatermarkName(): string {
+    if (!form.value.watermarkId) return 'No watermark';
+    const wm = watermarks.value.find((w) => w.id === form.value.watermarkId);
+    return wm?.name || 'No watermark';
+  }
+
+  function selectIntro(id: string | null) {
+    form.value.introId = id;
+    openAssetDropdown.value = null;
+  }
+
+  function selectOutro(id: string | null) {
+    form.value.outroId = id;
+    openAssetDropdown.value = null;
+  }
+
+  function selectWatermark(id: string | null) {
+    form.value.watermarkId = id;
+    openAssetDropdown.value = null;
   }
 
   // Platform link management
@@ -505,7 +716,19 @@
       if (mintId) {
         link.platformId = mintId;
 
+        // Skip fetching if we already have a profile image from another link
+        const existingProfileImage = form.value.platformLinks.find(
+          (l) => l !== link && l.profileImageUrl
+        )?.profileImageUrl;
+
+        if (existingProfileImage) {
+          // Use the existing profile image from the first platform
+          link.profileImageUrl = existingProfileImage;
+          return;
+        }
+
         // Fetch profile image from DexScreener/Metaplex (same as LiveClip.vue)
+        fetchingProfileImage.value = true;
         try {
           let match = null;
 
@@ -533,6 +756,8 @@
           }
         } catch (e) {
           console.warn('Failed to fetch PumpFun metadata:', e);
+        } finally {
+          fetchingProfileImage.value = false;
         }
       }
     } else if (link.platform === 'kick') {
@@ -569,7 +794,10 @@
     try {
       const validLinks = form.value.platformLinks.filter((l) => l.platformId.trim());
 
-      // Normalize platform IDs and fetch profile images for all links
+      // Find the first existing profile image to reuse for all links
+      const firstProfileImage = validLinks.find((l) => l.profileImageUrl)?.profileImageUrl;
+
+      // Normalize platform IDs and handle profile images
       for (const link of validLinks) {
         // Always normalize the platform ID (URL -> ID extraction)
         if (link.platform === 'pumpfun') {
@@ -577,9 +805,13 @@
           if (mintId) {
             link.platformId = mintId;
           }
-          // Fetch profile image if missing
+          // Reuse first profile image or fetch if none exists
           if (!link.profileImageUrl) {
-            await extractPlatformId(link);
+            if (firstProfileImage) {
+              link.profileImageUrl = firstProfileImage;
+            } else {
+              await extractPlatformId(link);
+            }
           }
         } else if (link.platform === 'kick') {
           const slug = extractChannelSlug(link.platformId.trim());

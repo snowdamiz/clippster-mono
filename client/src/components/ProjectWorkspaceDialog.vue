@@ -185,13 +185,15 @@
 </style>
 
 <script setup lang="ts">
-  import { ref, watch, computed } from 'vue';
+  import { ref, watch, computed, nextTick } from 'vue';
   import {
     type Project,
     type ClipWithVersion,
+    type CreatorProfileWithLinks,
     getClipsWithVersionsByProjectId,
     deleteClip,
     getWatermarkImage,
+    getCreatorProfileByProjectId,
     type WatermarkImage,
   } from '@/services/database';
   import { X } from 'lucide-vue-next';
@@ -314,6 +316,9 @@
 
   // Current watermark image data (for VideoPlayer)
   const currentWatermarkData = ref<{ dataUrl: string; width?: number; height?: number } | null>(null);
+
+  // Creator profile associated with this project (for preconfiguring settings)
+  const creatorProfile = ref<CreatorProfileWithLinks | null>(null);
 
   // Use video player composable
   const projectRef = computed(() => props.project);
@@ -1016,6 +1021,45 @@
     }
   }
 
+  // Load creator profile and apply their default settings
+  async function loadCreatorProfileSettings(projectId: string) {
+    try {
+      const profile = await getCreatorProfileByProjectId(projectId);
+      creatorProfile.value = profile;
+
+      if (profile) {
+        console.log('[ProjectWorkspaceDialog] Found creator profile:', profile.name);
+
+        // Apply watermark settings from creator profile
+        if (profile.watermark_id) {
+          console.log('[ProjectWorkspaceDialog] Applying creator watermark:', profile.watermark_id);
+          const newSettings = {
+            ...watermarkSettings.value,
+            enabled: true,
+            watermarkId: profile.watermark_id,
+          };
+
+          // Wait for next tick to ensure MediaPanel ref is available
+          await nextTick();
+
+          // Update MediaPanel's internal state if ref is available
+          if (mediaPanelRef.value) {
+            mediaPanelRef.value.setWatermarkSettings(newSettings);
+          } else {
+            // Fallback: just update parent state directly
+            await onWatermarkSettingsChanged(newSettings);
+          }
+        }
+
+        // Note: intro_id and outro_id from the creator profile can be used
+        // when building/exporting clips in the future
+      }
+    } catch (error) {
+      console.error('[ProjectWorkspaceDialog] Failed to load creator profile:', error);
+      creatorProfile.value = null;
+    }
+  }
+
   // Function to handle clip playback
   function onPlayClip(clip: any) {
     // Clear all previous selection states when starting playback
@@ -1102,6 +1146,9 @@
         if (props.project) {
           await loadTimelineClips(props.project.id);
 
+          // Load creator profile and apply their default settings (watermark, etc.)
+          await loadCreatorProfileSettings(props.project.id);
+
           // Check if this project has active detection and restore state
           const detectionState = getDetectionState(props.project.id);
           if (detectionState && detectionState.isActive) {
@@ -1127,6 +1174,8 @@
         frontendError.value = '';
         // Reset backend progress tracking
         resetProgress();
+        // Clear creator profile
+        creatorProfile.value = null;
       }
     }
   );

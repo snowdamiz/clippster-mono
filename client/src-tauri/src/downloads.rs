@@ -372,16 +372,20 @@ pub async fn download_pumpfun_vod_segment(
             None
         };
 
-        // Get video dimensions and codec info
+        // Get video dimensions, codec info, and actual duration from file
         println!("[Rust] Getting detailed segment video info...");
         let video_info = get_video_info(&app_clone, &video_path).await.ok();
-        let (width, height, codec) = if let Some(ref info) = video_info {
-            println!("[Rust] Segment video info - width: {}, height: {}, codec: {}", info.width, info.height, info.codec);
-            (Some(info.width), Some(info.height), Some(info.codec.clone()))
+        let (width, height, codec, actual_duration) = if let Some(ref info) = video_info {
+            println!("[Rust] Segment video info - width: {}, height: {}, codec: {}, duration: {:?}", info.width, info.height, info.codec, info.duration);
+            (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
         } else {
             println!("[Rust] Could not get detailed segment video info");
-            (None, None, None)
+            (None, None, None, None)
         };
+
+        // Use actual duration from file if available, otherwise fall back to calculated segment duration
+        let final_duration = actual_duration.unwrap_or(segment_duration);
+        println!("[Rust] Final segment duration: {} (actual: {:?}, calculated: {})", final_duration, actual_duration, segment_duration);
 
         println!("[Rust] Segment download task completed successfully");
         Ok(DownloadResult {
@@ -389,7 +393,7 @@ pub async fn download_pumpfun_vod_segment(
             success: true,
             file_path: Some(video_path.to_string_lossy().to_string()),
             thumbnail_path: thumbnail_path_str,
-            duration: Some(segment_duration),
+            duration: Some(final_duration),
             width,
             height,
             codec,
@@ -821,16 +825,19 @@ pub async fn download_pumpfun_vod(
             None
         };
 
-        // Get video dimensions and codec info
+        // Get video dimensions, codec info, and actual duration from downloaded file
         println!("[Rust] Getting detailed video info...");
         let video_info = get_video_info(&app_clone, &video_path).await.ok();
-        let (width, height, codec) = if let Some(ref info) = video_info {
-            println!("[Rust] Video info - width: {}, height: {}, codec: {}", info.width, info.height, info.codec);
-            (Some(info.width), Some(info.height), Some(info.codec.clone()))
+        let (width, height, codec, actual_file_duration) = if let Some(ref info) = video_info {
+            println!("[Rust] Video info - width: {}, height: {}, codec: {}, duration: {:?}", info.width, info.height, info.codec, info.duration);
+            (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
         } else {
             println!("[Rust] Could not get detailed video info");
-            (None, None, None)
+            (None, None, None, None)
         };
+
+        // Prefer the actual file duration over the estimated duration from stream info
+        let final_duration = actual_file_duration.or(duration);
 
         println!("[Rust] Download task completed successfully");
         Ok(DownloadResult {
@@ -838,7 +845,7 @@ pub async fn download_pumpfun_vod(
             success: true,
             file_path: Some(video_path.to_string_lossy().to_string()),
             thumbnail_path: thumbnail_path_str,
-            duration,
+            duration: final_duration,
             width,
             height,
             codec,
@@ -1257,16 +1264,20 @@ pub async fn download_kick_vod_segment(
             None
         };
 
-        // Get video dimensions and codec info
+        // Get video dimensions, codec info, and actual duration from file
         println!("[Rust] Getting detailed segment video info...");
         let video_info = get_video_info(&app_clone, &video_path).await.ok();
-        let (width, height, codec) = if let Some(ref info) = video_info {
-            println!("[Rust] Segment video info - width: {}, height: {}, codec: {}", info.width, info.height, info.codec);
-            (Some(info.width), Some(info.height), Some(info.codec.clone()))
+        let (width, height, codec, actual_duration) = if let Some(ref info) = video_info {
+            println!("[Rust] Segment video info - width: {}, height: {}, codec: {}, duration: {:?}", info.width, info.height, info.codec, info.duration);
+            (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
         } else {
             println!("[Rust] Could not get detailed segment video info");
-            (None, None, None)
+            (None, None, None, None)
         };
+
+        // Use actual duration from file if available, otherwise fall back to calculated segment duration
+        let final_duration = actual_duration.unwrap_or(segment_duration);
+        println!("[Rust] Final segment duration: {} (actual: {:?}, calculated: {})", final_duration, actual_duration, segment_duration);
 
         println!("[Rust] Segment download task completed successfully");
         Ok(DownloadResult {
@@ -1274,7 +1285,7 @@ pub async fn download_kick_vod_segment(
             success: true,
             file_path: Some(video_path.to_string_lossy().to_string()),
             thumbnail_path: thumbnail_path_str,
-            duration: Some(segment_duration),
+            duration: Some(final_duration),
             width,
             height,
             codec,
@@ -1648,14 +1659,18 @@ pub async fn download_kick_vod(
             None
         };
 
-        // Get video dimensions and codec info
+        // Get video dimensions, codec info, and actual duration from downloaded file
         println!("[Rust] Getting detailed video info...");
         let video_info = get_video_info(&app_clone, &video_path).await.ok();
-        let (width, height, codec) = if let Some(ref info) = video_info {
-            (Some(info.width), Some(info.height), Some(info.codec.clone()))
+        let (width, height, codec, actual_file_duration) = if let Some(ref info) = video_info {
+            println!("[Rust] Video info - width: {}, height: {}, codec: {}, duration: {:?}", info.width, info.height, info.codec, info.duration);
+            (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
         } else {
-            (None, None, None)
+            (None, None, None, None)
         };
+
+        // Prefer the actual file duration over the estimated duration from stream info
+        let final_duration = actual_file_duration.or(duration);
 
         println!("[Rust] Download task completed successfully");
         Ok(DownloadResult {
@@ -1663,7 +1678,7 @@ pub async fn download_kick_vod(
             success: true,
             file_path: Some(video_path.to_string_lossy().to_string()),
             thumbnail_path: thumbnail_path_str,
-            duration,
+            duration: final_duration,
             width,
             height,
             codec,

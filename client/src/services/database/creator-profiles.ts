@@ -306,3 +306,73 @@ export async function getCreatorProfileByMonitoredStreamer(
 
   return await getCreatorProfile(links[0].creator_profile_id);
 }
+
+export async function getCreatorProfileByProjectId(
+  projectId: string
+): Promise<CreatorProfileWithLinks | null> {
+  const db = await getDatabase();
+
+  // Method 1: Find via livestream session (for live monitoring projects)
+  const sessions = await db.select<{ monitored_streamer_id: string }[]>(
+    'SELECT monitored_streamer_id FROM livestream_sessions WHERE project_id = ? ORDER BY created_at DESC LIMIT 1',
+    [projectId]
+  );
+
+  if (sessions.length > 0 && sessions[0].monitored_streamer_id) {
+    const profile = await getCreatorProfileByMonitoredStreamer(sessions[0].monitored_streamer_id);
+    if (profile) {
+      return profile;
+    }
+  }
+
+  // Method 2: Find via project platform + raw video source_mint_id (for VOD downloads)
+  // Get the project's platform
+  const projects = await db.select<{ platform: string | null }[]>(
+    'SELECT platform FROM projects WHERE id = ?',
+    [projectId]
+  );
+
+  if (projects.length === 0 || !projects[0].platform) {
+    return null;
+  }
+
+  const projectPlatform = projects[0].platform;
+
+  // Map project platform names to creator_platform_links platform values
+  const platformMap: Record<string, CreatorPlatformLink['platform']> = {
+    PumpFun: 'pumpfun',
+    Kick: 'kick',
+    Twitch: 'twitch',
+    Youtube: 'youtube',
+  };
+
+  const linkPlatform = platformMap[projectPlatform];
+  if (!linkPlatform) {
+    return null;
+  }
+
+  // Get the source_mint_id from raw videos in this project
+  const rawVideos = await db.select<{ source_mint_id: string | null }[]>(
+    'SELECT source_mint_id FROM raw_videos WHERE project_id = ? AND source_mint_id IS NOT NULL LIMIT 1',
+    [projectId]
+  );
+
+  if (rawVideos.length === 0 || !rawVideos[0].source_mint_id) {
+    return null;
+  }
+
+  const sourceMintId = rawVideos[0].source_mint_id;
+
+  // Find creator platform link by platform + platform_id
+  // Use case-insensitive comparison for Kick channel slugs (and other platforms just in case)
+  const links = await db.select<CreatorPlatformLink[]>(
+    'SELECT * FROM creator_platform_links WHERE platform = ? AND LOWER(platform_id) = LOWER(?)',
+    [linkPlatform, sourceMintId]
+  );
+
+  if (links.length === 0) {
+    return null;
+  }
+
+  return await getCreatorProfile(links[0].creator_profile_id);
+}

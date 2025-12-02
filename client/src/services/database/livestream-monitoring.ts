@@ -200,6 +200,17 @@ export async function getActiveLivestreamSessions(): Promise<LivestreamSessionRe
   );
 }
 
+export async function getLivestreamSessionByProjectId(
+  projectId: string
+): Promise<LivestreamSessionRecord | null> {
+  const db = await getDatabase();
+  const result = await db.select<LivestreamSessionRecord[]>(
+    'SELECT * FROM livestream_sessions WHERE project_id = ? ORDER BY created_at DESC LIMIT 1',
+    [projectId]
+  );
+  return result[0] || null;
+}
+
 export async function endLivestreamSession(
   sessionId: string,
   streamEndTime?: number

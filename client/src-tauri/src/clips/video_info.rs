@@ -141,7 +141,7 @@ fn parse_video_info_alternative(output: &str) -> Result<crate::ffmpeg_utils::Vid
     match (width, height, &codec) {
         (Some(w), Some(h), Some(c)) => {
             println!("[Rust] Parsed video info: {}x{}, codec: {}", w, h, c);
-            Ok(crate::ffmpeg_utils::VideoInfo { width: w, height: h, codec: c.clone() })
+            Ok(crate::ffmpeg_utils::VideoInfo { width: w, height: h, codec: c.clone(), duration: None })
         },
         _ => {
             println!("[Rust] Failed to parse - width: {:?}, height: {:?}, codec: {:?}", width, height, codec);

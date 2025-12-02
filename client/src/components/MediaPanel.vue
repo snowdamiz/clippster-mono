@@ -654,6 +654,10 @@
       clipsTabRef.value?.scrollClipIntoView(clipId);
     },
     getWatermarkSettings: () => watermarkSettings.value,
+    setWatermarkSettings: (settings: WatermarkSettings) => {
+      watermarkSettings.value = settings;
+      emit('watermarkSettingsChanged', settings);
+    },
     getWatermarkTabRef: () => watermarkTabRef.value,
   });
 </script>
