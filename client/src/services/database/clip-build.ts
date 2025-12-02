@@ -1,5 +1,5 @@
 import { getDatabase, timestamp, generateId } from './core';
-import type { Clip, ClipWithVersion } from './types';
+import type { Clip, ClipWithVersion, ClipBuild } from './types';
 
 // Update clip build status
 export async function updateClipBuildStatus(
@@ -190,7 +190,7 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
         };
       });
 
-    // Load segments for each clip
+    // Load segments and builds for each clip
     for (const clip of clipsWithVersion) {
       if (clip.current_version_id) {
         const segments = await db.select<any[]>(
@@ -214,6 +214,21 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
           transcript: seg.transcript,
           created_at: seg.created_at,
         }));
+      }
+
+      // Load builds for each clip
+      try {
+        const builds = await db.select<any[]>(
+          `SELECT * FROM clip_builds WHERE clip_id = ? ORDER BY build_number DESC`,
+          [clip.id]
+        );
+        clip.builds = builds.map((build: any) => ({
+          ...build,
+          include_subtitles: Boolean(build.include_subtitles),
+        }));
+      } catch {
+        // Table might not exist yet if migration hasn't run
+        clip.builds = [];
       }
     }
 
@@ -311,6 +326,277 @@ export async function cancelClipBuild(clipId: string): Promise<void> {
     console.log(`[Database] Cancelled build for clip ${clipId}`);
   } catch (error) {
     console.error('[Database] Failed to cancel clip build:', error);
+    throw error;
+  }
+}
+
+// ============================================================================
+// Multiple Builds Support
+// ============================================================================
+
+// Create a new clip build record
+export async function createClipBuild(
+  clipId: string,
+  settings: {
+    aspectRatios?: string[];
+    quality?: string;
+    frameRate?: number;
+    outputFormat?: string;
+    includeSubtitles?: boolean;
+  }
+): Promise<string> {
+  try {
+    const db = await getDatabase();
+    const buildId = generateId();
+    const now = timestamp();
+
+    // Get the next build number for this clip
+    const result = await db.select<{ max_build: number | null }[]>(
+      'SELECT MAX(build_number) as max_build FROM clip_builds WHERE clip_id = ?',
+      [clipId]
+    );
+    const nextBuildNumber = (result[0]?.max_build || 0) + 1;
+
+    await db.execute(
+      `INSERT INTO clip_builds (
+        id, clip_id, aspect_ratios, quality, frame_rate, output_format, 
+        include_subtitles, file_path, build_number, status, progress,
+        started_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, 'building', 0, ?, ?)`,
+      [
+        buildId,
+        clipId,
+        settings.aspectRatios ? JSON.stringify(settings.aspectRatios) : null,
+        settings.quality || null,
+        settings.frameRate || null,
+        settings.outputFormat || null,
+        settings.includeSubtitles ? 1 : 0,
+        nextBuildNumber,
+        now,
+        now,
+      ]
+    );
+
+    console.log(
+      `[Database] Created clip build ${buildId} for clip ${clipId} (build #${nextBuildNumber})`
+    );
+    return buildId;
+  } catch (error) {
+    console.error('[Database] Failed to create clip build:', error);
+    throw error;
+  }
+}
+
+// Update a clip build's status and data
+export async function updateClipBuild(
+  buildId: string,
+  updates: {
+    status?: 'building' | 'completed' | 'failed';
+    progress?: number;
+    filePath?: string;
+    thumbnailPath?: string;
+    fileSize?: number;
+    duration?: number;
+    errorMessage?: string;
+  }
+): Promise<void> {
+  try {
+    const db = await getDatabase();
+
+    const setClauses: string[] = [];
+    const params: any[] = [];
+
+    if (updates.status !== undefined) {
+      setClauses.push('status = ?');
+      params.push(updates.status);
+
+      if (updates.status === 'completed' || updates.status === 'failed') {
+        setClauses.push('completed_at = ?');
+        params.push(timestamp());
+      }
+    }
+
+    if (updates.progress !== undefined) {
+      setClauses.push('progress = ?');
+      params.push(updates.progress);
+    }
+
+    if (updates.filePath !== undefined) {
+      setClauses.push('file_path = ?');
+      params.push(updates.filePath);
+    }
+
+    if (updates.thumbnailPath !== undefined) {
+      setClauses.push('thumbnail_path = ?');
+      params.push(updates.thumbnailPath);
+    }
+
+    if (updates.fileSize !== undefined) {
+      setClauses.push('file_size = ?');
+      params.push(updates.fileSize);
+    }
+
+    if (updates.duration !== undefined) {
+      setClauses.push('duration = ?');
+      params.push(updates.duration);
+    }
+
+    if (updates.errorMessage !== undefined) {
+      setClauses.push('error_message = ?');
+      params.push(updates.errorMessage);
+    }
+
+    if (setClauses.length === 0) {
+      return;
+    }
+
+    params.push(buildId);
+
+    await db.execute(`UPDATE clip_builds SET ${setClauses.join(', ')} WHERE id = ?`, params);
+
+    console.log(`[Database] Updated clip build ${buildId}:`, updates);
+  } catch (error) {
+    console.error('[Database] Failed to update clip build:', error);
+    throw error;
+  }
+}
+
+// Get all builds for a clip
+export async function getClipBuilds(clipId: string): Promise<ClipBuild[]> {
+  try {
+    const db = await getDatabase();
+
+    const builds = await db.select<ClipBuild[]>(
+      `SELECT * FROM clip_builds 
+       WHERE clip_id = ? 
+       ORDER BY build_number DESC`,
+      [clipId]
+    );
+
+    return builds.map((build) => ({
+      ...build,
+      include_subtitles: Boolean(build.include_subtitles),
+    }));
+  } catch (error) {
+    console.error('[Database] Failed to get clip builds:', error);
+    throw error;
+  }
+}
+
+// Get a specific build by ID
+export async function getClipBuild(buildId: string): Promise<ClipBuild | null> {
+  try {
+    const db = await getDatabase();
+
+    const builds = await db.select<ClipBuild[]>('SELECT * FROM clip_builds WHERE id = ?', [
+      buildId,
+    ]);
+
+    if (builds.length === 0) {
+      return null;
+    }
+
+    return {
+      ...builds[0],
+      include_subtitles: Boolean(builds[0].include_subtitles),
+    };
+  } catch (error) {
+    console.error('[Database] Failed to get clip build:', error);
+    throw error;
+  }
+}
+
+// Delete a clip build
+export async function deleteClipBuild(buildId: string): Promise<void> {
+  try {
+    const db = await getDatabase();
+
+    await db.execute('DELETE FROM clip_builds WHERE id = ?', [buildId]);
+
+    console.log(`[Database] Deleted clip build ${buildId}`);
+  } catch (error) {
+    console.error('[Database] Failed to delete clip build:', error);
+    throw error;
+  }
+}
+
+// Get the latest completed build for a clip
+export async function getLatestClipBuild(clipId: string): Promise<ClipBuild | null> {
+  try {
+    const db = await getDatabase();
+
+    const builds = await db.select<ClipBuild[]>(
+      `SELECT * FROM clip_builds 
+       WHERE clip_id = ? AND status = 'completed'
+       ORDER BY build_number DESC 
+       LIMIT 1`,
+      [clipId]
+    );
+
+    if (builds.length === 0) {
+      return null;
+    }
+
+    return {
+      ...builds[0],
+      include_subtitles: Boolean(builds[0].include_subtitles),
+    };
+  } catch (error) {
+    console.error('[Database] Failed to get latest clip build:', error);
+    throw error;
+  }
+}
+
+// Check if clip has any completed builds
+export async function hasCompletedBuilds(clipId: string): Promise<boolean> {
+  try {
+    const db = await getDatabase();
+
+    const result = await db.select<{ count: number }[]>(
+      `SELECT COUNT(*) as count FROM clip_builds 
+       WHERE clip_id = ? AND status = 'completed'`,
+      [clipId]
+    );
+
+    return (result[0]?.count || 0) > 0;
+  } catch (error) {
+    console.error('[Database] Failed to check completed builds:', error);
+    throw error;
+  }
+}
+
+// Get all clips with their builds (for the global Clips page)
+export async function getAllClipsWithBuilds(): Promise<(Clip & { builds: ClipBuild[] })[]> {
+  try {
+    const db = await getDatabase();
+
+    // Get all clips
+    const clips = await db.select<Clip[]>('SELECT * FROM clips ORDER BY created_at DESC');
+
+    // Load builds for each clip
+    const clipsWithBuilds = await Promise.all(
+      clips.map(async (clip) => {
+        let builds: ClipBuild[] = [];
+        try {
+          const rawBuilds = await db.select<any[]>(
+            `SELECT * FROM clip_builds WHERE clip_id = ? ORDER BY build_number DESC`,
+            [clip.id]
+          );
+          builds = rawBuilds.map((build) => ({
+            ...build,
+            include_subtitles: Boolean(build.include_subtitles),
+          }));
+        } catch {
+          // Table might not exist yet
+          builds = [];
+        }
+        return { ...clip, builds };
+      })
+    );
+
+    return clipsWithBuilds;
+  } catch (error) {
+    console.error('[Database] Failed to get all clips with builds:', error);
     throw error;
   }
 }

@@ -258,6 +258,12 @@ pub fn run() {
                             sql: include_str!("../migrations/042_add_project_name_to_clips.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 43,
+                            description: "add_clip_builds_table",
+                            sql: include_str!("../migrations/043_add_clip_builds_table.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

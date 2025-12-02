@@ -236,6 +236,31 @@ export interface ClipSegment {
   created_at: number;
 }
 
+export interface ClipBuild {
+  id: string;
+  clip_id: string;
+  // Build settings used
+  aspect_ratios: string | null; // JSON array of aspect ratios
+  quality: string | null;
+  frame_rate: number | null;
+  output_format: string | null;
+  include_subtitles: boolean | number;
+  // Build output
+  file_path: string;
+  thumbnail_path: string | null;
+  file_size: number | null;
+  duration: number | null;
+  // Build metadata
+  build_number: number;
+  status: 'building' | 'completed' | 'failed';
+  error_message: string | null;
+  progress: number;
+  // Timestamps
+  started_at: number;
+  completed_at: number | null;
+  created_at: number;
+}
+
 export interface ClipWithVersion extends Clip {
   current_version_id: string | null;
   detection_session_id: string | null;
@@ -257,6 +282,8 @@ export interface ClipWithVersion extends Clip {
   current_version_created_at?: number;
   current_version?: ClipVersion;
   current_version_segments?: ClipSegment[];
+  // Multiple builds support
+  builds?: ClipBuild[];
 }
 
 export interface CustomSubtitlePreset {

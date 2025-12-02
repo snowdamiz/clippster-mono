@@ -145,6 +145,9 @@
     getAllPrompts,
     getClipsWithBuildStatus,
     updateClipBuildStatus,
+    createClipBuild,
+    updateClipBuild,
+    getClipBuilds,
     type ClipWithVersion,
     type ClipDetectionSession,
     type Prompt,
@@ -552,6 +555,7 @@
     if (success) {
       console.log(`[MediaPanel] Clip build SUCCEEDED: ${clip_id}`);
 
+      // Update clip status (legacy support)
       updateClipBuildStatus(clip_id, 'completed', {
         progress: 100,
         builtFilePath: output_path,
@@ -560,8 +564,41 @@
         builtFileSize: file_size,
         error: undefined,
       })
-        .then(() => {
+        .then(async () => {
           console.log(`[MediaPanel] Database updated successfully for clip: ${clip_id}`);
+
+          // Update the existing build record (created by ClipsTab before build started)
+          try {
+            const builds = await getClipBuilds(clip_id);
+            // Find the build with 'building' status (most recently created)
+            const buildingRecord = builds.find((b) => b.status === 'building');
+
+            if (buildingRecord) {
+              await updateClipBuild(buildingRecord.id, {
+                status: 'completed',
+                filePath: output_path,
+                thumbnailPath: thumbnail_path,
+                fileSize: file_size,
+                duration: duration,
+              });
+              console.log(`[MediaPanel] Updated build record ${buildingRecord.id} for clip: ${clip_id}`);
+            } else {
+              // Fallback: create a new build record if none found (for backwards compatibility)
+              const buildId = await createClipBuild(clip_id, {});
+              await updateClipBuild(buildId, {
+                status: 'completed',
+                filePath: output_path,
+                thumbnailPath: thumbnail_path,
+                fileSize: file_size,
+                duration: duration,
+              });
+              console.log(`[MediaPanel] Created fallback build record ${buildId} for clip: ${clip_id}`);
+            }
+          } catch (buildError) {
+            // Don't fail the whole operation if build record update fails
+            console.warn('[MediaPanel] Failed to update build record:', buildError);
+          }
+
           refreshClips();
         })
         .catch((dbError) => {

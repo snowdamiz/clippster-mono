@@ -129,6 +129,8 @@ pub async fn build_clip_internal_simple(
     frame_rate: u32,
     output_format: &str,
     run_number: Option<u32>,
+    build_number: Option<u32>,
+    _build_id: Option<String>,
     intro_path: Option<&str>,
     intro_duration: Option<f64>,
     outro_path: Option<&str>,
@@ -201,6 +203,9 @@ pub async fn build_clip_internal_simple(
     // Convert clip name to snake_case for the filename (e.g., "Epic Victory" -> "epic_victory")
     let snake_case_clip_name = clip_name_to_snake_case(clip_name);
     
+    // Get the build number for the filename (default to 1 if not provided)
+    let build_num = build_number.unwrap_or(1);
+    
     let build_tasks: Vec<_> = aspect_ratios.iter().enumerate().map(|(ratio_idx, aspect_ratio_str)| {
         let app = app.clone();
         let video_path = video_path.to_string();
@@ -220,6 +225,7 @@ pub async fn build_clip_internal_simple(
         let snake_case_name = snake_case_clip_name.clone();
         let watermark_settings = watermark_settings.clone();
         let cancel_rx = cancel_rx.clone();
+        let build_num = build_num;
         
         async move {
             // Check for cancellation at the start of each task
@@ -242,10 +248,10 @@ pub async fn build_clip_internal_simple(
             // Parse aspect ratio string (e.g., "16:9")
             let aspect_ratio = parse_aspect_ratio(&aspect_ratio_str)?;
             
-            // Create filename using the AI-generated clip name in snake_case
-            // e.g., "Epic Victory Trash Talk" with 16:9 -> "epic_victory_trash_talk_16-9.mp4"
+            // Create filename using the AI-generated clip name in snake_case with build number
+            // e.g., "Epic Victory Trash Talk" with 16:9, build 2 -> "epic_victory_trash_talk_16-9_2.mp4"
             let ratio_suffix = aspect_ratio_str.replace(":", "-");
-            let output_filename = format!("{}_{}.{}", snake_case_name, ratio_suffix, output_format);
+            let output_filename = format!("{}_{}_{}.{}", snake_case_name, ratio_suffix, build_num, output_format);
             let output_path = clip_base_dir.join(&output_filename);
 
             // Generate subtitle file if needed for this aspect ratio

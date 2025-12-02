@@ -43,6 +43,8 @@ pub async fn build_clip_from_segments(
     frame_rate: u32,
     output_format: String,
     run_number: Option<u32>,
+    build_number: Option<u32>,
+    build_id: Option<String>,
     intro_path: Option<String>,
     intro_duration: Option<f64>,
     outro_path: Option<String>,
@@ -63,6 +65,8 @@ pub async fn build_clip_from_segments(
     println!("[Rust]   frame_rate: {}", frame_rate);
     println!("[Rust]   output_format: {}", output_format);
     println!("[Rust]   run_number: {:?}", run_number);
+    println!("[Rust]   build_number: {:?}", build_number);
+    println!("[Rust]   build_id: {:?}", build_id);
     println!("[Rust]   intro_path: {:?}", intro_path);
     println!("[Rust]   outro_path: {:?}", outro_path);
     println!("[Rust]   watermark enabled: {}", watermark_settings.as_ref().map(|w| w.enabled).unwrap_or(false));
@@ -95,6 +99,7 @@ pub async fn build_clip_from_segments(
     let intro_path_clone = intro_path.clone();
     let outro_path_clone = outro_path.clone();
     let watermark_settings_clone = watermark_settings.clone();
+    let build_id_clone = build_id.clone();
 
     // Send initial progress
     let _ = app.emit("clip-build-progress", ClipBuildProgress {
@@ -126,6 +131,8 @@ pub async fn build_clip_from_segments(
             frame_rate,
             &output_format_clone,
             run_number,
+            build_number,
+            build_id_clone,
             intro_path_clone.as_deref(),
             intro_duration,
             outro_path_clone.as_deref(),

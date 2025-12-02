@@ -141,7 +141,7 @@
             :key="clip.id"
             :ref="(el) => setClipRef(el, clip.id)"
             :class="[
-              'group relative bg-card/50 backdrop-blur-sm border border-border/50 rounded-lg cursor-pointer transition-all duration-200 overflow-hidden',
+              'group relative bg-card/50 backdrop-blur-sm border border-border/50 rounded-lg cursor-pointer transition-all duration-200',
               // Playing clip gets green styling
               props.isPlayingSegments && props.playingClipId === clip.id
                 ? 'ring-1 ring-green-500/50 bg-green-500/[0.04] border-green-500/50 shadow-lg shadow-green-500/10'
@@ -165,7 +165,7 @@
             <!-- Left accent bar -->
             <div
               v-if="clip.run_number"
-              class="absolute left-0 top-0 bottom-0 w-1 transition-all duration-200"
+              class="absolute left-0 top-0 bottom-0 w-1 transition-all duration-200 rounded-l-lg"
               :style="{
                 backgroundColor: clip.session_run_color || '#8B5CF6',
                 opacity: props.isPlayingSegments && props.playingClipId === clip.id ? '1' : '0.6',
@@ -184,10 +184,15 @@
                   </h5>
                 </div>
 
-                <!-- Actions (visible on hover or if active) -->
+                <!-- Actions (visible on hover, or always visible if clip has been built) -->
                 <div
-                  class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex-shrink-0 -mr-1 -mt-1"
-                  :class="{ 'opacity-100': showBuildSettingsDialog && clipToBuild?.id === clip.id }"
+                  class="flex items-center gap-0.5 transition-opacity duration-200 flex-shrink-0 -mr-1 -mt-1"
+                  :class="[
+                    hasCompletedBuilds(clip) || clip.build_status === 'building'
+                      ? 'opacity-100'
+                      : 'opacity-0 group-hover:opacity-100',
+                    { 'opacity-100': showBuildSettingsDialog && clipToBuild?.id === clip.id },
+                  ]"
                 >
                   <button
                     class="p-1.5 hover:bg-blue-500/15 rounded-md transition-colors text-foreground/60 hover:text-blue-400"
@@ -196,23 +201,92 @@
                   >
                     <PlayIcon class="h-4 w-4" />
                   </button>
+
+                  <!-- Build button (always available for rebuilding) -->
                   <button
-                    v-if="!clip.build_status || clip.build_status === 'pending' || clip.build_status === 'failed'"
+                    v-if="clip.build_status !== 'building'"
                     class="p-1.5 hover:bg-green-500/15 rounded-md transition-colors text-foreground/60 hover:text-green-400"
                     title="Build clip"
                     @click.stop="onBuildClip(clip)"
                   >
                     <Hammer class="h-4 w-4" />
                   </button>
+
+                  <!-- Download dropdown (only shown when clip has completed builds) -->
+                  <div v-if="hasCompletedBuilds(clip)" class="relative">
+                    <button
+                      :ref="(el) => setDropdownButtonRef(el, clip.id)"
+                      class="p-1.5 hover:bg-green-500/15 rounded-md transition-colors text-green-500/80 hover:text-green-400 flex items-center gap-0.5"
+                      title="Download built clip"
+                      @click.stop="toggleDownloadDropdown(clip.id)"
+                    >
+                      <DownloadIcon class="h-4 w-4" />
+                      <ChevronDownIcon class="h-3 w-3" />
+                    </button>
+
+                    <!-- Dropdown menu with list of all builds - Teleported to body -->
+                    <Teleport to="body">
+                      <div
+                        v-if="openDownloadDropdownId === clip.id"
+                        class="fixed z-[9999] min-w-[240px] max-w-[320px] bg-popover border border-border rounded-md shadow-lg py-1 max-h-[300px] overflow-y-auto"
+                        :style="getDropdownPosition(clip.id)"
+                        @click.stop
+                      >
+                        <div
+                          class="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider border-b border-border/50 mb-1 flex items-center justify-between"
+                        >
+                          <span>Builds ({{ getCompletedBuilds(clip).length }})</span>
+                        </div>
+                        <!-- Build items from builds array -->
+                        <button
+                          v-for="build in getCompletedBuilds(clip)"
+                          :key="build.id"
+                          class="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted/50 flex items-center gap-3 border-b border-border/20 last:border-b-0"
+                          @click.stop="
+                            onSaveBuild(build);
+                            closeDownloadDropdown();
+                          "
+                        >
+                          <DownloadIcon class="h-4 w-4 text-green-500 flex-shrink-0" />
+                          <div class="flex-1 min-w-0">
+                            <div class="text-xs font-medium truncate flex items-center gap-1.5">
+                              <span class="text-muted-foreground/70">#{{ build.build_number }}</span>
+                              <span>{{ getBuildFileName(build.file_path) }}</span>
+                            </div>
+                            <div class="text-[10px] text-muted-foreground flex items-center gap-2 mt-0.5">
+                              <span v-if="build.completed_at">{{ formatBuildDate(build.completed_at) }}</span>
+                              <span v-if="build.file_size">{{ formatFileSize(build.file_size) }}</span>
+                              <span v-if="build.aspect_ratios" class="text-primary/70">
+                                {{ formatAspectRatios(build.aspect_ratios) }}
+                              </span>
+                            </div>
+                          </div>
+                        </button>
+                        <!-- Fallback for legacy builds (clip.built_file_path) -->
+                        <button
+                          v-if="getCompletedBuilds(clip).length === 0 && clip.built_file_path"
+                          class="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted/50 flex items-center gap-3"
+                          @click.stop="
+                            onSaveBuiltClip(clip);
+                            closeDownloadDropdown();
+                          "
+                        >
+                          <DownloadIcon class="h-4 w-4 text-green-500 flex-shrink-0" />
+                          <div class="flex-1 min-w-0">
+                            <div class="text-xs font-medium truncate">{{ getBuildFileName(clip.built_file_path) }}</div>
+                            <div class="text-[10px] text-muted-foreground flex items-center gap-2">
+                              <span v-if="clip.built_at">{{ formatBuildDate(clip.built_at) }}</span>
+                              <span v-if="clip.built_file_size">{{ formatFileSize(clip.built_file_size) }}</span>
+                            </div>
+                          </div>
+                        </button>
+                      </div>
+                    </Teleport>
+                  </div>
+
+                  <!-- Delete button (only for clips that haven't been built) -->
                   <button
-                    v-else-if="clip.build_status === 'completed' && clip.built_file_path"
-                    class="p-1.5 hover:bg-green-500/15 rounded-md transition-colors text-green-500/80 hover:text-green-400"
-                    title="Save clip to..."
-                    @click.stop="onSaveBuiltClip(clip)"
-                  >
-                    <DownloadIcon class="h-4 w-4" />
-                  </button>
-                  <button
+                    v-if="!hasCompletedBuilds(clip)"
                     class="p-1.5 hover:bg-red-500/15 rounded-md transition-colors text-foreground/60 hover:text-red-400"
                     title="Delete clip"
                     @click.stop="onDeleteClip(clip.id)"
@@ -289,9 +363,11 @@
                       <XIcon class="h-2.5 w-2.5" />
                     </button>
                   </span>
-                  <span v-else-if="clip.build_status === 'completed'" class="text-green-400 flex items-center gap-1">
+                  <span v-else-if="hasCompletedBuilds(clip)" class="text-green-400 flex items-center gap-1">
                     <CheckIcon class="h-2.5 w-2.5" />
-                    Built
+                    {{ getCompletedBuilds(clip).length || 1 }} Build{{
+                      (getCompletedBuilds(clip).length || 1) !== 1 ? 's' : ''
+                    }}
                   </span>
                 </div>
 
@@ -347,8 +423,8 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch } from 'vue';
-  import type { ClipWithVersion, Prompt } from '@/services/database';
+  import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+  import type { ClipWithVersion, ClipBuild, Prompt } from '@/services/database';
   import {
     PlayIcon,
     BrainIcon,
@@ -368,6 +444,7 @@
     Flame,
     XIcon,
     StopCircle,
+    ChevronDownIcon,
   } from 'lucide-vue-next';
   import ClipBuildSettingsDialog, { type BuildSettings } from './ClipBuildSettingsDialog.vue';
   import type { SubtitleSettings, WatermarkSettings } from '@/types';
@@ -427,6 +504,26 @@
   const clipElements = ref<Map<string, HTMLElement>>(new Map());
   const showBuildSettingsDialog = ref(false);
   const clipToBuild = ref<ClipWithVersion | null>(null);
+  const openDownloadDropdownId = ref<string | null>(null);
+  const dropdownButtonRefs = ref<Map<string, HTMLElement>>(new Map());
+
+  // Close dropdown when clicking outside
+  function handleClickOutside(event: MouseEvent) {
+    if (openDownloadDropdownId.value !== null) {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.relative')) {
+        openDownloadDropdownId.value = null;
+      }
+    }
+  }
+
+  onMounted(() => {
+    document.addEventListener('click', handleClickOutside);
+  });
+
+  onUnmounted(() => {
+    document.removeEventListener('click', handleClickOutside);
+  });
 
   // Sorted clips: by run_number descending (newest first), then by virality descending
   const sortedClips = computed(() => {
@@ -590,6 +687,55 @@
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
+  function getBuildFileName(filePath: string | null): string {
+    if (!filePath) return 'Built clip';
+    return filePath.split(/[/\\]/).pop() || 'Built clip';
+  }
+
+  function formatBuildDate(timestamp: number | null): string {
+    if (!timestamp) return '';
+    // Timestamps are stored in seconds, convert to milliseconds for Date
+    const date = new Date(timestamp * 1000);
+    return date.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  function formatFileSize(bytes: number | null): string {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  }
+
+  function formatAspectRatios(aspectRatiosJson: string | null): string {
+    if (!aspectRatiosJson) return '';
+    try {
+      const ratios = JSON.parse(aspectRatiosJson);
+      return Array.isArray(ratios) ? ratios.join(', ') : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function hasCompletedBuilds(clip: ClipWithVersion): boolean {
+    // Check for builds in the new builds array
+    if (clip.builds && clip.builds.some((b) => b.status === 'completed')) {
+      return true;
+    }
+    // Fallback to legacy built_file_path
+    return clip.build_status === 'completed' && !!clip.built_file_path;
+  }
+
+  function getCompletedBuilds(clip: ClipWithVersion): ClipBuild[] {
+    if (!clip.builds) return [];
+    return clip.builds.filter((b) => b.status === 'completed');
+  }
+
   function getLoadingMessage(): string {
     switch (props.generationStage) {
       case 'starting':
@@ -705,6 +851,38 @@
     }
   }
 
+  function setDropdownButtonRef(el: any, clipId: string) {
+    if (el && el instanceof HTMLElement) {
+      dropdownButtonRefs.value.set(clipId, el);
+    } else {
+      dropdownButtonRefs.value.delete(clipId);
+    }
+  }
+
+  function getDropdownPosition(clipId: string): Record<string, string> {
+    const button = dropdownButtonRefs.value.get(clipId);
+    if (!button) {
+      return { top: '0px', left: '0px' };
+    }
+
+    const rect = button.getBoundingClientRect();
+    const dropdownWidth = 260; // approximate width
+
+    // Position below the button, aligned to the right edge
+    return {
+      top: `${rect.bottom + 4}px`,
+      left: `${Math.max(8, rect.right - dropdownWidth)}px`,
+    };
+  }
+
+  function toggleDownloadDropdown(clipId: string) {
+    openDownloadDropdownId.value = openDownloadDropdownId.value === clipId ? null : clipId;
+  }
+
+  function closeDownloadDropdown() {
+    openDownloadDropdownId.value = null;
+  }
+
   function handleDetectClips() {
     emit('detectClips');
   }
@@ -810,10 +988,37 @@
     try {
       console.log('[ClipsTab] Starting clip build for:', clip.id, 'with settings:', settings);
 
-      const { updateClipBuildStatus, getRawVideosByProjectId, getWatermarkImage } = await import('@/services/database');
+      const { updateClipBuildStatus, getRawVideosByProjectId, getWatermarkImage, createClipBuild, getClipBuilds } =
+        await import('@/services/database');
 
       // Update database status to building
       await updateClipBuildStatus(clip.id, 'building', { progress: 0 });
+
+      // Create build record to get the build number
+      let buildNumber = 1;
+      try {
+        // Get existing builds to determine the next build number
+        const existingBuilds = await getClipBuilds(clip.id);
+        buildNumber = existingBuilds.length + 1;
+      } catch {
+        // Table might not exist yet
+        buildNumber = 1;
+      }
+
+      // Create the build record now (before starting the build)
+      let buildId: string | null = null;
+      try {
+        buildId = await createClipBuild(clip.id, {
+          aspectRatios: settings.aspectRatios,
+          quality: settings.quality,
+          frameRate: settings.frameRate,
+          outputFormat: settings.format,
+          includeSubtitles: settings.includeSubtitles,
+        });
+        console.log('[ClipsTab] Created build record:', buildId, 'with build number:', buildNumber);
+      } catch (err) {
+        console.warn('[ClipsTab] Could not create build record:', err);
+      }
 
       // Get the project video file path
       const rawVideos = await getRawVideosByProjectId(props.projectId);
@@ -856,7 +1061,7 @@
         }
       }
 
-      // Pass all build settings to the backend
+      // Pass all build settings to the backend (including build number for filename)
       await invoke('build_clip_from_segments', {
         projectId: props.projectId,
         clipId: clip.id,
@@ -874,6 +1079,8 @@
         frameRate: settings.frameRate,
         outputFormat: settings.format,
         runNumber: clip.run_number || null,
+        buildNumber: buildNumber,
+        buildId: buildId,
         introPath: settings.intro?.file_path || null,
         introDuration: settings.intro?.duration || null,
         outroPath: settings.outro?.file_path || null,
@@ -900,6 +1107,54 @@
 
       // Show error via event
       showError('Build Failed', `Failed to build clip: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async function onSaveBuild(build: ClipBuild) {
+    if (!build.file_path) {
+      console.error('[ClipsTab] No build file path available');
+      return;
+    }
+
+    try {
+      const { save } = await import('@tauri-apps/plugin-dialog');
+      const { invoke } = await import('@tauri-apps/api/core');
+
+      // Extract the filename from the source path
+      const sourcePath = build.file_path;
+      const fileName = sourcePath.split(/[/\\]/).pop() || 'clip.mp4';
+
+      // Open save dialog so user can choose where to save
+      const destinationPath = await save({
+        title: 'Save Clip As',
+        defaultPath: fileName,
+        filters: [
+          { name: 'Video Files', extensions: ['mp4', 'mov'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      });
+
+      // User cancelled the dialog
+      if (!destinationPath) {
+        console.log('[ClipsTab] Save dialog cancelled');
+        return;
+      }
+
+      // Copy the clip to the selected destination
+      await invoke('copy_clip_to_destination', {
+        sourcePath: sourcePath,
+        destinationPath: destinationPath,
+      });
+
+      console.log('[ClipsTab] Build saved to:', destinationPath);
+
+      // Show success message
+      const toastComposable = await import('@/composables/useToast');
+      const { success: showSuccessToast } = toastComposable.useToast();
+      showSuccessToast('Build Saved', `Build saved to ${destinationPath}`);
+    } catch (error) {
+      console.error('[ClipsTab] Failed to save build:', error);
+      showError('Failed to Save', 'Could not save the build file. Please try again.');
     }
   }
 

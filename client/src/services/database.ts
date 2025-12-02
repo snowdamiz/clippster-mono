@@ -16,6 +16,7 @@ export type {
   ClipDetectionSession,
   ClipVersion,
   ClipSegment,
+  ClipBuild,
   ClipWithVersion,
   FocalPoint,
   CustomSubtitlePreset,
@@ -76,6 +77,15 @@ export {
   getClipWithBuildStatus,
   getClipsCurrentlyBuilding,
   cancelClipBuild,
+  // Multiple builds support
+  createClipBuild,
+  updateClipBuild,
+  getClipBuilds,
+  getClipBuild,
+  deleteClipBuild,
+  getLatestClipBuild,
+  hasCompletedBuilds,
+  getAllClipsWithBuilds,
 } from './database/clip-build';
 
 // Re-export project functions

@@ -26,7 +26,7 @@
         <!-- Filter Toolbar -->
         <div
           class="mb-6 -mt-2 bg-card flex flex-col md:flex-row gap-4 items-center justify-between"
-          v-if="clips.length > 0"
+          v-if="displayableBuilds.length > 0"
         >
           <!-- Left: Search -->
           <div class="relative w-full md:w-72">
@@ -95,25 +95,27 @@
           </div>
         </div>
 
-        <!-- Clips Grid -->
-        <div v-if="filteredClips.length > 0" class="space-y-8">
-          <!-- List View -->
+        <!-- Builds Grid -->
+        <div v-if="filteredBuilds.length > 0" class="space-y-8">
+          <!-- List View - Shows individual builds as cards -->
           <div v-if="viewMode === 'list'" class="space-y-8">
-            <div v-for="group in groupedClips" :key="group.dateLabel" class="space-y-4">
+            <div v-for="group in groupedBuilds" :key="group.dateLabel" class="space-y-4">
               <!-- Date Header -->
               <h3 class="text-sm font-medium text-muted-foreground border-b border-border pb-2">
                 {{ group.dateLabel }}
               </h3>
 
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                <ClipCard
-                  v-for="clip in group.clips"
-                  :key="clip.id"
-                  :clip="clip"
-                  :thumbnail-url="getThumbnailUrl(clip)"
-                  :project-name="getClipProjectName(clip)"
-                  @play="playClip"
-                  @delete="confirmDelete"
+                <BuildCard
+                  v-for="item in group.builds"
+                  :key="item.id"
+                  :build="item.build"
+                  :clip-name="item.clipName"
+                  :thumbnail-url="item.thumbnailUrl"
+                  :project-name="item.projectName"
+                  @play="playBuild"
+                  @save="saveBuild"
+                  @delete="confirmDeleteBuild"
                 />
               </div>
             </div>
@@ -156,7 +158,7 @@
                     class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-blue-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm"
                   >
                     <FolderOpen class="w-3 h-3" />
-                    <span>{{ group.clips.length }} Clips</span>
+                    <span>{{ getFolderBuildsCount(group.clips) }} Builds</span>
                   </div>
 
                   <!-- Bottom Info -->
@@ -178,16 +180,16 @@
 
         <!-- No Results State -->
         <div
-          v-if="clips.length > 0 && filteredClips.length === 0"
+          v-if="displayableBuilds.length > 0 && filteredBuilds.length === 0"
           class="flex flex-col items-center justify-center py-16 text-center space-y-4"
         >
           <div class="bg-muted rounded-full p-4">
             <Search class="h-8 w-8 text-muted-foreground" />
           </div>
           <div class="space-y-1">
-            <h3 class="font-semibold text-lg">No clips found</h3>
+            <h3 class="font-semibold text-lg">No builds found</h3>
             <p class="text-muted-foreground text-sm max-w-sm">
-              We couldn't find any clips matching your search filters. Try adjusting your search query or filters.
+              We couldn't find any builds matching your search filters. Try adjusting your search query or filters.
             </p>
           </div>
           <button
@@ -203,9 +205,9 @@
 
         <!-- Empty State -->
         <EmptyState
-          v-if="filteredClips.length === 0 && clips.length === 0"
-          title="No clips yet"
-          description="Generate your first video clip from a project to see it here"
+          v-if="displayableBuilds.length === 0"
+          title="No builds yet"
+          description="Build your first video clip from a project to see it here"
         >
           <template #icon>
             <Video class="h-16 w-16 text-muted-foreground" />
@@ -216,11 +218,11 @@
     </PageLayout>
     <!-- Pagination Footer -->
     <PaginationFooter
-      v-if="!loading && filteredClips.length > 0 && viewMode === 'list'"
+      v-if="!loading && filteredBuilds.length > 0 && viewMode === 'list'"
       :current-page="currentPage"
       :total-pages="totalPages"
-      :total-items="filteredClips.length"
-      item-label="clip"
+      :total-items="filteredBuilds.length"
+      item-label="build"
       @go-to-page="goToPage"
       @previous="previousPage"
       @next="nextPage"
@@ -234,9 +236,9 @@
       <div
         class="bg-card rounded-lg w-full mx-4 border border-border flex flex-col overflow-hidden shadow-2xl transition-all duration-200 max-h-[80vh]"
         :class="{
-          'max-w-lg': paginatedFolderClips.length <= 1,
-          'max-w-3xl': paginatedFolderClips.length === 2,
-          'max-w-5xl': paginatedFolderClips.length >= 3,
+          'max-w-lg': paginatedFolderBuilds.length <= 1,
+          'max-w-3xl': paginatedFolderBuilds.length === 2,
+          'max-w-5xl': paginatedFolderBuilds.length >= 3,
         }"
       >
         <!-- Header -->
@@ -257,7 +259,7 @@
 
         <!-- Content -->
         <div class="flex-1 overflow-y-auto p-6 space-y-8">
-          <div v-for="group in groupedFolderClips" :key="group.dateLabel" class="space-y-4">
+          <div v-for="group in groupedFolderBuilds" :key="group.dateLabel" class="space-y-4">
             <!-- Date Header -->
             <h3 class="text-sm font-medium text-muted-foreground border-b border-border pb-2">
               {{ group.dateLabel }}
@@ -266,22 +268,24 @@
             <div
               class="grid gap-5"
               :class="{
-                'grid-cols-1': group.clips.length === 1 && groupedFolderClips.length === 1,
+                'grid-cols-1': group.builds.length === 1 && groupedFolderBuilds.length === 1,
                 'grid-cols-1 md:grid-cols-2':
-                  (group.clips.length === 2 && groupedFolderClips.length === 1) ||
-                  (paginatedFolderClips.length > 1 && paginatedFolderClips.length <= 4),
+                  (group.builds.length === 2 && groupedFolderBuilds.length === 1) ||
+                  (paginatedFolderBuilds.length > 1 && paginatedFolderBuilds.length <= 4),
                 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3':
-                  paginatedFolderClips.length >= 5 || groupedFolderClips.length > 1,
+                  paginatedFolderBuilds.length >= 5 || groupedFolderBuilds.length > 1,
               }"
             >
-              <ClipCard
-                v-for="clip in group.clips"
-                :key="clip.id"
-                :clip="clip"
-                :thumbnail-url="getThumbnailUrl(clip)"
+              <BuildCard
+                v-for="item in group.builds"
+                :key="item.id"
+                :build="item.build"
+                :clip-name="item.clipName"
+                :thumbnail-url="item.thumbnailUrl"
                 :project-name="null"
-                @play="playClip"
-                @delete="confirmDelete"
+                @play="playBuild"
+                @save="saveBuild"
+                @delete="confirmDeleteBuild"
               />
             </div>
           </div>
@@ -292,8 +296,8 @@
           <PaginationFooter
             :current-page="folderCurrentPage"
             :total-pages="folderTotalPages"
-            :total-items="folderProject.clips.length"
-            item-label="clip"
+            :total-items="folderBuilds.length"
+            item-label="build"
             mode="static"
             @go-to-page="(page) => (folderCurrentPage = page)"
             @previous="folderCurrentPage--"
@@ -305,16 +309,17 @@
 
     <!-- Video Player Dialog -->
     <VideoPlayerDialog :video="clipToPlay" :show-video-player="showVideoPlayer" @close="showVideoPlayer = false" />
-    <!-- Delete Confirmation Modal -->
+
+    <!-- Delete Build Confirmation Modal -->
     <ConfirmationModal
-      :show="showDeleteDialog"
-      title="Delete Clip"
-      :message="'Are you sure you want to delete'"
-      :item-name="clipToDelete?.name || 'this clip'"
-      suffix="?"
-      confirm-text="Delete"
-      @close="handleDeleteDialogClose"
-      @confirm="deleteClipConfirmed"
+      :show="showDeleteBuildDialog"
+      title="Delete Build"
+      :message="'Are you sure you want to delete build'"
+      :item-name="buildToDelete ? `#${buildToDelete.build_number}` : 'this build'"
+      suffix="? The video file will be permanently removed."
+      confirm-text="Delete Build"
+      @close="handleDeleteBuildDialogClose"
+      @confirm="deleteBuildConfirmed"
     />
   </div>
 </template>
@@ -323,17 +328,20 @@
   import { ref, onMounted, computed, watch } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
+  import { save } from '@tauri-apps/plugin-dialog';
   import { LayoutGrid, Folder, Video, Search, X, List, FolderOpen } from 'lucide-vue-next';
   import {
-    getAllClips,
-    deleteClip,
+    getAllClipsWithBuilds,
+    deleteClipBuild,
     getThumbnailByClipId,
     getProject,
     getRawVideosByProjectId,
     type Clip,
+    type ClipBuild,
     type Project,
     type RawVideo,
   } from '@/services/database';
+  import { useToast } from '@/composables/useToast';
   import { getStoragePath } from '@/services/storage';
   import { useFormatters } from '@/composables/useFormatters';
   import PageLayout from '@/components/PageLayout.vue';
@@ -342,25 +350,42 @@
   import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import PaginationFooter from '@/components/PaginationFooter.vue';
-  import ClipCard from '@/components/ClipCard.vue';
+  import BuildCard from '@/components/BuildCard.vue';
   import { Input } from '@/components/ui/input';
   import CustomDropdown from '@/components/CustomDropdown.vue';
 
-  const clips = ref<Clip[]>([]);
+  type ClipWithBuilds = Clip & { builds: ClipBuild[] };
+
+  // A displayable item is either a build (from clip_builds table) with clip context
+  interface DisplayableBuild {
+    id: string;
+    build: ClipBuild;
+    clip: ClipWithBuilds;
+    clipName: string;
+    projectName: string | null;
+    projectId: string | null;
+    thumbnailUrl: string | null;
+    createdAt: number; // For sorting - use build completion time
+  }
+
+  const clips = ref<ClipWithBuilds[]>([]);
   const loading = ref(true);
-  const showDeleteDialog = ref(false);
-  const clipToDelete = ref<Clip | null>(null);
   const showVideoPlayer = ref(false);
   const clipToPlay = ref<RawVideo | null>(null);
   const thumbnailCache = ref<Map<string, string>>(new Map());
   const rawVideoCache = ref<Map<string, (RawVideo & { thumbnail_path: string | null })[]>>(new Map());
   const projectCache = ref<Map<string, Project>>(new Map());
   const { getRelativeTime } = useFormatters();
+  const { success: showSuccessToast, error: showErrorToast } = useToast();
+
+  // Build deletion state
+  const showDeleteBuildDialog = ref(false);
+  const buildToDelete = ref<ClipBuild | null>(null);
 
   // View state
   const viewMode = ref<'folders' | 'list'>('folders');
   const showFolderDialog = ref(false);
-  const folderProject = ref<{ id: string; name: string; clips: Clip[] } | null>(null);
+  const folderProject = ref<{ id: string; name: string; clips: ClipWithBuilds[] } | null>(null);
   const folderCurrentPage = ref(1);
   const folderItemsPerPage = 12;
 
@@ -427,47 +452,77 @@
   const currentPage = ref(1);
   const clipsPerPage = 20;
 
-  // Computed property to check if any generated clips have actual files
+  // Computed property to check if any builds exist
   const hasAnyClipsWithFiles = computed(() => {
-    return filteredClips.value.some((clip) => clip.file_path && clip.file_path.trim() !== '');
+    return displayableBuilds.value.length > 0;
   });
 
-  // Filtered clips
-  const filteredClips = computed(() => {
-    // First, filter out detected-only clips - only show generated/processing clips
-    let result = clips.value.filter((c) => c.status !== 'detected');
+  // Transform clips into displayable builds (each build becomes its own card)
+  const displayableBuilds = computed((): DisplayableBuild[] => {
+    const builds: DisplayableBuild[] = [];
+
+    for (const clip of clips.value) {
+      // Get clip metadata
+      const clipName = clip.name || 'Untitled Clip';
+      const projectName = getClipProjectName(clip);
+      const thumbnailUrl = getThumbnailUrl(clip);
+
+      // If clip has builds, create a displayable item for each completed build
+      if (clip.builds && clip.builds.length > 0) {
+        for (const build of clip.builds) {
+          if (build.status === 'completed' && build.file_path) {
+            builds.push({
+              id: build.id,
+              build,
+              clip,
+              clipName,
+              projectName,
+              projectId: clip.project_id,
+              thumbnailUrl,
+              createdAt: build.completed_at || build.created_at,
+            });
+          }
+        }
+      }
+    }
+
+    return builds;
+  });
+
+  // Filtered builds (each build is shown as a separate card)
+  const filteredBuilds = computed((): DisplayableBuild[] => {
+    let result = [...displayableBuilds.value];
 
     // 1. Search Text
     if (searchQuery.value) {
       const query = searchQuery.value.toLowerCase();
       result = result.filter(
-        (c) =>
-          (c.name && c.name.toLowerCase().includes(query)) ||
-          (c.project_id && getProjectName(c.project_id)?.toLowerCase().includes(query)) ||
-          (c.project_name && c.project_name.toLowerCase().includes(query))
+        (item) =>
+          item.clipName.toLowerCase().includes(query) ||
+          (item.projectName && item.projectName.toLowerCase().includes(query))
       );
     }
 
-    // 2. Status Filter
-    if (statusFilter.value !== 'all') {
-      result = result.filter((c) => c.status === statusFilter.value);
+    // 2. Status Filter - builds are always "generated"
+    if (statusFilter.value !== 'all' && statusFilter.value !== 'generated') {
+      result = [];
     }
 
     // 3. Project Filter
     if (projectFilter.value !== 'all') {
-      result = result.filter((c) => {
+      result = result.filter((item) => {
         // Handle deleted project filter (starts with "deleted:")
         if (projectFilter.value.startsWith('deleted:')) {
-          const deletedProjectName = projectFilter.value.substring(8); // Remove "deleted:" prefix
-          return c.project_name === deletedProjectName;
+          const deletedProjectName = projectFilter.value.substring(8);
+          return item.clip.project_name === deletedProjectName;
         }
 
-        if (!c.project_id) return false;
-        // Match if clip project ID is the selected ID (direct match)
-        if (c.project_id === projectFilter.value) return true;
+        if (!item.projectId) return false;
+        // Match if project ID is the selected ID (direct match)
+        if (item.projectId === projectFilter.value) return true;
 
-        // Match if clip project's parent ID is the selected ID (child match)
-        const project = projectCache.value.get(c.project_id);
+        // Match if project's parent ID is the selected ID (child match)
+        const project = projectCache.value.get(item.projectId);
         return project?.parent_id === projectFilter.value;
       });
     }
@@ -479,14 +534,14 @@
       let valB: string | number = '';
 
       if (field === 'created') {
-        valA = a.created_at;
-        valB = b.created_at;
+        valA = a.createdAt;
+        valB = b.createdAt;
       } else if (field === 'name') {
-        valA = (a.name || '').toLowerCase();
-        valB = (b.name || '').toLowerCase();
+        valA = a.clipName.toLowerCase();
+        valB = b.clipName.toLowerCase();
       } else if (field === 'duration') {
-        valA = a.duration || 0;
-        valB = b.duration || 0;
+        valA = a.build.duration || 0;
+        valB = b.build.duration || 0;
       }
 
       if (valA < valB) return direction === 'asc' ? -1 : 1;
@@ -497,22 +552,60 @@
     return result;
   });
 
-  // Pagination computed properties
-  const totalPages = computed(() => Math.ceil(filteredClips.value.length / clipsPerPage));
+  // Keep filteredClips for backward compatibility with folder view
+  const filteredClips = computed(() => {
+    return clips.value.filter((c) => c.status !== 'detected');
+  });
 
-  const paginatedClips = computed(() => {
+  // Pagination computed properties
+  const totalPages = computed(() => Math.ceil(filteredBuilds.value.length / clipsPerPage));
+
+  const paginatedBuilds = computed(() => {
     const startIndex = (currentPage.value - 1) * clipsPerPage;
     const endIndex = startIndex + clipsPerPage;
-    return filteredClips.value.slice(startIndex, endIndex);
+    return filteredBuilds.value.slice(startIndex, endIndex);
   });
 
-  // Group by date logic
-  const groupedClips = computed(() => {
-    return groupClips(paginatedClips.value);
+  // Group builds by date
+  const groupedBuilds = computed(() => {
+    return groupBuilds(paginatedBuilds.value);
   });
 
-  function groupClips(clipsToGroup: Clip[]) {
+  function groupBuilds(buildsToGroup: DisplayableBuild[]) {
     // If we are sorting by name or duration, skip date grouping
+    if (sortBy.value.startsWith('name') || sortBy.value.startsWith('duration')) {
+      return [{ dateLabel: 'Builds', builds: buildsToGroup }];
+    }
+
+    const groups: { dateLabel: string; builds: DisplayableBuild[] }[] = [];
+    let currentLabel = '';
+    let currentBuilds: DisplayableBuild[] = [];
+
+    for (const item of buildsToGroup) {
+      const label = getDateLabel(item.createdAt);
+
+      if (label !== currentLabel) {
+        if (currentLabel) {
+          groups.push({ dateLabel: currentLabel, builds: currentBuilds });
+        }
+        currentLabel = label;
+        currentBuilds = [item];
+      } else {
+        currentBuilds.push(item);
+      }
+    }
+
+    if (currentLabel) {
+      groups.push({ dateLabel: currentLabel, builds: currentBuilds });
+    } else if (buildsToGroup.length > 0 && groups.length === 0) {
+      groups.push({ dateLabel: 'Builds', builds: buildsToGroup });
+    }
+
+    return groups;
+  }
+
+  // Keep groupClips for folder view compatibility
+  function groupClips(clipsToGroup: Clip[]) {
     if (sortBy.value.startsWith('name') || sortBy.value.startsWith('duration')) {
       return [{ dateLabel: 'Clips', clips: clipsToGroup }];
     }
@@ -547,9 +640,16 @@
   const groupedByProject = computed(() => {
     const groups = new Map<
       string,
-      { id: string; name: string; project: Project | null; clips: Clip[]; updatedAt: number; isDeleted?: boolean }
+      {
+        id: string;
+        name: string;
+        project: Project | null;
+        clips: ClipWithBuilds[];
+        updatedAt: number;
+        isDeleted?: boolean;
+      }
     >();
-    const uncategorized: Clip[] = [];
+    const uncategorized: ClipWithBuilds[] = [];
 
     // Use filteredClips so search/filter applies to folder contents/visibility
     for (const clip of filteredClips.value) {
@@ -667,16 +767,19 @@
   });
 
   const groupedFolderProjects = computed(() => {
+    // Filter out projects with no builds
+    const projectsWithBuilds = groupedByProject.value.filter((folder) => getFolderBuildsCount(folder.clips) > 0);
+
     // If sorting by name, return single group
     if (sortBy.value.startsWith('name')) {
-      return [{ dateLabel: 'Projects', folders: groupedByProject.value }];
+      return [{ dateLabel: 'Projects', folders: projectsWithBuilds }];
     }
 
     const groups: { dateLabel: string; folders: typeof groupedByProject.value }[] = [];
     let currentLabel = '';
     let currentFolders: typeof groupedByProject.value = [];
 
-    for (const folder of groupedByProject.value) {
+    for (const folder of projectsWithBuilds) {
       const label = getDateLabel(folder.updatedAt);
 
       if (label !== currentLabel) {
@@ -692,32 +795,72 @@
 
     if (currentLabel) {
       groups.push({ dateLabel: currentLabel, folders: currentFolders });
-    } else if (groupedByProject.value.length > 0 && groups.length === 0) {
-      groups.push({ dateLabel: 'Projects', folders: groupedByProject.value });
+    } else if (projectsWithBuilds.length > 0 && groups.length === 0) {
+      groups.push({ dateLabel: 'Projects', folders: projectsWithBuilds });
     }
 
     return groups;
   });
 
-  const paginatedFolderClips = computed(() => {
+  // Get builds for the currently open folder
+  const folderBuilds = computed((): DisplayableBuild[] => {
     if (!folderProject.value) return [];
-    const startIndex = (folderCurrentPage.value - 1) * folderItemsPerPage;
-    return folderProject.value.clips.slice(startIndex, startIndex + folderItemsPerPage);
+
+    const builds: DisplayableBuild[] = [];
+    for (const clip of folderProject.value.clips) {
+      const clipName = clip.name || 'Untitled Clip';
+      const thumbnailUrl = getThumbnailUrl(clip);
+
+      if (clip.builds && clip.builds.length > 0) {
+        for (const build of clip.builds) {
+          if (build.status === 'completed' && build.file_path) {
+            builds.push({
+              id: build.id,
+              build,
+              clip,
+              clipName,
+              projectName: folderProject.value.name,
+              projectId: clip.project_id,
+              thumbnailUrl,
+              createdAt: build.completed_at || build.created_at,
+            });
+          }
+        }
+      }
+    }
+
+    // Sort by creation date descending
+    return builds.sort((a, b) => b.createdAt - a.createdAt);
   });
 
-  const groupedFolderClips = computed(() => {
-    return groupClips(paginatedFolderClips.value);
+  const paginatedFolderBuilds = computed(() => {
+    const startIndex = (folderCurrentPage.value - 1) * folderItemsPerPage;
+    return folderBuilds.value.slice(startIndex, startIndex + folderItemsPerPage);
+  });
+
+  const groupedFolderBuilds = computed(() => {
+    return groupBuilds(paginatedFolderBuilds.value);
   });
 
   const folderTotalPages = computed(() => {
-    if (!folderProject.value) return 0;
-    return Math.ceil(folderProject.value.clips.length / folderItemsPerPage);
+    return Math.ceil(folderBuilds.value.length / folderItemsPerPage);
   });
 
-  function openFolder(group: { id: string; name: string; clips: Clip[] }) {
+  function openFolder(group: { id: string; name: string; clips: ClipWithBuilds[] }) {
     folderProject.value = group;
     folderCurrentPage.value = 1;
     showFolderDialog.value = true;
+  }
+
+  // Count total completed builds in a project folder
+  function getFolderBuildsCount(clips: ClipWithBuilds[]): number {
+    let count = 0;
+    for (const clip of clips) {
+      if (clip.builds) {
+        count += clip.builds.filter((b) => b.status === 'completed' && b.file_path).length;
+      }
+    }
+    return count;
   }
 
   function getDateLabel(timestamp: number): string {
@@ -754,16 +897,16 @@
     }
   }
 
-  // Reset to first page when clips change or filters change
-  watch([clips, searchQuery, sortBy, statusFilter, projectFilter], () => {
+  // Reset to first page when clips/builds change or filters change
+  watch([clips, displayableBuilds, searchQuery, sortBy, statusFilter, projectFilter], () => {
     currentPage.value = 1;
   });
 
   async function loadClips() {
     loading.value = true;
     try {
-      // Load all clips
-      clips.value = await getAllClips();
+      // Load all clips with their builds
+      clips.value = await getAllClipsWithBuilds();
 
       // Load thumbnails, project info, and raw videos for all clips
       for (const clip of clips.value) {
@@ -919,30 +1062,29 @@
     }
   }
 
-  async function playClip(clip: Clip) {
+  async function playBuild(build: ClipBuild) {
     try {
-      // Check if clip has a valid file path
-      if (!clip.file_path) {
+      if (!build.file_path) {
+        showErrorToast('Error', 'No video file available for this build');
         return;
       }
 
-      // Convert clip to RawVideo-like format for the video player
-      const clipAsVideo = {
-        id: clip.id,
-        project_id: clip.project_id,
-        file_path: clip.file_path,
-        original_filename: clip.name || 'Untitled Clip',
-        thumbnail_path: getThumbnailUrl(clip),
-        duration: clip.duration,
+      // Convert build to RawVideo-like format for the video player
+      const buildAsVideo = {
+        id: build.id,
+        project_id: build.clip_id,
+        file_path: build.file_path,
+        original_filename: `Build #${build.build_number}`,
+        thumbnail_path: build.thumbnail_path,
+        duration: build.duration,
         width: null,
         height: null,
         frame_rate: null,
         codec: null,
-        file_size: null,
+        file_size: build.file_size,
         original_project_id: null,
-        created_at: clip.created_at,
-        updated_at: clip.updated_at,
-        // Segment tracking fields (null for clips)
+        created_at: build.created_at,
+        updated_at: build.created_at,
         source_clip_id: null,
         source_mint_id: null,
         segment_number: null,
@@ -950,41 +1092,88 @@
         segment_start_time: null,
         segment_end_time: null,
       };
-      clipToPlay.value = clipAsVideo;
+      clipToPlay.value = buildAsVideo;
       showVideoPlayer.value = true;
     } catch (err) {
-      console.error('Failed to prepare clip:', err);
+      console.error('Failed to prepare build:', err);
+      showErrorToast('Error', 'Failed to play build');
     }
   }
 
-  async function confirmDelete(clip: Clip) {
-    clipToDelete.value = clip;
-    showDeleteDialog.value = true;
-  }
-
-  function handleDeleteDialogClose() {
-    showDeleteDialog.value = false;
-    clipToDelete.value = null;
-  }
-
-  async function deleteClipConfirmed() {
-    if (!clipToDelete.value) return;
+  // Build operations
+  async function saveBuild(build: ClipBuild) {
+    if (!build.file_path) {
+      showErrorToast('Error', 'No build file path available');
+      return;
+    }
 
     try {
-      await deleteClip(clipToDelete.value.id);
+      // Extract the filename from the source path
+      const sourcePath = build.file_path;
+      const fileName = sourcePath.split(/[/\\]/).pop() || 'clip.mp4';
 
-      // Remove from thumbnail cache if exists
-      if (clipToDelete.value.id && thumbnailCache.value.has(clipToDelete.value.id)) {
-        thumbnailCache.value.delete(clipToDelete.value.id);
+      // Open save dialog so user can choose where to save
+      const destinationPath = await save({
+        title: 'Save Build As',
+        defaultPath: fileName,
+        filters: [
+          { name: 'Video Files', extensions: ['mp4', 'mov'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      });
+
+      // User cancelled the dialog
+      if (!destinationPath) {
+        return;
+      }
+
+      // Copy the build to the selected destination
+      await invoke('copy_clip_to_destination', {
+        sourcePath: sourcePath,
+        destinationPath: destinationPath,
+      });
+
+      showSuccessToast('Build Saved', `Build saved to ${destinationPath}`);
+    } catch (error) {
+      console.error('Failed to save build:', error);
+      showErrorToast('Save Failed', 'Could not save the build file.');
+    }
+  }
+
+  function confirmDeleteBuild(build: ClipBuild) {
+    buildToDelete.value = build;
+    showDeleteBuildDialog.value = true;
+  }
+
+  function handleDeleteBuildDialogClose() {
+    showDeleteBuildDialog.value = false;
+    buildToDelete.value = null;
+  }
+
+  async function deleteBuildConfirmed() {
+    if (!buildToDelete.value) return;
+
+    try {
+      // Delete the build record from database
+      await deleteClipBuild(buildToDelete.value.id);
+
+      // Try to delete the actual file
+      try {
+        await invoke('delete_file', { path: buildToDelete.value.file_path });
+      } catch (fileError) {
+        console.warn('Could not delete build file:', fileError);
+        // Don't fail the whole operation if file deletion fails
       }
 
       await loadClips();
+      showSuccessToast('Build Deleted', 'The build has been deleted.');
     } catch (error) {
-      console.error('Failed to delete clip:', error);
+      console.error('Failed to delete build:', error);
+      showErrorToast('Delete Failed', 'Failed to delete the build.');
     }
 
-    showDeleteDialog.value = false;
-    clipToDelete.value = null;
+    showDeleteBuildDialog.value = false;
+    buildToDelete.value = null;
   }
 
   onMounted(() => {
