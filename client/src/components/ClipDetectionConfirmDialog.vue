@@ -14,8 +14,20 @@
           </button>
         </div>
 
-        <!-- Video Duration Info -->
-        <div v-if="videoDuration > 0" class="mb-4 p-3 bg-muted/30 rounded-md">
+        <!-- Multi-Segment Info (project-level detection) -->
+        <div v-if="segmentCount > 0" class="mb-4 p-3 bg-muted/30 rounded-md space-y-2">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-muted-foreground">Segments to Process:</span>
+            <span class="font-medium">{{ segmentCount }} segment{{ segmentCount !== 1 ? 's' : '' }}</span>
+          </div>
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-muted-foreground">Total Duration:</span>
+            <span class="font-medium">{{ formatDuration(effectiveDuration) }}</span>
+          </div>
+        </div>
+
+        <!-- Single Video Duration Info -->
+        <div v-else-if="videoDuration > 0" class="mb-4 p-3 bg-muted/30 rounded-md">
           <div class="flex items-center justify-between text-sm">
             <span class="text-muted-foreground">Video Duration:</span>
             <span class="font-medium">{{ formatDuration(videoDuration) }}</span>
@@ -118,7 +130,13 @@
     modelValue: boolean;
     videoDuration: number;
     isTranscribed?: boolean;
+    // Multi-segment mode props (for project-level detection)
+    segmentCount?: number;
+    totalDuration?: number;
   }>();
+
+  // Use totalDuration if provided (multi-segment mode), otherwise use videoDuration
+  const effectiveDuration = computed(() => props.totalDuration ?? props.videoDuration);
 
   const emit = defineEmits<{
     'update:modelValue': [value: boolean];
@@ -156,7 +174,7 @@
       return 'Loading credit information...';
     }
 
-    const hoursToCharge = props.videoDuration / 3600; // Convert seconds to hours
+    const hoursToCharge = effectiveDuration.value / 3600; // Convert seconds to hours
     // If already transcribed, charge 0.75 credits per hour, otherwise 1.0
     const rate = props.isTranscribed ? 0.75 : 1.0;
     const creditsToCharge = hoursToCharge * rate;
@@ -227,7 +245,7 @@
 
     // Check credits for non-admin users
     if (!isAdmin.value && hoursRemaining.value !== null && !creditError.value) {
-      const hoursToCharge = props.videoDuration / 3600;
+      const hoursToCharge = effectiveDuration.value / 3600;
       // If already transcribed, charge 0.75 credits per hour, otherwise 1.0
       const rate = props.isTranscribed ? 0.75 : 1.0;
       const creditsToCharge = hoursToCharge * rate;

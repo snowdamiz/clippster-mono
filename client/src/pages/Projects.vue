@@ -297,6 +297,15 @@
                 </button>
 
                 <button
+                  v-if="canDetectClips(project.id)"
+                  class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                  title="Detect Clips"
+                  @click.stop="startProjectDetection(project)"
+                >
+                  <Sparkles class="h-5 w-5" />
+                </button>
+
+                <button
                   class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
                   title="Edit"
                   @click.stop="editProject(project)"
@@ -364,6 +373,15 @@
     <ProjectDialog v-model="showDialog" :project="selectedProject" @submit="handleProjectSubmit" />
     <!-- Project Workspace Dialog -->
     <ProjectWorkspaceDialog v-model="showWorkspaceDialog" :project="workspaceProject" />
+    <!-- Project-Level Clip Detection Dialog -->
+    <ClipDetectionConfirmDialog
+      :model-value="showProjectDetectDialog"
+      :video-duration="0"
+      :segment-count="segmentsToDetect.length"
+      :total-duration="totalDetectionDuration"
+      @update:model-value="showProjectDetectDialog = $event"
+      @confirm="onProjectDetectClipsConfirmed"
+    />
     <!-- Folder Contents Dialog -->
     <div
       v-if="showFolderDialog && folderProject"
@@ -726,6 +744,7 @@
     Clock,
     Monitor,
     Check,
+    Sparkles,
   } from 'lucide-vue-next';
   import {
     getAllProjects,
@@ -754,6 +773,9 @@
   import { Input } from '@/components/ui/input';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import DownloadCard from '@/components/DownloadCard.vue';
+  import ClipDetectionConfirmDialog from '@/components/ClipDetectionConfirmDialog.vue';
+  import { useChunkedClipDetection } from '@/composables/useChunkedClipDetection';
+  import { useAuthStore } from '@/stores/auth';
 
   const projects = ref<Project[]>([]);
   const loading = ref(true);
@@ -790,6 +812,14 @@
   const showBulkDeleteDialog = ref(false);
   const selectedFolderChildren = ref<Set<string>>(new Set());
   const showBulkDeleteFolderChildrenDialog = ref(false);
+
+  // Project-level clip detection state
+  const showProjectDetectDialog = ref(false);
+  const projectToDetect = ref<Project | null>(null);
+  const segmentsToDetect = ref<Project[]>([]);
+  const totalDetectionDuration = ref(0);
+  const isDetectingProject = ref(false);
+  const authStore = useAuthStore();
 
   // Filter state
   const searchQuery = ref('');
@@ -1584,6 +1614,155 @@
       error('Failed to delete segments', 'An error occurred while deleting the segments.');
     } finally {
       showBulkDeleteFolderChildrenDialog.value = false;
+    }
+  }
+
+  // Project-level clip detection methods
+  function canDetectClips(projectId: string): boolean {
+    // Check if project has videos directly
+    const videos = projectVideos.value[projectId];
+    if (videos && videos.length > 0) {
+      return true;
+    }
+
+    // Check if any children have videos
+    const children = getFolderChildren(projectId);
+    for (const child of children) {
+      const childVideos = projectVideos.value[child.id];
+      if (childVideos && childVideos.length > 0) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  function getProjectTotalDuration(projectId: string): number {
+    let totalDuration = 0;
+
+    // Get duration from direct videos
+    const videos = projectVideos.value[projectId];
+    if (videos) {
+      totalDuration += videos.reduce((acc, v) => acc + (v.duration || 0), 0);
+    }
+
+    // Get duration from children
+    const children = getFolderChildren(projectId);
+    for (const child of children) {
+      const childVideos = projectVideos.value[child.id];
+      if (childVideos) {
+        totalDuration += childVideos.reduce((acc, v) => acc + (v.duration || 0), 0);
+      }
+    }
+
+    return totalDuration;
+  }
+
+  function startProjectDetection(project: Project) {
+    // Check if user is authenticated
+    if (!authStore.isAuthenticated) {
+      window.dispatchEvent(new CustomEvent('show-auth-modal'));
+      return;
+    }
+
+    // Gather segments to detect (children if they exist, otherwise the project itself)
+    const children = getFolderChildren(project.id);
+    if (children.length > 0) {
+      // Filter children that have videos
+      segmentsToDetect.value = children.filter((child) => {
+        const videos = projectVideos.value[child.id];
+        return videos && videos.length > 0;
+      });
+    } else {
+      // Single project (no children)
+      const videos = projectVideos.value[project.id];
+      if (videos && videos.length > 0) {
+        segmentsToDetect.value = [project];
+      } else {
+        segmentsToDetect.value = [];
+      }
+    }
+
+    if (segmentsToDetect.value.length === 0) {
+      error('No videos found', 'This project has no videos to detect clips from.');
+      return;
+    }
+
+    // Calculate total duration
+    totalDetectionDuration.value = segmentsToDetect.value.reduce((acc, segment) => {
+      const videos = projectVideos.value[segment.id];
+      return acc + (videos?.reduce((sum, v) => sum + (v.duration || 0), 0) || 0);
+    }, 0);
+
+    projectToDetect.value = project;
+    showProjectDetectDialog.value = true;
+  }
+
+  async function onProjectDetectClipsConfirmed(_promptId: string, promptContent: string) {
+    if (!projectToDetect.value || segmentsToDetect.value.length === 0) {
+      return;
+    }
+
+    const segments = [...segmentsToDetect.value];
+    const totalSegments = segments.length;
+    let successCount = 0;
+    let totalClipsFound = 0;
+
+    isDetectingProject.value = true;
+
+    try {
+      for (let i = 0; i < segments.length; i++) {
+        const segment = segments[i];
+
+        // Show progress toast
+        success('Detecting clips...', `Processing segment ${i + 1} of ${totalSegments}: ${segment.name}`, 3000);
+
+        try {
+          const { detectClipsWithChunking } = useChunkedClipDetection();
+          const result = await detectClipsWithChunking(segment.id, promptContent, {
+            chunkDurationMinutes: 15,
+            overlapSeconds: 30,
+            forceReprocess: false,
+          });
+
+          if (result.success) {
+            successCount++;
+            // Get clip count from the result or refresh clip counts
+            const clips = await getClipsWithVersionsByProjectId(segment.id);
+            totalClipsFound += clips.length;
+          }
+        } catch (err) {
+          console.error(`Failed to detect clips for segment ${segment.name}:`, err);
+          // Continue with remaining segments even if one fails
+        }
+      }
+
+      // Show summary toast
+      if (successCount === totalSegments) {
+        success(
+          'Detection Complete',
+          `Successfully processed ${successCount} segment${successCount !== 1 ? 's' : ''}. Found ${totalClipsFound} clips total.`
+        );
+      } else {
+        error(
+          'Detection Partially Complete',
+          `Processed ${successCount} of ${totalSegments} segments. Some segments failed.`
+        );
+      }
+
+      // Refresh projects to update clip counts
+      await loadProjects();
+
+      // Emit refresh event for clips page
+      const refreshEvent = new CustomEvent('refresh-clips-projects', {
+        detail: { projectId: projectToDetect.value.id },
+      });
+      document.dispatchEvent(refreshEvent);
+    } finally {
+      isDetectingProject.value = false;
+      projectToDetect.value = null;
+      segmentsToDetect.value = [];
+      totalDetectionDuration.value = 0;
     }
   }
 
