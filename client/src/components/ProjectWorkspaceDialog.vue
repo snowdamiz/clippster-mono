@@ -509,12 +509,10 @@
       console.error('[ProjectWorkspaceDialog] Failed to update backend clip generation state:', error);
     }
 
-    // Show toast
-    // Note: Credits may have been deducted for transcription if it started before cancellation.
-    // Cancellation stops further processing but may not refund already-deducted credits.
+    // Show toast - the cancel function handles server-side refund
     const toastComposable = await import('@/composables/useToast');
     const { success: showSuccessToast } = toastComposable.useToast();
-    showSuccessToast('Detection Cancelled', 'Clip detection was cancelled.');
+    showSuccessToast('Detection Cancelled', 'Clip detection was cancelled. Any charged credits have been refunded.');
   }
 
   async function onDetectClipsConfirmed(_promptId: string, promptContent: string) {

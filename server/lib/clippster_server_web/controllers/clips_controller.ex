@@ -47,17 +47,17 @@ defmodule ClippsterServerWeb.ClipsController do
         IO.puts("[ClipsController] Audio duration: #{Float.round(duration_hours, 3)} hours")
 
         # Bypass credit deduction for admin users
-        credits_deducted = if is_admin do
+        credit_result = if is_admin do
           IO.puts("[ClipsController] Admin user detected - bypassing credit charges")
-          0.0
+          {:ok, %{credits: 0.0, job_id: nil}}
         else
-          # Deduct credits before processing for regular users
-          case deduct_credits_for_processing(user_id, duration_hours, is_first_run) do
-            {:ok, credits} ->
-              credits
+          # Deduct credits and create job record for regular users
+          case deduct_credits_and_create_job(user_id, duration_hours, is_first_run, project_id: project_id) do
+            {:ok, result} ->
+              {:ok, result}
             {:error, :insufficient_credits, remaining, needed} ->
               IO.puts("[ClipsController] Insufficient credits: have #{Float.round(remaining, 3)}, need #{Float.round(needed, 3)}")
-              conn
+              {:halt, conn
               |> put_status(402)
               |> json(%{
                 success: false,
@@ -65,28 +65,26 @@ defmodule ClippsterServerWeb.ClipsController do
                 details: "You have #{Float.round(remaining, 3)} credits remaining, but #{Float.round(needed, 3)} credits are required for this operation.",
                 credits_required: needed,
                 credits_remaining: remaining
-              })
-              |> then(&{:halt, &1})
+              })}
 
             {:error, reason, details} ->
               IO.puts("[ClipsController] Credit deduction failed: #{inspect(reason)} - #{inspect(details)}")
-              conn
+              {:halt, conn
               |> put_status(500)
               |> json(%{
                 success: false,
                 error: "Credit deduction failed",
                 details: "Unable to process credits: #{inspect(details)}"
-              })
-              |> then(&{:halt, &1})
+              })}
           end
         end
 
         # Continue with processing if not halted
-        case credits_deducted do
+        case credit_result do
           {:halt, response} -> response
-          credits ->
-            IO.puts("[ClipsController] Processing with credits deducted: #{Float.round(credits, 3)}")
-            process_chunked_clip_detection(conn, project_id, user_prompt, chunks_metadata, processing_mode, user_id, credits, is_admin)
+          {:ok, %{credits: credits, job_id: job_id}} ->
+            IO.puts("[ClipsController] Processing with credits deducted: #{Float.round(credits, 3)}, job_id: #{inspect(job_id)}")
+            process_chunked_clip_detection(conn, project_id, user_prompt, chunks_metadata, processing_mode, user_id, credits, is_admin, job_id)
         end
 
       {:error, reason} ->
@@ -102,13 +100,16 @@ defmodule ClippsterServerWeb.ClipsController do
   end
 
   # Separate function to handle the actual chunked clip detection process
-  defp process_chunked_clip_detection(conn, project_id, user_prompt, chunks_metadata, processing_mode, user_id, credits_deducted, is_admin) do
+  defp process_chunked_clip_detection(conn, project_id, user_prompt, chunks_metadata, processing_mode, user_id, credits_deducted, is_admin, job_id) do
     operation = fn ->
       execute_chunked_clip_detection(project_id, user_prompt, chunks_metadata, processing_mode, user_id)
     end
 
     case retry_with_backoff(operation, 3, project_id) do
       {:ok, result_map} ->
+        # Mark job as completed
+        complete_job(job_id)
+
         # Get updated user balance after credit deduction (or show unlimited for admins)
         remaining_credits = if is_admin do
           %{
@@ -123,22 +124,26 @@ defmodule ClippsterServerWeb.ClipsController do
           }
         end
 
-        # Add credit info to result map
+        # Add credit info and job_id to result map
         final_result = result_map
         |> put_in([:processing_info, :credits_charged], credits_deducted)
         |> put_in([:processing_info, :remaining_credits], remaining_credits)
+        |> put_in([:processing_info, :job_id], job_id)
 
         json(conn, final_result)
 
       {:error, reason} ->
-        # Refund credits
-        refund_credits(user_id, credits_deducted, is_admin)
-
+        # Mark job as failed (but don't auto-refund - user must explicitly cancel)
         error_msg = case reason do
           %RuntimeError{message: msg} -> msg
           s when is_binary(s) -> s
           _ -> inspect(reason)
         end
+
+        fail_job(job_id, error_msg)
+
+        # Still refund credits on server errors (legacy behavior)
+        refund_credits(user_id, credits_deducted, is_admin)
 
         ProgressChannel.broadcast_progress(project_id, "error", 0, "Failed after retries: #{error_msg}. Credits have been refunded.")
 
@@ -148,6 +153,7 @@ defmodule ClippsterServerWeb.ClipsController do
           success: false,
           error: "Clip detection failed",
           details: error_msg,
+          job_id: job_id,
           creditsRefunded: true
         })
     end
@@ -307,33 +313,48 @@ defmodule ClippsterServerWeb.ClipsController do
           
           duration_hours = calculate_audio_duration_hours(params)
           
-          credits_deducted = if is_admin do
-            0.0
+          # Deduct credits and create job for tracking/refunds
+          credit_result = if is_admin do
+            {:ok, %{credits: 0.0, job_id: nil}}
           else
             case deduct_credits_for_transcription(user_id, duration_hours) do
-              {:ok, credits} -> credits
+              {:ok, credits} ->
+                # Create job record for refund tracking
+                case Credits.create_processing_job(user_id, credits, duration_hours, [
+                  project_id: project_id,
+                  job_type: "transcription"
+                ]) do
+                  {:ok, job} ->
+                    IO.puts("[ClipsController] Created transcription job #{job.id} for tracking (#{Float.round(credits, 3)} credits)")
+                    {:ok, %{credits: credits, job_id: job.id}}
+                  {:error, _} ->
+                    {:ok, %{credits: credits, job_id: nil}}
+                end
               {:error, :insufficient_credits, remaining, needed} ->
-                 conn
+                 {:halt, conn
                  |> put_status(402)
                  |> json(%{
                    success: false, 
                    error: "Insufficient credits",
                    details: "Need #{Float.round(needed, 3)} credits, have #{Float.round(remaining, 3)}"
-                 })
-                 |> then(&{:halt, &1})
+                 })}
               {:error, _reason, _} ->
-                 conn
+                 {:halt, conn
                  |> put_status(500)
-                 |> json(%{success: false, error: "Credit deduction failed"})
-                 |> then(&{:halt, &1})
+                 |> json(%{success: false, error: "Credit deduction failed"})}
             end
           end
 
-          case credits_deducted do
+          case credit_result do
             {:halt, response} -> response
-            credits ->
+            {:ok, %{credits: credits, job_id: job_id}} ->
+              IO.puts("[ClipsController] Processing transcription with credits: #{Float.round(credits, 3)}, job_id: #{inspect(job_id)}")
+              
               case WhisperAPI.transcribe(audio_upload) do
                 {:ok, response} ->
+                   # Mark job as completed
+                   complete_job(job_id)
+                   
                    duration = Map.get(response, "duration", 0)
                    AI.log_usage(%{
                       user_id: user_id,
@@ -343,12 +364,14 @@ defmodule ClippsterServerWeb.ClipsController do
                       duration_seconds: Decimal.new(to_string(duration)),
                       operation_type: "transcription_only"
                    })
-                   json(conn, %{success: true, transcript: response})
-      {:error, reason} ->
+                   json(conn, %{success: true, transcript: response, job_id: job_id})
+                {:error, reason} ->
+                   # Mark job as failed and refund
+                   fail_job(job_id, inspect(reason))
                    refund_credits(user_id, credits, is_admin)
                    conn
                    |> put_status(500)
-                   |> json(%{success: false, error: "Transcription failed: #{inspect(reason)}"})
+                   |> json(%{success: false, error: "Transcription failed: #{inspect(reason)}", job_id: job_id})
               end
           end
         else
@@ -380,17 +403,17 @@ defmodule ClippsterServerWeb.ClipsController do
         IO.puts("[ClipsController] Audio duration: #{Float.round(duration_hours, 3)} hours")
 
         # Bypass credit deduction for admin users
-        credits_deducted = if is_admin do
+        credit_result = if is_admin do
           IO.puts("[ClipsController] Admin user detected - bypassing credit charges")
-          0.0
+          {:ok, %{credits: 0.0, job_id: nil}}
         else
-          # Deduct credits before processing for regular users
-          case deduct_credits_for_processing(user_id, duration_hours, is_first_run) do
-            {:ok, credits} ->
-              credits
+          # Deduct credits and create job record for regular users
+          case deduct_credits_and_create_job(user_id, duration_hours, is_first_run, [project_id: project_id]) do
+            {:ok, result} ->
+              {:ok, result}
             {:error, :insufficient_credits, remaining, needed} ->
               IO.puts("[ClipsController] Insufficient credits: have #{Float.round(remaining, 3)}, need #{Float.round(needed, 3)}")
-              conn
+              {:halt, conn
               |> put_status(402)
               |> json(%{
                 success: false,
@@ -398,28 +421,26 @@ defmodule ClippsterServerWeb.ClipsController do
                 details: "You have #{Float.round(remaining, 3)} credits remaining, but #{Float.round(needed, 3)} credits are required for this operation.",
                 credits_required: needed,
                 credits_remaining: remaining
-              })
-              |> then(&{:halt, &1})
+              })}
 
             {:error, reason, details} ->
               IO.puts("[ClipsController] Credit deduction failed: #{inspect(reason)} - #{inspect(details)}")
-              conn
+              {:halt, conn
               |> put_status(500)
               |> json(%{
                 success: false,
                 error: "Credit deduction failed",
                 details: "Unable to process credits: #{inspect(details)}"
-              })
-              |> then(&{:halt, &1})
+              })}
           end
         end
 
         # Continue with processing if not halted
-        case credits_deducted do
+        case credit_result do
           {:halt, response} -> response
-          credits ->
-            IO.puts("[ClipsController] Processing with credits deducted: #{Float.round(credits, 3)}")
-            process_clip_detection(conn, params, user_id, credits, is_admin)
+          {:ok, %{credits: credits, job_id: job_id}} ->
+            IO.puts("[ClipsController] Processing with credits deducted: #{Float.round(credits, 3)}, job_id: #{inspect(job_id)}")
+            process_clip_detection(conn, params, user_id, credits, is_admin, job_id)
         end
 
       {:error, reason} ->
@@ -435,7 +456,7 @@ defmodule ClippsterServerWeb.ClipsController do
   end
 
   # Separate function to handle the actual clip detection process
-  defp process_clip_detection(conn, params, user_id, credits_deducted, is_admin) do
+  defp process_clip_detection(conn, params, user_id, credits_deducted, is_admin, job_id) do
     %{"project_id" => project_id} = params
 
     operation = fn ->
@@ -444,6 +465,9 @@ defmodule ClippsterServerWeb.ClipsController do
 
     case retry_with_backoff(operation, 3, project_id) do
       {:ok, result_map} ->
+        # Mark job as completed
+        complete_job(job_id)
+
         # Get updated user balance after credit deduction (or show unlimited for admins)
         remaining_credits = if is_admin do
           %{
@@ -458,22 +482,26 @@ defmodule ClippsterServerWeb.ClipsController do
           }
         end
 
-        # Add credit info to result map
+        # Add credit info and job_id to result map
         final_result = result_map
         |> put_in([:processing_info, :credits_charged], credits_deducted)
         |> put_in([:processing_info, :remaining_credits], remaining_credits)
+        |> put_in([:processing_info, :job_id], job_id)
 
         json(conn, final_result)
 
       {:error, reason} ->
-        # Refund credits
-        refund_credits(user_id, credits_deducted, is_admin)
-
+        # Mark job as failed
         error_msg = case reason do
           %RuntimeError{message: msg} -> msg
           s when is_binary(s) -> s
           _ -> inspect(reason)
         end
+
+        fail_job(job_id, error_msg)
+
+        # Refund credits on server error
+        refund_credits(user_id, credits_deducted, is_admin)
 
         ProgressChannel.broadcast_progress(project_id, "error", 0, "Failed after retries: #{error_msg}. Credits have been refunded.")
 
@@ -483,6 +511,7 @@ defmodule ClippsterServerWeb.ClipsController do
           success: false,
           error: "Clip detection failed",
           details: error_msg,
+          job_id: job_id,
           creditsRefunded: true
         })
     end
@@ -1590,6 +1619,68 @@ defmodule ClippsterServerWeb.ClipsController do
       {:ok, %{hours_remaining: :unlimited}} ->
         IO.puts("[ClipsController] User has unlimited credits, no deduction needed")
         {:ok, 0.0}
+    end
+  end
+
+  # Deducts credits and creates a processing job record for tracking.
+  # Returns {:ok, %{credits: amount, job_id: id}} on success.
+  # The job_id can be used by the client to cancel and get a refund.
+  defp deduct_credits_and_create_job(user_id, duration_hours, is_first_run, opts) do
+    project_id = Keyword.get(opts, :project_id)
+    video_url = Keyword.get(opts, :video_url)
+    job_type = Keyword.get(opts, :job_type, "clip_detection")
+
+    # First deduct credits
+    case deduct_credits_for_processing(user_id, duration_hours, is_first_run) do
+      {:ok, credits_deducted} when is_number(credits_deducted) and credits_deducted > 0 ->
+        # Create a processing job record for refund tracking
+        case Credits.create_processing_job(user_id, credits_deducted, duration_hours, [
+          project_id: project_id,
+          video_url: video_url,
+          job_type: job_type
+        ]) do
+          {:ok, job} ->
+            IO.puts("[ClipsController] Created processing job #{job.id} for tracking (#{Float.round(credits_deducted, 3)} credits)")
+            {:ok, %{credits: credits_deducted, job_id: job.id}}
+
+          {:error, reason} ->
+            IO.puts("[ClipsController] Warning: Failed to create job record: #{inspect(reason)}")
+            # Still return success - job tracking is not critical
+            {:ok, %{credits: credits_deducted, job_id: nil}}
+        end
+
+      {:ok, credits_deducted} when credits_deducted == 0 or credits_deducted == 0.0 ->
+        # Admin user or unlimited - no job needed
+        {:ok, %{credits: 0.0, job_id: nil}}
+
+      error ->
+        error
+    end
+  end
+
+  # Marks a processing job as completed.
+  defp complete_job(nil), do: :ok
+  defp complete_job(job_id) do
+    case Credits.complete_processing_job(job_id) do
+      {:ok, _job} ->
+        IO.puts("[ClipsController] Marked job #{job_id} as completed")
+        :ok
+      {:error, reason} ->
+        IO.puts("[ClipsController] Warning: Failed to mark job as completed: #{inspect(reason)}")
+        :ok  # Non-critical error
+    end
+  end
+
+  # Marks a processing job as failed.
+  defp fail_job(nil, _error), do: :ok
+  defp fail_job(job_id, error) do
+    case Credits.fail_processing_job(job_id, %{error: error}) do
+      {:ok, _job} ->
+        IO.puts("[ClipsController] Marked job #{job_id} as failed")
+        :ok
+      {:error, reason} ->
+        IO.puts("[ClipsController] Warning: Failed to mark job as failed: #{inspect(reason)}")
+        :ok  # Non-critical error
     end
   end
 

@@ -72,6 +72,11 @@ defmodule ClippsterServerWeb.Router do
     post "/clips/detect-chunked", ClipsController, :detect_chunked
     post "/clips/transcribe", ClipsController, :transcribe
 
+    # Processing job management (for cancellation/refunds)
+    get "/jobs/:job_id", ProcessingJobController, :show
+    post "/jobs/:job_id/cancel", ProcessingJobController, :cancel
+    post "/jobs/cancel-by-project", ProcessingJobController, :cancel_by_project
+
     # Bug report creation (requires authentication)
     post "/bug-reports", BugReportsController, :create
   end

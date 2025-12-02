@@ -5,7 +5,7 @@ defmodule ClippsterServer.Credits do
 
   import Ecto.Query, warn: false
   alias ClippsterServer.Repo
-  alias ClippsterServer.Credits.{CreditTransaction, UserCredit}
+  alias ClippsterServer.Credits.{CreditTransaction, UserCredit, ProcessingJob}
 
   @credit_packs %{
     "starter" => %{hours: 4, usd: 10.00},
@@ -203,5 +203,172 @@ defmodule ClippsterServer.Credits do
   def has_enough_credits?(user_id, hours_needed) do
     {:ok, %{hours_remaining: remaining}} = get_user_balance(user_id)
     Decimal.compare(remaining, Decimal.new(to_string(hours_needed))) != :lt
+  end
+
+  # ============================================================================
+  # Processing Job Management (for secure credit refunds)
+  # ============================================================================
+
+  @doc """
+  Creates a new processing job record when credits are deducted.
+  Returns {:ok, job} with the job_id that can be used for cancellation.
+  """
+  def create_processing_job(user_id, credits_deducted, duration_hours, opts \\ []) do
+    attrs = %{
+      user_id: user_id,
+      credits_deducted: Decimal.new(to_string(credits_deducted)),
+      video_duration_hours: Decimal.new(to_string(duration_hours)),
+      status: "processing",
+      project_id: Keyword.get(opts, :project_id),
+      video_url: Keyword.get(opts, :video_url),
+      job_type: Keyword.get(opts, :job_type, "clip_detection")
+    }
+
+    ProcessingJob.create_changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
+  Gets a processing job by ID, ensuring it belongs to the specified user.
+  Returns {:ok, job} or {:error, :not_found} or {:error, :unauthorized}
+  """
+  def get_processing_job(job_id, user_id) do
+    case Repo.get(ProcessingJob, job_id) do
+      nil ->
+        {:error, :not_found}
+      
+      %ProcessingJob{user_id: ^user_id} = job ->
+        {:ok, job}
+      
+      _job ->
+        # Job exists but belongs to a different user
+        {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Gets a processing job by project_id and user_id (for client convenience).
+  Only returns jobs in 'processing' status.
+  """
+  def get_active_job_by_project(project_id, user_id) do
+    ProcessingJob
+    |> where([j], j.project_id == ^project_id)
+    |> where([j], j.user_id == ^user_id)
+    |> where([j], j.status == "processing")
+    |> order_by([j], desc: j.inserted_at)
+    |> limit(1)
+    |> Repo.one()
+    |> case do
+      nil -> {:error, :not_found}
+      job -> {:ok, job}
+    end
+  end
+
+  @doc """
+  Cancels a processing job and refunds the credits.
+  This is the main server-authoritative cancellation function.
+  
+  Security checks:
+  - Job must exist
+  - Job must belong to the requesting user
+  - Job must be in 'processing' status
+  - Refund cannot exceed original charge
+  
+  Returns {:ok, %{job: job, refunded: amount}} or {:error, reason}
+  """
+  def cancel_processing_job(job_id, user_id, reason \\ "User cancelled") do
+    Repo.transaction(fn ->
+      # Get and validate the job
+      job = case get_processing_job(job_id, user_id) do
+        {:ok, job} -> job
+        {:error, :not_found} -> Repo.rollback(:job_not_found)
+        {:error, :unauthorized} -> Repo.rollback(:unauthorized)
+      end
+
+      # Check if job can be cancelled
+      unless ProcessingJob.can_cancel?(job) do
+        Repo.rollback(:job_not_cancellable)
+      end
+
+      # Check if already refunded
+      if ProcessingJob.was_refunded?(job) do
+        Repo.rollback(:already_refunded)
+      end
+
+      # Calculate refund amount (full refund of deducted credits)
+      refund_amount = job.credits_deducted
+
+      # Update job status to cancelled with refund info
+      {:ok, updated_job} = job
+        |> ProcessingJob.cancel_changeset(refund_amount, reason)
+        |> Repo.update()
+
+      # Add credits back to user's balance
+      {:ok, _updated_credit} = add_credits(user_id, Decimal.to_float(refund_amount))
+
+      IO.puts("[Credits] Refunded #{Decimal.to_string(refund_amount)} credits to user #{user_id} for cancelled job #{job_id}")
+
+      %{job: updated_job, refunded: refund_amount}
+    end)
+  end
+
+  @doc """
+  Cancels a job by project_id (convenience function for clients).
+  Finds the active job for the project and cancels it.
+  """
+  def cancel_job_by_project(project_id, user_id, reason \\ "User cancelled") do
+    case get_active_job_by_project(project_id, user_id) do
+      {:ok, job} -> cancel_processing_job(job.id, user_id, reason)
+      {:error, :not_found} -> {:error, :no_active_job}
+    end
+  end
+
+  @doc """
+  Marks a processing job as completed.
+  """
+  def complete_processing_job(job_id, result_data \\ nil) do
+    case Repo.get(ProcessingJob, job_id) do
+      nil -> {:error, :not_found}
+      job ->
+        job
+        |> ProcessingJob.complete_changeset(result_data)
+        |> Repo.update()
+    end
+  end
+
+  @doc """
+  Marks a processing job as failed.
+  Note: Failed jobs do NOT automatically refund credits.
+  Admin intervention may be needed for failed job refunds.
+  """
+  def fail_processing_job(job_id, error_info \\ nil) do
+    case Repo.get(ProcessingJob, job_id) do
+      nil -> {:error, :not_found}
+      job ->
+        job
+        |> ProcessingJob.fail_changeset(error_info)
+        |> Repo.update()
+    end
+  end
+
+  @doc """
+  Lists all processing jobs for a user.
+  """
+  def list_user_processing_jobs(user_id, opts \\ []) do
+    query = ProcessingJob
+      |> where([j], j.user_id == ^user_id)
+      |> order_by([j], desc: j.inserted_at)
+
+    query = case Keyword.get(opts, :status) do
+      nil -> query
+      status -> where(query, [j], j.status == ^status)
+    end
+
+    query = case Keyword.get(opts, :limit) do
+      nil -> query
+      limit -> limit(query, ^limit)
+    end
+
+    Repo.all(query)
   end
 end

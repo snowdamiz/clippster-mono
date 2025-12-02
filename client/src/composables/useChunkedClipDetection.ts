@@ -33,6 +33,8 @@ export interface DetectionProgress {
   progress: number;
   message: string;
   error?: string;
+  jobId?: string;
+  creditsRefunded?: number;
 }
 
 export function useChunkedClipDetection() {
@@ -51,8 +53,12 @@ export function useChunkedClipDetection() {
   // Shared transcript cache instance to maintain session state across functions
   const transcriptCache = useChunkedTranscriptCache();
 
-  // Cancel the current detection process
-  function cancelDetection() {
+  // Track the current job ID for server-side cancellation
+  let currentJobId: string | null = null;
+  let currentProjectId: string | null = null;
+
+  // Cancel the current detection process and request server-side refund
+  async function cancelDetection() {
     if (!isProcessing.value) return;
 
     console.log('[ChunkedClipDetection] Cancelling detection...');
@@ -64,12 +70,40 @@ export function useChunkedClipDetection() {
       abortController = null;
     }
 
+    // Request server-side cancellation and refund
+    let creditsRefunded = 0;
+    if (currentProjectId) {
+      try {
+        console.log(
+          '[ChunkedClipDetection] Requesting server-side cancellation for project:',
+          currentProjectId
+        );
+        const response = await api.post('/jobs/cancel-by-project', {
+          project_id: currentProjectId,
+        });
+
+        if (response.data.success) {
+          creditsRefunded = response.data.credits_refunded || 0;
+          console.log('[ChunkedClipDetection] Server refunded', creditsRefunded, 'credits');
+        }
+      } catch (error) {
+        // Server cancellation failed - might not have charged yet, or job completed
+        console.log('[ChunkedClipDetection] Server cancellation response:', error);
+      }
+    }
+
     progress.value = {
       stage: 'cancelled',
       progress: 0,
-      message: 'Detection cancelled by user',
+      message:
+        creditsRefunded > 0
+          ? `Detection cancelled. ${creditsRefunded.toFixed(3)} credits refunded.`
+          : 'Detection cancelled by user',
+      creditsRefunded: creditsRefunded,
     };
 
+    currentJobId = null;
+    currentProjectId = null;
     isProcessing.value = false;
   }
 
@@ -85,11 +119,21 @@ export function useChunkedClipDetection() {
     projectId: string,
     prompt: string,
     options: ChunkedDetectionOptions = {}
-  ): Promise<{ success: boolean; sessionId?: string; error?: string; cancelled?: boolean }> {
+  ): Promise<{
+    success: boolean;
+    sessionId?: string;
+    error?: string;
+    cancelled?: boolean;
+    jobId?: string;
+  }> {
     try {
       // Reset cancellation state
       isCancelled.value = false;
       abortController = new AbortController();
+
+      // Store project ID for server-side cancellation
+      currentProjectId = projectId;
+      currentJobId = null;
 
       isProcessing.value = true;
       progress.value = {
@@ -230,6 +274,8 @@ export function useChunkedClipDetection() {
     } finally {
       isProcessing.value = false;
       abortController = null;
+      currentJobId = null;
+      currentProjectId = null;
     }
   }
 
@@ -790,6 +836,8 @@ export function useChunkedClipDetection() {
     isProcessing.value = false;
     isCancelled.value = false;
     abortController = null;
+    currentJobId = null;
+    currentProjectId = null;
     progress.value = { stage: 'initializing', progress: 0, message: '' };
   }
 
