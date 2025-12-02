@@ -28,6 +28,7 @@ export interface DetectionProgress {
     | 'transcribing_chunks'
     | 'detecting_clips'
     | 'completed'
+    | 'cancelled'
     | 'error';
   progress: number;
   message: string;
@@ -36,6 +37,7 @@ export interface DetectionProgress {
 
 export function useChunkedClipDetection() {
   const isProcessing = ref(false);
+  const isCancelled = ref(false);
   const progress = ref<DetectionProgress>({
     stage: 'initializing',
     progress: 0,
@@ -43,15 +45,52 @@ export function useChunkedClipDetection() {
   });
   const { success: showSuccess, error: showError } = useToast();
 
+  // AbortController for canceling API requests
+  let abortController: AbortController | null = null;
+
   // Shared transcript cache instance to maintain session state across functions
   const transcriptCache = useChunkedTranscriptCache();
+
+  // Cancel the current detection process
+  function cancelDetection() {
+    if (!isProcessing.value) return;
+
+    console.log('[ChunkedClipDetection] Cancelling detection...');
+    isCancelled.value = true;
+
+    // Abort any pending API requests
+    if (abortController) {
+      abortController.abort();
+      abortController = null;
+    }
+
+    progress.value = {
+      stage: 'cancelled',
+      progress: 0,
+      message: 'Detection cancelled by user',
+    };
+
+    isProcessing.value = false;
+  }
+
+  // Check if detection was cancelled
+  function checkCancelled(): boolean {
+    if (isCancelled.value) {
+      throw new Error('Detection cancelled by user');
+    }
+    return false;
+  }
 
   async function detectClipsWithChunking(
     projectId: string,
     prompt: string,
     options: ChunkedDetectionOptions = {}
-  ): Promise<{ success: boolean; sessionId?: string; error?: string }> {
+  ): Promise<{ success: boolean; sessionId?: string; error?: string; cancelled?: boolean }> {
     try {
+      // Reset cancellation state
+      isCancelled.value = false;
+      abortController = new AbortController();
+
       isProcessing.value = true;
       progress.value = {
         stage: 'initializing',
@@ -165,6 +204,20 @@ export function useChunkedClipDetection() {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
 
+      // Check if this was a cancellation
+      if (
+        isCancelled.value ||
+        errorMessage.includes('cancelled') ||
+        errorMessage.includes('aborted')
+      ) {
+        progress.value = {
+          stage: 'cancelled',
+          progress: 0,
+          message: 'Detection cancelled by user',
+        };
+        return { success: false, cancelled: true };
+      }
+
       progress.value = {
         stage: 'error',
         progress: 0,
@@ -176,6 +229,7 @@ export function useChunkedClipDetection() {
       return { success: false, error: errorMessage };
     } finally {
       isProcessing.value = false;
+      abortController = null;
     }
   }
 
@@ -200,6 +254,9 @@ export function useChunkedClipDetection() {
       const totalChunks = chunks.length;
 
       for (let i = 0; i < totalChunks; i++) {
+        // Check for cancellation before processing each chunk
+        checkCancelled();
+
         const chunk = chunks[i];
 
         if (transcribedChunkIds.has(chunk.chunk_id)) {
@@ -230,9 +287,10 @@ export function useChunkedClipDetection() {
         formData.append('audio', audioFile); // This uses the File object which includes filename
         formData.append('duration', chunk.duration.toString());
 
-        // Send to transcribe endpoint
+        // Send to transcribe endpoint with abort signal
         const response = await api.post('/clips/transcribe', formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
+          signal: abortController?.signal,
         });
 
         if (!response.data.success) {
@@ -306,11 +364,15 @@ export function useChunkedClipDetection() {
         message: 'Analyzing cached transcript for clips...',
       };
 
-      // Call the chunked detection endpoint
+      // Check for cancellation before API call
+      checkCancelled();
+
+      // Call the chunked detection endpoint with abort signal
       const response = await api.post('/clips/detect-chunked', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+        signal: abortController?.signal,
       });
 
       const result = response.data;
@@ -485,10 +547,14 @@ export function useChunkedClipDetection() {
         message: 'Analyzing transcript for clips...',
       };
 
+      // Check for cancellation before API call
+      checkCancelled();
+
       const response = await api.post('/clips/detect', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+        signal: abortController?.signal,
       });
 
       const result = response.data;
@@ -515,6 +581,14 @@ export function useChunkedClipDetection() {
       return { success: true, sessionId };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
+      // Check if this was a cancellation
+      if (
+        isCancelled.value ||
+        errorMessage.includes('cancelled') ||
+        errorMessage.includes('aborted')
+      ) {
+        return { success: false, cancelled: true };
+      }
       return { success: false, error: errorMessage };
     }
   }
@@ -561,6 +635,9 @@ export function useChunkedClipDetection() {
         message: 'Detecting clips...',
       };
 
+      // Check for cancellation before API call
+      checkCancelled();
+
       // Prepare request with fresh audio
       const formData = new FormData();
       formData.append('project_id', projectId.toString());
@@ -575,6 +652,7 @@ export function useChunkedClipDetection() {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+        signal: abortController?.signal,
       });
 
       const result = response.data;
@@ -601,6 +679,14 @@ export function useChunkedClipDetection() {
       return { success: true, sessionId };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
+      // Check if this was a cancellation
+      if (
+        isCancelled.value ||
+        errorMessage.includes('cancelled') ||
+        errorMessage.includes('aborted')
+      ) {
+        return { success: false, cancelled: true };
+      }
       return { success: false, error: errorMessage };
     }
   }
@@ -654,10 +740,14 @@ export function useChunkedClipDetection() {
         message: 'Analyzing transcript for clips...',
       };
 
+      // Check for cancellation before API call
+      checkCancelled();
+
       const response = await api.post('/clips/detect', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+        signal: abortController?.signal,
       });
 
       const result = response.data;
@@ -684,23 +774,35 @@ export function useChunkedClipDetection() {
       return { success: true, sessionId };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
+      // Check if this was a cancellation
+      if (
+        isCancelled.value ||
+        errorMessage.includes('cancelled') ||
+        errorMessage.includes('aborted')
+      ) {
+        return { success: false, cancelled: true };
+      }
       return { success: false, error: errorMessage };
     }
   }
 
   function reset() {
     isProcessing.value = false;
+    isCancelled.value = false;
+    abortController = null;
     progress.value = { stage: 'initializing', progress: 0, message: '' };
   }
 
   return {
     // State
     isProcessing,
+    isCancelled,
     progress,
 
     // Methods
     detectClipsWithChunking,
     fallbackToTraditionalDetection,
+    cancelDetection,
     reset,
   };
 }

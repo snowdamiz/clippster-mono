@@ -94,6 +94,7 @@
       :max-words-for-aspect-ratio="maxWordsForAspectRatio"
       :watermark-settings="watermarkSettings"
       @detect-clips="handleDetectClips"
+      @cancel-detection="handleCancelDetection"
       @delete-clip="onDeleteClip"
       @play-clip="onPlayClip"
       @clip-hover="onClipHover"
@@ -420,6 +421,10 @@
     emit('detectClips');
   }
 
+  function handleCancelDetection() {
+    emit('cancelDetection');
+  }
+
   function onDeleteClip(clipId: string) {
     emit('deleteClip', clipId);
   }
@@ -462,9 +467,30 @@
     const payload = event.payload || event.detail;
     const { clip_id, progress, stage, message } = payload;
 
-    console.log(`[MediaPanel] Received clip build progress event for: ${clip_id}`);
+    console.log(`[MediaPanel] Received clip build progress event for: ${clip_id} - stage: ${stage}`);
 
     const clip = clips.value.find((c) => c.id === clip_id);
+
+    // Handle cancellation progress event
+    if (stage === 'cancelled') {
+      console.log(`[MediaPanel] Clip build cancelled via progress event: ${clip_id}`);
+      if (clip) {
+        clip.build_status = 'pending';
+        clip.build_progress = 0;
+        clip.build_error = undefined;
+      }
+
+      updateClipBuildStatus(clip_id, 'pending', {
+        progress: 0,
+        error: undefined,
+      }).catch((error) => {
+        console.error('[MediaPanel] Failed to update clip cancellation:', error);
+      });
+
+      refreshClips();
+      return;
+    }
+
     if (clip) {
       console.log(`[MediaPanel] Clip build progress: ${clip_id} - ${progress}% - ${stage}`);
       clip.build_status = 'building';
@@ -496,6 +522,8 @@
 
     // Immediately update local state for instant UI feedback
     const clip = clips.value.find((c) => c.id === clip_id);
+    const isCancelled = error && (error.includes('cancelled') || error.includes('Cancelled'));
+
     if (clip) {
       if (success) {
         clip.build_status = 'completed';
@@ -505,6 +533,14 @@
         clip.built_duration = duration;
         clip.built_file_size = file_size;
         console.log(`[MediaPanel] Local state updated immediately for clip: ${clip_id}`);
+      } else if (isCancelled) {
+        // Reset to pending for cancelled builds
+        clip.build_status = 'pending';
+        clip.build_progress = 0;
+        clip.build_error = undefined;
+        clip.built_file_path = undefined;
+        clip.built_thumbnail_path = undefined;
+        console.log(`[MediaPanel] Local state reset for cancelled clip: ${clip_id}`);
       } else {
         clip.build_status = 'failed';
         clip.build_error = error || 'Unknown build error';
@@ -534,20 +570,43 @@
           refreshClips();
         });
     } else {
-      console.log(`[MediaPanel] Clip build FAILED: ${clip_id} - ${error}`);
+      // Check if this was a cancellation vs a real failure
+      const isCancelled = error && (error.includes('cancelled') || error.includes('Cancelled'));
 
-      updateClipBuildStatus(clip_id, 'failed', {
-        progress: 0,
-        error: error || 'Unknown build error',
-      })
-        .then(() => {
-          refreshClips();
+      if (isCancelled) {
+        console.log(`[MediaPanel] Clip build CANCELLED: ${clip_id}`);
+
+        // Reset to pending status (not failed) so user can try again
+        updateClipBuildStatus(clip_id, 'pending', {
+          progress: 0,
+          error: undefined,
+          // Clear any partial build paths
+          builtFilePath: undefined,
+          builtThumbnailPath: undefined,
         })
-        .catch((dbError) => {
-          console.error('[MediaPanel] Failed to update clip build failure:', dbError);
-          // Still refresh to try to get consistent state
-          refreshClips();
-        });
+          .then(() => {
+            refreshClips();
+          })
+          .catch((dbError) => {
+            console.error('[MediaPanel] Failed to update clip cancellation:', dbError);
+            refreshClips();
+          });
+      } else {
+        console.log(`[MediaPanel] Clip build FAILED: ${clip_id} - ${error}`);
+
+        updateClipBuildStatus(clip_id, 'failed', {
+          progress: 0,
+          error: error || 'Unknown build error',
+        })
+          .then(() => {
+            refreshClips();
+          })
+          .catch((dbError) => {
+            console.error('[MediaPanel] Failed to update clip build failure:', dbError);
+            // Still refresh to try to get consistent state
+            refreshClips();
+          });
+      }
     }
   }
 

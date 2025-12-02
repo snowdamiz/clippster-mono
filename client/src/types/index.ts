@@ -234,6 +234,7 @@ export interface MediaPanelEmits {
   (e: 'clipHover', clipId: string): void;
   (e: 'clipLeave'): void;
   (e: 'detectClips'): void;
+  (e: 'cancelDetection'): void;
   (e: 'scrollToTimeline'): void;
   (e: 'deleteClip', clipId: string): void;
   (e: 'playClip', clip: any): void; // Using any for ClipWithVersion for now

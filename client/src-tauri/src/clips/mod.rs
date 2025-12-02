@@ -17,9 +17,13 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use tauri::Emitter;
 use orchestrator::build_clip_internal_simple;
+use tokio::sync::watch;
 
-// Active clip builds tracking
-static ACTIVE_CLIP_BUILDS: Lazy<Arc<Mutex<HashMap<String, bool>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+// Cancellation token for clip builds
+pub type CancellationToken = watch::Receiver<bool>;
+
+// Active clip builds tracking with cancellation senders
+static ACTIVE_CLIP_BUILDS: Lazy<Arc<Mutex<HashMap<String, watch::Sender<bool>>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 // Build clip from segments using FFmpeg
 #[tauri::command]
@@ -63,14 +67,17 @@ pub async fn build_clip_from_segments(
     println!("[Rust]   outro_path: {:?}", outro_path);
     println!("[Rust]   watermark enabled: {}", watermark_settings.as_ref().map(|w| w.enabled).unwrap_or(false));
 
-    // Check if clip is already being built
-    {
+    // Check if clip is already being built and create cancellation token
+    let cancel_rx = {
         let mut active_builds = ACTIVE_CLIP_BUILDS.lock().unwrap();
         if active_builds.contains_key(&clip_id) {
             return Err(format!("Clip {} is already being built", clip_id));
         }
-        active_builds.insert(clip_id.clone(), true);
-    }
+        // Create a cancellation channel (false = not cancelled, true = cancelled)
+        let (cancel_tx, cancel_rx) = watch::channel(false);
+        active_builds.insert(clip_id.clone(), cancel_tx);
+        cancel_rx
+    };
 
     // Clone app handle for use in async block
     let app_clone = app.clone();
@@ -123,13 +130,29 @@ pub async fn build_clip_from_segments(
             intro_duration,
             outro_path_clone.as_deref(),
             outro_duration,
-            watermark_settings_clone
+            watermark_settings_clone,
+            cancel_rx
         ).await {
             Ok(result) => {
                 println!("[Rust] Clip build completed successfully for: {}", clip_id_clone);
                 result
             },
             Err(e) => {
+                // Check if this was a cancellation
+                let is_cancelled = e.contains("cancelled") || e.contains("Cancelled");
+                if is_cancelled {
+                    println!("[Rust] Clip build was cancelled: {}", clip_id_clone);
+                    // Emit cancellation event
+                    let _ = app_clone.emit("clip-build-progress", ClipBuildProgress {
+                        clip_id: clip_id_clone.clone(),
+                        project_id: project_id_clone.clone(),
+                        progress: 0.0,
+                        stage: "cancelled".to_string(),
+                        message: "Build cancelled by user".to_string(),
+                        error: None,
+                    });
+                }
+                
                 println!("[Rust] Clip build failed with error: {}", e);
                 ClipBuildResult {
                     clip_id: clip_id_clone.clone(),
@@ -139,7 +162,7 @@ pub async fn build_clip_from_segments(
                     thumbnail_path: None,
                     duration: None,
                     file_size: None,
-                    error: Some(e),
+                    error: if is_cancelled { Some("Cancelled by user".to_string()) } else { Some(e) },
                 }
             }
         };
@@ -167,10 +190,17 @@ pub async fn build_clip_from_segments(
 #[tauri::command]
 pub async fn cancel_clip_build(clip_id: String) -> Result<bool, String> {
     println!("[Rust] Canceling clip build: {}", clip_id);
-    let mut active_builds = ACTIVE_CLIP_BUILDS.lock().unwrap();
-    if active_builds.remove(&clip_id).is_some() {
+    let active_builds = ACTIVE_CLIP_BUILDS.lock().unwrap();
+    if let Some(cancel_tx) = active_builds.get(&clip_id) {
+        // Send cancellation signal
+        if let Err(e) = cancel_tx.send(true) {
+            println!("[Rust] Failed to send cancel signal: {}", e);
+            return Err(format!("Failed to cancel: {}", e));
+        }
+        println!("[Rust] Cancel signal sent for clip: {}", clip_id);
         Ok(true)
     } else {
+        println!("[Rust] No active build found for clip: {}", clip_id);
         Ok(false)
     }
 }
@@ -180,4 +210,9 @@ pub async fn cancel_clip_build(clip_id: String) -> Result<bool, String> {
 pub async fn is_clip_build_active(clip_id: String) -> Result<bool, String> {
     let active_builds = ACTIVE_CLIP_BUILDS.lock().unwrap();
     Ok(active_builds.contains_key(&clip_id))
+}
+
+// Helper function to check if a build has been cancelled
+pub fn is_build_cancelled(cancel_rx: &CancellationToken) -> bool {
+    *cancel_rx.borrow()
 }

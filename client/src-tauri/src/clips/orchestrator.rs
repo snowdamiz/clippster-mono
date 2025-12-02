@@ -8,6 +8,7 @@ use super::subtitle::generate_ass_file;
 use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings};
 use super::thumbnail::generate_clip_thumbnail_simple;
 use super::font_manager::get_fonts_dir;
+use super::{CancellationToken, is_build_cancelled};
 
 // Helper function to sanitize a clip name for use as a folder name
 fn sanitize_clip_name(name: &str) -> String {
@@ -132,8 +133,21 @@ pub async fn build_clip_internal_simple(
     intro_duration: Option<f64>,
     outro_path: Option<&str>,
     _outro_duration: Option<f64>,
-    watermark_settings: Option<WatermarkSettings>
+    watermark_settings: Option<WatermarkSettings>,
+    cancel_rx: CancellationToken
 ) -> Result<ClipBuildResult, String> {
+
+    // Helper to check cancellation
+    let check_cancelled = || -> Result<(), String> {
+        if is_build_cancelled(&cancel_rx) {
+            Err("Build cancelled by user".to_string())
+        } else {
+            Ok(())
+        }
+    };
+
+    // Check for cancellation at start
+    check_cancelled()?;
 
     // Emit progress
     let _ = app.emit("clip-build-progress", ClipBuildProgress {
@@ -160,9 +174,15 @@ pub async fn build_clip_internal_simple(
     // Get or create the clip-specific folder within the run
     let clip_base_dir = get_or_create_clip_folder(&run_folder, clip_name)?;
 
+    // Check for cancellation before getting video info
+    check_cancelled()?;
+
     // Get video dimensions for proper subtitle rendering
     let video_info = get_video_info(app, video_path).await?;
     println!("[Rust] Video dimensions: {}x{}", video_info.width, video_info.height);
+
+    // Check for cancellation before starting builds
+    check_cancelled()?;
 
     // Track all output paths for the result
     let mut all_output_paths = Vec::new();
@@ -199,8 +219,14 @@ pub async fn build_clip_internal_simple(
         let aspect_ratio_str = aspect_ratio_str.clone();
         let snake_case_name = snake_case_clip_name.clone();
         let watermark_settings = watermark_settings.clone();
+        let cancel_rx = cancel_rx.clone();
         
         async move {
+            // Check for cancellation at the start of each task
+            if is_build_cancelled(&cancel_rx) {
+                return Err::<_, String>("Build cancelled by user".to_string());
+            }
+            
             println!("[Rust] Building clip for aspect ratio: {}", aspect_ratio_str);
             
             let progress_start = 10.0 + (ratio_idx as f64 / total_ratios as f64) * 75.0;
@@ -251,6 +277,11 @@ pub async fn build_clip_internal_simple(
             } else {
                 None
             };
+
+            // Check for cancellation before building
+            if is_build_cancelled(&cancel_rx) {
+                return Err::<_, String>("Build cancelled by user".to_string());
+            }
 
             // Build clip based on segments with aspect ratio cropping
             // Note: We pass the Arc<Mutex<>> cache, and lock/unlock inside the build functions
@@ -347,6 +378,32 @@ pub async fn build_clip_internal_simple(
     }
     
     println!("[Rust] All {} aspect ratios built successfully in parallel!", total_ratios);
+
+    // Final cancellation check - if cancelled after builds completed, clean up and return error
+    if is_build_cancelled(&cancel_rx) {
+        println!("[Rust] Build was cancelled after completion - cleaning up output files...");
+        
+        // Delete all built files
+        for output_path in &all_output_paths {
+            if let Err(e) = std::fs::remove_file(output_path) {
+                println!("[Rust] Warning: Failed to clean up {}: {}", output_path, e);
+            } else {
+                println!("[Rust] Cleaned up: {}", output_path);
+            }
+        }
+        
+        // Delete thumbnail if it was generated
+        if let Some(ref thumb_path) = first_thumbnail_path {
+            if let Err(e) = std::fs::remove_file(thumb_path) {
+                println!("[Rust] Warning: Failed to clean up thumbnail: {}", e);
+            }
+        }
+        
+        // Try to clean up the clip folder if empty
+        let _ = std::fs::remove_dir(&clip_base_dir);
+        
+        return Err("Build cancelled by user".to_string());
+    }
 
     // Emit completion progress
     println!("[Rust] Emitting completion progress event...");

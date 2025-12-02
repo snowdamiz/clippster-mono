@@ -95,6 +95,7 @@
                 :current-time="currentTime"
                 :aspect-ratio="selectedAspectRatio"
                 @detectClips="onDetectClips"
+                @cancelDetection="onCancelDetection"
                 @clipHover="onClipHover"
                 @scrollToTimeline="onScrollToTimeline"
                 @deleteClip="onDeleteClip"
@@ -353,6 +354,9 @@
   const frontendMessage = ref('');
   const frontendError = ref('');
 
+  // Store the cancel function for the current detection
+  const cancelDetectionFn = ref<(() => void) | null>(null);
+
   // Combined progress computed properties
   const clipProgress = computed(() => {
     // If detection is completed, show 100%
@@ -476,6 +480,43 @@
     showDetectConfirmDialog.value = true;
   }
 
+  async function onCancelDetection() {
+    console.log('[ProjectWorkspaceDialog] Cancelling clip detection...');
+
+    if (cancelDetectionFn.value) {
+      cancelDetectionFn.value();
+      cancelDetectionFn.value = null;
+    }
+
+    // Update UI state
+    if (props.project?.id) {
+      completeDetection(props.project.id, 'Cancelled by user');
+    }
+
+    clipGenerationInProgress.value = false;
+    frontendProgress.value = 0;
+    frontendStage.value = 'cancelled';
+    frontendMessage.value = 'Detection cancelled';
+
+    // Update window close warning
+    setClipGenerationInProgress(hasAnyActiveDetection.value);
+
+    // Also update backend state
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('set_clip_generation_in_progress', { inProgress: hasAnyActiveDetection.value });
+    } catch (error) {
+      console.error('[ProjectWorkspaceDialog] Failed to update backend clip generation state:', error);
+    }
+
+    // Show toast
+    // Note: Credits may have been deducted for transcription if it started before cancellation.
+    // Cancellation stops further processing but may not refund already-deducted credits.
+    const toastComposable = await import('@/composables/useToast');
+    const { success: showSuccessToast } = toastComposable.useToast();
+    showSuccessToast('Detection Cancelled', 'Clip detection was cancelled.');
+  }
+
   async function onDetectClipsConfirmed(_promptId: string, promptContent: string) {
     if (!props.project) {
       console.error('[ProjectWorkspaceDialog] No project available');
@@ -513,7 +554,10 @@
 
       // Use the new chunked detection system
       const { useChunkedClipDetection } = await import('@/composables/useChunkedClipDetection');
-      const { detectClipsWithChunking, progress: chunkedProgress } = useChunkedClipDetection();
+      const { detectClipsWithChunking, cancelDetection, progress: chunkedProgress } = useChunkedClipDetection();
+
+      // Store the cancel function so we can call it from onCancelDetection
+      cancelDetectionFn.value = cancelDetection;
 
       // Watch chunked detection progress and update global state
       // Only update local refs if this is still the active project being viewed
@@ -589,9 +633,17 @@
           return;
         }
 
+        // Handle cancellation - don't show error
+        if (result.cancelled) {
+          console.log('[ProjectWorkspaceDialog] Detection was cancelled');
+          completeDetection(projectId, 'Cancelled by user');
+          return;
+        }
+
         // If enhanced detection failed, the error handling below will catch it
       } finally {
         stopProgressWatch();
+        cancelDetectionFn.value = null;
       }
     } catch (error) {
       console.error('[ProjectWorkspaceDialog] Enhanced detection failed:', error);

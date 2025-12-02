@@ -28,6 +28,14 @@
             <span class="font-mono">{{ Math.round(generationProgress) }}%</span>
           </div>
         </div>
+        <!-- Cancel Detection Button -->
+        <button
+          @click="handleCancelDetection"
+          class="p-1 hover:bg-red-500/15 rounded transition-colors text-muted-foreground hover:text-red-400"
+          title="Cancel detection"
+        >
+          <XIcon class="h-4 w-4" />
+        </button>
       </div>
 
       <!-- Detect More Button (when not detecting) -->
@@ -81,14 +89,23 @@
             </div>
           </div>
 
-          <!-- Time Estimate -->
-          <div class="flex justify-center">
+          <!-- Time Estimate & Cancel Button -->
+          <div class="flex flex-col items-center gap-3">
             <div
               class="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground/70 bg-secondary/20 px-2.5 py-1 rounded-full border border-border/10"
             >
               <ClockIcon class="w-3 h-3" />
               {{ getTimeEstimate() }}
             </div>
+            <!-- Cancel Detection Button -->
+            <button
+              @click="handleCancelDetection"
+              class="group flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-red-400 bg-muted/30 hover:bg-red-500/10 border border-border hover:border-red-500/40 rounded-md transition-all duration-200"
+              title="Cancel clip detection"
+            >
+              <StopCircle class="h-3.5 w-3.5" />
+              <span>Cancel</span>
+            </button>
           </div>
 
           <!-- Status Message (if extra details) -->
@@ -264,6 +281,13 @@
                   <span v-if="clip.build_status === 'building'" class="text-blue-400 flex items-center gap-1">
                     <LoaderIcon class="h-2.5 w-2.5 animate-spin" />
                     Building...
+                    <button
+                      @click.stop="handleCancelBuild(clip.id)"
+                      class="ml-1 p-0.5 hover:bg-red-500/20 rounded transition-colors text-muted-foreground hover:text-red-400"
+                      title="Cancel build"
+                    >
+                      <XIcon class="h-2.5 w-2.5" />
+                    </button>
                   </span>
                   <span v-else-if="clip.build_status === 'completed'" class="text-green-400 flex items-center gap-1">
                     <CheckIcon class="h-2.5 w-2.5" />
@@ -342,6 +366,8 @@
     Trash2,
     Video,
     Flame,
+    XIcon,
+    StopCircle,
   } from 'lucide-vue-next';
   import ClipBuildSettingsDialog, { type BuildSettings } from './ClipBuildSettingsDialog.vue';
   import type { SubtitleSettings, WatermarkSettings } from '@/types';
@@ -386,6 +412,7 @@
   // Emits
   const emit = defineEmits<{
     detectClips: [];
+    cancelDetection: [];
     deleteClip: [clipId: string];
     playClip: [clip: ClipWithVersion];
     clipHover: [clipId: string];
@@ -680,6 +707,38 @@
 
   function handleDetectClips() {
     emit('detectClips');
+  }
+
+  function handleCancelDetection() {
+    emit('cancelDetection');
+  }
+
+  async function handleCancelBuild(clipId: string) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const result = await invoke<boolean>('cancel_clip_build', { clipId });
+
+      if (result) {
+        console.log('[ClipsTab] Successfully cancelled clip build:', clipId);
+
+        // Update the clip status to cancelled
+        const { updateClipBuildStatus } = await import('@/services/database');
+        await updateClipBuildStatus(clipId, 'pending', { error: 'Cancelled by user' });
+
+        // Refresh clips to show updated status
+        emit('refreshClips');
+
+        // Show toast
+        const toastComposable = await import('@/composables/useToast');
+        const { success: showSuccessToast } = toastComposable.useToast();
+        showSuccessToast('Build Cancelled', 'Clip build was cancelled. No credits were charged.');
+      } else {
+        console.log('[ClipsTab] No active build found to cancel:', clipId);
+      }
+    } catch (error) {
+      console.error('[ClipsTab] Failed to cancel clip build:', error);
+      showError('Failed to Cancel', 'Could not cancel the clip build. Please try again.');
+    }
   }
 
   function onDeleteClip(clipId: string) {
