@@ -188,23 +188,23 @@
 
             <!-- Hover Overlay Buttons -->
             <div
-              class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-4"
+              class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-3"
             >
               <!-- Play button only for video assets -->
               <button
                 v-if="asset.assetType !== 'watermark'"
-                class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
                 title="Play"
                 @click.stop="playAsset(asset as IntroOutro)"
               >
-                <Play class="h-6 w-6" />
+                <Play class="h-5 w-5" />
               </button>
               <button
-                class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
                 title="Delete"
                 @click.stop="confirmDelete(asset)"
               >
-                <Trash2 class="h-6 w-6" />
+                <Trash2 class="h-5 w-5" />
               </button>
             </div>
           </div>
