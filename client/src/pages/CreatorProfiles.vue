@@ -16,15 +16,20 @@
       <!-- Loading State -->
       <div v-if="loading" class="space-y-6">
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          <div v-for="i in 6" :key="i" class="relative bg-card rounded-lg overflow-hidden animate-pulse">
-            <div class="aspect-video bg-muted/40"></div>
-            <div class="p-4 space-y-3">
-              <div class="h-5 bg-muted/70 rounded w-3/4"></div>
-              <div class="h-4 bg-muted/50 rounded w-1/2"></div>
-              <div class="flex gap-2">
-                <div class="h-6 w-16 bg-muted/50 rounded-full"></div>
-                <div class="h-6 w-16 bg-muted/50 rounded-full"></div>
+          <div
+            v-for="i in 6"
+            :key="i"
+            class="relative bg-card/80 border border-border/40 rounded-xl overflow-hidden animate-pulse"
+          >
+            <div class="aspect-[2/1] bg-muted/30"></div>
+            <div class="px-3 py-2.5 space-y-2">
+              <div class="flex gap-1.5">
+                <div class="h-5 w-20 bg-muted/30 rounded-md"></div>
+                <div class="h-5 w-24 bg-muted/30 rounded-md"></div>
               </div>
+            </div>
+            <div class="px-3 py-2 border-t border-border/30">
+              <div class="h-3 bg-muted/30 rounded w-16"></div>
             </div>
           </div>
         </div>
@@ -50,161 +55,171 @@
             <div
               v-for="creator in creators"
               :key="creator.id"
-              class="relative bg-card border border-border rounded-lg overflow-hidden hover:border-primary/30 cursor-pointer group transition-all"
+              class="creator-card relative bg-card/80 backdrop-blur-sm border border-border/60 rounded-xl overflow-hidden group transition-all duration-300 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5"
             >
               <!-- Profile Image / Header -->
-              <div class="relative aspect-video bg-muted/20">
+              <div class="relative aspect-[2/1] bg-muted/30 overflow-hidden">
                 <!-- Profile image from platform links -->
                 <img
                   v-if="getCreatorProfileImage(creator)"
                   :src="getCreatorProfileImage(creator)"
-                  class="w-full h-full object-cover"
+                  class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   @error="handleImageError($event, creator)"
                 />
                 <div
                   v-else
-                  class="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/5"
+                  class="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/10 via-muted/20 to-primary/5"
                 >
-                  <Users class="w-16 h-16 text-muted-foreground/30" />
+                  <Users class="w-14 h-14 text-muted-foreground/20" />
                 </div>
+
+                <!-- Gradient overlay for text readability -->
+                <div
+                  class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60"
+                ></div>
 
                 <!-- Live Status Indicator -->
                 <div
                   v-if="isCreatorLive(creator)"
-                  class="absolute top-3 left-3 flex items-center gap-1.5 px-2 py-1 bg-red-500 text-white text-xs font-medium rounded-full"
+                  class="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 bg-red-500/90 backdrop-blur-sm text-white text-xs font-semibold rounded-md shadow-lg shadow-red-500/20"
                 >
-                  <span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+                  <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
                   LIVE
                 </div>
 
                 <!-- Monitoring Status -->
                 <div
                   v-else-if="isCreatorMonitored(creator)"
-                  class="absolute top-3 left-3 flex items-center gap-1.5 px-2 py-1 bg-green-500/90 text-white text-xs font-medium rounded-full"
+                  class="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/90 backdrop-blur-sm text-white text-xs font-semibold rounded-md shadow-lg shadow-emerald-500/20"
                 >
-                  <span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+                  <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
                   Monitoring
                 </div>
 
                 <!-- Asset Indicators -->
-                <div class="absolute top-3 right-3 flex items-center gap-1.5">
+                <div class="absolute top-3 right-3 flex items-center gap-1">
                   <div
                     v-if="creator.intro_id"
-                    class="p-1.5 bg-black/50 backdrop-blur-sm rounded-md"
+                    class="p-1.5 bg-black/40 backdrop-blur-md rounded-lg border border-white/10"
                     title="Has intro configured"
                   >
                     <Play class="w-3 h-3 text-blue-400" />
                   </div>
                   <div
                     v-if="creator.outro_id"
-                    class="p-1.5 bg-black/50 backdrop-blur-sm rounded-md"
+                    class="p-1.5 bg-black/40 backdrop-blur-md rounded-lg border border-white/10"
                     title="Has outro configured"
                   >
                     <SkipForward class="w-3 h-3 text-purple-400" />
                   </div>
                   <div
                     v-if="creator.watermark_id"
-                    class="p-1.5 bg-black/50 backdrop-blur-sm rounded-md"
+                    class="p-1.5 bg-black/40 backdrop-blur-md rounded-lg border border-white/10"
                     title="Has watermark configured"
                   >
                     <ImageIcon class="w-3 h-3 text-amber-400" />
                   </div>
                 </div>
 
+                <!-- Creator Name Overlay -->
+                <div class="absolute bottom-0 left-0 right-0 px-3 py-2">
+                  <h3 class="font-semibold text-sm text-white truncate drop-shadow-md">{{ creator.name }}</h3>
+                </div>
+
                 <!-- Hover Overlay -->
                 <div
-                  class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3"
+                  class="absolute inset-0 bg-black/70 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-2"
                 >
                   <button
-                    class="p-2.5 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                    class="action-btn p-2 bg-white/90 hover:bg-white text-gray-800 rounded-lg transition-all duration-200 hover:-translate-y-0.5 shadow-lg"
                     title="Edit Creator"
                     @click.stop="openEditDialog(creator)"
                   >
-                    <Edit class="h-5 w-5" />
+                    <Edit class="h-4 w-4" />
                   </button>
                   <button
-                    class="p-2.5 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                    class="action-btn p-2 bg-white/90 hover:bg-white text-gray-800 rounded-lg transition-all duration-200 hover:-translate-y-0.5 shadow-lg"
                     title="View VODs"
                     @click.stop="viewCreatorVods(creator)"
                   >
-                    <Video class="h-5 w-5" />
+                    <Video class="h-4 w-4" />
                   </button>
                   <button
-                    class="p-2.5 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                    class="action-btn p-2 bg-white/90 hover:bg-white text-gray-800 rounded-lg transition-all duration-200 hover:-translate-y-0.5 shadow-lg"
                     title="Download Last VOD"
                     @click.stop="openDownloadDialog(creator)"
                   >
-                    <Download class="h-5 w-5" />
+                    <Download class="h-4 w-4" />
                   </button>
                   <!-- Monitoring Controls -->
                   <template v-if="!isCreatorMonitored(creator)">
                     <!-- Record Only Button -->
                     <button
-                      class="p-2.5 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                      class="action-btn p-2 bg-white/90 hover:bg-white text-gray-800 rounded-lg transition-all duration-200 hover:-translate-y-0.5 shadow-lg"
                       title="Record Only"
                       @click.stop="startCreatorMonitoringDirect(creator, false)"
                     >
-                      <VideoIcon class="h-5 w-5" />
+                      <VideoIcon class="h-4 w-4" />
                     </button>
                     <!-- Auto-Detect Button -->
                     <button
-                      class="p-2.5 bg-purple-500 hover:bg-purple-600 text-white rounded-full transition-all transform hover:scale-110 shadow-lg"
+                      class="action-btn p-2 bg-purple-500 hover:bg-purple-400 text-white rounded-lg transition-all duration-200 hover:-translate-y-0.5 shadow-lg shadow-purple-500/30"
                       title="Auto-Detect Clips"
                       @click.stop="startCreatorMonitoringDirect(creator, true)"
                     >
-                      <Sparkles class="h-5 w-5" />
+                      <Sparkles class="h-4 w-4" />
                     </button>
                   </template>
                   <button
                     v-else
-                    class="p-2.5 bg-red-500 hover:bg-red-600 text-white rounded-full transition-all transform hover:scale-110 shadow-lg"
+                    class="action-btn p-2 bg-red-500 hover:bg-red-400 text-white rounded-lg transition-all duration-200 hover:-translate-y-0.5 shadow-lg shadow-red-500/30"
                     title="Stop Monitoring"
                     @click.stop="stopCreatorMonitoring(creator)"
                   >
-                    <Square class="h-5 w-5" />
+                    <Square class="h-4 w-4" />
                   </button>
                 </div>
               </div>
 
               <!-- Creator Info -->
-              <div class="p-4">
-                <h3 class="font-semibold text-lg text-foreground truncate">{{ creator.name }}</h3>
-                <p v-if="creator.description" class="text-sm text-muted-foreground mt-1 line-clamp-2">
+              <div class="px-3 py-2.5">
+                <p v-if="creator.description" class="text-xs text-muted-foreground line-clamp-1 leading-relaxed mb-2">
                   {{ creator.description }}
                 </p>
 
                 <!-- Platform Badges -->
-                <div class="flex flex-wrap gap-2 mt-3">
+                <div class="flex flex-wrap gap-1.5">
                   <div
                     v-for="link in creator.platform_links"
                     :key="link.id"
-                    class="flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium"
+                    class="platform-badge flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-colors"
                     :style="{
-                      backgroundColor: getPlatformColor(link.platform) + '20',
+                      backgroundColor: getPlatformColor(link.platform) + '10',
+                      borderColor: getPlatformColor(link.platform) + '25',
                       color: getPlatformColor(link.platform),
                     }"
                   >
                     <img
                       :src="getPlatformIcon(link.platform)"
-                      class="w-3.5 h-3.5"
+                      class="w-3 h-3"
                       :class="getPlatformIconClass(link.platform)"
                     />
-                    {{ link.display_name || truncateId(link.platform_id) }}
+                    <span class="truncate max-w-[100px]">{{ link.display_name || truncateId(link.platform_id) }}</span>
                   </div>
                 </div>
               </div>
 
               <!-- Quick Actions Footer -->
-              <div class="px-4 py-3 border-t border-border/50 flex items-center justify-between bg-muted/20">
-                <span class="text-xs text-muted-foreground">
+              <div class="px-3 py-2 border-t border-border/30 flex items-center justify-between">
+                <span class="text-[11px] text-muted-foreground/60">
                   {{ creator.platform_links.length }} platform{{ creator.platform_links.length !== 1 ? 's' : '' }}
                 </span>
                 <button
                   @click.stop="confirmDeleteCreator(creator)"
-                  class="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+                  class="p-1 text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 rounded transition-all duration-200"
                   title="Delete Creator"
                 >
-                  <Trash2 class="w-4 h-4" />
+                  <Trash2 class="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
@@ -344,7 +359,6 @@
     Video,
     Video as VideoIcon,
     Download,
-    Radio,
     Square,
     Trash2,
     Play,
@@ -394,7 +408,7 @@
   }
 
   // Get the creator's profile image from platform links (similar to LiveClip.vue)
-  function getCreatorProfileImage(creator: CreatorProfileWithLinks): string | null {
+  function getCreatorProfileImage(creator: CreatorProfileWithLinks): string | undefined {
     // First try to get from primary platform link
     const primaryLink = creator.platform_links.find((l) => l.is_primary) || creator.platform_links[0];
     if (primaryLink?.profile_image_url) {
@@ -408,7 +422,7 @@
       }
     }
 
-    return null;
+    return undefined;
   }
 
   function handleImageError(event: Event, _creator: CreatorProfileWithLinks) {
@@ -438,9 +452,9 @@
     return colors[platform] || '#6b7280';
   }
 
-  function getPlatformIconClass(platform: PlatformId): string {
-    if (platform === 'kick') return '';
-    return 'brightness-200';
+  function getPlatformIconClass(_platform: PlatformId): string {
+    // Make all platform icons white
+    return 'brightness-0 invert';
   }
 
   function truncateId(id: string): string {
@@ -558,11 +572,6 @@
   }
 
   // Monitoring controls
-  function startCreatorMonitoring(creator: CreatorProfileWithLinks) {
-    creatorToMonitor.value = creator;
-    showMonitoringModeDialog.value = true;
-  }
-
   async function startCreatorMonitoringDirect(creator: CreatorProfileWithLinks, detectClips: boolean) {
     creatorToMonitor.value = creator;
     await startMonitoringWithMode(detectClips);
@@ -658,6 +667,50 @@
 </script>
 
 <style scoped>
+  /* Card Styles */
+  .creator-card {
+    will-change: transform, box-shadow;
+  }
+
+  .creator-card:hover {
+    transform: translateY(-2px);
+  }
+
+  /* Action Button Stagger Animation */
+  .action-btn {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  .group:hover .action-btn {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .group:hover .action-btn:nth-child(1) {
+    transition-delay: 0ms;
+  }
+  .group:hover .action-btn:nth-child(2) {
+    transition-delay: 30ms;
+  }
+  .group:hover .action-btn:nth-child(3) {
+    transition-delay: 60ms;
+  }
+  .group:hover .action-btn:nth-child(4) {
+    transition-delay: 90ms;
+  }
+  .group:hover .action-btn:nth-child(5) {
+    transition-delay: 120ms;
+  }
+  .group:hover .action-btn:nth-child(6) {
+    transition-delay: 150ms;
+  }
+
+  /* Platform Badge Hover */
+  .platform-badge:hover {
+    filter: brightness(1.1);
+  }
+
   /* List Transitions */
   .list-move,
   .list-enter-active,
