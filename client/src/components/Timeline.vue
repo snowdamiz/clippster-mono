@@ -344,6 +344,7 @@
   // timelineBounds is now managed by useTimelineInteraction composable
 
   // Helper function to sort clips: by run_number descending (newest first), then by virality descending
+  // IMPORTANT: This must match the sorting in ClipsTab.vue exactly for consistent clip ordering
   function sortClips(clips: Clip[]): Clip[] {
     return [...clips].sort((a, b) => {
       // First sort by run_number descending (newest run first)
@@ -354,8 +355,9 @@
       }
 
       // Then sort by virality score descending (highest first)
-      const viralityA = a.virality_score || 0;
-      const viralityB = b.virality_score || 0;
+      // Use current_version_virality_score to match ClipsTab.vue sorting
+      const viralityA = (a as any).current_version_virality_score || a.virality_score || 0;
+      const viralityB = (b as any).current_version_virality_score || b.virality_score || 0;
       return viralityB - viralityA;
     });
   }

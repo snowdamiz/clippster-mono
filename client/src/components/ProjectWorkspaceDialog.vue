@@ -883,6 +883,7 @@
         const clipType = segments.length > 1 ? 'spliced' : 'continuous';
 
         // Transform to Timeline's Clip interface
+        // IMPORTANT: Include current_version_virality_score to match ClipsTab sorting
         return {
           id: clip.id,
           title: version.name || clip.name || 'Untitled Clip',
@@ -891,7 +892,8 @@
           segments: segments,
           total_duration: version.end_time - version.start_time,
           combined_transcript: version.description || 'No transcript available',
-          virality_score: Math.round((version.confidence_score || 0) * 100),
+          virality_score: clip.current_version_virality_score || version.virality_score || 0,
+          current_version_virality_score: clip.current_version_virality_score || version.virality_score || 0,
           reason: version.detection_reason || 'AI detected clip-worthy moment',
           socialMediaPost: `${version.name || 'Clip'} - ${version.description || 'Interesting moment'}`,
           run_number: clip.run_number,
