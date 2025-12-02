@@ -151,9 +151,17 @@
                 </div>
               </div>
 
-              <!-- Folder Badge (if has children and in folder view) -->
+              <!-- Processing Indicator (if project or any segment is being detected) -->
               <div
-                v-if="viewMode === 'folders' && hasChildren(project.id) && getChildCount(project.id) > 1"
+                v-if="isProjectDetecting(project.id)"
+                class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-purple-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm"
+              >
+                <Loader2 class="w-3 h-3 animate-spin" />
+                <span>Detecting...</span>
+              </div>
+              <!-- Folder Badge (if has children and in folder view, only show if not detecting) -->
+              <div
+                v-else-if="viewMode === 'folders' && hasChildren(project.id) && getChildCount(project.id) > 1"
                 class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-blue-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm"
               >
                 <FolderOpen class="w-3 h-3" />
@@ -745,6 +753,7 @@
     Monitor,
     Check,
     Sparkles,
+    Loader2,
   } from 'lucide-vue-next';
   import {
     getAllProjects,
@@ -776,6 +785,7 @@
   import ClipDetectionConfirmDialog from '@/components/ClipDetectionConfirmDialog.vue';
   import { useChunkedClipDetection } from '@/composables/useChunkedClipDetection';
   import { useAuthStore } from '@/stores/auth';
+  import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
 
   const projects = ref<Project[]>([]);
   const loading = ref(true);
@@ -820,6 +830,8 @@
   const totalDetectionDuration = ref(0);
   const isDetectingProject = ref(false);
   const authStore = useAuthStore();
+  const { startDetection, updateProgress, completeDetection, isDetectionActive, getDetectionState } =
+    useClipDetectionTracking();
 
   // Filter state
   const searchQuery = ref('');
@@ -1618,6 +1630,51 @@
   }
 
   // Project-level clip detection methods
+  function isProjectDetecting(projectId: string): boolean {
+    // Check if the project itself is being detected
+    if (isDetectionActive(projectId)) {
+      return true;
+    }
+
+    // Check if any child segment is being detected
+    const children = getFolderChildren(projectId);
+    for (const child of children) {
+      if (isDetectionActive(child.id)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  function getProjectDetectionProgress(projectId: string): { progress: number; message: string } | null {
+    // Check if the project itself is being detected
+    const selfState = getDetectionState(projectId);
+    if (selfState?.isActive) {
+      return { progress: selfState.progress, message: selfState.message };
+    }
+
+    // Check children and aggregate progress
+    const children = getFolderChildren(projectId);
+    const activeChildren = children.filter((child) => isDetectionActive(child.id));
+
+    if (activeChildren.length > 0) {
+      // Find the currently active child
+      for (const child of activeChildren) {
+        const state = getDetectionState(child.id);
+        if (state?.isActive) {
+          const childIndex = children.findIndex((c) => c.id === child.id);
+          return {
+            progress: state.progress,
+            message: `Segment ${childIndex + 1}/${children.length}: ${state.message}`,
+          };
+        }
+      }
+    }
+
+    return null;
+  }
+
   function canDetectClips(projectId: string): boolean {
     // Check if project has videos directly
     const videos = projectVideos.value[projectId];
@@ -1704,6 +1761,7 @@
     }
 
     const segments = [...segmentsToDetect.value];
+    const parentProjectId = projectToDetect.value.id;
     const totalSegments = segments.length;
     let successCount = 0;
     let totalClipsFound = 0;
@@ -1717,22 +1775,51 @@
         // Show progress toast
         success('Detecting clips...', `Processing segment ${i + 1} of ${totalSegments}: ${segment.name}`, 3000);
 
-        try {
-          const { detectClipsWithChunking } = useChunkedClipDetection();
-          const result = await detectClipsWithChunking(segment.id, promptContent, {
-            chunkDurationMinutes: 15,
-            overlapSeconds: 30,
-            forceReprocess: false,
-          });
+        // Start global tracking for this segment (so it shows in workspace if user navigates there)
+        startDetection(segment.id);
 
-          if (result.success) {
-            successCount++;
-            // Get clip count from the result or refresh clip counts
-            const clips = await getClipsWithVersionsByProjectId(segment.id);
-            totalClipsFound += clips.length;
+        try {
+          const { detectClipsWithChunking, progress: chunkedProgress } = useChunkedClipDetection();
+
+          // Watch chunked detection progress and update global state for this segment
+          const stopProgressWatch = watch(
+            chunkedProgress,
+            (newProgress) => {
+              updateProgress(
+                segment.id,
+                newProgress.progress,
+                newProgress.stage,
+                newProgress.message,
+                newProgress.error || ''
+              );
+            },
+            { immediate: true }
+          );
+
+          try {
+            const result = await detectClipsWithChunking(segment.id, promptContent, {
+              chunkDurationMinutes: 15,
+              overlapSeconds: 30,
+              forceReprocess: false,
+            });
+
+            if (result.success) {
+              successCount++;
+              // Get clip count from the result or refresh clip counts
+              const clips = await getClipsWithVersionsByProjectId(segment.id);
+              totalClipsFound += clips.length;
+              completeDetection(segment.id);
+            } else if (result.cancelled) {
+              completeDetection(segment.id, 'Cancelled');
+            } else {
+              completeDetection(segment.id, result.error || 'Detection failed');
+            }
+          } finally {
+            stopProgressWatch();
           }
         } catch (err) {
           console.error(`Failed to detect clips for segment ${segment.name}:`, err);
+          completeDetection(segment.id, err instanceof Error ? err.message : 'Detection failed');
           // Continue with remaining segments even if one fails
         }
       }
@@ -1755,7 +1842,7 @@
 
       // Emit refresh event for clips page
       const refreshEvent = new CustomEvent('refresh-clips-projects', {
-        detail: { projectId: projectToDetect.value.id },
+        detail: { projectId: parentProjectId },
       });
       document.dispatchEvent(refreshEvent);
     } finally {
