@@ -28,10 +28,28 @@
           class="mb-6 -mt-2 bg-card flex flex-col md:flex-row gap-4 items-center justify-between"
           v-if="displayableBuilds.length > 0"
         >
-          <!-- Left: Search -->
-          <div class="relative w-full md:w-72">
-            <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input v-model="searchQuery" placeholder="Search clips or projects..." class="pl-9 bg-background/50" />
+          <!-- Left: Search or Selection Info -->
+          <div class="flex items-center gap-3 w-full md:w-auto">
+            <!-- Selection Controls (visible when items selected) -->
+            <div v-if="totalSelectedCount > 0" class="flex items-center gap-3">
+              <button
+                @click="confirmBulkDelete"
+                class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md flex items-center gap-2 font-medium text-sm transition-all"
+              >
+                <Trash2 class="h-4 w-4" />
+                Delete ({{ totalSelectedCount }})
+              </button>
+              <span class="text-sm text-muted-foreground">{{ totalSelectedCount }} selected</span>
+              <button @click="clearSelection" class="text-xs text-muted-foreground hover:text-foreground font-medium">
+                Clear
+              </button>
+            </div>
+
+            <!-- Search (hidden when items selected) -->
+            <div v-else class="relative w-full md:w-72">
+              <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input v-model="searchQuery" placeholder="Search clips or projects..." class="pl-9 bg-background/50" />
+            </div>
           </div>
 
           <!-- Right: Filters -->
@@ -106,17 +124,42 @@
               </h3>
 
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                <BuildCard
+                <div
                   v-for="item in group.builds"
                   :key="item.id"
-                  :build="item.build"
-                  :clip-name="item.clipName"
-                  :thumbnail-url="item.thumbnailUrl"
-                  :project-name="item.projectName"
-                  @play="playBuild"
-                  @save="saveBuild"
-                  @delete="confirmDeleteBuild"
-                />
+                  class="relative group/select"
+                  :class="{
+                    'ring-2 ring-primary ring-offset-2 ring-offset-background rounded-md': isBuildSelected(item.id),
+                  }"
+                >
+                  <!-- Selection Checkbox (visible on hover or when selected) -->
+                  <div
+                    class="absolute top-4 right-4 z-30 transition-opacity"
+                    :class="isBuildSelected(item.id) ? 'opacity-100' : 'opacity-0 group-hover/select:opacity-100'"
+                    @click.stop="toggleBuildSelection(item.id)"
+                  >
+                    <div
+                      :class="[
+                        'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md',
+                        isBuildSelected(item.id)
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-black/60 text-white hover:bg-black/80',
+                      ]"
+                    >
+                      <Check v-if="isBuildSelected(item.id)" class="w-4 h-4" />
+                    </div>
+                  </div>
+
+                  <BuildCard
+                    :build="item.build"
+                    :clip-name="item.clipName"
+                    :thumbnail-url="item.thumbnailUrl"
+                    :project-name="item.projectName"
+                    @play="playBuild"
+                    @save="saveBuild"
+                    @delete="confirmDeleteBuild"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -133,8 +176,27 @@
                   v-for="group in dateGroup.folders"
                   :key="group.id"
                   class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all border border-border shadow-sm"
+                  :class="{ 'ring-2 ring-primary ring-offset-2 ring-offset-background': isFolderSelected(group.id) }"
                   @click="openFolder(group)"
                 >
+                  <!-- Selection Checkbox (visible on hover or when selected) -->
+                  <div
+                    class="absolute top-4 right-4 z-30 transition-opacity"
+                    :class="isFolderSelected(group.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+                    @click.stop="toggleFolderSelection(group.id)"
+                  >
+                    <div
+                      :class="[
+                        'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md',
+                        isFolderSelected(group.id)
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-black/60 text-white hover:bg-black/80',
+                      ]"
+                    >
+                      <Check v-if="isFolderSelected(group.id)" class="w-4 h-4" />
+                    </div>
+                  </div>
+
                   <!-- Thumbnail -->
                   <div
                     v-if="group.clips.length > 0 && getThumbnailUrl(group.clips[0])"
@@ -244,10 +306,31 @@
         <!-- Header -->
         <div class="py-2 px-3 border-b border-border flex items-center justify-between bg-black/30">
           <div class="flex items-center justify-center gap-2.5">
-            <div class="bg-primary/10 p-1.5 rounded-md">
-              <FolderOpen class="h-4 w-4 text-primary" />
+            <!-- Selection Controls (visible when items selected) -->
+            <div v-if="selectedFolderDialogBuilds.size > 0" class="flex items-center gap-3">
+              <button
+                @click="confirmBulkDeleteFolderDialogBuilds"
+                class="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md flex items-center gap-2 font-medium text-sm transition-all"
+              >
+                <Trash2 class="h-4 w-4" />
+                Delete ({{ selectedFolderDialogBuilds.size }})
+              </button>
+              <span class="text-sm text-muted-foreground">{{ selectedFolderDialogBuilds.size }} selected</span>
+              <button
+                @click="clearFolderDialogBuildSelection"
+                class="text-xs text-muted-foreground hover:text-foreground font-medium"
+              >
+                Clear
+              </button>
             </div>
-            <h2 class="text-md font-medium text-foreground -mt-1">{{ folderProject.name }}</h2>
+
+            <!-- Normal header (hidden when items selected) -->
+            <template v-else>
+              <div class="bg-primary/10 p-1.5 rounded-md">
+                <FolderOpen class="h-4 w-4 text-primary" />
+              </div>
+              <h2 class="text-md font-medium text-foreground -mt-1">{{ folderProject.name }}</h2>
+            </template>
           </div>
           <button
             @click="showFolderDialog = false"
@@ -276,17 +359,46 @@
                   paginatedFolderBuilds.length >= 5 || groupedFolderBuilds.length > 1,
               }"
             >
-              <BuildCard
+              <div
                 v-for="item in group.builds"
                 :key="item.id"
-                :build="item.build"
-                :clip-name="item.clipName"
-                :thumbnail-url="item.thumbnailUrl"
-                :project-name="null"
-                @play="playBuild"
-                @save="saveBuild"
-                @delete="confirmDeleteBuild"
-              />
+                class="relative group/select"
+                :class="{
+                  'ring-2 ring-primary ring-offset-2 ring-offset-background rounded-md': isFolderDialogBuildSelected(
+                    item.id
+                  ),
+                }"
+              >
+                <!-- Selection Checkbox (visible on hover or when selected) -->
+                <div
+                  class="absolute top-4 right-4 z-30 transition-opacity"
+                  :class="
+                    isFolderDialogBuildSelected(item.id) ? 'opacity-100' : 'opacity-0 group-hover/select:opacity-100'
+                  "
+                  @click.stop="toggleFolderDialogBuildSelection(item.id)"
+                >
+                  <div
+                    :class="[
+                      'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md',
+                      isFolderDialogBuildSelected(item.id)
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-black/60 text-white hover:bg-black/80',
+                    ]"
+                  >
+                    <Check v-if="isFolderDialogBuildSelected(item.id)" class="w-4 h-4" />
+                  </div>
+                </div>
+
+                <BuildCard
+                  :build="item.build"
+                  :clip-name="item.clipName"
+                  :thumbnail-url="item.thumbnailUrl"
+                  :project-name="null"
+                  @play="playBuild"
+                  @save="saveBuild"
+                  @delete="confirmDeleteBuild"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -321,6 +433,98 @@
       @close="handleDeleteBuildDialogClose"
       @confirm="deleteBuildConfirmed"
     />
+
+    <!-- Bulk Delete Confirmation Modal -->
+    <div
+      v-if="showBulkDeleteDialog"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+      @click.self="handleBulkDeleteDialogClose"
+    >
+      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
+        <h2 class="text-2xl font-bold mb-4">
+          Delete
+          {{
+            viewMode === 'folders'
+              ? selectedFolders.size + ' Project' + (selectedFolders.size !== 1 ? 's' : '')
+              : totalSelectedCount + ' Build' + (totalSelectedCount !== 1 ? 's' : '')
+          }}
+        </h2>
+
+        <div class="space-y-4">
+          <p class="text-muted-foreground">
+            <span v-if="viewMode === 'folders'">
+              Are you sure you want to delete all builds from
+              <span class="font-semibold text-foreground">
+                {{ selectedFolders.size }} project{{ selectedFolders.size !== 1 ? 's' : '' }}
+              </span>
+              ?
+            </span>
+            <span v-else>
+              Are you sure you want to delete
+              <span class="font-semibold text-foreground">
+                {{ totalSelectedCount }} build{{ totalSelectedCount !== 1 ? 's' : '' }}
+              </span>
+              ?
+            </span>
+            The video files will be permanently removed.
+            <span class="block mt-1">This action cannot be undone.</span>
+          </p>
+
+          <button
+            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
+            @click="bulkDeleteConfirmed"
+          >
+            Delete
+            {{
+              viewMode === 'folders'
+                ? 'All Builds'
+                : totalSelectedCount + ' Build' + (totalSelectedCount !== 1 ? 's' : '')
+            }}
+          </button>
+          <button
+            class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
+            @click="handleBulkDeleteDialogClose"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bulk Delete Folder Dialog Builds Confirmation Modal -->
+    <div
+      v-if="showBulkDeleteFolderDialogBuildsDialog"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]"
+      @click.self="handleBulkDeleteFolderDialogBuildsDialogClose"
+    >
+      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
+        <h2 class="text-2xl font-bold mb-4">Delete {{ selectedFolderDialogBuilds.size }} Builds</h2>
+
+        <div class="space-y-4">
+          <p class="text-muted-foreground">
+            Are you sure you want to delete
+            <span class="font-semibold text-foreground">
+              {{ selectedFolderDialogBuilds.size }} build{{ selectedFolderDialogBuilds.size !== 1 ? 's' : '' }}
+            </span>
+            ? The video files will be permanently removed.
+            <span class="block mt-1">This action cannot be undone.</span>
+          </p>
+
+          <button
+            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
+            @click="bulkDeleteFolderDialogBuildsConfirmed"
+          >
+            Delete {{ selectedFolderDialogBuilds.size }} Builds
+          </button>
+          <button
+            class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
+            @click="handleBulkDeleteFolderDialogBuildsDialogClose"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -329,7 +533,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
   import { save } from '@tauri-apps/plugin-dialog';
-  import { LayoutGrid, Folder, Video, Search, X, List, FolderOpen } from 'lucide-vue-next';
+  import { LayoutGrid, Folder, Video, Search, X, List, FolderOpen, Check, Trash2 } from 'lucide-vue-next';
   import {
     getAllClipsWithBuilds,
     deleteClipBuild,
@@ -388,6 +592,13 @@
   const folderProject = ref<{ id: string; name: string; clips: ClipWithBuilds[] } | null>(null);
   const folderCurrentPage = ref(1);
   const folderItemsPerPage = 12;
+
+  // Multi-select state
+  const selectedBuilds = ref<Set<string>>(new Set());
+  const selectedFolders = ref<Set<string>>(new Set());
+  const showBulkDeleteDialog = ref(false);
+  const selectedFolderDialogBuilds = ref<Set<string>>(new Set());
+  const showBulkDeleteFolderDialogBuildsDialog = ref(false);
 
   // Filter state
   const searchQuery = ref('');
@@ -902,6 +1113,85 @@
     currentPage.value = 1;
   });
 
+  // Clear selections when switching view mode
+  watch(viewMode, () => {
+    clearSelection();
+  });
+
+  // Clear folder dialog build selection when folder dialog closes
+  watch(showFolderDialog, (isOpen) => {
+    if (!isOpen) {
+      clearFolderDialogBuildSelection();
+    }
+  });
+
+  // Folder dialog build multi-select functions
+  function toggleFolderDialogBuildSelection(buildId: string, event?: MouseEvent) {
+    if (event) {
+      event.stopPropagation();
+    }
+    if (selectedFolderDialogBuilds.value.has(buildId)) {
+      selectedFolderDialogBuilds.value.delete(buildId);
+    } else {
+      selectedFolderDialogBuilds.value.add(buildId);
+    }
+    selectedFolderDialogBuilds.value = new Set(selectedFolderDialogBuilds.value);
+  }
+
+  function isFolderDialogBuildSelected(buildId: string): boolean {
+    return selectedFolderDialogBuilds.value.has(buildId);
+  }
+
+  function clearFolderDialogBuildSelection() {
+    selectedFolderDialogBuilds.value.clear();
+    selectedFolderDialogBuilds.value = new Set(selectedFolderDialogBuilds.value);
+  }
+
+  function confirmBulkDeleteFolderDialogBuilds() {
+    if (selectedFolderDialogBuilds.value.size > 0) {
+      showBulkDeleteFolderDialogBuildsDialog.value = true;
+    }
+  }
+
+  function handleBulkDeleteFolderDialogBuildsDialogClose() {
+    showBulkDeleteFolderDialogBuildsDialog.value = false;
+  }
+
+  async function bulkDeleteFolderDialogBuildsConfirmed() {
+    const buildIds = Array.from(selectedFolderDialogBuilds.value);
+    let deletedCount = 0;
+
+    try {
+      for (const buildId of buildIds) {
+        const buildItem = folderBuilds.value.find((b) => b.id === buildId);
+        if (!buildItem) continue;
+
+        await deleteClipBuild(buildItem.build.id);
+        try {
+          await invoke('delete_file', { path: buildItem.build.file_path });
+        } catch (fileError) {
+          console.warn('Could not delete build file:', fileError);
+        }
+        deletedCount++;
+      }
+
+      await loadClips();
+      showSuccessToast('Builds Deleted', `${deletedCount} build${deletedCount !== 1 ? 's' : ''} deleted successfully.`);
+      selectedFolderDialogBuilds.value.clear();
+
+      // Close folder dialog if all builds were deleted
+      if (folderProject.value && folderBuilds.value.length === 0) {
+        showFolderDialog.value = false;
+        folderProject.value = null;
+      }
+    } catch (error) {
+      console.error('Failed to delete builds:', error);
+      showErrorToast('Delete Failed', 'Failed to delete some builds.');
+    }
+
+    showBulkDeleteFolderDialogBuildsDialog.value = false;
+  }
+
   async function loadClips() {
     loading.value = true;
     try {
@@ -1174,6 +1464,123 @@
 
     showDeleteBuildDialog.value = false;
     buildToDelete.value = null;
+  }
+
+  // Multi-select functions
+  function toggleBuildSelection(buildId: string, event?: MouseEvent) {
+    if (event) {
+      event.stopPropagation();
+    }
+    if (selectedBuilds.value.has(buildId)) {
+      selectedBuilds.value.delete(buildId);
+    } else {
+      selectedBuilds.value.add(buildId);
+    }
+    // Trigger reactivity
+    selectedBuilds.value = new Set(selectedBuilds.value);
+  }
+
+  function isBuildSelected(buildId: string): boolean {
+    return selectedBuilds.value.has(buildId);
+  }
+
+  function toggleFolderSelection(folderId: string, event?: MouseEvent) {
+    if (event) {
+      event.stopPropagation();
+    }
+    if (selectedFolders.value.has(folderId)) {
+      selectedFolders.value.delete(folderId);
+    } else {
+      selectedFolders.value.add(folderId);
+    }
+    // Trigger reactivity
+    selectedFolders.value = new Set(selectedFolders.value);
+  }
+
+  function isFolderSelected(folderId: string): boolean {
+    return selectedFolders.value.has(folderId);
+  }
+
+  // Combined selection count based on current view
+  const totalSelectedCount = computed(() => {
+    if (viewMode.value === 'folders') {
+      return selectedFolders.value.size;
+    }
+    return selectedBuilds.value.size;
+  });
+
+  function clearSelection() {
+    selectedBuilds.value.clear();
+    selectedBuilds.value = new Set(selectedBuilds.value);
+    selectedFolders.value.clear();
+    selectedFolders.value = new Set(selectedFolders.value);
+  }
+
+  function confirmBulkDelete() {
+    if (totalSelectedCount.value > 0) {
+      showBulkDeleteDialog.value = true;
+    }
+  }
+
+  function handleBulkDeleteDialogClose() {
+    showBulkDeleteDialog.value = false;
+  }
+
+  async function bulkDeleteConfirmed() {
+    let deletedCount = 0;
+
+    try {
+      if (viewMode.value === 'folders') {
+        // Delete all builds in selected folders
+        const folderIds = Array.from(selectedFolders.value);
+        for (const folderId of folderIds) {
+          const folder = groupedByProject.value.find((g) => g.id === folderId);
+          if (!folder) continue;
+
+          // Delete all builds in this folder
+          for (const clip of folder.clips) {
+            if (clip.builds) {
+              for (const build of clip.builds) {
+                if (build.status === 'completed' && build.file_path) {
+                  await deleteClipBuild(build.id);
+                  try {
+                    await invoke('delete_file', { path: build.file_path });
+                  } catch (fileError) {
+                    console.warn('Could not delete build file:', fileError);
+                  }
+                  deletedCount++;
+                }
+              }
+            }
+          }
+        }
+        selectedFolders.value.clear();
+      } else {
+        // Delete selected builds
+        const buildIds = Array.from(selectedBuilds.value);
+        for (const buildId of buildIds) {
+          const buildItem = displayableBuilds.value.find((b) => b.id === buildId);
+          if (!buildItem) continue;
+
+          await deleteClipBuild(buildItem.build.id);
+          try {
+            await invoke('delete_file', { path: buildItem.build.file_path });
+          } catch (fileError) {
+            console.warn('Could not delete build file:', fileError);
+          }
+          deletedCount++;
+        }
+        selectedBuilds.value.clear();
+      }
+
+      await loadClips();
+      showSuccessToast('Builds Deleted', `${deletedCount} build${deletedCount !== 1 ? 's' : ''} deleted successfully.`);
+    } catch (error) {
+      console.error('Failed to delete builds:', error);
+      showErrorToast('Delete Failed', 'Failed to delete some builds.');
+    }
+
+    showBulkDeleteDialog.value = false;
   }
 
   onMounted(() => {

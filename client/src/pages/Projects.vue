@@ -27,10 +27,28 @@
     >
       <!-- Filter Toolbar -->
       <div class="-mt-2 bg-card flex flex-col md:flex-row gap-4 items-center justify-between">
-        <!-- Left: Search -->
-        <div class="relative w-full md:w-72">
-          <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input v-model="searchQuery" placeholder="Search projects..." class="pl-9 bg-background/50" />
+        <!-- Left: Search or Selection Info -->
+        <div class="flex items-center gap-3 w-full md:w-auto">
+          <!-- Selection Controls (visible when items selected) -->
+          <div v-if="selectedProjects.size > 0" class="flex items-center gap-3">
+            <button
+              @click="confirmBulkDelete"
+              class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md flex items-center gap-2 font-medium text-sm transition-all"
+            >
+              <Trash2 class="h-4 w-4" />
+              Delete ({{ selectedProjects.size }})
+            </button>
+            <span class="text-sm text-muted-foreground">{{ selectedProjects.size }} selected</span>
+            <button @click="clearSelection" class="text-xs text-muted-foreground hover:text-foreground font-medium">
+              Clear
+            </button>
+          </div>
+
+          <!-- Search (hidden when items selected) -->
+          <div v-else class="relative w-full md:w-72">
+            <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input v-model="searchQuery" placeholder="Search projects..." class="pl-9 bg-background/50" />
+          </div>
         </div>
 
         <!-- Right: Filters & View Mode -->
@@ -112,10 +130,26 @@
               v-for="project in group.projects"
               :key="project.id"
               class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
+              :class="{ 'ring-2 ring-primary ring-offset-2 ring-offset-background': isProjectSelected(project.id) }"
               @click="handleProjectClick(project)"
             >
-              <!-- Live Badge (kept if needed for clear visibility, but simplified) -->
-              <!-- Moving inside bottom overlay as per request to simplify -->
+              <!-- Selection Checkbox (visible on hover or when selected) -->
+              <div
+                class="absolute top-4 right-4 z-30 transition-opacity"
+                :class="isProjectSelected(project.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+                @click.stop="toggleProjectSelection(project.id)"
+              >
+                <div
+                  :class="[
+                    'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md',
+                    isProjectSelected(project.id)
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-black/60 text-white hover:bg-black/80',
+                  ]"
+                >
+                  <Check v-if="isProjectSelected(project.id)" class="w-4 h-4" />
+                </div>
+              </div>
 
               <!-- Folder Badge (if has children and in folder view) -->
               <div
@@ -347,12 +381,33 @@
         <!-- Header -->
         <div class="py-2 px-3 border-b border-border flex items-center justify-between bg-black/30">
           <div class="flex items-center gap-2.5 min-w-0">
-            <div class="bg-primary/10 p-1.5 rounded-md shrink-0">
-              <FolderOpen class="h-4 w-4 text-primary" />
+            <!-- Selection Controls (visible when items selected) -->
+            <div v-if="selectedFolderChildren.size > 0" class="flex items-center gap-3">
+              <button
+                @click="confirmBulkDeleteFolderChildren"
+                class="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md flex items-center gap-2 font-medium text-sm transition-all"
+              >
+                <Trash2 class="h-4 w-4" />
+                Delete ({{ selectedFolderChildren.size }})
+              </button>
+              <span class="text-sm text-muted-foreground">{{ selectedFolderChildren.size }} selected</span>
+              <button
+                @click="clearFolderChildSelection"
+                class="text-xs text-muted-foreground hover:text-foreground font-medium"
+              >
+                Clear
+              </button>
             </div>
-            <h2 class="text-md font-medium text-foreground -mt-1 truncate" :title="folderProject.name">
-              {{ folderProject.name }}
-            </h2>
+
+            <!-- Normal header (hidden when items selected) -->
+            <template v-else>
+              <div class="bg-primary/10 p-1.5 rounded-md shrink-0">
+                <FolderOpen class="h-4 w-4 text-primary" />
+              </div>
+              <h2 class="text-md font-medium text-foreground -mt-1 truncate" :title="folderProject.name">
+                {{ folderProject.name }}
+              </h2>
+            </template>
           </div>
           <button
             @click="showFolderDialog = false"
@@ -376,8 +431,27 @@
               v-for="project in paginatedFolderChildren"
               :key="project.id"
               class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all border border-border shadow-sm"
+              :class="{ 'ring-2 ring-primary ring-offset-2 ring-offset-background': isFolderChildSelected(project.id) }"
               @click="openWorkspace(project)"
             >
+              <!-- Selection Checkbox (visible on hover or when selected) -->
+              <div
+                class="absolute top-3 right-3 z-30 transition-opacity"
+                :class="isFolderChildSelected(project.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+                @click.stop="toggleFolderChildSelection(project.id)"
+              >
+                <div
+                  :class="[
+                    'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md',
+                    isFolderChildSelected(project.id)
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-black/60 text-white hover:bg-black/80',
+                  ]"
+                >
+                  <Check v-if="isFolderChildSelected(project.id)" class="w-4 h-4" />
+                </div>
+              </div>
+
               <!-- Thumbnail background -->
               <div
                 v-if="getThumbnailUrl(project.id)"
@@ -564,6 +638,74 @@
         </div>
       </div>
     </div>
+
+    <!-- Bulk Delete Confirmation Modal -->
+    <div
+      v-if="showBulkDeleteDialog"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+      @click.self="handleBulkDeleteDialogClose"
+    >
+      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
+        <h2 class="text-2xl font-bold mb-4">Delete {{ selectedProjects.size }} Projects</h2>
+
+        <div class="space-y-4">
+          <p class="text-muted-foreground">
+            Are you sure you want to delete
+            <span class="font-semibold text-foreground">{{ selectedProjects.size }} projects</span>
+            ? This will also delete all associated segments and video files.
+            <span class="block mt-1">This action cannot be undone.</span>
+          </p>
+
+          <button
+            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
+            @click="bulkDeleteConfirmed"
+          >
+            Delete {{ selectedProjects.size }} Projects
+          </button>
+          <button
+            class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
+            @click="handleBulkDeleteDialogClose"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bulk Delete Folder Children Confirmation Modal -->
+    <div
+      v-if="showBulkDeleteFolderChildrenDialog"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]"
+      @click.self="handleBulkDeleteFolderChildrenDialogClose"
+    >
+      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
+        <h2 class="text-2xl font-bold mb-4">Delete {{ selectedFolderChildren.size }} Segments</h2>
+
+        <div class="space-y-4">
+          <p class="text-muted-foreground">
+            Are you sure you want to delete
+            <span class="font-semibold text-foreground">
+              {{ selectedFolderChildren.size }} segment{{ selectedFolderChildren.size !== 1 ? 's' : '' }}
+            </span>
+            ? This will also delete all associated video files.
+            <span class="block mt-1">This action cannot be undone.</span>
+          </p>
+
+          <button
+            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
+            @click="bulkDeleteFolderChildrenConfirmed"
+          >
+            Delete {{ selectedFolderChildren.size }} Segments
+          </button>
+          <button
+            class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
+            @click="handleBulkDeleteFolderChildrenDialogClose"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
   </PageLayout>
 </template>
 
@@ -583,6 +725,7 @@
     Search,
     Clock,
     Monitor,
+    Check,
   } from 'lucide-vue-next';
   import {
     getAllProjects,
@@ -641,6 +784,12 @@
   const viewMode = ref<'folders' | 'list'>('folders');
   const showFolderDialog = ref(false);
   const folderProject = ref<Project | null>(null);
+
+  // Multi-select state
+  const selectedProjects = ref<Set<string>>(new Set());
+  const showBulkDeleteDialog = ref(false);
+  const selectedFolderChildren = ref<Set<string>>(new Set());
+  const showBulkDeleteFolderChildrenDialog = ref(false);
 
   // Filter state
   const searchQuery = ref('');
@@ -1107,6 +1256,13 @@
     currentPage.value = 1;
   });
 
+  // Clear folder child selection when folder dialog closes
+  watch(showFolderDialog, (isOpen) => {
+    if (!isOpen) {
+      clearFolderChildSelection();
+    }
+  });
+
   function openCreateDialog() {
     selectedProject.value = null;
     showDialog.value = true;
@@ -1304,6 +1460,130 @@
       projectHasClips.value = false;
       deleteSegmentsToo.value = false;
       projectToDelete.value = null;
+    }
+  }
+
+  // Multi-select functions
+  function toggleProjectSelection(projectId: string, event?: MouseEvent) {
+    if (event) {
+      event.stopPropagation();
+    }
+    if (selectedProjects.value.has(projectId)) {
+      selectedProjects.value.delete(projectId);
+    } else {
+      selectedProjects.value.add(projectId);
+    }
+    // Trigger reactivity
+    selectedProjects.value = new Set(selectedProjects.value);
+  }
+
+  function isProjectSelected(projectId: string): boolean {
+    return selectedProjects.value.has(projectId);
+  }
+
+  function clearSelection() {
+    selectedProjects.value.clear();
+    selectedProjects.value = new Set(selectedProjects.value);
+  }
+
+  function confirmBulkDelete() {
+    if (selectedProjects.value.size > 0) {
+      showBulkDeleteDialog.value = true;
+    }
+  }
+
+  function handleBulkDeleteDialogClose() {
+    showBulkDeleteDialog.value = false;
+  }
+
+  async function bulkDeleteConfirmed() {
+    const projectIds = Array.from(selectedProjects.value);
+    let deletedCount = 0;
+
+    try {
+      for (const projectId of projectIds) {
+        // Get the project to check for children
+        const project = projects.value.find((p) => p.id === projectId);
+        if (!project) continue;
+
+        // Delete children if any
+        if (hasChildren(projectId)) {
+          const children = getFolderChildren(projectId);
+          for (const child of children) {
+            await deleteProjectWithFiles(child.id);
+          }
+        }
+
+        // Delete the project
+        await deleteProjectWithFiles(projectId);
+        deletedCount++;
+      }
+
+      success('Projects deleted', `${deletedCount} project${deletedCount !== 1 ? 's' : ''} deleted successfully`);
+      selectedProjects.value.clear();
+      await loadProjects();
+    } catch (err) {
+      error('Failed to delete projects', 'An error occurred while deleting the projects.');
+    } finally {
+      showBulkDeleteDialog.value = false;
+    }
+  }
+
+  // Folder children multi-select functions
+  function toggleFolderChildSelection(projectId: string, event?: MouseEvent) {
+    if (event) {
+      event.stopPropagation();
+    }
+    if (selectedFolderChildren.value.has(projectId)) {
+      selectedFolderChildren.value.delete(projectId);
+    } else {
+      selectedFolderChildren.value.add(projectId);
+    }
+    selectedFolderChildren.value = new Set(selectedFolderChildren.value);
+  }
+
+  function isFolderChildSelected(projectId: string): boolean {
+    return selectedFolderChildren.value.has(projectId);
+  }
+
+  function clearFolderChildSelection() {
+    selectedFolderChildren.value.clear();
+    selectedFolderChildren.value = new Set(selectedFolderChildren.value);
+  }
+
+  function confirmBulkDeleteFolderChildren() {
+    if (selectedFolderChildren.value.size > 0) {
+      showBulkDeleteFolderChildrenDialog.value = true;
+    }
+  }
+
+  function handleBulkDeleteFolderChildrenDialogClose() {
+    showBulkDeleteFolderChildrenDialog.value = false;
+  }
+
+  async function bulkDeleteFolderChildrenConfirmed() {
+    const projectIds = Array.from(selectedFolderChildren.value);
+    let deletedCount = 0;
+
+    try {
+      for (const projectId of projectIds) {
+        await deleteProjectWithFiles(projectId);
+        deletedCount++;
+      }
+
+      success('Segments deleted', `${deletedCount} segment${deletedCount !== 1 ? 's' : ''} deleted successfully`);
+      selectedFolderChildren.value.clear();
+      await loadProjects();
+
+      // Close folder dialog if all children were deleted
+      if (folderProject.value && getFolderChildren(folderProject.value.id).length === 0) {
+        showFolderDialog.value = false;
+        folderProject.value = null;
+      }
+    } catch (err) {
+      error('Failed to delete segments', 'An error occurred while deleting the segments.');
+    } finally {
+      showBulkDeleteFolderChildrenDialog.value = false;
     }
   }
 

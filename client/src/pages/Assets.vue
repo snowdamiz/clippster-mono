@@ -33,9 +33,25 @@
 
       <!-- Content when not loading -->
       <div v-else>
-        <!-- Header with stats -->
+        <!-- Header with stats or selection controls -->
         <div v-if="allAssets.length > 0 || showSkeletonCard" class="flex items-center justify-between mb-4">
-          <p class="text-sm text-muted-foreground">
+          <!-- Selection Controls (visible when items selected) -->
+          <div v-if="selectedAssets.size > 0" class="flex items-center gap-3">
+            <button
+              @click="confirmBulkDelete"
+              class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md flex items-center gap-2 font-medium text-sm transition-all"
+            >
+              <Trash2 class="h-4 w-4" />
+              Delete ({{ selectedAssets.size }})
+            </button>
+            <span class="text-sm text-muted-foreground">{{ selectedAssets.size }} selected</span>
+            <button @click="clearSelection" class="text-xs text-muted-foreground hover:text-foreground font-medium">
+              Clear
+            </button>
+          </div>
+
+          <!-- Stats (hidden when items selected) -->
+          <p v-else class="text-sm text-muted-foreground">
             <span v-if="showSkeletonCard">
               Uploading...
               <span v-if="allAssets.length > 0">
@@ -83,8 +99,27 @@
             v-for="asset in paginatedAssets"
             :key="asset.id"
             class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
+            :class="{ 'ring-2 ring-primary ring-offset-2 ring-offset-background': isAssetSelected(asset.id) }"
             @click="asset.assetType !== 'watermark' ? playAsset(asset as IntroOutro) : null"
           >
+            <!-- Selection Checkbox (visible on hover or when selected) -->
+            <div
+              class="absolute top-4 right-4 z-30 transition-opacity"
+              :class="isAssetSelected(asset.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+              @click.stop="toggleAssetSelection(asset.id)"
+            >
+              <div
+                :class="[
+                  'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md',
+                  isAssetSelected(asset.id)
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-black/60 text-white hover:bg-black/80',
+                ]"
+              >
+                <Check v-if="isAssetSelected(asset.id)" class="w-4 h-4" />
+              </div>
+            </div>
+
             <!-- Thumbnail background with vignette -->
             <div
               v-if="getThumbnailUrl(asset)"
@@ -218,13 +253,46 @@
 
     <!-- Asset Upload Dialog -->
     <AssetUploadDialog :show="showUploadDialog" @close="showUploadDialog = false" @uploaded="handleUploadComplete" />
+
+    <!-- Bulk Delete Confirmation Modal -->
+    <div
+      v-if="showBulkDeleteDialog"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+      @click.self="handleBulkDeleteDialogClose"
+    >
+      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
+        <h2 class="text-2xl font-bold mb-4">Delete {{ selectedAssets.size }} Assets</h2>
+
+        <div class="space-y-4">
+          <p class="text-muted-foreground">
+            Are you sure you want to delete
+            <span class="font-semibold text-foreground">{{ selectedAssets.size }} assets</span>
+            ? The files will be permanently removed.
+            <span class="block mt-1">This action cannot be undone.</span>
+          </p>
+
+          <button
+            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
+            @click="bulkDeleteConfirmed"
+          >
+            Delete {{ selectedAssets.size }} Assets
+          </button>
+          <button
+            class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
+            @click="handleBulkDeleteDialogClose"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
   import { getAllIntroOutros, getAllWatermarkImages, type IntroOutro, type WatermarkImage } from '@/services/database';
-  import { Archive, Folder, Upload, Play, Trash2, Package, Image as ImageIcon } from 'lucide-vue-next';
+  import { Archive, Folder, Upload, Play, Trash2, Package, Image as ImageIcon, Check } from 'lucide-vue-next';
   import { useToast } from '@/composables/useToast';
   import { useAssetOperations } from '@/composables/useAssetOperations';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
@@ -251,7 +319,11 @@
   const assetToPlay = ref<IntroOutro | null>(null);
   const showUploadDialog = ref(false);
   const thumbnailCache = ref<Map<string, string>>(new Map());
-  const { error } = useToast();
+  const { error, success } = useToast();
+
+  // Multi-select state
+  const selectedAssets = ref<Set<string>>(new Set());
+  const showBulkDeleteDialog = ref(false);
 
   let unregisterUploadCallback: (() => void) | null = null;
   let unregisterWatermarkCallback: (() => void) | null = null;
@@ -574,6 +646,72 @@
     } catch (err) {
       error('Failed to open folder', 'Unable to open the assets folder');
     }
+  }
+
+  // Multi-select functions
+  function toggleAssetSelection(assetId: string, event?: MouseEvent) {
+    if (event) {
+      event.stopPropagation();
+    }
+    if (selectedAssets.value.has(assetId)) {
+      selectedAssets.value.delete(assetId);
+    } else {
+      selectedAssets.value.add(assetId);
+    }
+    // Trigger reactivity
+    selectedAssets.value = new Set(selectedAssets.value);
+  }
+
+  function isAssetSelected(assetId: string): boolean {
+    return selectedAssets.value.has(assetId);
+  }
+
+  function clearSelection() {
+    selectedAssets.value.clear();
+    selectedAssets.value = new Set(selectedAssets.value);
+  }
+
+  function confirmBulkDelete() {
+    if (selectedAssets.value.size > 0) {
+      showBulkDeleteDialog.value = true;
+    }
+  }
+
+  function handleBulkDeleteDialogClose() {
+    showBulkDeleteDialog.value = false;
+  }
+
+  async function bulkDeleteConfirmed() {
+    const assetIds = Array.from(selectedAssets.value);
+    let deletedCount = 0;
+
+    try {
+      for (const assetId of assetIds) {
+        // Find the asset
+        const asset = allAssets.value.find((a) => a.id === assetId);
+        if (!asset) continue;
+
+        let result;
+        if (asset.assetType === 'watermark') {
+          result = await deleteWatermark(asset as WatermarkImage);
+        } else {
+          result = await deleteAsset(asset as IntroOutro);
+        }
+
+        if (result.success) {
+          deletedCount++;
+        }
+      }
+
+      await loadAssets();
+      success('Assets Deleted', `${deletedCount} asset${deletedCount !== 1 ? 's' : ''} deleted successfully.`);
+      selectedAssets.value.clear();
+    } catch (err) {
+      console.error('Failed to delete assets:', err);
+      error('Delete Failed', 'Failed to delete some assets.');
+    }
+
+    showBulkDeleteDialog.value = false;
   }
 
   onMounted(async () => {
