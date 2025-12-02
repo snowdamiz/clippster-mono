@@ -15,10 +15,11 @@ import {
 } from '@livekit/rtc-node';
 
 const VIDEO_QUALITY_HIGH = 2;
-// Audio offset in milliseconds. 
-// Positive value (e.g. 1000): DELAY audio (fills start with silence). Use when Audio is Ahead of Video.
-// Negative value (e.g. -1000): ADVANCE audio (skips/crops start). Use when Video is Ahead of Audio.
-const AUDIO_OFFSET_MS = 1000;
+// Audio-Video Sync Configuration
+// The sync is now PTS-based (presentation timestamp) for both audio and video.
+// This fallback offset is only used if PTS is not available on audio frames.
+const AUDIO_FALLBACK_OFFSET_MS = 0; // Only used as fallback if PTS unavailable
+const DEBUG_SYNC = true; // Temporarily enabled to diagnose audio frame properties
 
 const args = process.argv.slice(2);
 const [mintId, sessionId, outputDirArg, segmentMinutesArg] = args;
@@ -205,12 +206,11 @@ class AudioMixer {
 }
 
 class PumpfunRecorder {
-  constructor({ mintId, sessionId, outputDir, segmentDuration, audioOffset }) {
+  constructor({ mintId, sessionId, outputDir, segmentDuration }) {
     this.mintId = mintId;
     this.sessionId = sessionId;
     this.outputDir = outputDir;
     this.segmentDurationSeconds = segmentDuration;
-    this.audioOffset = audioOffset || 0;
     this.ffmpegPath = resolveFfmpegBinary();
     this.segmentPrefix = `${this.mintId}_${this.sessionId}_segment_`;
     this.playlistPath = path.join(this.outputDir, 'playlist.csv');
@@ -243,11 +243,19 @@ class PumpfunRecorder {
     
     this.firstAudioTime = null;
     this.firstVideoTime = null;
+    this.firstAudioTimestampUs = null; // Audio PTS from LiveKit (or computed)
     this.firstVideoTimestampUs = null;
     this.audioSamplesWritten = 0;
+    this.audioFrameCount = 0; // Count audio frames for computed PTS fallback
     
+    // Sync reference - calculated from PTS alignment
     this.referenceTime = null;
+    this.audioOffsetFromRef = 0; // ms offset to apply to audio timestamps
+    this.videoOffsetFromRef = 0; // ms offset to apply to video timestamps
+    this.syncMethod = 'unknown'; // 'pts', 'computed-pts', or 'wallclock'
     this.videoFramesWritten = 0;
+    this._loggedAudioFrame = false; // Debug: log first audio frame structure
+    this._audioTimestampSource = 'none'; // 'livekit', 'computed', or 'none'
     this.lastVideoFrame = null;
     this.videoQueue = []; // { buffer, timestampUs } sorted
     
@@ -378,9 +386,67 @@ class PumpfunRecorder {
         if (done || !value) break;
         
         const arrivalTime = Date.now();
+        this.audioFrameCount++;
+        
+        // Extract audio timestamp from LiveKit frame (similar to video)
+        // LiveKit provides timestampUs as BigInt presentation timestamp
+        // If not available, compute from frame count (each frame = 20ms = 20000us)
+        let audioTimestampUs = value.timestampUs;
+        let timestampSource = 'livekit';
+        
+        if (audioTimestampUs === undefined) {
+            // Compute PTS from frame count: each frame is exactly 20ms (20000 microseconds)
+            // This is reliable because AudioStream is configured with frameSizeMs: 20
+            audioTimestampUs = BigInt((this.audioFrameCount - 1) * 20000);
+            timestampSource = 'computed';
+        }
+        
+        // Debug: Log first audio frame structure to understand available properties
+        if (!this._loggedAudioFrame) {
+            this._loggedAudioFrame = true;
+            // Always log audio frame structure on first frame - critical for debugging sync issues
+            const frameProps = {};
+            for (const key of Object.keys(value)) {
+                const v = value[key];
+                if (typeof v === 'bigint') {
+                    frameProps[key] = v.toString() + 'n';
+                } else if (v && typeof v === 'object' && v.byteLength !== undefined) {
+                    frameProps[key] = `[Buffer ${v.byteLength} bytes]`;
+                } else if (typeof v === 'object') {
+                    frameProps[key] = JSON.stringify(v);
+                } else {
+                    frameProps[key] = v;
+                }
+            }
+            log('Audio frame structure', frameProps);
+            
+            // Also check for nested frame object (some SDKs wrap the data)
+            if (value.frame) {
+                const nestedProps = {};
+                for (const key of Object.keys(value.frame)) {
+                    const v = value.frame[key];
+                    if (typeof v === 'bigint') {
+                        nestedProps[key] = v.toString() + 'n';
+                    } else {
+                        nestedProps[key] = typeof v;
+                    }
+                }
+                log('Audio frame.frame properties', nestedProps);
+            }
+        }
 
+        // Track first audio timestamp (both wall-clock and PTS)
         if (!this.firstAudioTime) {
             this.firstAudioTime = arrivalTime;
+            this.firstAudioTimestampUs = audioTimestampUs;
+            this._audioTimestampSource = timestampSource;
+            if (DEBUG_SYNC) {
+                log('First audio PTS captured', { 
+                    pts: audioTimestampUs.toString(),
+                    source: timestampSource,
+                    wallClock: arrivalTime 
+                });
+            }
             this.checkSyncAndStart();
         }
         
@@ -392,17 +458,25 @@ class PumpfunRecorder {
               value.data.byteLength
             );
             
-            // Calculate relative time index
-            // We use arrivalTime but "snap" to grid to handle jitter while preserving large gaps
-            // Apply audioOffset to shift audio relative to video (positive = delay audio)
-            const relativeTime = arrivalTime - this.referenceTime + this.audioOffset;
-            let timeIndex = Math.floor(relativeTime / 20);
+            let timeIndex;
+            
+            // Use PTS-based timing (always available now - either from LiveKit or computed)
+            if ((this.syncMethod === 'pts' || this.syncMethod === 'computed-pts') && this.firstAudioTimestampUs !== null) {
+                // Calculate time relative to first audio frame using PTS
+                const diffUs = audioTimestampUs - this.firstAudioTimestampUs;
+                const diffMs = Number(diffUs) / 1000;
+                // Apply the sync offset calculated during checkSyncAndStart
+                const relativeTime = diffMs + this.audioOffsetFromRef;
+                timeIndex = Math.floor(relativeTime / 20);
+            } else {
+                // Fallback: wall-clock based timing (only if sync setup failed)
+                const relativeTime = arrivalTime - this.referenceTime + AUDIO_FALLBACK_OFFSET_MS;
+                timeIndex = Math.floor(relativeTime / 20);
+            }
 
-            // Jitter Snapping Logic:
+            // Jitter Snapping Logic (only needed for wall-clock mode, but kept for safety):
             // If the calculated index is very close to the expected next index (within 2 frames = 40ms),
             // we snap it to be contiguous. This handles network jitter where packets arrive slightly late/early.
-            // If it's further away, we assume it's a real gap (DTX) and respect the gap (silence will be filled by mixer).
-            
             if (lastAudioIndex !== -1) {
                 const diff = timeIndex - (lastAudioIndex + 1);
                 if (diff > 0 && diff <= 2) {
@@ -524,11 +598,13 @@ class PumpfunRecorder {
 
         const buffer = Buffer.concat([yBuffer, uBuffer, vBuffer]);
 
-        // Store in queue instead of writing immediately
+        // Store in queue with RELATIVE timestamp (relative to first frame)
+        // This ensures all timestamp comparisons use consistent relative values
         if (this.firstVideoTimestampUs !== null && timestampUs !== undefined) {
+            const relativeTimestampUs = timestampUs - this.firstVideoTimestampUs;
             this.videoQueue.push({ 
                 buffer, 
-                timestampUs,
+                timestampUs: relativeTimestampUs, // Now relative, not absolute
                 width: effectiveWidth, 
                 height: effectiveHeight 
             });
@@ -576,7 +652,50 @@ class PumpfunRecorder {
     }
     
     if (!this.referenceTime) {
-        this.referenceTime = Math.max(this.firstAudioTime, this.firstVideoTime);
+        // SIMPLE SYNC STRATEGY:
+        // - Both audio and video use RELATIVE timestamps (from their first frame = 0)
+        // - No offset needed - both streams start at relative time 0
+        // - The mixer and video sync naturally align them
+        //
+        // Why this works:
+        // - Audio computed PTS: frame 1 = 0ms, frame 2 = 20ms, etc.
+        // - Video relative PTS: frame 1 = 0us, frame 2 = 33333us, etc.
+        // - Both start at 0, so they're aligned by definition
+        // - Any wall-clock arrival difference is just network jitter, not content offset
+        
+        const hasVideoPTS = this.firstVideoTimestampUs !== null;
+        const hasAudioPTS = this.firstAudioTimestampUs !== null;
+        
+        if (hasAudioPTS && hasVideoPTS) {
+            // Use the EARLIER arrival time as reference
+            // This ensures both streams start outputting as soon as possible
+            const wallClockOffsetMs = this.firstAudioTime - this.firstVideoTime;
+            this.referenceTime = Math.min(this.firstAudioTime, this.firstVideoTime);
+            
+            // No offset needed - both streams are relative starting from 0
+            this.audioOffsetFromRef = 0;
+            this.videoOffsetFromRef = 0;
+            
+            this.syncMethod = this._audioTimestampSource === 'livekit' ? 'pts' : 'computed-pts';
+            
+            log('A/V sync initialized', {
+                method: this.syncMethod,
+                audioSource: this._audioTimestampSource,
+                wallClockDiffMs: wallClockOffsetMs.toFixed(1),
+                referenceTime: this.referenceTime
+            });
+        } else {
+            // WALL-CLOCK FALLBACK (Original behavior - only if PTS missing)
+            this.referenceTime = Math.max(this.firstAudioTime, this.firstVideoTime);
+            this.audioOffsetFromRef = 0;
+            this.videoOffsetFromRef = 0;
+            this.syncMethod = 'wallclock';
+            log('A/V sync initialized', {
+                method: 'wall-clock (fallback)',
+                note: 'PTS unavailable'
+            });
+        }
+        
         this.videoFramesWritten = 0;
     }
 
@@ -665,10 +784,17 @@ class PumpfunRecorder {
         this.videoFramesWritten = 0;
         this.firstAudioTime = null;
         this.firstVideoTime = null;
+        this.firstAudioTimestampUs = null;
         this.firstVideoTimestampUs = null;
         this.audioSamplesWritten = 0;
+        this.audioFrameCount = 0;
+        this.audioOffsetFromRef = 0;
+        this.videoOffsetFromRef = 0;
+        this.syncMethod = 'unknown';
+        this._audioTimestampSource = 'none';
         this.fpsDetected = false;
         this.videoQueue = [];
+        this._loggedAudioFrame = false;
         
         // Reset mixer state
         this.audioMixer.reset();
@@ -717,11 +843,9 @@ class PumpfunRecorder {
   async syncVideoToAudio() {
       if (!this.videoPipe || this.restarting || !this.firstVideoTimestampUs || !this.referenceTime) return;
 
-      // Calculate the offset between when we STARTED the reference clock and when the first video frame appeared.
-      // If referenceTime is later than firstVideoTime (e.g. waited for audio), we must skip the early video frames.
-      const videoStartOffsetMs = this.referenceTime - this.firstVideoTime;
-      const videoStartOffsetUs = BigInt(Math.max(0, videoStartOffsetMs) * 1000);
-      const effectiveFirstTimestampUs = this.firstVideoTimestampUs + videoStartOffsetUs;
+      // Video queue contains RELATIVE timestamps (relative to first video frame = 0)
+      // Audio uses computed relative timestamps (first frame = 0)
+      // Both start at 0, so they're naturally aligned
 
       // Calculate how many video frames we SHOULD have written to match audio duration
       // Audio Sample Rate: 48000
@@ -730,10 +854,10 @@ class PumpfunRecorder {
       const targetVideoFrames = Math.floor((this.audioSamplesWritten / 48000) * 30);
       
       while (this.videoFramesWritten < targetVideoFrames) {
-          // Determine the target timestamp for this specific frame
-          // Frame N corresponds to time N * 33333.33 microseconds from start
+          // Determine the target RELATIVE timestamp for this specific frame
+          // Frame N corresponds to time N * 33333.33 microseconds from encoder start
           const frameTimeUs = BigInt(Math.floor(this.videoFramesWritten * 33333.33));
-          const targetTimestampUs = effectiveFirstTimestampUs + frameTimeUs;
+          const targetTimestampUs = frameTimeUs;
           
           // Find the best matching frame in the queue
           // We want the newest frame that is <= targetTimestampUs
@@ -1019,7 +1143,6 @@ async function main() {
     sessionId,
     outputDir,
     segmentDuration: segmentDurationSeconds,
-    audioOffset: AUDIO_OFFSET_MS,
   });
 
   await recorder.start();
