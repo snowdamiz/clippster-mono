@@ -595,6 +595,15 @@
   onMounted(() => {
     document.addEventListener('click', handleClickOutside);
     platformStore.refreshRecentSearchesMetadata();
+
+    // Restore platform state if clips are already loaded (e.g., returning from another page)
+    if (platformStore.clips.length > 0) {
+      detectedPlatform.value = platformStore.activePlatform;
+      // Restore the search input to show what's currently loaded
+      if (platformStore.currentSearchId) {
+        searchInput.value = platformStore.currentSearchId;
+      }
+    }
   });
 
   onUnmounted(() => {
