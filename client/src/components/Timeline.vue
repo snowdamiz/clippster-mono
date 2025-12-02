@@ -207,8 +207,10 @@
       :show="showCreateClipDialog"
       :startTime="createClipStartTime"
       :endTime="createClipEndTime"
+      :existingClips="existingClipsForDialog"
       @close="cancelCreateClip"
       @create="confirmCreateClip"
+      @addSegment="confirmAddSegment"
     />
   </div>
 </template>
@@ -234,6 +236,7 @@
     splitClipSegment,
     deleteClipSegment,
     createManualClip,
+    addSegmentToClip,
   } from '../services/database';
   import { debounce, throttle } from '../utils/timelineUtils';
   import { createSeekEvent } from '../utils/videoSeekUtils';
@@ -514,6 +517,16 @@
 
   // Computed: Can add clip (only when video is loaded)
   const canAddClip = computed(() => !!props.videoSrc && props.duration > 0);
+
+  // Computed: Existing clips for the dialog (format needed by CreateClipDialog)
+  const existingClipsForDialog = computed(() => {
+    return displayClips.value.map((clip) => ({
+      id: clip.id,
+      title: clip.title,
+      name: (clip as any).current_version_name || clip.title,
+      segmentCount: clip.segments?.length || 0,
+    }));
+  });
 
   // Continuous seeking state
   const isSeeking = ref(false);
@@ -865,7 +878,7 @@
     } else {
       // If timeline isn't stable yet, set bounds but they might be incorrect
       // This will be corrected when timeline becomes stable
-      timelineBounds.value = { top: rect.top, bottom: rect.bottom };
+      timelineBounds.value = { top: rect.top, bottom: rect.bottom, left: timelineBounds.value.left || 0 };
     }
 
     // Only show hover line if we're in the timeline content area (after track labels)
@@ -2432,6 +2445,44 @@
     } catch (error) {
       console.error('[Timeline] Error creating manual clip:', error);
       showWarning(`Failed to create clip: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Confirm adding segment to existing clip
+  async function confirmAddSegment(data: { clipId: string }) {
+    if (!props.projectId) {
+      console.error('[Timeline] Cannot add segment: no project ID');
+      showWarning('Cannot add segment: no project selected');
+      cancelCreateClip();
+      return;
+    }
+
+    try {
+      console.log('[Timeline] Adding segment to clip:', {
+        clipId: data.clipId,
+        startTime: createClipStartTime.value,
+        endTime: createClipEndTime.value,
+        projectId: props.projectId,
+      });
+
+      // Add the segment to the existing clip
+      const segmentId = await addSegmentToClip(data.clipId, props.projectId, {
+        startTime: createClipStartTime.value,
+        endTime: createClipEndTime.value,
+      });
+
+      console.log('[Timeline] Segment added successfully:', segmentId);
+
+      // Close the dialog
+      showCreateClipDialog.value = false;
+      createClipStartTime.value = 0;
+      createClipEndTime.value = 0;
+
+      // Refresh clips data to show the updated clip
+      emit('refreshClipsData');
+    } catch (error) {
+      console.error('[Timeline] Error adding segment to clip:', error);
+      showWarning(`Failed to add segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 </script>

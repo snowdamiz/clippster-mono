@@ -3,6 +3,7 @@ import { getProject } from './projects';
 import { createClipVersion } from './clip-versions';
 import { createClipDetectionSession } from './clip-detection-sessions';
 import { getTranscriptByProjectId } from './transcripts';
+import type { ClipSegment } from './types';
 
 /**
  * Extract transcript text for a specific time range from the raw transcript JSON
@@ -192,4 +193,89 @@ export async function createManualClip(
   });
 
   return clipId;
+}
+
+/**
+ * Add a new segment to an existing clip
+ * This allows users to extend clips by adding additional time ranges
+ */
+export async function addSegmentToClip(
+  clipId: string,
+  projectId: string,
+  segmentData: {
+    startTime: number;
+    endTime: number;
+  }
+): Promise<string> {
+  const db = await getDatabase();
+  const now = timestamp();
+
+  // Get the clip's current version ID
+  const clipResult = await db.select<{ current_version_id: string | null }[]>(
+    'SELECT current_version_id FROM clips WHERE id = ?',
+    [clipId]
+  );
+
+  if (!clipResult.length || !clipResult[0].current_version_id) {
+    throw new Error('Clip not found or has no current version');
+  }
+
+  const versionId = clipResult[0].current_version_id;
+
+  // Get existing segments to determine the next segment index
+  const existingSegments = await db.select<ClipSegment[]>(
+    'SELECT * FROM clip_segments WHERE clip_version_id = ? ORDER BY segment_index DESC LIMIT 1',
+    [versionId]
+  );
+
+  const nextIndex = existingSegments.length > 0 ? existingSegments[0].segment_index + 1 : 0;
+
+  // Extract transcript for the time range
+  let segmentTranscript = '';
+  try {
+    const transcript = await getTranscriptByProjectId(projectId);
+    if (transcript?.raw_json) {
+      segmentTranscript = extractTranscriptForTimeRange(
+        transcript.raw_json,
+        segmentData.startTime,
+        segmentData.endTime
+      );
+    }
+  } catch (error) {
+    console.error('[ManualClips] Failed to extract transcript for segment:', error);
+  }
+
+  // Create the new segment
+  const segmentId = generateId();
+  const duration = segmentData.endTime - segmentData.startTime;
+
+  await db.execute(
+    `INSERT INTO clip_segments (
+      id, clip_version_id, segment_index, start_time, end_time, duration, transcript, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      segmentId,
+      versionId,
+      nextIndex,
+      segmentData.startTime,
+      segmentData.endTime,
+      duration,
+      segmentTranscript || null,
+      now,
+    ]
+  );
+
+  // Update the clip's updated_at timestamp
+  await db.execute('UPDATE clips SET updated_at = ? WHERE id = ?', [now, clipId]);
+
+  console.log('[ManualClips] Added segment to clip:', {
+    clipId,
+    segmentId,
+    segmentIndex: nextIndex,
+    startTime: segmentData.startTime,
+    endTime: segmentData.endTime,
+    hasTranscript: !!segmentTranscript,
+  });
+
+  return segmentId;
 }

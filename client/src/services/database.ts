@@ -221,4 +221,8 @@ export {
 } from './database/watermark-presets';
 
 // Manual clip creation exports
-export { createManualClip, extractTranscriptForTimeRange } from './database/manual-clips';
+export {
+  createManualClip,
+  addSegmentToClip,
+  extractTranscriptForTimeRange,
+} from './database/manual-clips';
