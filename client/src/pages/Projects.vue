@@ -33,7 +33,14 @@
           <div v-if="selectedProjects.size > 0" class="flex items-center gap-3">
             <button
               @click="confirmBulkDelete"
-              class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md flex items-center gap-2 font-medium text-sm transition-all"
+              :disabled="hasAnySelectedProjectDetecting()"
+              :class="[
+                'px-3 py-2 text-white rounded-md flex items-center gap-2 font-medium text-sm transition-all',
+                hasAnySelectedProjectDetecting()
+                  ? 'bg-gray-500 cursor-not-allowed opacity-50'
+                  : 'bg-red-600 hover:bg-red-700',
+              ]"
+              :title="hasAnySelectedProjectDetecting() ? 'Cannot delete while detection is in progress' : ''"
             >
               <Trash2 class="h-4 w-4" />
               Delete ({{ selectedProjects.size }})
@@ -321,6 +328,7 @@
                   <Edit class="h-5 w-5" />
                 </button>
                 <button
+                  v-if="!isProjectDetecting(project.id)"
                   class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
                   title="Delete"
                   @click.stop="confirmDelete(project)"
@@ -411,7 +419,14 @@
             <div v-if="selectedFolderChildren.size > 0" class="flex items-center gap-3">
               <button
                 @click="confirmBulkDeleteFolderChildren"
-                class="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md flex items-center gap-2 font-medium text-sm transition-all"
+                :disabled="hasAnySelectedFolderChildDetecting()"
+                :class="[
+                  'px-3 py-1.5 text-white rounded-md flex items-center gap-2 font-medium text-sm transition-all',
+                  hasAnySelectedFolderChildDetecting()
+                    ? 'bg-gray-500 cursor-not-allowed opacity-50'
+                    : 'bg-red-600 hover:bg-red-700',
+                ]"
+                :title="hasAnySelectedFolderChildDetecting() ? 'Cannot delete while detection is in progress' : ''"
               >
                 <Trash2 class="h-4 w-4" />
                 Delete ({{ selectedFolderChildren.size }})
@@ -498,8 +513,16 @@
                 </div>
               </div>
 
-              <!-- Duration Badge -->
-              <div v-if="getProjectDuration(project.id)" class="absolute top-3 left-3 z-5">
+              <!-- Detection Progress Indicator (for individual segment) -->
+              <div
+                v-if="isDetectionActive(project.id)"
+                class="absolute top-3 left-3 z-10 flex items-center gap-1.5 bg-purple-600/90 text-white px-2 py-1 rounded-md text-xs font-bold shadow-sm backdrop-blur-sm"
+              >
+                <Loader2 class="w-3 h-3 animate-spin" />
+                <span>Detecting...</span>
+              </div>
+              <!-- Duration Badge (only show if not detecting) -->
+              <div v-else-if="getProjectDuration(project.id)" class="absolute top-3 left-3 z-5">
                 <span
                   class="text-xs px-2 py-1 rounded-md text-white bg-black/60 backdrop-blur-sm font-medium flex items-center gap-1.5"
                 >
@@ -528,6 +551,7 @@
                   <Play class="h-5 w-5" />
                 </button>
                 <button
+                  v-if="!isDetectionActive(project.id) && !isProjectDetecting(folderProject?.id || '')"
                   class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
                   title="Delete"
                   @click.stop="confirmDelete(project)"
@@ -1644,6 +1668,28 @@
       }
     }
 
+    return false;
+  }
+
+  function hasAnySelectedProjectDetecting(): boolean {
+    for (const projectId of selectedProjects.value) {
+      if (isProjectDetecting(projectId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function hasAnySelectedFolderChildDetecting(): boolean {
+    for (const projectId of selectedFolderChildren.value) {
+      if (isDetectionActive(projectId)) {
+        return true;
+      }
+    }
+    // Also check if the parent folder is detecting
+    if (folderProject.value && isProjectDetecting(folderProject.value.id)) {
+      return true;
+    }
     return false;
   }
 
