@@ -96,6 +96,14 @@ pub struct WatermarkSettings {
     pub scale: u32, // percentage of video width (5-50)
 }
 
+// Audio settings structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioSettings {
+    pub volume: f64,     // dB gain (-20 to +20)
+    pub normalize: bool, // enable audio normalization (export only)
+}
+
 // Build settings structure (reserved for future use)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

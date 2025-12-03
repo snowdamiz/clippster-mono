@@ -1,78 +1,83 @@
 <template>
   <div class="flex-1 flex flex-col overflow-hidden">
-    <!-- Header with Detect More button/progress and count -->
-    <div v-if="clips.length > 0" class="flex items-center justify-between py-3 px-1 mt-2">
-      <div class="flex items-center gap-2">
-        <span class="text-sm font-medium text-foreground/90">
-          {{ clips.length }} Clip{{ clips.length !== 1 ? 's' : '' }}
-        </span>
-        <span class="text-xs text-muted-foreground">•</span>
-        <span class="text-xs text-muted-foreground">Click to preview on timeline</span>
+    <!-- Header -->
+    <div class="flex items-center justify-between py-3 px-1 border-b border-border/30">
+      <div class="flex items-center gap-3">
+        <div
+          class="w-8 h-8 bg-gradient-to-br from-purple-500/15 to-indigo-500/15 rounded-lg flex items-center justify-center border border-purple-500/20"
+        >
+          <Video class="h-4 w-4 text-purple-400" />
+        </div>
+        <div>
+          <h3 class="text-sm font-semibold text-foreground">Clips</h3>
+          <p class="text-[10px] text-muted-foreground">
+            {{ clips.length > 0 ? `${clips.length} clip${clips.length !== 1 ? 's' : ''} detected` : 'No clips yet' }}
+          </p>
+        </div>
       </div>
 
-      <!-- Compact Progress Bar (when detecting more clips) -->
-      <div v-if="isGenerating" class="flex items-center gap-3 min-w-[180px]">
-        <div class="flex-1 space-y-1">
-          <div class="h-1.5 w-full bg-secondary/30 rounded-full overflow-hidden">
+      <!-- Compact Progress Bar (when detecting) -->
+      <div v-if="isGenerating && clips.length > 0" class="flex items-center gap-2 min-w-[160px]">
+        <div class="flex-1 space-y-0.5">
+          <div class="h-1 w-full bg-secondary/30 rounded-full overflow-hidden">
             <div
               class="h-full bg-primary transition-all duration-500 ease-out"
               :class="{ 'animate-pulse': generationProgress === 0 }"
               :style="{ width: `${Math.max(generationProgress, 5)}%` }"
             ></div>
           </div>
-          <div class="flex justify-between items-center text-[10px] text-muted-foreground">
+          <div class="flex justify-between items-center text-[9px] text-muted-foreground">
             <span class="flex items-center gap-1">
-              <LoaderIcon class="w-2.5 h-2.5 animate-spin" />
-              <span class="truncate max-w-[100px]">{{ getCompactMessage() }}</span>
+              <LoaderIcon class="w-2 h-2 animate-spin" />
+              <span class="truncate max-w-[80px]">{{ getCompactMessage() }}</span>
             </span>
             <span class="font-mono">{{ Math.round(generationProgress) }}%</span>
           </div>
         </div>
-        <!-- Cancel Detection Button -->
         <button
           @click="handleCancelDetection"
           class="p-1 hover:bg-red-500/15 rounded transition-colors text-muted-foreground hover:text-red-400"
           title="Cancel detection"
         >
-          <XIcon class="h-4 w-4" />
+          <XIcon class="h-3.5 w-3.5" />
         </button>
       </div>
 
-      <!-- Detect More Button (when not detecting) -->
+      <!-- Detect Button (when not detecting and has clips) -->
       <button
-        v-else
+        v-else-if="clips.length > 0"
         @click="handleDetectClips"
-        class="group flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted/30 hover:bg-muted/50 border border-border hover:border-foreground/40 rounded-md transition-all duration-200"
-        title="Run clip detection again to find more clips"
+        class="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground bg-muted/30 hover:bg-muted/50 rounded-md transition-all border border-border/40 hover:border-border/60"
+        title="Run clip detection again"
       >
-        <RefreshCw class="h-3.5 w-3.5 group-hover:rotate-180 transition-transform duration-500" />
-        <span>Detect More</span>
+        <RefreshCw class="h-3 w-3" />
+        Detect
       </button>
     </div>
 
-    <div class="flex-1 overflow-y-auto">
+    <div class="flex-1 overflow-y-auto px-1">
       <!-- Progress State (only when no clips exist yet) -->
-      <div v-if="isGenerating && clips.length === 0" class="h-full flex flex-col items-center justify-center px-8">
-        <div class="w-full max-w-xs space-y-6">
+      <div v-if="isGenerating && clips.length === 0" class="h-full flex flex-col items-center justify-center px-6">
+        <div class="w-full max-w-xs space-y-5">
           <!-- Icon & Status -->
-          <div class="text-center space-y-3">
-            <div class="relative mx-auto w-12 h-12">
+          <div class="text-center space-y-2.5">
+            <div class="relative mx-auto w-10 h-10">
               <div class="absolute inset-0 rounded-full bg-primary/5 animate-ping duration-1000"></div>
               <div
-                class="relative w-12 h-12 rounded-full bg-background border border-border/50 shadow-sm flex items-center justify-center"
+                class="relative w-10 h-10 rounded-full bg-background border border-border/50 shadow-sm flex items-center justify-center"
               >
-                <component :is="stageIcon" class="w-5 h-5 transition-colors duration-300" :class="stageIconClass" />
+                <component :is="stageIcon" class="w-4 h-4 transition-colors duration-300" :class="stageIconClass" />
               </div>
             </div>
 
             <div class="space-y-1">
-              <h4 class="font-medium text-foreground text-sm tracking-wide uppercase opacity-90">{{ stageTitle }}</h4>
-              <p class="text-sm text-muted-foreground leading-relaxed max-w-[260px] mx-auto">{{ stageDescription }}</p>
+              <h4 class="font-semibold text-foreground text-xs tracking-wide uppercase">{{ stageTitle }}</h4>
+              <p class="text-xs text-muted-foreground leading-relaxed max-w-[240px] mx-auto">{{ stageDescription }}</p>
             </div>
           </div>
 
           <!-- Progress Bar -->
-          <div class="space-y-2">
+          <div class="space-y-1.5">
             <div class="h-1 w-full bg-secondary/30 rounded-full overflow-hidden">
               <div
                 class="h-full bg-primary transition-all duration-500 ease-out"
@@ -80,9 +85,9 @@
                 :style="{ width: `${Math.max(generationProgress, 5)}%` }"
               ></div>
             </div>
-            <div class="flex justify-between items-center text-[11px] text-muted-foreground font-medium px-0.5">
+            <div class="flex justify-between items-center text-[10px] text-muted-foreground px-0.5">
               <span class="flex items-center gap-1.5">
-                <LoaderIcon class="w-3 h-3 animate-spin opacity-70" />
+                <LoaderIcon class="w-2.5 h-2.5 animate-spin opacity-70" />
                 {{ getLoadingMessage() }}
               </span>
               <span class="font-mono">{{ Math.round(generationProgress) }}%</span>
@@ -90,39 +95,38 @@
           </div>
 
           <!-- Time Estimate & Cancel Button -->
-          <div class="flex flex-col items-center gap-3">
+          <div class="flex flex-col items-center gap-2.5">
             <div
-              class="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground/70 bg-secondary/20 px-2.5 py-1 rounded-full border border-border/10"
+              class="inline-flex items-center gap-1.5 text-[9px] text-muted-foreground/70 bg-secondary/20 px-2 py-0.5 rounded-full border border-border/10"
             >
-              <ClockIcon class="w-3 h-3" />
+              <ClockIcon class="w-2.5 h-2.5" />
               {{ getTimeEstimate() }}
             </div>
-            <!-- Cancel Detection Button -->
             <button
               @click="handleCancelDetection"
-              class="group flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-red-400 bg-muted/30 hover:bg-red-500/10 border border-border hover:border-red-500/40 rounded-md transition-all duration-200"
+              class="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-red-400 bg-muted/30 hover:bg-red-500/10 border border-border/40 hover:border-red-500/40 rounded-md transition-all"
               title="Cancel clip detection"
             >
-              <StopCircle class="h-3.5 w-3.5" />
-              <span>Cancel</span>
+              <StopCircle class="h-3 w-3" />
+              Cancel
             </button>
           </div>
 
           <!-- Status Message (if extra details) -->
           <div
             v-if="generationMessage && generationMessage !== getLoadingMessage()"
-            class="text-xs text-center text-muted-foreground/80 bg-muted/20 rounded px-3 py-2 border border-border/20"
+            class="text-[10px] text-center text-muted-foreground/80 bg-muted/20 rounded px-2.5 py-1.5 border border-border/20"
           >
             {{ generationMessage }}
           </div>
 
           <!-- Error State -->
-          <div v-if="generationError" class="bg-red-500/5 border border-red-500/20 rounded-md p-3">
-            <div class="flex items-start gap-2.5">
-              <AlertTriangle class="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
+          <div v-if="generationError" class="bg-red-500/5 border border-red-500/20 rounded-md p-2.5">
+            <div class="flex items-start gap-2">
+              <AlertTriangle class="h-3.5 w-3.5 text-red-400 flex-shrink-0 mt-0.5" />
               <div class="text-left">
-                <h4 class="font-medium text-red-400 text-xs mb-0.5">Error</h4>
-                <p class="text-[11px] text-red-400/80 leading-snug">{{ generationError }}</p>
+                <h4 class="font-medium text-red-400 text-[10px] mb-0.5">Error</h4>
+                <p class="text-[10px] text-red-400/80 leading-snug">{{ generationError }}</p>
               </div>
             </div>
           </div>
@@ -131,7 +135,7 @@
       <!-- Clips List State -->
       <div
         v-else-if="clips.length > 0"
-        class="w-full flex-1 overflow-y-auto pr-2 custom-scrollbar"
+        class="w-full flex-1 overflow-y-auto custom-scrollbar"
         ref="clipsScrollContainer"
       >
         <!-- Clips Grid -->
@@ -388,26 +392,26 @@
       </div>
       <!-- Default State -->
       <div v-else class="h-full flex items-center justify-center px-4">
-        <div class="text-center text-muted-foreground max-w-sm">
-          <div class="mb-8 flex flex-col items-center">
+        <div class="text-center text-muted-foreground max-w-xs">
+          <div class="mb-6 flex flex-col items-center">
             <div
-              class="w-24 h-24 bg-gradient-to-br from-purple-500/10 via-indigo-500/10 to-blue-500/10 rounded-lg flex items-center justify-center mb-6 border border-purple-500/20 shadow-lg shadow-purple-500/5"
+              class="w-16 h-16 bg-gradient-to-br from-purple-500/10 to-indigo-500/10 rounded-lg flex items-center justify-center mb-4 border border-purple-500/20"
             >
-              <Video class="h-12 w-12 text-purple-400/80" />
+              <Video class="h-7 w-7 text-purple-400/70" />
             </div>
-            <h4 class="text-lg font-semibold text-foreground mb-2">No Clips Yet</h4>
-            <p class="text-sm text-muted-foreground/80 mb-8 leading-relaxed">
+            <h4 class="text-sm font-semibold text-foreground mb-1.5">No Clips Yet</h4>
+            <p class="text-xs text-muted-foreground leading-relaxed mb-5">
               Start detecting clips from your video using AI-powered analysis
             </p>
+            <button
+              @click="handleDetectClips"
+              class="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-foreground bg-muted/40 hover:bg-muted/60 border border-border hover:border-border/80 rounded-md transition-all"
+              title="Detect Clips"
+            >
+              <RefreshCw class="h-3.5 w-3.5" />
+              Detect Clips
+            </button>
           </div>
-          <button
-            @click="handleDetectClips"
-            class="group inline-flex items-center gap-2.5 px-5 py-2.5 text-sm font-medium text-foreground bg-muted/40 hover:bg-muted/60 border border-border hover:border-foreground/50 rounded-md transition-all hover:shadow-lg hover:scale-105 active:scale-100"
-            title="Detect Clips"
-          >
-            <RefreshCw class="h-4 w-4 group-hover:rotate-180 transition-transform duration-500" />
-            <span>Detect Clips</span>
-          </button>
         </div>
       </div>
     </div>
@@ -1013,7 +1017,7 @@
           quality: settings.quality,
           frameRate: settings.frameRate,
           outputFormat: settings.format,
-          includeSubtitles: settings.includeSubtitles,
+          includeSubtitles: props.subtitleSettings?.enabled ?? false,
         });
         console.log('[ClipsTab] Created build record:', buildId, 'with build number:', buildNumber);
       } catch (err) {
@@ -1061,16 +1065,25 @@
         }
       }
 
+      // Load audio settings for the project
+      const { getProjectAudioSettings } = await import('@/services/database');
+      let audioSettings = null;
+      try {
+        audioSettings = await getProjectAudioSettings(props.projectId);
+        console.log('[ClipsTab] Loaded audio settings:', audioSettings);
+      } catch (err) {
+        console.warn('[ClipsTab] Could not load audio settings:', err);
+      }
+
       // Pass all build settings to the backend (including build number for filename)
+      // Subtitle settings come directly from SubtitlesTab via props
       await invoke('build_clip_from_segments', {
         projectId: props.projectId,
         clipId: clip.id,
         clipName: clip.current_version_name || clip.name || 'Untitled',
         videoPath: projectVideo.file_path,
         segments: segments,
-        subtitleSettings: settings.includeSubtitles
-          ? props.subtitleSettings
-          : { ...props.subtitleSettings, enabled: false },
+        subtitleSettings: props.subtitleSettings,
         transcriptWords: transcriptWords,
         transcriptSegments: transcriptSegments,
         maxWords: props.maxWordsForAspectRatio,
@@ -1086,6 +1099,7 @@
         outroPath: settings.outro?.file_path || null,
         outroDuration: settings.outro?.duration || null,
         watermarkSettings: watermarkSettings,
+        audioSettings: audioSettings,
       });
 
       console.log('[ClipsTab] Clip build started successfully');

@@ -26,6 +26,7 @@ export type {
   LivestreamSegmentRecord,
   WatermarkImage,
   WatermarkSettings,
+  AudioSettings,
   CreatorProfile,
   CreatorPlatformLink,
   CreatorProfileWithLinks,
@@ -258,3 +259,10 @@ export {
   getCreatorProfileByMonitoredStreamer,
   getCreatorProfileByProjectId,
 } from './database/creator-profiles';
+
+// Audio settings exports
+export {
+  getDefaultAudioSettings,
+  getProjectAudioSettings,
+  updateProjectAudioSettings,
+} from './database/audio-settings';

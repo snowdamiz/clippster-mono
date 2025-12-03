@@ -151,6 +151,13 @@ pub async fn start_video_server_impl() {
                                             "bytes"
                                         );
 
+                                        // Add CORS headers for Web Audio API support
+                                        let response = warp::reply::with_header(
+                                            response,
+                                            "Access-Control-Allow-Origin",
+                                            "*"
+                                        );
+
                                         return Ok(warp::reply::with_status(
                                             response,
                                             warp::http::StatusCode::PARTIAL_CONTENT
@@ -203,6 +210,13 @@ pub async fn start_video_server_impl() {
                             response,
                             "Accept-Ranges",
                             "bytes"
+                        );
+
+                        // Add CORS headers for Web Audio API support
+                        let response = warp::reply::with_header(
+                            response,
+                            "Access-Control-Allow-Origin",
+                            "*"
                         );
 
                         return Ok(response.into_response());

@@ -7,6 +7,7 @@ export interface Project {
   thumbnail_path: string | null;
   parent_id: string | null;
   platform: 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual' | null;
+  audio_settings: string | null; // JSON string of AudioSettings
   created_at: number;
   updated_at: number;
 }
@@ -377,6 +378,11 @@ export interface WatermarkSettings {
   positionY: number; // 0-100 (percentage from top)
   opacity: number; // 0-100
   scale: number; // 0-100 (percentage of video width)
+}
+
+export interface AudioSettings {
+  volume: number; // dB gain (-20 to +20)
+  normalize: boolean; // enable audio normalization (export only)
 }
 
 export interface CreatorProfile {

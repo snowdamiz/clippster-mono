@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 use tauri::Emitter;
 
-use super::types::{SubtitleSettings, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings};
+use super::types::{SubtitleSettings, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings};
 use super::video_info::{get_video_info, parse_aspect_ratio, IntroOutroCache};
 use super::subtitle::generate_ass_file;
 use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings};
@@ -136,6 +136,7 @@ pub async fn build_clip_internal_simple(
     outro_path: Option<&str>,
     _outro_duration: Option<f64>,
     watermark_settings: Option<WatermarkSettings>,
+    audio_settings: Option<AudioSettings>,
     cancel_rx: CancellationToken
 ) -> Result<ClipBuildResult, String> {
 
@@ -224,6 +225,7 @@ pub async fn build_clip_internal_simple(
         let aspect_ratio_str = aspect_ratio_str.clone();
         let snake_case_name = snake_case_clip_name.clone();
         let watermark_settings = watermark_settings.clone();
+        let audio_settings = audio_settings.clone();
         let cancel_rx = cancel_rx.clone();
         let build_num = build_num;
         
@@ -306,7 +308,8 @@ pub async fn build_clip_internal_simple(
                     intro_path.as_deref(),
                     outro_path.as_deref(),
                     intro_outro_cache.clone(),
-                    watermark_settings.as_ref()
+                    watermark_settings.as_ref(),
+                    audio_settings.as_ref()
                 ).await?;
             } else {
                 println!("[Rust] Building multi-segment clip for {} with {} segments", aspect_ratio_str, segments.len());
@@ -323,7 +326,8 @@ pub async fn build_clip_internal_simple(
                     intro_path.as_deref(),
                     outro_path.as_deref(),
                     intro_outro_cache.clone(),
-                    watermark_settings.as_ref()
+                    watermark_settings.as_ref(),
+                    audio_settings.as_ref()
                 ).await?;
             }
 

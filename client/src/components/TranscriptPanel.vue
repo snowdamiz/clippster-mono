@@ -1,16 +1,33 @@
 <template>
-  <div class="border-b border-border flex flex-col h-full">
+  <div class="flex flex-col h-full overflow-hidden">
+    <!-- Header -->
+    <div class="flex items-center justify-between py-3 px-1 border-b border-border/30">
+      <div class="flex items-center gap-3">
+        <div
+          class="w-8 h-8 bg-gradient-to-br from-green-500/15 to-emerald-500/15 rounded-lg flex items-center justify-center border border-green-500/20"
+        >
+          <FileText class="h-4 w-4 text-green-400" />
+        </div>
+        <div>
+          <h3 class="text-sm font-semibold text-foreground">Transcript</h3>
+          <p class="text-[10px] text-muted-foreground">
+            {{ transcriptData?.words?.length ? `${transcriptData.words.length} words` : 'No transcript' }}
+          </p>
+        </div>
+      </div>
+    </div>
+
     <!-- Loading state -->
     <div v-if="loadingTranscript" class="flex-1 flex items-center justify-center">
       <div class="text-center text-muted-foreground px-6 animate-fade-in">
         <div class="relative">
-          <Loader2 class="animate-spin h-10 w-10 mx-auto mb-4 text-primary" />
+          <Loader2 class="animate-spin h-8 w-8 mx-auto mb-3 text-primary" />
           <div class="absolute inset-0 flex items-center justify-center">
-            <div class="h-4 w-4 rounded-full bg-primary/20 animate-pulse"></div>
+            <div class="h-3 w-3 rounded-full bg-primary/20 animate-pulse"></div>
           </div>
         </div>
         <p class="text-sm font-medium">Loading transcript...</p>
-        <p class="text-xs text-muted-foreground/70 mt-1">Processing audio</p>
+        <p class="text-[10px] text-muted-foreground/70 mt-1">Processing audio</p>
       </div>
     </div>
 
@@ -22,12 +39,12 @@
       <div class="text-center text-muted-foreground max-w-xs">
         <div class="mb-6 flex flex-col items-center">
           <div
-            class="w-20 h-20 bg-gradient-to-br from-green-500/10 to-emerald-500/10 rounded-lg flex items-center justify-center mb-5 border border-green-500/20"
+            class="w-16 h-16 bg-gradient-to-br from-green-500/10 to-emerald-500/10 rounded-lg flex items-center justify-center mb-4 border border-green-500/20"
           >
-            <FileText class="h-9 w-9 text-green-400/70" />
+            <FileText class="h-7 w-7 text-green-400/70" />
           </div>
-          <h4 class="text-base font-semibold text-foreground mb-2">No Transcript Yet</h4>
-          <p class="text-sm text-muted-foreground leading-relaxed">
+          <h4 class="text-sm font-semibold text-foreground mb-1.5">No Transcript Yet</h4>
+          <p class="text-xs text-muted-foreground leading-relaxed">
             Generate clips first to automatically transcribe audio from your video
           </p>
         </div>
@@ -36,28 +53,25 @@
 
     <!-- Transcript with Toolbar -->
     <template v-else>
-      <!-- Transcript Toolbar -->
-      <div class="flex items-center justify-between mt-4 mb-3">
-        <!-- Search Bar -->
-        <div class="flex-1 max-w-full">
-          <div class="relative">
-            <div class="absolute left-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
-              <Search class="h-4 w-4 text-muted-foreground/50" />
-            </div>
-            <input
-              ref="searchInputRef"
-              v-model="searchQuery"
-              type="text"
-              placeholder="Search transcript..."
-              class="w-full pl-10 pr-3 py-1.5 text-sm bg-muted/40 border border-border rounded-md focus:outline-none focus:ring-primary/50 focus:border-primary/50 transition-all duration-200 placeholder:text-muted-foreground/60"
-            />
+      <!-- Search Bar -->
+      <div class="py-2 px-1">
+        <div class="relative">
+          <div class="absolute left-2.5 top-1/2 transform -translate-y-1/2 pointer-events-none">
+            <Search class="h-3.5 w-3.5 text-muted-foreground/50" />
           </div>
+          <input
+            ref="searchInputRef"
+            v-model="searchQuery"
+            type="text"
+            placeholder="Search transcript..."
+            class="w-full pl-8 pr-3 py-1.5 text-xs bg-muted/30 border border-border/40 rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all duration-200 placeholder:text-muted-foreground/50"
+          />
         </div>
       </div>
 
       <!-- Transcript content -->
-      <div ref="transcriptContent" class="flex-1 overflow-y-auto transcript-scrollbar relative">
-        <div class="text-base text-foreground leading-loose break-words pb-6 min-h-full select-text transcript-content">
+      <div ref="transcriptContent" class="flex-1 overflow-y-auto px-1 custom-scrollbar relative">
+        <div class="text-sm text-foreground leading-relaxed break-words pb-4 min-h-full select-text transcript-content">
           <span
             v-for="(word, index) in transcriptData.words"
             :key="`word-${index}`"
@@ -698,28 +712,31 @@
 </script>
 
 <style scoped>
-  /* Custom scrollbar */
-  .transcript-scrollbar {
+  /* Custom scrollbar - consistent with other tabs */
+  .custom-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: hsl(var(--primary) / 0.3) transparent;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
   }
 
-  .transcript-scrollbar::-webkit-scrollbar {
+  .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
   }
 
-  .transcript-scrollbar::-webkit-scrollbar-track {
+  .custom-scrollbar::-webkit-scrollbar-track {
     background: transparent;
+    margin: 4px 0;
   }
 
-  .transcript-scrollbar::-webkit-scrollbar-thumb {
-    background-color: hsl(var(--primary) / 0.3);
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.3);
     border-radius: 3px;
-    transition: background-color 0.2s;
+    border: 1px solid transparent;
+    background-clip: padding-box;
   }
 
-  .transcript-scrollbar::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(var(--primary) / 0.5);
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+    background-clip: padding-box;
   }
 
   /* Fade in animation */

@@ -65,7 +65,13 @@
 
   const props = withDefaults(defineProps<TimelineVideoTrackProps>(), {
     zoomLevel: 1,
+    audioGainDb: 0,
   });
+
+  // Convert dB to linear gain multiplier
+  function dbToLinear(db: number): number {
+    return Math.pow(10, db / 20);
+  }
 
   const emit = defineEmits<TimelineVideoTrackEmits>();
 
@@ -122,11 +128,18 @@
         normalizedData.peaks.length
       );
 
+      // Apply audio gain to peaks
+      const gainMultiplier = dbToLinear(props.audioGainDb ?? 0);
+      const gainedPeaks = normalizedData.peaks.map((peak: any) => ({
+        min: Math.max(-1, peak.min * gainMultiplier), // Clamp to prevent overdrive
+        max: Math.min(1, peak.max * gainMultiplier),
+      }));
+
       // Render dual-color waveform (white before playhead, purple after)
       renderDualColorWaveform(canvas, {
         width: rect.width,
         height: rect.height,
-        peaks: normalizedData.peaks,
+        peaks: gainedPeaks,
         duration: props.duration,
         currentTime: props.currentTime,
         barWidth: params.barWidth,
@@ -248,7 +261,7 @@
 
   // Watch for waveform data changes and render
   watch(
-    [waveformData, isWaveformLoaded, () => props.zoomLevel, () => props.currentTime],
+    [waveformData, isWaveformLoaded, () => props.zoomLevel, () => props.currentTime, () => props.audioGainDb],
     () => {
       if (isWaveformLoaded.value && waveformData.value) {
         nextTick(() => {

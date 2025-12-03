@@ -61,6 +61,7 @@
             :currentTime="currentTime"
             :duration="duration"
             :zoomLevel="zoomLevel"
+            :audioGainDb="props.audioGainDb"
             @videoTrackClick="onVideoTrackClick"
             @timelineTrackHover="onTimelineTrackHover"
             @timelineMouseLeave="onTimelineMouseLeave"

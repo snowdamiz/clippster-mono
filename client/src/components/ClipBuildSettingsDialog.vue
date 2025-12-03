@@ -441,70 +441,36 @@
                   </p>
                 </div>
 
-                <!-- Format & Subtitles -->
-                <div class="bg-muted/20 rounded-xl p-4 border border-border/50 space-y-3">
-                  <!-- Format -->
-                  <div class="space-y-2">
-                    <label class="text-sm font-semibold text-foreground">Output Format</label>
-                    <div class="flex gap-2">
-                      <button
-                        @click="outputFormat = 'mp4'"
-                        :class="[
-                          'flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
-                          outputFormat === 'mp4'
-                            ? 'bg-primary text-primary-foreground shadow-md'
-                            : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
-                        ]"
-                      >
-                        MP4
-                      </button>
-                      <button
-                        @click="outputFormat = 'mov'"
-                        :class="[
-                          'flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
-                          outputFormat === 'mov'
-                            ? 'bg-primary text-primary-foreground shadow-md'
-                            : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
-                        ]"
-                      >
-                        MOV
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- Subtitles Toggle -->
-                  <div class="pt-3 border-t border-border/30">
+                <!-- Format -->
+                <div class="bg-muted/20 rounded-xl p-4 border border-border/50 space-y-2">
+                  <label class="text-sm font-semibold text-foreground">Output Format</label>
+                  <div class="flex gap-2">
                     <button
-                      @click="includeSubtitles = !includeSubtitles"
-                      type="button"
+                      @click="outputFormat = 'mp4'"
                       :class="[
-                        'w-full flex items-center justify-between p-3 rounded-lg transition-all',
-                        includeSubtitles
-                          ? 'bg-primary/15 border-2 border-primary'
-                          : 'bg-muted/50 border-2 border-border/40 hover:border-border',
+                        'flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
+                        outputFormat === 'mp4'
+                          ? 'bg-primary text-primary-foreground shadow-md'
+                          : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
                       ]"
                     >
-                      <div class="text-left">
-                        <div class="text-sm font-semibold text-foreground">Include Subtitles</div>
-                        <div class="text-xs text-muted-foreground mt-0.5">
-                          {{ includeSubtitles ? 'Subtitles will be burned in' : 'No subtitles' }}
-                        </div>
-                      </div>
-                      <div
-                        :class="[
-                          'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-all',
-                          includeSubtitles ? 'bg-primary' : 'bg-muted-foreground/30',
-                        ]"
-                      >
-                        <span
-                          :class="[
-                            'inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-all',
-                            includeSubtitles ? 'translate-x-[22px]' : 'translate-x-0.5',
-                          ]"
-                        ></span>
-                      </div>
+                      MP4
+                    </button>
+                    <button
+                      @click="outputFormat = 'mov'"
+                      :class="[
+                        'flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
+                        outputFormat === 'mov'
+                          ? 'bg-primary text-primary-foreground shadow-md'
+                          : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
+                      ]"
+                    >
+                      MOV
                     </button>
                   </div>
+                  <p class="text-[10px] text-muted-foreground/70 mt-1">
+                    {{ outputFormat === 'mp4' ? 'Best compatibility' : 'Apple ProRes quality' }}
+                  </p>
                 </div>
               </div>
             </div>
@@ -568,7 +534,6 @@
     quality: 'low' | 'medium' | 'high';
     frameRate: 30 | 60;
     format: 'mp4' | 'mov';
-    includeSubtitles: boolean;
     intro: IntroOutro | null;
     outro: IntroOutro | null;
     watermark: WatermarkSettings | null;
@@ -576,7 +541,6 @@
 
   // State
   const selectedRatios = ref<string[]>(['16:9']);
-  const includeSubtitles = ref(true);
   const quality = ref<'low' | 'medium' | 'high'>('high');
   const frameRate = ref<30 | 60>(30);
   const outputFormat = ref<'mp4' | 'mov'>('mp4');
@@ -667,38 +631,37 @@
 
   function calculateDropdownPosition(buttonRef: HTMLElement) {
     const rect = buttonRef.getBoundingClientRect();
-    const dropdownHeight = 192; // max-h-48 = 192px
+    const maxDropdownHeight = 192; // max-h-48 = 192px
+    const minDropdownHeight = 80; // minimum usable height
     const viewportHeight = window.innerHeight;
     const viewportWidth = window.innerWidth;
     const spacing = 4;
 
-    // Check if there's enough space below
-    const spaceBelow = viewportHeight - rect.bottom;
-    const spaceAbove = rect.top;
+    // Calculate available space
+    const spaceBelow = viewportHeight - rect.bottom - spacing;
+    const spaceAbove = rect.top - spacing;
 
     let top: string;
-    let maxHeight = '192px'; // default max-h-48
+    let maxHeight: string;
 
-    // If not enough space below but enough space above, show above
-    if (spaceBelow < dropdownHeight && spaceAbove > spaceBelow) {
-      top = `${rect.top - dropdownHeight - spacing}px`;
-      // If it would go off the top, limit the height
-      if (rect.top - dropdownHeight - spacing < 0) {
-        maxHeight = `${spaceAbove - spacing}px`;
-        top = `${spacing}px`;
-      }
+    // Prefer showing below, but switch to above if not enough space below and more space above
+    const showAbove = spaceBelow < minDropdownHeight && spaceAbove > spaceBelow;
+
+    if (showAbove) {
+      // Show above the button
+      const availableHeight = Math.min(maxDropdownHeight, spaceAbove);
+      maxHeight = `${availableHeight}px`;
+      top = `${rect.top - availableHeight - spacing}px`;
     } else {
-      // Show below
+      // Show below the button
+      const availableHeight = Math.min(maxDropdownHeight, spaceBelow);
+      maxHeight = `${Math.max(availableHeight, minDropdownHeight)}px`;
       top = `${rect.bottom + spacing}px`;
-      // If it would go off the bottom, limit the height
-      if (rect.bottom + spacing + dropdownHeight > viewportHeight) {
-        maxHeight = `${spaceBelow - spacing}px`;
-      }
     }
 
     // Handle horizontal positioning
     let left = `${rect.left}px`;
-    let width = `${rect.width}px`;
+    const width = `${rect.width}px`;
 
     // Check if it would go off the right edge
     if (rect.left + rect.width > viewportWidth) {
@@ -706,7 +669,7 @@
     }
 
     // Check if it would go off the left edge
-    if (rect.left < 0) {
+    if (rect.left < spacing) {
       left = `${spacing}px`;
     }
 
@@ -791,7 +754,6 @@
       quality: quality.value,
       frameRate: frameRate.value,
       format: outputFormat.value,
-      includeSubtitles: includeSubtitles.value,
       intro: selectedIntro.value,
       outro: selectedOutro.value,
       watermark: watermarkSettings,

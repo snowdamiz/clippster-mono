@@ -270,6 +270,12 @@ pub fn run() {
                             sql: include_str!("../migrations/044_add_creator_profiles.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 45,
+                            description: "add_audio_settings",
+                            sql: include_str!("../migrations/045_add_audio_settings.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

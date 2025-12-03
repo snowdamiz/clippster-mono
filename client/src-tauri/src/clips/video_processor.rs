@@ -2,10 +2,34 @@ use tauri_plugin_shell::ShellExt;
 use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 
-use super::types::{AspectRatio, WatermarkSettings};
+use super::types::{AspectRatio, WatermarkSettings, AudioSettings};
 use super::encoder::{detect_hardware_encoder, get_quality_settings};
 use super::video_info::{get_video_info, calculate_crop_params, calculate_crop_position, IntroOutroCache};
 use super::font_manager::get_fonts_dir;
+
+// Helper function to build audio filter string for FFmpeg
+// Combines volume adjustment and normalization
+fn build_audio_filter(audio_settings: Option<&AudioSettings>) -> Option<String> {
+    let settings = audio_settings?;
+    
+    let mut filters = Vec::new();
+    
+    // Volume adjustment (in dB)
+    if settings.volume != 0.0 {
+        filters.push(format!("volume={}dB", settings.volume));
+    }
+    
+    // Normalization (loudnorm filter - industry standard -16 LUFS)
+    if settings.normalize {
+        filters.push("loudnorm=I=-16:TP=-1.5:LRA=11".to_string());
+    }
+    
+    if filters.is_empty() {
+        None
+    } else {
+        Some(filters.join(","))
+    }
+}
 
 // Helper function to calculate watermark position for FFmpeg overlay filter
 // position_x and position_y are percentages (0-100) from top-left corner
@@ -131,7 +155,8 @@ pub async fn build_single_segment_clip_with_settings(
     intro_path: Option<&str>,
     outro_path: Option<&str>,
     intro_outro_cache: Arc<Mutex<IntroOutroCache>>,
-    watermark_settings: Option<&WatermarkSettings>
+    watermark_settings: Option<&WatermarkSettings>,
+    audio_settings: Option<&AudioSettings>
 ) -> Result<(), String> {
     let shell = app.shell();
     let start_time: f64 = segment["start_time"].as_f64().ok_or("Invalid start_time")?;
@@ -328,6 +353,13 @@ pub async fn build_single_segment_clip_with_settings(
             subtitle_args.push(encoder.quality_param.clone());
             subtitle_args.push(encoder.quality_value.clone());
             
+            // Add audio filter if audio settings are provided
+            if let Some(af) = build_audio_filter(audio_settings) {
+                println!("[Rust] Applying audio filter (with subtitles): {}", af);
+                subtitle_args.push("-af".to_string());
+                subtitle_args.push(af);
+            }
+            
             // Add common parameters
             subtitle_args.extend_from_slice(&[
                 "-c:a".to_string(), "aac".to_string(),
@@ -349,6 +381,34 @@ pub async fn build_single_segment_clip_with_settings(
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 return Err(format!("FFmpeg subtitle burning failed: {}", stderr));
+            }
+        } else if audio_settings.is_some() {
+            // No subtitles but audio settings provided - need to apply audio filter
+            // Re-encode with audio filter
+            println!("[Rust] Applying audio filter (no subtitles, with intro/outro)...");
+            
+            if let Some(af) = build_audio_filter(audio_settings) {
+                let audio_args = vec![
+                    "-i".to_string(), concat_output_path.to_string_lossy().to_string(),
+                    "-c:v".to_string(), "copy".to_string(),
+                    "-af".to_string(), af,
+                    "-c:a".to_string(), "aac".to_string(),
+                    "-b:a".to_string(), "192k".to_string(),
+                    "-y".to_string(),
+                    output_path.to_string_lossy().to_string(),
+                ];
+                
+                let output = shell.sidecar("ffmpeg")
+                    .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+                    .args(audio_args)
+                    .output()
+                    .await
+                    .map_err(|e| format!("Failed to apply audio filter: {}", e))?;
+                
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    return Err(format!("FFmpeg audio filter failed: {}", stderr));
+                }
             }
         }
 
@@ -412,6 +472,13 @@ pub async fn build_single_segment_clip_with_settings(
     args.push(encoder.quality_param.clone());
     args.push(encoder.quality_value.clone());
     
+    // Add audio filter if audio settings are provided
+    if let Some(af) = build_audio_filter(audio_settings) {
+        println!("[Rust] Applying audio filter: {}", af);
+        args.push("-af".to_string());
+        args.push(af);
+    }
+    
     // Add common parameters
     args.extend_from_slice(&[
         "-r".to_string(), frame_rate.to_string(),
@@ -467,7 +534,8 @@ pub async fn build_multi_segment_clip_with_settings(
     intro_path: Option<&str>,
     outro_path: Option<&str>,
     intro_outro_cache: Arc<Mutex<IntroOutroCache>>,
-    watermark_settings: Option<&WatermarkSettings>
+    watermark_settings: Option<&WatermarkSettings>,
+    audio_settings: Option<&AudioSettings>
 ) -> Result<(), String> {
     let shell = app.shell();
 
@@ -691,6 +759,13 @@ pub async fn build_multi_segment_clip_with_settings(
         subtitle_args.push(encoder.quality_param.clone());
         subtitle_args.push(encoder.quality_value.clone());
         
+        // Add audio filter if audio settings are provided
+        if let Some(af) = build_audio_filter(audio_settings) {
+            println!("[Rust] Applying audio filter (multi-segment with subtitles): {}", af);
+            subtitle_args.push("-af".to_string());
+            subtitle_args.push(af);
+        }
+        
         // Add common parameters
         subtitle_args.extend_from_slice(&[
             "-c:a".to_string(), "aac".to_string(),
@@ -712,6 +787,33 @@ pub async fn build_multi_segment_clip_with_settings(
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(format!("FFmpeg subtitle burning failed: {}", stderr));
+        }
+    } else if audio_settings.is_some() {
+        // No subtitles but audio settings provided - need to apply audio filter
+        println!("[Rust] Applying audio filter (multi-segment, no subtitles)...");
+        
+        if let Some(af) = build_audio_filter(audio_settings) {
+            let audio_args = vec![
+                "-i".to_string(), concat_output_path.to_string_lossy().to_string(),
+                "-c:v".to_string(), "copy".to_string(),
+                "-af".to_string(), af,
+                "-c:a".to_string(), "aac".to_string(),
+                "-b:a".to_string(), "192k".to_string(),
+                "-y".to_string(),
+                output_path.to_string_lossy().to_string(),
+            ];
+            
+            let output = shell.sidecar("ffmpeg")
+                .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+                .args(audio_args)
+                .output()
+                .await
+                .map_err(|e| format!("Failed to apply audio filter: {}", e))?;
+            
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("FFmpeg audio filter failed: {}", stderr));
+            }
         }
     }
 

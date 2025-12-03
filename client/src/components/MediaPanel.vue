@@ -104,7 +104,7 @@
     />
 
     <!-- Audio Tab Content -->
-    <AudioTab v-if="activeTab === 'audio'" :project-id="projectId" />
+    <AudioTab v-if="activeTab === 'audio'" :project-id="projectId" @settings-changed="onAudioSettingsChanged" />
 
     <!-- Transcript Tab Content - use v-show to keep mounted so it receives events -->
     <TranscriptPanel
@@ -152,7 +152,7 @@
     type ClipDetectionSession,
     type Prompt,
   } from '@/services/database';
-  import type { MediaPanelProps, MediaPanelEmits, SubtitleSettings, WatermarkSettings } from '../types';
+  import type { MediaPanelProps, MediaPanelEmits, SubtitleSettings, WatermarkSettings, AudioSettings } from '../types';
   import ClipsTab from './ClipsTab.vue';
   import AudioTab from './AudioTab.vue';
   import TranscriptPanel from './TranscriptPanel.vue';
@@ -456,6 +456,10 @@
   function onWatermarkSettingsChanged(settings: WatermarkSettings) {
     watermarkSettings.value = settings;
     emit('watermarkSettingsChanged', settings);
+  }
+
+  function onAudioSettingsChanged(settings: AudioSettings) {
+    emit('audioSettingsChanged', settings);
   }
 
   // Event listener for fallback refresh mechanism

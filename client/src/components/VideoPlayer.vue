@@ -1,8 +1,13 @@
 <template>
   <div
-    class="flex-1 min-h-0 rounded-lg bg-black relative overflow-hidden flex items-center justify-center"
+    class="flex-1 min-h-0 rounded-xl bg-zinc-950 relative overflow-hidden flex items-center justify-center group/player"
     :style="{ maxWidth: '100%', maxHeight: '100%' }"
   >
+    <!-- Ambient Background Glow -->
+    <div
+      class="absolute inset-0 bg-gradient-to-br from-violet-950/20 via-transparent to-cyan-950/20 pointer-events-none"
+    />
+
     <!-- Video Crop Container -->
     <div
       ref="videoContainerRef"
@@ -16,31 +21,59 @@
       }"
     >
       <!-- Loading State -->
-      <div v-if="videoLoading" class="absolute inset-0 flex items-center justify-center bg-black z-10">
-        <div class="flex flex-col items-center gap-3">
-          <Loader2 class="animate-spin h-8 w-8 text-white" />
-          <span class="text-white text-sm">Loading video...</span>
+      <div v-if="videoLoading" class="absolute inset-0 flex items-center justify-center bg-zinc-950 z-10">
+        <div class="flex flex-col items-center gap-4">
+          <!-- Animated Loading Ring -->
+          <div class="relative">
+            <div class="loading-ring"></div>
+            <div class="loading-ring-inner"></div>
+            <Film class="h-6 w-6 text-white/60 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+          </div>
+          <div class="flex flex-col items-center gap-1">
+            <span class="text-white/90 text-sm font-medium tracking-wide">Loading video</span>
+            <span class="text-white/40 text-xs">Please wait...</span>
+          </div>
         </div>
       </div>
+
       <!-- No Video State -->
       <div v-else-if="!videoSrc && !videoError" class="absolute inset-0 flex items-center justify-center">
-        <div class="text-center text-muted-foreground">
-          <Video class="h-12 w-12 mx-auto mb-3" />
-          <p class="text-sm">No video assigned</p>
+        <div class="text-center group/empty">
+          <div class="relative inline-block">
+            <!-- Decorative rings -->
+            <div class="absolute inset-0 -m-4 rounded-full border border-white/5 animate-pulse-slow" />
+            <div class="absolute inset-0 -m-8 rounded-full border border-white/[0.03]" />
+            <div
+              class="p-5 rounded-2xl bg-white/[0.03] border border-white/[0.06] backdrop-blur-sm transition-all duration-300 group-hover/empty:bg-white/[0.05] group-hover/empty:border-white/[0.1]"
+            >
+              <Video
+                class="h-10 w-10 text-white/30 transition-colors group-hover/empty:text-white/50"
+                strokeWidth="{1.5}"
+              />
+            </div>
+          </div>
+          <p class="text-white/40 text-sm mt-5 font-medium">No video assigned</p>
+          <p class="text-white/20 text-xs mt-1">Select a clip to preview</p>
         </div>
       </div>
-      <!-- Error State -->
-      <div v-else-if="videoError" class="absolute inset-0 flex items-center justify-center">
-        <div class="text-center text-red-400 p-4">
-          <AlertTriangle class="h-12 w-12 mx-auto mb-3" />
-          <p class="text-sm font-medium">Video Error</p>
 
-          <p class="text-xs mt-1 text-red-300">{{ videoError }}</p>
+      <!-- Error State -->
+      <div v-else-if="videoError" class="absolute inset-0 flex items-center justify-center bg-zinc-950/90">
+        <div class="text-center p-6 max-w-xs">
+          <div class="relative inline-block mb-4">
+            <div class="absolute inset-0 -m-2 rounded-full bg-red-500/20 animate-pulse-slow" />
+            <div class="p-4 rounded-xl bg-red-500/10 border border-red-500/20">
+              <AlertTriangle class="h-8 w-8 text-red-400" strokeWidth="{1.5}" />
+            </div>
+          </div>
+          <p class="text-white/90 text-sm font-semibold">Failed to load video</p>
+          <p class="text-white/40 text-xs mt-2 leading-relaxed">{{ videoError }}</p>
           <button
             @click="$emit('retryLoad')"
-            class="mt-3 px-3 py-1 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 rounded text-xs text-red-300 transition-colors"
+            class="mt-5 px-5 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 hover:border-red-500/50 rounded-lg text-sm text-red-300 transition-all duration-200 flex items-center gap-2 mx-auto group/retry"
           >
-            Retry
+            <RotateCcw class="h-3.5 w-3.5 transition-transform group-hover/retry:-rotate-45" />
+            <span>Try again</span>
           </button>
         </div>
       </div>
@@ -49,6 +82,7 @@
         v-else
         ref="videoElementRef"
         :src="videoSrc || undefined"
+        crossorigin="anonymous"
         class="w-full h-full object-cover video-with-focal-point"
         :style="{
           objectPosition: `${focalPoint.x * 100}% ${focalPoint.y * 100}%`,
@@ -170,39 +204,43 @@
       <!-- Watermark Overlay -->
       <div
         v-if="watermarkSettings?.enabled && watermarkData && videoSrc && !videoLoading"
-        class="absolute pointer-events-none z-15"
+        class="absolute pointer-events-none z-15 transition-opacity duration-300"
         :style="getWatermarkOverlayStyle"
       >
         <img
           :src="getWatermarkSrc"
           alt="Watermark"
-          class="max-w-full max-h-full object-contain drop-shadow-lg"
+          class="max-w-full max-h-full object-contain watermark-image"
           :style="{ opacity: (watermarkSettings?.opacity || 100) / 100 }"
         />
       </div>
 
-      <!-- Focal Point Debug Indicator -->
-      <div
-        v-if="videoSrc && !videoLoading"
-        class="absolute top-2 right-2 z-20 bg-black/70 backdrop-blur-sm text-white text-xs px-2 py-1 rounded pointer-events-none font-mono"
-      >
-        Focal: {{ (focalPoint.x * 100).toFixed(0) }}%, {{ (focalPoint.y * 100).toFixed(0) }}%
-      </div>
-
-      <!-- Focal Point Crosshair (for debugging) -->
+      <!-- Focal Point Indicator -->
       <div
         v-if="videoSrc && !videoLoading && (Math.abs(focalPoint.x - 0.5) > 0.05 || Math.abs(focalPoint.y - 0.5) > 0.05)"
-        class="absolute pointer-events-none z-10"
+        class="absolute pointer-events-none z-10 opacity-0 group-hover/player:opacity-100 transition-opacity duration-300"
         :style="{
           left: `${focalPoint.x * 100}%`,
           top: `${focalPoint.y * 100}%`,
           transform: 'translate(-50%, -50%)',
         }"
       >
-        <div class="relative">
-          <div class="absolute w-8 h-0.5 bg-red-500 opacity-70" style="left: -16px; top: 0"></div>
-          <div class="absolute w-0.5 h-8 bg-red-500 opacity-70" style="left: 0; top: -16px"></div>
-          <div class="w-2 h-2 bg-red-500 rounded-full opacity-70"></div>
+        <div class="relative focal-point-indicator">
+          <!-- Outer ring -->
+          <div class="absolute w-8 h-8 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-400/50" />
+          <!-- Inner ring -->
+          <div class="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-400/70" />
+          <!-- Center dot -->
+          <div
+            class="absolute w-1.5 h-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-400 shadow-lg shadow-cyan-400/50"
+          />
+          <!-- Crosshair lines -->
+          <div
+            class="absolute w-12 h-px bg-gradient-to-r from-transparent via-cyan-400/60 to-transparent -translate-x-1/2"
+          />
+          <div
+            class="absolute h-12 w-px bg-gradient-to-b from-transparent via-cyan-400/60 to-transparent -translate-y-1/2"
+          />
         </div>
       </div>
 
@@ -210,12 +248,33 @@
       <button
         v-if="videoSrc && !videoLoading"
         @click="$emit('togglePlayPause')"
-        class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/20"
-        title="Play/Pause"
+        class="absolute inset-0 flex items-center justify-center play-overlay"
+        :class="{ 'is-paused': !isPlaying }"
+        title="Play/Pause (Space)"
       >
-        <div class="p-4 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-colors">
-          <Play v-if="!isPlaying" class="h-8 w-8 text-white" fill="white" />
-          <Pause v-else class="h-8 w-8 text-white" fill="white" />
+        <!-- Gradient vignette for better visibility -->
+        <div
+          class="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/20 opacity-0 group-hover/player:opacity-100 transition-opacity duration-300"
+        />
+
+        <!-- Play/Pause Button -->
+        <div class="play-button-container" :class="{ 'show-button': !isPlaying }">
+          <div class="play-button">
+            <Play v-if="!isPlaying" class="h-10 w-10 text-white ml-1" fill="white" />
+            <Pause v-else class="h-10 w-10 text-white" fill="white" />
+          </div>
+        </div>
+
+        <!-- Keyboard hint -->
+        <div
+          class="absolute bottom-4 left-1/2 -translate-x-1/2 opacity-0 group-hover/player:opacity-100 transition-all duration-300 translate-y-2 group-hover/player:translate-y-0"
+        >
+          <div
+            class="flex items-center gap-1.5 px-2.5 py-1 bg-black/60 backdrop-blur-sm rounded-md border border-white/10"
+          >
+            <kbd class="text-[10px] text-white/50 font-mono bg-white/10 px-1.5 py-0.5 rounded">Space</kbd>
+            <span class="text-[10px] text-white/40">to {{ isPlaying ? 'pause' : 'play' }}</span>
+          </div>
         </div>
       </button>
     </div>
@@ -224,7 +283,7 @@
 
 <script setup lang="ts">
   import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
-  import { Loader2, Video, AlertTriangle, Play, Pause } from 'lucide-vue-next';
+  import { Video, AlertTriangle, Play, Pause, Film, RotateCcw } from 'lucide-vue-next';
 
   import type { WhisperSegment, WatermarkSettings } from '@/types';
 
@@ -247,6 +306,7 @@
     currentTime?: number;
     watermarkSettings?: WatermarkSettings;
     watermarkData?: WatermarkData | null;
+    audioGainDb?: number; // dB gain (-20 to +20) for audio playback preview
   }
 
   interface WordInfo {
@@ -329,6 +389,7 @@
       scale: 15,
     }),
     watermarkData: null,
+    audioGainDb: 0,
   });
 
   interface Emits {
@@ -348,6 +409,108 @@
   const videoElementRef = ref<HTMLVideoElement | null>(null);
   const videoContainerRef = ref<HTMLElement | null>(null);
   const containerHeight = ref<number>(1080); // Default to 1080p height
+
+  // Web Audio API refs for gain control
+  const audioContext = ref<AudioContext | null>(null);
+  const gainNode = ref<GainNode | null>(null);
+  const mediaSource = ref<MediaElementAudioSourceNode | null>(null);
+  const isAudioSetup = ref(false);
+
+  // Convert dB to linear gain multiplier
+  function dbToLinear(db: number): number {
+    return Math.pow(10, db / 20);
+  }
+
+  // Setup Web Audio API for gain control
+  async function setupAudioGain(videoElement: HTMLVideoElement) {
+    // Only setup once per video element
+    if (isAudioSetup.value) return;
+
+    // Don't setup if gain is 0 dB (no change needed)
+    // This allows normal playback when no gain adjustment is required
+    const currentGainDb = props.audioGainDb ?? 0;
+    if (currentGainDb === 0 && !audioContext.value) {
+      console.log('[VideoPlayer] Skipping audio gain setup (0 dB, no adjustment needed)');
+      return;
+    }
+
+    try {
+      // Create audio context if not exists
+      if (!audioContext.value) {
+        audioContext.value = new AudioContext();
+        console.log('[VideoPlayer] Created new AudioContext, state:', audioContext.value.state);
+      }
+
+      // Resume context if suspended (required for user gesture)
+      if (audioContext.value.state === 'suspended') {
+        console.log('[VideoPlayer] Resuming suspended AudioContext...');
+        await audioContext.value.resume();
+        console.log('[VideoPlayer] AudioContext resumed, state:', audioContext.value.state);
+      }
+
+      // Create media source from video element
+      mediaSource.value = audioContext.value.createMediaElementSource(videoElement);
+      console.log('[VideoPlayer] Created MediaElementSourceNode');
+
+      // Create gain node
+      gainNode.value = audioContext.value.createGain();
+
+      // Set initial gain
+      const linearGain = dbToLinear(currentGainDb);
+      gainNode.value.gain.value = linearGain;
+      console.log('[VideoPlayer] Created GainNode with initial gain:', linearGain);
+
+      // Connect: video -> gain -> destination (speakers)
+      mediaSource.value.connect(gainNode.value);
+      gainNode.value.connect(audioContext.value.destination);
+      console.log('[VideoPlayer] Audio routing connected: video -> gain -> destination');
+
+      isAudioSetup.value = true;
+      console.log('[VideoPlayer] Audio gain setup complete, gain:', linearGain, '(', currentGainDb, 'dB)');
+    } catch (error) {
+      console.error('[VideoPlayer] Failed to setup audio gain:', error);
+      // Reset state so we can try again if needed
+      isAudioSetup.value = false;
+    }
+  }
+
+  // Update gain value when prop changes
+  function updateAudioGain() {
+    if (gainNode.value && audioContext.value) {
+      const linearGain = dbToLinear(props.audioGainDb ?? 0);
+      // Use setValueAtTime for smooth transition
+      gainNode.value.gain.setTargetAtTime(linearGain, audioContext.value.currentTime, 0.05);
+    }
+  }
+
+  // Cleanup audio resources
+  function cleanupAudio() {
+    if (mediaSource.value) {
+      try {
+        mediaSource.value.disconnect();
+      } catch (e) {
+        // Ignore disconnect errors
+      }
+      mediaSource.value = null;
+    }
+    if (gainNode.value) {
+      try {
+        gainNode.value.disconnect();
+      } catch (e) {
+        // Ignore disconnect errors
+      }
+      gainNode.value = null;
+    }
+    if (audioContext.value) {
+      try {
+        audioContext.value.close();
+      } catch (e) {
+        // Ignore close errors
+      }
+      audioContext.value = null;
+    }
+    isAudioSetup.value = false;
+  }
 
   // Calculate max words based on aspect ratio
   const maxWordsForAspectRatio = computed(() => {
@@ -577,8 +740,42 @@
   watch(videoElementRef, (newElement) => {
     if (newElement) {
       emit('videoElementReady', newElement);
+      // Don't setup audio immediately - wait for gain change or canPlay
     }
   });
+
+  // Watch for audioGainDb changes
+  watch(
+    () => props.audioGainDb,
+    async (newGainDb) => {
+      // If audio is already setup, just update the gain
+      if (isAudioSetup.value) {
+        updateAudioGain();
+        // Also ensure AudioContext is running
+        if (audioContext.value?.state === 'suspended') {
+          await audioContext.value.resume();
+        }
+      } else if (newGainDb !== 0 && videoElementRef.value) {
+        // Setup audio when user changes gain from 0 to something else
+        await setupAudioGain(videoElementRef.value);
+      }
+    }
+  );
+
+  // Watch for play state to ensure AudioContext is running
+  watch(
+    () => props.isPlaying,
+    async (playing) => {
+      if (playing && audioContext.value?.state === 'suspended') {
+        console.log('[VideoPlayer] Video playing, resuming AudioContext');
+        await audioContext.value.resume();
+      }
+    }
+  );
+
+  // Note: We do NOT cleanup audio when video source changes because
+  // MediaElementAudioSourceNode can only be created once per video element.
+  // The audio routing remains valid even when the video src changes.
 
   // Setup ResizeObserver to track container size changes
   let resizeObserver: ResizeObserver | null = null;
@@ -621,6 +818,8 @@
     if (resizeObserver) {
       resizeObserver.disconnect();
     }
+    // Cleanup audio resources
+    cleanupAudio();
   });
 </script>
 
@@ -636,6 +835,7 @@
   .video-crop-container {
     position: relative;
     overflow: hidden;
+    border-radius: 0.5rem;
   }
 
   .video-element {
@@ -649,17 +849,32 @@
     transition: object-position 1.5s ease-in-out;
   }
 
-  /* Play overlay animation */
-  .play-overlay {
-    transition: opacity 0.2s ease;
+  /* Loading Animation */
+  .loading-ring {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    border-top-color: rgba(139, 92, 246, 0.8);
+    border-right-color: rgba(6, 182, 212, 0.4);
+    animation: loading-spin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
   }
 
-  .play-overlay:hover {
-    opacity: 1 !important;
+  .loading-ring-inner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 40px;
+    height: 40px;
+    margin: -20px 0 0 -20px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    border-top-color: rgba(6, 182, 212, 0.6);
+    border-left-color: rgba(139, 92, 246, 0.3);
+    animation: loading-spin 0.8s cubic-bezier(0.5, 0, 0.5, 1) infinite reverse;
   }
 
-  /* Loading spinner */
-  @keyframes spin {
+  @keyframes loading-spin {
     from {
       transform: rotate(0deg);
     }
@@ -668,8 +883,85 @@
     }
   }
 
-  .animate-spin {
-    animation: spin 1s linear infinite;
+  /* Slow pulse animation */
+  @keyframes pulse-slow {
+    0%,
+    100% {
+      opacity: 0.5;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.3;
+      transform: scale(1.05);
+    }
+  }
+
+  .animate-pulse-slow {
+    animation: pulse-slow 3s ease-in-out infinite;
+  }
+
+  /* Play/Pause Overlay */
+  .play-overlay {
+    cursor: pointer;
+  }
+
+  .play-button-container {
+    opacity: 0;
+    transform: scale(0.8);
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .play-overlay:hover .play-button-container,
+  .play-button-container.show-button {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .play-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    transition: all 0.2s ease;
+  }
+
+  .play-button:hover {
+    background: rgba(0, 0, 0, 0.7);
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: scale(1.05);
+  }
+
+  .play-button:active {
+    transform: scale(0.95);
+  }
+
+  /* Paused state shows play button more prominently */
+  .is-paused .play-button-container {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+
+  /* Focal Point Indicator */
+  .focal-point-indicator {
+    animation: focal-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes focal-pulse {
+    0%,
+    100% {
+      opacity: 0.7;
+    }
+    50% {
+      opacity: 1;
+    }
   }
 
   /* Smooth transitions */
@@ -690,7 +982,6 @@
     flex-wrap: wrap;
     justify-content: center;
     align-items: center;
-    /* Gap is dynamically set via inline style from subtitleSettings.wordSpacing */
   }
 
   /* Subtitle layering for crisp borders */
@@ -704,10 +995,22 @@
   }
 
   .subtitle-word-stack:has(.current-word) {
-    /* Animation scale logic is handled via transform on parent or logic in JS if needed */
-    /* But here we kept the transform logic on the stack itself? */
-    /* The :class="{ 'current-word': isCurrentWord(wordInfo) }" is now on the ghost span? No. */
-    /* We need to make sure the transform still works */
     transform: scale(1.15);
+  }
+
+  /* Watermark styling */
+  .watermark-image {
+    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.3));
+    transition: opacity 0.3s ease;
+  }
+
+  /* Video element styling */
+  video {
+    background: #09090b;
+  }
+
+  /* Keyboard hint styling */
+  kbd {
+    font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace;
   }
 </style>

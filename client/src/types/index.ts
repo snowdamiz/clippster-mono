@@ -84,6 +84,7 @@ export interface TimelineProps {
   currentlyPlayingClipId?: string | null;
   projectId?: string | null;
   dialogHeight?: number | null;
+  audioGainDb?: number; // dB gain (-20 to +20) to apply to waveform visualization
 }
 
 export interface TimelineEmits {
@@ -156,6 +157,7 @@ export interface TimelineVideoTrackProps {
   currentTime: number;
   duration: number;
   zoomLevel?: number;
+  audioGainDb?: number; // dB gain (-20 to +20) to apply to waveform visualization
 }
 
 export interface TimelineVideoTrackEmits {
@@ -230,6 +232,11 @@ export interface MediaPanelProps {
   aspectRatio: { width: number; height: number };
 }
 
+export interface AudioSettings {
+  volume: number; // dB gain (-20 to +20)
+  normalize: boolean; // enable audio normalization (export only)
+}
+
 export interface MediaPanelEmits {
   (e: 'clipHover', clipId: string): void;
   (e: 'clipLeave'): void;
@@ -241,6 +248,7 @@ export interface MediaPanelEmits {
   (e: 'seekVideo', time: number): void;
   (e: 'subtitleSettingsChanged', settings: SubtitleSettings): void;
   (e: 'watermarkSettingsChanged', settings: WatermarkSettings): void;
+  (e: 'audioSettingsChanged', settings: AudioSettings): void;
 }
 
 export interface TimelinePlayheadProps {
