@@ -25,7 +25,7 @@ const VIDEO_QUALITY_HIGH = 2;
 const AUDIO_ADVANCE_MS = 208; // Advance audio by 200ms to fix sync
 
 const AUDIO_FALLBACK_OFFSET_MS = 0; // Only used as fallback if sync setup fails
-const DEBUG_SYNC = false; // Set to true to log sync debugging info
+const DEBUG_SYNC = true; // Enabled to diagnose video stride issues
 
 const args = process.argv.slice(2);
 const [mintId, sessionId, outputDirArg, segmentMinutesArg] = args;
@@ -261,6 +261,7 @@ class PumpfunRecorder {
     this.syncMethod = 'unknown'; // 'pts', 'computed-pts', or 'wallclock'
     this.videoFramesWritten = 0;
     this._loggedAudioFrame = false; // Debug: log first audio frame structure
+    this._loggedVideoFrame = false; // Debug: log first video frame structure
     this._audioTimestampSource = 'none'; // 'livekit', 'computed', or 'none'
     this.lastVideoFrame = null;
     this.videoQueue = []; // { buffer, timestampUs } sorted
@@ -572,36 +573,74 @@ class PumpfunRecorder {
         if (!yPlane || !uPlane || !vPlane) {
           continue;
         }
+        
+        // Debug: Log video frame structure on first frame to diagnose stride issues
+        if (!this._loggedVideoFrame) {
+            this._loggedVideoFrame = true;
+            const describePlane = (plane, name, planeHeight) => {
+                return {
+                    type: plane.constructor?.name || typeof plane,
+                    stride: plane.stride,
+                    byteLength: plane.byteLength,
+                    byteOffset: plane.byteOffset,
+                    hasBuffer: !!plane.buffer,
+                    inferredStride: plane.byteLength && planeHeight > 0 
+                        ? Math.floor(plane.byteLength / planeHeight)
+                        : 'N/A'
+                };
+            };
+            log('Video frame structure', {
+                width: effectiveWidth,
+                height: effectiveHeight,
+                Y: describePlane(yPlane, 'Y', effectiveHeight),
+                U: describePlane(uPlane, 'U', effectiveHeight >> 1),
+                V: describePlane(vPlane, 'V', effectiveHeight >> 1)
+            });
+        }
 
-        const yStride = width;
-        const uvStride = (width + 1) >> 1;
-
-        const extractPlane = (plane, w, h, originalStride) => {
-             let stride = plane.stride || originalStride || w;
-             const availableBytes = plane.byteLength !== undefined ? plane.byteLength : (plane.buffer.byteLength - plane.byteOffset);
-             const requiredBytes = stride * h;
-
-             if (requiredBytes > availableBytes && stride > w) {
-                 stride = originalStride || w;
+        // Extract plane data - handles LiveKit's I420 plane format
+        // LiveKit planes are TypedArrays (Uint8Array) with potential stride padding
+        const extractPlane = (plane, w, h, planeType) => {
+             // Convert plane to Buffer - handles TypedArray correctly
+             const srcBuffer = Buffer.from(plane.buffer, plane.byteOffset, plane.byteLength);
+             
+             // Calculate stride - either explicit or inferred from buffer size
+             let stride;
+             if (typeof plane.stride === 'number' && plane.stride >= w) {
+                 stride = plane.stride;
+             } else {
+                 // Infer stride from buffer size / height
+                 stride = Math.floor(srcBuffer.length / h);
+                 if (stride < w) stride = w;
              }
              
-             if (stride === w) {
-                 return Buffer.from(plane.buffer, plane.byteOffset, w * h);
+             // Fast path: no padding, direct copy
+             if (stride === w && srcBuffer.length >= w * h) {
+                 return Buffer.from(srcBuffer.buffer, srcBuffer.byteOffset, w * h);
              }
              
+             // Slow path: remove stride padding row by row
              const tight = Buffer.allocUnsafe(w * h);
-             for (let y = 0; y < h; y++) {
-                 const srcStart = plane.byteOffset + (y * stride);
-                 const dstStart = y * w;
-                 if (srcStart + w > plane.buffer.byteLength) break;
-                 Buffer.from(plane.buffer, srcStart, w).copy(tight, dstStart);
+             
+             for (let row = 0; row < h; row++) {
+                 const srcStart = row * stride;
+                 const dstStart = row * w;
+                 
+                 if (srcStart + w <= srcBuffer.length) {
+                     srcBuffer.copy(tight, dstStart, srcStart, srcStart + w);
+                 } else {
+                     // Fill with neutral value if out of bounds
+                     const fillValue = planeType === 'Y' ? 16 : 128;
+                     tight.fill(fillValue, dstStart, dstStart + w);
+                 }
              }
+             
              return tight;
         };
 
-        const yBuffer = extractPlane(yPlane, effectiveWidth, effectiveHeight, yStride);
-        const uBuffer = extractPlane(uPlane, effectiveWidth >> 1, effectiveHeight >> 1, uvStride);
-        const vBuffer = extractPlane(vPlane, effectiveWidth >> 1, effectiveHeight >> 1, uvStride);
+        const yBuffer = extractPlane(yPlane, effectiveWidth, effectiveHeight, 'Y');
+        const uBuffer = extractPlane(uPlane, effectiveWidth >> 1, effectiveHeight >> 1, 'U');
+        const vBuffer = extractPlane(vPlane, effectiveWidth >> 1, effectiveHeight >> 1, 'V');
 
         const buffer = Buffer.concat([yBuffer, uBuffer, vBuffer]);
 
@@ -802,6 +841,7 @@ class PumpfunRecorder {
         this.fpsDetected = false;
         this.videoQueue = [];
         this._loggedAudioFrame = false;
+        this._loggedVideoFrame = false;
         
         // Reset mixer state
         this.audioMixer.reset();
