@@ -17,9 +17,15 @@ import {
 const VIDEO_QUALITY_HIGH = 2;
 // Audio-Video Sync Configuration
 // The sync is now PTS-based (presentation timestamp) for both audio and video.
-// This fallback offset is only used if PTS is not available on audio frames.
-const AUDIO_FALLBACK_OFFSET_MS = 0; // Only used as fallback if PTS unavailable
-const DEBUG_SYNC = true; // Temporarily enabled to diagnose audio frame properties
+//
+// AUDIO_ADVANCE_MS: Manual offset to fix audio being behind video.
+// Positive value = advance audio (audio plays earlier) - fixes "audio behind" issues
+// Adjust this value if audio is consistently behind across all streams.
+// Typical values: 100-300ms
+const AUDIO_ADVANCE_MS = 208; // Advance audio by 200ms to fix sync
+
+const AUDIO_FALLBACK_OFFSET_MS = 0; // Only used as fallback if sync setup fails
+const DEBUG_SYNC = false; // Set to true to log sync debugging info
 
 const args = process.argv.slice(2);
 const [mintId, sessionId, outputDirArg, segmentMinutesArg] = args;
@@ -465,12 +471,13 @@ class PumpfunRecorder {
                 // Calculate time relative to first audio frame using PTS
                 const diffUs = audioTimestampUs - this.firstAudioTimestampUs;
                 const diffMs = Number(diffUs) / 1000;
-                // Apply the sync offset calculated during checkSyncAndStart
-                const relativeTime = diffMs + this.audioOffsetFromRef;
+                // Apply sync offset: subtract AUDIO_ADVANCE_MS to make audio play earlier
+                // (smaller time index = audio chunk is output sooner)
+                const relativeTime = diffMs + this.audioOffsetFromRef - AUDIO_ADVANCE_MS;
                 timeIndex = Math.floor(relativeTime / 20);
             } else {
                 // Fallback: wall-clock based timing (only if sync setup failed)
-                const relativeTime = arrivalTime - this.referenceTime + AUDIO_FALLBACK_OFFSET_MS;
+                const relativeTime = arrivalTime - this.referenceTime + AUDIO_FALLBACK_OFFSET_MS - AUDIO_ADVANCE_MS;
                 timeIndex = Math.floor(relativeTime / 20);
             }
 
@@ -681,8 +688,8 @@ class PumpfunRecorder {
             log('A/V sync initialized', {
                 method: this.syncMethod,
                 audioSource: this._audioTimestampSource,
-                wallClockDiffMs: wallClockOffsetMs.toFixed(1),
-                referenceTime: this.referenceTime
+                audioAdvanceMs: AUDIO_ADVANCE_MS,
+                wallClockDiffMs: wallClockOffsetMs.toFixed(1)
             });
         } else {
             // WALL-CLOCK FALLBACK (Original behavior - only if PTS missing)
