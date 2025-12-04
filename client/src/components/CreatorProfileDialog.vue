@@ -1,427 +1,466 @@
 <template>
-  <Transition
-    enter-active-class="transition duration-200 ease-out"
-    enter-from-class="opacity-0 scale-95"
-    enter-to-class="opacity-100 scale-100"
-    leave-active-class="transition duration-150 ease-in"
-    leave-from-class="opacity-100 scale-100"
-    leave-to-class="opacity-0 scale-95"
-  >
+  <Transition name="modal">
     <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="$emit('close')"></div>
-      <div
-        class="relative flex flex-col w-full max-w-2xl overflow-hidden bg-card border border-border shadow-2xl rounded-xl max-h-[90vh]"
-      >
-        <!-- Header -->
-        <div class="flex items-center justify-between px-6 py-4 border-b border-border/60 bg-muted/30">
-          <h2 class="text-lg font-semibold text-foreground">
-            {{ isEditing ? 'Edit Creator' : 'Add Creator' }}
-          </h2>
-          <button
-            @click="$emit('close')"
-            class="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+      <div class="absolute inset-0 bg-black/70 backdrop-blur-md" @click="$emit('close')"></div>
+      <Transition name="dialog" appear>
+        <div
+          class="relative flex flex-col w-full max-w-lg sm:max-w-xl lg:max-w-2xl mx-3 sm:mx-4 overflow-hidden bg-gradient-to-b from-zinc-900 to-zinc-950 border border-white/10 rounded-xl sm:rounded-2xl max-h-[92vh] sm:max-h-[90vh]"
+        >
+          <!-- Decorative top accent -->
+          <div class="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500 flex-shrink-0" />
+
+          <!-- Header -->
+          <div
+            class="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-zinc-800 bg-zinc-900/50"
           >
-            <X class="w-5 h-5" />
-          </button>
-        </div>
-
-        <!-- Content -->
-        <div class="flex-1 p-6 overflow-y-auto custom-scrollbar space-y-6" @click="openPlatformDropdown = null">
-          <!-- Basic Info Section -->
-          <div class="space-y-4">
-            <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Basic Info</h3>
-
-            <div class="grid gap-4">
-              <div>
-                <label class="block text-sm font-medium mb-2">Name *</label>
-                <Input v-model="form.name" placeholder="Creator name" />
+            <div class="flex items-center gap-2 sm:gap-3">
+              <div
+                class="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 flex items-center justify-center border border-violet-500/30"
+              >
+                <Users class="h-4 w-4 sm:h-5 sm:w-5 text-violet-400" />
               </div>
-
-              <div>
-                <label class="block text-sm font-medium mb-2">Description</label>
-                <Textarea v-model="form.description" placeholder="Optional description..." rows="2" />
-              </div>
+              <h2 class="text-base sm:text-lg font-semibold text-white">
+                {{ isEditing ? 'Edit Creator' : 'Add Creator' }}
+              </h2>
             </div>
+            <button
+              @click="$emit('close')"
+              class="p-1.5 sm:p-2 rounded-lg sm:rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors border border-zinc-800"
+            >
+              <X class="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
           </div>
 
-          <!-- Platform Links Section -->
-          <div class="space-y-4">
-            <div class="flex items-center justify-between">
-              <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Platform Links</h3>
-              <button
-                @click="addPlatformLink"
-                class="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10 rounded-md transition-colors"
-              >
-                <Plus class="w-3.5 h-3.5" />
-                Add Platform
-              </button>
+          <!-- Content -->
+          <div
+            class="flex-1 p-4 sm:p-6 overflow-y-auto custom-scrollbar space-y-4 sm:space-y-6"
+            @click="openPlatformDropdown = null"
+          >
+            <!-- Basic Info Section -->
+            <div class="space-y-3 sm:space-y-4">
+              <h3 class="text-xs sm:text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                Basic Info
+              </h3>
+
+              <div class="grid gap-3 sm:gap-4">
+                <div>
+                  <label class="block text-xs sm:text-sm font-medium mb-1.5 sm:mb-2">Name *</label>
+                  <Input v-model="form.name" placeholder="Creator name" class="text-sm" />
+                </div>
+
+                <div>
+                  <label class="block text-xs sm:text-sm font-medium mb-1.5 sm:mb-2">Description</label>
+                  <Textarea v-model="form.description" placeholder="Optional description..." rows="2" class="text-sm" />
+                </div>
+              </div>
             </div>
 
-            <div
-              v-if="form.platformLinks.length === 0"
-              class="p-4 border border-dashed border-border rounded-lg text-center"
-            >
-              <p class="text-sm text-muted-foreground">No platforms added yet</p>
-              <button @click="addPlatformLink" class="mt-2 text-sm text-primary hover:underline">
-                Add your first platform
-              </button>
-            </div>
+            <!-- Platform Links Section -->
+            <div class="space-y-4">
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Platform Links</h3>
+                <button
+                  @click="addPlatformLink"
+                  class="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10 rounded-md transition-colors"
+                >
+                  <Plus class="w-3.5 h-3.5" />
+                  Add Platform
+                </button>
+              </div>
 
-            <div v-else class="space-y-3">
               <div
-                v-for="(link, index) in form.platformLinks"
-                :key="index"
-                class="p-4 bg-muted/20 border border-border/50 rounded-lg space-y-3"
+                v-if="form.platformLinks.length === 0"
+                class="p-4 border border-dashed border-border rounded-lg text-center"
               >
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-3">
-                    <!-- Profile Image Preview -->
-                    <div
-                      class="w-10 h-10 rounded-lg overflow-hidden bg-muted border border-border/50 flex items-center justify-center flex-shrink-0"
-                    >
-                      <img
-                        v-if="link.profileImageUrl"
-                        :src="link.profileImageUrl"
-                        class="w-full h-full object-cover"
-                        @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
-                      />
-                      <component
-                        v-else
-                        :is="link.platform === 'pumpfun' ? Loader2 : Users"
-                        :class="[
-                          'w-5 h-5 text-muted-foreground',
-                          link.platform === 'pumpfun' && link.platformId && !link.profileImageUrl ? 'animate-spin' : '',
-                        ]"
+                <p class="text-sm text-muted-foreground">No platforms added yet</p>
+                <button @click="addPlatformLink" class="mt-2 text-sm text-primary hover:underline">
+                  Add your first platform
+                </button>
+              </div>
+
+              <div v-else class="space-y-3">
+                <div
+                  v-for="(link, index) in form.platformLinks"
+                  :key="index"
+                  class="p-4 bg-muted/20 border border-border/50 rounded-lg space-y-3"
+                >
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                      <!-- Profile Image Preview -->
+                      <div
+                        class="w-10 h-10 rounded-lg overflow-hidden bg-muted border border-border/50 flex items-center justify-center flex-shrink-0"
+                      >
+                        <img
+                          v-if="link.profileImageUrl"
+                          :src="link.profileImageUrl"
+                          class="w-full h-full object-cover"
+                          @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
+                        />
+                        <component
+                          v-else
+                          :is="link.platform === 'pumpfun' ? Loader2 : Users"
+                          :class="[
+                            'w-5 h-5 text-muted-foreground',
+                            link.platform === 'pumpfun' && link.platformId && !link.profileImageUrl
+                              ? 'animate-spin'
+                              : '',
+                          ]"
+                        />
+                      </div>
+
+                      <div class="relative">
+                        <button
+                          type="button"
+                          @click.stop="togglePlatformDropdown(index)"
+                          class="flex items-center gap-2 px-3 py-1.5 bg-muted border border-border rounded-md text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                        >
+                          <div
+                            class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+                            :style="{ backgroundColor: getPlatformColor(link.platform) }"
+                          >
+                            <img
+                              :src="getPlatformIcon(link.platform)"
+                              class="w-3.5 h-3.5"
+                              :class="getPlatformIconClass(link.platform)"
+                            />
+                          </div>
+                          <span class="text-sm font-medium">{{ getPlatformName(link.platform) }}</span>
+                          <ChevronDown
+                            class="w-3.5 h-3.5 text-muted-foreground transition-transform"
+                            :class="{ 'rotate-180': openPlatformDropdown === index }"
+                          />
+                        </button>
+
+                        <!-- Platform Dropdown -->
+                        <div
+                          v-if="openPlatformDropdown === index"
+                          class="absolute top-full left-0 mt-1 w-48 bg-card border border-border rounded-md shadow-lg z-50 overflow-hidden"
+                          @click.stop
+                        >
+                          <div class="p-1">
+                            <button
+                              v-for="platform in availablePlatforms"
+                              :key="platform.id"
+                              type="button"
+                              @click="selectPlatform(index, platform.id)"
+                              class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2"
+                              :class="[
+                                platform.disabled
+                                  ? 'opacity-50 cursor-not-allowed'
+                                  : 'hover:bg-muted/80 cursor-pointer',
+                                link.platform === platform.id ? 'bg-muted' : '',
+                              ]"
+                              :disabled="platform.disabled"
+                            >
+                              <div
+                                class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+                                :style="{ backgroundColor: getPlatformColor(platform.id) }"
+                              >
+                                <img
+                                  :src="getPlatformIcon(platform.id)"
+                                  class="w-3.5 h-3.5"
+                                  :class="getPlatformIconClass(platform.id)"
+                                />
+                              </div>
+                              <span
+                                class="text-sm"
+                                :class="platform.disabled ? 'text-muted-foreground' : 'text-foreground'"
+                              >
+                                {{ platform.name }}
+                              </span>
+                              <span
+                                v-if="platform.disabled"
+                                class="text-[10px] px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded-full ml-auto"
+                              >
+                                Soon
+                              </span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <label class="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+                        <input
+                          type="radio"
+                          :name="'primary-' + index"
+                          :checked="link.isPrimary"
+                          @change="setPrimaryLink(index)"
+                          class="w-3 h-3"
+                        />
+                        Primary
+                      </label>
+                      <button
+                        @click="removePlatformLink(index)"
+                        class="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+                      >
+                        <Trash2 class="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="grid gap-3">
+                    <div>
+                      <label class="block text-xs font-medium text-muted-foreground mb-1">
+                        {{ link.platform === 'pumpfun' ? 'Mint ID or URL' : 'Channel Slug or URL' }} *
+                      </label>
+                      <Input
+                        v-model="link.platformId"
+                        :placeholder="
+                          link.platform === 'pumpfun'
+                            ? 'Enter mint ID or paste PumpFun URL'
+                            : 'Enter channel slug or paste URL'
+                        "
+                        @blur="extractPlatformId(link)"
                       />
                     </div>
+                    <div>
+                      <label class="block text-xs font-medium text-muted-foreground mb-1">Display Name</label>
+                      <Input v-model="link.displayName" placeholder="Optional display name" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-                    <div class="relative">
+            <!-- Assets Section -->
+            <div class="space-y-4" @click.stop="openAssetDropdown = null">
+              <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Default Assets</h3>
+              <p class="text-xs text-muted-foreground -mt-2">
+                Configure default intro, outro, and watermark for this creator's content.
+              </p>
+
+              <div class="grid gap-4">
+                <!-- Intro Selection -->
+                <div>
+                  <label class="block text-sm font-medium mb-2">Intro</label>
+                  <div class="flex gap-2">
+                    <div class="relative flex-1">
                       <button
                         type="button"
-                        @click.stop="togglePlatformDropdown(index)"
-                        class="flex items-center gap-2 px-3 py-1.5 bg-muted border border-border rounded-md text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                        @click.stop="toggleAssetDropdown('intro')"
+                        class="w-full flex items-center gap-2 px-3 py-2 bg-muted border border-border rounded-md text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
                       >
-                        <div
-                          class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
-                          :style="{ backgroundColor: getPlatformColor(link.platform) }"
-                        >
-                          <img
-                            :src="getPlatformIcon(link.platform)"
-                            class="w-3.5 h-3.5"
-                            :class="getPlatformIconClass(link.platform)"
-                          />
+                        <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-blue-500">
+                          <Play class="w-3.5 h-3.5 text-white" />
                         </div>
-                        <span class="text-sm font-medium">{{ getPlatformName(link.platform) }}</span>
+                        <span class="text-sm font-medium flex-1 text-left truncate">
+                          {{ getSelectedIntroName() }}
+                        </span>
                         <ChevronDown
-                          class="w-3.5 h-3.5 text-muted-foreground transition-transform"
-                          :class="{ 'rotate-180': openPlatformDropdown === index }"
+                          class="w-3.5 h-3.5 text-muted-foreground transition-transform flex-shrink-0"
+                          :class="{ 'rotate-180': openAssetDropdown === 'intro' }"
                         />
                       </button>
 
-                      <!-- Platform Dropdown -->
+                      <!-- Intro Dropdown -->
                       <div
-                        v-if="openPlatformDropdown === index"
-                        class="absolute top-full left-0 mt-1 w-48 bg-card border border-border rounded-md shadow-lg z-50 overflow-hidden"
+                        v-if="openAssetDropdown === 'intro'"
+                        class="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-50 overflow-hidden"
                         @click.stop
                       >
-                        <div class="p-1">
+                        <div class="p-1 max-h-48 overflow-y-auto custom-scrollbar">
                           <button
-                            v-for="platform in availablePlatforms"
-                            :key="platform.id"
                             type="button"
-                            @click="selectPlatform(index, platform.id)"
-                            class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2"
-                            :class="[
-                              platform.disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted/80 cursor-pointer',
-                              link.platform === platform.id ? 'bg-muted' : '',
-                            ]"
-                            :disabled="platform.disabled"
+                            @click="selectIntro(null)"
+                            class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-muted/80 cursor-pointer"
+                            :class="{ 'bg-muted': form.introId === null }"
                           >
                             <div
-                              class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
-                              :style="{ backgroundColor: getPlatformColor(platform.id) }"
+                              class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-muted-foreground/20"
                             >
-                              <img
-                                :src="getPlatformIcon(platform.id)"
-                                class="w-3.5 h-3.5"
-                                :class="getPlatformIconClass(platform.id)"
-                              />
+                              <X class="w-3.5 h-3.5 text-muted-foreground" />
                             </div>
-                            <span
-                              class="text-sm"
-                              :class="platform.disabled ? 'text-muted-foreground' : 'text-foreground'"
-                            >
-                              {{ platform.name }}
-                            </span>
-                            <span
-                              v-if="platform.disabled"
-                              class="text-[10px] px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded-full ml-auto"
-                            >
-                              Soon
-                            </span>
+                            <span class="text-sm text-muted-foreground">No intro</span>
+                          </button>
+                          <button
+                            v-for="intro in intros"
+                            :key="intro.id"
+                            type="button"
+                            @click="selectIntro(intro.id)"
+                            class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-muted/80 cursor-pointer"
+                            :class="{ 'bg-muted': form.introId === intro.id }"
+                          >
+                            <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-blue-500">
+                              <Play class="w-3.5 h-3.5 text-white" />
+                            </div>
+                            <span class="text-sm text-foreground truncate">{{ intro.name }}</span>
                           </button>
                         </div>
                       </div>
                     </div>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <label class="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
-                      <input
-                        type="radio"
-                        :name="'primary-' + index"
-                        :checked="link.isPrimary"
-                        @change="setPrimaryLink(index)"
-                        class="w-3 h-3"
-                      />
-                      Primary
-                    </label>
-                    <button
-                      @click="removePlatformLink(index)"
-                      class="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
-                    >
-                      <Trash2 class="w-4 h-4" />
-                    </button>
+                    <Button variant="outline" size="sm" @click="handleAssetUpload('intro')" :disabled="uploading">
+                      <Upload class="w-4 h-4" />
+                    </Button>
                   </div>
                 </div>
 
-                <div class="grid gap-3">
-                  <div>
-                    <label class="block text-xs font-medium text-muted-foreground mb-1">
-                      {{ link.platform === 'pumpfun' ? 'Mint ID or URL' : 'Channel Slug or URL' }} *
-                    </label>
-                    <Input
-                      v-model="link.platformId"
-                      :placeholder="
-                        link.platform === 'pumpfun'
-                          ? 'Enter mint ID or paste PumpFun URL'
-                          : 'Enter channel slug or paste URL'
-                      "
-                      @blur="extractPlatformId(link)"
-                    />
+                <!-- Outro Selection -->
+                <div>
+                  <label class="block text-sm font-medium mb-2">Outro</label>
+                  <div class="flex gap-2">
+                    <div class="relative flex-1">
+                      <button
+                        type="button"
+                        @click.stop="toggleAssetDropdown('outro')"
+                        class="w-full flex items-center gap-2 px-3 py-2 bg-muted border border-border rounded-md text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                      >
+                        <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-purple-500">
+                          <SkipForward class="w-3.5 h-3.5 text-white" />
+                        </div>
+                        <span class="text-sm font-medium flex-1 text-left truncate">
+                          {{ getSelectedOutroName() }}
+                        </span>
+                        <ChevronDown
+                          class="w-3.5 h-3.5 text-muted-foreground transition-transform flex-shrink-0"
+                          :class="{ 'rotate-180': openAssetDropdown === 'outro' }"
+                        />
+                      </button>
+
+                      <!-- Outro Dropdown -->
+                      <div
+                        v-if="openAssetDropdown === 'outro'"
+                        class="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-50 overflow-hidden"
+                        @click.stop
+                      >
+                        <div class="p-1 max-h-48 overflow-y-auto custom-scrollbar">
+                          <button
+                            type="button"
+                            @click="selectOutro(null)"
+                            class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-muted/80 cursor-pointer"
+                            :class="{ 'bg-muted': form.outroId === null }"
+                          >
+                            <div
+                              class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-muted-foreground/20"
+                            >
+                              <X class="w-3.5 h-3.5 text-muted-foreground" />
+                            </div>
+                            <span class="text-sm text-muted-foreground">No outro</span>
+                          </button>
+                          <button
+                            v-for="outro in outros"
+                            :key="outro.id"
+                            type="button"
+                            @click="selectOutro(outro.id)"
+                            class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-muted/80 cursor-pointer"
+                            :class="{ 'bg-muted': form.outroId === outro.id }"
+                          >
+                            <div
+                              class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-purple-500"
+                            >
+                              <SkipForward class="w-3.5 h-3.5 text-white" />
+                            </div>
+                            <span class="text-sm text-foreground truncate">{{ outro.name }}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" @click="handleAssetUpload('outro')" :disabled="uploading">
+                      <Upload class="w-4 h-4" />
+                    </Button>
                   </div>
-                  <div>
-                    <label class="block text-xs font-medium text-muted-foreground mb-1">Display Name</label>
-                    <Input v-model="link.displayName" placeholder="Optional display name" />
+                </div>
+
+                <!-- Watermark Selection -->
+                <div>
+                  <label class="block text-sm font-medium mb-2">Watermark</label>
+                  <div class="flex gap-2">
+                    <div class="relative flex-1">
+                      <button
+                        type="button"
+                        @click.stop="toggleAssetDropdown('watermark')"
+                        class="w-full flex items-center gap-2 px-3 py-2 bg-muted border border-border rounded-md text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                      >
+                        <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-amber-500">
+                          <ImageIcon class="w-3.5 h-3.5 text-white" />
+                        </div>
+                        <span class="text-sm font-medium flex-1 text-left truncate">
+                          {{ getSelectedWatermarkName() }}
+                        </span>
+                        <ChevronDown
+                          class="w-3.5 h-3.5 text-muted-foreground transition-transform flex-shrink-0"
+                          :class="{ 'rotate-180': openAssetDropdown === 'watermark' }"
+                        />
+                      </button>
+
+                      <!-- Watermark Dropdown -->
+                      <div
+                        v-if="openAssetDropdown === 'watermark'"
+                        class="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-50 overflow-hidden"
+                        @click.stop
+                      >
+                        <div class="p-1 max-h-48 overflow-y-auto custom-scrollbar">
+                          <button
+                            type="button"
+                            @click="selectWatermark(null)"
+                            class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-muted/80 cursor-pointer"
+                            :class="{ 'bg-muted': form.watermarkId === null }"
+                          >
+                            <div
+                              class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-muted-foreground/20"
+                            >
+                              <X class="w-3.5 h-3.5 text-muted-foreground" />
+                            </div>
+                            <span class="text-sm text-muted-foreground">No watermark</span>
+                          </button>
+                          <button
+                            v-for="wm in watermarks"
+                            :key="wm.id"
+                            type="button"
+                            @click="selectWatermark(wm.id)"
+                            class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-muted/80 cursor-pointer"
+                            :class="{ 'bg-muted': form.watermarkId === wm.id }"
+                          >
+                            <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-amber-500">
+                              <ImageIcon class="w-3.5 h-3.5 text-white" />
+                            </div>
+                            <span class="text-sm text-foreground truncate">{{ wm.name }}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" @click="handleAssetUpload('watermark')" :disabled="uploading">
+                      <Upload class="w-4 h-4" />
+                    </Button>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Assets Section -->
-          <div class="space-y-4" @click.stop="openAssetDropdown = null">
-            <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Default Assets</h3>
-            <p class="text-xs text-muted-foreground -mt-2">
-              Configure default intro, outro, and watermark for this creator's content.
-            </p>
-
-            <div class="grid gap-4">
-              <!-- Intro Selection -->
-              <div>
-                <label class="block text-sm font-medium mb-2">Intro</label>
-                <div class="flex gap-2">
-                  <div class="relative flex-1">
-                    <button
-                      type="button"
-                      @click.stop="toggleAssetDropdown('intro')"
-                      class="w-full flex items-center gap-2 px-3 py-2 bg-muted border border-border rounded-md text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
-                    >
-                      <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-blue-500">
-                        <Play class="w-3.5 h-3.5 text-white" />
-                      </div>
-                      <span class="text-sm font-medium flex-1 text-left truncate">
-                        {{ getSelectedIntroName() }}
-                      </span>
-                      <ChevronDown
-                        class="w-3.5 h-3.5 text-muted-foreground transition-transform flex-shrink-0"
-                        :class="{ 'rotate-180': openAssetDropdown === 'intro' }"
-                      />
-                    </button>
-
-                    <!-- Intro Dropdown -->
-                    <div
-                      v-if="openAssetDropdown === 'intro'"
-                      class="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-50 overflow-hidden"
-                      @click.stop
-                    >
-                      <div class="p-1 max-h-48 overflow-y-auto custom-scrollbar">
-                        <button
-                          type="button"
-                          @click="selectIntro(null)"
-                          class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-muted/80 cursor-pointer"
-                          :class="{ 'bg-muted': form.introId === null }"
-                        >
-                          <div
-                            class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-muted-foreground/20"
-                          >
-                            <X class="w-3.5 h-3.5 text-muted-foreground" />
-                          </div>
-                          <span class="text-sm text-muted-foreground">No intro</span>
-                        </button>
-                        <button
-                          v-for="intro in intros"
-                          :key="intro.id"
-                          type="button"
-                          @click="selectIntro(intro.id)"
-                          class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-muted/80 cursor-pointer"
-                          :class="{ 'bg-muted': form.introId === intro.id }"
-                        >
-                          <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-blue-500">
-                            <Play class="w-3.5 h-3.5 text-white" />
-                          </div>
-                          <span class="text-sm text-foreground truncate">{{ intro.name }}</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  <Button variant="outline" size="sm" @click="handleAssetUpload('intro')" :disabled="uploading">
-                    <Upload class="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-
-              <!-- Outro Selection -->
-              <div>
-                <label class="block text-sm font-medium mb-2">Outro</label>
-                <div class="flex gap-2">
-                  <div class="relative flex-1">
-                    <button
-                      type="button"
-                      @click.stop="toggleAssetDropdown('outro')"
-                      class="w-full flex items-center gap-2 px-3 py-2 bg-muted border border-border rounded-md text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
-                    >
-                      <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-purple-500">
-                        <SkipForward class="w-3.5 h-3.5 text-white" />
-                      </div>
-                      <span class="text-sm font-medium flex-1 text-left truncate">
-                        {{ getSelectedOutroName() }}
-                      </span>
-                      <ChevronDown
-                        class="w-3.5 h-3.5 text-muted-foreground transition-transform flex-shrink-0"
-                        :class="{ 'rotate-180': openAssetDropdown === 'outro' }"
-                      />
-                    </button>
-
-                    <!-- Outro Dropdown -->
-                    <div
-                      v-if="openAssetDropdown === 'outro'"
-                      class="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-50 overflow-hidden"
-                      @click.stop
-                    >
-                      <div class="p-1 max-h-48 overflow-y-auto custom-scrollbar">
-                        <button
-                          type="button"
-                          @click="selectOutro(null)"
-                          class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-muted/80 cursor-pointer"
-                          :class="{ 'bg-muted': form.outroId === null }"
-                        >
-                          <div
-                            class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-muted-foreground/20"
-                          >
-                            <X class="w-3.5 h-3.5 text-muted-foreground" />
-                          </div>
-                          <span class="text-sm text-muted-foreground">No outro</span>
-                        </button>
-                        <button
-                          v-for="outro in outros"
-                          :key="outro.id"
-                          type="button"
-                          @click="selectOutro(outro.id)"
-                          class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-muted/80 cursor-pointer"
-                          :class="{ 'bg-muted': form.outroId === outro.id }"
-                        >
-                          <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-purple-500">
-                            <SkipForward class="w-3.5 h-3.5 text-white" />
-                          </div>
-                          <span class="text-sm text-foreground truncate">{{ outro.name }}</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  <Button variant="outline" size="sm" @click="handleAssetUpload('outro')" :disabled="uploading">
-                    <Upload class="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-
-              <!-- Watermark Selection -->
-              <div>
-                <label class="block text-sm font-medium mb-2">Watermark</label>
-                <div class="flex gap-2">
-                  <div class="relative flex-1">
-                    <button
-                      type="button"
-                      @click.stop="toggleAssetDropdown('watermark')"
-                      class="w-full flex items-center gap-2 px-3 py-2 bg-muted border border-border rounded-md text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
-                    >
-                      <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-amber-500">
-                        <ImageIcon class="w-3.5 h-3.5 text-white" />
-                      </div>
-                      <span class="text-sm font-medium flex-1 text-left truncate">
-                        {{ getSelectedWatermarkName() }}
-                      </span>
-                      <ChevronDown
-                        class="w-3.5 h-3.5 text-muted-foreground transition-transform flex-shrink-0"
-                        :class="{ 'rotate-180': openAssetDropdown === 'watermark' }"
-                      />
-                    </button>
-
-                    <!-- Watermark Dropdown -->
-                    <div
-                      v-if="openAssetDropdown === 'watermark'"
-                      class="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-50 overflow-hidden"
-                      @click.stop
-                    >
-                      <div class="p-1 max-h-48 overflow-y-auto custom-scrollbar">
-                        <button
-                          type="button"
-                          @click="selectWatermark(null)"
-                          class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-muted/80 cursor-pointer"
-                          :class="{ 'bg-muted': form.watermarkId === null }"
-                        >
-                          <div
-                            class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-muted-foreground/20"
-                          >
-                            <X class="w-3.5 h-3.5 text-muted-foreground" />
-                          </div>
-                          <span class="text-sm text-muted-foreground">No watermark</span>
-                        </button>
-                        <button
-                          v-for="wm in watermarks"
-                          :key="wm.id"
-                          type="button"
-                          @click="selectWatermark(wm.id)"
-                          class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-muted/80 cursor-pointer"
-                          :class="{ 'bg-muted': form.watermarkId === wm.id }"
-                        >
-                          <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-amber-500">
-                            <ImageIcon class="w-3.5 h-3.5 text-white" />
-                          </div>
-                          <span class="text-sm text-foreground truncate">{{ wm.name }}</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  <Button variant="outline" size="sm" @click="handleAssetUpload('watermark')" :disabled="uploading">
-                    <Upload class="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
+          <!-- Footer -->
+          <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-zinc-800 bg-zinc-900/50">
+            <button
+              @click="$emit('close')"
+              :disabled="saving"
+              class="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all duration-200 font-medium border border-zinc-700 hover:border-zinc-600 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              @click="saveCreator"
+              :disabled="!isValid || saving || fetchingProfileImage"
+              class="px-5 py-2.5 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl font-semibold transition-all duration-200 relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div
+                class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
+              />
+              <span class="relative flex items-center gap-2">
+                <Loader2 v-if="saving || fetchingProfileImage" class="w-4 h-4 animate-spin" />
+                {{
+                  saving
+                    ? 'Saving...'
+                    : fetchingProfileImage
+                      ? 'Loading...'
+                      : isEditing
+                        ? 'Save Changes'
+                        : 'Create Creator'
+                }}
+              </span>
+            </button>
           </div>
         </div>
-
-        <!-- Footer -->
-        <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-border bg-muted/30">
-          <Button variant="outline" @click="$emit('close')" :disabled="saving">Cancel</Button>
-          <Button @click="saveCreator" :disabled="!isValid || saving || fetchingProfileImage">
-            <Loader2 v-if="saving || fetchingProfileImage" class="w-4 h-4 animate-spin mr-2" />
-            {{
-              saving ? 'Saving...' : fetchingProfileImage ? 'Loading...' : isEditing ? 'Save Changes' : 'Create Creator'
-            }}
-          </Button>
-        </div>
-      </div>
+      </Transition>
     </div>
   </Transition>
 </template>
@@ -895,6 +934,36 @@
 </script>
 
 <style scoped>
+  /* Modal backdrop transition */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 0.3s ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  /* Dialog transition */
+  .dialog-enter-active {
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 0.2s ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
   /* Custom scrollbar for dropdown */
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
@@ -905,11 +974,11 @@
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: hsl(var(--muted));
+    background: rgb(63 63 70);
     border-radius: 3px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground));
+    background: rgb(82 82 91);
   }
 </style>

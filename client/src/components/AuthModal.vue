@@ -1,119 +1,132 @@
 <template>
   <Teleport to="body">
-    <Transition name="modal-backdrop">
+    <Transition name="modal">
       <div
         v-if="modelValue"
-        class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+        class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-[9999]"
         @click.self="close"
         @keydown.esc="close"
         tabindex="-1"
       >
-        <Transition name="modal-content">
+        <Transition name="dialog" appear>
           <div
             v-if="modelValue"
-            class="relative bg-card border border-border rounded-xl shadow-2xl max-w-2xl w-full overflow-hidden"
+            class="relative bg-gradient-to-b from-zinc-900 to-zinc-950 border border-white/10 rounded-2xl max-w-md sm:max-w-xl lg:max-w-2xl w-full mx-3 sm:mx-4 overflow-hidden max-h-[95vh] overflow-y-auto"
             role="dialog"
             aria-modal="true"
             aria-labelledby="auth-modal-title"
           >
+            <!-- Decorative top accent -->
+            <div class="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500" />
+
             <!-- Close Button -->
             <button
               @click="close"
               :disabled="authStore.loading"
-              class="absolute right-3 top-3 z-10 p-1.5 rounded-md hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              class="absolute right-4 top-4 z-10 p-2 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-zinc-700"
               aria-label="Close dialog"
             >
-              <X class="h-4 w-4 text-muted-foreground hover:text-foreground" />
+              <X class="h-4 w-4 text-zinc-400 hover:text-white" />
             </button>
 
             <!-- Two Column Layout -->
-            <div class="grid md:grid-cols-2">
+            <div class="grid lg:grid-cols-2">
               <!-- Left Column - Branding & Value Props -->
-              <div class="bg-gradient-to-br from-purple-600/10 via-indigo-600/10 to-purple-600/10 p-8 flex flex-col">
+              <div
+                class="bg-gradient-to-br from-violet-500/10 via-purple-500/10 to-fuchsia-500/10 p-5 sm:p-6 lg:p-8 flex flex-col lg:border-r border-b lg:border-b-0 border-white/5"
+              >
                 <!-- Logo -->
-                <div class="mb-8">
-                  <img src="/logo.svg" alt="Clippster" class="h-10 w-auto" />
+                <div class="mb-4 sm:mb-6 lg:mb-8">
+                  <img src="/logo.svg" alt="Clippster" class="h-8 sm:h-10 w-auto" />
                 </div>
 
                 <!-- Value Propositions -->
-                <div class="flex-1 space-y-6">
+                <div class="flex-1 space-y-4 sm:space-y-6">
                   <div>
-                    <h2 id="auth-modal-title" class="text-2xl font-bold text-foreground mb-2">
+                    <h2
+                      id="auth-modal-title"
+                      class="text-lg sm:text-xl lg:text-2xl font-bold text-white mb-1.5 sm:mb-2 tracking-tight"
+                    >
                       Transform Videos into Viral Clips
                     </h2>
-                    <p class="text-sm text-muted-foreground">
+                    <p class="text-xs sm:text-sm text-zinc-400">
                       Connect your wallet to unlock AI-powered clip creation and editing
                     </p>
                   </div>
 
                   <!-- Features List -->
-                  <div class="space-y-4">
-                    <div class="flex items-start gap-3 group">
+                  <div class="space-y-3 sm:space-y-4">
+                    <div class="flex items-start gap-2.5 sm:gap-3 group">
                       <div
-                        class="flex-shrink-0 w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center mt-0.5"
+                        class="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-violet-500/20 flex items-center justify-center mt-0.5 border border-violet-500/30"
                       >
-                        <Zap class="h-4 w-4 text-purple-400" />
+                        <Zap class="h-4 w-4 sm:h-5 sm:w-5 text-violet-400" />
                       </div>
                       <div>
-                        <h3 class="text-sm font-semibold text-foreground">AI-Powered Detection</h3>
-                        <p class="text-xs text-muted-foreground mt-0.5">
+                        <h3 class="text-xs sm:text-sm font-semibold text-white">AI-Powered Detection</h3>
+                        <p class="text-[10px] sm:text-xs text-zinc-500 mt-0.5">
                           Automatically find the best moments in your videos
                         </p>
                       </div>
                     </div>
 
-                    <div class="flex items-start gap-3 group">
+                    <div class="flex items-start gap-2.5 sm:gap-3 group">
                       <div
-                        class="flex-shrink-0 w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center mt-0.5"
+                        class="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-purple-500/20 flex items-center justify-center mt-0.5 border border-purple-500/30"
                       >
-                        <Film class="h-4 w-4 text-indigo-400" />
+                        <Film class="h-4 w-4 sm:h-5 sm:w-5 text-purple-400" />
                       </div>
                       <div>
-                        <h3 class="text-sm font-semibold text-foreground">Professional Editing</h3>
-                        <p class="text-xs text-muted-foreground mt-0.5">
+                        <h3 class="text-xs sm:text-sm font-semibold text-white">Professional Editing</h3>
+                        <p class="text-[10px] sm:text-xs text-zinc-500 mt-0.5">
                           Timeline editor with multi-platform formatting
                         </p>
                       </div>
                     </div>
 
-                    <div class="flex items-start gap-3 group">
+                    <div class="flex items-start gap-2.5 sm:gap-3 group">
                       <div
-                        class="flex-shrink-0 w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center mt-0.5"
+                        class="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-fuchsia-500/20 flex items-center justify-center mt-0.5 border border-fuchsia-500/30"
                       >
-                        <DollarSign class="h-4 w-4 text-purple-400" />
+                        <DollarSign class="h-4 w-4 sm:h-5 sm:w-5 text-fuchsia-400" />
                       </div>
                       <div>
-                        <h3 class="text-sm font-semibold text-foreground">Credit-Based Pricing</h3>
-                        <p class="text-xs text-muted-foreground mt-0.5">Pay only for what you use, no subscriptions</p>
+                        <h3 class="text-xs sm:text-sm font-semibold text-white">Credit-Based Pricing</h3>
+                        <p class="text-[10px] sm:text-xs text-zinc-500 mt-0.5">
+                          Pay only for what you use, no subscriptions
+                        </p>
                       </div>
                     </div>
                   </div>
                 </div>
 
                 <!-- Trust Badge -->
-                <div class="mt-8 pt-6 border-t border-border/20">
-                  <div class="flex items-center gap-2 text-xs text-muted-foreground">
-                    <ShieldCheck class="h-4 w-4" />
+                <div class="mt-4 sm:mt-6 lg:mt-8 pt-4 sm:pt-6 border-t border-white/10">
+                  <div class="flex items-center gap-2 text-[10px] sm:text-xs text-zinc-500">
+                    <ShieldCheck class="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                     <span>Secured by Solana blockchain</span>
                   </div>
                 </div>
               </div>
 
               <!-- Right Column - Auth Actions -->
-              <div class="p-8 flex flex-col justify-center">
-                <div class="space-y-6">
+              <div class="p-5 sm:p-6 lg:p-8 flex flex-col justify-center">
+                <div class="space-y-4 sm:space-y-6">
                   <!-- Connect Wallet -->
                   <div>
-                    <label class="block text-sm font-medium text-foreground mb-3">Sign In</label>
+                    <label class="block text-xs sm:text-sm font-medium text-zinc-300 mb-2 sm:mb-3">Sign In</label>
                     <button
                       @click="connectWallet"
                       :disabled="authStore.loading"
-                      class="w-full group relative overflow-hidden rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-card"
+                      class="w-full group relative overflow-hidden rounded-lg sm:rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:ring-offset-2 focus:ring-offset-zinc-900"
                     >
-                      <div class="px-4 py-3 flex items-center justify-center gap-2.5">
-                        <Wallet v-if="!authStore.loading" class="h-5 w-5 text-white" />
-                        <Loader2 v-else class="h-5 w-5 animate-spin text-white" />
-                        <span class="text-sm font-semibold text-white">
+                      <div
+                        class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
+                      />
+                      <div class="px-4 py-3 sm:py-3.5 flex items-center justify-center gap-2 sm:gap-2.5 relative">
+                        <Wallet v-if="!authStore.loading" class="h-4 w-4 sm:h-5 sm:w-5 text-white" />
+                        <Loader2 v-else class="h-4 w-4 sm:h-5 sm:w-5 animate-spin text-white" />
+                        <span class="text-xs sm:text-sm font-semibold text-white">
                           {{ authStore.loading ? 'Connecting...' : 'Connect Phantom Wallet' }}
                         </span>
                       </div>
@@ -121,11 +134,14 @@
                   </div>
 
                   <!-- Error Message -->
-                  <Transition name="error-fade">
-                    <div v-if="authStore.error" class="rounded-lg bg-destructive/10 border border-destructive/20 p-3">
-                      <div class="flex items-start gap-2.5">
-                        <AlertTriangle class="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
-                        <p class="text-sm text-destructive">{{ authStore.error }}</p>
+                  <Transition name="slide-fade">
+                    <div
+                      v-if="authStore.error"
+                      class="rounded-lg sm:rounded-xl bg-red-500/10 border border-red-500/30 p-3 sm:p-4"
+                    >
+                      <div class="flex items-start gap-2 sm:gap-2.5">
+                        <AlertTriangle class="h-3.5 w-3.5 sm:h-4 sm:w-4 text-red-400 flex-shrink-0 mt-0.5" />
+                        <p class="text-xs sm:text-sm text-red-400">{{ authStore.error }}</p>
                       </div>
                     </div>
                   </Transition>
@@ -133,10 +149,10 @@
                   <!-- Divider -->
                   <div class="relative">
                     <div class="absolute inset-0 flex items-center">
-                      <div class="w-full border-t border-border"></div>
+                      <div class="w-full border-t border-zinc-800"></div>
                     </div>
-                    <div class="relative flex justify-center text-xs uppercase">
-                      <span class="bg-card px-2 text-muted-foreground">New to Phantom?</span>
+                    <div class="relative flex justify-center text-[10px] sm:text-xs uppercase">
+                      <span class="bg-zinc-950 px-2 sm:px-3 text-zinc-500">New to Phantom?</span>
                     </div>
                   </div>
 
@@ -145,23 +161,29 @@
                     href="https://phantom.app/"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="block text-center px-4 py-3 rounded-lg border border-border hover:bg-secondary/50 transition-colors group"
+                    class="block text-center px-4 py-2.5 sm:py-3.5 rounded-lg sm:rounded-xl border border-zinc-800 hover:bg-zinc-800/50 hover:border-zinc-700 transition-colors group"
                   >
                     <div class="flex items-center justify-center gap-2">
-                      <span class="text-sm font-medium text-foreground">Download Phantom</span>
+                      <span class="text-xs sm:text-sm font-medium text-zinc-300">Download Phantom</span>
                       <ExternalLink
-                        class="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-all group-hover:translate-x-0.5"
+                        class="h-3.5 w-3.5 sm:h-4 sm:w-4 text-zinc-500 group-hover:text-zinc-300 transition-all group-hover:translate-x-0.5"
                       />
                     </div>
                   </a>
 
                   <!-- Pricing Hint -->
-                  <div class="pt-4 border-t border-border/50">
-                    <div class="flex items-start gap-3 p-3 rounded-lg bg-secondary/30">
-                      <Info class="h-5 w-5 text-purple-400 flex-shrink-0 mt-0.5" />
+                  <div class="pt-3 sm:pt-4 border-t border-zinc-800">
+                    <div
+                      class="flex items-start gap-2 sm:gap-3 p-3 sm:p-4 rounded-lg sm:rounded-xl bg-violet-500/10 border border-violet-500/30"
+                    >
+                      <div
+                        class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-violet-500/20 flex items-center justify-center flex-shrink-0"
+                      >
+                        <Info class="h-3.5 w-3.5 sm:h-4 sm:w-4 text-violet-400" />
+                      </div>
                       <div>
-                        <p class="text-xs font-medium text-foreground">Get started with free credits</p>
-                        <p class="text-xs text-muted-foreground mt-0.5">
+                        <p class="text-[10px] sm:text-xs font-medium text-violet-300">Get started with free credits</p>
+                        <p class="text-[10px] sm:text-xs text-violet-400/70 mt-0.5">
                           New users receive credits to try all features
                         </p>
                       </div>
@@ -253,60 +275,52 @@
 </script>
 
 <style scoped>
-  /* Modal Backdrop Transitions */
-  .modal-backdrop-enter-active {
-    transition: opacity 0.25s ease-out;
+  /* Modal backdrop transition */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 0.3s ease;
   }
 
-  .modal-backdrop-leave-active {
-    transition: opacity 0.2s ease-in;
-  }
-
-  .modal-backdrop-enter-from,
-  .modal-backdrop-leave-to {
+  .modal-enter-from,
+  .modal-leave-to {
     opacity: 0;
   }
 
-  /* Modal Content Transitions */
-  .modal-content-enter-active {
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  /* Dialog transition */
+  .dialog-enter-active {
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .modal-content-leave-active {
+  .dialog-leave-active {
     transition: all 0.2s ease-in;
   }
 
-  .modal-content-enter-from {
+  .dialog-enter-from {
     opacity: 0;
-    transform: scale(0.96) translateY(10px);
+    transform: scale(0.95) translateY(10px);
   }
 
-  .modal-content-leave-to {
+  .dialog-leave-to {
     opacity: 0;
-    transform: scale(0.98) translateY(-5px);
+    transform: scale(0.98);
   }
 
-  /* Error Fade Transitions */
-  .error-fade-enter-active {
-    transition: all 0.25s ease-out;
+  /* Slide fade for error */
+  .slide-fade-enter-active {
+    transition: all 0.3s ease-out;
   }
 
-  .error-fade-leave-active {
+  .slide-fade-leave-active {
     transition: all 0.2s ease-in;
   }
 
-  .error-fade-enter-from {
+  .slide-fade-enter-from {
     opacity: 0;
     transform: translateY(-8px);
   }
 
-  .error-fade-leave-to {
+  .slide-fade-leave-to {
     opacity: 0;
     transform: translateY(-4px);
-  }
-
-  /* Z-index */
-  .fixed {
-    z-index: 9999;
   }
 </style>

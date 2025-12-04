@@ -8,21 +8,17 @@
     >
       <template #actions>
         <div class="flex items-center gap-2">
-          <button
-            @click="openIntrosFolder"
-            title="Open assets folder"
-            class="p-3 bg-muted hover:bg-muted/80 text-foreground rounded-md transition-all"
-          >
+          <Button @click="openIntrosFolder" title="Open assets folder" class="flex items-center gap-2">
             <Folder class="h-5 w-5" />
-          </button>
-          <button
+          </Button>
+          <Button
             @click="handleUpload"
             :disabled="uploading"
-            class="px-5 py-2.5 bg-muted hover:bg-muted/80 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            class="flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Upload class="h-5 w-5" />
             {{ uploading ? 'Uploading...' : 'Upload Asset' }}
-          </button>
+          </Button>
         </div>
       </template>
 
@@ -299,6 +295,7 @@
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
   import { getStoragePath } from '@/services/storage';
   import { invoke } from '@tauri-apps/api/core';
+  import { Button } from '@/components/ui/button';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
   import SkeletonGrid from '@/components/SkeletonGrid.vue';

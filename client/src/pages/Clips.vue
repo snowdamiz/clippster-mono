@@ -7,14 +7,15 @@
       :icon="LayoutGrid"
     >
       <template #actions>
-        <button
+        <Button
           @click="openClipsFolder"
           :disabled="!hasAnyClipsWithFiles"
           :title="hasAnyClipsWithFiles ? 'Open clips folder' : 'No clips available to show in folder'"
-          class="p-3 bg-muted hover:bg-muted/80 text-foreground rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          class="flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Folder class="h-5 w-5" />
-        </button>
+          Open clips folder
+        </Button>
       </template>
       <!-- Loading State -->
       <div v-if="loading" class="space-y-6">
@@ -556,6 +557,7 @@
   import PaginationFooter from '@/components/PaginationFooter.vue';
   import BuildCard from '@/components/BuildCard.vue';
   import { Input } from '@/components/ui/input';
+  import { Button } from '@/components/ui/button';
   import CustomDropdown from '@/components/CustomDropdown.vue';
 
   type ClipWithBuilds = Clip & { builds: ClipBuild[] };

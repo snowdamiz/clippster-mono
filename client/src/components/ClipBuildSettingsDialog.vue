@@ -1,514 +1,562 @@
 <template>
   <Teleport to="body">
-    <div
-      v-if="modelValue"
-      class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60]"
-      @click.self="close"
-    >
-      <div class="bg-card rounded-xl w-full max-w-4xl mx-4 border border-border shadow-2xl max-h-[90vh] flex flex-col">
-        <!-- Header -->
-        <div
-          class="flex items-center justify-between px-6 py-4 border-b border-border/50 bg-gradient-to-r from-[#070707] to-[#0a0a0a] rounded-t-xl"
-        >
-          <div class="flex items-center gap-3">
+    <Transition name="modal">
+      <div
+        v-if="modelValue"
+        class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60]"
+        @click.self="close"
+      >
+        <Transition name="dialog" appear>
+          <div
+            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-xl sm:rounded-2xl w-full max-w-md sm:max-w-2xl lg:max-w-4xl mx-2 sm:mx-4 border border-white/10 max-h-[92vh] sm:max-h-[90vh] flex flex-col overflow-hidden"
+          >
+            <!-- Decorative top accent -->
+            <div class="h-1 w-full bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 flex-shrink-0" />
+
+            <!-- Header -->
             <div
-              class="w-10 h-10 rounded-lg bg-gradient-to-br from-green-500/20 to-emerald-500/20 flex items-center justify-center border border-green-500/30"
+              class="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-zinc-800 bg-zinc-900/50"
             >
-              <WrenchIcon class="h-5 w-5 text-green-400" />
-            </div>
-            <div>
-              <h2 class="text-lg font-semibold text-foreground">Export Configuration</h2>
-              <p class="text-xs text-muted-foreground">
-                {{ clip?.current_version_name || clip?.name || 'Untitled Clip' }} • {{ formatDuration(clipDuration) }}
-              </p>
-            </div>
-          </div>
-          <button @click="close" class="p-2 hover:bg-white/10 rounded-lg transition-colors" title="Close">
-            <X class="h-5 w-5 text-foreground/70 hover:text-foreground" />
-          </button>
-        </div>
-
-        <!-- Content - Two Column Layout -->
-        <div class="flex-1 overflow-y-auto custom-scrollbar">
-          <div class="p-6 grid grid-cols-2 gap-6">
-            <!-- Left Column: Aspect Ratios -->
-            <div class="space-y-4">
-              <div>
-                <h3 class="text-sm font-semibold text-foreground mb-1">Aspect Ratios</h3>
-                <p class="text-xs text-muted-foreground">
-                  Select target platforms ({{ selectedRatios.length }} selected)
-                </p>
+              <div class="flex items-center gap-2 sm:gap-3">
+                <div
+                  class="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 flex items-center justify-center border border-emerald-500/30"
+                >
+                  <WrenchIcon class="h-4 w-4 sm:h-5 sm:w-5 text-emerald-400" />
+                </div>
+                <div>
+                  <h2 class="text-base sm:text-lg font-semibold text-white">Export Configuration</h2>
+                  <p class="text-[10px] sm:text-xs text-zinc-400 truncate max-w-[150px] sm:max-w-none">
+                    {{ clip?.current_version_name || clip?.name || 'Untitled Clip' }} •
+                    {{ formatDuration(clipDuration) }}
+                  </p>
+                </div>
               </div>
+              <button
+                @click="close"
+                class="p-1.5 sm:p-2 hover:bg-zinc-800 rounded-lg sm:rounded-xl transition-colors border border-zinc-800"
+                title="Close"
+              >
+                <X class="h-4 w-4 sm:h-5 sm:w-5 text-zinc-400 hover:text-white" />
+              </button>
+            </div>
 
-              <div class="grid grid-cols-2 gap-3">
-                <!-- 16:9 Landscape -->
-                <button
-                  @click="toggleRatio('16:9')"
-                  :class="[
-                    'group relative overflow-hidden rounded-xl border-2 transition-all',
-                    selectedRatios.includes('16:9')
-                      ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
-                      : 'border-border/50 bg-muted/20 hover:border-primary/30 hover:bg-muted/30',
-                  ]"
-                >
-                  <div class="p-4 space-y-3">
-                    <div class="flex items-center justify-between">
-                      <span class="text-sm font-bold text-foreground">16:9</span>
-                      <div
-                        :class="[
-                          'w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all',
-                          selectedRatios.includes('16:9')
-                            ? 'border-primary bg-primary scale-110'
-                            : 'border-muted-foreground/30',
-                        ]"
-                      >
-                        <CheckIcon v-if="selectedRatios.includes('16:9')" class="h-3 w-3 text-primary-foreground" />
-                      </div>
-                    </div>
-                    <div class="flex items-center justify-center py-3">
-                      <div
-                        class="w-16 h-9 border-2 border-current rounded transition-all"
-                        :class="selectedRatios.includes('16:9') ? 'text-primary' : 'text-muted-foreground/40'"
-                      ></div>
-                    </div>
-                    <div class="text-center">
-                      <p class="text-xs font-medium text-muted-foreground">YouTube • Twitch</p>
-                    </div>
+            <!-- Content - Two Column Layout -->
+            <div class="flex-1 overflow-y-auto custom-scrollbar">
+              <div class="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                <!-- Left Column: Aspect Ratios -->
+                <div class="space-y-3 sm:space-y-4">
+                  <div>
+                    <h3 class="text-xs sm:text-sm font-semibold text-foreground mb-0.5 sm:mb-1">Aspect Ratios</h3>
+                    <p class="text-[10px] sm:text-xs text-muted-foreground">
+                      Select target platforms ({{ selectedRatios.length }} selected)
+                    </p>
                   </div>
-                </button>
 
-                <!-- 9:16 Portrait -->
-                <button
-                  @click="toggleRatio('9:16')"
-                  :class="[
-                    'group relative overflow-hidden rounded-xl border-2 transition-all',
-                    selectedRatios.includes('9:16')
-                      ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
-                      : 'border-border/50 bg-muted/20 hover:border-primary/30 hover:bg-muted/30',
-                  ]"
-                >
-                  <div class="p-4 space-y-3">
-                    <div class="flex items-center justify-between">
-                      <span class="text-sm font-bold text-foreground">9:16</span>
-                      <div
-                        :class="[
-                          'w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all',
-                          selectedRatios.includes('9:16')
-                            ? 'border-primary bg-primary scale-110'
-                            : 'border-muted-foreground/30',
-                        ]"
-                      >
-                        <CheckIcon v-if="selectedRatios.includes('9:16')" class="h-3 w-3 text-primary-foreground" />
-                      </div>
-                    </div>
-                    <div class="flex items-center justify-center py-3">
-                      <div
-                        class="w-5 h-9 border-2 border-current rounded transition-all"
-                        :class="selectedRatios.includes('9:16') ? 'text-primary' : 'text-muted-foreground/40'"
-                      ></div>
-                    </div>
-                    <div class="text-center">
-                      <p class="text-xs font-medium text-muted-foreground">TikTok • Reels</p>
-                    </div>
-                  </div>
-                </button>
-
-                <!-- 1:1 Square -->
-                <button
-                  @click="toggleRatio('1:1')"
-                  :class="[
-                    'group relative overflow-hidden rounded-xl border-2 transition-all',
-                    selectedRatios.includes('1:1')
-                      ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
-                      : 'border-border/50 bg-muted/20 hover:border-primary/30 hover:bg-muted/30',
-                  ]"
-                >
-                  <div class="p-4 space-y-3">
-                    <div class="flex items-center justify-between">
-                      <span class="text-sm font-bold text-foreground">1:1</span>
-                      <div
-                        :class="[
-                          'w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all',
-                          selectedRatios.includes('1:1')
-                            ? 'border-primary bg-primary scale-110'
-                            : 'border-muted-foreground/30',
-                        ]"
-                      >
-                        <CheckIcon v-if="selectedRatios.includes('1:1')" class="h-3 w-3 text-primary-foreground" />
-                      </div>
-                    </div>
-                    <div class="flex items-center justify-center py-3">
-                      <div
-                        class="w-9 h-9 border-2 border-current rounded transition-all"
-                        :class="selectedRatios.includes('1:1') ? 'text-primary' : 'text-muted-foreground/40'"
-                      ></div>
-                    </div>
-                    <div class="text-center">
-                      <p class="text-xs font-medium text-muted-foreground">Instagram Feed</p>
-                    </div>
-                  </div>
-                </button>
-
-                <!-- 4:5 Portrait -->
-                <button
-                  @click="toggleRatio('4:5')"
-                  :class="[
-                    'group relative overflow-hidden rounded-xl border-2 transition-all',
-                    selectedRatios.includes('4:5')
-                      ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
-                      : 'border-border/50 bg-muted/20 hover:border-primary/30 hover:bg-muted/30',
-                  ]"
-                >
-                  <div class="p-4 space-y-3">
-                    <div class="flex items-center justify-between">
-                      <span class="text-sm font-bold text-foreground">4:5</span>
-                      <div
-                        :class="[
-                          'w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all',
-                          selectedRatios.includes('4:5')
-                            ? 'border-primary bg-primary scale-110'
-                            : 'border-muted-foreground/30',
-                        ]"
-                      >
-                        <CheckIcon v-if="selectedRatios.includes('4:5')" class="h-3 w-3 text-primary-foreground" />
-                      </div>
-                    </div>
-                    <div class="flex items-center justify-center py-3">
-                      <div
-                        class="w-7 h-9 border-2 border-current rounded transition-all"
-                        :class="selectedRatios.includes('4:5') ? 'text-primary' : 'text-muted-foreground/40'"
-                      ></div>
-                    </div>
-                    <div class="text-center">
-                      <p class="text-xs font-medium text-muted-foreground">Instagram Post</p>
-                    </div>
-                  </div>
-                </button>
-              </div>
-
-              <!-- Intro/Outro Compact -->
-              <div class="bg-muted/20 rounded-xl p-4 border border-border/50 space-y-3">
-                <h4 class="text-sm font-semibold text-foreground">Add-ons</h4>
-
-                <!-- Intro Compact Selector -->
-                <div class="space-y-2">
-                  <label class="text-xs font-medium text-muted-foreground">Intro</label>
-                  <div class="relative">
+                  <div class="grid grid-cols-2 gap-2 sm:gap-3">
+                    <!-- 16:9 Landscape -->
                     <button
-                      ref="introButtonRef"
-                      @click="toggleIntroDropdown"
-                      class="w-full px-3 py-2 bg-muted/50 border border-border/40 rounded-lg text-left flex items-center justify-between hover:border-border hover:bg-muted/60 transition-all text-sm text-foreground"
+                      @click="toggleRatio('16:9')"
+                      :class="[
+                        'group relative overflow-hidden rounded-lg sm:rounded-xl border-2 transition-all',
+                        selectedRatios.includes('16:9')
+                          ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
+                          : 'border-border/50 bg-muted/20 hover:border-primary/30 hover:bg-muted/30',
+                      ]"
                     >
-                      <span class="truncate">
-                        {{
-                          selectedIntro
-                            ? `${selectedIntro.name} (${formatDuration(selectedIntro.duration || 0)})`
-                            : 'None'
-                        }}
-                      </span>
-                      <ChevronDown
-                        class="h-4 w-4 text-muted-foreground transition-transform flex-shrink-0 ml-2"
-                        :class="{ 'rotate-180': showIntroDropdown }"
-                      />
-                    </button>
-
-                    <!-- Dropdown - Teleported -->
-                    <Teleport to="body">
-                      <div
-                        v-if="showIntroDropdown"
-                        ref="introDropdownRef"
-                        class="fixed bg-card border border-border rounded-lg shadow-xl z-[9999] overflow-y-auto custom-scrollbar"
-                        :style="{
-                          top: introDropdownPosition.top,
-                          left: introDropdownPosition.left,
-                          width: introDropdownPosition.width,
-                          maxHeight: introDropdownPosition.maxHeight,
-                        }"
-                        @click.stop
-                      >
-                        <button
-                          @click="selectIntro(null)"
-                          class="block w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm border-b border-border/30"
-                          :class="{ 'bg-primary/10 text-primary': !selectedIntro }"
-                        >
-                          None
-                        </button>
-                        <button
-                          v-for="intro in intros"
-                          :key="intro.id"
-                          @click="selectIntro(intro)"
-                          class="block w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm"
-                          :class="{ 'bg-primary/10 text-primary': selectedIntro?.id === intro.id }"
-                        >
-                          <div class="flex items-center justify-between">
-                            <span class="truncate">{{ intro.name }}</span>
-                            <span class="text-xs text-muted-foreground ml-2 flex-shrink-0">
-                              {{ formatDuration(intro.duration || 0) }}
-                            </span>
+                      <div class="p-2.5 sm:p-4 space-y-2 sm:space-y-3">
+                        <div class="flex items-center justify-between">
+                          <span class="text-xs sm:text-sm font-bold text-foreground">16:9</span>
+                          <div
+                            :class="[
+                              'w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 flex items-center justify-center transition-all',
+                              selectedRatios.includes('16:9')
+                                ? 'border-primary bg-primary scale-110'
+                                : 'border-muted-foreground/30',
+                            ]"
+                          >
+                            <CheckIcon
+                              v-if="selectedRatios.includes('16:9')"
+                              class="h-2.5 w-2.5 sm:h-3 sm:w-3 text-primary-foreground"
+                            />
                           </div>
-                        </button>
-                        <div v-if="loadingAssets" class="px-3 py-2.5 text-sm text-center text-muted-foreground">
-                          Loading...
                         </div>
-                        <div
-                          v-if="!loadingAssets && intros.length === 0"
-                          class="px-3 py-2.5 text-sm text-center text-muted-foreground"
-                        >
-                          No intros available
+                        <div class="flex items-center justify-center py-2 sm:py-3">
+                          <div
+                            class="w-12 h-7 sm:w-16 sm:h-9 border-2 border-current rounded transition-all"
+                            :class="selectedRatios.includes('16:9') ? 'text-primary' : 'text-muted-foreground/40'"
+                          ></div>
+                        </div>
+                        <div class="text-center">
+                          <p class="text-[10px] sm:text-xs font-medium text-muted-foreground">YouTube • Twitch</p>
                         </div>
                       </div>
-                    </Teleport>
-                  </div>
-                </div>
-
-                <!-- Outro Compact Selector -->
-                <div class="space-y-2">
-                  <label class="text-xs font-medium text-muted-foreground">Outro</label>
-                  <div class="relative">
-                    <button
-                      ref="outroButtonRef"
-                      @click="toggleOutroDropdown"
-                      class="w-full px-3 py-2 bg-muted/50 border border-border/40 rounded-lg text-left flex items-center justify-between hover:border-border hover:bg-muted/60 transition-all text-sm text-foreground"
-                    >
-                      <span class="truncate">
-                        {{
-                          selectedOutro
-                            ? `${selectedOutro.name} (${formatDuration(selectedOutro.duration || 0)})`
-                            : 'None'
-                        }}
-                      </span>
-                      <ChevronDown
-                        class="h-4 w-4 text-muted-foreground transition-transform flex-shrink-0 ml-2"
-                        :class="{ 'rotate-180': showOutroDropdown }"
-                      />
                     </button>
 
-                    <!-- Dropdown - Teleported -->
-                    <Teleport to="body">
-                      <div
-                        v-if="showOutroDropdown"
-                        ref="outroDropdownRef"
-                        class="fixed bg-card border border-border rounded-lg shadow-xl z-[9999] overflow-y-auto custom-scrollbar"
-                        :style="{
-                          top: outroDropdownPosition.top,
-                          left: outroDropdownPosition.left,
-                          width: outroDropdownPosition.width,
-                          maxHeight: outroDropdownPosition.maxHeight,
-                        }"
-                        @click.stop
-                      >
-                        <button
-                          @click="selectOutro(null)"
-                          class="block w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm border-b border-border/30"
-                          :class="{ 'bg-primary/10 text-primary': !selectedOutro }"
-                        >
-                          None
-                        </button>
-                        <button
-                          v-for="outro in outros"
-                          :key="outro.id"
-                          @click="selectOutro(outro)"
-                          class="block w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm"
-                          :class="{ 'bg-primary/10 text-primary': selectedOutro?.id === outro.id }"
-                        >
-                          <div class="flex items-center justify-between">
-                            <span class="truncate">{{ outro.name }}</span>
-                            <span class="text-xs text-muted-foreground ml-2 flex-shrink-0">
-                              {{ formatDuration(outro.duration || 0) }}
-                            </span>
+                    <!-- 9:16 Portrait -->
+                    <button
+                      @click="toggleRatio('9:16')"
+                      :class="[
+                        'group relative overflow-hidden rounded-lg sm:rounded-xl border-2 transition-all',
+                        selectedRatios.includes('9:16')
+                          ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
+                          : 'border-border/50 bg-muted/20 hover:border-primary/30 hover:bg-muted/30',
+                      ]"
+                    >
+                      <div class="p-2.5 sm:p-4 space-y-2 sm:space-y-3">
+                        <div class="flex items-center justify-between">
+                          <span class="text-xs sm:text-sm font-bold text-foreground">9:16</span>
+                          <div
+                            :class="[
+                              'w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 flex items-center justify-center transition-all',
+                              selectedRatios.includes('9:16')
+                                ? 'border-primary bg-primary scale-110'
+                                : 'border-muted-foreground/30',
+                            ]"
+                          >
+                            <CheckIcon
+                              v-if="selectedRatios.includes('9:16')"
+                              class="h-2.5 w-2.5 sm:h-3 sm:w-3 text-primary-foreground"
+                            />
                           </div>
-                        </button>
-                        <div v-if="loadingAssets" class="px-3 py-2.5 text-sm text-center text-muted-foreground">
-                          Loading...
                         </div>
-                        <div
-                          v-if="!loadingAssets && outros.length === 0"
-                          class="px-3 py-2.5 text-sm text-center text-muted-foreground"
-                        >
-                          No outros available
+                        <div class="flex items-center justify-center py-2 sm:py-3">
+                          <div
+                            class="w-4 h-7 sm:w-5 sm:h-9 border-2 border-current rounded transition-all"
+                            :class="selectedRatios.includes('9:16') ? 'text-primary' : 'text-muted-foreground/40'"
+                          ></div>
+                        </div>
+                        <div class="text-center">
+                          <p class="text-[10px] sm:text-xs font-medium text-muted-foreground">TikTok • Reels</p>
                         </div>
                       </div>
-                    </Teleport>
+                    </button>
+
+                    <!-- 1:1 Square -->
+                    <button
+                      @click="toggleRatio('1:1')"
+                      :class="[
+                        'group relative overflow-hidden rounded-lg sm:rounded-xl border-2 transition-all',
+                        selectedRatios.includes('1:1')
+                          ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
+                          : 'border-border/50 bg-muted/20 hover:border-primary/30 hover:bg-muted/30',
+                      ]"
+                    >
+                      <div class="p-2.5 sm:p-4 space-y-2 sm:space-y-3">
+                        <div class="flex items-center justify-between">
+                          <span class="text-xs sm:text-sm font-bold text-foreground">1:1</span>
+                          <div
+                            :class="[
+                              'w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 flex items-center justify-center transition-all',
+                              selectedRatios.includes('1:1')
+                                ? 'border-primary bg-primary scale-110'
+                                : 'border-muted-foreground/30',
+                            ]"
+                          >
+                            <CheckIcon
+                              v-if="selectedRatios.includes('1:1')"
+                              class="h-2.5 w-2.5 sm:h-3 sm:w-3 text-primary-foreground"
+                            />
+                          </div>
+                        </div>
+                        <div class="flex items-center justify-center py-2 sm:py-3">
+                          <div
+                            class="w-7 h-7 sm:w-9 sm:h-9 border-2 border-current rounded transition-all"
+                            :class="selectedRatios.includes('1:1') ? 'text-primary' : 'text-muted-foreground/40'"
+                          ></div>
+                        </div>
+                        <div class="text-center">
+                          <p class="text-[10px] sm:text-xs font-medium text-muted-foreground">Instagram Feed</p>
+                        </div>
+                      </div>
+                    </button>
+
+                    <!-- 4:5 Portrait -->
+                    <button
+                      @click="toggleRatio('4:5')"
+                      :class="[
+                        'group relative overflow-hidden rounded-lg sm:rounded-xl border-2 transition-all',
+                        selectedRatios.includes('4:5')
+                          ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
+                          : 'border-border/50 bg-muted/20 hover:border-primary/30 hover:bg-muted/30',
+                      ]"
+                    >
+                      <div class="p-2.5 sm:p-4 space-y-2 sm:space-y-3">
+                        <div class="flex items-center justify-between">
+                          <span class="text-xs sm:text-sm font-bold text-foreground">4:5</span>
+                          <div
+                            :class="[
+                              'w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 flex items-center justify-center transition-all',
+                              selectedRatios.includes('4:5')
+                                ? 'border-primary bg-primary scale-110'
+                                : 'border-muted-foreground/30',
+                            ]"
+                          >
+                            <CheckIcon
+                              v-if="selectedRatios.includes('4:5')"
+                              class="h-2.5 w-2.5 sm:h-3 sm:w-3 text-primary-foreground"
+                            />
+                          </div>
+                        </div>
+                        <div class="flex items-center justify-center py-2 sm:py-3">
+                          <div
+                            class="w-6 h-7 sm:w-7 sm:h-9 border-2 border-current rounded transition-all"
+                            :class="selectedRatios.includes('4:5') ? 'text-primary' : 'text-muted-foreground/40'"
+                          ></div>
+                        </div>
+                        <div class="text-center">
+                          <p class="text-[10px] sm:text-xs font-medium text-muted-foreground">Instagram Post</p>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+
+                  <!-- Intro/Outro Compact -->
+                  <div
+                    class="bg-muted/20 rounded-lg sm:rounded-xl p-3 sm:p-4 border border-border/50 space-y-2 sm:space-y-3"
+                  >
+                    <h4 class="text-xs sm:text-sm font-semibold text-foreground">Add-ons</h4>
+
+                    <!-- Intro Compact Selector -->
+                    <div class="space-y-1.5 sm:space-y-2">
+                      <label class="text-[10px] sm:text-xs font-medium text-muted-foreground">Intro</label>
+                      <div class="relative">
+                        <button
+                          ref="introButtonRef"
+                          @click="toggleIntroDropdown"
+                          class="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 bg-muted/50 border border-border/40 rounded-lg text-left flex items-center justify-between hover:border-border hover:bg-muted/60 transition-all text-xs sm:text-sm text-foreground"
+                        >
+                          <span class="truncate">
+                            {{
+                              selectedIntro
+                                ? `${selectedIntro.name} (${formatDuration(selectedIntro.duration || 0)})`
+                                : 'None'
+                            }}
+                          </span>
+                          <ChevronDown
+                            class="h-4 w-4 text-muted-foreground transition-transform flex-shrink-0 ml-2"
+                            :class="{ 'rotate-180': showIntroDropdown }"
+                          />
+                        </button>
+
+                        <!-- Dropdown - Teleported -->
+                        <Teleport to="body">
+                          <div
+                            v-if="showIntroDropdown"
+                            ref="introDropdownRef"
+                            class="fixed bg-card border border-border rounded-lg shadow-xl z-[9999] overflow-y-auto custom-scrollbar"
+                            :style="{
+                              top: introDropdownPosition.top,
+                              left: introDropdownPosition.left,
+                              width: introDropdownPosition.width,
+                              maxHeight: introDropdownPosition.maxHeight,
+                            }"
+                            @click.stop
+                          >
+                            <button
+                              @click="selectIntro(null)"
+                              class="block w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm border-b border-border/30"
+                              :class="{ 'bg-primary/10 text-primary': !selectedIntro }"
+                            >
+                              None
+                            </button>
+                            <button
+                              v-for="intro in intros"
+                              :key="intro.id"
+                              @click="selectIntro(intro)"
+                              class="block w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm"
+                              :class="{ 'bg-primary/10 text-primary': selectedIntro?.id === intro.id }"
+                            >
+                              <div class="flex items-center justify-between">
+                                <span class="truncate">{{ intro.name }}</span>
+                                <span class="text-xs text-muted-foreground ml-2 flex-shrink-0">
+                                  {{ formatDuration(intro.duration || 0) }}
+                                </span>
+                              </div>
+                            </button>
+                            <div v-if="loadingAssets" class="px-3 py-2.5 text-sm text-center text-muted-foreground">
+                              Loading...
+                            </div>
+                            <div
+                              v-if="!loadingAssets && intros.length === 0"
+                              class="px-3 py-2.5 text-sm text-center text-muted-foreground"
+                            >
+                              No intros available
+                            </div>
+                          </div>
+                        </Teleport>
+                      </div>
+                    </div>
+
+                    <!-- Outro Compact Selector -->
+                    <div class="space-y-1.5 sm:space-y-2">
+                      <label class="text-[10px] sm:text-xs font-medium text-muted-foreground">Outro</label>
+                      <div class="relative">
+                        <button
+                          ref="outroButtonRef"
+                          @click="toggleOutroDropdown"
+                          class="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 bg-muted/50 border border-border/40 rounded-lg text-left flex items-center justify-between hover:border-border hover:bg-muted/60 transition-all text-xs sm:text-sm text-foreground"
+                        >
+                          <span class="truncate">
+                            {{
+                              selectedOutro
+                                ? `${selectedOutro.name} (${formatDuration(selectedOutro.duration || 0)})`
+                                : 'None'
+                            }}
+                          </span>
+                          <ChevronDown
+                            class="h-4 w-4 text-muted-foreground transition-transform flex-shrink-0 ml-2"
+                            :class="{ 'rotate-180': showOutroDropdown }"
+                          />
+                        </button>
+
+                        <!-- Dropdown - Teleported -->
+                        <Teleport to="body">
+                          <div
+                            v-if="showOutroDropdown"
+                            ref="outroDropdownRef"
+                            class="fixed bg-card border border-border rounded-lg shadow-xl z-[9999] overflow-y-auto custom-scrollbar"
+                            :style="{
+                              top: outroDropdownPosition.top,
+                              left: outroDropdownPosition.left,
+                              width: outroDropdownPosition.width,
+                              maxHeight: outroDropdownPosition.maxHeight,
+                            }"
+                            @click.stop
+                          >
+                            <button
+                              @click="selectOutro(null)"
+                              class="block w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm border-b border-border/30"
+                              :class="{ 'bg-primary/10 text-primary': !selectedOutro }"
+                            >
+                              None
+                            </button>
+                            <button
+                              v-for="outro in outros"
+                              :key="outro.id"
+                              @click="selectOutro(outro)"
+                              class="block w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm"
+                              :class="{ 'bg-primary/10 text-primary': selectedOutro?.id === outro.id }"
+                            >
+                              <div class="flex items-center justify-between">
+                                <span class="truncate">{{ outro.name }}</span>
+                                <span class="text-xs text-muted-foreground ml-2 flex-shrink-0">
+                                  {{ formatDuration(outro.duration || 0) }}
+                                </span>
+                              </div>
+                            </button>
+                            <div v-if="loadingAssets" class="px-3 py-2.5 text-sm text-center text-muted-foreground">
+                              Loading...
+                            </div>
+                            <div
+                              v-if="!loadingAssets && outros.length === 0"
+                              class="px-3 py-2.5 text-sm text-center text-muted-foreground"
+                            >
+                              No outros available
+                            </div>
+                          </div>
+                        </Teleport>
+                      </div>
+                    </div>
+
+                    <!-- Duration Summary -->
+                    <div v-if="selectedIntro || selectedOutro" class="pt-2 border-t border-border/30">
+                      <div class="flex items-center justify-between text-xs">
+                        <span class="text-muted-foreground">Total Duration</span>
+                        <span class="font-semibold text-primary">{{ formatDuration(totalDuration) }}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <!-- Duration Summary -->
-                <div v-if="selectedIntro || selectedOutro" class="pt-2 border-t border-border/30">
-                  <div class="flex items-center justify-between text-xs">
-                    <span class="text-muted-foreground">Total Duration</span>
-                    <span class="font-semibold text-primary">{{ formatDuration(totalDuration) }}</span>
+                <!-- Right Column: Export Settings -->
+                <div class="space-y-3 sm:space-y-4">
+                  <div>
+                    <h3 class="text-xs sm:text-sm font-semibold text-foreground mb-0.5 sm:mb-1">Video Settings</h3>
+                    <p class="text-[10px] sm:text-xs text-muted-foreground">Configure quality and export options</p>
+                  </div>
+
+                  <div class="space-y-2 sm:space-y-3">
+                    <!-- Quality -->
+                    <div
+                      class="bg-muted/20 rounded-lg sm:rounded-xl p-3 sm:p-4 border border-border/50 space-y-1.5 sm:space-y-2"
+                    >
+                      <div class="flex items-center justify-between">
+                        <label class="text-xs sm:text-sm font-semibold text-foreground">Quality</label>
+                        <span
+                          class="text-[10px] sm:text-xs font-mono text-primary bg-primary/10 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded capitalize"
+                        >
+                          {{ quality }}
+                        </span>
+                      </div>
+                      <div class="flex gap-1.5 sm:gap-2">
+                        <button
+                          @click="quality = 'low'"
+                          :class="[
+                            'flex-1 px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-medium transition-all',
+                            quality === 'low'
+                              ? 'bg-primary text-primary-foreground shadow-md'
+                              : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
+                          ]"
+                        >
+                          Low
+                        </button>
+                        <button
+                          @click="quality = 'medium'"
+                          :class="[
+                            'flex-1 px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-medium transition-all',
+                            quality === 'medium'
+                              ? 'bg-primary text-primary-foreground shadow-md'
+                              : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
+                          ]"
+                        >
+                          Medium
+                        </button>
+                        <button
+                          @click="quality = 'high'"
+                          :class="[
+                            'flex-1 px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-medium transition-all',
+                            quality === 'high'
+                              ? 'bg-primary text-primary-foreground shadow-md'
+                              : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
+                          ]"
+                        >
+                          High
+                        </button>
+                      </div>
+                      <p class="text-[10px] text-muted-foreground/70 mt-0.5 sm:mt-1">
+                        {{
+                          quality === 'low'
+                            ? 'Fast export, smaller file'
+                            : quality === 'medium'
+                              ? 'Balanced quality'
+                              : 'Best quality, larger file'
+                        }}
+                      </p>
+                    </div>
+
+                    <!-- Frame Rate -->
+                    <div
+                      class="bg-muted/20 rounded-lg sm:rounded-xl p-3 sm:p-4 border border-border/50 space-y-1.5 sm:space-y-2"
+                    >
+                      <div class="flex items-center justify-between">
+                        <label class="text-xs sm:text-sm font-semibold text-foreground">Frame Rate</label>
+                        <span
+                          class="text-[10px] sm:text-xs font-mono text-primary bg-primary/10 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded"
+                        >
+                          {{ frameRate }} FPS
+                        </span>
+                      </div>
+                      <div class="flex gap-1.5 sm:gap-2">
+                        <button
+                          @click="frameRate = 30"
+                          :class="[
+                            'flex-1 px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-medium transition-all',
+                            frameRate === 30
+                              ? 'bg-primary text-primary-foreground shadow-md'
+                              : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
+                          ]"
+                        >
+                          30 FPS
+                        </button>
+                        <button
+                          @click="frameRate = 60"
+                          :class="[
+                            'flex-1 px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-medium transition-all',
+                            frameRate === 60
+                              ? 'bg-primary text-primary-foreground shadow-md'
+                              : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
+                          ]"
+                        >
+                          60 FPS
+                        </button>
+                      </div>
+                      <p class="text-[10px] text-muted-foreground/70 mt-0.5 sm:mt-1">
+                        {{ frameRate === 30 ? 'Standard for most platforms' : 'Smoother motion for fast content' }}
+                      </p>
+                    </div>
+
+                    <!-- Format -->
+                    <div
+                      class="bg-muted/20 rounded-lg sm:rounded-xl p-3 sm:p-4 border border-border/50 space-y-1.5 sm:space-y-2"
+                    >
+                      <label class="text-xs sm:text-sm font-semibold text-foreground">Output Format</label>
+                      <div class="flex gap-1.5 sm:gap-2">
+                        <button
+                          @click="outputFormat = 'mp4'"
+                          :class="[
+                            'flex-1 px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-medium transition-all',
+                            outputFormat === 'mp4'
+                              ? 'bg-primary text-primary-foreground shadow-md'
+                              : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
+                          ]"
+                        >
+                          MP4
+                        </button>
+                        <button
+                          @click="outputFormat = 'mov'"
+                          :class="[
+                            'flex-1 px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-medium transition-all',
+                            outputFormat === 'mov'
+                              ? 'bg-primary text-primary-foreground shadow-md'
+                              : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
+                          ]"
+                        >
+                          MOV
+                        </button>
+                      </div>
+                      <p class="text-[10px] text-muted-foreground/70 mt-0.5 sm:mt-1">
+                        {{ outputFormat === 'mp4' ? 'Best compatibility' : 'Apple ProRes quality' }}
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <!-- Right Column: Export Settings -->
-            <div class="space-y-4">
-              <div>
-                <h3 class="text-sm font-semibold text-foreground mb-1">Video Settings</h3>
-                <p class="text-xs text-muted-foreground">Configure quality and export options</p>
+            <!-- Footer -->
+            <div
+              class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 px-4 sm:px-6 py-3 sm:py-4 border-t border-zinc-800 bg-zinc-900/50"
+            >
+              <div class="text-xs sm:text-sm text-zinc-400">
+                <span v-if="selectedRatios.length === 0" class="text-amber-400">
+                  ⚠ Select at least one aspect ratio
+                </span>
+                <span v-else>
+                  {{ selectedRatios.length }} aspect ratio{{ selectedRatios.length > 1 ? 's' : '' }} selected
+                </span>
               </div>
-
-              <div class="space-y-3">
-                <!-- Quality -->
-                <div class="bg-muted/20 rounded-xl p-4 border border-border/50 space-y-2">
-                  <div class="flex items-center justify-between">
-                    <label class="text-sm font-semibold text-foreground">Quality</label>
-                    <span class="text-xs font-mono text-primary bg-primary/10 px-2 py-1 rounded capitalize">
-                      {{ quality }}
-                    </span>
-                  </div>
-                  <div class="flex gap-2">
-                    <button
-                      @click="quality = 'low'"
-                      :class="[
-                        'flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
-                        quality === 'low'
-                          ? 'bg-primary text-primary-foreground shadow-md'
-                          : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
-                      ]"
-                    >
-                      Low
-                    </button>
-                    <button
-                      @click="quality = 'medium'"
-                      :class="[
-                        'flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
-                        quality === 'medium'
-                          ? 'bg-primary text-primary-foreground shadow-md'
-                          : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
-                      ]"
-                    >
-                      Medium
-                    </button>
-                    <button
-                      @click="quality = 'high'"
-                      :class="[
-                        'flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
-                        quality === 'high'
-                          ? 'bg-primary text-primary-foreground shadow-md'
-                          : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
-                      ]"
-                    >
-                      High
-                    </button>
-                  </div>
-                  <p class="text-[10px] text-muted-foreground/70 mt-1">
-                    {{
-                      quality === 'low'
-                        ? 'Fast export, smaller file'
-                        : quality === 'medium'
-                          ? 'Balanced quality'
-                          : 'Best quality, larger file'
-                    }}
-                  </p>
-                </div>
-
-                <!-- Frame Rate -->
-                <div class="bg-muted/20 rounded-xl p-4 border border-border/50 space-y-2">
-                  <div class="flex items-center justify-between">
-                    <label class="text-sm font-semibold text-foreground">Frame Rate</label>
-                    <span class="text-xs font-mono text-primary bg-primary/10 px-2 py-1 rounded">
-                      {{ frameRate }} FPS
-                    </span>
-                  </div>
-                  <div class="flex gap-2">
-                    <button
-                      @click="frameRate = 30"
-                      :class="[
-                        'flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
-                        frameRate === 30
-                          ? 'bg-primary text-primary-foreground shadow-md'
-                          : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
-                      ]"
-                    >
-                      30 FPS
-                    </button>
-                    <button
-                      @click="frameRate = 60"
-                      :class="[
-                        'flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
-                        frameRate === 60
-                          ? 'bg-primary text-primary-foreground shadow-md'
-                          : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
-                      ]"
-                    >
-                      60 FPS
-                    </button>
-                  </div>
-                  <p class="text-[10px] text-muted-foreground/70 mt-1">
-                    {{ frameRate === 30 ? 'Standard for most platforms' : 'Smoother motion for fast content' }}
-                  </p>
-                </div>
-
-                <!-- Format -->
-                <div class="bg-muted/20 rounded-xl p-4 border border-border/50 space-y-2">
-                  <label class="text-sm font-semibold text-foreground">Output Format</label>
-                  <div class="flex gap-2">
-                    <button
-                      @click="outputFormat = 'mp4'"
-                      :class="[
-                        'flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
-                        outputFormat === 'mp4'
-                          ? 'bg-primary text-primary-foreground shadow-md'
-                          : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
-                      ]"
-                    >
-                      MP4
-                    </button>
-                    <button
-                      @click="outputFormat = 'mov'"
-                      :class="[
-                        'flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
-                        outputFormat === 'mov'
-                          ? 'bg-primary text-primary-foreground shadow-md'
-                          : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
-                      ]"
-                    >
-                      MOV
-                    </button>
-                  </div>
-                  <p class="text-[10px] text-muted-foreground/70 mt-1">
-                    {{ outputFormat === 'mp4' ? 'Best compatibility' : 'Apple ProRes quality' }}
-                  </p>
-                </div>
+              <div class="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                <button
+                  @click="close"
+                  class="flex-1 sm:flex-none px-4 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 hover:border-zinc-600 rounded-lg sm:rounded-xl transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  @click="confirmBuild"
+                  :disabled="selectedRatios.length === 0"
+                  :class="[
+                    'flex-1 sm:flex-none flex items-center justify-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold rounded-lg sm:rounded-xl transition-all relative overflow-hidden group',
+                    selectedRatios.length === 0
+                      ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50'
+                      : 'bg-gradient-to-r from-emerald-600 to-green-600 text-white',
+                  ]"
+                >
+                  <div
+                    v-if="selectedRatios.length > 0"
+                    class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
+                  />
+                  <WrenchIcon class="h-3.5 w-3.5 sm:h-4 sm:w-4 relative" />
+                  <span class="relative">
+                    Build {{ selectedRatios.length > 1 ? `${selectedRatios.length} Videos` : 'Video' }}
+                  </span>
+                </button>
               </div>
             </div>
           </div>
-        </div>
-
-        <!-- Footer -->
-        <div class="flex items-center justify-between gap-3 px-6 py-4 border-t border-border/50 bg-muted/10">
-          <div class="text-sm text-muted-foreground">
-            <span v-if="selectedRatios.length === 0" class="text-amber-500">⚠ Select at least one aspect ratio</span>
-            <span v-else>
-              {{ selectedRatios.length }} aspect ratio{{ selectedRatios.length > 1 ? 's' : '' }} selected
-            </span>
-          </div>
-          <div class="flex items-center gap-3">
-            <button
-              @click="close"
-              class="px-5 py-2.5 text-sm font-medium text-foreground bg-transparent hover:bg-muted/50 border border-border rounded-lg transition-all"
-            >
-              Cancel
-            </button>
-            <button
-              @click="confirmBuild"
-              :disabled="selectedRatios.length === 0"
-              :class="[
-                'flex items-center gap-2 px-6 py-2.5 text-sm font-semibold rounded-lg transition-all',
-                selectedRatios.length === 0
-                  ? 'bg-muted/50 text-muted-foreground cursor-not-allowed opacity-50'
-                  : 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]',
-              ]"
-            >
-              <WrenchIcon class="h-4 w-4" />
-              <span>Build {{ selectedRatios.length > 1 ? `${selectedRatios.length} Videos` : 'Video' }}</span>
-            </button>
-          </div>
-        </div>
+        </Transition>
       </div>
-    </div>
+    </Transition>
   </Teleport>
 </template>
 
@@ -765,6 +813,36 @@
 </script>
 
 <style scoped>
+  /* Modal backdrop transition */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 0.3s ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  /* Dialog transition */
+  .dialog-enter-active {
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 0.2s ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
   /* Custom scrollbar styling */
   .custom-scrollbar::-webkit-scrollbar {
     width: 8px;
@@ -776,20 +854,20 @@
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: hsl(var(--muted-foreground) / 0.3);
+    background: rgb(63 63 70 / 0.5);
     border-radius: 4px;
     border: 2px solid transparent;
     background-clip: padding-box;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.5);
+    background: rgb(82 82 91 / 0.7);
     background-clip: padding-box;
   }
 
   /* Firefox scrollbar */
   .custom-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+    scrollbar-color: rgb(63 63 70 / 0.5) transparent;
   }
 </style>

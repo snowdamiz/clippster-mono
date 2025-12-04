@@ -1,150 +1,166 @@
 <template>
-  <div
-    v-if="showVideoPlayer"
-    class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-    @click.self="$emit('close')"
-  >
-    <div class="bg-card rounded-lg max-w-6xl max-h-[calc(100vh-80px)] w-full mx-4 border border-border overflow-hidden">
-      <!-- Custom Video Player -->
-      <div v-if="videoSrc" class="relative w-full h-full flex flex-col">
-        <!-- Video Title Header -->
-        <div class="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-black/60 to-transparent p-6 pt-8">
-          <h3 class="text-white text-lg font-semibold truncate pr-12">
-            {{ getVideoTitle(video) }}
-          </h3>
-        </div>
-        <!-- Close Button (Top Right) -->
-        <button
-          @click="$emit('close')"
-          class="absolute top-6 right-6 z-30 p-2 bg-black/40 hover:bg-black/60 backdrop-blur-sm rounded-md transition-colors"
-          title="Close"
+  <Transition name="modal">
+    <div
+      v-if="showVideoPlayer"
+      class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50"
+      @click.self="$emit('close')"
+    >
+      <Transition name="dialog" appear>
+        <div
+          class="bg-zinc-950 rounded-xl sm:rounded-2xl max-w-5xl lg:max-w-6xl max-h-[calc(100vh-40px)] sm:max-h-[calc(100vh-80px)] w-full mx-2 sm:mx-4 border border-white/10 overflow-hidden"
         >
-          <X class="h-5 w-5 text-white" />
-        </button>
-        <!-- Video Display (16:9 Aspect Ratio) -->
-        <div class="relative flex-1 flex items-center justify-center bg-black aspect-video">
-          <video
-            ref="videoElement"
-            :key="videoKey"
-            :src="videoSrc"
-            class="w-full h-full object-contain"
-            @timeupdate="onTimeUpdate"
-            @loadedmetadata="onLoadedMetadata"
-            @ended="onVideoEnded"
-          />
-          <!-- Loading Indicator -->
-          <div v-if="isVideoLoading" class="absolute inset-0 flex items-center justify-center bg-black/50">
-            <div class="flex flex-col items-center gap-3">
-              <Loader2 class="animate-spin h-12 w-12 text-white" />
-              <span class="text-white text-sm">Loading video...</span>
-            </div>
-          </div>
-          <!-- Center Play/Pause Overlay -->
-          <button
-            v-if="!isVideoLoading"
-            @click="togglePlayPause"
-            class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/20"
-            title="Play/Pause"
-          >
-            <div class="p-4 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-colors">
-              <Play v-if="!isPlaying" class="h-8 w-8 text-white" />
-              <Pause v-else class="h-8 w-8 text-white" />
-            </div>
-          </button>
-        </div>
-        <!-- Custom Video Controls -->
-        <div class="bg-gradient-to-t from-black/80 to-black/60 backdrop-blur-md border-t border-border">
-          <!-- Timeline/Seek Bar -->
-          <div
-            class="relative h-2 cursor-pointer group mx-4 mt-4"
-            @click="seekTo($event)"
-            @mousemove="onTimelineHover($event)"
-            @mouseleave="hoverTime = null"
-          >
-            <!-- Background track (darker gray) -->
-            <div class="absolute inset-0 bg-gray-800 rounded-full"></div>
-            <!-- Buffered segments indicator -->
+          <!-- Custom Video Player -->
+          <div v-if="videoSrc" class="relative w-full h-full flex flex-col">
+            <!-- Video Title Header -->
             <div
-              class="absolute h-full bg-purple-400/30 rounded-full transition-all duration-300"
-              :style="{ width: `${duration ? (buffered / duration) * 100 : 0}%` }"
-            ></div>
-            <!-- Progress Bar (purple for played section) -->
-            <div
-              class="absolute h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full transition-all duration-100"
-              :style="{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }"
-            ></div>
-            <!-- Seek thumb (fixed positioning) -->
-            <div
-              class="absolute top-1/2 w-4 h-4 bg-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-all duration-200 border-2 border-purple-500"
-              :style="{
-                left: `${duration ? (currentTime / duration) * 100 : 0}%`,
-                transform: 'translate(-50%, -50%)',
-              }"
-            ></div>
-            <!-- Hover time preview -->
-            <div
-              v-if="hoverTime !== null"
-              class="absolute -top-10 bg-black/90 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-md font-medium"
-              :style="{ left: `${hoverPosition}%`, transform: 'translateX(-50%)' }"
+              class="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-black/80 to-transparent p-3 pt-4 sm:p-6 sm:pt-8"
             >
-              {{ formatDuration(hoverTime) }}
-              <div
-                class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-black/90"
-              ></div>
+              <h3 class="text-white text-sm sm:text-base lg:text-lg font-semibold truncate pr-10 sm:pr-12">
+                {{ getVideoTitle(video) }}
+              </h3>
             </div>
-          </div>
-          <!-- Control Buttons and Time Display -->
-          <div class="flex items-center justify-between p-4 pb-6">
-            <!-- Left Controls -->
-            <div class="flex items-center gap-3">
-              <!-- Play/Pause Button -->
+            <!-- Close Button (Top Right) -->
+            <button
+              @click="$emit('close')"
+              class="absolute top-3 right-3 sm:top-6 sm:right-6 z-30 p-2 sm:p-2.5 bg-zinc-900/80 hover:bg-zinc-800 backdrop-blur-sm rounded-lg sm:rounded-xl transition-all border border-white/10"
+              title="Close"
+            >
+              <X class="h-4 w-4 sm:h-5 sm:w-5 text-white" />
+            </button>
+            <!-- Video Display (16:9 Aspect Ratio) -->
+            <div class="relative flex-1 flex items-center justify-center bg-black aspect-video">
+              <video
+                ref="videoElement"
+                :key="videoKey"
+                :src="videoSrc"
+                class="w-full h-full object-contain"
+                @timeupdate="onTimeUpdate"
+                @loadedmetadata="onLoadedMetadata"
+                @ended="onVideoEnded"
+              />
+              <!-- Loading Indicator -->
+              <div v-if="isVideoLoading" class="absolute inset-0 flex items-center justify-center bg-black/60">
+                <div class="flex flex-col items-center gap-3 sm:gap-4">
+                  <div
+                    class="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-violet-500/20 flex items-center justify-center"
+                  >
+                    <Loader2 class="animate-spin h-6 w-6 sm:h-8 sm:w-8 text-violet-400" />
+                  </div>
+                  <span class="text-white text-xs sm:text-sm font-medium">Loading video...</span>
+                </div>
+              </div>
+              <!-- Center Play/Pause Overlay -->
               <button
+                v-if="!isVideoLoading"
                 @click="togglePlayPause"
-                class="px-1.5 py-1.5 bg-white/10 hover:bg-white/20 rounded-md transition-all duration-200 backdrop-blur-sm"
+                class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/30"
                 title="Play/Pause"
               >
-                <Play v-if="!isPlaying" class="h-6 w-6 text-white" />
-                <Pause v-else class="h-6 w-6 text-white" />
-              </button>
-              <!-- Time Display -->
-              <div class="text-white text-sm font-mono font-medium bg-white/10 px-3 py-2 rounded-md backdrop-blur-sm">
-                {{ formatDuration(currentTime) }} / {{ formatDuration(duration) }}
-              </div>
-            </div>
-            <!-- Right Controls -->
-            <div class="flex items-center gap-4">
-              <!-- Volume Control -->
-              <div class="flex items-center gap-3">
-                <button
-                  @click="toggleMute"
-                  class="p-3 bg-white/10 hover:bg-white/20 rounded-md transition-all duration-200 backdrop-blur-sm"
-                  title="Mute/Unmute"
+                <div
+                  class="p-3 sm:p-5 bg-white/20 backdrop-blur-md rounded-xl sm:rounded-2xl hover:bg-white/30 transition-colors border border-white/20"
                 >
-                  <VolumeX v-if="isMuted || volume === 0" class="h-4 w-4 text-white" />
-                  <Volume2 v-else class="h-4 w-4 text-white" />
-                </button>
-                <div class="relative w-24 h-1.5 bg-gray-800 rounded-md">
+                  <Play v-if="!isPlaying" class="h-7 w-7 sm:h-10 sm:w-10 text-white" />
+                  <Pause v-else class="h-7 w-7 sm:h-10 sm:w-10 text-white" />
+                </div>
+              </button>
+            </div>
+            <!-- Custom Video Controls -->
+            <div class="bg-gradient-to-t from-zinc-950 to-zinc-900/90 backdrop-blur-xl border-t border-white/10">
+              <!-- Timeline/Seek Bar -->
+              <div
+                class="relative h-1.5 sm:h-2 cursor-pointer group mx-3 sm:mx-6 mt-3 sm:mt-5"
+                @click="seekTo($event)"
+                @mousemove="onTimelineHover($event)"
+                @mouseleave="hoverTime = null"
+              >
+                <!-- Background track -->
+                <div class="absolute inset-0 bg-zinc-800 rounded-full"></div>
+                <!-- Buffered segments indicator -->
+                <div
+                  class="absolute h-full bg-violet-500/30 rounded-full transition-all duration-300"
+                  :style="{ width: `${duration ? (buffered / duration) * 100 : 0}%` }"
+                ></div>
+                <!-- Progress Bar -->
+                <div
+                  class="absolute h-full bg-gradient-to-r from-violet-500 to-purple-500 rounded-full transition-all duration-100"
+                  :style="{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }"
+                ></div>
+                <!-- Seek thumb -->
+                <div
+                  class="absolute top-1/2 w-4 h-4 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 border-2 border-violet-500"
+                  :style="{
+                    left: `${duration ? (currentTime / duration) * 100 : 0}%`,
+                    transform: 'translate(-50%, -50%)',
+                  }"
+                ></div>
+                <!-- Hover time preview -->
+                <div
+                  v-if="hoverTime !== null"
+                  class="absolute -top-12 bg-zinc-900 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-lg font-medium border border-zinc-800"
+                  :style="{ left: `${hoverPosition}%`, transform: 'translateX(-50%)' }"
+                >
+                  {{ formatDuration(hoverTime) }}
                   <div
-                    class="absolute left-0 top-0 h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-md transition-all duration-200"
-                    :style="{ width: `${volume * 100}%` }"
+                    class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-zinc-900 border-r border-b border-zinc-800"
                   ></div>
-                  <input
-                    v-model="volume"
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    class="absolute inset-0 w-full h-full cursor-pointer slider z-10 mt-0.5"
-                    @input="updateVolume"
-                  />
+                </div>
+              </div>
+              <!-- Control Buttons and Time Display -->
+              <div class="flex items-center justify-between p-5 pb-6">
+                <!-- Left Controls -->
+                <div class="flex items-center gap-4">
+                  <!-- Play/Pause Button -->
+                  <button
+                    @click="togglePlayPause"
+                    class="p-2.5 bg-zinc-800/80 hover:bg-zinc-700 rounded-xl transition-all duration-200 border border-zinc-700"
+                    title="Play/Pause"
+                  >
+                    <Play v-if="!isPlaying" class="h-5 w-5 text-white" />
+                    <Pause v-else class="h-5 w-5 text-white" />
+                  </button>
+                  <!-- Time Display -->
+                  <div
+                    class="text-white text-sm font-mono font-medium bg-zinc-800/80 px-4 py-2.5 rounded-xl border border-zinc-700"
+                  >
+                    {{ formatDuration(currentTime) }} / {{ formatDuration(duration) }}
+                  </div>
+                </div>
+                <!-- Right Controls -->
+                <div class="flex items-center gap-4">
+                  <!-- Volume Control -->
+                  <div class="flex items-center gap-3">
+                    <button
+                      @click="toggleMute"
+                      class="p-2.5 bg-zinc-800/80 hover:bg-zinc-700 rounded-xl transition-all duration-200 border border-zinc-700"
+                      title="Mute/Unmute"
+                    >
+                      <VolumeX v-if="isMuted || volume === 0" class="h-4 w-4 text-white" />
+                      <Volume2 v-else class="h-4 w-4 text-white" />
+                    </button>
+                    <div class="relative w-24 h-1.5 bg-zinc-800 rounded-full">
+                      <div
+                        class="absolute left-0 top-0 h-full bg-gradient-to-r from-violet-500 to-purple-500 rounded-full transition-all duration-200"
+                        :style="{ width: `${volume * 100}%` }"
+                      ></div>
+                      <input
+                        v-model="volume"
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        class="absolute inset-0 w-full h-full cursor-pointer slider z-10 mt-0.5"
+                        @input="updateVolume"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </Transition>
     </div>
-  </div>
+  </Transition>
 </template>
 
 <script setup lang="ts">
@@ -399,6 +415,36 @@
 </script>
 
 <style scoped>
+  /* Modal backdrop transition */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 0.3s ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  /* Dialog transition */
+  .dialog-enter-active {
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 0.2s ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
   /* Custom range input styling */
   input[type='range'].slider {
     -webkit-appearance: none;
@@ -408,7 +454,7 @@
   }
 
   input[type='range'].slider::-webkit-slider-track {
-    background: #374151;
+    background: transparent;
     height: 6px;
     border-radius: 3px;
   }
@@ -422,7 +468,6 @@
     border-radius: 50%;
     margin-top: -5px;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   }
 
   input[type='range'].slider::-webkit-slider-thumb:hover {
@@ -431,7 +476,7 @@
   }
 
   input[type='range'].slider::-moz-range-track {
-    background: #374151;
+    background: transparent;
     height: 6px;
     border-radius: 3px;
   }
@@ -444,7 +489,6 @@
     border-radius: 50%;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   }
 
   input[type='range'].slider::-moz-range-thumb:hover {
@@ -452,58 +496,8 @@
     transform: scale(1.1);
   }
 
-  /* Timeline hover effects */
-  .group:hover .group-hover\:opacity-100 {
-    opacity: 1;
-  }
-
   /* Video element styling */
   video {
     object-fit: contain;
-  }
-
-  /* Custom dialog styling improvements */
-  .rounded-2xl {
-    border-radius: 1rem;
-  }
-
-  /* Timeline seek thumb positioning fix */
-  .group .absolute.top-1\/2 {
-    top: 50%;
-  }
-
-  /* Center play overlay animation */
-  .absolute.inset-0:hover {
-    opacity: 1 !important;
-  }
-
-  /* Gradient backdrop effects */
-  .backdrop-blur-md {
-    backdrop-filter: blur(12px);
-  }
-
-  .backdrop-blur-sm {
-    backdrop-filter: blur(4px);
-  }
-
-  /* Smooth transitions for controls */
-  .transition-all {
-    transition-property: all;
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-    transition-duration: 200ms;
-  }
-
-  /* Loading indicator animation */
-  @keyframes spin {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  .animate-spin {
-    animation: spin 1s linear infinite;
   }
 </style>

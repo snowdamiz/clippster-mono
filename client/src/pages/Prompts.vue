@@ -6,13 +6,10 @@
     :icon="MessageSquare"
   >
     <template #actions>
-      <button
-        @click="navigateToNew"
-        class="px-5 py-2.5 bg-muted hover:bg-muted/80 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all active:scale-95"
-      >
+      <Button @click="navigateToNew" class="flex items-center gap-2">
         <Plus class="h-5 w-5" />
         New Prompt
-      </button>
+      </Button>
     </template>
 
     <!-- Loading State -->
@@ -207,6 +204,7 @@
   } from 'lucide-vue-next';
   import { useFormatters } from '@/composables/useFormatters';
   import { useToast } from '@/composables/useToast';
+  import { Button } from '@/components/ui/button';
   import PageLayout from '@/components/PageLayout.vue';
   import LoadingState from '@/components/LoadingState.vue';
   import EmptyState from '@/components/EmptyState.vue';

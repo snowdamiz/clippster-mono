@@ -6,13 +6,10 @@
     :icon="Folder"
   >
     <template #actions>
-      <button
-        @click="openCreateDialog"
-        class="px-5 py-2.5 bg-muted hover:bg-muted/80 text-white rounded-md flex items-center gap-2 font-medium shadow-sm transition-all"
-      >
+      <Button @click="openCreateDialog" class="flex items-center gap-2">
         <Plus class="h-5 w-5" />
         New Project
-      </button>
+      </Button>
     </template>
 
     <!-- Loading State -->
@@ -810,6 +807,7 @@
   import { useChunkedClipDetection } from '@/composables/useChunkedClipDetection';
   import { useAuthStore } from '@/stores/auth';
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
+  import { Button } from '@/components/ui/button';
 
   const projects = ref<Project[]>([]);
   const loading = ref(true);

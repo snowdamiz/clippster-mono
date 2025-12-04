@@ -1,121 +1,154 @@
 <template>
   <Teleport to="body">
-    <div
-      v-if="modelValue"
-      class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
-      @click.self="close"
-    >
-      <div class="bg-card border border-border rounded-lg shadow-xl max-w-md w-full m-4 p-6">
-        <!-- Header -->
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-semibold text-foreground">Detect Clips</h3>
-          <button @click="close" class="p-1 hover:bg-[#ffffff]/10 rounded-md transition-colors">
-            <X class="h-4 w-4 text-foreground/70 hover:text-foreground" />
-          </button>
-        </div>
+    <Transition name="modal">
+      <div
+        v-if="modelValue"
+        class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+        @click.self="close"
+      >
+        <Transition name="dialog" appear>
+          <div
+            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-sm sm:max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden max-h-[90vh] overflow-y-auto"
+          >
+            <!-- Decorative top accent -->
+            <div class="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-500" />
 
-        <!-- Multi-Segment Info (project-level detection) -->
-        <div v-if="segmentCount > 0" class="mb-4 p-3 bg-muted/30 rounded-md space-y-2">
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-muted-foreground">Segments to Process:</span>
-            <span class="font-medium">{{ segmentCount }} segment{{ segmentCount !== 1 ? 's' : '' }}</span>
-          </div>
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-muted-foreground">Total Duration:</span>
-            <span class="font-medium">{{ formatDuration(effectiveDuration) }}</span>
-          </div>
-        </div>
+            <div class="p-5 sm:p-6 lg:p-8">
+              <!-- Header -->
+              <div class="mb-4 sm:mb-6 text-center">
+                <div
+                  class="inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl lg:rounded-2xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 mb-3 sm:mb-4"
+                >
+                  <Sparkles class="h-5 w-5 sm:h-6 sm:w-6 lg:h-7 lg:w-7 text-violet-400" />
+                </div>
+                <h2 class="text-lg sm:text-xl lg:text-2xl font-bold text-white tracking-tight">Detect Clips</h2>
+                <p class="text-zinc-400 text-xs sm:text-sm mt-1">AI-powered clip detection</p>
+              </div>
 
-        <!-- Single Video Duration Info -->
-        <div v-else-if="videoDuration > 0" class="mb-4 p-3 bg-muted/30 rounded-md">
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-muted-foreground">Video Duration:</span>
-            <span class="font-medium">{{ formatDuration(videoDuration) }}</span>
-          </div>
-        </div>
-
-        <!-- Prompt Selection -->
-        <div class="mb-4">
-          <label class="block text-sm font-medium text-foreground mb-2">Detection Prompt</label>
-          <div class="relative">
-            <button
-              @click="showPromptDropdown = !showPromptDropdown"
-              class="w-full px-3 py-2 bg-background border border-input rounded-md text-left flex items-center justify-between hover:border-primary/50 transition-colors"
-            >
-              <span class="truncate">
-                {{ selectedPromptName || 'Select a prompt...' }}
-              </span>
-              <ChevronDown
-                class="h-4 w-4 text-muted-foreground transition-transform"
-                :class="{ 'rotate-180': showPromptDropdown }"
-              />
-            </button>
-
-            <!-- Dropdown -->
-            <div
-              v-if="showPromptDropdown"
-              class="absolute top-full left-0 right-0 mt-1 bg-background border border-input rounded-md shadow-lg z-10 max-h-48 overflow-y-auto"
-            >
-              <button
-                v-for="prompt in prompts"
-                :key="prompt.id"
-                @click="selectPrompt(prompt)"
-                class="block w-full text-left px-3 py-2 hover:bg-muted/80 transition-colors text-sm whitespace-nowrap"
-                :class="{ 'bg-primary/10 text-primary': selectedPromptId === prompt.id }"
+              <!-- Multi-Segment Info (project-level detection) -->
+              <div
+                v-if="segmentCount > 0"
+                class="mb-4 sm:mb-5 p-3 sm:p-4 bg-zinc-900/80 rounded-lg sm:rounded-xl border border-zinc-800 space-y-1.5 sm:space-y-2"
               >
-                {{ prompt.name }}
-              </button>
+                <div class="flex items-center justify-between text-xs sm:text-sm">
+                  <span class="text-zinc-400">Segments to Process:</span>
+                  <span class="font-medium text-white">
+                    {{ segmentCount }} segment{{ segmentCount !== 1 ? 's' : '' }}
+                  </span>
+                </div>
+                <div class="flex items-center justify-between text-xs sm:text-sm">
+                  <span class="text-zinc-400">Total Duration:</span>
+                  <span class="font-medium text-white">{{ formatDuration(effectiveDuration) }}</span>
+                </div>
+              </div>
+
+              <!-- Single Video Duration Info -->
+              <div
+                v-else-if="videoDuration > 0"
+                class="mb-4 sm:mb-5 p-3 sm:p-4 bg-zinc-900/80 rounded-lg sm:rounded-xl border border-zinc-800"
+              >
+                <div class="flex items-center justify-between text-xs sm:text-sm">
+                  <span class="text-zinc-400">Video Duration:</span>
+                  <span class="font-medium text-white">{{ formatDuration(videoDuration) }}</span>
+                </div>
+              </div>
+
+              <!-- Prompt Selection -->
+              <div class="mb-4 sm:mb-5">
+                <label class="block text-xs sm:text-sm font-medium text-zinc-300 mb-1.5 sm:mb-2">
+                  Detection Prompt
+                </label>
+                <div class="relative">
+                  <button
+                    @click="showPromptDropdown = !showPromptDropdown"
+                    class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-left flex items-center justify-between hover:border-zinc-700 transition-colors text-sm"
+                  >
+                    <span class="truncate text-white">
+                      {{ selectedPromptName || 'Select a prompt...' }}
+                    </span>
+                    <ChevronDown
+                      class="h-3.5 w-3.5 sm:h-4 sm:w-4 text-zinc-400 transition-transform"
+                      :class="{ 'rotate-180': showPromptDropdown }"
+                    />
+                  </button>
+
+                  <!-- Dropdown -->
+                  <div
+                    v-if="showPromptDropdown"
+                    class="absolute top-full left-0 right-0 mt-1.5 sm:mt-2 bg-zinc-900 border border-zinc-800 rounded-lg sm:rounded-xl overflow-hidden z-10 max-h-40 sm:max-h-48 overflow-y-auto custom-scrollbar"
+                  >
+                    <button
+                      v-for="prompt in prompts"
+                      :key="prompt.id"
+                      @click="selectPrompt(prompt)"
+                      class="block w-full text-left px-3 sm:px-4 py-2.5 sm:py-3 hover:bg-zinc-800/80 transition-colors text-xs sm:text-sm whitespace-nowrap"
+                      :class="{ 'bg-violet-500/10 text-violet-400': selectedPromptId === prompt.id }"
+                    >
+                      {{ prompt.name }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Credit Information -->
+              <div class="mb-4 sm:mb-5 p-3 sm:p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg sm:rounded-xl">
+                <div class="flex items-start gap-2 sm:gap-3">
+                  <div
+                    class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-blue-500/20 flex items-center justify-center flex-shrink-0"
+                  >
+                    <Info class="h-3.5 w-3.5 sm:h-4 sm:w-4 text-blue-400" />
+                  </div>
+                  <div class="flex-1">
+                    <p class="font-medium text-blue-300 text-xs sm:text-sm mb-0.5 sm:mb-1">Credit Cost</p>
+                    <p class="text-blue-400/80 text-[10px] sm:text-xs">
+                      {{ creditInfo }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Error Message -->
+              <div
+                v-if="error"
+                class="mb-4 sm:mb-5 p-3 sm:p-4 bg-red-500/10 border border-red-500/30 rounded-lg sm:rounded-xl"
+              >
+                <p class="text-red-400 text-xs sm:text-sm">{{ error }}</p>
+              </div>
+
+              <!-- Actions -->
+              <div class="flex gap-2 sm:gap-3">
+                <button
+                  @click="close"
+                  :disabled="isProcessing"
+                  class="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg sm:rounded-xl transition-all duration-200 font-medium border border-zinc-700 hover:border-zinc-600 disabled:opacity-50 text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  @click="confirm"
+                  :disabled="!selectedPromptId || isProcessing"
+                  class="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-lg sm:rounded-xl font-semibold transition-all duration-200 relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                  <div
+                    class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
+                  />
+                  <span class="relative flex items-center justify-center gap-1.5 sm:gap-2">
+                    <Loader2 v-if="isProcessing" class="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
+                    {{ isProcessing ? 'Detecting...' : 'Detect Clips' }}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-
-        <!-- Credit Information -->
-        <div class="mb-6 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
-          <div class="flex items-start gap-2">
-            <Info class="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
-            <div class="text-sm">
-              <p class="font-medium text-blue-900 dark:text-blue-100 mb-1">Credit Cost</p>
-              <p class="text-blue-700 dark:text-blue-300">
-                {{ creditInfo }}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Error Message -->
-        <div
-          v-if="error"
-          class="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md"
-        >
-          <p class="text-red-600 dark:text-red-400 text-sm">{{ error }}</p>
-        </div>
-
-        <!-- Actions -->
-        <div class="flex justify-end gap-3">
-          <button
-            @click="close"
-            :disabled="isProcessing"
-            class="px-4 py-2 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            @click="confirm"
-            :disabled="!selectedPromptId || isProcessing"
-            class="px-4 py-2 bg-gradient-to-br from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 disabled:from-gray-500/50 disabled:to-gray-600/50 disabled:cursor-not-allowed text-white rounded-md font-medium transition-all disabled:opacity-50 flex items-center gap-2"
-          >
-            <Loader2 v-if="isProcessing" class="h-4 w-4 animate-spin" />
-            {{ isProcessing ? 'Detecting...' : 'Detect Clips' }}
-          </button>
-        </div>
+        </Transition>
       </div>
-    </div>
+    </Transition>
   </Teleport>
 </template>
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-  import { X, ChevronDown, Info, Loader2 } from 'lucide-vue-next';
+  import { ChevronDown, Info, Loader2, Sparkles } from 'lucide-vue-next';
   import { useCreditBalance } from '@/composables/useCreditBalance';
   import { useAuthStore } from '@/stores/auth';
   import { getAllPrompts } from '@/services/database';
@@ -325,30 +358,51 @@
 </script>
 
 <style scoped>
-  .backdrop-blur-sm {
-    backdrop-filter: blur(4px);
+  /* Modal backdrop transition */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 0.3s ease;
   }
 
-  .transition-colors {
-    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-    transition-duration: 150ms;
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
   }
 
-  .z-50 {
-    z-index: 50;
+  /* Dialog transition */
+  .dialog-enter-active {
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .animate-spin {
-    animation: spin 1s linear infinite;
+  .dialog-leave-active {
+    transition: all 0.2s ease-in;
   }
 
-  @keyframes spin {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
+  /* Custom scrollbar */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgb(63 63 70);
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgb(82 82 91);
   }
 </style>
