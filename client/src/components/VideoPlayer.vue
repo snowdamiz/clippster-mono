@@ -1,13 +1,8 @@
 <template>
   <div
-    class="flex-1 min-h-0 rounded-xl bg-zinc-950 relative overflow-hidden flex items-center justify-center group/player"
+    class="flex-1 min-h-0 rounded-xl bg-black/40 border border-white/3 relative overflow-hidden flex items-center justify-center group/player"
     :style="{ maxWidth: '100%', maxHeight: '100%' }"
   >
-    <!-- Ambient Background Glow -->
-    <div
-      class="absolute inset-0 bg-gradient-to-br from-violet-950/20 via-transparent to-cyan-950/20 pointer-events-none"
-    />
-
     <!-- Video Crop Container -->
     <div
       ref="videoContainerRef"
@@ -213,35 +208,6 @@
           class="max-w-full max-h-full object-contain watermark-image"
           :style="{ opacity: (watermarkSettings?.opacity || 100) / 100 }"
         />
-      </div>
-
-      <!-- Focal Point Indicator -->
-      <div
-        v-if="videoSrc && !videoLoading && (Math.abs(focalPoint.x - 0.5) > 0.05 || Math.abs(focalPoint.y - 0.5) > 0.05)"
-        class="absolute pointer-events-none z-10 opacity-0 group-hover/player:opacity-100 transition-opacity duration-300"
-        :style="{
-          left: `${focalPoint.x * 100}%`,
-          top: `${focalPoint.y * 100}%`,
-          transform: 'translate(-50%, -50%)',
-        }"
-      >
-        <div class="relative focal-point-indicator">
-          <!-- Outer ring -->
-          <div class="absolute w-8 h-8 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-400/50" />
-          <!-- Inner ring -->
-          <div class="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-400/70" />
-          <!-- Center dot -->
-          <div
-            class="absolute w-1.5 h-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-400 shadow-lg shadow-cyan-400/50"
-          />
-          <!-- Crosshair lines -->
-          <div
-            class="absolute w-12 h-px bg-gradient-to-r from-transparent via-cyan-400/60 to-transparent -translate-x-1/2"
-          />
-          <div
-            class="absolute h-12 w-px bg-gradient-to-b from-transparent via-cyan-400/60 to-transparent -translate-y-1/2"
-          />
-        </div>
       </div>
 
       <!-- Center Play/Pause Overlay -->

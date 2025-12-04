@@ -1,42 +1,53 @@
 <template>
-  <div v-if="videoSrc && !videoLoading" class="mt-3 bg-[#0a0a0a]/50 rounded-lg backdrop-blur-sm">
+  <div v-if="videoSrc && !videoLoading" class="mt-2 bg-black/40 backdrop-blur-sm rounded-lg border border-white/[0.04]">
     <!-- Control Buttons and Time Display -->
-    <div class="flex items-center justify-between">
+    <div class="flex items-center justify-between px-1.5 py-1.5">
       <!-- Left Controls -->
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-1">
         <!-- Go to Beginning Button -->
         <button
           @click="goToBeginning"
-          class="p-3 bg-white/5 hover:bg-white/10 rounded-md transition-all duration-200 backdrop-blur-sm"
+          class="p-2.5 hover:bg-white/[0.08] rounded-lg transition-all duration-200 group"
           title="Go to Beginning"
         >
-          <SkipBack class="h-3.5 w-3.5 text-white" />
+          <SkipBack class="h-4 w-4 text-white/60 group-hover:text-white transition-colors" />
         </button>
         <!-- Play/Pause Button -->
         <button
           @click="togglePlayPause"
-          class="p-3 bg-white/5 hover:bg-white/10 rounded-md transition-all duration-200 backdrop-blur-sm"
-          title="Play/Pause"
+          class="p-2.5 hover:bg-white/[0.08] rounded-lg transition-all duration-200 grou"
+          title="Play/Pause (Space)"
         >
-          <Play v-if="!isPlaying" class="h-3.5 w-3.5 text-white" />
-          <Pause v-else class="h-3.5 w-3.5 text-white" />
+          <Play v-if="!isPlaying" class="h-4 w-4 text-white/60 group-hover:text-white transition-colors" />
+          <Pause v-else class="h-4 w-4 text-white/60 group-hover:text-white transition-colors" />
         </button>
         <!-- Time Display -->
-        <div class="text-white text-sm bg-white/5 px-4 py-[9px] rounded-md backdrop-blur-sm">
-          {{ formatDuration(currentTime) }} / {{ formatDuration(duration) }}
+        <div
+          class="text-white/80 text-xs font-mono bg-white/[0.04] px-3 py-2 rounded-lg ml-1 tabular-nums tracking-tight"
+        >
+          <span class="text-white/90">{{ formatDuration(currentTime) }}</span>
+          <span class="text-white/40 mx-1">/</span>
+          <span class="text-white/50">{{ formatDuration(duration) }}</span>
         </div>
       </div>
       <!-- Right Controls -->
-      <div class="pr-3.5 flex items-center gap-2 bg-muted/40 rounded-sm">
+      <div class="flex items-center gap-2 pr-1">
         <!-- Volume Control -->
-        <div class="flex items-center gap-1.5">
-          <button @click="toggleMute" class="p-2.5 rounded-md transition-all duration-200" title="Mute/Unmute">
-            <VolumeX v-if="isMuted || volume === 0" class="h-5 w-5 text-white" />
-            <Volume2 v-else class="h-5 w-5 text-white" />
+        <div class="flex items-center gap-2 px-2 py-1.5">
+          <button
+            @click="toggleMute"
+            class="p-1.5 rounded-md hover:bg-white/[0.08] transition-all duration-200 group"
+            title="Mute/Unmute"
+          >
+            <VolumeX
+              v-if="isMuted || volume === 0"
+              class="h-4 w-4 text-white/50 group-hover:text-white/80 transition-colors"
+            />
+            <Volume2 v-else class="h-4 w-4 text-white/60 group-hover:text-white/90 transition-colors" />
           </button>
-          <div class="relative w-30 h-1.5 bg-gray-700 rounded-md">
+          <div class="relative w-24 h-1 bg-white/10 rounded-full">
             <div
-              class="absolute left-0 top-0 h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-md transition-all duration-200"
+              class="absolute left-0 top-0 h-full bg-gradient-to-r from-violet-500 to-purple-500 rounded-full transition-all duration-150"
               :style="{ width: `${volume * 100}%` }"
             ></div>
             <input
@@ -45,7 +56,7 @@
               min="0"
               max="1"
               step="0.05"
-              class="absolute inset-0 w-full h-full cursor-pointer slider z-10 mt-0.5"
+              class="absolute inset-0 w-full h-full cursor-pointer slider z-10 pt-0.5"
               @input="updateVolume"
             />
           </div>
@@ -134,6 +145,7 @@
     appearance: none;
     background: transparent;
     cursor: pointer;
+    margin: 0;
   }
 
   input[type='range'].slider::-webkit-slider-track {
@@ -146,18 +158,19 @@
     -webkit-appearance: none;
     appearance: none;
     background: white;
-    height: 12px;
-    width: 12px;
+    height: 10px;
+    width: 10px;
     border-radius: 50%;
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-    margin-top: -4px;
+    transition: all 0.15s ease;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    margin-top: -3px;
   }
 
   input[type='range'].slider::-webkit-slider-thumb:hover {
     background: #f3f4f6;
-    transform: scale(1.1);
+    transform: scale(1.15);
+    box-shadow: 0 3px 8px rgba(139, 92, 246, 0.4);
   }
 
   input[type='range'].slider::-moz-range-track {
@@ -169,31 +182,18 @@
   input[type='range'].slider::-moz-range-thumb {
     border: none;
     background: white;
-    height: 12px;
-    width: 12px;
+    height: 10px;
+    width: 10px;
     border-radius: 50%;
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    transition: all 0.15s ease;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
   }
 
   input[type='range'].slider::-moz-range-thumb:hover {
     background: #f3f4f6;
-    transform: scale(1.1);
-  }
-
-  /* Control buttons */
-  .control-button {
-    transition: all 0.2s ease;
-    backdrop-filter: blur(4px);
-  }
-
-  .control-button:hover {
-    transform: scale(1.05);
-  }
-
-  .control-button:active {
-    transform: scale(0.95);
+    transform: scale(1.15);
+    box-shadow: 0 3px 8px rgba(139, 92, 246, 0.4);
   }
 
   /* Smooth transitions */
@@ -205,6 +205,6 @@
 
   /* Backdrop blur effects */
   .backdrop-blur-sm {
-    backdrop-filter: blur(4px);
+    backdrop-filter: blur(8px);
   }
 </style>

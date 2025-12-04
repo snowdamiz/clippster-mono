@@ -1,8 +1,8 @@
 <template>
   <div
-    class="bg-[#0a0a0a]/30 transition-all duration-300 ease-in-out"
+    class="bg-gradient-to-t from-[#0a0a0a]/50 to-[#0a0a0a]/20 transition-all duration-300 ease-in-out"
     :style="{
-      height: calculatedHeight + 'px',
+      height: calculatedHeight + 22 + 'px',
     }"
   >
     <div class="pt-3 px-4 h-full flex flex-col">
@@ -30,7 +30,7 @@
       <!-- Timeline Tracks Container -->
       <div
         :class="[
-          'flex-1 pr-1 bg-muted/20 border border-border/40 rounded-md relative overflow-x-auto',
+          'flex-1 pr-1 bg-[#101010] border border-white/[0.04] rounded-lg relative overflow-x-auto backdrop-blur-sm',
           shouldShowScrollbar
             ? 'overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800'
             : 'overflow-y-hidden',

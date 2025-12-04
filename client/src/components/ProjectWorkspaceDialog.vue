@@ -12,15 +12,27 @@
       >
         <!-- Header -->
         <div
-          class="flex items-center justify-between pl-3 pr-1.5 py-1.5 border-b border-border bg-[#070707] rounded-t-lg"
+          class="flex items-center justify-between px-4 py-2.5 border-b border-border/60 bg-gradient-to-r from-[#0a0a0a] via-[#0d0d0d] to-[#0a0a0a] rounded-t-lg"
         >
-          <div class="flex-1 min-w-0">
-            <h2 class="text-sm font-medium text-foreground/90 truncate">
-              {{ project?.name || 'New Project' }}
-            </h2>
+          <div class="flex items-center gap-3 min-w-0">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500/20 to-purple-600/20 border border-violet-500/30 flex items-center justify-center"
+            >
+              <Film class="h-4 w-4 text-violet-400" />
+            </div>
+            <div class="flex flex-col">
+              <h2 class="text-sm font-semibold text-foreground tracking-tight truncate">
+                {{ project?.name || 'New Project' }}
+              </h2>
+              <span class="text-[10px] text-muted-foreground/70">Workspace</span>
+            </div>
           </div>
-          <button @click="close" class="p-1.5 hover:bg-[#ffffff]/10 rounded-md transition-colors" title="Close">
-            <X class="h-4 w-4 text-foreground/70 hover:text-foreground" />
+          <button
+            @click="close"
+            class="p-2 hover:bg-white/5 rounded-lg transition-all duration-200 group"
+            title="Close (Esc)"
+          >
+            <X class="h-4 w-4 text-foreground/50 group-hover:text-foreground/90 transition-colors" />
           </button>
         </div>
         <!-- Main Content Area -->
@@ -31,9 +43,11 @@
             style="flex: 1; overflow: hidden; max-height: calc(100% - 170px)"
           >
             <!-- Video Player Section -->
-            <div class="w-3/5 min-w-0 p-6 border-r border-border flex flex-col">
+            <div
+              class="w-3/5 min-w-0 p-5 border-r border-border/40 flex flex-col bg-gradient-to-br from-black/20 to-transparent"
+            >
               <!-- Aspect Ratio Selector -->
-              <div class="mb-3">
+              <div class="mb-4">
                 <AspectRatioSelector @ratio-changed="handleRatioChanged" />
               </div>
               <!-- Video Player Container -->
@@ -77,7 +91,7 @@
               />
             </div>
             <!-- Right Side: Media Section -->
-            <div class="w-2/5 min-w-0 flex flex-col flex-1">
+            <div class="w-2/5 min-w-0 flex flex-col flex-1 bg-gradient-to-b from-transparent to-black/10">
               <!-- Media Section -->
               <MediaPanel
                 ref="mediaPanelRef"
@@ -199,7 +213,7 @@
     getCreatorProfileByProjectId,
     type WatermarkImage,
   } from '@/services/database';
-  import { X } from 'lucide-vue-next';
+  import { X, Film } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import type { SubtitleSettings, WatermarkSettings, AudioSettings } from '@/types';
   import VideoPlayer from './VideoPlayer.vue';

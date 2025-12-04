@@ -1,6 +1,6 @@
 <template>
   <div
-    class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 px-2 sticky top-0 z-20 backdrop-blur-sm timeline-ruler sticky-ruler"
+    class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 px-2 sticky top-0 z-50 backdrop-blur-sm timeline-ruler sticky-ruler"
     @wheel="onRulerWheel"
     title="Scroll to zoom"
   >
@@ -91,6 +91,6 @@
   .sticky-ruler {
     position: sticky;
     top: 0;
-    z-index: 20;
+    z-index: 50;
   }
 </style>

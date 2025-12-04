@@ -1,19 +1,29 @@
 <template>
   <div class="aspect-ratio-selector">
-    <div class="flex gap-1 bg-muted/20 p-1 rounded-md w-fit">
+    <div class="flex gap-0.5 bg-black/40 backdrop-blur-sm p-1 rounded-lg border border-white/[0.06] w-fit">
       <button
         v-for="ratio in aspectRatios"
         :key="ratio.id"
         @click="selectRatio(ratio)"
         :class="[
-          'px-3 py-1.5 text-xs font-medium transition-all rounded-md',
+          'relative px-3 py-1.5 text-xs font-medium transition-all duration-200 rounded-md flex items-center gap-1.5',
           selectedRatioId === ratio.id
-            ? 'bg-primary text-primary-foreground shadow-sm'
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
+            ? 'bg-gradient-to-r from-violet-500/90 to-purple-600/90 text-white shadow-lg shadow-violet-500/20'
+            : 'text-white/50 hover:text-white/80 hover:bg-white/[0.06]',
         ]"
         :title="ratio.label"
       >
-        {{ ratio.id }}
+        <!-- Ratio visual indicator -->
+        <div
+          class="flex items-center justify-center transition-colors duration-200"
+          :class="selectedRatioId === ratio.id ? 'text-white/90' : 'text-white/40'"
+        >
+          <div
+            class="border rounded-sm transition-all duration-200"
+            :class="[selectedRatioId === ratio.id ? 'border-white/60' : 'border-current', getRatioBoxClass(ratio.id)]"
+          ></div>
+        </div>
+        <span class="tabular-nums">{{ ratio.id }}</span>
       </button>
     </div>
   </div>
@@ -44,6 +54,21 @@
 
   function selectRatio(ratio: AspectRatio) {
     selectedRatioId.value = ratio.id;
+  }
+
+  function getRatioBoxClass(ratioId: string): string {
+    switch (ratioId) {
+      case '16:9':
+        return 'w-4 h-2.5';
+      case '9:16':
+        return 'w-2 h-3.5';
+      case '1:1':
+        return 'w-3 h-3';
+      case '4:5':
+        return 'w-2.5 h-3';
+      default:
+        return 'w-3 h-2';
+    }
   }
 
   // Watch for ratio changes and emit event

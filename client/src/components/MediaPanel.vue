@@ -1,74 +1,29 @@
 <template>
   <div class="px-4 flex flex-col flex-1 h-full" data-media-panel>
     <!-- Tabs Header -->
-    <div class="flex items-center border-b border-border/60 -mx-4 gap-1">
+    <div
+      class="flex items-center border-b border-border/40 -mx-4 bg-gradient-to-r from-transparent via-white/[0.01] to-transparent"
+    >
       <button
-        @click="activeTab = 'clips'"
+        v-for="tab in tabs"
+        :key="tab.id"
+        @click="activeTab = tab.id"
         :class="[
-          'px-4 py-2.5 text-sm font-medium transition-all relative',
-          activeTab === 'clips'
-            ? 'text-foreground bg-muted/30'
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted/20',
+          'relative px-4 py-3 text-xs font-medium transition-all duration-200 flex items-center gap-1.5 group',
+          activeTab === tab.id ? 'text-foreground' : 'text-muted-foreground hover:text-foreground/80',
         ]"
       >
-        Clips
-        <div v-if="activeTab === 'clips'" class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"></div>
-      </button>
-      <button
-        @click="activeTab = 'audio'"
-        :class="[
-          'px-4 py-2.5 text-sm font-medium transition-all relative',
-          activeTab === 'audio'
-            ? 'text-foreground bg-muted/30'
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted/20',
-        ]"
-      >
-        Audio
-        <div v-if="activeTab === 'audio'" class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"></div>
-      </button>
-      <button
-        @click="activeTab = 'transcript'"
-        :class="[
-          'px-4 py-2.5 text-sm font-medium transition-all relative',
-          activeTab === 'transcript'
-            ? 'text-foreground bg-muted/30'
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted/20',
-        ]"
-      >
-        Transcript
+        <component
+          :is="tab.icon"
+          :class="[
+            'h-3.5 w-3.5 transition-colors duration-200',
+            activeTab === tab.id ? 'text-violet-400' : 'text-muted-foreground group-hover:text-foreground/60',
+          ]"
+        />
+        {{ tab.label }}
         <div
-          v-if="activeTab === 'transcript'"
-          class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"
-        ></div>
-      </button>
-      <button
-        @click="activeTab = 'subtitles'"
-        :class="[
-          'px-4 py-2.5 text-sm font-medium transition-all relative',
-          activeTab === 'subtitles'
-            ? 'text-foreground bg-muted/30'
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted/20',
-        ]"
-      >
-        Subtitles
-        <div
-          v-if="activeTab === 'subtitles'"
-          class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"
-        ></div>
-      </button>
-      <button
-        @click="activeTab = 'watermark'"
-        :class="[
-          'px-4 py-2.5 text-sm font-medium transition-all relative',
-          activeTab === 'watermark'
-            ? 'text-foreground bg-muted/30'
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted/20',
-        ]"
-      >
-        Watermark
-        <div
-          v-if="activeTab === 'watermark'"
-          class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"
+          v-if="activeTab === tab.id"
+          class="absolute bottom-0 left-2 right-2 h-0.5 bg-gradient-to-r from-violet-500 to-purple-500 rounded-full"
         ></div>
       </button>
     </div>
@@ -138,7 +93,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
+  import { ref, onMounted, computed, watch, onUnmounted, markRaw } from 'vue';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import {
     getClipDetectionSessionsByProjectId,
@@ -159,6 +114,16 @@
   import SubtitlesTab from './SubtitlesTab.vue';
   import WatermarkTab from './WatermarkTab.vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
+  import { Video, Volume2, FileText, Type, Image } from 'lucide-vue-next';
+
+  // Tab configuration
+  const tabs = [
+    { id: 'clips', label: 'Clips', icon: markRaw(Video) },
+    { id: 'audio', label: 'Audio', icon: markRaw(Volume2) },
+    { id: 'transcript', label: 'Transcript', icon: markRaw(FileText) },
+    { id: 'subtitles', label: 'Subtitles', icon: markRaw(Type) },
+    { id: 'watermark', label: 'Watermark', icon: markRaw(Image) },
+  ];
 
   const props = withDefaults(defineProps<MediaPanelProps>(), {
     isGenerating: false,

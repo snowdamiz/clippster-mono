@@ -28,7 +28,7 @@
         <!-- Video Track with Waveform -->
         <div v-else class="relative w-full h-full">
           <!-- Full video duration background -->
-          <div class="absolute inset-0 bg-gradient-to-r from-purple-600/20 to-indigo-600/20 rounded-md"></div>
+          <div class="absolute inset-0 bg-gradient-to-r from-violet-900/15 to-indigo-900/10 rounded-md"></div>
 
           <!-- Audio Waveform Canvas -->
           <canvas
@@ -39,7 +39,7 @@
 
           <!-- Played progress overlay -->
           <div
-            class="absolute inset-y-0 left-0 bg-gradient-to-r from-purple-500/40 to-indigo-500/40 rounded-l-md transition-all duration-100 pointer-events-none z-15"
+            class="absolute inset-y-0 left-0 bg-gradient-to-r from-violet-500/20 to-indigo-500/15 rounded-l-md transition-all duration-100 pointer-events-none z-15"
             :style="{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }"
           ></div>
 
@@ -198,7 +198,7 @@
       // Determine color based on position relative to playhead
       const barCenter = x + barWidth / 2;
       const isBeforePlayhead = barCenter < playheadPixel;
-      const color = isBeforePlayhead ? '#ffffff' : '#a855f7'; // white before, purple after
+      const color = isBeforePlayhead ? '#e4e4e7' : '#a78bfa'; // soft gray-white before, muted violet after
 
       // Set color with full opacity
       ctx.fillStyle = color;
@@ -303,14 +303,14 @@
 <style scoped>
   /* Video track styling */
   .video-track {
-    background: linear-gradient(to right, rgba(147, 51, 234, 0.3), rgba(99, 102, 241, 0.3));
+    background: linear-gradient(to right, rgba(124, 58, 237, 0.15), rgba(99, 102, 241, 0.1));
     border-radius: 0.375rem;
     position: relative;
     overflow: hidden;
   }
 
   .video-track-progress {
-    background: linear-gradient(to right, rgba(147, 51, 234, 0.6), rgba(99, 102, 241, 0.6));
+    background: linear-gradient(to right, rgba(139, 92, 246, 0.25), rgba(99, 102, 241, 0.2));
     transition: width 0.1s ease;
   }
 

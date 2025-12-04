@@ -8,13 +8,13 @@ export const TIMELINE_HEIGHTS = {
   RULER: 32, // Timeline ruler height
   MAIN_TRACK: 86, // Main video track height
   CLIP_TRACK: 48, // Height per clip track
-  BASE_BOTTOM_PADDING: 16, // Consistent bottom padding for all cases
+  BASE_BOTTOM_PADDING: 14, // Consistent bottom padding for all cases
   MINIMUM_NO_CLIPS_HEIGHT: 200, // Minimum comfortable height when no clips
 } as const;
 
 // Timeline height bounds
 export const TIMELINE_BOUNDS = {
-  MIN_HEIGHT: 200, // Minimum height when no clips (more comfortable space)
+  MIN_HEIGHT: 160, // Minimum height when no clips (more comfortable space)
   MAX_HEIGHT: 350, // Maximum height to allow more clips before scrollbar (reduced for more compact UI)
 } as const;
 

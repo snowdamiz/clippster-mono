@@ -1,16 +1,16 @@
 <template>
   <div class="flex-1 flex flex-col overflow-hidden">
     <!-- Header -->
-    <div class="flex items-center justify-between py-3 px-1 border-b border-border/30">
+    <div class="flex items-center justify-between py-3 px-1 border-b border-border/20">
       <div class="flex items-center gap-3">
         <div
-          class="w-8 h-8 bg-gradient-to-br from-purple-500/15 to-indigo-500/15 rounded-lg flex items-center justify-center border border-purple-500/20"
+          class="w-8 h-8 bg-gradient-to-br from-violet-500/15 to-purple-600/15 rounded-lg flex items-center justify-center border border-violet-500/25 shadow-sm shadow-violet-500/5"
         >
-          <Video class="h-4 w-4 text-purple-400" />
+          <Video class="h-4 w-4 text-violet-400" />
         </div>
         <div>
-          <h3 class="text-sm font-semibold text-foreground">Clips</h3>
-          <p class="text-[10px] text-muted-foreground">
+          <h3 class="text-sm font-semibold text-foreground tracking-tight">Clips</h3>
+          <p class="text-[10px] text-muted-foreground/70">
             {{ clips.length > 0 ? `${clips.length} clip${clips.length !== 1 ? 's' : ''} detected` : 'No clips yet' }}
           </p>
         </div>
@@ -19,24 +19,24 @@
       <!-- Compact Progress Bar (when detecting) -->
       <div v-if="isGenerating && clips.length > 0" class="flex items-center gap-2 min-w-[160px]">
         <div class="flex-1 space-y-0.5">
-          <div class="h-1 w-full bg-secondary/30 rounded-full overflow-hidden">
+          <div class="h-1 w-full bg-white/5 rounded-full overflow-hidden">
             <div
-              class="h-full bg-primary transition-all duration-500 ease-out"
+              class="h-full bg-gradient-to-r from-violet-500 to-purple-500 transition-all duration-500 ease-out"
               :class="{ 'animate-pulse': generationProgress === 0 }"
               :style="{ width: `${Math.max(generationProgress, 5)}%` }"
             ></div>
           </div>
-          <div class="flex justify-between items-center text-[9px] text-muted-foreground">
+          <div class="flex justify-between items-center text-[9px] text-muted-foreground/70">
             <span class="flex items-center gap-1">
-              <LoaderIcon class="w-2 h-2 animate-spin" />
+              <LoaderIcon class="w-2 h-2 animate-spin text-violet-400" />
               <span class="truncate max-w-[80px]">{{ getCompactMessage() }}</span>
             </span>
-            <span class="font-mono">{{ Math.round(generationProgress) }}%</span>
+            <span class="font-mono tabular-nums">{{ Math.round(generationProgress) }}%</span>
           </div>
         </div>
         <button
           @click="handleCancelDetection"
-          class="p-1 hover:bg-red-500/15 rounded transition-colors text-muted-foreground hover:text-red-400"
+          class="p-1.5 hover:bg-red-500/15 rounded-md transition-colors text-muted-foreground/60 hover:text-red-400"
           title="Cancel detection"
         >
           <XIcon class="h-3.5 w-3.5" />
@@ -47,10 +47,10 @@
       <button
         v-else-if="clips.length > 0"
         @click="handleDetectClips"
-        class="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground bg-muted/30 hover:bg-muted/50 rounded-md transition-all border border-border/40 hover:border-border/60"
+        class="group flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-muted-foreground/80 hover:text-foreground bg-white/[0.03] hover:bg-white/[0.06] rounded-lg transition-all border border-white/[0.06] hover:border-white/[0.1]"
         title="Run clip detection again"
       >
-        <RefreshCw class="h-3 w-3" />
+        <Sparkles class="h-3 w-3 group-hover:text-violet-400 transition-colors" />
         Detect
       </button>
     </div>
@@ -392,23 +392,35 @@
       </div>
       <!-- Default State -->
       <div v-else class="h-full flex items-center justify-center px-4">
-        <div class="text-center text-muted-foreground max-w-xs">
+        <div class="text-center max-w-xs">
           <div class="mb-6 flex flex-col items-center">
-            <div
-              class="w-16 h-16 bg-gradient-to-br from-purple-500/10 to-indigo-500/10 rounded-lg flex items-center justify-center mb-4 border border-purple-500/20"
-            >
-              <Video class="h-7 w-7 text-purple-400/70" />
+            <!-- Animated icon container -->
+            <div class="relative mb-6">
+              <!-- Outer glow ring -->
+              <div
+                class="absolute inset-0 w-20 h-20 -m-2 rounded-2xl bg-gradient-to-br from-violet-500/10 to-purple-600/10 blur-xl animate-pulse"
+              ></div>
+              <!-- Icon container -->
+              <div
+                class="relative w-16 h-16 bg-gradient-to-br from-violet-500/15 to-purple-600/15 rounded-xl flex items-center justify-center border border-violet-500/20 shadow-lg shadow-violet-500/5"
+              >
+                <Video class="h-7 w-7 text-violet-400" />
+              </div>
+              <!-- Decorative dots -->
+              <div class="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-violet-400/40"></div>
+              <div class="absolute -bottom-0.5 -left-0.5 w-1.5 h-1.5 rounded-full bg-purple-400/30"></div>
             </div>
-            <h4 class="text-sm font-semibold text-foreground mb-1.5">No Clips Yet</h4>
-            <p class="text-xs text-muted-foreground leading-relaxed mb-5">
+
+            <h4 class="text-sm font-semibold text-foreground mb-2">No Clips Yet</h4>
+            <p class="text-xs text-muted-foreground/80 leading-relaxed mb-6 max-w-[200px]">
               Start detecting clips from your video using AI-powered analysis
             </p>
             <button
               @click="handleDetectClips"
-              class="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-foreground bg-muted/40 hover:bg-muted/60 border border-border hover:border-border/80 rounded-md transition-all"
+              class="group inline-flex items-center gap-2 px-5 py-2.5 text-xs font-medium text-white bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 rounded-lg transition-all duration-200 shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 hover:scale-[1.02] active:scale-[0.98]"
               title="Detect Clips"
             >
-              <RefreshCw class="h-3.5 w-3.5" />
+              <Sparkles class="h-3.5 w-3.5" />
               Detect Clips
             </button>
           </div>
@@ -449,6 +461,7 @@
     XIcon,
     StopCircle,
     ChevronDownIcon,
+    Sparkles,
   } from 'lucide-vue-next';
   import ClipBuildSettingsDialog, { type BuildSettings } from './ClipBuildSettingsDialog.vue';
   import type { SubtitleSettings, WatermarkSettings } from '@/types';
