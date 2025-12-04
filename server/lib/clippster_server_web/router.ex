@@ -72,6 +72,10 @@ defmodule ClippsterServerWeb.Router do
     post "/clips/detect-chunked", ClipsController, :detect_chunked
     post "/clips/transcribe", ClipsController, :transcribe
 
+    # Speaker detection and framing strategy
+    post "/clips/:clip_id/analyze-speakers", SpeakerDetectionController, :analyze
+    post "/clips/:clip_id/classify-video", SpeakerDetectionController, :classify
+
     # Processing job management (for cancellation/refunds)
     get "/jobs/:job_id", ProcessingJobController, :show
     post "/jobs/:job_id/cancel", ProcessingJobController, :cancel

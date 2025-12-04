@@ -2,10 +2,10 @@ use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 use tauri::Emitter;
 
-use super::types::{SubtitleSettings, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings};
+use super::types::{SubtitleSettings, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy};
 use super::video_info::{get_video_info, parse_aspect_ratio, IntroOutroCache};
 use super::subtitle::generate_ass_file;
-use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings};
+use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings, build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy};
 use super::thumbnail::generate_clip_thumbnail_simple;
 use super::font_manager::get_fonts_dir;
 use super::{CancellationToken, is_build_cancelled};
@@ -137,6 +137,7 @@ pub async fn build_clip_internal_simple(
     _outro_duration: Option<f64>,
     watermark_settings: Option<WatermarkSettings>,
     audio_settings: Option<AudioSettings>,
+    framing_strategy: Option<FramingStrategy>,
     cancel_rx: CancellationToken
 ) -> Result<ClipBuildResult, String> {
 
@@ -226,6 +227,7 @@ pub async fn build_clip_internal_simple(
         let snake_case_name = snake_case_clip_name.clone();
         let watermark_settings = watermark_settings.clone();
         let audio_settings = audio_settings.clone();
+        let framing_strategy = framing_strategy.clone();
         let cancel_rx = cancel_rx.clone();
         let build_num = build_num;
         
@@ -292,8 +294,51 @@ pub async fn build_clip_internal_simple(
             }
 
             // Build clip based on segments with aspect ratio cropping
-            // Note: We pass the Arc<Mutex<>> cache, and lock/unlock inside the build functions
-            if segments.len() == 1 {
+            // Check if this is a portrait (9:16) clip with a framing strategy
+            let is_portrait = aspect_ratio_str == "9:16";
+            let use_framing_strategy = is_portrait && framing_strategy.is_some();
+            
+            if use_framing_strategy {
+                // Use speaker-aware framing for portrait clips
+                let strategy = framing_strategy.as_ref().unwrap();
+                
+                if segments.len() == 1 {
+                    println!("[Rust] Building single-segment clip for {} with framing strategy: {:?}", aspect_ratio_str, strategy.mode);
+                    build_clip_with_framing_strategy(
+                        &app,
+                        &video_path,
+                        &output_path,
+                        &segments[0],
+                        strategy,
+                        &quality,
+                        frame_rate,
+                        subtitle_file.as_deref(),
+                        intro_path.as_deref(),
+                        outro_path.as_deref(),
+                        intro_outro_cache.clone(),
+                        watermark_settings.as_ref(),
+                        audio_settings.as_ref()
+                    ).await?;
+                } else {
+                    println!("[Rust] Building multi-segment clip for {} with {} segments and framing strategy: {:?}", 
+                             aspect_ratio_str, segments.len(), strategy.mode);
+                    build_multi_segment_clip_with_framing_strategy(
+                        &app,
+                        &video_path,
+                        &output_path,
+                        &segments,
+                        strategy,
+                        &quality,
+                        frame_rate,
+                        subtitle_file.as_deref(),
+                        intro_path.as_deref(),
+                        outro_path.as_deref(),
+                        intro_outro_cache.clone(),
+                        watermark_settings.as_ref(),
+                        audio_settings.as_ref()
+                    ).await?;
+                }
+            } else if segments.len() == 1 {
                 println!("[Rust] Building single-segment clip for {}", aspect_ratio_str);
                 build_single_segment_clip_with_settings(
                     &app,

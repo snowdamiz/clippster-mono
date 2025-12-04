@@ -266,3 +266,26 @@ export {
   getProjectAudioSettings,
   updateProjectAudioSettings,
 } from './database/audio-settings';
+
+// Speaker detection exports
+export {
+  saveSpeakerDetections,
+  getSpeakerDetectionsByClipId,
+  deleteSpeakerDetectionsByClipId,
+  saveSpeakerSummary,
+  getSpeakerSummariesByClipId,
+  saveFramingStrategy,
+  getFramingStrategyByClipId,
+  getFramingStrategyWithData,
+  deleteFramingStrategyByClipId,
+  getClipsByFramingMode,
+  getClipsByVideoType,
+  clearAllSpeakerDataForClip,
+  hasFramingStrategy,
+  type SpeakerDetection,
+  type SpeakerSummary,
+  type FramingStrategy as FramingStrategyRecord,
+  type FramingMode,
+  type VideoType,
+  type ParsedStrategyData,
+} from './database/speaker-detection';

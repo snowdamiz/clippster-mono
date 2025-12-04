@@ -934,3 +934,733 @@ pub async fn prepare_intro_outro_for_concat(
     Ok(output_path)
 }
 
+// ============================================================================
+// SPEAKER-AWARE FRAMING BUILDERS
+// ============================================================================
+// These functions are used when the client passes a FramingStrategy
+// from the server's speaker detection API. They enable:
+// - Split screen exports (gaming/screen share content)
+// - Dynamic panning (IRL/mobile content)
+// - Static centered crop (talking head content)
+//
+// Integration: The orchestrator calls `build_clip_with_framing_strategy` 
+// when a FramingStrategy is available for portrait (9:16) exports.
+// ============================================================================
+
+use super::types::{FramingStrategy, FramingMode, PanKeyframe};
+
+/// Builds a split screen clip with two video regions stacked vertically.
+/// 
+/// This is used for gaming/screen share content where the speaker is in one corner
+/// and the main content (gameplay, presentation) occupies the rest of the frame.
+/// 
+/// The resulting video has:
+/// - Top region: Content area (e.g., gameplay)
+/// - Bottom region: Speaker area
+pub async fn build_split_screen_clip(
+    app: &tauri::AppHandle,
+    video_path: &str,
+    output_path: &std::path::Path,
+    segment: &serde_json::Value,
+    strategy: &FramingStrategy,
+    quality: &str,
+    frame_rate: u32,
+    audio_settings: Option<&AudioSettings>,
+) -> Result<(), String> {
+    let shell = app.shell();
+    let start_time: f64 = segment["start_time"].as_f64().ok_or("Invalid start_time")?;
+    let end_time: f64 = segment["end_time"].as_f64().ok_or("Invalid end_time")?;
+    let duration = end_time - start_time;
+
+    let layout = strategy.layout.as_ref()
+        .ok_or("Split screen strategy missing layout configuration")?;
+
+    println!("[Rust] Building split screen clip with ratio: {}", layout.split_ratio);
+
+    // Get video info for pixel calculations
+    let video_info = get_video_info(app, video_path).await?;
+    let source_w = video_info.width as f64;
+    let source_h = video_info.height as f64;
+
+    // Calculate output dimensions for 9:16
+    let output_w: u32 = 1080;
+    let output_h: u32 = 1920;
+
+    // Calculate heights for each split
+    let top_height = (output_h as f64 * layout.split_ratio) as u32;
+    let bottom_height = output_h - top_height;
+
+    // Calculate crop regions in pixels
+    let top_crop = &layout.top_region;
+    let bottom_crop = &layout.bottom_region;
+
+    let top_x = (source_w * top_crop.x) as u32;
+    let top_y = (source_h * top_crop.y) as u32;
+    let top_w = (source_w * top_crop.width) as u32;
+    let top_crop_h = (source_h * top_crop.height) as u32;
+
+    let bottom_x = (source_w * bottom_crop.x) as u32;
+    let bottom_y = (source_h * bottom_crop.y) as u32;
+    let bottom_w = (source_w * bottom_crop.width) as u32;
+    let bottom_crop_h = (source_h * bottom_crop.height) as u32;
+
+    // Build complex filter for split screen
+    let filter_complex = format!(
+        "[0:v]split=2[top_src][bottom_src];\
+        [top_src]crop={}:{}:{}:{},scale={}:{}[top];\
+        [bottom_src]crop={}:{}:{}:{},scale={}:{}[bottom];\
+        [top][bottom]vstack=inputs=2[outv]",
+        top_w, top_crop_h, top_x, top_y, output_w, top_height,
+        bottom_w, bottom_crop_h, bottom_x, bottom_y, output_w, bottom_height
+    );
+
+    // Detect hardware encoder
+    let encoder = detect_hardware_encoder(app, quality).await;
+
+    // Build FFmpeg args
+    let mut args = vec![
+        "-ss".to_string(), format!("{:.3}", start_time),
+        "-i".to_string(), video_path.to_string(),
+        "-t".to_string(), format!("{:.3}", duration),
+        "-filter_complex".to_string(), filter_complex,
+        "-map".to_string(), "[outv]".to_string(),
+        "-map".to_string(), "0:a?".to_string(),
+        "-c:v".to_string(), encoder.codec.clone(),
+    ];
+
+    // Add encoder preset
+    if let Some(preset) = &encoder.preset {
+        args.push("-preset".to_string());
+        args.push(preset.clone());
+    }
+
+    // Add quality parameter
+    args.push(encoder.quality_param.clone());
+    args.push(encoder.quality_value.clone());
+
+    // Add audio filter if settings provided
+    if let Some(af) = build_audio_filter(audio_settings) {
+        args.push("-af".to_string());
+        args.push(af);
+    }
+
+    // Common output parameters
+    args.extend_from_slice(&[
+        "-r".to_string(), frame_rate.to_string(),
+        "-c:a".to_string(), "aac".to_string(),
+        "-b:a".to_string(), "192k".to_string(),
+        "-pix_fmt".to_string(), "yuv420p".to_string(),
+        "-movflags".to_string(), "+faststart".to_string(),
+        "-y".to_string(),
+        output_path.to_string_lossy().to_string(),
+    ]);
+
+    println!("[Rust] Running split screen FFmpeg command...");
+
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("FFmpeg split screen failed: {}", stderr));
+    }
+
+    println!("[Rust] Split screen clip built successfully");
+    Ok(())
+}
+
+/// Builds a dynamic pan clip that smoothly follows speakers across frames.
+/// 
+/// Uses keyframes to interpolate crop position over time, creating a smooth
+/// panning effect that keeps the subject in frame.
+pub async fn build_dynamic_pan_clip(
+    app: &tauri::AppHandle,
+    video_path: &str,
+    output_path: &std::path::Path,
+    segment: &serde_json::Value,
+    strategy: &FramingStrategy,
+    quality: &str,
+    frame_rate: u32,
+    audio_settings: Option<&AudioSettings>,
+) -> Result<(), String> {
+    let shell = app.shell();
+    let start_time: f64 = segment["start_time"].as_f64().ok_or("Invalid start_time")?;
+    let end_time: f64 = segment["end_time"].as_f64().ok_or("Invalid end_time")?;
+    let duration = end_time - start_time;
+
+    let keyframes = strategy.keyframes.as_ref()
+        .ok_or("Dynamic pan strategy missing keyframes")?;
+
+    println!("[Rust] Building dynamic pan clip with {} keyframes", keyframes.len());
+
+    // Get video info
+    let video_info = get_video_info(app, video_path).await?;
+    let source_w = video_info.width;
+    let source_h = video_info.height;
+
+    // Calculate crop dimensions for 9:16 output from 16:9 source
+    let target_aspect = 9.0 / 16.0;
+    let source_aspect = source_w as f64 / source_h as f64;
+    
+    let (crop_w, crop_h) = if target_aspect < source_aspect {
+        // Crop width (most common case: 16:9 to 9:16)
+        let h = source_h;
+        let w = (h as f64 * target_aspect) as u32;
+        (w, h)
+    } else {
+        // Crop height
+        let w = source_w;
+        let h = (w as f64 / target_aspect) as u32;
+        (w, h)
+    };
+
+    // Build pan expression from keyframes
+    let pan_expr = build_pan_expression(keyframes, source_w, crop_w, start_time, duration);
+
+    // Build video filter
+    let vf = format!("crop={}:{}:{}:0", crop_w, crop_h, pan_expr);
+
+    // Detect hardware encoder
+    let encoder = detect_hardware_encoder(app, quality).await;
+
+    // Build FFmpeg args
+    let mut args = vec![
+        "-ss".to_string(), format!("{:.3}", start_time),
+        "-i".to_string(), video_path.to_string(),
+        "-t".to_string(), format!("{:.3}", duration),
+        "-vf".to_string(), vf,
+        "-c:v".to_string(), encoder.codec.clone(),
+    ];
+
+    // Add encoder preset
+    if let Some(preset) = &encoder.preset {
+        args.push("-preset".to_string());
+        args.push(preset.clone());
+    }
+
+    // Add quality parameter
+    args.push(encoder.quality_param.clone());
+    args.push(encoder.quality_value.clone());
+
+    // Add audio filter if settings provided
+    if let Some(af) = build_audio_filter(audio_settings) {
+        args.push("-af".to_string());
+        args.push(af);
+    }
+
+    // Common output parameters
+    args.extend_from_slice(&[
+        "-r".to_string(), frame_rate.to_string(),
+        "-c:a".to_string(), "aac".to_string(),
+        "-b:a".to_string(), "192k".to_string(),
+        "-pix_fmt".to_string(), "yuv420p".to_string(),
+        "-movflags".to_string(), "+faststart".to_string(),
+        "-y".to_string(),
+        output_path.to_string_lossy().to_string(),
+    ]);
+
+    println!("[Rust] Running dynamic pan FFmpeg command...");
+
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("FFmpeg dynamic pan failed: {}", stderr));
+    }
+
+    println!("[Rust] Dynamic pan clip built successfully");
+    Ok(())
+}
+
+/// Builds FFmpeg expression for panning based on keyframes.
+/// 
+/// Creates a linear interpolation expression that smoothly transitions
+/// between keyframe positions.
+fn build_pan_expression(
+    keyframes: &[PanKeyframe],
+    source_width: u32,
+    crop_width: u32,
+    segment_start: f64,
+    segment_duration: f64
+) -> String {
+    if keyframes.is_empty() {
+        // Default to center
+        let center = (source_width - crop_width) / 2;
+        return center.to_string();
+    }
+
+    if keyframes.len() == 1 {
+        // Single keyframe - static position
+        let x = (keyframes[0].crop_x * source_width as f64) as u32;
+        let clamped = x.min(source_width - crop_width);
+        return clamped.to_string();
+    }
+
+    // Filter keyframes to those within segment time range
+    let relevant_keyframes: Vec<&PanKeyframe> = keyframes.iter()
+        .filter(|kf| kf.timestamp >= segment_start && kf.timestamp <= segment_start + segment_duration)
+        .collect();
+
+    if relevant_keyframes.is_empty() {
+        // No keyframes in range, use first keyframe position
+        let x = (keyframes[0].crop_x * source_width as f64) as u32;
+        let clamped = x.min(source_width - crop_width);
+        return clamped.to_string();
+    }
+
+    // For simplicity, use linear interpolation between first and last relevant keyframe
+    let first = relevant_keyframes.first().unwrap();
+    let last = relevant_keyframes.last().unwrap();
+
+    let start_x = ((first.crop_x * source_width as f64) as u32).min(source_width - crop_width);
+    let end_x = ((last.crop_x * source_width as f64) as u32).min(source_width - crop_width);
+
+    let kf_duration = last.timestamp - first.timestamp;
+    
+    if kf_duration < 0.5 || (start_x as i32 - end_x as i32).abs() < 10 {
+        // Minimal change - use average position
+        let avg_x = (start_x + end_x) / 2;
+        return avg_x.to_string();
+    }
+
+    // Linear interpolation: start + (end - start) * (t - start_t) / duration
+    // Note: 't' in FFmpeg is time in seconds from start of output
+    let relative_start = first.timestamp - segment_start;
+    
+    format!(
+        "{}+({})*(t-{})/{}", 
+        start_x, 
+        end_x as i32 - start_x as i32,
+        relative_start,
+        kf_duration
+    )
+}
+
+/// Builds a clip with framing strategy applied.
+/// 
+/// This is the main entry point that routes to the appropriate builder
+/// based on the framing mode.
+pub async fn build_clip_with_framing_strategy(
+    app: &tauri::AppHandle,
+    video_path: &str,
+    output_path: &std::path::Path,
+    segment: &serde_json::Value,
+    strategy: &FramingStrategy,
+    quality: &str,
+    frame_rate: u32,
+    subtitle_path: Option<&std::path::Path>,
+    intro_path: Option<&str>,
+    outro_path: Option<&str>,
+    intro_outro_cache: Arc<Mutex<IntroOutroCache>>,
+    watermark_settings: Option<&WatermarkSettings>,
+    audio_settings: Option<&AudioSettings>,
+) -> Result<(), String> {
+    println!("[Rust] Building clip with framing strategy: {:?}", strategy.mode);
+
+    match strategy.mode {
+        FramingMode::SplitScreen => {
+            // For split screen, we build without subtitles first, then add them
+            let temp_output = if subtitle_path.is_some() {
+                let paths = crate::storage::init_storage_dirs()
+                    .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+                Some(paths.temp.join(format!("split_temp_{}.mp4", uuid::Uuid::new_v4())))
+            } else {
+                None
+            };
+
+            let output_path_buf = output_path.to_path_buf();
+            let build_path = temp_output.as_ref().unwrap_or(&output_path_buf);
+            
+            build_split_screen_clip(
+                app, video_path, build_path, segment, strategy, quality, frame_rate, audio_settings
+            ).await?;
+
+            // Add subtitles if needed
+            if let (Some(temp), Some(sub_path)) = (&temp_output, subtitle_path) {
+                burn_subtitles_to_video(app, temp, output_path, sub_path, quality).await?;
+                let _ = std::fs::remove_file(temp);
+            }
+        },
+        FramingMode::DynamicPan => {
+            let temp_output = if subtitle_path.is_some() {
+                let paths = crate::storage::init_storage_dirs()
+                    .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+                Some(paths.temp.join(format!("pan_temp_{}.mp4", uuid::Uuid::new_v4())))
+            } else {
+                None
+            };
+
+            let output_path_buf = output_path.to_path_buf();
+            let build_path = temp_output.as_ref().unwrap_or(&output_path_buf);
+
+            build_dynamic_pan_clip(
+                app, video_path, build_path, segment, strategy, quality, frame_rate, audio_settings
+            ).await?;
+
+            // Add subtitles if needed
+            if let (Some(temp), Some(sub_path)) = (&temp_output, subtitle_path) {
+                burn_subtitles_to_video(app, temp, output_path, sub_path, quality).await?;
+                let _ = std::fs::remove_file(temp);
+            }
+        },
+        FramingMode::Static => {
+            // Use existing static crop builder with strategy's crop region
+            let aspect_ratio = super::types::AspectRatio {
+                width: 9.0,
+                height: 16.0,
+            };
+            
+            build_single_segment_clip_with_settings(
+                app,
+                video_path,
+                output_path,
+                segment,
+                subtitle_path,
+                &aspect_ratio,
+                quality,
+                frame_rate,
+                "mp4",
+                intro_path,
+                outro_path,
+                intro_outro_cache,
+                watermark_settings,
+                audio_settings,
+            ).await?;
+        },
+    }
+
+    // Apply watermark if enabled (after all other processing)
+    if let Some(wm) = watermark_settings {
+        if wm.enabled {
+            apply_watermark_to_video(app, output_path, wm, quality).await?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Builds a multi-segment clip with framing strategy applied.
+/// 
+/// This extracts each segment, applies the framing strategy, then concatenates them.
+pub async fn build_multi_segment_clip_with_framing_strategy(
+    app: &tauri::AppHandle,
+    video_path: &str,
+    output_path: &std::path::Path,
+    segments: &[serde_json::Value],
+    strategy: &FramingStrategy,
+    quality: &str,
+    frame_rate: u32,
+    subtitle_path: Option<&std::path::Path>,
+    intro_path: Option<&str>,
+    outro_path: Option<&str>,
+    intro_outro_cache: Arc<Mutex<IntroOutroCache>>,
+    watermark_settings: Option<&WatermarkSettings>,
+    audio_settings: Option<&AudioSettings>,
+) -> Result<(), String> {
+    use futures::future::join_all;
+    
+    println!("[Rust] Building multi-segment clip with framing strategy: {:?}", strategy.mode);
+    println!("[Rust] Processing {} segments", segments.len());
+
+    let paths = crate::storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+
+    // Extract each segment with framing applied in parallel
+    let temp_files: Vec<std::path::PathBuf> = segments.iter()
+        .enumerate()
+        .map(|(i, _)| paths.temp.join(format!("segment_framed_{}_{}.mp4", uuid::Uuid::new_v4(), i)))
+        .collect();
+
+    // Build each segment with framing strategy
+    let segment_tasks: Vec<_> = segments.iter().enumerate().map(|(i, segment)| {
+        let app = app.clone();
+        let video_path = video_path.to_string();
+        let temp_path = temp_files[i].clone();
+        let strategy = strategy.clone();
+        let quality = quality.to_string();
+        let audio_settings = audio_settings.cloned();
+
+        async move {
+            println!("[Rust] Building framed segment {}/{}", i + 1, segments.len());
+            
+            match strategy.mode {
+                FramingMode::SplitScreen => {
+                    build_split_screen_clip(
+                        &app, &video_path, &temp_path, segment, &strategy, &quality, frame_rate, audio_settings.as_ref()
+                    ).await?;
+                },
+                FramingMode::DynamicPan => {
+                    build_dynamic_pan_clip(
+                        &app, &video_path, &temp_path, segment, &strategy, &quality, frame_rate, audio_settings.as_ref()
+                    ).await?;
+                },
+                FramingMode::Static => {
+                    // For static mode, use simple crop
+                    let aspect_ratio = super::types::AspectRatio { width: 9.0, height: 16.0 };
+                    extract_segment_with_crop(&app, &video_path, &temp_path, segment, &aspect_ratio, &quality, frame_rate, audio_settings.as_ref()).await?;
+                },
+            }
+            
+            Ok::<(), String>(())
+        }
+    }).collect();
+
+    // Wait for all segments to be processed
+    let results = join_all(segment_tasks).await;
+    for (i, result) in results.into_iter().enumerate() {
+        if let Err(e) = result {
+            // Clean up temp files
+            for temp_file in &temp_files {
+                let _ = std::fs::remove_file(temp_file);
+            }
+            return Err(format!("Failed to build segment {}: {}", i + 1, e));
+        }
+    }
+
+    println!("[Rust] All {} segments processed, concatenating...", segments.len());
+
+    // Create concat file
+    let concat_file = paths.temp.join(format!("concat_{}.txt", uuid::Uuid::new_v4()));
+    let concat_content: String = temp_files.iter()
+        .map(|f| format!("file '{}'", f.to_string_lossy().replace("\\", "/")))
+        .collect::<Vec<_>>()
+        .join("\n");
+    
+    std::fs::write(&concat_file, &concat_content)
+        .map_err(|e| format!("Failed to write concat file: {}", e))?;
+
+    // Determine if we need a temp output for post-processing
+    let needs_post_processing = subtitle_path.is_some() || intro_path.is_some() || outro_path.is_some();
+    let concat_output = if needs_post_processing {
+        paths.temp.join(format!("concat_out_{}.mp4", uuid::Uuid::new_v4()))
+    } else {
+        output_path.to_path_buf()
+    };
+
+    // Concatenate segments
+    let shell = app.shell();
+    let encoder = detect_hardware_encoder(app, quality).await;
+    
+    let mut args = vec![
+        "-f".to_string(), "concat".to_string(),
+        "-safe".to_string(), "0".to_string(),
+        "-i".to_string(), concat_file.to_string_lossy().to_string(),
+        "-c:v".to_string(), encoder.codec.clone(),
+    ];
+
+    if let Some(preset) = &encoder.preset {
+        args.push("-preset".to_string());
+        args.push(preset.clone());
+    }
+
+    args.push(encoder.quality_param.clone());
+    args.push(encoder.quality_value.clone());
+    
+    args.extend_from_slice(&[
+        "-c:a".to_string(), "aac".to_string(),
+        "-b:a".to_string(), "192k".to_string(),
+        "-r".to_string(), frame_rate.to_string(),
+        "-pix_fmt".to_string(), "yuv420p".to_string(),
+        "-movflags".to_string(), "+faststart".to_string(),
+        "-y".to_string(),
+        concat_output.to_string_lossy().to_string(),
+    ]);
+
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+    // Clean up segment temp files
+    for temp_file in &temp_files {
+        let _ = std::fs::remove_file(temp_file);
+    }
+    let _ = std::fs::remove_file(&concat_file);
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("FFmpeg concat failed: {}", stderr));
+    }
+
+    // Add subtitles if needed
+    if let Some(sub_path) = subtitle_path {
+        burn_subtitles_to_video(app, &concat_output, output_path, sub_path, quality).await?;
+        if needs_post_processing {
+            let _ = std::fs::remove_file(&concat_output);
+        }
+    } else if concat_output != output_path.to_path_buf() {
+        // Move to final output
+        std::fs::rename(&concat_output, output_path)
+            .map_err(|e| format!("Failed to move output: {}", e))?;
+    }
+    
+    // Note: Intro/outro not yet supported for framing strategy multi-segment builds
+    // The intro/outro cache is available but would need additional implementation
+    let _ = intro_path;
+    let _ = outro_path;
+    let _ = intro_outro_cache;
+
+    // Apply watermark if enabled
+    if let Some(wm) = watermark_settings {
+        if wm.enabled {
+            apply_watermark_to_video(app, output_path, wm, quality).await?;
+        }
+    }
+
+    println!("[Rust] Multi-segment framed clip built successfully");
+    Ok(())
+}
+
+/// Helper to extract a segment with simple center crop (for Static framing mode)
+async fn extract_segment_with_crop(
+    app: &tauri::AppHandle,
+    video_path: &str,
+    output_path: &std::path::Path,
+    segment: &serde_json::Value,
+    aspect_ratio: &super::types::AspectRatio,
+    quality: &str,
+    frame_rate: u32,
+    audio_settings: Option<&AudioSettings>,
+) -> Result<(), String> {
+    let shell = app.shell();
+    let encoder = detect_hardware_encoder(app, quality).await;
+    
+    let start = segment.get("start_time")
+        .and_then(|v| v.as_f64())
+        .ok_or("Missing start_time")?;
+    let end = segment.get("end_time")
+        .and_then(|v| v.as_f64())
+        .ok_or("Missing end_time")?;
+    let duration = end - start;
+
+    // Get video dimensions for crop calculation
+    let video_info = get_video_info(app, video_path).await?;
+    let (crop_w, crop_h, crop_x, crop_y) = calculate_crop_params(
+        video_info.width, video_info.height, aspect_ratio
+    );
+
+    let crop_filter = format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y);
+    let scale_filter = "scale=1080:1920:flags=lanczos";
+    let vf = format!("{},{}", crop_filter, scale_filter);
+
+    let mut args = vec![
+        "-ss".to_string(), start.to_string(),
+        "-i".to_string(), video_path.to_string(),
+        "-t".to_string(), duration.to_string(),
+        "-vf".to_string(), vf,
+        "-c:v".to_string(), encoder.codec.clone(),
+    ];
+
+    if let Some(preset) = &encoder.preset {
+        args.push("-preset".to_string());
+        args.push(preset.clone());
+    }
+
+    args.push(encoder.quality_param.clone());
+    args.push(encoder.quality_value.clone());
+
+    // Audio filter
+    let mut af_parts = Vec::new();
+    if let Some(settings) = audio_settings {
+        if settings.volume != 0.0 {
+            af_parts.push(format!("volume={}dB", settings.volume));
+        }
+    }
+    
+    if !af_parts.is_empty() {
+        args.push("-af".to_string());
+        args.push(af_parts.join(","));
+    }
+
+    args.extend_from_slice(&[
+        "-c:a".to_string(), "aac".to_string(),
+        "-b:a".to_string(), "192k".to_string(),
+        "-r".to_string(), frame_rate.to_string(),
+        "-pix_fmt".to_string(), "yuv420p".to_string(),
+        "-movflags".to_string(), "+faststart".to_string(),
+        "-y".to_string(),
+        output_path.to_string_lossy().to_string(),
+    ]);
+
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("FFmpeg crop failed: {}", stderr));
+    }
+
+    Ok(())
+}
+
+/// Burns subtitles onto a video file.
+async fn burn_subtitles_to_video(
+    app: &tauri::AppHandle,
+    input_path: &std::path::Path,
+    output_path: &std::path::Path,
+    subtitle_path: &std::path::Path,
+    quality: &str,
+) -> Result<(), String> {
+    let shell = app.shell();
+    let encoder = detect_hardware_encoder(app, quality).await;
+
+    let sub_arg = subtitle_path.to_string_lossy().replace("\\", "/").replace(":", "\\:");
+    let vf_arg = format!("format=rgb24,ass='{}'", sub_arg);
+
+    let paths = crate::storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+    let fontconfig_path = paths.temp.join("fonts.conf");
+
+    let mut args = vec![
+        "-i".to_string(), input_path.to_string_lossy().to_string(),
+        "-vf".to_string(), vf_arg,
+        "-c:v".to_string(), encoder.codec.clone(),
+    ];
+
+    if let Some(preset) = &encoder.preset {
+        args.push("-preset".to_string());
+        args.push(preset.clone());
+    }
+
+    args.push(encoder.quality_param.clone());
+    args.push(encoder.quality_value.clone());
+
+    args.extend_from_slice(&[
+        "-c:a".to_string(), "copy".to_string(),
+        "-pix_fmt".to_string(), "yuv420p".to_string(),
+        "-movflags".to_string(), "+faststart".to_string(),
+        "-y".to_string(),
+        output_path.to_string_lossy().to_string(),
+    ]);
+
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .env("FONTCONFIG_FILE", fontconfig_path.to_string_lossy().to_string())
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to burn subtitles: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("FFmpeg subtitle burning failed: {}", stderr));
+    }
+
+    Ok(())
+}
+
