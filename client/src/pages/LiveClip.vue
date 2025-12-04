@@ -760,6 +760,18 @@
       clearLogs();
     }
 
+    // Add initial activity log
+    const mode = detectClips ? 'Auto Detect' : 'Record Only';
+    addActivityLog({
+      streamerId: streamer.id,
+      streamerName: streamer.displayName || streamer.mintId.slice(0, 8),
+      platform: 'PumpFun',
+      mintId: streamer.mintId,
+      message: `Started monitoring (${mode}). Waiting for stream to go live...`,
+      status: 'loading',
+      profileImageUrl: streamer.imageUrl,
+    });
+
     await startMonitoring([streamer], { detectClips });
 
     // Move to top of the list

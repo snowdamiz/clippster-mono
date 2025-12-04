@@ -610,7 +610,7 @@ export function useLivestreamMonitoring() {
         streamerId: streamer.id,
         streamerName: streamer.displayName,
         platform: streamer.platform,
-        message: `Monitoring started (${options.detectClips ? 'Auto-Detect' : 'Record Only'}).`,
+        message: `Stream is live! Recording started (${options.detectClips ? 'Auto-Detect' : 'Record Only'}).`,
         status: 'success',
         mintId: streamer.mintId,
         profileImageUrl: streamer.profileImageUrl,
