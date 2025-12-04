@@ -104,6 +104,7 @@ export {
   hasClipsForProject,
   hasDetectedOrGeneratedClips,
   hasChildProjects,
+  getChildProjects,
 } from './database/projects';
 
 // Re-export prompt functions

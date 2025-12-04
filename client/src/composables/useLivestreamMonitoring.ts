@@ -35,7 +35,8 @@ const pollingHandle = ref<number | null>(null);
 const isMonitoring = computed(() => monitoredStreamers.value.size > 0);
 
 const activityLogs = ref<ActivityLog[]>([]);
-const segmentLogIds = new Map<number, string>();
+// Key format: `${streamerId}-${segmentNumber}` to avoid collisions between streamers
+const segmentLogIds = new Map<string, string>();
 let listenersInitialized = false;
 const unlistenFunctions: UnlistenFn[] = [];
 
@@ -183,15 +184,8 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
   try {
     await endLivestreamSession(session.sessionId, Math.floor(Date.now() / 1000));
 
-    // Delay cleanup to allow in-flight segment events to arrive and be processed
-    // The segment-ready events from the backend may be slightly delayed
-    if (session.projectId) {
-      const sessionId = session.sessionId;
-      const projectId = session.projectId;
-      setTimeout(async () => {
-        await cleanupSessionProject(sessionId, projectId);
-      }, 5000); // 5 second delay
-    }
+    // Finalize the session (cleanup empty projects)
+    await finalizeRecordingSession(session);
   } catch (error) {
     console.warn('[LiveMonitor] Failed to mark session ended', error);
   }
@@ -206,6 +200,28 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
   activeSessions.value = newMap;
 }
 
+// Shared function to finalize a recording session (cleanup empty projects)
+async function finalizeRecordingSession(session: { sessionId: string; projectId?: string }) {
+  console.log('[LiveMonitor] finalizeRecordingSession called:', {
+    sessionId: session.sessionId,
+    projectId: session.projectId,
+  });
+
+  if (!session.projectId) {
+    console.log('[LiveMonitor] No projectId, skipping finalize');
+    return;
+  }
+
+  const sessionId = session.sessionId;
+  const projectId = session.projectId;
+
+  // Delay to allow final segment events to process
+  setTimeout(async () => {
+    console.log('[LiveMonitor] Delayed finalize starting for project:', projectId);
+    await cleanupSessionProject(sessionId, projectId);
+  }, 5000);
+}
+
 async function initializeListeners() {
   if (listenersInitialized) return;
 
@@ -217,14 +233,15 @@ async function initializeListeners() {
     const payload = event.payload;
     const info = await getStreamerInfo(payload.streamerId);
 
-    // 1. Update previous segment log
-    const startingLogId = segmentLogIds.get(payload.segment);
+    // 1. Update previous segment log (use streamerId-segment as key to avoid collisions)
+    const segmentKey = `${payload.streamerId}-${payload.segment}`;
+    const startingLogId = segmentLogIds.get(segmentKey);
     if (startingLogId) {
       updateActivityLog(startingLogId, {
         message: `Segment ${payload.segment} finished recording`,
         status: 'success',
       });
-      segmentLogIds.delete(payload.segment);
+      segmentLogIds.delete(segmentKey);
     } else {
       // Fallback
       addActivityLog({
@@ -252,7 +269,8 @@ async function initializeListeners() {
         status: 'loading',
         profileImageUrl: info.profileImageUrl,
       });
-      segmentLogIds.set(nextSegment, id);
+      const nextSegmentKey = `${payload.streamerId}-${nextSegment}`;
+      segmentLogIds.set(nextSegmentKey, id);
     }
 
     // 3. Create log for processing status
@@ -520,14 +538,8 @@ export function useLivestreamMonitoring() {
         try {
           await endLivestreamSession(session.sessionId, Math.floor(Date.now() / 1000));
 
-          // Delay cleanup to allow in-flight segment events to arrive
-          if (session.projectId) {
-            const sessionId = session.sessionId;
-            const projectId = session.projectId;
-            setTimeout(async () => {
-              await cleanupSessionProject(sessionId, projectId);
-            }, 5000); // 5 second delay
-          }
+          // Finalize the session (cleanup empty projects)
+          await finalizeRecordingSession(session);
         } catch (error) {
           console.warn('[LiveMonitor] Failed to close session', error);
         }
@@ -616,7 +628,7 @@ export function useLivestreamMonitoring() {
         profileImageUrl: streamer.profileImageUrl,
       });
 
-      // Initial segment start log
+      // Initial segment start log (use streamerId-1 as key)
       const id = addActivityLog({
         streamerId: streamer.id,
         streamerName: streamer.displayName,
@@ -626,7 +638,7 @@ export function useLivestreamMonitoring() {
         mintId: streamer.mintId,
         profileImageUrl: streamer.profileImageUrl,
       });
-      segmentLogIds.set(1, id);
+      segmentLogIds.set(`${streamer.id}-1`, id);
     } catch (error) {
       console.error('[LiveMonitor] Failed to start stream session', error);
       addActivityLog({

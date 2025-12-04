@@ -163,7 +163,7 @@
                 <Loader2 class="w-3 h-3 animate-spin" />
                 <span>Detecting...</span>
               </div>
-              <!-- Folder Badge (if has children and in folder view, only show if not detecting) -->
+              <!-- Folder Badge (if has children and in folder view, only show if not detecting/merging) -->
               <div
                 v-else-if="viewMode === 'folders' && hasChildren(project.id) && getChildCount(project.id) > 1"
                 class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-blue-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm"
