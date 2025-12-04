@@ -3,31 +3,50 @@
     <!-- Header -->
     <div class="flex items-center justify-between py-3 px-1 border-b border-border/30">
       <div class="flex items-center gap-3">
-        <button
-          @click="toggleSubtitles"
+        <div
           :class="[
             'w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-200 border',
             localSettings.enabled
               ? 'bg-gradient-to-br from-purple-500/20 to-indigo-500/20 border-purple-500/30'
               : 'bg-gradient-to-br from-purple-500/10 to-indigo-500/10 border-purple-500/15 opacity-60',
           ]"
-          :title="localSettings.enabled ? 'Disable subtitles' : 'Enable subtitles'"
         >
           <Type :class="['h-4 w-4', localSettings.enabled ? 'text-purple-400' : 'text-purple-400/50']" />
-        </button>
+        </div>
         <div>
           <h3 class="text-sm font-semibold text-foreground">Subtitles</h3>
           <p class="text-[10px] text-muted-foreground">Text overlay & styling</p>
         </div>
       </div>
-      <button
-        @click="resetToDefaults"
-        class="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground bg-muted/30 hover:bg-muted/50 rounded-md transition-all border border-border/40 hover:border-border/60"
-        title="Reset all settings to defaults"
-      >
-        <RotateCcw class="h-3 w-3" />
-        Reset
-      </button>
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-medium text-muted-foreground">Enabled</span>
+          <button
+            @click="toggleSubtitles"
+            type="button"
+            :class="[
+              'relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-all duration-200',
+              localSettings.enabled ? 'bg-primary' : 'bg-muted-foreground/30',
+            ]"
+            :title="localSettings.enabled ? 'Disable subtitles' : 'Enable subtitles'"
+          >
+            <span
+              :class="[
+                'inline-block h-4 w-4 transform rounded-full bg-white shadow-lg transition-all duration-200 ease-in-out',
+                localSettings.enabled ? 'translate-x-[18px]' : 'translate-x-0.5',
+              ]"
+            ></span>
+          </button>
+        </div>
+        <button
+          @click="resetToDefaults"
+          class="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground bg-muted/30 hover:bg-muted/50 rounded-md transition-all border border-border/40 hover:border-border/60"
+          title="Reset all settings to defaults"
+        >
+          <RotateCcw class="h-3 w-3" />
+          Reset
+        </button>
+      </div>
     </div>
 
     <!-- Sub-tabs -->
