@@ -19,7 +19,7 @@
         </button>
 
         <!-- Loading/Queued State -->
-        <div class="flex flex-col items-center gap-3">
+        <div class="flex flex-col items-center gap-3 -mt-5">
           <div v-if="download.isQueued" class="flex flex-col items-center gap-2">
             <div class="h-8 w-8 rounded-full border-2 border-dashed border-muted-foreground/50"></div>
             <span class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Queued</span>
@@ -37,7 +37,7 @@
       </div>
 
       <!-- Progress bar at bottom -->
-      <div v-if="!download.isQueued" class="absolute bottom-0 left-0 right-0 h-1 bg-white/10">
+      <div v-if="!download.isQueued" class="absolute bottom-0 left-0 right-0 h-1 bg-white/10 z-50">
         <div
           class="h-full bg-gradient-to-r from-purple-500 to-indigo-500 transition-all duration-300 ease-out"
           :style="{ width: `${download.progress.progress}%` }"
