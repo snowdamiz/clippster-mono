@@ -18,6 +18,7 @@ export type {
   ClipSegment,
   ClipBuild,
   ClipWithVersion,
+  ClipWithVersionAndSegment,
   FocalPoint,
   CustomSubtitlePreset,
   SubtitleSettings,
@@ -166,6 +167,7 @@ export {
   ensureClipVersioningTables,
   createVersionedClip,
   getClipsWithVersionsByProjectId,
+  getClipsWithVersionsForProjectAndChildren,
   getClipsByDetectionSession,
   persistClipDetectionResults,
 } from './database/clip-detection';

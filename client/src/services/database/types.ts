@@ -287,6 +287,12 @@ export interface ClipWithVersion extends Clip {
   builds?: ClipBuild[];
 }
 
+// Clip with version data plus segment (child project) info for folder-level view
+export interface ClipWithVersionAndSegment extends ClipWithVersion {
+  segment_id: string;
+  segment_name: string;
+}
+
 export interface CustomSubtitlePreset {
   id: string;
   name: string;

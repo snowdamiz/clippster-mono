@@ -8,7 +8,7 @@ import {
 } from './transcripts';
 import { getRawVideosByProjectId } from './raw-videos';
 import { getProject } from './projects';
-import type { ClipWithVersion, ClipSegment } from './types';
+import type { ClipWithVersion, ClipSegment, ClipWithVersionAndSegment } from './types';
 
 // Manual migration fallback function - kept here as it's specifically for clip versioning
 export async function ensureClipVersioningTables(): Promise<void> {
@@ -306,6 +306,108 @@ export async function getClipsWithVersionsByProjectId(
 
     return mapped;
   }) as ClipWithVersion[];
+}
+
+/**
+ * Get all clips for a parent project and all its child projects (segments).
+ * Returns clips with segment information so they can be displayed at the folder level.
+ */
+export async function getClipsWithVersionsForProjectAndChildren(
+  parentProjectId: string
+): Promise<ClipWithVersionAndSegment[]> {
+  const db = await getDatabase();
+
+  // Get all child project IDs (segments) for this parent
+  const childProjects = await db.select<{ id: string; name: string }[]>(
+    `SELECT id, name FROM projects WHERE parent_id = ? ORDER BY created_at ASC`,
+    [parentProjectId]
+  );
+
+  if (childProjects.length === 0) {
+    return [];
+  }
+
+  // Build list of project IDs to query
+  const projectIds = childProjects.map((p) => p.id);
+  const projectNameMap = new Map(childProjects.map((p) => [p.id, p.name]));
+
+  // Create placeholders for IN clause
+  const placeholders = projectIds.map(() => '?').join(', ');
+
+  // Query clips for all child projects
+  const clips = await db.select<any[]>(
+    `SELECT
+      c.*,
+      cv.id as current_version_id,
+      cv.name as current_version_name,
+      cv.description as current_version_description,
+      cv.start_time as current_version_start_time,
+      cv.end_time as current_version_end_time,
+      cv.confidence_score as current_version_confidence_score,
+      cv.virality_score as current_version_virality_score,
+      cv.relevance_score as current_version_relevance_score,
+      cv.detection_reason as current_version_detection_reason,
+      cv.tags as current_version_tags,
+      cv.change_type as current_version_change_type,
+      cv.created_at as current_version_created_at,
+      s.id as detection_session_id,
+      s.created_at as session_created_at,
+      s.run_color as session_run_color,
+      s.prompt as session_prompt,
+      (SELECT COUNT(*) + 1 FROM clip_detection_sessions s2
+       WHERE s2.project_id = c.project_id AND s2.created_at < s.created_at) as run_number
+     FROM clips c
+     LEFT JOIN clip_versions cv ON c.current_version_id = cv.id
+     LEFT JOIN clip_detection_sessions s ON c.detection_session_id = s.id
+     WHERE c.project_id IN (${placeholders})
+     ORDER BY COALESCE(cv.virality_score, 0) DESC, COALESCE(cv.start_time, c.start_time) ASC`,
+    projectIds
+  );
+
+  // Load segments for each clip's current version
+  for (const clip of clips) {
+    if (clip.current_version_id) {
+      const segments = await db.select<ClipSegment[]>(
+        `SELECT * FROM clip_segments
+         WHERE clip_version_id = ?
+         ORDER BY segment_index ASC`,
+        [clip.current_version_id]
+      );
+      clip.current_version_segments = segments;
+    }
+  }
+
+  // Map clips with segment info
+  return clips.map((clip) => {
+    const mapped = {
+      ...clip,
+      segment_id: clip.project_id,
+      segment_name: projectNameMap.get(clip.project_id) || 'Unknown Segment',
+      current_version: clip.current_version_id
+        ? {
+            id: clip.current_version_id,
+            clip_id: clip.id,
+            session_id: clip.detection_session_id || '',
+            version_number: 1,
+            parent_version_id: null,
+            name: clip.current_version_name || clip.name || '',
+            description: clip.current_version_description || null,
+            start_time: clip.current_version_start_time || clip.start_time || 0,
+            end_time: clip.current_version_end_time || clip.end_time || 0,
+            confidence_score: clip.current_version_confidence_score,
+            virality_score: clip.current_version_virality_score,
+            relevance_score: clip.current_version_relevance_score,
+            detection_reason: clip.current_version_detection_reason,
+            tags: clip.current_version_tags,
+            change_type: clip.current_version_change_type as 'detected' | 'modified' | 'deleted',
+            change_description: null,
+            created_at: clip.current_version_created_at,
+          }
+        : undefined,
+    };
+
+    return mapped;
+  }) as ClipWithVersionAndSegment[];
 }
 
 export async function getClipsByDetectionSession(sessionId: string): Promise<ClipWithVersion[]> {
