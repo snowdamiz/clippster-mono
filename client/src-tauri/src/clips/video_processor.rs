@@ -986,32 +986,57 @@ pub async fn build_split_screen_clip(
     let output_w: u32 = 1080;
     let output_h: u32 = 1920;
 
-    // Calculate heights for each split
-    let top_height = (output_h as f64 * layout.split_ratio) as u32;
-    let bottom_height = output_h - top_height;
+    // Calculate heights for each split region in the output
+    let top_output_height = (output_h as f64 * layout.split_ratio) as u32;
+    let bottom_output_height = output_h - top_output_height;
 
-    // Calculate crop regions in pixels
+    // Calculate the CORRECT aspect ratio for each split region
+    // This is crucial - each split has its own aspect ratio, not the overall 9:16
+    let top_split_aspect = output_w as f64 / top_output_height as f64;
+    let bottom_split_aspect = output_w as f64 / bottom_output_height as f64;
+    
+    println!("[Rust] Top split aspect: {:.4} ({}x{})", top_split_aspect, output_w, top_output_height);
+    println!("[Rust] Bottom split aspect: {:.4} ({}x{})", bottom_split_aspect, output_w, bottom_output_height);
+
+    // Get normalized crop centers from the layout (or use defaults)
     let top_crop = &layout.top_region;
     let bottom_crop = &layout.bottom_region;
-
-    let top_x = (source_w * top_crop.x) as u32;
-    let top_y = (source_h * top_crop.y) as u32;
-    let top_w = (source_w * top_crop.width) as u32;
-    let top_crop_h = (source_h * top_crop.height) as u32;
-
-    let bottom_x = (source_w * bottom_crop.x) as u32;
-    let bottom_y = (source_h * bottom_crop.y) as u32;
-    let bottom_w = (source_w * bottom_crop.width) as u32;
-    let bottom_crop_h = (source_h * bottom_crop.height) as u32;
+    
+    // Calculate top region center point (from normalized coords)
+    let top_center_x = top_crop.x + top_crop.width / 2.0;
+    let top_center_y = top_crop.y + top_crop.height / 2.0;
+    
+    // Calculate bottom region center point
+    let bottom_center_x = bottom_crop.x + bottom_crop.width / 2.0;
+    let bottom_center_y = bottom_crop.y + bottom_crop.height / 2.0;
+    
+    // Calculate crop dimensions that maintain the correct aspect ratio for each split
+    // Top region: crop from source with aspect ratio matching top_split_aspect
+    let (top_crop_w, top_crop_h, top_x, top_y) = calculate_aspect_preserving_crop(
+        source_w as u32, source_h as u32,
+        top_split_aspect,
+        top_center_x, top_center_y
+    );
+    
+    // Bottom region: crop from source with aspect ratio matching bottom_split_aspect  
+    let (bottom_crop_w, bottom_crop_h, bottom_x, bottom_y) = calculate_aspect_preserving_crop(
+        source_w as u32, source_h as u32,
+        bottom_split_aspect,
+        bottom_center_x, bottom_center_y
+    );
+    
+    println!("[Rust] Top crop: {}x{} at ({},{})", top_crop_w, top_crop_h, top_x, top_y);
+    println!("[Rust] Bottom crop: {}x{} at ({},{})", bottom_crop_w, bottom_crop_h, bottom_x, bottom_y);
 
     // Build complex filter for split screen
+    // Each crop maintains the correct aspect ratio for its output region
     let filter_complex = format!(
         "[0:v]split=2[top_src][bottom_src];\
-        [top_src]crop={}:{}:{}:{},scale={}:{}[top];\
-        [bottom_src]crop={}:{}:{}:{},scale={}:{}[bottom];\
+        [top_src]crop={}:{}:{}:{},scale={}:{}:flags=lanczos[top];\
+        [bottom_src]crop={}:{}:{}:{},scale={}:{}:flags=lanczos[bottom];\
         [top][bottom]vstack=inputs=2[outv]",
-        top_w, top_crop_h, top_x, top_y, output_w, top_height,
-        bottom_w, bottom_crop_h, bottom_x, bottom_y, output_w, bottom_height
+        top_crop_w, top_crop_h, top_x, top_y, output_w, top_output_height,
+        bottom_crop_w, bottom_crop_h, bottom_x, bottom_y, output_w, bottom_output_height
     );
 
     // Detect hardware encoder
@@ -1071,6 +1096,45 @@ pub async fn build_split_screen_clip(
 
     println!("[Rust] Split screen clip built successfully");
     Ok(())
+}
+
+/// Calculates crop dimensions that preserve a target aspect ratio, centered on a point.
+/// 
+/// Given source dimensions, target aspect ratio, and a center point (normalized 0-1),
+/// returns (crop_width, crop_height, crop_x, crop_y) in pixels.
+fn calculate_aspect_preserving_crop(
+    source_w: u32,
+    source_h: u32,
+    target_aspect: f64,  // width / height
+    center_x: f64,       // normalized 0-1
+    center_y: f64,       // normalized 0-1
+) -> (u32, u32, u32, u32) {
+    let source_aspect = source_w as f64 / source_h as f64;
+    
+    let (crop_w, crop_h) = if target_aspect > source_aspect {
+        // Target is wider - use full width, crop height
+        let w = source_w;
+        let h = (source_w as f64 / target_aspect) as u32;
+        (w, h)
+    } else {
+        // Target is taller - use full height, crop width
+        let h = source_h;
+        let w = (source_h as f64 * target_aspect) as u32;
+        (w, h)
+    };
+    
+    // Calculate crop position centered on the given point
+    let center_x_px = (source_w as f64 * center_x) as i32;
+    let center_y_px = (source_h as f64 * center_y) as i32;
+    
+    let mut crop_x = center_x_px - (crop_w as i32 / 2);
+    let mut crop_y = center_y_px - (crop_h as i32 / 2);
+    
+    // Clamp to valid range
+    crop_x = crop_x.max(0).min((source_w - crop_w) as i32);
+    crop_y = crop_y.max(0).min((source_h - crop_h) as i32);
+    
+    (crop_w, crop_h, crop_x as u32, crop_y as u32)
 }
 
 /// Builds a dynamic pan clip that smoothly follows speakers across frames.

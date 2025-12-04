@@ -195,43 +195,77 @@ defmodule ClippsterServer.AI.FramingStrategy do
   end
 
   # Calculate crop regions for split screen
+  # The key insight: each split region has its OWN aspect ratio based on the split ratio.
+  # For a 9:16 output with 50/50 split, each split is 1080x960 = 9:8 aspect ratio (1.125).
+  # We store the CENTER POINT of each crop region, and the Rust code calculates
+  # the actual crop dimensions based on the split's aspect ratio.
   defp calculate_split_crops(speaker, content_region, video_dims, target_w, target_h, split_ratio) do
-    # Each split should maintain proper aspect ratio for its portion
-    split_aspect = target_w / target_h
+    # Calculate the output dimensions for reference
+    output_w = target_w * 120  # e.g., 1080
+    output_h = target_h * 120  # e.g., 1920
     
-    # Top region (content)
-    _top_height = split_ratio  # Used for output_height_ratio
-    top_crop_h = video_dims.height * 0.5  # Use half the video height
-    top_crop_w = top_crop_h * split_aspect
+    # Calculate the aspect ratio for each split region
+    top_output_h = round(output_h * split_ratio)
+    bottom_output_h = output_h - top_output_h
+    
+    # Each split has its own aspect ratio
+    top_split_aspect = output_w / top_output_h
+    bottom_split_aspect = output_w / bottom_output_h
+    
+    # Calculate crop dimensions for each split using its own aspect ratio
+    source_aspect = video_dims.width / video_dims.height
+    
+    # Top region crop dimensions (based on top_split_aspect)
+    {top_crop_w_norm, top_crop_h_norm} = if top_split_aspect > source_aspect do
+      # Use full width, calculate height
+      {1.0, source_aspect / top_split_aspect}
+    else
+      # Use full height, calculate width  
+      {top_split_aspect / source_aspect, 1.0}
+    end
+    
+    # Get content center for top region
+    content_center_x = content_region.bbox.x + content_region.bbox.width / 2
+    content_center_y = content_region.bbox.y + content_region.bbox.height / 2
+    
+    # Calculate top crop position (centered on content)
+    top_x = clamp(content_center_x - top_crop_w_norm / 2, 0.0, 1.0 - top_crop_w_norm)
+    top_y = clamp(content_center_y - top_crop_h_norm / 2, 0.0, 1.0 - top_crop_h_norm)
     
     top_crop = %{
-      x: content_region.bbox.x + (content_region.bbox.width - top_crop_w / video_dims.width) / 2,
-      y: content_region.bbox.y,
-      width: top_crop_w / video_dims.width,
-      height: 0.5,
+      x: top_x,
+      y: top_y,
+      width: top_crop_w_norm,
+      height: top_crop_h_norm,
       output_height_ratio: split_ratio
     }
 
-    # Bottom region (speaker)
-    bottom_height = 1.0 - split_ratio
+    # Bottom region crop dimensions (based on bottom_split_aspect)
+    {bottom_crop_w_norm, bottom_crop_h_norm} = if bottom_split_aspect > source_aspect do
+      # Use full width, calculate height
+      {1.0, source_aspect / bottom_split_aspect}
+    else
+      # Use full height, calculate width
+      {bottom_split_aspect / source_aspect, 1.0}
+    end
+    
+    # Get speaker center for bottom region
     speaker_center = if speaker do
-      %{
-        x: speaker.centroid.x,
-        y: speaker.centroid.y
-      }
+      %{x: speaker.centroid.x, y: speaker.centroid.y}
     else
       %{x: 0.5, y: 0.75}  # Default to lower center
     end
 
-    bottom_crop_h = video_dims.height * 0.5
-    bottom_crop_w = bottom_crop_h * split_aspect
+    # Calculate bottom crop position (centered on speaker)
+    bottom_x = clamp(speaker_center.x - bottom_crop_w_norm / 2, 0.0, 1.0 - bottom_crop_w_norm)
+    bottom_y = clamp(speaker_center.y - bottom_crop_h_norm / 2, 0.0, 1.0 - bottom_crop_h_norm)
     
     bottom_crop = %{
-      x: clamp(speaker_center.x - (bottom_crop_w / video_dims.width / 2), 0.0, 1.0 - bottom_crop_w / video_dims.width),
-      y: clamp(speaker_center.y - 0.25, 0.0, 0.5),
-      width: bottom_crop_w / video_dims.width,
-      height: 0.5,
-      output_height_ratio: bottom_height
+      x: bottom_x,
+      y: bottom_y,
+      width: bottom_crop_w_norm,
+      height: bottom_crop_h_norm,
+      output_height_ratio: 1.0 - split_ratio
     }
 
     {bottom_crop, top_crop}
@@ -344,6 +378,8 @@ defmodule ClippsterServer.AI.FramingStrategy do
   end
 
   # Build FFmpeg filter string for split screen
+  # Note: The Rust client handles the actual FFmpeg filter generation.
+  # This filter string is provided for reference/debugging but may not be used directly.
   defp build_split_screen_filter(top_crop, bottom_crop, target_w, target_h) do
     # Calculate output dimensions
     output_w = target_w * 120  # Scale to reasonable size (e.g., 1080)
@@ -352,10 +388,12 @@ defmodule ClippsterServer.AI.FramingStrategy do
     top_h = round(output_h * top_crop.output_height_ratio)
     bottom_h = output_h - top_h
 
+    # The crop dimensions are normalized (0-1), multiply by source dimensions
+    # Each crop has the correct aspect ratio to match its output region
     """
     [0:v]split=2[top_src][bottom_src];
-    [top_src]crop=iw*#{Float.round(top_crop.width, 4)}:ih*#{Float.round(top_crop.height, 4)}:iw*#{Float.round(top_crop.x, 4)}:ih*#{Float.round(top_crop.y, 4)},scale=#{output_w}:#{top_h}[top];
-    [bottom_src]crop=iw*#{Float.round(bottom_crop.width, 4)}:ih*#{Float.round(bottom_crop.height, 4)}:iw*#{Float.round(bottom_crop.x, 4)}:ih*#{Float.round(bottom_crop.y, 4)},scale=#{output_w}:#{bottom_h}[bottom];
+    [top_src]crop=iw*#{Float.round(top_crop.width, 4)}:ih*#{Float.round(top_crop.height, 4)}:iw*#{Float.round(top_crop.x, 4)}:ih*#{Float.round(top_crop.y, 4)},scale=#{output_w}:#{top_h}:flags=lanczos[top];
+    [bottom_src]crop=iw*#{Float.round(bottom_crop.width, 4)}:ih*#{Float.round(bottom_crop.height, 4)}:iw*#{Float.round(bottom_crop.x, 4)}:ih*#{Float.round(bottom_crop.y, 4)},scale=#{output_w}:#{bottom_h}:flags=lanczos[bottom];
     [top][bottom]vstack=inputs=2[out]
     """
   end
