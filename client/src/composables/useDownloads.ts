@@ -602,14 +602,18 @@ export function useDownloads() {
         segmentEndTime: segment.endTime,
         videoUrl: videoUrl,
         parentProjectId,
+        groupId,
+        totalSegments: numberOfSegments,
+        currentSegmentIndex: i,
+        isAutoSegmented: true,
+        isQueued: i >= MAX_CONCURRENT_DOWNLOADS,
       };
 
-      // Add group metadata
-      download.groupId = groupId;
-      download.totalSegments = numberOfSegments;
-      download.currentSegmentIndex = i;
-      download.isAutoSegmented = true;
-      download.isQueued = i >= MAX_CONCURRENT_DOWNLOADS;
+      console.log(`[Downloads] Created segment download ${i + 1}/${numberOfSegments}:`, {
+        id: downloadId,
+        title: segmentTitle,
+        groupId,
+      });
 
       // Add to appropriate queue
       if (i < MAX_CONCURRENT_DOWNLOADS) {
@@ -664,6 +668,7 @@ export function useDownloads() {
     // Return the first download ID as the primary identifier
     return allDownloadIds[0];
   }
+
   // Process queued downloads
   function processQueue() {
     // Clean up stale active downloads to prevent queue blocking

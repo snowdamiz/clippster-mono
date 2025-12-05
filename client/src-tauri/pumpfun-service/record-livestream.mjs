@@ -223,6 +223,7 @@ class PumpfunRecorder {
     this.processedSegments = new Set();
     this.running = false;
     this.restarting = false;
+    this.stopRequested = false; // Flag to signal stop during waiting phase
     this.room = null;
     this.ffmpeg = null;
     this.audioMixer = new AudioMixer();
@@ -310,17 +311,67 @@ class PumpfunRecorder {
   async start() {
     await fs.promises.mkdir(this.outputDir, { recursive: true });
 
-    const info = await getLivestreamInfo(this.mintId);
-    if (!info?.isLive) {
+    // Poll until stream goes live or stop is requested
+    const POLL_INTERVAL_MS = 15000; // Check every 15 seconds
+    let isLive = false;
+    let pollCount = 0;
+    
+    while (!isLive && !this.stopRequested) {
+      try {
+        const info = await getLivestreamInfo(this.mintId);
+        isLive = Boolean(info?.isLive);
+        
+        if (!isLive) {
+          pollCount++;
+          // Emit waiting status so frontend knows we're monitoring
+          console.log(
+            JSON.stringify({
+              type: 'waiting_for_stream',
+              mintId: this.mintId,
+              sessionId: this.sessionId,
+              pollCount,
+            })
+          );
+          
+          // Wait before next check, but allow early exit if stop requested
+          await new Promise((resolve) => {
+            const timeout = setTimeout(resolve, POLL_INTERVAL_MS);
+            // Store timeout so we can clear it on stop
+            this._waitTimeout = timeout;
+          });
+          this._waitTimeout = null;
+        }
+      } catch (error) {
+        // Log error but continue polling
+        console.log(
+          JSON.stringify({
+            type: 'log',
+            message: `Error checking stream status: ${error.message}`,
+          })
+        );
+        // Wait before retry on error
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+      }
+    }
+    
+    // If stop was requested during waiting, exit cleanly
+    if (this.stopRequested) {
       console.log(
         JSON.stringify({
-          type: 'stream_offline',
-          mintId: this.mintId,
-          sessionId: this.sessionId,
+          type: 'log',
+          message: 'Stop requested while waiting for stream',
         })
       );
       return;
     }
+
+    // Stream is live - proceed with recording
+    console.log(
+      JSON.stringify({
+        type: 'log',
+        message: 'Stream is live, starting recording...',
+      })
+    );
 
     const joinData = await joinLivestream(this.mintId);
     const token = joinData?.token;
@@ -1192,12 +1243,26 @@ async function main() {
     segmentDuration: segmentDurationSeconds,
   });
 
-  await recorder.start();
+  let isStarting = true; // Track if we're still in the start() phase
 
   const shutdown = async () => {
     process.off('SIGINT', shutdown);
     process.off('SIGTERM', shutdown);
     process.stdin.off('data', onStdinData);
+    
+    // Signal stop to interrupt waiting phase
+    recorder.stopRequested = true;
+    if (recorder._waitTimeout) {
+      clearTimeout(recorder._waitTimeout);
+    }
+    
+    // If still starting (waiting for stream), just exit after signaling
+    if (isStarting) {
+      // Give a moment for the start() loop to exit cleanly
+      await new Promise(resolve => setTimeout(resolve, 100));
+      process.exit(0);
+      return;
+    }
     
     const forceExitTimer = setTimeout(() => {
         console.error(JSON.stringify({ type: 'log', message: 'Shutdown timed out, forcing exit' }));
@@ -1224,6 +1289,9 @@ async function main() {
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
   process.stdin.on('data', onStdinData);
+
+  await recorder.start();
+  isStarting = false; // Recording has started (or was stopped during wait)
 }
 
 main().catch((error) => {

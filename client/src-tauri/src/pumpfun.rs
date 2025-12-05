@@ -394,6 +394,26 @@ fn handle_recorder_line(
                 };
                 let _ = app.emit("stream-ended", payload);
             }
+            "waiting_for_stream" => {
+                // Emit a log event to inform frontend that we're waiting for stream to go live
+                let poll_count = event.extra.get("pollCount")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                
+                let message = if poll_count <= 1 {
+                    "Waiting for stream to go live...".to_string()
+                } else {
+                    format!("Waiting for stream to go live... (check #{})", poll_count)
+                };
+                
+                let payload = RecorderLogPayload {
+                    streamer_id: streamer_id.to_string(),
+                    mint_id: mint_id.to_string(),
+                    message,
+                    level: "info".to_string(),
+                };
+                let _ = app.emit("recorder-log", payload);
+            }
             "log" => {
                 let context = if event.extra.is_empty() {
                     String::new()

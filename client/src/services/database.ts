@@ -18,6 +18,7 @@ export type {
   ClipSegment,
   ClipBuild,
   ClipWithVersion,
+  ClipWithVersionAndSegment,
   FocalPoint,
   CustomSubtitlePreset,
   SubtitleSettings,
@@ -103,6 +104,7 @@ export {
   hasClipsForProject,
   hasDetectedOrGeneratedClips,
   hasChildProjects,
+  getChildProjects,
 } from './database/projects';
 
 // Re-export prompt functions
@@ -166,6 +168,7 @@ export {
   ensureClipVersioningTables,
   createVersionedClip,
   getClipsWithVersionsByProjectId,
+  getClipsWithVersionsForProjectAndChildren,
   getClipsByDetectionSession,
   persistClipDetectionResults,
 } from './database/clip-detection';

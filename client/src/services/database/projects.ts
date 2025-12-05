@@ -158,3 +158,11 @@ export async function hasChildProjects(projectId: string): Promise<boolean> {
   );
   return (result[0]?.count || 0) > 0;
 }
+
+export async function getChildProjects(parentId: string): Promise<Project[]> {
+  const db = await getDatabase();
+  return await db.select<Project[]>(
+    'SELECT * FROM projects WHERE parent_id = ? ORDER BY created_at ASC',
+    [parentId]
+  );
+}

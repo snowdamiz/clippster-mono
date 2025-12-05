@@ -282,6 +282,7 @@
                     <p class="text-[10px] text-muted-foreground mt-1">
                       Split into ~{{ Math.ceil((latestVod.duration || 0) / (autoSegmentDuration * 60)) }} parts
                     </p>
+
                   </div>
                 </div>
               </div>

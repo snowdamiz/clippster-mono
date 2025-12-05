@@ -163,7 +163,7 @@
                 <Loader2 class="w-3 h-3 animate-spin" />
                 <span>Detecting...</span>
               </div>
-              <!-- Folder Badge (if has children and in folder view, only show if not detecting) -->
+              <!-- Folder Badge (if has children and in folder view, only show if not detecting/merging) -->
               <div
                 v-else-if="viewMode === 'folders' && hasChildren(project.id) && getChildCount(project.id) > 1"
                 class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-blue-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm"
@@ -395,6 +395,20 @@
       @update:model-value="showProjectDetectDialog = $event"
       @confirm="onProjectDetectClipsConfirmed"
     />
+    <!-- Folder Clip Build Dialog -->
+    <ClipBuildSettingsDialog
+      v-model="showFolderBuildDialog"
+      :clip="folderClipToBuild"
+      @confirm="onFolderBuildConfirm"
+    />
+
+    <!-- Clip Preview Dialog -->
+    <ClipPreviewDialog
+      :show="showClipPreview"
+      :clip="clipToPreview"
+      @close="closeClipPreview"
+    />
+
     <!-- Folder Contents Dialog -->
     <div
       v-if="showFolderDialog && folderProject"
@@ -455,9 +469,45 @@
           </button>
         </div>
 
+        <!-- Tabs -->
+        <div class="flex items-center border-b border-border px-4 bg-black/20">
+          <button
+            @click="onFolderTabChange('segments')"
+            :class="[
+              'relative px-4 py-2.5 text-sm font-medium transition-all duration-200 flex items-center gap-2',
+              folderActiveTab === 'segments' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground/80',
+            ]"
+          >
+            <FolderOpen class="h-4 w-4" />
+            Segments
+            <span class="text-xs bg-muted px-1.5 py-0.5 rounded-full">{{ getFolderChildren(folderProject.id).length }}</span>
+            <div
+              v-if="folderActiveTab === 'segments'"
+              class="absolute bottom-0 left-2 right-2 h-0.5 bg-gradient-to-r from-violet-500 to-purple-500 rounded-full"
+            ></div>
+          </button>
+          <button
+            @click="onFolderTabChange('clips')"
+            :class="[
+              'relative px-4 py-2.5 text-sm font-medium transition-all duration-200 flex items-center gap-2',
+              folderActiveTab === 'clips' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground/80',
+            ]"
+          >
+            <Video class="h-4 w-4" />
+            Clips
+            <span class="text-xs bg-muted px-1.5 py-0.5 rounded-full">{{ folderTotalClipsCount }}</span>
+            <div
+              v-if="folderActiveTab === 'clips'"
+              class="absolute bottom-0 left-2 right-2 h-0.5 bg-gradient-to-r from-violet-500 to-purple-500 rounded-full"
+            ></div>
+          </button>
+        </div>
+
         <!-- Content -->
         <div class="flex-1 overflow-y-auto p-6">
+          <!-- Segments Tab -->
           <div
+            v-if="folderActiveTab === 'segments'"
             class="grid gap-5"
             :class="{
               'grid-cols-1': paginatedFolderChildren.length <= 1,
@@ -558,10 +608,189 @@
               </div>
             </div>
           </div>
+
+          <!-- Clips Tab -->
+          <div v-else-if="folderActiveTab === 'clips'" class="space-y-3">
+            <!-- Loading State -->
+            <div v-if="folderClipsLoading" class="flex items-center justify-center py-12">
+              <Loader2 class="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+
+            <!-- Empty State -->
+            <div v-else-if="folderClips.length === 0" class="flex flex-col items-center justify-center py-12 text-center">
+              <div class="w-16 h-16 bg-muted/20 rounded-full flex items-center justify-center mb-4">
+                <Video class="w-8 h-8 text-muted-foreground" />
+              </div>
+              <h3 class="text-lg font-medium text-foreground mb-2">No Clips Detected</h3>
+              <p class="text-sm text-muted-foreground max-w-xs">
+                Run clip detection on individual segments to find viral moments.
+              </p>
+            </div>
+
+            <!-- Clips List -->
+            <div v-else class="space-y-3 pb-4">
+              <div
+                v-for="(clip, index) in folderClips"
+                :key="clip.id"
+                class="group relative bg-card/50 backdrop-blur-sm border border-border/50 rounded-lg cursor-pointer transition-all duration-200 hover:border-border/80 hover:bg-card/70 hover:shadow-lg hover:shadow-black/10"
+                @click="previewClip(clip)"
+              >
+                <!-- Left accent bar -->
+                <div
+                  v-if="clip.run_number"
+                  class="absolute left-0 top-0 bottom-0 w-1 transition-all duration-200 rounded-l-lg"
+                  :style="{ backgroundColor: clip.session_run_color || '#8B5CF6', opacity: 0.6 }"
+                ></div>
+
+                <div class="flex flex-col p-3 pl-4">
+                  <!-- Header: Title & Actions -->
+                  <div class="flex items-start justify-between gap-3 mb-2">
+                    <div class="flex items-start gap-2 min-w-0">
+                      <span class="text-xs font-bold text-foreground/30 mt-1 tabular-nums select-none">
+                        #{{ index + 1 }}
+                      </span>
+                      <h5 class="text-[15px] font-semibold text-foreground leading-snug line-clamp-2">
+                        {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
+                      </h5>
+                    </div>
+
+                    <!-- Actions -->
+                    <div
+                      class="flex items-center gap-0.5 transition-opacity duration-200 flex-shrink-0 -mr-1 -mt-1"
+                      :class="hasCompletedBuilds(clip) || clip.build_status === 'building' ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+                    >
+                      <!-- Play button (preview) -->
+                      <button
+                        class="p-1.5 hover:bg-violet-500/15 rounded-md transition-colors text-foreground/60 hover:text-violet-400"
+                        title="Preview clip"
+                        @click.stop="previewClip(clip)"
+                      >
+                        <PlayIcon class="h-4 w-4" />
+                      </button>
+
+                      <!-- Edit button (open in segment) -->
+                      <button
+                        class="p-1.5 hover:bg-blue-500/15 rounded-md transition-colors text-foreground/60 hover:text-blue-400"
+                        title="Edit in Segment"
+                        @click.stop="openSegmentWithClip(clip)"
+                      >
+                        <ExternalLink class="h-4 w-4" />
+                      </button>
+
+                      <!-- Build button -->
+                      <button
+                        v-if="clip.build_status !== 'building'"
+                        class="p-1.5 hover:bg-green-500/15 rounded-md transition-colors text-foreground/60 hover:text-green-400"
+                        title="Build clip"
+                        @click.stop="onFolderBuildClip(clip)"
+                      >
+                        <Hammer class="h-4 w-4" />
+                      </button>
+
+                      <!-- Download button (only when built) -->
+                      <button
+                        v-if="hasCompletedBuilds(clip)"
+                        class="p-1.5 hover:bg-green-500/15 rounded-md transition-colors text-green-500/80 hover:text-green-400"
+                        title="Download built clip"
+                        @click.stop="onFolderSaveBuiltClip(clip)"
+                      >
+                        <DownloadIcon class="h-4 w-4" />
+                      </button>
+
+                      <!-- Delete button -->
+                      <button
+                        v-if="!hasCompletedBuilds(clip)"
+                        class="p-1.5 hover:bg-red-500/15 rounded-md transition-colors text-foreground/60 hover:text-red-400"
+                        title="Delete clip"
+                        @click.stop="deleteFolderClip(clip.id)"
+                      >
+                        <Trash2 class="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Metrics Row -->
+                  <div class="flex items-center flex-wrap gap-2 mb-2.5">
+                    <!-- Segment Badge -->
+                    <div class="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/70 bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20">
+                      <FolderOpen class="h-3 w-3 opacity-70" />
+                      <span>{{ clip.segment_name }}</span>
+                    </div>
+
+                    <!-- Virality Score -->
+                    <div
+                      v-if="clip.current_version_virality_score !== undefined && clip.current_version_virality_score !== null"
+                      class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium transition-colors"
+                      :class="getViralityColorClass(clip.current_version_virality_score)"
+                      title="Predicted Virality Score"
+                    >
+                      <Flame class="h-3 w-3" />
+                      <span>{{ Math.round(clip.current_version_virality_score) }}% Viral</span>
+                    </div>
+
+                    <!-- Duration -->
+                    <div class="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 bg-secondary/40 px-2 py-0.5 rounded-md">
+                      <Clock class="h-3 w-3 opacity-70" />
+                      <span>{{ getClipDuration(clip) }}</span>
+                    </div>
+
+                    <!-- Confidence -->
+                    <div
+                      v-if="clip.current_version_confidence_score"
+                      class="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 text-muted-foreground"
+                      title="AI Confidence Score"
+                    >
+                      <BrainIcon class="h-3 w-3" />
+                      <span>{{ Math.round((clip.current_version_confidence_score || 0) * 100) }}%</span>
+                    </div>
+                  </div>
+
+                  <!-- Description -->
+                  <p
+                    v-if="clip.current_version_detection_reason"
+                    class="text-xs text-muted-foreground/80 line-clamp-2 mb-2.5 leading-relaxed italic"
+                  >
+                    "{{ clip.current_version_detection_reason }}"
+                  </p>
+
+                  <!-- Footer Info -->
+                  <div class="flex items-center justify-between text-[10px] text-muted-foreground/60 border-t border-border/30 pt-2 mt-auto">
+                    <div class="flex items-center gap-2">
+                      <span class="font-mono">
+                        {{ formatClipTime(clip.current_version_start_time || 0) }} -
+                        {{ formatClipTime(clip.current_version_end_time || 0) }}
+                      </span>
+
+                      <!-- Build Status -->
+                      <span v-if="clip.build_status === 'building'" class="text-blue-400 flex items-center gap-1">
+                        <Loader2 class="h-2.5 w-2.5 animate-spin" />
+                        Building...
+                      </span>
+                      <span v-else-if="hasCompletedBuilds(clip)" class="text-green-400 flex items-center gap-1">
+                        <Check class="h-2.5 w-2.5" />
+                        Built
+                      </span>
+                    </div>
+
+                    <!-- Run Info -->
+                    <div class="flex items-center gap-2">
+                      <span v-if="clip.run_number" class="flex items-center gap-1">
+                        <div
+                          class="w-1 h-1 rounded-full"
+                          :style="{ backgroundColor: clip.session_run_color || '#8B5CF6' }"
+                        ></div>
+                        Run {{ clip.run_number }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <!-- Footer with Pagination -->
-        <div v-if="folderTotalPages > 1" class="px-6 py-4 border-t border-border bg-muted/10 flex justify-center">
+        <!-- Footer with Pagination (only for segments tab) -->
+        <div v-if="folderActiveTab === 'segments' && folderTotalPages > 1" class="px-6 py-4 border-t border-border bg-muted/10 flex justify-center">
           <PaginationFooter
             :current-page="folderCurrentPage"
             :total-pages="folderTotalPages"
@@ -775,18 +1004,29 @@
     Check,
     Sparkles,
     Loader2,
+    Video,
+    Flame,
+    ExternalLink,
+    PlayIcon,
+    Hammer,
+    DownloadIcon,
+    ChevronDownIcon,
+    BrainIcon,
   } from 'lucide-vue-next';
   import {
     getAllProjects,
     getClipsWithVersionsByProjectId,
+    getClipsWithVersionsForProjectAndChildren,
     deleteProject,
     createProject,
     updateProject,
     getRawVideosByProjectId,
     hasRawVideosForProject,
     hasClipsForProject,
+    deleteClip,
     type Project,
     type RawVideo,
+    type ClipWithVersionAndSegment,
   } from '@/services/database';
   import { extractMintId } from '@/services/pumpfun';
   import { useFormatters } from '@/composables/useFormatters';
@@ -804,10 +1044,13 @@
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import DownloadCard from '@/components/DownloadCard.vue';
   import ClipDetectionConfirmDialog from '@/components/ClipDetectionConfirmDialog.vue';
+  import ClipBuildSettingsDialog, { type BuildSettings } from '@/components/ClipBuildSettingsDialog.vue';
+  import ClipPreviewDialog from '@/components/ClipPreviewDialog.vue';
   import { useChunkedClipDetection } from '@/composables/useChunkedClipDetection';
   import { useAuthStore } from '@/stores/auth';
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
   import { Button } from '@/components/ui/button';
+  import { save } from '@tauri-apps/plugin-dialog';
 
   const projects = ref<Project[]>([]);
   const loading = ref(true);
@@ -1096,8 +1339,176 @@
   const folderCurrentPage = ref(1);
   const folderItemsPerPage = 6;
 
+  // Folder dialog tabs and clips
+  const folderActiveTab = ref<'segments' | 'clips'>('segments');
+  const folderClips = ref<ClipWithVersionAndSegment[]>([]);
+  const folderClipsLoading = ref(false);
+  const folderClipToBuild = ref<ClipWithVersionAndSegment | null>(null);
+  const showFolderBuildDialog = ref(false);
+  const folderDownloadDropdownId = ref<string | null>(null);
+  const showClipPreview = ref(false);
+  const clipToPreview = ref<ClipWithVersionAndSegment | null>(null);
+
   function getFolderChildren(projectId: string): Project[] {
     return childrenMap.value.get(projectId) || [];
+  }
+
+  // Load clips for folder view
+  async function loadFolderClips(projectId: string) {
+    folderClipsLoading.value = true;
+    try {
+      folderClips.value = await getClipsWithVersionsForProjectAndChildren(projectId);
+    } catch (e) {
+      console.error('Failed to load folder clips:', e);
+      folderClips.value = [];
+    } finally {
+      folderClipsLoading.value = false;
+    }
+  }
+
+  // Get total clips count for folder
+  const folderTotalClipsCount = computed(() => {
+    if (!folderProject.value) return 0;
+    const children = getFolderChildren(folderProject.value.id);
+    return children.reduce((acc, child) => acc + (clipCounts.value[child.id] || 0), 0);
+  });
+
+  // Handle folder tab change
+  function onFolderTabChange(tab: 'segments' | 'clips') {
+    folderActiveTab.value = tab;
+    if (tab === 'clips' && folderProject.value && folderClips.value.length === 0) {
+      loadFolderClips(folderProject.value.id);
+    }
+  }
+
+  // Open segment workspace and navigate to specific clip
+  function openSegmentWithClip(clip: ClipWithVersionAndSegment) {
+    const segmentProject = projects.value.find((p) => p.id === clip.segment_id);
+    if (segmentProject) {
+      showFolderDialog.value = false;
+      openWorkspace(segmentProject);
+    }
+  }
+
+  // Preview clip in popup player
+  function previewClip(clip: ClipWithVersionAndSegment) {
+    clipToPreview.value = clip;
+    showClipPreview.value = true;
+  }
+
+  // Close clip preview
+  function closeClipPreview() {
+    showClipPreview.value = false;
+    clipToPreview.value = null;
+  }
+
+  // Delete clip from folder view
+  async function deleteFolderClip(clipId: string) {
+    try {
+      await deleteClip(clipId);
+      folderClips.value = folderClips.value.filter((c) => c.id !== clipId);
+      await loadProjects();
+      success('Clip deleted', 'The clip has been removed.');
+    } catch (e) {
+      error('Failed to delete clip', 'An error occurred while deleting the clip.');
+    }
+  }
+
+  // Build clip from folder view
+  function onFolderBuildClip(clip: ClipWithVersionAndSegment) {
+    folderClipToBuild.value = clip;
+    showFolderBuildDialog.value = true;
+  }
+
+  // Handle build confirmation
+  async function onFolderBuildConfirm(settings: BuildSettings) {
+    if (!folderClipToBuild.value) return;
+    const clip = folderClipToBuild.value;
+
+    try {
+      // Get the video file for this clip's segment
+      const videos = projectVideos.value[clip.segment_id];
+      if (!videos || videos.length === 0) {
+        error('No video found', 'Cannot find the source video for this clip.');
+        return;
+      }
+      const videoPath = videos[0].file_path;
+
+      // Start the build
+      await invoke('build_clip', {
+        clipId: clip.id,
+        videoPath,
+        startTime: clip.current_version?.start_time ?? clip.start_time ?? 0,
+        endTime: clip.current_version?.end_time ?? clip.end_time ?? 0,
+        aspectRatios: settings.aspectRatios,
+        quality: settings.quality,
+        frameRate: settings.frameRate,
+        outputFormat: settings.format,
+        introPath: settings.intro?.file_path || null,
+        outroPath: settings.outro?.file_path || null,
+        watermarkSettings: settings.watermark,
+      });
+
+      success('Build started', 'Your clip is being built in the background.');
+      showFolderBuildDialog.value = false;
+      folderClipToBuild.value = null;
+
+      // Refresh clips to get updated build status
+      if (folderProject.value) {
+        setTimeout(() => loadFolderClips(folderProject.value!.id), 1000);
+      }
+    } catch (e) {
+      error('Build failed', e instanceof Error ? e.message : 'An error occurred while building the clip.');
+    }
+  }
+
+  // Download built clip
+  async function onFolderSaveBuiltClip(clip: ClipWithVersionAndSegment) {
+    if (!clip.built_file_path) return;
+
+    try {
+      const defaultName = `${clip.current_version?.name || clip.name || 'clip'}.mp4`;
+      const savePath = await save({
+        defaultPath: defaultName,
+        filters: [{ name: 'Video', extensions: ['mp4'] }],
+      });
+
+      if (savePath) {
+        await invoke('copy_file', { source: clip.built_file_path, destination: savePath });
+        success('Clip saved', 'Your clip has been saved successfully.');
+      }
+    } catch (e) {
+      error('Save failed', 'Failed to save the clip file.');
+    }
+  }
+
+  // Toggle download dropdown
+  function toggleFolderDownloadDropdown(clipId: string) {
+    folderDownloadDropdownId.value = folderDownloadDropdownId.value === clipId ? null : clipId;
+  }
+
+  // Helper functions for clip display
+  function getClipDuration(clip: ClipWithVersionAndSegment): string {
+    const startTime = clip.current_version?.start_time ?? clip.start_time ?? 0;
+    const endTime = clip.current_version?.end_time ?? clip.end_time ?? 0;
+    const duration = endTime - startTime;
+    return formatDuration(duration);
+  }
+
+  function formatClipTime(seconds: number): string {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  function getViralityColorClass(score: number): string {
+    if (score >= 80) return 'bg-orange-500/20 text-orange-400 border border-orange-500/30';
+    if (score >= 60) return 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30';
+    return 'bg-blue-500/20 text-blue-400 border border-blue-500/30';
+  }
+
+  function hasCompletedBuilds(clip: ClipWithVersionAndSegment): boolean {
+    return clip.build_status === 'completed' || Boolean(clip.built_file_path);
   }
 
   const paginatedFolderChildren = computed(() => {
@@ -1118,7 +1529,11 @@
         // Open folder dialog if more than 1 child
         folderProject.value = project;
         folderCurrentPage.value = 1; // Reset to first page
+        folderActiveTab.value = 'segments'; // Reset to segments tab
+        folderClips.value = []; // Clear clips
         showFolderDialog.value = true;
+        // Preload clips in background
+        loadFolderClips(project.id);
       } else {
         // If only 1 child, open that child directly (or the parent workspace if that's preferred logic)
         // The user requested "looks like normal project card" if 1 segment.

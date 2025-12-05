@@ -408,6 +408,7 @@ pub fn run() {
             storage::get_video_duration,
             storage::copy_watermark_to_storage,
             storage::delete_watermark_file,
+            storage::merge_video_segments,
 
             // Assets commands
             assets::upload_asset_async,
