@@ -207,49 +207,88 @@ defmodule ClippsterServer.AI.LayoutAnalyzer do
     free_quadrants = spatial_analysis.free_quadrants
     coverage = spatial_analysis.coverage_percentage
 
+    # Log classification details for debugging
+    if speaker_count > 0 do
+      primary = speaker_analysis.primary_speaker
+      {h_pos, v_pos} = primary.position_category
+      is_corner = is_corner_position?(primary)
+      is_centered = is_centered?(primary)
+      
+      IO.puts("[LayoutAnalyzer] Classification details:")
+      IO.puts("  Speaker count: #{speaker_count}")
+      IO.puts("  Position: #{inspect(h_pos)}, #{inspect(v_pos)}")
+      IO.puts("  Is corner: #{is_corner}, Is centered: #{is_centered}")
+      IO.puts("  Coverage: #{Float.round(coverage, 4)}")
+      IO.puts("  Free quadrants: #{length(free_quadrants)} (#{inspect(free_quadrants)})")
+      IO.puts("  Movement variance: #{Float.round(movement_variance, 4)}")
+      IO.puts("  Speaker centroid: (#{Float.round(primary.centroid.x, 3)}, #{Float.round(primary.centroid.y, 3)})")
+      IO.puts("  Speaker bbox: (#{Float.round(primary.average_bbox.x, 3)}, #{Float.round(primary.average_bbox.y, 3)}, #{Float.round(primary.average_bbox.width, 3)}, #{Float.round(primary.average_bbox.height, 3)})")
+    end
+
     # Classification logic based on the plan's decision table
-    cond do
+    result = cond do
       # No faces detected
       speaker_count == 0 ->
         {:unknown, 0.3}
 
       # Gaming/Screen share: Single speaker in corner, large free area
+      # More lenient: if speaker is in bottom corner (common for facecams), classify as gaming
       speaker_count == 1 and 
         is_corner_position?(speaker_analysis.primary_speaker) and 
         length(free_quadrants) >= 2 and 
-        coverage < 0.15 ->
+        coverage < 0.20 ->  # Increased threshold from 0.15 to 0.20
+        IO.puts("[LayoutAnalyzer] Classified as GAMING (corner position, free quadrants, low coverage)")
         {:gaming, 0.85}
+
+      # Gaming/Screen share: Single speaker in bottom corner (common facecam position)
+      # Even if coverage is slightly higher, if speaker is clearly in bottom corner, it's likely gaming
+      speaker_count == 1 and 
+        is_bottom_corner?(speaker_analysis.primary_speaker) and 
+        coverage < 0.25 ->
+        IO.puts("[LayoutAnalyzer] Classified as GAMING (bottom corner position)")
+        {:gaming, 0.75}
 
       # IRL/Mobile: Single speaker with high movement
       speaker_count == 1 and movement_variance > 0.08 ->
+        IO.puts("[LayoutAnalyzer] Classified as IRL (high movement)")
         {:irl, 0.80}
 
       # Talking head: Single centered speaker, low movement
       speaker_count == 1 and 
         is_centered?(speaker_analysis.primary_speaker) and 
         movement_variance < 0.05 ->
+        IO.puts("[LayoutAnalyzer] Classified as TALKING_HEAD (centered, low movement)")
         {:talking_head, 0.90}
 
       # Single speaker, not clearly categorized
       speaker_count == 1 ->
         if movement_variance > 0.04 do
+          IO.puts("[LayoutAnalyzer] Classified as IRL (moderate movement)")
           {:irl, 0.65}
         else
+          IO.puts("[LayoutAnalyzer] Classified as TALKING_HEAD (default fallback)")
           {:talking_head, 0.70}
         end
 
       # Multi-speaker in same region (podcast style)
       speaker_count >= 2 and position_spread < 0.35 ->
+        IO.puts("[LayoutAnalyzer] Classified as PODCAST")
         {:podcast, 0.80}
 
       # Multi-speaker in different regions
       speaker_count >= 2 and position_spread >= 0.35 ->
+        IO.puts("[LayoutAnalyzer] Classified as MULTI_SPEAKER")
         {:multi_speaker, 0.85}
 
       # Default fallback
       true ->
+        IO.puts("[LayoutAnalyzer] Classified as UNKNOWN (fallback)")
         {:unknown, 0.4}
     end
+
+    {video_type, confidence} = result
+    IO.puts("[LayoutAnalyzer] Final classification: #{video_type} (confidence: #{Float.round(confidence, 2)})")
+    result
   end
 
   @doc """
@@ -258,6 +297,7 @@ defmodule ClippsterServer.AI.LayoutAnalyzer do
   """
   def identify_content_regions(speakers, _dimensions) when length(speakers) == 0 do
     # No speakers - entire frame is content
+    IO.puts("[LayoutAnalyzer] No speakers detected - entire frame is content")
     [%{
       type: :full_frame,
       bbox: %{x: 0.0, y: 0.0, width: 1.0, height: 1.0},
@@ -265,10 +305,14 @@ defmodule ClippsterServer.AI.LayoutAnalyzer do
     }]
   end
   def identify_content_regions(speakers, _dimensions) do
+    IO.puts("[LayoutAnalyzer] Identifying content regions for #{length(speakers)} speaker(s)")
+    
     # Get all speaker bboxes
     speaker_areas = Enum.map(speakers, fn s ->
       # Expand bbox slightly for safety margin
-      expand_bbox(s.average_bbox, 0.05)
+      expanded = expand_bbox(s.average_bbox, 0.05)
+      IO.puts("  Speaker bbox: (#{Float.round(s.average_bbox.x, 3)}, #{Float.round(s.average_bbox.y, 3)}, #{Float.round(s.average_bbox.width, 3)}, #{Float.round(s.average_bbox.height, 3)})")
+      expanded
     end)
 
     # Find largest free regions
@@ -291,31 +335,43 @@ defmodule ClippsterServer.AI.LayoutAnalyzer do
 
     # Group adjacent free cells into regions
     free_cells = cells |> Enum.filter(fn {_, _, free} -> free end)
+    IO.puts("  Free cells: #{length(free_cells)}/#{grid_size * grid_size}")
     
-    # Find contiguous free regions (simplified - just identify quadrants)
-    regions = [:top_left, :top_right, :bottom_left, :bottom_right]
-    |> Enum.map(fn quadrant ->
-      quadrant_cells = get_quadrant_cells(free_cells, quadrant, grid_size)
-      if length(quadrant_cells) >= 2 do
-        %{
-          type: :content_area,
-          quadrant: quadrant,
-          bbox: quadrant_to_bbox(quadrant),
-          cell_count: length(quadrant_cells),
-          priority: if(length(quadrant_cells) >= 3, do: :primary, else: :secondary)
-        }
-      else
-        nil
-      end
-    end)
-    |> Enum.filter(& &1)
-    |> Enum.sort_by(fn r -> -r.cell_count end)
-
+    # Find contiguous free regions - use improved algorithm
+    # First, try to find large contiguous areas (not just quadrants)
+    regions = find_contiguous_regions(free_cells, grid_size, speaker_areas)
+    
     if length(regions) > 0 do
       regions
     else
-      # No clear content regions found
-      []
+      # Fallback: use quadrant-based detection
+      quadrant_regions = [:top_left, :top_right, :bottom_left, :bottom_right]
+      |> Enum.map(fn quadrant ->
+        quadrant_cells = get_quadrant_cells(free_cells, quadrant, grid_size)
+        cell_count = length(quadrant_cells)
+        if cell_count >= 2 do
+          region = %{
+            type: :content_area,
+            quadrant: quadrant,
+            bbox: quadrant_to_bbox(quadrant),
+            cell_count: cell_count,
+            priority: if(cell_count >= 3, do: :primary, else: :secondary)
+          }
+          IO.puts("  Content region: #{quadrant} (#{cell_count} cells, #{region.priority})")
+          region
+        else
+          nil
+        end
+      end)
+      |> Enum.filter(& &1)
+      |> Enum.sort_by(fn r -> -r.cell_count end)
+      
+      if length(quadrant_regions) > 0 do
+        quadrant_regions
+      else
+        # Last resort: create content region based on speaker position
+        create_fallback_content_region(speakers)
+      end
     end
   end
 
@@ -323,39 +379,68 @@ defmodule ClippsterServer.AI.LayoutAnalyzer do
   Determines the recommended framing strategy based on video type and analysis.
   """
   def determine_framing_strategy(video_type, speaker_analysis, content_regions) do
-    case video_type do
+    content_region_count = length(content_regions)
+    
+    IO.puts("[LayoutAnalyzer] Determining framing strategy:")
+    IO.puts("  Video type: #{video_type}")
+    IO.puts("  Content regions: #{content_region_count}")
+    
+    result = case video_type do
       :gaming ->
         # Split screen: speaker bottom, content top
+        IO.puts("[LayoutAnalyzer] Using split_screen (gaming)")
         :split_screen
 
       :talking_head ->
-        # Simple static crop centered on speaker
-        :static
+        # If content regions are detected, use split screen even for talking_head
+        # This handles cases where facecam is in corner but wasn't classified as gaming
+        if content_region_count > 0 do
+          IO.puts("[LayoutAnalyzer] Using split_screen (talking_head with content regions)")
+          :split_screen
+        else
+          # Simple static crop centered on speaker
+          IO.puts("[LayoutAnalyzer] Using static (talking_head)")
+          :static
+        end
 
       :irl ->
         # Dynamic panning to follow speaker
+        IO.puts("[LayoutAnalyzer] Using dynamic_pan (irl)")
         :dynamic_pan
 
       :multi_speaker ->
-        if length(content_regions) > 0 do
+        if content_region_count > 0 do
+          IO.puts("[LayoutAnalyzer] Using split_screen (multi_speaker with content regions)")
           :split_screen
         else
           # Pan between speakers or static wide shot
+          IO.puts("[LayoutAnalyzer] Using dynamic_pan (multi_speaker)")
           :dynamic_pan
         end
 
       :podcast ->
         # Static wide shot or split screen if speakers far apart
         if speaker_analysis.position_spread > 0.25 do
+          IO.puts("[LayoutAnalyzer] Using split_screen (podcast, speakers far apart)")
           :split_screen
         else
+          IO.puts("[LayoutAnalyzer] Using static (podcast)")
           :static
         end
 
       _ ->
-        # Default to static centered crop
-        :static
+        # Default to static centered crop, but prefer split_screen if content regions exist
+        if content_region_count > 0 do
+          IO.puts("[LayoutAnalyzer] Using split_screen (unknown type with content regions)")
+          :split_screen
+        else
+          IO.puts("[LayoutAnalyzer] Using static (default fallback)")
+          :static
+        end
     end
+    
+    IO.puts("[LayoutAnalyzer] Recommended framing: #{result}")
+    result
   end
 
   # Helper functions
@@ -439,6 +524,11 @@ defmodule ClippsterServer.AI.LayoutAnalyzer do
     h == :center
   end
 
+  defp is_bottom_corner?(speaker) do
+    {h, v} = speaker.position_category
+    (h == :left or h == :right) and v == :bottom
+  end
+
   defp expand_bbox(bbox, margin) do
     %{
       x: max(0.0, bbox.x - margin),
@@ -480,5 +570,152 @@ defmodule ClippsterServer.AI.LayoutAnalyzer do
       :bottom_right -> %{x: 0.5, y: 0.5, width: 0.5, height: 0.5}
     end
   end
+
+  # Find contiguous free regions using improved algorithm
+  # Groups adjacent free cells into larger regions
+  defp find_contiguous_regions(free_cells, grid_size, _speaker_areas) do
+    # Group cells by adjacency
+    groups = group_adjacent_cells(free_cells, grid_size)
+    
+    # Convert groups to regions
+    regions = groups
+    |> Enum.filter(fn group -> length(group) >= 2 end)  # At least 2 cells
+    |> Enum.map(fn group ->
+      # Calculate bounding box for this group
+      min_row = Enum.min(Enum.map(group, fn {r, _, _} -> r end))
+      max_row = Enum.max(Enum.map(group, fn {r, _, _} -> r end))
+      min_col = Enum.min(Enum.map(group, fn {_, c, _} -> c end))
+      max_col = Enum.max(Enum.map(group, fn {_, c, _} -> c end))
+      
+      bbox = %{
+        x: min_col / grid_size,
+        y: min_row / grid_size,
+        width: (max_col - min_col + 1) / grid_size,
+        height: (max_row - min_row + 1) / grid_size
+      }
+      
+      # Determine quadrant (if applicable)
+      quadrant = if bbox.width >= 0.4 and bbox.height >= 0.4 do
+        cond do
+          bbox.x < 0.5 and bbox.y < 0.5 -> :top_left
+          bbox.x >= 0.5 and bbox.y < 0.5 -> :top_right
+          bbox.x < 0.5 and bbox.y >= 0.5 -> :bottom_left
+          true -> :bottom_right
+        end
+      else
+        nil
+      end
+      
+      %{
+        type: :content_area,
+        quadrant: quadrant,
+        bbox: bbox,
+        cell_count: length(group),
+        priority: if(length(group) >= 4, do: :primary, else: :secondary)
+      }
+    end)
+    |> Enum.sort_by(fn r -> -r.cell_count end)
+    
+    if length(regions) > 0 do
+      IO.puts("[LayoutAnalyzer] Found #{length(regions)} contiguous content region(s)")
+      regions
+    else
+      []
+    end
+  end
+
+  # Group adjacent cells into contiguous regions
+  defp group_adjacent_cells(cells, _grid_size) do
+    # Simple grouping: cells are adjacent if they share a row or col and are next to each other
+    groups = Enum.reduce(cells, [], fn cell, acc ->
+      {row, col, _} = cell
+      
+      # Find existing groups that this cell is adjacent to
+      {adjacent_groups, other_groups} = Enum.split_with(acc, fn group ->
+        Enum.any?(group, fn {r, c, _} ->
+          (r == row and abs(c - col) == 1) or (c == col and abs(r - row) == 1)
+        end)
+      end)
+      
+      # Merge adjacent groups and add this cell
+      merged_group = Enum.reduce(adjacent_groups, [cell], fn group, merged ->
+        merged ++ group
+      end)
+      
+      other_groups ++ [merged_group]
+    end)
+    
+    groups
+  end
+
+  # Create fallback content region based on speaker position
+  defp create_fallback_content_region(speakers) when length(speakers) == 0 do
+    IO.puts("[LayoutAnalyzer] No speakers - entire frame is content")
+    [%{
+      type: :full_frame,
+      bbox: %{x: 0.0, y: 0.0, width: 1.0, height: 1.0},
+      priority: :primary
+    }]
+  end
+  defp create_fallback_content_region(speakers) do
+    if length(speakers) == 1 do
+      primary = hd(speakers)
+      {h_pos, v_pos} = primary.position_category
+      
+      # If speaker is in corner, create content region for opposite area
+      if (h_pos == :left or h_pos == :right) and (v_pos == :top or v_pos == :bottom) do
+        # Speaker in corner - create content region for center/opposite area
+        content_bbox = cond do
+          h_pos == :left and v_pos == :bottom ->
+            # Speaker bottom-left - content is top/center-right
+            %{x: 0.3, y: 0.0, width: 0.7, height: 0.7}
+          h_pos == :right and v_pos == :bottom ->
+            # Speaker bottom-right - content is top/center-left
+            %{x: 0.0, y: 0.0, width: 0.7, height: 0.7}
+          h_pos == :left and v_pos == :top ->
+            # Speaker top-left - content is bottom/center-right
+            %{x: 0.3, y: 0.3, width: 0.7, height: 0.7}
+          h_pos == :right and v_pos == :top ->
+            # Speaker top-right - content is bottom/center-left
+            %{x: 0.0, y: 0.3, width: 0.7, height: 0.7}
+          true ->
+            # Speaker centered - content is around edges
+            %{x: 0.1, y: 0.1, width: 0.8, height: 0.8}
+        end
+        
+        quadrant = cond do
+          h_pos == :left -> :top_right
+          h_pos == :right -> :top_left
+          true -> nil
+        end
+        
+        region = %{
+          type: :content_area,
+          quadrant: quadrant,
+          bbox: content_bbox,
+          cell_count: 8,
+          priority: :primary
+        }
+        IO.puts("[LayoutAnalyzer] Created fallback content region (speaker in #{inspect(h_pos)}-#{inspect(v_pos)})")
+        [region]
+      else
+        # Speaker not in corner - create center content region
+        region = %{
+          type: :content_area,
+          quadrant: nil,
+          bbox: %{x: 0.2, y: 0.2, width: 0.6, height: 0.6},
+          cell_count: 6,
+          priority: :primary
+        }
+        IO.puts("[LayoutAnalyzer] Created fallback content region (speaker centered)")
+        [region]
+      end
+    else
+      # Multiple speakers - create content region in largest free area
+      IO.puts("[LayoutAnalyzer] Multiple speakers - no fallback content region")
+      []
+    end
+  end
+
 end
 

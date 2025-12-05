@@ -998,45 +998,138 @@ pub async fn build_split_screen_clip(
     println!("[Rust] Top split aspect: {:.4} ({}x{})", top_split_aspect, output_w, top_output_height);
     println!("[Rust] Bottom split aspect: {:.4} ({}x{})", bottom_split_aspect, output_w, bottom_output_height);
 
-    // Get normalized crop centers from the layout (or use defaults)
+    // Get normalized crop regions from the layout
     let top_crop = &layout.top_region;
     let bottom_crop = &layout.bottom_region;
     
     // Calculate top region center point (from normalized coords)
+    // Use the center point from the crop region (calculated intelligently by Elixir)
     let top_center_x = top_crop.x + top_crop.width / 2.0;
     let top_center_y = top_crop.y + top_crop.height / 2.0;
     
-    // Calculate bottom region center point
+    // Calculate bottom region center point (speaker position)
     let bottom_center_x = bottom_crop.x + bottom_crop.width / 2.0;
     let bottom_center_y = bottom_crop.y + bottom_crop.height / 2.0;
     
     // Calculate crop dimensions that maintain the correct aspect ratio for each split
     // Top region: crop from source with aspect ratio matching top_split_aspect
+    // Use full available area (no zoom constraint)
     let (top_crop_w, top_crop_h, top_x, top_y) = calculate_aspect_preserving_crop(
         source_w as u32, source_h as u32,
         top_split_aspect,
         top_center_x, top_center_y
     );
     
-    // Bottom region: crop from source with aspect ratio matching bottom_split_aspect  
-    let (bottom_crop_w, bottom_crop_h, bottom_x, bottom_y) = calculate_aspect_preserving_crop(
-        source_w as u32, source_h as u32,
-        bottom_split_aspect,
-        bottom_center_x, bottom_center_y
-    );
+    // Bottom region: crop from source with aspect ratio matching bottom_split_aspect
+    // Use the width/height from layout as maximum bounds to zoom into facecam
+    // CRITICAL: Always maintain exact aspect ratio - never stretch!
+    // For facecam, we want aggressive zooming - apply constraint if crop size is smaller than full frame
+    let (bottom_crop_w, bottom_crop_h, bottom_x, bottom_y) = 
+        if bottom_crop.width > 0.0 && bottom_crop.height > 0.0 && 
+           (bottom_crop.width < 0.8 || bottom_crop.height < 0.8) {
+            // Layout specifies a zoomed crop size - use it as constraint
+            // Calculate the maximum crop size that fits within the constraint AND maintains aspect ratio
+            let max_w_norm = bottom_crop.width;
+            let max_h_norm = bottom_crop.height;
+            
+            // Calculate what the dimensions would be if we use max width (maintaining aspect ratio)
+            let w_based_h = max_w_norm / bottom_split_aspect;
+            // Calculate what the dimensions would be if we use max height (maintaining aspect ratio)
+            let h_based_w = max_h_norm * bottom_split_aspect;
+            
+            // Use the constraint that gives us the smaller crop (more zoom)
+            let (final_w_norm, final_h_norm) = if w_based_h <= max_h_norm {
+                // Width constraint is tighter - use it
+                (max_w_norm, w_based_h)
+            } else {
+                // Height constraint is tighter - use it
+                (h_based_w, max_h_norm)
+            };
+            
+            // Convert to pixel dimensions
+            let mut final_w = (source_w * final_w_norm) as u32;
+            let mut final_h = (source_h * final_h_norm) as u32;
+            
+            // Ensure we don't exceed source dimensions
+            final_w = final_w.min(source_w as u32);
+            final_h = final_h.min(source_h as u32);
+            
+            // Recalculate to ensure exact aspect ratio (fix any rounding errors)
+            let (recalc_w, recalc_h, _, _) = calculate_aspect_preserving_crop(
+                source_w as u32, source_h as u32,
+                bottom_split_aspect,
+                bottom_center_x, bottom_center_y
+            );
+            
+            // Use the smaller of the two to ensure we zoom in (respect the constraint)
+            // But maintain aspect ratio - choose the dimension that gives us the smaller crop
+            let constraint_max_w = (source_w * final_w_norm) as u32;
+            let constraint_max_h = (source_h * final_h_norm) as u32;
+            
+            // Calculate what each constraint would give us while maintaining aspect ratio
+            let w_from_constraint_w = constraint_max_w;
+            let h_from_constraint_w = (w_from_constraint_w as f64 / bottom_split_aspect) as u32;
+            
+            let h_from_constraint_h = constraint_max_h;
+            let w_from_constraint_h = (h_from_constraint_h as f64 * bottom_split_aspect) as u32;
+            
+            // Use the constraint that gives us the smaller crop (more zoom)
+            // For facecam, prioritize the constraint to ensure maximum zoom
+            let (final_w, final_h) = if w_from_constraint_w <= recalc_w && h_from_constraint_w <= recalc_h {
+                // Width-based constraint fits and is smaller - use it for maximum zoom
+                (w_from_constraint_w, h_from_constraint_w)
+            } else if w_from_constraint_h <= recalc_w && h_from_constraint_h <= recalc_h {
+                // Height-based constraint fits and is smaller - use it for maximum zoom
+                (w_from_constraint_h, h_from_constraint_h)
+            } else if constraint_max_w < recalc_w || constraint_max_h < recalc_h {
+                // Constraint is smaller than calculated - use constraint even if slightly off
+                // This ensures we respect the aggressive zoom requested
+                if w_from_constraint_w < recalc_w {
+                    (w_from_constraint_w, h_from_constraint_w)
+                } else {
+                    (w_from_constraint_h, h_from_constraint_h)
+                }
+            } else {
+                // Use the calculated crop (no constraint applied)
+                (recalc_w, recalc_h)
+            };
+            
+            // Recalculate position to center on speaker with new dimensions
+            let center_x_px = (source_w * bottom_center_x) as i32;
+            let center_y_px = (source_h * bottom_center_y) as i32;
+            
+            let mut final_x = center_x_px - (final_w as i32 / 2);
+            let mut final_y = center_y_px - (final_h as i32 / 2);
+            
+            // Clamp to valid range
+            let source_w_u32 = source_w as u32;
+            let source_h_u32 = source_h as u32;
+            final_x = final_x.max(0).min((source_w_u32.saturating_sub(final_w)) as i32);
+            final_y = final_y.max(0).min((source_h_u32.saturating_sub(final_h)) as i32);
+            
+            (final_w, final_h, final_x as u32, final_y as u32)
+        } else {
+            // No zoom constraint - use normal aspect-preserving crop
+            calculate_aspect_preserving_crop(
+                source_w as u32, source_h as u32,
+                bottom_split_aspect,
+                bottom_center_x, bottom_center_y
+            )
+        };
     
     println!("[Rust] Top crop: {}x{} at ({},{})", top_crop_w, top_crop_h, top_x, top_y);
     println!("[Rust] Bottom crop: {}x{} at ({},{})", bottom_crop_w, bottom_crop_h, bottom_x, bottom_y);
 
     // Build complex filter for split screen
     // Each crop maintains the correct aspect ratio for its output region
+    // Use force_original_aspect_ratio=decrease to prevent stretching - crop to fit instead
     let filter_complex = format!(
         "[0:v]split=2[top_src][bottom_src];\
-        [top_src]crop={}:{}:{}:{},scale={}:{}:flags=lanczos[top];\
-        [bottom_src]crop={}:{}:{}:{},scale={}:{}:flags=lanczos[bottom];\
+        [top_src]crop={}:{}:{}:{},scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2:black[top];\
+        [bottom_src]crop={}:{}:{}:{},scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2:black[bottom];\
         [top][bottom]vstack=inputs=2[outv]",
-        top_crop_w, top_crop_h, top_x, top_y, output_w, top_output_height,
-        bottom_crop_w, bottom_crop_h, bottom_x, bottom_y, output_w, bottom_output_height
+        top_crop_w, top_crop_h, top_x, top_y, output_w, top_output_height, output_w, top_output_height,
+        bottom_crop_w, bottom_crop_h, bottom_x, bottom_y, output_w, bottom_output_height, output_w, bottom_output_height
     );
 
     // Detect hardware encoder

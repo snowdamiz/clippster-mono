@@ -77,15 +77,26 @@ defmodule ClippsterServer.AI.FramingStrategy do
   Builds a split screen strategy with speaker region and content region.
   """
   def build_split_screen_strategy(speakers, layout_analysis, video_dims, target_w, target_h) do
+    IO.puts("[FramingStrategy] Building split screen strategy")
+    IO.puts("  Speakers: #{length(speakers)}")
+    IO.puts("  Content regions: #{length(layout_analysis.content_regions)}")
+    
     # Determine split ratio (default 50/50, can be adjusted)
     split_ratio = determine_split_ratio(speakers, layout_analysis)
+    IO.puts("  Split ratio: #{Float.round(split_ratio, 3)} (top: #{Float.round(split_ratio * 100, 1)}%, bottom: #{Float.round((1.0 - split_ratio) * 100, 1)}%)")
     
     # Get primary speaker for bottom region
     primary_speaker = List.first(speakers)
     
+    if primary_speaker do
+      IO.puts("  Primary speaker centroid: (#{Float.round(primary_speaker.centroid.x, 3)}, #{Float.round(primary_speaker.centroid.y, 3)})")
+    end
+    
     # Get content region for top
     content_region = List.first(layout_analysis.content_regions) || 
       %{bbox: %{x: 0.0, y: 0.0, width: 1.0, height: 0.5}}
+    
+    IO.puts("  Content region bbox: (#{Float.round(content_region.bbox.x, 3)}, #{Float.round(content_region.bbox.y, 3)}, #{Float.round(content_region.bbox.width, 3)}, #{Float.round(content_region.bbox.height, 3)})")
 
     # Calculate crop regions for each split
     {bottom_crop, top_crop} = calculate_split_crops(
@@ -96,6 +107,9 @@ defmodule ClippsterServer.AI.FramingStrategy do
       target_h,
       split_ratio
     )
+    
+    IO.puts("  Top crop: (#{Float.round(top_crop.x, 3)}, #{Float.round(top_crop.y, 3)}, #{Float.round(top_crop.width, 3)}, #{Float.round(top_crop.height, 3)})")
+    IO.puts("  Bottom crop: (#{Float.round(bottom_crop.x, 3)}, #{Float.round(bottom_crop.y, 3)}, #{Float.round(bottom_crop.width, 3)}, #{Float.round(bottom_crop.height, 3)})")
 
     %{
       mode: :split_screen,
@@ -224,37 +238,207 @@ defmodule ClippsterServer.AI.FramingStrategy do
       {top_split_aspect / source_aspect, 1.0}
     end
     
-    # Get content center for top region
-    content_center_x = content_region.bbox.x + content_region.bbox.width / 2
-    content_center_y = content_region.bbox.y + content_region.bbox.height / 2
+    # Intelligently determine top region center based on content region
+    # If content region is detected, use its center; otherwise use screen center
+    {top_center_x, top_center_y} = if content_region && content_region.bbox do
+      # Use content region center, but intelligently adjust based on region type
+      content_center_x = content_region.bbox.x + content_region.bbox.width / 2
+      content_center_y = content_region.bbox.y + content_region.bbox.height / 2
+      
+      # If content region is a specific quadrant, prefer center of screen for better framing
+      # Otherwise use the detected center
+      case content_region.quadrant do
+        nil ->
+          # No specific quadrant - use detected center
+          {content_center_x, content_center_y}
+        _quadrant ->
+          # Quadrant detected - blend between quadrant center and screen center
+          # This prevents off-center crops for quadrant-based detections
+          quadrant_center_x = case content_region.quadrant do
+            :top_left -> 0.25
+            :top_right -> 0.75
+            :bottom_left -> 0.25
+            :bottom_right -> 0.75
+            _ -> 0.5
+          end
+          quadrant_center_y = case content_region.quadrant do
+            :top_left -> 0.25
+            :top_right -> 0.25
+            :bottom_left -> 0.75
+            :bottom_right -> 0.75
+            _ -> 0.5
+          end
+          
+          # Blend: 70% screen center, 30% quadrant center (prefer centered framing)
+          {0.7 * 0.5 + 0.3 * quadrant_center_x, 0.7 * 0.35 + 0.3 * quadrant_center_y}
+      end
+    else
+      # No content region - center on screen (default for presentations, screen shares, etc.)
+      {0.5, 0.4}  # Slightly above center for better framing
+    end
     
-    # Calculate top crop position (centered on content)
-    top_x = clamp(content_center_x - top_crop_w_norm / 2, 0.0, 1.0 - top_crop_w_norm)
-    top_y = clamp(content_center_y - top_crop_h_norm / 2, 0.0, 1.0 - top_crop_h_norm)
+    IO.puts("  Top crop center: (#{Float.round(top_center_x, 3)}, #{Float.round(top_center_y, 3)})")
+    
+    # Calculate top crop position (centered on content area)
+    # Use full available area - no zoom constraint
+    top_x = clamp(top_center_x - top_crop_w_norm / 2, 0.0, 1.0 - top_crop_w_norm)
+    top_y = clamp(top_center_y - top_crop_h_norm / 2, 0.0, 1.0 - top_crop_h_norm)
     
     top_crop = %{
       x: top_x,
       y: top_y,
-      width: top_crop_w_norm,
-      height: top_crop_h_norm,
+      width: top_crop_w_norm,  # Full width - no zoom constraint
+      height: top_crop_h_norm,  # Full height - no zoom constraint
       output_height_ratio: split_ratio
     }
 
-    # Bottom region crop dimensions (based on bottom_split_aspect)
-    {bottom_crop_w_norm, bottom_crop_h_norm} = if bottom_split_aspect > source_aspect do
-      # Use full width, calculate height
-      {1.0, source_aspect / bottom_split_aspect}
-    else
-      # Use full height, calculate width
-      {bottom_split_aspect / source_aspect, 1.0}
-    end
-    
-    # Get speaker center for bottom region
+    # Bottom region: Intelligently calculate zoom based on facecam size and target output
     speaker_center = if speaker do
       %{x: speaker.centroid.x, y: speaker.centroid.y}
     else
       %{x: 0.5, y: 0.75}  # Default to lower center
     end
+    
+    # Determine if speaker is in corner (facecam) or center (main subject)
+    is_corner_speaker = if speaker do
+      {h_pos, v_pos} = speaker.position_category
+      (h_pos == :left or h_pos == :right) and (v_pos == :top or v_pos == :bottom)
+    else
+      false
+    end
+    
+    # Intelligently calculate zoom based on facecam size and target output dimensions
+    # Goal: Fill 70-80% of the bottom section with the facecam
+    {calculated_crop_w, calculated_crop_h} = if speaker && is_corner_speaker do
+      # Calculate intelligent zoom for facecam
+      # Bottom section output dimensions (in pixels)
+      bottom_output_w_px = output_w  # e.g., 1080
+      bottom_output_h_px = bottom_output_h  # e.g., 960 for 50/50 split
+      
+      # Face bbox in source video (normalized 0-1)
+      face_w_norm = speaker.average_bbox.width
+      face_h_norm = speaker.average_bbox.height
+      
+      # Face bbox in source video (pixels)
+      face_w_px = face_w_norm * video_dims.width
+      face_h_px = face_h_norm * video_dims.height
+      
+      # Target: Fill 90-95% of bottom section with facecam for maximum zoom
+      # For facecam, we want it to fill almost the entire bottom section
+      # Use a higher ratio to ensure maximum zoom - the face should dominate the bottom section
+      face_fill_ratio = 0.92  # 92% of bottom section should be face (maximum zoom)
+      target_face_h_px = bottom_output_h_px * face_fill_ratio
+      
+      # Calculate zoom factor needed to achieve target face size
+      zoom_factor_h = target_face_h_px / face_h_px
+      
+      # Also check width - ensure face width fits in output after zoom
+      # Use 95% of width to allow face to fill most of the width too
+      zoomed_face_w_px = face_w_px * zoom_factor_h
+      zoom_factor = if zoomed_face_w_px > bottom_output_w_px * 0.95 do
+        # Width constraint - use width-based zoom instead
+        target_face_w_px = bottom_output_w_px * 0.95  # 95% of width (more aggressive)
+        target_face_w_px / face_w_px
+      else
+        zoom_factor_h
+      end
+      
+      IO.puts("  Intelligent zoom calculation:")
+      IO.puts("    Face bbox (norm): #{Float.round(face_w_norm, 4)} x #{Float.round(face_h_norm, 4)}")
+      IO.puts("    Face bbox (px): #{Float.round(face_w_px, 1)} x #{Float.round(face_h_px, 1)}")
+      IO.puts("    Bottom output: #{bottom_output_w_px} x #{bottom_output_h_px}")
+      IO.puts("    Target face height: #{Float.round(target_face_h_px, 1)}px (#{Float.round(face_fill_ratio * 100, 1)}% of bottom section)")
+      IO.puts("    Calculated zoom factor: #{Float.round(zoom_factor, 2)}x")
+      
+      # Calculate crop size needed to achieve this zoom
+      # Key insight: To zoom IN on the face, we need a SMALLER crop from the source
+      # 
+      # Math:
+      # - Face in source: face_h_px pixels
+      # - Face in output: target_face_h_px pixels  
+      # - Crop from source: crop_h_px pixels (what we're calculating)
+      # - Crop scaled to output: bottom_output_h_px pixels
+      #
+      # The scale factor from crop to output is: bottom_output_h_px / crop_h_px
+      # So: face_in_output = face_in_source * (bottom_output_h_px / crop_h_px)
+      # Rearranging: crop_h_px = face_h_px * (bottom_output_h_px / target_face_h_px)
+      # Since target_face_h_px = bottom_output_h_px * face_fill_ratio:
+      # crop_h_px = face_h_px / face_fill_ratio
+      # crop_h_norm = face_h_norm / face_fill_ratio
+      #
+      # Similarly for width: crop_w_norm = face_w_norm / face_fill_ratio
+      # But we need to maintain bottom_split_aspect, so we'll adjust
+      
+      # Calculate crop size: smaller crop = more zoom
+      # The crop should be sized so the face fills face_fill_ratio of the output
+      desired_crop_w_norm = face_w_norm / face_fill_ratio
+      desired_crop_h_norm = face_h_norm / face_fill_ratio
+      
+      # Adjust to maintain bottom_split_aspect ratio
+      {crop_w, crop_h} = if bottom_split_aspect > (desired_crop_w_norm / desired_crop_h_norm) do
+        # Need wider crop - use desired height, calculate width
+        {desired_crop_h_norm * bottom_split_aspect, desired_crop_h_norm}
+      else
+        # Need taller crop - use desired width, calculate height
+        {desired_crop_w_norm, desired_crop_w_norm / bottom_split_aspect}
+      end
+      
+      # Ensure crop doesn't exceed source dimensions
+      crop_w = min(crop_w, 1.0)
+      crop_h = min(crop_h, 1.0)
+      
+      # For facecam, allow ANY crop size - let the intelligent calculation determine the zoom
+      # Don't apply minimum size constraint - if the calculation says we need a tiny crop, use it
+      # This allows maximum zoom for small facecams
+      # Only ensure we don't go below a tiny absolute minimum to prevent division errors
+      absolute_min_crop_size = 0.01  # Absolute minimum 1% of frame (only for safety)
+      crop_w = max(crop_w, absolute_min_crop_size)
+      crop_h = max(crop_h, absolute_min_crop_size)
+      
+      IO.puts("    Calculated crop size (before final checks): #{Float.round(crop_w, 4)} x #{Float.round(crop_h, 4)}")
+      IO.puts("    Zoom level: #{Float.round(1.0 / max(crop_w, crop_h), 2)}x (inverse of crop size)")
+      
+      IO.puts("    Calculated crop size (norm): #{Float.round(crop_w, 4)} x #{Float.round(crop_h, 4)}")
+      
+      {crop_w, crop_h}
+    else
+      # Not a corner speaker (or no speaker) - use standard aspect-preserving crop
+      speaker_bbox_area = if speaker do
+        speaker.average_bbox.width * speaker.average_bbox.height
+      else
+        0.1
+      end
+      
+      # For centered speakers, use moderate zoom based on size
+      zoom_factor = cond do
+        speaker_bbox_area < 0.10 -> 2.5
+        speaker_bbox_area < 0.20 -> 2.0
+        true -> 1.5
+      end
+      
+      speaker_bbox_w = if speaker, do: speaker.average_bbox.width, else: 0.2
+      speaker_bbox_h = if speaker, do: speaker.average_bbox.height, else: 0.25
+      
+      desired_w = speaker_bbox_w * zoom_factor
+      desired_h = speaker_bbox_h * zoom_factor
+      
+      {crop_w, crop_h} = if bottom_split_aspect > (desired_w / desired_h) do
+        {desired_h * bottom_split_aspect, desired_h}
+      else
+        {desired_w, desired_w / bottom_split_aspect}
+      end
+      
+      # Clamp to reasonable bounds for non-facecam speakers
+      crop_w = clamp(crop_w, 0.20, 0.7)
+      crop_h = clamp(crop_h, 0.20, 0.7)
+      
+      {crop_w, crop_h}
+    end
+    
+    bottom_crop_w_norm = calculated_crop_w
+    bottom_crop_h_norm = calculated_crop_h
+    
+    IO.puts("  Final bottom crop size: #{Float.round(bottom_crop_w_norm, 4)} x #{Float.round(bottom_crop_h_norm, 4)}")
 
     # Calculate bottom crop position (centered on speaker)
     bottom_x = clamp(speaker_center.x - bottom_crop_w_norm / 2, 0.0, 1.0 - bottom_crop_w_norm)
