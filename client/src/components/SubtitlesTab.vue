@@ -6,9 +6,7 @@
         <div
           :class="[
             'w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-200 border',
-            localSettings.enabled
-              ? 'bg-gradient-to-br from-purple-500/20 to-indigo-500/20 border-purple-500/30'
-              : 'bg-gradient-to-br from-purple-500/10 to-indigo-500/10 border-purple-500/15 opacity-60',
+            'bg-gradient-to-br from-purple-500/20 to-indigo-500/20 border-purple-500/30',
           ]"
         >
           <Type :class="['h-4 w-4', localSettings.enabled ? 'text-purple-400' : 'text-purple-400/50']" />
