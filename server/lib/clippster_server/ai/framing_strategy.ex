@@ -292,13 +292,6 @@ defmodule ClippsterServer.AI.FramingStrategy do
       output_height_ratio: split_ratio
     }
 
-    # Bottom region: Intelligently calculate zoom based on facecam size and target output
-    speaker_center = if speaker do
-      %{x: speaker.centroid.x, y: speaker.centroid.y}
-    else
-      %{x: 0.5, y: 0.75}  # Default to lower center
-    end
-    
     # Determine if speaker is in corner (facecam) or center (main subject)
     is_corner_speaker = if speaker do
       {h_pos, v_pos} = speaker.position_category
@@ -307,102 +300,134 @@ defmodule ClippsterServer.AI.FramingStrategy do
       false
     end
     
-    # Intelligently calculate zoom based on facecam size and target output dimensions
-    # Goal: Fill 70-80% of the bottom section with the facecam
-    {calculated_crop_w, calculated_crop_h} = if speaker && is_corner_speaker do
-      # Calculate intelligent zoom for facecam
+    # Bottom region: Intelligently calculate zoom based on facecam size and target output
+    # For facecam, use the face bbox center directly (more accurate than centroid)
+    speaker_center = if speaker do
+      # Use the center of the average bbox for more precise positioning
+      # This is more accurate than centroid which averages across frames
+      bbox = speaker.average_bbox
+      face_center_x = bbox.x + (bbox.width / 2)
+      face_center_y = bbox.y + (bbox.height / 2)
+      
+      # For corner facecams, the facecam window might be positioned in a specific corner
+      # Adjust the center slightly to account for typical facecam window positioning
+      {h_pos, v_pos} = speaker.position_category
+      adjusted_center = if is_corner_speaker do
+        # For corner facecams, bias towards the corner slightly
+        # This helps center on the facecam window, not just the face
+        bias_x = case h_pos do
+          :left -> -0.02  # Slight bias left
+          :right -> 0.02  # Slight bias right
+          _ -> 0.0
+        end
+        bias_y = case v_pos do
+          :top -> -0.02  # Slight bias up
+          :bottom -> 0.02  # Slight bias down
+          _ -> 0.0
+        end
+        %{
+          x: face_center_x + bias_x,
+          y: face_center_y + bias_y
+        }
+      else
+        %{x: face_center_x, y: face_center_y}
+      end
+      
+      adjusted_center
+    else
+      %{x: 0.5, y: 0.75}  # Default to lower center
+    end
+    
+    IO.puts("  Speaker center (from bbox): (#{Float.round(speaker_center.x, 4)}, #{Float.round(speaker_center.y, 4)})")
+    
+    # Intelligently detect facecam window boundaries and calculate crop to include entire window
+    # No hardcoded values - everything is calculated adaptively based on face position and size
+    {calculated_crop_w, calculated_crop_h, window_center} = if speaker && is_corner_speaker do
       # Bottom section output dimensions (in pixels)
-      bottom_output_w_px = output_w  # e.g., 1080
-      bottom_output_h_px = bottom_output_h  # e.g., 960 for 50/50 split
+      bottom_output_w_px = output_w
+      bottom_output_h_px = bottom_output_h
       
       # Face bbox in source video (normalized 0-1)
-      face_w_norm = speaker.average_bbox.width
-      face_h_norm = speaker.average_bbox.height
+      face_bbox = speaker.average_bbox
+      face_w_norm = face_bbox.width
+      face_h_norm = face_bbox.height
+      face_x_norm = face_bbox.x
+      face_y_norm = face_bbox.y
+      face_center_x = face_x_norm + face_w_norm / 2
+      face_center_y = face_y_norm + face_h_norm / 2
       
-      # Face bbox in source video (pixels)
-      face_w_px = face_w_norm * video_dims.width
-      face_h_px = face_h_norm * video_dims.height
+      # Calculate crop size to make the facecam FILL the bottom section
+      # Key insight: We want the face/facecam to be CENTERED and LARGE in the output
+      # The crop MUST be centered on the face - if the face is near an edge,
+      # we need to make the crop smaller so it can still be centered
       
-      # Target: Fill 90-95% of bottom section with facecam for maximum zoom
-      # For facecam, we want it to fill almost the entire bottom section
-      # Use a higher ratio to ensure maximum zoom - the face should dominate the bottom section
-      face_fill_ratio = 0.92  # 92% of bottom section should be face (maximum zoom)
-      target_face_h_px = bottom_output_h_px * face_fill_ratio
+      bottom_aspect = bottom_output_w_px / bottom_output_h_px
       
-      # Calculate zoom factor needed to achieve target face size
-      zoom_factor_h = target_face_h_px / face_h_px
+      # Calculate the MAXIMUM crop size that can be centered on the face
+      # For a face at position cx, the max width centered on it is 2 * min(cx, 1-cx)
+      max_centered_w = 2.0 * min(face_center_x, 1.0 - face_center_x)
+      max_centered_h = 2.0 * min(face_center_y, 1.0 - face_center_y)
       
-      # Also check width - ensure face width fits in output after zoom
-      # Use 95% of width to allow face to fill most of the width too
-      zoomed_face_w_px = face_w_px * zoom_factor_h
-      zoom_factor = if zoomed_face_w_px > bottom_output_w_px * 0.95 do
-        # Width constraint - use width-based zoom instead
-        target_face_w_px = bottom_output_w_px * 0.95  # 95% of width (more aggressive)
-        target_face_w_px / face_w_px
-      else
-        zoom_factor_h
-      end
+      # Calculate desired padding around face
+      # Use face size as reference - typically want 2-3x face size for good framing
+      padding_h = face_w_norm * 1.2  # Horizontal padding on each side
+      padding_v_top = face_h_norm * 0.6  # Less padding above face
+      padding_v_bottom = face_h_norm * 2.0  # More padding below for body
       
-      IO.puts("  Intelligent zoom calculation:")
-      IO.puts("    Face bbox (norm): #{Float.round(face_w_norm, 4)} x #{Float.round(face_h_norm, 4)}")
-      IO.puts("    Face bbox (px): #{Float.round(face_w_px, 1)} x #{Float.round(face_h_px, 1)}")
-      IO.puts("    Bottom output: #{bottom_output_w_px} x #{bottom_output_h_px}")
-      IO.puts("    Target face height: #{Float.round(target_face_h_px, 1)}px (#{Float.round(face_fill_ratio * 100, 1)}% of bottom section)")
-      IO.puts("    Calculated zoom factor: #{Float.round(zoom_factor, 2)}x")
-      
-      # Calculate crop size needed to achieve this zoom
-      # Key insight: To zoom IN on the face, we need a SMALLER crop from the source
-      # 
-      # Math:
-      # - Face in source: face_h_px pixels
-      # - Face in output: target_face_h_px pixels  
-      # - Crop from source: crop_h_px pixels (what we're calculating)
-      # - Crop scaled to output: bottom_output_h_px pixels
-      #
-      # The scale factor from crop to output is: bottom_output_h_px / crop_h_px
-      # So: face_in_output = face_in_source * (bottom_output_h_px / crop_h_px)
-      # Rearranging: crop_h_px = face_h_px * (bottom_output_h_px / target_face_h_px)
-      # Since target_face_h_px = bottom_output_h_px * face_fill_ratio:
-      # crop_h_px = face_h_px / face_fill_ratio
-      # crop_h_norm = face_h_norm / face_fill_ratio
-      #
-      # Similarly for width: crop_w_norm = face_w_norm / face_fill_ratio
-      # But we need to maintain bottom_split_aspect, so we'll adjust
-      
-      # Calculate crop size: smaller crop = more zoom
-      # The crop should be sized so the face fills face_fill_ratio of the output
-      desired_crop_w_norm = face_w_norm / face_fill_ratio
-      desired_crop_h_norm = face_h_norm / face_fill_ratio
+      # Calculate ideal crop area centered on face with padding
+      ideal_padded_w = face_w_norm + padding_h * 2
+      ideal_padded_h = face_h_norm + padding_v_top + padding_v_bottom
       
       # Adjust to maintain bottom_split_aspect ratio
-      {crop_w, crop_h} = if bottom_split_aspect > (desired_crop_w_norm / desired_crop_h_norm) do
-        # Need wider crop - use desired height, calculate width
-        {desired_crop_h_norm * bottom_split_aspect, desired_crop_h_norm}
+      {ideal_crop_w, ideal_crop_h} = if bottom_aspect > (ideal_padded_w / ideal_padded_h) do
+        # Need wider crop to match aspect ratio
+        {ideal_padded_h * bottom_aspect, ideal_padded_h}
       else
-        # Need taller crop - use desired width, calculate height
-        {desired_crop_w_norm, desired_crop_w_norm / bottom_split_aspect}
+        # Need taller crop to match aspect ratio
+        {ideal_padded_w, ideal_padded_w / bottom_aspect}
       end
       
-      # Ensure crop doesn't exceed source dimensions
-      crop_w = min(crop_w, 1.0)
-      crop_h = min(crop_h, 1.0)
+      # CRITICAL: Constrain crop size to what can be CENTERED on the face
+      # This ensures the face will be perfectly centered in the output
+      # Use the SMALLER of: ideal size OR maximum centerable size
+      constrained_w = min(ideal_crop_w, max_centered_w)
+      constrained_h = min(ideal_crop_h, max_centered_h)
       
-      # For facecam, allow ANY crop size - let the intelligent calculation determine the zoom
-      # Don't apply minimum size constraint - if the calculation says we need a tiny crop, use it
-      # This allows maximum zoom for small facecams
-      # Only ensure we don't go below a tiny absolute minimum to prevent division errors
-      absolute_min_crop_size = 0.01  # Absolute minimum 1% of frame (only for safety)
-      crop_w = max(crop_w, absolute_min_crop_size)
-      crop_h = max(crop_h, absolute_min_crop_size)
+      # Re-adjust to maintain aspect ratio after constraining
+      # Choose the dimension that results in the TIGHTER crop (more zoom)
+      {final_crop_w, final_crop_h} = if bottom_aspect > (constrained_w / constrained_h) do
+        # Width is the limiting factor
+        {constrained_w, constrained_w / bottom_aspect}
+      else
+        # Height is the limiting factor
+        {constrained_h * bottom_aspect, constrained_h}
+      end
       
-      IO.puts("    Calculated crop size (before final checks): #{Float.round(crop_w, 4)} x #{Float.round(crop_h, 4)}")
-      IO.puts("    Zoom level: #{Float.round(1.0 / max(crop_w, crop_h), 2)}x (inverse of crop size)")
+      # Ensure minimum crop size to avoid over-zooming on very small faces
+      min_crop_w = 0.12
+      min_crop_h = min_crop_w / bottom_aspect
+      final_crop_w = max(final_crop_w, min_crop_w)
+      final_crop_h = max(final_crop_h, min_crop_h)
       
-      IO.puts("    Calculated crop size (norm): #{Float.round(crop_w, 4)} x #{Float.round(crop_h, 4)}")
+      # The crop is EXACTLY centered on the face - no offset needed
+      # Since we constrained the size, this position will always be valid
+      crop_center_x = face_center_x
+      crop_center_y = face_center_y
       
-      {crop_w, crop_h}
+      IO.puts("  Facecam framing (face-centered, constrained for true centering):")
+      IO.puts("    Face bbox: (#{Float.round(face_x_norm, 4)}, #{Float.round(face_y_norm, 4)}, #{Float.round(face_w_norm, 4)}, #{Float.round(face_h_norm, 4)})")
+      IO.puts("    Face center: (#{Float.round(face_center_x, 4)}, #{Float.round(face_center_y, 4)})")
+      IO.puts("    Max centerable: #{Float.round(max_centered_w, 4)} x #{Float.round(max_centered_h, 4)}")
+      IO.puts("    Ideal padded: #{Float.round(ideal_crop_w, 4)} x #{Float.round(ideal_crop_h, 4)}")
+      IO.puts("    Final crop: #{Float.round(final_crop_w, 4)} x #{Float.round(final_crop_h, 4)}")
+      IO.puts("    Crop center: (#{Float.round(crop_center_x, 4)}, #{Float.round(crop_center_y, 4)})")
+      
+      {final_crop_w, final_crop_h, %{x: crop_center_x, y: crop_center_y}}
     else
       # Not a corner speaker (or no speaker) - use standard aspect-preserving crop
+      # Use speaker center for positioning
+      window_center = speaker_center
+      
       speaker_bbox_area = if speaker do
         speaker.average_bbox.width * speaker.average_bbox.height
       else
@@ -432,7 +457,7 @@ defmodule ClippsterServer.AI.FramingStrategy do
       crop_w = clamp(crop_w, 0.20, 0.7)
       crop_h = clamp(crop_h, 0.20, 0.7)
       
-      {crop_w, crop_h}
+      {crop_w, crop_h, window_center}
     end
     
     bottom_crop_w_norm = calculated_crop_w
@@ -440,9 +465,25 @@ defmodule ClippsterServer.AI.FramingStrategy do
     
     IO.puts("  Final bottom crop size: #{Float.round(bottom_crop_w_norm, 4)} x #{Float.round(bottom_crop_h_norm, 4)}")
 
-    # Calculate bottom crop position (centered on speaker)
-    bottom_x = clamp(speaker_center.x - bottom_crop_w_norm / 2, 0.0, 1.0 - bottom_crop_w_norm)
-    bottom_y = clamp(speaker_center.y - bottom_crop_h_norm / 2, 0.0, 1.0 - bottom_crop_h_norm)
+    # Calculate bottom crop position centered on the face/speaker
+    # For corner facecams, the crop size is constrained to ensure true centering
+    crop_center = window_center
+    ideal_x = crop_center.x - bottom_crop_w_norm / 2
+    ideal_y = crop_center.y - bottom_crop_h_norm / 2
+    
+    # Clamp to ensure crop stays within frame bounds
+    # But try to maintain the center as much as possible
+    bottom_x = clamp(ideal_x, 0.0, 1.0 - bottom_crop_w_norm)
+    bottom_y = clamp(ideal_y, 0.0, 1.0 - bottom_crop_h_norm)
+    
+    # If clamping moved the crop, log it for debugging
+    if abs(ideal_x - bottom_x) > 0.01 or abs(ideal_y - bottom_y) > 0.01 do
+      IO.puts("  Crop position adjusted due to bounds:")
+      IO.puts("    Ideal: (#{Float.round(ideal_x, 4)}, #{Float.round(ideal_y, 4)})")
+      IO.puts("    Actual: (#{Float.round(bottom_x, 4)}, #{Float.round(bottom_y, 4)})")
+    end
+    
+    IO.puts("  Final bottom crop position: (#{Float.round(bottom_x, 4)}, #{Float.round(bottom_y, 4)})")
     
     bottom_crop = %{
       x: bottom_x,

@@ -1028,71 +1028,42 @@ pub async fn build_split_screen_clip(
         if bottom_crop.width > 0.0 && bottom_crop.height > 0.0 && 
            (bottom_crop.width < 0.8 || bottom_crop.height < 0.8) {
             // Layout specifies a zoomed crop size - use it as constraint
-            // Calculate the maximum crop size that fits within the constraint AND maintains aspect ratio
+            // The Elixir server has calculated the estimated facecam window size and sent it as
+            // normalized width/height values that should fit the entire facecam window
             let max_w_norm = bottom_crop.width;
             let max_h_norm = bottom_crop.height;
             
-            // Calculate what the dimensions would be if we use max width (maintaining aspect ratio)
-            let w_based_h = max_w_norm / bottom_split_aspect;
-            // Calculate what the dimensions would be if we use max height (maintaining aspect ratio)
-            let h_based_w = max_h_norm * bottom_split_aspect;
+            // Elixir now calculates a tight, face-centered crop with proper aspect ratio
+            // We should use those dimensions directly - they already have adequate padding
+            // and the correct aspect ratio for the bottom split
             
-            // Use the constraint that gives us the smaller crop (more zoom)
-            let (final_w_norm, final_h_norm) = if w_based_h <= max_h_norm {
-                // Width constraint is tighter - use it
-                (max_w_norm, w_based_h)
+            // Convert normalized constraint dimensions to pixels
+            let constraint_w = (source_w * max_w_norm) as u32;
+            let constraint_h = (source_h * max_h_norm) as u32;
+            
+            // The Elixir-provided dimensions should already have the correct aspect ratio
+            // But verify and adjust if needed to match bottom_split_aspect exactly
+            let current_aspect = constraint_w as f64 / constraint_h as f64;
+            
+            let (final_w, final_h) = if (current_aspect - bottom_split_aspect).abs() < 0.01 {
+                // Aspect ratio is already correct, use as-is
+                (constraint_w, constraint_h)
+            } else if current_aspect > bottom_split_aspect {
+                // Crop is too wide - use width, calculate tighter height
+                let h = (constraint_w as f64 / bottom_split_aspect) as u32;
+                (constraint_w, h)
             } else {
-                // Height constraint is tighter - use it
-                (h_based_w, max_h_norm)
+                // Crop is too tall - use height, calculate tighter width
+                let w = (constraint_h as f64 * bottom_split_aspect) as u32;
+                (w, constraint_h)
             };
-            
-            // Convert to pixel dimensions
-            let mut final_w = (source_w * final_w_norm) as u32;
-            let mut final_h = (source_h * final_h_norm) as u32;
             
             // Ensure we don't exceed source dimensions
-            final_w = final_w.min(source_w as u32);
-            final_h = final_h.min(source_h as u32);
+            let final_w = final_w.min(source_w as u32);
+            let final_h = final_h.min(source_h as u32);
             
-            // Recalculate to ensure exact aspect ratio (fix any rounding errors)
-            let (recalc_w, recalc_h, _, _) = calculate_aspect_preserving_crop(
-                source_w as u32, source_h as u32,
-                bottom_split_aspect,
-                bottom_center_x, bottom_center_y
-            );
-            
-            // Use the smaller of the two to ensure we zoom in (respect the constraint)
-            // But maintain aspect ratio - choose the dimension that gives us the smaller crop
-            let constraint_max_w = (source_w * final_w_norm) as u32;
-            let constraint_max_h = (source_h * final_h_norm) as u32;
-            
-            // Calculate what each constraint would give us while maintaining aspect ratio
-            let w_from_constraint_w = constraint_max_w;
-            let h_from_constraint_w = (w_from_constraint_w as f64 / bottom_split_aspect) as u32;
-            
-            let h_from_constraint_h = constraint_max_h;
-            let w_from_constraint_h = (h_from_constraint_h as f64 * bottom_split_aspect) as u32;
-            
-            // Use the constraint that gives us the smaller crop (more zoom)
-            // For facecam, prioritize the constraint to ensure maximum zoom
-            let (final_w, final_h) = if w_from_constraint_w <= recalc_w && h_from_constraint_w <= recalc_h {
-                // Width-based constraint fits and is smaller - use it for maximum zoom
-                (w_from_constraint_w, h_from_constraint_w)
-            } else if w_from_constraint_h <= recalc_w && h_from_constraint_h <= recalc_h {
-                // Height-based constraint fits and is smaller - use it for maximum zoom
-                (w_from_constraint_h, h_from_constraint_h)
-            } else if constraint_max_w < recalc_w || constraint_max_h < recalc_h {
-                // Constraint is smaller than calculated - use constraint even if slightly off
-                // This ensures we respect the aggressive zoom requested
-                if w_from_constraint_w < recalc_w {
-                    (w_from_constraint_w, h_from_constraint_w)
-                } else {
-                    (w_from_constraint_h, h_from_constraint_h)
-                }
-            } else {
-                // Use the calculated crop (no constraint applied)
-                (recalc_w, recalc_h)
-            };
+            println!("[Rust] Using constraint-based crop for facecam zoom: {}x{} (from norm: {}x{})", 
+                final_w, final_h, max_w_norm, max_h_norm);
             
             // Recalculate position to center on speaker with new dimensions
             let center_x_px = (source_w * bottom_center_x) as i32;
