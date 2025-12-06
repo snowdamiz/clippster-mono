@@ -292,57 +292,15 @@ defmodule ClippsterServer.AI.FramingStrategy do
       output_height_ratio: split_ratio
     }
 
-    # Determine if speaker is in corner (facecam) or center (main subject)
-    is_corner_speaker = if speaker do
-      {h_pos, v_pos} = speaker.position_category
-      (h_pos == :left or h_pos == :right) and (v_pos == :top or v_pos == :bottom)
-    else
-      false
+    # Log speaker position for debugging
+    if speaker do
+      IO.puts("  Speaker position category: #{inspect(speaker.position_category)}")
     end
     
-    # Bottom region: Intelligently calculate zoom based on facecam size and target output
-    # For facecam, use the face bbox center directly (more accurate than centroid)
-    speaker_center = if speaker do
-      # Use the center of the average bbox for more precise positioning
-      # This is more accurate than centroid which averages across frames
-      bbox = speaker.average_bbox
-      face_center_x = bbox.x + (bbox.width / 2)
-      face_center_y = bbox.y + (bbox.height / 2)
-      
-      # For corner facecams, the facecam window might be positioned in a specific corner
-      # Adjust the center slightly to account for typical facecam window positioning
-      {h_pos, v_pos} = speaker.position_category
-      adjusted_center = if is_corner_speaker do
-        # For corner facecams, bias towards the corner slightly
-        # This helps center on the facecam window, not just the face
-        bias_x = case h_pos do
-          :left -> -0.02  # Slight bias left
-          :right -> 0.02  # Slight bias right
-          _ -> 0.0
-        end
-        bias_y = case v_pos do
-          :top -> -0.02  # Slight bias up
-          :bottom -> 0.02  # Slight bias down
-          _ -> 0.0
-        end
-        %{
-          x: face_center_x + bias_x,
-          y: face_center_y + bias_y
-        }
-      else
-        %{x: face_center_x, y: face_center_y}
-      end
-      
-      adjusted_center
-    else
-      %{x: 0.5, y: 0.75}  # Default to lower center
-    end
-    
-    IO.puts("  Speaker center (from bbox): (#{Float.round(speaker_center.x, 4)}, #{Float.round(speaker_center.y, 4)})")
-    
-    # Intelligently detect facecam window boundaries and calculate crop to include entire window
-    # No hardcoded values - everything is calculated adaptively based on face position and size
-    {calculated_crop_w, calculated_crop_h, window_center} = if speaker && is_corner_speaker do
+    # For split-screen, ALWAYS use tight face-centered cropping when there's a speaker
+    # This ensures the speaker fills the bottom section regardless of their position
+    # The constraint-based approach naturally handles any position
+    {calculated_crop_w, calculated_crop_h, window_center} = if speaker do
       # Bottom section output dimensions (in pixels)
       bottom_output_w_px = output_w
       bottom_output_h_px = bottom_output_h
@@ -424,40 +382,14 @@ defmodule ClippsterServer.AI.FramingStrategy do
       
       {final_crop_w, final_crop_h, %{x: crop_center_x, y: crop_center_y}}
     else
-      # Not a corner speaker (or no speaker) - use standard aspect-preserving crop
-      # Use speaker center for positioning
-      window_center = speaker_center
+      # No speaker detected - use center crop as fallback
+      IO.puts("  No speaker detected - using center crop fallback")
       
-      speaker_bbox_area = if speaker do
-        speaker.average_bbox.width * speaker.average_bbox.height
-      else
-        0.1
-      end
+      # Default to center of frame with moderate crop size
+      crop_w = 0.5
+      crop_h = crop_w / bottom_split_aspect
       
-      # For centered speakers, use moderate zoom based on size
-      zoom_factor = cond do
-        speaker_bbox_area < 0.10 -> 2.5
-        speaker_bbox_area < 0.20 -> 2.0
-        true -> 1.5
-      end
-      
-      speaker_bbox_w = if speaker, do: speaker.average_bbox.width, else: 0.2
-      speaker_bbox_h = if speaker, do: speaker.average_bbox.height, else: 0.25
-      
-      desired_w = speaker_bbox_w * zoom_factor
-      desired_h = speaker_bbox_h * zoom_factor
-      
-      {crop_w, crop_h} = if bottom_split_aspect > (desired_w / desired_h) do
-        {desired_h * bottom_split_aspect, desired_h}
-      else
-        {desired_w, desired_w / bottom_split_aspect}
-      end
-      
-      # Clamp to reasonable bounds for non-facecam speakers
-      crop_w = clamp(crop_w, 0.20, 0.7)
-      crop_h = clamp(crop_h, 0.20, 0.7)
-      
-      {crop_w, crop_h, window_center}
+      {crop_w, crop_h, %{x: 0.5, y: 0.5}}
     end
     
     bottom_crop_w_norm = calculated_crop_w
