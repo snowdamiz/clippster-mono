@@ -85,15 +85,35 @@
                 >
                   <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
                   LIVE
+                  <span v-if="getCreatorViewerCount(creator)" class="text-white/80 font-normal">
+                    · {{ formatViewerCount(getCreatorViewerCount(creator)!) }}
+                  </span>
                 </div>
 
-                <!-- Monitoring Status -->
+                <!-- Monitoring Status (waiting for stream) -->
                 <div
                   v-else-if="isCreatorMonitored(creator)"
                   class="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/90 backdrop-blur-sm text-white text-xs font-semibold rounded-md shadow-lg shadow-emerald-500/20"
                 >
                   <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
                   Monitoring
+                </div>
+
+                <!-- Checking Live Status -->
+                <div
+                  v-else-if="isCreatorCheckingLive(creator)"
+                  class="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 bg-black/50 backdrop-blur-sm text-white text-xs font-medium rounded-md"
+                >
+                  <Loader2 class="w-3 h-3 animate-spin" />
+                </div>
+
+                <!-- Offline Status -->
+                <div
+                  v-else-if="creator.platform_links.some((l) => l.platform === 'pumpfun')"
+                  class="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 bg-black/40 backdrop-blur-sm text-white/70 text-xs font-medium rounded-md"
+                >
+                  <span class="w-1.5 h-1.5 rounded-full bg-white/50"></span>
+                  Offline
                 </div>
 
                 <!-- Asset Indicators -->
@@ -444,7 +464,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, computed } from 'vue';
+  import { ref, onMounted, onUnmounted, computed } from 'vue';
   import { useRouter } from 'vue-router';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
@@ -454,7 +474,7 @@
   import CreatorDownloadDialog from '@/components/CreatorDownloadDialog.vue';
   import { getAllCreatorProfiles, deleteCreatorProfile, type CreatorProfileWithLinks } from '@/services/database';
   import { useToast } from '@/composables/useToast';
-  import { useLivestreamMonitoring } from '@/composables/useLivestreamMonitoring';
+  import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
   import { type PlatformId } from '@/config/platforms';
   import {
     Users,
@@ -499,10 +519,91 @@
   const platformSelectMode = ref<'record' | 'detect'>('record');
   const selectedPlatformLinkIndex = ref(0);
 
+  // Live status tracking (by platform_id for pumpfun links)
+  const liveStatusMap = ref<Map<string, { isLive: boolean; viewerCount?: number; isChecking: boolean }>>(new Map());
+  const liveStatusInterval = ref<number | null>(null);
+
   // Load creators on mount
   onMounted(async () => {
     await loadCreators();
+    // Check live status for all pumpfun platform links
+    checkAllLiveStatuses();
+
+    // Refresh live status every 60 seconds
+    liveStatusInterval.value = window.setInterval(() => {
+      checkAllLiveStatuses();
+    }, 60_000);
   });
+
+  onUnmounted(() => {
+    // Clean up live status polling interval
+    if (liveStatusInterval.value) {
+      clearInterval(liveStatusInterval.value);
+      liveStatusInterval.value = null;
+    }
+  });
+
+  async function checkAllLiveStatuses() {
+    // Collect all pumpfun platform links that aren't being monitored
+    const linksToCheck: { platformId: string; mintId: string }[] = [];
+
+    for (const creator of creators.value) {
+      for (const link of creator.platform_links) {
+        if (link.platform === 'pumpfun') {
+          // Skip if already being monitored
+          if (link.monitored_streamer_id && monitoredStreamers.value.has(link.monitored_streamer_id)) {
+            continue;
+          }
+          linksToCheck.push({ platformId: link.platform_id, mintId: link.platform_id });
+        }
+      }
+    }
+
+    // Check all in parallel
+    const promises = linksToCheck.map(async ({ platformId, mintId }) => {
+      // Set checking state
+      liveStatusMap.value.set(platformId, {
+        ...liveStatusMap.value.get(platformId),
+        isLive: liveStatusMap.value.get(platformId)?.isLive ?? false,
+        isChecking: true,
+      });
+
+      try {
+        const status = await fetchLiveStatus(mintId);
+        liveStatusMap.value.set(platformId, {
+          isLive: status.isLive,
+          viewerCount: status.numParticipants,
+          isChecking: false,
+        });
+      } catch (error) {
+        console.error('[CreatorProfiles] Failed to check live status for', mintId, error);
+        liveStatusMap.value.set(platformId, {
+          ...liveStatusMap.value.get(platformId),
+          isLive: false,
+          isChecking: false,
+        });
+      }
+    });
+
+    await Promise.all(promises);
+  }
+
+  function getLinkLiveStatus(link: { platform: string; platform_id: string; monitored_streamer_id?: string | null }) {
+    // If monitored and has active session, it's live
+    if (link.monitored_streamer_id) {
+      const session = activeSessions.value.get(link.monitored_streamer_id);
+      if (session && !session.isStopping) {
+        return { isLive: true, viewerCount: undefined, isChecking: false };
+      }
+    }
+
+    // Otherwise check our cached status
+    if (link.platform === 'pumpfun') {
+      return liveStatusMap.value.get(link.platform_id) || { isLive: false, viewerCount: undefined, isChecking: false };
+    }
+
+    return { isLive: false, viewerCount: undefined, isChecking: false };
+  }
 
   async function loadCreators() {
     loading.value = true;
@@ -593,14 +694,56 @@
   // Monitoring status helpers
   function isCreatorLive(creator: CreatorProfileWithLinks): boolean {
     for (const link of creator.platform_links) {
+      // Check if monitored and has active session
       if (link.monitored_streamer_id) {
         const session = activeSessions.value.get(link.monitored_streamer_id);
         if (session && !session.isStopping) {
           return true;
         }
       }
+      // Also check our cached live status for pumpfun links
+      if (link.platform === 'pumpfun') {
+        const status = liveStatusMap.value.get(link.platform_id);
+        if (status?.isLive) {
+          return true;
+        }
+      }
     }
     return false;
+  }
+
+  function isCreatorCheckingLive(creator: CreatorProfileWithLinks): boolean {
+    for (const link of creator.platform_links) {
+      if (link.platform === 'pumpfun') {
+        const status = liveStatusMap.value.get(link.platform_id);
+        if (status?.isChecking) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function getCreatorViewerCount(creator: CreatorProfileWithLinks): number | undefined {
+    for (const link of creator.platform_links) {
+      if (link.platform === 'pumpfun') {
+        const status = liveStatusMap.value.get(link.platform_id);
+        if (status?.isLive && status.viewerCount) {
+          return status.viewerCount;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  function formatViewerCount(count: number): string {
+    if (count >= 1000000) {
+      return (count / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+    }
+    if (count >= 1000) {
+      return (count / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    }
+    return count.toString();
   }
 
   function isCreatorMonitored(creator: CreatorProfileWithLinks): boolean {
