@@ -402,19 +402,6 @@
       @confirm="onFolderBuildConfirm"
     />
 
-    <!-- Clip Preview Dialog (uses VideoPlayerDialog in clip preview mode) -->
-    <VideoPlayerDialog
-      :video="null"
-      :show-video-player="showClipPreview"
-      :video-file-path="clipPreviewVideoPath"
-      :clip-start-time="clipToPreview?.current_version?.start_time ?? clipToPreview?.start_time ?? null"
-      :clip-end-time="clipToPreview?.current_version?.end_time ?? clipToPreview?.end_time ?? null"
-      :clip-name="clipToPreview?.current_version?.name || clipToPreview?.name || 'Untitled Clip'"
-      :clip-segment-name="clipToPreview?.segment_name"
-      :z-index="60"
-      @close="closeClipPreview"
-    />
-
     <!-- Folder Contents Dialog -->
     <div
       v-if="showFolderDialog && folderProject"
@@ -508,7 +495,7 @@
         </div>
 
         <!-- Content -->
-        <div class="flex-1 overflow-y-auto p-6">
+        <div class="flex-1 min-h-0 flex flex-col" :class="folderActiveTab === 'clips' ? '' : 'overflow-y-auto p-6'">
           <!-- Segments Tab -->
           <div
             v-if="folderActiveTab === 'segments'"
@@ -613,277 +600,356 @@
             </div>
           </div>
 
-          <!-- Clips Tab -->
-          <div v-else-if="folderActiveTab === 'clips'" class="space-y-3">
-            <!-- Loading State -->
-            <div v-if="folderClipsLoading" class="flex items-center justify-center py-12">
-              <Loader2 class="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-
-            <!-- Empty State -->
-            <div
-              v-else-if="folderClips.length === 0"
-              class="flex flex-col items-center justify-center py-12 text-center"
-            >
-              <div class="w-16 h-16 bg-muted/20 rounded-full flex items-center justify-center mb-4">
-                <Video class="w-8 h-8 text-muted-foreground" />
+          <!-- Clips Tab - 2 Column Layout -->
+          <div v-else-if="folderActiveTab === 'clips'" class="flex-1 flex min-h-0">
+            <!-- Left Column: Clips List -->
+            <div class="w-[480px] flex-shrink-0 border-r border-border overflow-y-auto p-4">
+              <!-- Loading State -->
+              <div v-if="folderClipsLoading" class="flex items-center justify-center py-12">
+                <Loader2 class="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
-              <h3 class="text-lg font-medium text-foreground mb-2">No Clips Detected</h3>
-              <p class="text-sm text-muted-foreground max-w-xs">
-                Run clip detection on individual segments to find viral moments.
-              </p>
-            </div>
 
-            <!-- Clips List -->
-            <div v-else class="space-y-3 pb-4">
+              <!-- Empty State -->
               <div
-                v-for="(clip, index) in folderClips"
-                :key="clip.id"
-                class="group relative bg-card/50 backdrop-blur-sm border border-border/50 rounded-lg cursor-pointer transition-all duration-200 hover:border-border/80 hover:bg-card/70 hover:shadow-lg hover:shadow-black/10"
-                @click="previewClip(clip)"
+                v-else-if="folderClips.length === 0"
+                class="flex flex-col items-center justify-center py-12 text-center"
               >
-                <!-- Left accent bar -->
+                <div class="w-16 h-16 bg-muted/20 rounded-full flex items-center justify-center mb-4">
+                  <Video class="w-8 h-8 text-muted-foreground" />
+                </div>
+                <h3 class="text-lg font-medium text-foreground mb-2">No Clips Detected</h3>
+                <p class="text-sm text-muted-foreground max-w-xs">
+                  Run clip detection on individual segments to find viral moments.
+                </p>
+              </div>
+
+              <!-- Clips List -->
+              <div v-else class="space-y-3 pb-4">
                 <div
-                  v-if="clip.run_number"
-                  class="absolute left-0 top-0 bottom-0 w-1 transition-all duration-200 rounded-l-lg"
-                  :style="{ backgroundColor: clip.session_run_color || '#8B5CF6', opacity: 0.6 }"
-                ></div>
+                  v-for="(clip, index) in folderClips"
+                  :key="clip.id"
+                  class="group relative bg-card/50 backdrop-blur-sm border rounded-lg cursor-pointer transition-all duration-200"
+                  :class="
+                    clipToPreview?.id === clip.id
+                      ? 'border-primary/60 bg-primary/5 ring-1 ring-primary/30'
+                      : 'border-border/50 hover:border-border/80 hover:bg-card/70 hover:shadow-lg hover:shadow-black/10'
+                  "
+                  @click="previewClip(clip)"
+                >
+                  <!-- Left accent bar -->
+                  <div
+                    v-if="clip.run_number"
+                    class="absolute left-0 top-0 bottom-0 w-1 transition-all duration-200 rounded-l-lg"
+                    :style="{ backgroundColor: clip.session_run_color || '#8B5CF6', opacity: 0.6 }"
+                  ></div>
 
-                <div class="flex gap-4 p-3 pl-4">
-                  <!-- Thumbnail (16:9 aspect ratio) -->
-                  <div class="relative flex-shrink-0 w-40 aspect-video rounded-lg overflow-hidden bg-black/50">
-                    <div
-                      v-if="getClipThumbnailUrl(clip)"
-                      class="absolute inset-0"
-                      :style="{
-                        backgroundImage: `url(${getClipThumbnailUrl(clip)})`,
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center',
-                      }"
-                    ></div>
-                    <div v-else class="absolute inset-0 flex items-center justify-center">
-                      <Video class="w-6 h-6 text-muted-foreground/40" />
-                    </div>
-                    <!-- Duration badge -->
-                    <div
-                      class="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/70 rounded text-[10px] font-medium text-white tabular-nums"
-                    >
-                      {{ getClipDuration(clip) }}
-                    </div>
-                    <!-- Play overlay on hover -->
-                    <div
-                      class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                    >
-                      <PlayIcon class="w-6 h-6 text-white" />
-                    </div>
-                  </div>
-
-                  <!-- Content -->
-                  <div class="flex-1 min-w-0 flex flex-col justify-between py-0.5">
-                    <!-- Header: Title & Actions -->
-                    <div class="flex items-start justify-between gap-2">
-                      <div class="flex items-start gap-2 min-w-0">
-                        <span class="text-xs font-bold text-foreground/30 mt-0.5 tabular-nums select-none">
-                          #{{ index + 1 }}
-                        </span>
-                        <h5 class="text-sm font-semibold text-foreground leading-snug line-clamp-2">
-                          {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
-                        </h5>
-                      </div>
-
-                      <!-- Actions -->
+                  <div class="flex gap-3 p-3 pl-4">
+                    <!-- Thumbnail (16:9 aspect ratio) -->
+                    <div class="relative flex-shrink-0 w-40 aspect-video rounded-lg overflow-hidden bg-black/50">
                       <div
-                        class="flex items-center gap-0.5 transition-opacity duration-200 flex-shrink-0 -mr-1 -mt-1"
-                        :class="
-                          hasCompletedBuilds(clip) || clip.build_status === 'building'
-                            ? 'opacity-100'
-                            : 'opacity-0 group-hover:opacity-100'
-                        "
+                        v-if="getClipThumbnailUrl(clip)"
+                        class="absolute inset-0"
+                        :style="{
+                          backgroundImage: `url(${getClipThumbnailUrl(clip)})`,
+                          backgroundSize: 'cover',
+                          backgroundPosition: 'center',
+                        }"
+                      ></div>
+                      <div v-else class="absolute inset-0 flex items-center justify-center">
+                        <Video class="w-6 h-6 text-muted-foreground/40" />
+                      </div>
+                      <!-- Duration badge -->
+                      <div
+                        class="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/70 rounded text-[10px] font-medium text-white tabular-nums"
                       >
-                        <!-- Play button (preview) -->
-                        <button
-                          class="p-1.5 hover:bg-violet-500/15 rounded-md transition-colors text-foreground/60 hover:text-violet-400"
-                          title="Preview clip"
-                          @click.stop="previewClip(clip)"
-                        >
-                          <PlayIcon class="h-4 w-4" />
-                        </button>
+                        {{ getClipDuration(clip) }}
+                      </div>
+                      <!-- Play overlay on hover -->
+                      <div
+                        class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                      >
+                        <PlayIcon class="w-6 h-6 text-white" />
+                      </div>
+                    </div>
 
-                        <!-- Edit button (open in segment) -->
-                        <button
-                          class="p-1.5 hover:bg-blue-500/15 rounded-md transition-colors text-foreground/60 hover:text-blue-400"
-                          title="Edit in Segment"
-                          @click.stop="openSegmentWithClip(clip)"
-                        >
-                          <ExternalLink class="h-4 w-4" />
-                        </button>
-
-                        <!-- Build button -->
-                        <button
-                          v-if="clip.build_status !== 'building'"
-                          class="p-1.5 hover:bg-green-500/15 rounded-md transition-colors text-foreground/60 hover:text-green-400"
-                          title="Build clip"
-                          @click.stop="onFolderBuildClip(clip)"
-                        >
-                          <Hammer class="h-4 w-4" />
-                        </button>
-
-                        <!-- Download dropdown (only when built) -->
-                        <div v-if="hasCompletedBuilds(clip)" class="relative">
-                          <button
-                            :ref="(el) => setFolderDropdownButtonRef(el, clip.id)"
-                            class="p-1.5 hover:bg-green-500/15 rounded-md transition-colors text-green-500/80 hover:text-green-400 flex items-center gap-0.5"
-                            title="Download built clip"
-                            @click.stop="toggleFolderDownloadDropdown(clip.id)"
-                          >
-                            <DownloadIcon class="h-4 w-4" />
-                            <ChevronDownIcon class="h-3 w-3" />
-                          </button>
-
-                          <!-- Dropdown menu with list of all builds - Teleported to body -->
-                          <Teleport to="body">
-                            <div
-                              v-if="folderDownloadDropdownId === clip.id"
-                              class="fixed z-[9999] min-w-[260px] max-w-[340px] bg-popover border border-border rounded-md shadow-lg py-1 max-h-[300px] overflow-y-auto"
-                              :style="getFolderDropdownPosition(clip.id)"
-                              @click.stop
-                            >
-                              <div
-                                class="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider border-b border-border/50 mb-1 flex items-center justify-between"
-                              >
-                                <span>Downloads ({{ getDownloadableFilesCount(clip) }})</span>
-                              </div>
-                              <!-- Individual file items from all builds -->
-                              <button
-                                v-for="(file, fileIdx) in getDownloadableFiles(clip)"
-                                :key="`${file.build.id}-${fileIdx}`"
-                                class="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted/50 flex items-center gap-3 border-b border-border/20 last:border-b-0"
-                                @click.stop="
-                                  onFolderSaveFile(file.filePath);
-                                  closeFolderDownloadDropdown();
-                                "
-                              >
-                                <DownloadIcon class="h-4 w-4 text-green-500 flex-shrink-0" />
-                                <div class="flex-1 min-w-0">
-                                  <div class="text-xs font-medium truncate flex items-center gap-1.5">
-                                    <span v-if="file.aspectRatio" class="text-primary/80 font-semibold">
-                                      {{ file.aspectRatio }}
-                                    </span>
-                                    <span class="text-muted-foreground/70">#{{ file.build.build_number }}</span>
-                                    <span class="truncate">{{ getBuildFileName(file.filePath) }}</span>
-                                  </div>
-                                  <div class="text-[10px] text-muted-foreground flex items-center gap-2 mt-0.5">
-                                    <span v-if="file.build.completed_at">
-                                      {{ formatBuildDate(file.build.completed_at) }}
-                                    </span>
-                                    <span v-if="file.build.file_size && getDownloadableFiles(clip).length === 1">
-                                      {{ formatFileSize(file.build.file_size) }}
-                                    </span>
-                                  </div>
-                                </div>
-                              </button>
-                              <!-- Fallback for legacy builds (clip.built_file_path) -->
-                              <button
-                                v-if="getDownloadableFilesCount(clip) === 0 && clip.built_file_path"
-                                class="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted/50 flex items-center gap-3"
-                                @click.stop="
-                                  onFolderSaveFile(clip.built_file_path);
-                                  closeFolderDownloadDropdown();
-                                "
-                              >
-                                <DownloadIcon class="h-4 w-4 text-green-500 flex-shrink-0" />
-                                <div class="flex-1 min-w-0">
-                                  <div class="text-xs font-medium truncate">
-                                    {{ getBuildFileName(clip.built_file_path) }}
-                                  </div>
-                                </div>
-                              </button>
-                            </div>
-                          </Teleport>
+                    <!-- Content -->
+                    <div class="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                      <!-- Header: Title & Actions -->
+                      <div class="flex items-start justify-between gap-2">
+                        <div class="flex items-start gap-2 min-w-0">
+                          <span class="text-xs font-bold text-foreground/30 mt-0.5 tabular-nums select-none">
+                            #{{ index + 1 }}
+                          </span>
+                          <h5 class="text-sm font-semibold text-foreground leading-snug line-clamp-2">
+                            {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
+                          </h5>
                         </div>
 
-                        <!-- Delete button -->
-                        <button
-                          v-if="!hasCompletedBuilds(clip)"
-                          class="p-1.5 hover:bg-red-500/15 rounded-md transition-colors text-foreground/60 hover:text-red-400"
-                          title="Delete clip"
-                          @click.stop="deleteFolderClip(clip.id)"
+                        <!-- Actions -->
+                        <div
+                          class="flex items-center gap-0.5 transition-opacity duration-200 flex-shrink-0 -mr-1 -mt-1"
+                          :class="
+                            hasCompletedBuilds(clip) || clip.build_status === 'building'
+                              ? 'opacity-100'
+                              : 'opacity-0 group-hover:opacity-100'
+                          "
                         >
-                          <Trash2 class="h-4 w-4" />
-                        </button>
+                          <!-- Play button (preview) -->
+                          <button
+                            class="p-1.5 hover:bg-violet-500/15 rounded-md transition-colors text-foreground/60 hover:text-violet-400"
+                            title="Preview clip"
+                            @click.stop="previewClip(clip)"
+                          >
+                            <PlayIcon class="h-4 w-4" />
+                          </button>
+
+                          <!-- Edit button (open in segment) -->
+                          <button
+                            class="p-1.5 hover:bg-blue-500/15 rounded-md transition-colors text-foreground/60 hover:text-blue-400"
+                            title="Edit in Segment"
+                            @click.stop="openSegmentWithClip(clip)"
+                          >
+                            <ExternalLink class="h-4 w-4" />
+                          </button>
+
+                          <!-- Build button -->
+                          <button
+                            v-if="clip.build_status !== 'building'"
+                            class="p-1.5 hover:bg-green-500/15 rounded-md transition-colors text-foreground/60 hover:text-green-400"
+                            title="Build clip"
+                            @click.stop="onFolderBuildClip(clip)"
+                          >
+                            <Hammer class="h-4 w-4" />
+                          </button>
+
+                          <!-- Download dropdown (only when built) -->
+                          <div v-if="hasCompletedBuilds(clip)" class="relative">
+                            <button
+                              :ref="(el) => setFolderDropdownButtonRef(el, clip.id)"
+                              class="p-1.5 hover:bg-green-500/15 rounded-md transition-colors text-green-500/80 hover:text-green-400 flex items-center gap-0.5"
+                              title="Download built clip"
+                              @click.stop="toggleFolderDownloadDropdown(clip.id)"
+                            >
+                              <DownloadIcon class="h-4 w-4" />
+                              <ChevronDownIcon class="h-3 w-3" />
+                            </button>
+
+                            <!-- Dropdown menu with list of all builds - Teleported to body -->
+                            <Teleport to="body">
+                              <div
+                                v-if="folderDownloadDropdownId === clip.id"
+                                class="fixed z-[9999] min-w-[260px] max-w-[340px] bg-popover border border-border rounded-md shadow-lg py-1 max-h-[300px] overflow-y-auto"
+                                :style="getFolderDropdownPosition(clip.id)"
+                                @click.stop
+                              >
+                                <div
+                                  class="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider border-b border-border/50 mb-1 flex items-center justify-between"
+                                >
+                                  <span>Downloads ({{ getDownloadableFilesCount(clip) }})</span>
+                                </div>
+                                <!-- Individual file items from all builds -->
+                                <button
+                                  v-for="(file, fileIdx) in getDownloadableFiles(clip)"
+                                  :key="`${file.build.id}-${fileIdx}`"
+                                  class="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted/50 flex items-center gap-3 border-b border-border/20 last:border-b-0"
+                                  @click.stop="
+                                    onFolderSaveFile(file.filePath);
+                                    closeFolderDownloadDropdown();
+                                  "
+                                >
+                                  <DownloadIcon class="h-4 w-4 text-green-500 flex-shrink-0" />
+                                  <div class="flex-1 min-w-0">
+                                    <div class="text-xs font-medium truncate flex items-center gap-1.5">
+                                      <span v-if="file.aspectRatio" class="text-primary/80 font-semibold">
+                                        {{ file.aspectRatio }}
+                                      </span>
+                                      <span class="text-muted-foreground/70">#{{ file.build.build_number }}</span>
+                                      <span class="truncate">{{ getBuildFileName(file.filePath) }}</span>
+                                    </div>
+                                    <div class="text-[10px] text-muted-foreground flex items-center gap-2 mt-0.5">
+                                      <span v-if="file.build.completed_at">
+                                        {{ formatBuildDate(file.build.completed_at) }}
+                                      </span>
+                                      <span v-if="file.build.file_size && getDownloadableFiles(clip).length === 1">
+                                        {{ formatFileSize(file.build.file_size) }}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </button>
+                                <!-- Fallback for legacy builds (clip.built_file_path) -->
+                                <button
+                                  v-if="getDownloadableFilesCount(clip) === 0 && clip.built_file_path"
+                                  class="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted/50 flex items-center gap-3"
+                                  @click.stop="
+                                    onFolderSaveFile(clip.built_file_path);
+                                    closeFolderDownloadDropdown();
+                                  "
+                                >
+                                  <DownloadIcon class="h-4 w-4 text-green-500 flex-shrink-0" />
+                                  <div class="flex-1 min-w-0">
+                                    <div class="text-xs font-medium truncate">
+                                      {{ getBuildFileName(clip.built_file_path) }}
+                                    </div>
+                                  </div>
+                                </button>
+                              </div>
+                            </Teleport>
+                          </div>
+
+                          <!-- Delete button -->
+                          <button
+                            v-if="!hasCompletedBuilds(clip)"
+                            class="p-1.5 hover:bg-red-500/15 rounded-md transition-colors text-foreground/60 hover:text-red-400"
+                            title="Delete clip"
+                            @click.stop="deleteFolderClip(clip.id)"
+                          >
+                            <Trash2 class="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
 
-                    <!-- Metrics Row -->
-                    <div class="flex items-center flex-wrap gap-2">
-                      <!-- Segment Badge -->
-                      <div
-                        class="inline-flex items-center gap-1.5 text-[11px] font-medium text-foreground/70 bg-primary/10 px-2 py-0.5 rounded border border-primary/20"
-                      >
-                        <FolderOpen class="h-3 w-3 opacity-70" />
-                        <span class="truncate max-w-[120px]">{{ clip.segment_name }}</span>
+                      <!-- Metrics Row -->
+                      <div class="flex items-center flex-wrap gap-2">
+                        <!-- Segment Badge -->
+                        <div
+                          class="inline-flex items-center gap-1.5 text-[11px] font-medium text-foreground/70 bg-primary/10 px-2 py-0.5 rounded border border-primary/20"
+                        >
+                          <FolderOpen class="h-3 w-3 opacity-70" />
+                          <span class="truncate max-w-[120px]">{{ clip.segment_name }}</span>
+                        </div>
+
+                        <!-- Virality Score -->
+                        <div
+                          v-if="
+                            clip.current_version_virality_score !== undefined &&
+                            clip.current_version_virality_score !== null
+                          "
+                          class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium transition-colors"
+                          :class="getViralityColorClass(clip.current_version_virality_score)"
+                          title="Predicted Virality Score"
+                        >
+                          <Flame class="h-3 w-3" />
+                          <span>{{ Math.round(clip.current_version_virality_score) }}%</span>
+                        </div>
+
+                        <!-- Confidence (more subtle) -->
+                        <div
+                          v-if="clip.current_version_confidence_score"
+                          class="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground/60"
+                          title="AI Confidence Score"
+                        >
+                          <BrainIcon class="h-3 w-3" />
+                          <span>{{ Math.round((clip.current_version_confidence_score || 0) * 100) }}%</span>
+                        </div>
                       </div>
 
-                      <!-- Virality Score -->
-                      <div
-                        v-if="
-                          clip.current_version_virality_score !== undefined &&
-                          clip.current_version_virality_score !== null
-                        "
-                        class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium transition-colors"
-                        :class="getViralityColorClass(clip.current_version_virality_score)"
-                        title="Predicted Virality Score"
-                      >
-                        <Flame class="h-3 w-3" />
-                        <span>{{ Math.round(clip.current_version_virality_score) }}%</span>
-                      </div>
+                      <!-- Footer Info -->
+                      <div class="flex items-center justify-between text-[11px] text-muted-foreground/60 mt-auto">
+                        <div class="flex items-center gap-3">
+                          <span class="font-mono tabular-nums">
+                            {{ formatClipTime(clip.current_version_start_time || 0) }} -
+                            {{ formatClipTime(clip.current_version_end_time || 0) }}
+                          </span>
 
-                      <!-- Confidence (more subtle) -->
-                      <div
-                        v-if="clip.current_version_confidence_score"
-                        class="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground/60"
-                        title="AI Confidence Score"
-                      >
-                        <BrainIcon class="h-3 w-3" />
-                        <span>{{ Math.round((clip.current_version_confidence_score || 0) * 100) }}%</span>
-                      </div>
-                    </div>
+                          <!-- Build Status -->
+                          <span v-if="clip.build_status === 'building'" class="text-blue-400 flex items-center gap-1">
+                            <Loader2 class="h-3 w-3 animate-spin" />
+                            Building...
+                          </span>
+                          <span v-else-if="hasCompletedBuilds(clip)" class="text-green-400 flex items-center gap-1">
+                            <Check class="h-3 w-3" />
+                            {{ getDownloadableFilesCount(clip) || 1 }} File{{
+                              (getDownloadableFilesCount(clip) || 1) !== 1 ? 's' : ''
+                            }}
+                          </span>
+                        </div>
 
-                    <!-- Footer Info -->
-                    <div class="flex items-center justify-between text-[11px] text-muted-foreground/60 mt-auto">
-                      <div class="flex items-center gap-3">
-                        <span class="font-mono tabular-nums">
-                          {{ formatClipTime(clip.current_version_start_time || 0) }} -
-                          {{ formatClipTime(clip.current_version_end_time || 0) }}
-                        </span>
-
-                        <!-- Build Status -->
-                        <span v-if="clip.build_status === 'building'" class="text-blue-400 flex items-center gap-1">
-                          <Loader2 class="h-3 w-3 animate-spin" />
-                          Building...
-                        </span>
-                        <span v-else-if="hasCompletedBuilds(clip)" class="text-green-400 flex items-center gap-1">
-                          <Check class="h-3 w-3" />
-                          {{ getDownloadableFilesCount(clip) || 1 }} File{{
-                            (getDownloadableFilesCount(clip) || 1) !== 1 ? 's' : ''
-                          }}
-                        </span>
-                      </div>
-
-                      <!-- Run Info -->
-                      <div class="flex items-center gap-2">
-                        <span v-if="clip.run_number" class="flex items-center gap-1.5">
-                          <div
-                            class="w-2 h-2 rounded-full"
-                            :style="{ backgroundColor: clip.session_run_color || '#8B5CF6' }"
-                          ></div>
-                          Run {{ clip.run_number }}
-                        </span>
+                        <!-- Run Info -->
+                        <div class="flex items-center gap-2">
+                          <span v-if="clip.run_number" class="flex items-center gap-1.5">
+                            <div
+                              class="w-2 h-2 rounded-full"
+                              :style="{ backgroundColor: clip.session_run_color || '#8B5CF6' }"
+                            ></div>
+                            Run {{ clip.run_number }}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
+            </div>
+
+            <!-- Right Column: Video Player -->
+            <div class="flex-1 flex flex-col p-4 overflow-y-auto">
+              <!-- No clip selected state -->
+              <div
+                v-if="!clipToPreview"
+                class="flex-1 flex flex-col items-center justify-center text-center bg-black/20 rounded-xl border border-border/30"
+              >
+                <div class="w-20 h-20 bg-muted/10 rounded-full flex items-center justify-center mb-4">
+                  <PlayIcon class="w-10 h-10 text-muted-foreground/40" />
+                </div>
+                <h3 class="text-lg font-medium text-foreground/80 mb-2">Select a Clip to Preview</h3>
+                <p class="text-sm text-muted-foreground/60 max-w-xs">
+                  Click on any clip from the list to preview it here
+                </p>
+              </div>
+
+              <!-- Video Player -->
+              <template v-else>
+                <!-- Clip Info Header -->
+                <div class="flex items-center justify-between mb-3">
+                  <div class="min-w-0 flex-1">
+                    <h3 class="text-base font-semibold text-foreground truncate">
+                      {{ clipToPreview.current_version?.name || clipToPreview.name || 'Untitled Clip' }}
+                    </h3>
+                    <p class="text-xs text-muted-foreground flex items-center gap-2">
+                      <span class="truncate">{{ clipToPreview.segment_name }}</span>
+                      <span class="text-foreground/30">•</span>
+                      <span class="font-mono tabular-nums">
+                        {{ formatClipTime(clipToPreview.current_version_start_time || 0) }} -
+                        {{ formatClipTime(clipToPreview.current_version_end_time || 0) }}
+                      </span>
+                    </p>
+                  </div>
+                  <button
+                    @click="closeClipPreview"
+                    class="p-1.5 hover:bg-muted rounded-md transition-colors text-muted-foreground hover:text-foreground flex-shrink-0"
+                    title="Close preview"
+                  >
+                    <X class="h-4 w-4" />
+                  </button>
+                </div>
+
+                <!-- Video Container - Fixed 16:9 aspect ratio -->
+                <div class="w-full aspect-video bg-black rounded-lg overflow-hidden">
+                  <video
+                    v-if="inlineVideoSrc"
+                    ref="inlineVideoRef"
+                    class="w-full h-full object-contain"
+                    :src="inlineVideoSrc"
+                    @loadedmetadata="onInlineVideoLoaded"
+                    @timeupdate="onInlineVideoTimeUpdate"
+                    @ended="onInlineVideoEnded"
+                    controls
+                  ></video>
+                  <div v-else-if="inlineVideoLoading" class="w-full h-full flex items-center justify-center">
+                    <Loader2 class="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                  <div v-else class="w-full h-full flex items-center justify-center">
+                    <p class="text-muted-foreground text-sm">No video source available</p>
+                  </div>
+                </div>
+
+                <!-- Clip Description -->
+                <div v-if="clipToPreview.current_version_detection_reason" class="mt-3 p-2.5 bg-muted/20 rounded-lg">
+                  <p class="text-xs text-muted-foreground italic line-clamp-2">
+                    "{{ clipToPreview.current_version_detection_reason }}"
+                  </p>
+                </div>
+              </template>
             </div>
           </div>
         </div>
@@ -1147,7 +1213,6 @@
   import DownloadCard from '@/components/DownloadCard.vue';
   import ClipDetectionConfirmDialog from '@/components/ClipDetectionConfirmDialog.vue';
   import ClipBuildSettingsDialog, { type BuildSettings } from '@/components/ClipBuildSettingsDialog.vue';
-  import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
   import { useChunkedClipDetection } from '@/composables/useChunkedClipDetection';
   import { useAuthStore } from '@/stores/auth';
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
@@ -1488,7 +1553,8 @@
   // Computed class for folder dialog width based on active tab and content
   const folderDialogWidthClass = computed(() => {
     if (folderActiveTab.value === 'clips') {
-      return 'max-w-3xl'; // Wider for clips with 16:9 thumbnails
+      // Wide layout for 2-column view with inline video player
+      return 'max-w-6xl';
     }
     // For segments tab, base width on segment count
     const segmentCount = folderProject.value ? getEffectiveSegmentCount(folderProject.value.id) : 0;
@@ -1497,7 +1563,6 @@
     return 'max-w-5xl';
   });
   const folderDropdownButtonRefs = ref<Map<string, HTMLElement>>(new Map());
-  const showClipPreview = ref(false);
   const clipToPreview = ref<ClipWithVersionAndSegment | null>(null);
 
   // Computed property to get video file path for clip preview
@@ -1559,6 +1624,10 @@
     if (tab === 'clips' && folderProject.value && folderClips.value.length === 0) {
       loadFolderClips(folderProject.value.id);
     }
+    // Clear clip preview when switching away from clips tab
+    if (tab === 'segments') {
+      closeClipPreview();
+    }
   }
 
   // Open segment workspace and navigate to specific clip
@@ -1571,15 +1640,81 @@
   }
 
   // Preview clip in popup player
+  // Inline video player state
+  const inlineVideoRef = ref<HTMLVideoElement | null>(null);
+  const inlineVideoSrc = ref<string | null>(null);
+  const inlineVideoLoading = ref(false);
+
+  // Prepare video source when clip changes
+  async function prepareInlineVideo() {
+    if (!clipPreviewVideoPath.value) {
+      inlineVideoSrc.value = null;
+      return;
+    }
+
+    inlineVideoLoading.value = true;
+    try {
+      const port = await invoke<number>('get_video_server_port');
+      const encodedPath = btoa(clipPreviewVideoPath.value);
+      const timestamp = Date.now();
+      inlineVideoSrc.value = `http://localhost:${port}/video/${encodedPath}?t=${timestamp}`;
+    } catch (err) {
+      console.error('Failed to prepare video:', err);
+      inlineVideoSrc.value = null;
+    } finally {
+      inlineVideoLoading.value = false;
+    }
+  }
+
+  // Watch for clip changes to prepare video
+  watch(clipToPreview, async (newClip) => {
+    if (newClip) {
+      await prepareInlineVideo();
+    } else {
+      inlineVideoSrc.value = null;
+    }
+  });
+
   function previewClip(clip: ClipWithVersionAndSegment) {
     clipToPreview.value = clip;
-    showClipPreview.value = true;
   }
 
   // Close clip preview
   function closeClipPreview() {
-    showClipPreview.value = false;
+    if (inlineVideoRef.value) {
+      inlineVideoRef.value.pause();
+    }
     clipToPreview.value = null;
+    inlineVideoSrc.value = null;
+  }
+
+  // Handle inline video loaded - seek to clip start time
+  function onInlineVideoLoaded() {
+    if (inlineVideoRef.value && clipToPreview.value) {
+      const startTime = clipToPreview.value.current_version?.start_time ?? clipToPreview.value.start_time ?? 0;
+      inlineVideoRef.value.currentTime = startTime;
+      inlineVideoRef.value.play();
+    }
+  }
+
+  // Handle inline video time update - loop within clip bounds
+  function onInlineVideoTimeUpdate() {
+    if (inlineVideoRef.value && clipToPreview.value) {
+      const endTime = clipToPreview.value.current_version?.end_time ?? clipToPreview.value.end_time ?? Infinity;
+      if (inlineVideoRef.value.currentTime >= endTime) {
+        const startTime = clipToPreview.value.current_version?.start_time ?? clipToPreview.value.start_time ?? 0;
+        inlineVideoRef.value.currentTime = startTime;
+      }
+    }
+  }
+
+  // Handle inline video ended - loop back to start
+  function onInlineVideoEnded() {
+    if (inlineVideoRef.value && clipToPreview.value) {
+      const startTime = clipToPreview.value.current_version?.start_time ?? clipToPreview.value.start_time ?? 0;
+      inlineVideoRef.value.currentTime = startTime;
+      inlineVideoRef.value.play();
+    }
   }
 
   // Delete clip from folder view
@@ -2077,6 +2212,7 @@
     if (!isOpen) {
       clearFolderChildSelection();
       closeFolderDownloadDropdown();
+      closeClipPreview();
     }
   });
 
