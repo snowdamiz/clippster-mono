@@ -83,6 +83,7 @@
                 class="group relative flex items-center justify-between p-3 bg-card border border-border/50 rounded-lg transition-all duration-200 hover:border-primary/30 hover:bg-accent/5 shadow-sm"
                 :class="{
                   'border-green-500/30 bg-green-500/5': streamer.isDetecting,
+                  'border-red-500/20 bg-red-500/5': !streamer.isDetecting && streamer.isLive,
                 }"
               >
                 <!-- Left: Identity -->
@@ -117,10 +118,28 @@
                     </h3>
                     <span class="text-sm text-muted-foreground flex items-center gap-1">
                       {{ streamer.platform }}
+                      <!-- Live status when monitoring -->
                       <span v-if="streamer.isDetecting" class="text-green-500 flex items-center gap-1 ml-2">
                         <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
                         {{ getStatusLabel(streamer) }}
                       </span>
+                      <!-- Live status when NOT monitoring (checked on page load) -->
+                      <template v-else>
+                        <span v-if="streamer.isCheckingLive" class="text-muted-foreground flex items-center gap-1 ml-2">
+                          <Loader2 class="w-3 h-3 animate-spin" />
+                        </span>
+                        <span v-else-if="streamer.isLive" class="text-red-500 flex items-center gap-1 ml-2">
+                          <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                          LIVE
+                          <span v-if="streamer.viewerCount" class="text-muted-foreground text-xs">
+                            · {{ formatViewerCount(streamer.viewerCount) }} viewers
+                          </span>
+                        </span>
+                        <span v-else class="text-muted-foreground/60 flex items-center gap-1 ml-2">
+                          <span class="w-2 h-2 rounded-full bg-muted-foreground/40"></span>
+                          Offline
+                        </span>
+                      </template>
                     </span>
                   </div>
                 </div>
@@ -170,8 +189,19 @@
                     </Button>
                   </template>
 
-                  <!-- Delete Button (Only show when idle or hover) -->
+                  <!-- Refresh & Delete Buttons (Only show when idle) -->
                   <div class="w-px h-8 bg-border/30 mx-1" v-if="!streamer.isDetecting"></div>
+
+                  <button
+                    v-if="!streamer.isDetecting"
+                    @click.stop="refreshLiveStatus(streamer)"
+                    class="p-2 rounded-lg text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors"
+                    :class="{ 'animate-spin': streamer.isCheckingLive }"
+                    :disabled="streamer.isCheckingLive"
+                    title="Refresh live status"
+                  >
+                    <RefreshCw class="w-4 h-4" />
+                  </button>
 
                   <button
                     v-if="!streamer.isDetecting"
@@ -306,14 +336,26 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
-  import { Radio, Plus, Check, Square, Search, Trash2, Activity, Loader2, Video, Sparkles } from 'lucide-vue-next';
+  import {
+    Radio,
+    Plus,
+    Check,
+    Square,
+    Search,
+    Trash2,
+    Activity,
+    Loader2,
+    Video,
+    Sparkles,
+    RefreshCw,
+  } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   // import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-  import { useLivestreamMonitoring } from '@/composables/useLivestreamMonitoring';
+  import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
   import {
     getAllMonitoredStreamers,
     createMonitoredStreamer,
@@ -335,6 +377,10 @@
     isDetecting: boolean;
     mode?: 'Auto-Detect' | 'Record Only' | null;
     status?: 'LIVE' | 'WAITING' | 'IDLE' | 'STOPPING';
+    // Live status (checked independently of monitoring)
+    isLive?: boolean;
+    viewerCount?: number;
+    isCheckingLive?: boolean;
   };
 
   const streamers = ref<ExtendedStreamer[]>([]);
@@ -365,12 +411,79 @@
   const showCreditWarningDialog = ref(false);
   const pendingStreamerStart = ref<{ streamer: ExtendedStreamer; detectClips: boolean } | null>(null);
 
+  const liveStatusInterval = ref<number | null>(null);
+
   onMounted(async () => {
     await loadStreamers();
     // Refresh metadata for streamers that might be missing names or images
     refreshStreamerMetadata();
     syncDetectionState(); // Initial sync
+    // Check live status for all streamers
+    checkAllLiveStatuses();
+
+    // Refresh live status every 60 seconds
+    liveStatusInterval.value = window.setInterval(() => {
+      checkAllLiveStatuses();
+    }, 60_000);
   });
+
+  async function checkAllLiveStatuses() {
+    // Check live status for all streamers in parallel
+    const promises = streamers.value.map(async (streamer) => {
+      // Skip if already being monitored (we already know the status)
+      if (streamer.isDetecting) return;
+
+      // Set checking state
+      const index = streamers.value.findIndex((s) => s.id === streamer.id);
+      if (index !== -1) {
+        streamers.value[index] = { ...streamers.value[index], isCheckingLive: true };
+      }
+
+      try {
+        const status = await fetchLiveStatus(streamer.mintId);
+        const idx = streamers.value.findIndex((s) => s.id === streamer.id);
+        if (idx !== -1) {
+          streamers.value[idx] = {
+            ...streamers.value[idx],
+            isLive: status.isLive,
+            viewerCount: status.numParticipants,
+            isCheckingLive: false,
+          };
+        }
+      } catch (error) {
+        console.error('[LiveClip] Failed to check live status for', streamer.mintId, error);
+        const idx = streamers.value.findIndex((s) => s.id === streamer.id);
+        if (idx !== -1) {
+          streamers.value[idx] = { ...streamers.value[idx], isCheckingLive: false };
+        }
+      }
+    });
+
+    await Promise.all(promises);
+  }
+
+  // Refresh live status for a single streamer
+  async function refreshLiveStatus(streamer: ExtendedStreamer) {
+    if (streamer.isDetecting) return;
+
+    const index = streamers.value.findIndex((s) => s.id === streamer.id);
+    if (index === -1) return;
+
+    streamers.value[index] = { ...streamers.value[index], isCheckingLive: true };
+
+    try {
+      const status = await fetchLiveStatus(streamer.mintId);
+      streamers.value[index] = {
+        ...streamers.value[index],
+        isLive: status.isLive,
+        viewerCount: status.numParticipants,
+        isCheckingLive: false,
+      };
+    } catch (error) {
+      console.error('[LiveClip] Failed to refresh live status for', streamer.mintId, error);
+      streamers.value[index] = { ...streamers.value[index], isCheckingLive: false };
+    }
+  }
 
   async function refreshStreamerMetadata() {
     const needsUpdate = streamers.value.filter(
@@ -425,6 +538,12 @@
 
   onUnmounted(async () => {
     // Do not stop monitoring on unmount to allow background processing
+
+    // Clean up live status polling interval
+    if (liveStatusInterval.value) {
+      clearInterval(liveStatusInterval.value);
+      liveStatusInterval.value = null;
+    }
   });
 
   watch([activeSessions, monitoredStreamers], () => syncDetectionState(), { deep: true });
@@ -439,6 +558,8 @@
         isDetecting: !!monitored,
         mode: monitored ? (monitored.options.detectClips ? 'Auto-Detect' : 'Record Only') : null,
         status: session ? (session.isStopping ? 'STOPPING' : 'LIVE') : monitored ? 'WAITING' : 'IDLE',
+        // When actively monitoring, derive live status from session state
+        isLive: monitored ? (session ? true : streamer.isLive) : streamer.isLive,
       };
     });
   }
@@ -556,6 +677,16 @@
       default:
         return 'bg-slate-500';
     }
+  }
+
+  function formatViewerCount(count: number): string {
+    if (count >= 1000000) {
+      return (count / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+    }
+    if (count >= 1000) {
+      return (count / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    }
+    return count.toString();
   }
 
   function extractIdentifier(input: string): string {

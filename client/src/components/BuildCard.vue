@@ -80,6 +80,13 @@
       </button>
       <button
         class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+        title="Open in project workspace"
+        @click.stop="$emit('openProject', build)"
+      >
+        <ExternalLink class="h-5 w-5" />
+      </button>
+      <button
+        class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
         title="Delete build"
         @click.stop="$emit('delete', build)"
       >
@@ -91,7 +98,7 @@
 
 <script setup lang="ts">
   import { computed } from 'vue';
-  import { Play, Trash2, Download, Video } from 'lucide-vue-next';
+  import { Play, Trash2, Download, Video, ExternalLink } from 'lucide-vue-next';
   import type { ClipBuild } from '@/services/database';
   import { useFormatters } from '@/composables/useFormatters';
 
@@ -112,6 +119,7 @@
     (e: 'play', build: ClipBuild, filePath?: string): void;
     (e: 'save', build: ClipBuild, filePath?: string): void;
     (e: 'delete', build: ClipBuild): void;
+    (e: 'openProject', build: ClipBuild): void;
   }>();
 
   const { getRelativeTime } = useFormatters();

@@ -459,6 +459,9 @@ async function initializeListeners() {
   listenersInitialized = true;
 }
 
+// Export fetchLiveStatus for external use (e.g., checking live status on page load)
+export { fetchLiveStatus };
+
 export function useLivestreamMonitoring() {
   async function startMonitoring(
     streamers: MonitoredStreamer[],

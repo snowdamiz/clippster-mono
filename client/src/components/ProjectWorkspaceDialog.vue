@@ -249,6 +249,8 @@
   const props = defineProps<{
     modelValue: boolean;
     project?: Project | null;
+    /** Optional clip ID to preselect and scroll to when dialog opens */
+    initialClipId?: string | null;
   }>();
 
   const emit = defineEmits<{
@@ -1160,6 +1162,35 @@
     }
   }
 
+  // Function to scroll to and highlight a specific clip in both ClipsTab and Timeline
+  async function scrollToAndSelectClip(clipId: string) {
+    // Wait for DOM to update
+    await nextTick();
+
+    // Small delay to ensure components are fully mounted
+    setTimeout(() => {
+      // Clear any existing hover states first
+      hoveredClipId.value = null;
+      hoveredTimelineClipId.value = null;
+
+      // Use another nextTick to ensure the clear has propagated
+      nextTick(() => {
+        // Scroll in MediaPanel/ClipsTab
+        if (mediaPanelRef.value) {
+          mediaPanelRef.value.scrollClipIntoView(clipId);
+        }
+
+        // Scroll in Timeline
+        scrollToClipInTimeline(clipId);
+
+        // Set BOTH hover states to highlight the clip in both places
+        // hoveredClipId highlights in ClipsTab, hoveredTimelineClipId highlights in Timeline
+        hoveredClipId.value = clipId;
+        hoveredTimelineClipId.value = clipId;
+      });
+    }, 300);
+  }
+
   // Watch for dialog open/close
   watch(
     () => props.modelValue,
@@ -1182,6 +1213,11 @@
             frontendStage.value = detectionState.stage;
             frontendMessage.value = detectionState.message;
             frontendError.value = detectionState.error;
+          }
+
+          // If an initial clip ID was provided, scroll to and select it
+          if (props.initialClipId) {
+            await scrollToAndSelectClip(props.initialClipId);
           }
         }
       } else {

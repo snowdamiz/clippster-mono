@@ -172,6 +172,7 @@
                     @play="(build, filePath) => playBuild(build, filePath || item.filePath)"
                     @save="(build, filePath) => saveBuild(build, filePath || item.filePath)"
                     @delete="confirmDeleteBuild"
+                    @openProject="(build) => openProjectForClip(build, item.clip)"
                   />
                 </div>
               </div>
@@ -455,6 +456,7 @@
                   @play="(build, filePath) => playBuild(build, filePath || item.filePath)"
                   @save="(build, filePath) => saveBuild(build, filePath || item.filePath)"
                   @delete="confirmDeleteBuild"
+                  @openProject="(build) => openProjectForClip(build, item.clip)"
                 />
               </div>
             </div>
@@ -479,6 +481,13 @@
 
     <!-- Video Player Dialog -->
     <VideoPlayerDialog :video="clipToPlay" :show-video-player="showVideoPlayer" @close="showVideoPlayer = false" />
+
+    <!-- Project Workspace Dialog -->
+    <ProjectWorkspaceDialog
+      v-model="showWorkspaceDialog"
+      :project="workspaceProject"
+      :initial-clip-id="workspaceInitialClipId"
+    />
 
     <!-- Delete Build Confirmation Modal -->
     <ConfirmationModal
@@ -613,6 +622,7 @@
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import PaginationFooter from '@/components/PaginationFooter.vue';
   import BuildCard from '@/components/BuildCard.vue';
+  import ProjectWorkspaceDialog from '@/components/ProjectWorkspaceDialog.vue';
   import { Input } from '@/components/ui/input';
   import { Button } from '@/components/ui/button';
   import CustomDropdown from '@/components/CustomDropdown.vue';
@@ -693,6 +703,11 @@
   const showBulkDeleteDialog = ref(false);
   const selectedFolderDialogBuilds = ref<Set<string>>(new Set());
   const showBulkDeleteFolderDialogBuildsDialog = ref(false);
+
+  // Project workspace dialog state
+  const showWorkspaceDialog = ref(false);
+  const workspaceProject = ref<Project | null>(null);
+  const workspaceInitialClipId = ref<string | null>(null);
 
   // Filter state
   const searchQuery = ref('');
@@ -1811,6 +1826,45 @@
 
     showBulkDeleteDialog.value = false;
   }
+
+  // Open project workspace with a specific clip preselected
+  async function openProjectForClip(build: ClipBuild, clip: ClipWithBuilds) {
+    if (!clip.project_id) {
+      showErrorToast('Cannot Open Project', 'This clip is not associated with a project.');
+      return;
+    }
+
+    // Get the project from cache or load it
+    let project = projectCache.value.get(clip.project_id);
+
+    if (!project) {
+      try {
+        project = await getProject(clip.project_id);
+        if (project) {
+          projectCache.value.set(clip.project_id, project);
+        }
+      } catch (error) {
+        console.error('Failed to load project:', error);
+      }
+    }
+
+    if (!project) {
+      showErrorToast('Project Not Found', 'The project associated with this clip could not be found.');
+      return;
+    }
+
+    // Set the workspace state and open the dialog
+    workspaceProject.value = project;
+    workspaceInitialClipId.value = clip.id;
+    showWorkspaceDialog.value = true;
+  }
+
+  // Handle closing workspace dialog - clear initial clip ID
+  watch(showWorkspaceDialog, (isOpen) => {
+    if (!isOpen) {
+      workspaceInitialClipId.value = null;
+    }
+  });
 
   onMounted(() => {
     loadClips();

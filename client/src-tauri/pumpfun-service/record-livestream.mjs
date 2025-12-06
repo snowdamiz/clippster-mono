@@ -263,6 +263,9 @@ class PumpfunRecorder {
     this.videoFramesWritten = 0;
     this._loggedAudioFrame = false; // Debug: log first audio frame structure
     this._loggedVideoFrame = false; // Debug: log first video frame structure
+    this._loggedStride_Y = false; // Debug: log Y plane stride detection
+    this._loggedStride_U = false; // Debug: log U plane stride detection
+    this._loggedStride_V = false; // Debug: log V plane stride detection
     this._audioTimestampSource = 'none'; // 'livekit', 'computed', or 'none'
     this.lastVideoFrame = null;
     this.videoQueue = []; // { buffer, timestampUs } sorted
@@ -640,58 +643,175 @@ class PumpfunRecorder {
                         : 'N/A'
                 };
             };
+            
+            // Check for stride info at frame level
+            const frameStrideInfo = {
+                hasGetStride: typeof converted.getStride === 'function',
+                strideY: converted.strideY,
+                strideU: converted.strideU,
+                strideV: converted.strideV,
+            };
+            
+            // Try to get strides from frame if method exists
+            if (frameStrideInfo.hasGetStride) {
+                try {
+                    frameStrideInfo.strideY = converted.getStride(0);
+                    frameStrideInfo.strideU = converted.getStride(1);
+                    frameStrideInfo.strideV = converted.getStride(2);
+                } catch (e) {
+                    frameStrideInfo.getStrideError = e.message;
+                }
+            }
+            
             log('Video frame structure', {
                 width: effectiveWidth,
                 height: effectiveHeight,
+                frameStrideInfo,
                 Y: describePlane(yPlane, 'Y', effectiveHeight),
                 U: describePlane(uPlane, 'U', effectiveHeight >> 1),
                 V: describePlane(vPlane, 'V', effectiveHeight >> 1)
             });
         }
 
-        // Extract plane data - handles LiveKit's I420 plane format
+        // Extract plane data - handles LiveKit's I420 plane format with robust stride detection
         // LiveKit planes are TypedArrays (Uint8Array) with potential stride padding
-        const extractPlane = (plane, w, h, planeType) => {
-             // Convert plane to Buffer - handles TypedArray correctly
-             const srcBuffer = Buffer.from(plane.buffer, plane.byteOffset, plane.byteLength);
-             
-             // Calculate stride - either explicit or inferred from buffer size
-             let stride;
-             if (typeof plane.stride === 'number' && plane.stride >= w) {
-                 stride = plane.stride;
-             } else {
-                 // Infer stride from buffer size / height
-                 stride = Math.floor(srcBuffer.length / h);
-                 if (stride < w) stride = w;
-             }
-             
-             // Fast path: no padding, direct copy
-             if (stride === w && srcBuffer.length >= w * h) {
-                 return Buffer.from(srcBuffer.buffer, srcBuffer.byteOffset, w * h);
-             }
-             
-             // Slow path: remove stride padding row by row
-             const tight = Buffer.allocUnsafe(w * h);
-             
-             for (let row = 0; row < h; row++) {
-                 const srcStart = row * stride;
-                 const dstStart = row * w;
-                 
-                 if (srcStart + w <= srcBuffer.length) {
-                     srcBuffer.copy(tight, dstStart, srcStart, srcStart + w);
-                 } else {
-                     // Fill with neutral value if out of bounds
-                     const fillValue = planeType === 'Y' ? 16 : 128;
-                     tight.fill(fillValue, dstStart, dstStart + w);
-                 }
-             }
-             
-             return tight;
+        // 
+        // Stride is the number of bytes per row, which may be larger than width due to:
+        // - Memory alignment (16, 32, 64 byte boundaries for SIMD optimization)
+        // - Hardware requirements from the video encoder
+        //
+        // If stride != width, we must copy row-by-row to remove the padding bytes,
+        // otherwise FFmpeg will interpret the padding as pixel data, causing green/warped video.
+        const extractPlane = (plane, w, h, planeType, planeIndex) => {
+            // Convert plane to Buffer - handles TypedArray correctly
+            const srcBuffer = Buffer.from(plane.buffer, plane.byteOffset, plane.byteLength);
+            const bufferSize = srcBuffer.length;
+            const expectedTightSize = w * h;
+            
+            // Determine stride using multiple methods (in order of reliability)
+            let stride = null;
+            let strideSource = 'unknown';
+            
+            // Method 1: Get stride from converted frame (most reliable if available)
+            if (typeof converted.getStride === 'function') {
+                try {
+                    const frameStride = converted.getStride(planeIndex);
+                    if (typeof frameStride === 'number' && frameStride >= w) {
+                        stride = frameStride;
+                        strideSource = 'frame.getStride';
+                    }
+                } catch (e) {}
+            }
+            
+            // Method 2: Check frame's direct stride properties
+            if (!stride) {
+                const stridePropNames = ['strideY', 'strideU', 'strideV'];
+                const strideProp = converted[stridePropNames[planeIndex]];
+                if (typeof strideProp === 'number' && strideProp >= w) {
+                    stride = strideProp;
+                    strideSource = `frame.${stridePropNames[planeIndex]}`;
+                }
+            }
+            
+            // Method 3: Check plane.stride property (may be available on some SDK versions)
+            if (!stride && typeof plane.stride === 'number' && plane.stride >= w) {
+                stride = plane.stride;
+                strideSource = 'plane.stride';
+            }
+            
+            // Method 4: Smart inference from buffer size using common alignment values
+            // Video encoders commonly align to 16, 32, or 64 byte boundaries
+            if (!stride) {
+                const alignments = [64, 32, 16, 8, 4, 2, 1];
+                
+                for (const align of alignments) {
+                    const alignedWidth = Math.ceil(w / align) * align;
+                    const expectedAlignedSize = alignedWidth * h;
+                    
+                    // Check if buffer size matches this alignment exactly
+                    // or is within tolerance (some encoders add up to 1 extra row of padding)
+                    if (bufferSize === expectedAlignedSize) {
+                        stride = alignedWidth;
+                        strideSource = `inferred-align${align}-exact`;
+                        break;
+                    }
+                    
+                    // Allow for trailing padding (up to 1 row)
+                    if (bufferSize > expectedAlignedSize && 
+                        bufferSize <= expectedAlignedSize + alignedWidth) {
+                        stride = alignedWidth;
+                        strideSource = `inferred-align${align}-trailing`;
+                        break;
+                    }
+                }
+            }
+            
+            // Method 5: Fallback - basic inference from buffer size / height
+            // This is the least reliable method
+            if (!stride) {
+                const inferredStride = Math.floor(bufferSize / h);
+                if (inferredStride >= w) {
+                    stride = inferredStride;
+                    strideSource = 'inferred-basic';
+                } else {
+                    // Last resort: assume no padding
+                    stride = w;
+                    strideSource = 'fallback-width';
+                }
+            }
+            
+            // Validate stride makes sense
+            if (stride < w) {
+                stride = w;
+                strideSource = 'corrected-min';
+            }
+            
+            // Log stride detection for debugging (only once per plane type per session)
+            if (!this[`_loggedStride_${planeType}`]) {
+                this[`_loggedStride_${planeType}`] = true;
+                if (DEBUG_SYNC) {
+                    log(`Stride detection for ${planeType} plane`, {
+                        width: w,
+                        height: h,
+                        bufferSize,
+                        expectedTight: expectedTightSize,
+                        detectedStride: stride,
+                        strideSource,
+                        hasPadding: stride !== w
+                    });
+                }
+            }
+            
+            // Always allocate a new buffer to avoid buffer reuse issues from LiveKit
+            const result = Buffer.allocUnsafe(expectedTightSize);
+            
+            // Fast path: no padding needed
+            if (stride === w && bufferSize >= expectedTightSize) {
+                srcBuffer.copy(result, 0, 0, expectedTightSize);
+                return result;
+            }
+            
+            // Slow path: remove stride padding row by row
+            for (let row = 0; row < h; row++) {
+                const srcStart = row * stride;
+                const dstStart = row * w;
+                
+                if (srcStart + w <= bufferSize) {
+                    srcBuffer.copy(result, dstStart, srcStart, srcStart + w);
+                } else {
+                    // Fill with neutral value if source data is insufficient
+                    // Y=16 is black, U/V=128 is neutral chroma (no color shift)
+                    const fillValue = planeType === 'Y' ? 16 : 128;
+                    result.fill(fillValue, dstStart, dstStart + w);
+                }
+            }
+            
+            return result;
         };
 
-        const yBuffer = extractPlane(yPlane, effectiveWidth, effectiveHeight, 'Y');
-        const uBuffer = extractPlane(uPlane, effectiveWidth >> 1, effectiveHeight >> 1, 'U');
-        const vBuffer = extractPlane(vPlane, effectiveWidth >> 1, effectiveHeight >> 1, 'V');
+        const yBuffer = extractPlane(yPlane, effectiveWidth, effectiveHeight, 'Y', 0);
+        const uBuffer = extractPlane(uPlane, effectiveWidth >> 1, effectiveHeight >> 1, 'U', 1);
+        const vBuffer = extractPlane(vPlane, effectiveWidth >> 1, effectiveHeight >> 1, 'V', 2);
 
         const buffer = Buffer.concat([yBuffer, uBuffer, vBuffer]);
 
@@ -893,6 +1013,9 @@ class PumpfunRecorder {
         this.videoQueue = [];
         this._loggedAudioFrame = false;
         this._loggedVideoFrame = false;
+        this._loggedStride_Y = false;
+        this._loggedStride_U = false;
+        this._loggedStride_V = false;
         
         // Reset mixer state
         this.audioMixer.reset();
