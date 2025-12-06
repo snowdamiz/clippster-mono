@@ -282,6 +282,12 @@ pub fn run() {
                             sql: include_str!("../migrations/046_add_speaker_detections.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 47,
+                            description: "add_output_paths_to_clip_builds",
+                            sql: include_str!("../migrations/047_add_output_paths_to_clip_builds.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

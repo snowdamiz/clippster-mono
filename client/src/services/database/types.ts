@@ -248,6 +248,7 @@ export interface ClipBuild {
   include_subtitles: boolean | number;
   // Build output
   file_path: string;
+  output_paths: string | null; // JSON array of all output file paths (one per aspect ratio)
   thumbnail_path: string | null;
   file_size: number | null;
   duration: number | null;

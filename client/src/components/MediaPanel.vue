@@ -488,9 +488,13 @@
       return;
     }
 
-    const { clip_id, success, output_path, thumbnail_path, duration, file_size, error } = payload;
+    const { clip_id, success, output_path, all_output_paths, thumbnail_path, duration, file_size, error } = payload;
 
-    console.log(`[MediaPanel] Received clip build complete event for: ${clip_id}`, { success, output_path });
+    console.log(`[MediaPanel] Received clip build complete event for: ${clip_id}`, {
+      success,
+      output_path,
+      all_output_paths,
+    });
 
     // Immediately update local state for instant UI feedback
     const clip = clips.value.find((c) => c.id === clip_id);
@@ -546,17 +550,21 @@
               await updateClipBuild(buildingRecord.id, {
                 status: 'completed',
                 filePath: output_path,
+                outputPaths: all_output_paths || (output_path ? [output_path] : []),
                 thumbnailPath: thumbnail_path,
                 fileSize: file_size,
                 duration: duration,
               });
-              console.log(`[MediaPanel] Updated build record ${buildingRecord.id} for clip: ${clip_id}`);
+              console.log(
+                `[MediaPanel] Updated build record ${buildingRecord.id} for clip: ${clip_id} with ${all_output_paths?.length || 1} output paths`
+              );
             } else {
               // Fallback: create a new build record if none found (for backwards compatibility)
               const buildId = await createClipBuild(clip_id, {});
               await updateClipBuild(buildId, {
                 status: 'completed',
                 filePath: output_path,
+                outputPaths: all_output_paths || (output_path ? [output_path] : []),
                 thumbnailPath: thumbnail_path,
                 fileSize: file_size,
                 duration: duration,

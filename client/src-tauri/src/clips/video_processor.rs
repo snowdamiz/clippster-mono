@@ -963,6 +963,7 @@ pub async fn build_split_screen_clip(
     output_path: &std::path::Path,
     segment: &serde_json::Value,
     strategy: &FramingStrategy,
+    target_aspect_ratio: &str,  // Target aspect ratio (e.g., "9:16", "4:5", "1:1")
     quality: &str,
     frame_rate: u32,
     audio_settings: Option<&AudioSettings>,
@@ -975,16 +976,22 @@ pub async fn build_split_screen_clip(
     let layout = strategy.layout.as_ref()
         .ok_or("Split screen strategy missing layout configuration")?;
 
-    println!("[Rust] Building split screen clip with ratio: {}", layout.split_ratio);
+    // Parse target aspect ratio from parameter
+    let aspect = parse_aspect_ratio_string(target_aspect_ratio)
+        .unwrap_or(super::types::AspectRatio { width: 9.0, height: 16.0 });
+    
+    println!("[Rust] Building split screen clip with ratio: {}, aspect: {}:{}", 
+        layout.split_ratio, aspect.width, aspect.height);
 
     // Get video info for pixel calculations
     let video_info = get_video_info(app, video_path).await?;
     let source_w = video_info.width as f64;
     let source_h = video_info.height as f64;
 
-    // Calculate output dimensions for 9:16
+    // Calculate output dimensions based on target aspect ratio
+    // Use 1080 as base width, calculate height from aspect ratio
     let output_w: u32 = 1080;
-    let output_h: u32 = 1920;
+    let output_h: u32 = ((output_w as f32) * aspect.height / aspect.width) as u32;
 
     // Calculate heights for each split region in the output
     let top_output_height = (output_h as f64 * layout.split_ratio) as u32;
@@ -1162,6 +1169,19 @@ pub async fn build_split_screen_clip(
     Ok(())
 }
 
+/// Parses an aspect ratio string (e.g., "9:16", "1:1", "4:5") into an AspectRatio struct.
+fn parse_aspect_ratio_string(ratio_str: &str) -> Option<super::types::AspectRatio> {
+    let parts: Vec<&str> = ratio_str.split(':').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    
+    let width: f32 = parts[0].parse().ok()?;
+    let height: f32 = parts[1].parse().ok()?;
+    
+    Some(super::types::AspectRatio { width, height })
+}
+
 /// Calculates crop dimensions that preserve a target aspect ratio, centered on a point.
 /// 
 /// Given source dimensions, target aspect ratio, and a center point (normalized 0-1),
@@ -1211,6 +1231,7 @@ pub async fn build_dynamic_pan_clip(
     output_path: &std::path::Path,
     segment: &serde_json::Value,
     strategy: &FramingStrategy,
+    target_aspect_ratio: &str,  // Target aspect ratio (e.g., "9:16", "4:5", "1:1")
     quality: &str,
     frame_rate: u32,
     audio_settings: Option<&AudioSettings>,
@@ -1223,15 +1244,20 @@ pub async fn build_dynamic_pan_clip(
     let keyframes = strategy.keyframes.as_ref()
         .ok_or("Dynamic pan strategy missing keyframes")?;
 
-    println!("[Rust] Building dynamic pan clip with {} keyframes", keyframes.len());
+    // Parse target aspect ratio from parameter
+    let aspect = parse_aspect_ratio_string(target_aspect_ratio)
+        .unwrap_or(super::types::AspectRatio { width: 9.0, height: 16.0 });
+    
+    println!("[Rust] Building dynamic pan clip with {} keyframes, aspect: {}:{}", 
+        keyframes.len(), aspect.width, aspect.height);
 
     // Get video info
     let video_info = get_video_info(app, video_path).await?;
     let source_w = video_info.width;
     let source_h = video_info.height;
 
-    // Calculate crop dimensions for 9:16 output from 16:9 source
-    let target_aspect = 9.0 / 16.0;
+    // Calculate crop dimensions for target aspect ratio
+    let target_aspect = aspect.width as f64 / aspect.height as f64;
     let source_aspect = source_w as f64 / source_h as f64;
     
     let (crop_w, crop_h) = if target_aspect < source_aspect {
@@ -1377,12 +1403,16 @@ fn build_pan_expression(
 /// 
 /// This is the main entry point that routes to the appropriate builder
 /// based on the framing mode.
+/// 
+/// The `target_aspect_ratio` parameter allows overriding the strategy's aspect ratio
+/// to support building multiple aspect ratios (9:16, 4:5, 1:1) from the same strategy.
 pub async fn build_clip_with_framing_strategy(
     app: &tauri::AppHandle,
     video_path: &str,
     output_path: &std::path::Path,
     segment: &serde_json::Value,
     strategy: &FramingStrategy,
+    target_aspect_ratio: &str,  // Override aspect ratio (e.g., "9:16", "4:5", "1:1")
     quality: &str,
     frame_rate: u32,
     subtitle_path: Option<&std::path::Path>,
@@ -1392,7 +1422,7 @@ pub async fn build_clip_with_framing_strategy(
     watermark_settings: Option<&WatermarkSettings>,
     audio_settings: Option<&AudioSettings>,
 ) -> Result<(), String> {
-    println!("[Rust] Building clip with framing strategy: {:?}", strategy.mode);
+    println!("[Rust] Building clip with framing strategy: {:?}, target: {}", strategy.mode, target_aspect_ratio);
 
     match strategy.mode {
         FramingMode::SplitScreen => {
@@ -1409,7 +1439,7 @@ pub async fn build_clip_with_framing_strategy(
             let build_path = temp_output.as_ref().unwrap_or(&output_path_buf);
             
             build_split_screen_clip(
-                app, video_path, build_path, segment, strategy, quality, frame_rate, audio_settings
+                app, video_path, build_path, segment, strategy, target_aspect_ratio, quality, frame_rate, audio_settings
             ).await?;
 
             // Add subtitles if needed
@@ -1431,7 +1461,7 @@ pub async fn build_clip_with_framing_strategy(
             let build_path = temp_output.as_ref().unwrap_or(&output_path_buf);
 
             build_dynamic_pan_clip(
-                app, video_path, build_path, segment, strategy, quality, frame_rate, audio_settings
+                app, video_path, build_path, segment, strategy, target_aspect_ratio, quality, frame_rate, audio_settings
             ).await?;
 
             // Add subtitles if needed
@@ -1441,11 +1471,11 @@ pub async fn build_clip_with_framing_strategy(
             }
         },
         FramingMode::Static => {
-            // Use existing static crop builder with strategy's crop region
-            let aspect_ratio = super::types::AspectRatio {
-                width: 9.0,
-                height: 16.0,
-            };
+            // Parse target aspect ratio from parameter (e.g., "9:16", "1:1", "4:5")
+            let aspect_ratio = parse_aspect_ratio_string(target_aspect_ratio)
+                .unwrap_or(super::types::AspectRatio { width: 9.0, height: 16.0 });
+            
+            println!("[Rust] Static mode with aspect ratio: {}:{}", aspect_ratio.width, aspect_ratio.height);
             
             build_single_segment_clip_with_settings(
                 app,
@@ -1485,6 +1515,7 @@ pub async fn build_multi_segment_clip_with_framing_strategy(
     output_path: &std::path::Path,
     segments: &[serde_json::Value],
     strategy: &FramingStrategy,
+    target_aspect_ratio: &str,  // Target aspect ratio (e.g., "9:16", "4:5", "1:1")
     quality: &str,
     frame_rate: u32,
     subtitle_path: Option<&std::path::Path>,
@@ -1496,7 +1527,7 @@ pub async fn build_multi_segment_clip_with_framing_strategy(
 ) -> Result<(), String> {
     use futures::future::join_all;
     
-    println!("[Rust] Building multi-segment clip with framing strategy: {:?}", strategy.mode);
+    println!("[Rust] Building multi-segment clip with framing strategy: {:?}, target: {}", strategy.mode, target_aspect_ratio);
     println!("[Rust] Processing {} segments", segments.len());
 
     let paths = crate::storage::init_storage_dirs()
@@ -1509,6 +1540,7 @@ pub async fn build_multi_segment_clip_with_framing_strategy(
         .collect();
 
     // Build each segment with framing strategy
+    let target_aspect_ratio_owned = target_aspect_ratio.to_string();
     let segment_tasks: Vec<_> = segments.iter().enumerate().map(|(i, segment)| {
         let app = app.clone();
         let video_path = video_path.to_string();
@@ -1516,6 +1548,7 @@ pub async fn build_multi_segment_clip_with_framing_strategy(
         let strategy = strategy.clone();
         let quality = quality.to_string();
         let audio_settings = audio_settings.cloned();
+        let target_ar = target_aspect_ratio_owned.clone();
 
         async move {
             println!("[Rust] Building framed segment {}/{}", i + 1, segments.len());
@@ -1523,17 +1556,18 @@ pub async fn build_multi_segment_clip_with_framing_strategy(
             match strategy.mode {
                 FramingMode::SplitScreen => {
                     build_split_screen_clip(
-                        &app, &video_path, &temp_path, segment, &strategy, &quality, frame_rate, audio_settings.as_ref()
+                        &app, &video_path, &temp_path, segment, &strategy, &target_ar, &quality, frame_rate, audio_settings.as_ref()
                     ).await?;
                 },
                 FramingMode::DynamicPan => {
                     build_dynamic_pan_clip(
-                        &app, &video_path, &temp_path, segment, &strategy, &quality, frame_rate, audio_settings.as_ref()
+                        &app, &video_path, &temp_path, segment, &strategy, &target_ar, &quality, frame_rate, audio_settings.as_ref()
                     ).await?;
                 },
                 FramingMode::Static => {
-                    // For static mode, use simple crop
-                    let aspect_ratio = super::types::AspectRatio { width: 9.0, height: 16.0 };
+                    // For static mode, use the target aspect ratio
+                    let aspect_ratio = parse_aspect_ratio_string(&target_ar)
+                        .unwrap_or(super::types::AspectRatio { width: 9.0, height: 16.0 });
                     extract_segment_with_crop(&app, &video_path, &temp_path, segment, &aspect_ratio, &quality, frame_rate, audio_settings.as_ref()).await?;
                 },
             }

@@ -394,6 +394,7 @@ export async function updateClipBuild(
     status?: 'building' | 'completed' | 'failed';
     progress?: number;
     filePath?: string;
+    outputPaths?: string[]; // Array of all output file paths (one per aspect ratio)
     thumbnailPath?: string;
     fileSize?: number;
     duration?: number;
@@ -424,6 +425,11 @@ export async function updateClipBuild(
     if (updates.filePath !== undefined) {
       setClauses.push('file_path = ?');
       params.push(updates.filePath);
+    }
+
+    if (updates.outputPaths !== undefined) {
+      setClauses.push('output_paths = ?');
+      params.push(JSON.stringify(updates.outputPaths));
     }
 
     if (updates.thumbnailPath !== undefined) {

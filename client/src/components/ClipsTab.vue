@@ -232,43 +232,45 @@
                     <Teleport to="body">
                       <div
                         v-if="openDownloadDropdownId === clip.id"
-                        class="fixed z-[9999] min-w-[240px] max-w-[320px] bg-popover border border-border rounded-md shadow-lg py-1 max-h-[300px] overflow-y-auto"
+                        class="fixed z-[9999] min-w-[260px] max-w-[340px] bg-popover border border-border rounded-md shadow-lg py-1 max-h-[300px] overflow-y-auto"
                         :style="getDropdownPosition(clip.id)"
                         @click.stop
                       >
                         <div
                           class="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider border-b border-border/50 mb-1 flex items-center justify-between"
                         >
-                          <span>Builds ({{ getCompletedBuilds(clip).length }})</span>
+                          <span>Downloads ({{ getDownloadableFilesCount(clip) }})</span>
                         </div>
-                        <!-- Build items from builds array -->
+                        <!-- Individual file items from all builds -->
                         <button
-                          v-for="build in getCompletedBuilds(clip)"
-                          :key="build.id"
+                          v-for="(file, fileIdx) in getDownloadableFiles(clip)"
+                          :key="`${file.build.id}-${fileIdx}`"
                           class="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted/50 flex items-center gap-3 border-b border-border/20 last:border-b-0"
                           @click.stop="
-                            onSaveBuild(build);
+                            onSaveFile(file.filePath);
                             closeDownloadDropdown();
                           "
                         >
                           <DownloadIcon class="h-4 w-4 text-green-500 flex-shrink-0" />
                           <div class="flex-1 min-w-0">
                             <div class="text-xs font-medium truncate flex items-center gap-1.5">
-                              <span class="text-muted-foreground/70">#{{ build.build_number }}</span>
-                              <span>{{ getBuildFileName(build.file_path) }}</span>
+                              <span v-if="file.aspectRatio" class="text-primary/80 font-semibold">
+                                {{ file.aspectRatio }}
+                              </span>
+                              <span class="text-muted-foreground/70">#{{ file.build.build_number }}</span>
+                              <span class="truncate">{{ getBuildFileName(file.filePath) }}</span>
                             </div>
                             <div class="text-[10px] text-muted-foreground flex items-center gap-2 mt-0.5">
-                              <span v-if="build.completed_at">{{ formatBuildDate(build.completed_at) }}</span>
-                              <span v-if="build.file_size">{{ formatFileSize(build.file_size) }}</span>
-                              <span v-if="build.aspect_ratios" class="text-primary/70">
-                                {{ formatAspectRatios(build.aspect_ratios) }}
+                              <span v-if="file.build.completed_at">{{ formatBuildDate(file.build.completed_at) }}</span>
+                              <span v-if="file.build.file_size && getDownloadableFiles(clip).length === 1">
+                                {{ formatFileSize(file.build.file_size) }}
                               </span>
                             </div>
                           </div>
                         </button>
                         <!-- Fallback for legacy builds (clip.built_file_path) -->
                         <button
-                          v-if="getCompletedBuilds(clip).length === 0 && clip.built_file_path"
+                          v-if="getDownloadableFilesCount(clip) === 0 && clip.built_file_path"
                           class="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted/50 flex items-center gap-3"
                           @click.stop="
                             onSaveBuiltClip(clip);
@@ -369,8 +371,8 @@
                   </span>
                   <span v-else-if="hasCompletedBuilds(clip)" class="text-green-400 flex items-center gap-1">
                     <CheckIcon class="h-2.5 w-2.5" />
-                    {{ getCompletedBuilds(clip).length || 1 }} Build{{
-                      (getCompletedBuilds(clip).length || 1) !== 1 ? 's' : ''
+                    {{ getDownloadableFilesCount(clip) || 1 }} File{{
+                      (getDownloadableFilesCount(clip) || 1) !== 1 ? 's' : ''
                     }}
                   </span>
                 </div>
@@ -899,6 +901,61 @@
     return clip.builds.filter((b) => b.status === 'completed');
   }
 
+  // Parse output paths from a build (supports both new output_paths array and legacy single file_path)
+  function getOutputPathsFromBuild(build: ClipBuild): string[] {
+    // Try parsing output_paths JSON array first
+    if (build.output_paths) {
+      try {
+        const paths = JSON.parse(build.output_paths);
+        if (Array.isArray(paths) && paths.length > 0) {
+          return paths;
+        }
+      } catch {
+        // Fall through to single file_path
+      }
+    }
+    // Fallback to single file_path
+    if (build.file_path) {
+      return [build.file_path];
+    }
+    return [];
+  }
+
+  // Get all downloadable files from all completed builds for a clip
+  interface DownloadableFile {
+    build: ClipBuild;
+    filePath: string;
+    aspectRatio: string | null; // Extracted from filename (e.g., "16-9" from "clip_16-9_1.mp4")
+  }
+
+  function getDownloadableFiles(clip: ClipWithVersion): DownloadableFile[] {
+    const completedBuilds = getCompletedBuilds(clip);
+    const files: DownloadableFile[] = [];
+
+    for (const build of completedBuilds) {
+      const paths = getOutputPathsFromBuild(build);
+      for (const filePath of paths) {
+        // Extract aspect ratio from filename (e.g., "clip_name_16-9_1.mp4" -> "16:9")
+        const fileName = filePath.split(/[/\\]/).pop() || '';
+        const aspectRatioMatch = fileName.match(/_(\d+-\d+)_\d+\.\w+$/);
+        const aspectRatio = aspectRatioMatch ? aspectRatioMatch[1].replace('-', ':') : null;
+
+        files.push({
+          build,
+          filePath,
+          aspectRatio,
+        });
+      }
+    }
+
+    return files;
+  }
+
+  // Get total count of downloadable files for a clip
+  function getDownloadableFilesCount(clip: ClipWithVersion): number {
+    return getDownloadableFiles(clip).length;
+  }
+
   function getLoadingMessage(): string {
     switch (props.generationStage) {
       case 'starting':
@@ -1029,12 +1086,42 @@
     }
 
     const rect = button.getBoundingClientRect();
-    const dropdownWidth = 260; // approximate width
+    const dropdownWidth = 280; // approximate width
+    const dropdownMaxHeight = 300; // max-height from CSS
+    const padding = 8; // minimum distance from viewport edge
 
-    // Position below the button, aligned to the right edge
+    // Calculate horizontal position - align to right edge of button, but keep within viewport
+    let left = rect.right - dropdownWidth;
+
+    // Ensure it doesn't go off the left edge
+    if (left < padding) {
+      left = padding;
+    }
+
+    // Ensure it doesn't go off the right edge
+    const viewportWidth = window.innerWidth;
+    if (left + dropdownWidth > viewportWidth - padding) {
+      left = viewportWidth - dropdownWidth - padding;
+    }
+
+    // Calculate vertical position - prefer below, but flip above if not enough space
+    let top = rect.bottom + 4;
+    const viewportHeight = window.innerHeight;
+
+    // Check if dropdown would go off bottom of viewport
+    if (top + dropdownMaxHeight > viewportHeight - padding) {
+      // Position above the button instead
+      top = rect.top - dropdownMaxHeight - 4;
+
+      // If that would go off the top, just position at top with padding
+      if (top < padding) {
+        top = padding;
+      }
+    }
+
     return {
-      top: `${rect.bottom + 4}px`,
-      left: `${Math.max(8, rect.right - dropdownWidth)}px`,
+      top: `${top}px`,
+      left: `${left}px`,
     };
   }
 
@@ -1367,13 +1454,21 @@
       console.error('[ClipsTab] No build file path available');
       return;
     }
+    await onSaveFile(build.file_path);
+  }
+
+  async function onSaveFile(filePath: string) {
+    if (!filePath) {
+      console.error('[ClipsTab] No file path available');
+      return;
+    }
 
     try {
       const { save } = await import('@tauri-apps/plugin-dialog');
       const { invoke } = await import('@tauri-apps/api/core');
 
       // Extract the filename from the source path
-      const sourcePath = build.file_path;
+      const sourcePath = filePath;
       const fileName = sourcePath.split(/[/\\]/).pop() || 'clip.mp4';
 
       // Open save dialog so user can choose where to save
@@ -1398,15 +1493,15 @@
         destinationPath: destinationPath,
       });
 
-      console.log('[ClipsTab] Build saved to:', destinationPath);
+      console.log('[ClipsTab] File saved to:', destinationPath);
 
       // Show success message
       const toastComposable = await import('@/composables/useToast');
       const { success: showSuccessToast } = toastComposable.useToast();
-      showSuccessToast('Build Saved', `Build saved to ${destinationPath}`);
+      showSuccessToast('File Saved', `Clip saved to ${destinationPath}`);
     } catch (error) {
-      console.error('[ClipsTab] Failed to save build:', error);
-      showError('Failed to Save', 'Could not save the build file. Please try again.');
+      console.error('[ClipsTab] Failed to save file:', error);
+      showError('Failed to Save', 'Could not save the file. Please try again.');
     }
   }
 

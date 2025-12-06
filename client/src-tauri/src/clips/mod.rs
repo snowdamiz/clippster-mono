@@ -174,6 +174,7 @@ pub async fn build_clip_from_segments(
                     project_id: project_id_clone.clone(),
                     success: false,
                     output_path: None,
+                    all_output_paths: Vec::new(),
                     thumbnail_path: None,
                     duration: None,
                     file_size: None,

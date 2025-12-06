@@ -70,6 +70,8 @@ pub struct ClipBuildResult {
     pub project_id: String,
     pub success: bool,
     pub output_path: Option<String>,
+    /// All output paths (one per aspect ratio)
+    pub all_output_paths: Vec<String>,
     pub thumbnail_path: Option<String>,
     pub duration: Option<f64>,
     pub file_size: Option<u64>,

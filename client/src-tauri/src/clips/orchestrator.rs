@@ -294,9 +294,10 @@ pub async fn build_clip_internal_simple(
             }
 
             // Build clip based on segments with aspect ratio cropping
-            // Check if this is a portrait (9:16) clip with a framing strategy
-            let is_portrait = aspect_ratio_str == "9:16";
-            let use_framing_strategy = is_portrait && framing_strategy.is_some();
+            // Check if this is a portrait/square clip (9:16, 4:5, 1:1) with a framing strategy
+            // These aspect ratios benefit from speaker-aware framing (split screen, etc.)
+            let is_portrait_or_square = aspect_ratio_str == "9:16" || aspect_ratio_str == "4:5" || aspect_ratio_str == "1:1";
+            let use_framing_strategy = is_portrait_or_square && framing_strategy.is_some();
             
             if use_framing_strategy {
                 // Use speaker-aware framing for portrait clips
@@ -310,6 +311,7 @@ pub async fn build_clip_internal_simple(
                         &output_path,
                         &segments[0],
                         strategy,
+                        &aspect_ratio_str,  // Pass the current aspect ratio being built
                         &quality,
                         frame_rate,
                         subtitle_file.as_deref(),
@@ -328,6 +330,7 @@ pub async fn build_clip_internal_simple(
                         &output_path,
                         &segments,
                         strategy,
+                        &aspect_ratio_str,  // Pass the current aspect ratio being built
                         &quality,
                         frame_rate,
                         subtitle_file.as_deref(),
@@ -467,6 +470,7 @@ pub async fn build_clip_internal_simple(
         project_id: project_id.to_string(),
         success: true,
         output_path: first_output_path,
+        all_output_paths: all_output_paths.clone(),
         thumbnail_path: first_thumbnail_path.map(|p| p.to_string_lossy().to_string()),
         duration: clip_duration,
         file_size: Some(total_file_size),
