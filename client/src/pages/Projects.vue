@@ -292,9 +292,9 @@
                 class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-3"
               >
                 <button
-                  v-if="viewMode === 'folders' && hasChildren(project.id) && getChildCount(project.id) > 1"
+                  v-if="viewMode === 'folders' && (hasChildren(project.id) || hasDirectVideos(project.id))"
                   class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                  title="View Folder"
+                  title="View Project"
                   @click.stop="handleProjectClick(project)"
                 >
                   <FolderOpen class="h-5 w-5" />
@@ -402,10 +402,16 @@
       @confirm="onFolderBuildConfirm"
     />
 
-    <!-- Clip Preview Dialog -->
-    <ClipPreviewDialog
-      :show="showClipPreview"
-      :clip="clipToPreview"
+    <!-- Clip Preview Dialog (uses VideoPlayerDialog in clip preview mode) -->
+    <VideoPlayerDialog
+      :video="null"
+      :show-video-player="showClipPreview"
+      :video-file-path="clipPreviewVideoPath"
+      :clip-start-time="clipToPreview?.current_version?.start_time ?? clipToPreview?.start_time ?? null"
+      :clip-end-time="clipToPreview?.current_version?.end_time ?? clipToPreview?.end_time ?? null"
+      :clip-name="clipToPreview?.current_version?.name || clipToPreview?.name || 'Untitled Clip'"
+      :clip-segment-name="clipToPreview?.segment_name"
+      :z-index="60"
       @close="closeClipPreview"
     />
 
@@ -418,9 +424,9 @@
       <div
         class="bg-card rounded-lg w-full mx-4 border border-border flex flex-col overflow-hidden shadow-2xl transition-all duration-200 max-h-[80vh]"
         :class="{
-          'max-w-lg': getFolderChildren(folderProject.id).length <= 1,
-          'max-w-3xl': getFolderChildren(folderProject.id).length === 2,
-          'max-w-5xl': getFolderChildren(folderProject.id).length >= 3,
+          'max-w-lg': getEffectiveSegmentCount(folderProject.id) <= 1,
+          'max-w-3xl': getEffectiveSegmentCount(folderProject.id) === 2,
+          'max-w-5xl': getEffectiveSegmentCount(folderProject.id) >= 3,
         }"
       >
         <!-- Header -->
@@ -480,7 +486,9 @@
           >
             <FolderOpen class="h-4 w-4" />
             Segments
-            <span class="text-xs bg-muted px-1.5 py-0.5 rounded-full">{{ getFolderChildren(folderProject.id).length }}</span>
+            <span class="text-xs bg-muted px-1.5 py-0.5 rounded-full">
+              {{ getEffectiveSegmentCount(folderProject.id) }}
+            </span>
             <div
               v-if="folderActiveTab === 'segments'"
               class="absolute bottom-0 left-2 right-2 h-0.5 bg-gradient-to-r from-violet-500 to-purple-500 rounded-full"
@@ -617,7 +625,10 @@
             </div>
 
             <!-- Empty State -->
-            <div v-else-if="folderClips.length === 0" class="flex flex-col items-center justify-center py-12 text-center">
+            <div
+              v-else-if="folderClips.length === 0"
+              class="flex flex-col items-center justify-center py-12 text-center"
+            >
               <div class="w-16 h-16 bg-muted/20 rounded-full flex items-center justify-center mb-4">
                 <Video class="w-8 h-8 text-muted-foreground" />
               </div>
@@ -657,7 +668,11 @@
                     <!-- Actions -->
                     <div
                       class="flex items-center gap-0.5 transition-opacity duration-200 flex-shrink-0 -mr-1 -mt-1"
-                      :class="hasCompletedBuilds(clip) || clip.build_status === 'building' ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+                      :class="
+                        hasCompletedBuilds(clip) || clip.build_status === 'building'
+                          ? 'opacity-100'
+                          : 'opacity-0 group-hover:opacity-100'
+                      "
                     >
                       <!-- Play button (preview) -->
                       <button
@@ -687,15 +702,79 @@
                         <Hammer class="h-4 w-4" />
                       </button>
 
-                      <!-- Download button (only when built) -->
-                      <button
-                        v-if="hasCompletedBuilds(clip)"
-                        class="p-1.5 hover:bg-green-500/15 rounded-md transition-colors text-green-500/80 hover:text-green-400"
-                        title="Download built clip"
-                        @click.stop="onFolderSaveBuiltClip(clip)"
-                      >
-                        <DownloadIcon class="h-4 w-4" />
-                      </button>
+                      <!-- Download dropdown (only when built) -->
+                      <div v-if="hasCompletedBuilds(clip)" class="relative">
+                        <button
+                          :ref="(el) => setFolderDropdownButtonRef(el, clip.id)"
+                          class="p-1.5 hover:bg-green-500/15 rounded-md transition-colors text-green-500/80 hover:text-green-400 flex items-center gap-0.5"
+                          title="Download built clip"
+                          @click.stop="toggleFolderDownloadDropdown(clip.id)"
+                        >
+                          <DownloadIcon class="h-4 w-4" />
+                          <ChevronDownIcon class="h-3 w-3" />
+                        </button>
+
+                        <!-- Dropdown menu with list of all builds - Teleported to body -->
+                        <Teleport to="body">
+                          <div
+                            v-if="folderDownloadDropdownId === clip.id"
+                            class="fixed z-[9999] min-w-[260px] max-w-[340px] bg-popover border border-border rounded-md shadow-lg py-1 max-h-[300px] overflow-y-auto"
+                            :style="getFolderDropdownPosition(clip.id)"
+                            @click.stop
+                          >
+                            <div
+                              class="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider border-b border-border/50 mb-1 flex items-center justify-between"
+                            >
+                              <span>Downloads ({{ getDownloadableFilesCount(clip) }})</span>
+                            </div>
+                            <!-- Individual file items from all builds -->
+                            <button
+                              v-for="(file, fileIdx) in getDownloadableFiles(clip)"
+                              :key="`${file.build.id}-${fileIdx}`"
+                              class="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted/50 flex items-center gap-3 border-b border-border/20 last:border-b-0"
+                              @click.stop="
+                                onFolderSaveFile(file.filePath);
+                                closeFolderDownloadDropdown();
+                              "
+                            >
+                              <DownloadIcon class="h-4 w-4 text-green-500 flex-shrink-0" />
+                              <div class="flex-1 min-w-0">
+                                <div class="text-xs font-medium truncate flex items-center gap-1.5">
+                                  <span v-if="file.aspectRatio" class="text-primary/80 font-semibold">
+                                    {{ file.aspectRatio }}
+                                  </span>
+                                  <span class="text-muted-foreground/70">#{{ file.build.build_number }}</span>
+                                  <span class="truncate">{{ getBuildFileName(file.filePath) }}</span>
+                                </div>
+                                <div class="text-[10px] text-muted-foreground flex items-center gap-2 mt-0.5">
+                                  <span v-if="file.build.completed_at">
+                                    {{ formatBuildDate(file.build.completed_at) }}
+                                  </span>
+                                  <span v-if="file.build.file_size && getDownloadableFiles(clip).length === 1">
+                                    {{ formatFileSize(file.build.file_size) }}
+                                  </span>
+                                </div>
+                              </div>
+                            </button>
+                            <!-- Fallback for legacy builds (clip.built_file_path) -->
+                            <button
+                              v-if="getDownloadableFilesCount(clip) === 0 && clip.built_file_path"
+                              class="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted/50 flex items-center gap-3"
+                              @click.stop="
+                                onFolderSaveFile(clip.built_file_path);
+                                closeFolderDownloadDropdown();
+                              "
+                            >
+                              <DownloadIcon class="h-4 w-4 text-green-500 flex-shrink-0" />
+                              <div class="flex-1 min-w-0">
+                                <div class="text-xs font-medium truncate">
+                                  {{ getBuildFileName(clip.built_file_path) }}
+                                </div>
+                              </div>
+                            </button>
+                          </div>
+                        </Teleport>
+                      </div>
 
                       <!-- Delete button -->
                       <button
@@ -712,14 +791,19 @@
                   <!-- Metrics Row -->
                   <div class="flex items-center flex-wrap gap-2 mb-2.5">
                     <!-- Segment Badge -->
-                    <div class="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/70 bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20">
+                    <div
+                      class="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/70 bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20"
+                    >
                       <FolderOpen class="h-3 w-3 opacity-70" />
                       <span>{{ clip.segment_name }}</span>
                     </div>
 
                     <!-- Virality Score -->
                     <div
-                      v-if="clip.current_version_virality_score !== undefined && clip.current_version_virality_score !== null"
+                      v-if="
+                        clip.current_version_virality_score !== undefined &&
+                        clip.current_version_virality_score !== null
+                      "
                       class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium transition-colors"
                       :class="getViralityColorClass(clip.current_version_virality_score)"
                       title="Predicted Virality Score"
@@ -729,7 +813,9 @@
                     </div>
 
                     <!-- Duration -->
-                    <div class="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 bg-secondary/40 px-2 py-0.5 rounded-md">
+                    <div
+                      class="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 bg-secondary/40 px-2 py-0.5 rounded-md"
+                    >
                       <Clock class="h-3 w-3 opacity-70" />
                       <span>{{ getClipDuration(clip) }}</span>
                     </div>
@@ -754,7 +840,9 @@
                   </p>
 
                   <!-- Footer Info -->
-                  <div class="flex items-center justify-between text-[10px] text-muted-foreground/60 border-t border-border/30 pt-2 mt-auto">
+                  <div
+                    class="flex items-center justify-between text-[10px] text-muted-foreground/60 border-t border-border/30 pt-2 mt-auto"
+                  >
                     <div class="flex items-center gap-2">
                       <span class="font-mono">
                         {{ formatClipTime(clip.current_version_start_time || 0) }} -
@@ -768,7 +856,9 @@
                       </span>
                       <span v-else-if="hasCompletedBuilds(clip)" class="text-green-400 flex items-center gap-1">
                         <Check class="h-2.5 w-2.5" />
-                        Built
+                        {{ getDownloadableFilesCount(clip) || 1 }} File{{
+                          (getDownloadableFilesCount(clip) || 1) !== 1 ? 's' : ''
+                        }}
                       </span>
                     </div>
 
@@ -790,11 +880,14 @@
         </div>
 
         <!-- Footer with Pagination (only for segments tab) -->
-        <div v-if="folderActiveTab === 'segments' && folderTotalPages > 1" class="px-6 py-4 border-t border-border bg-muted/10 flex justify-center">
+        <div
+          v-if="folderActiveTab === 'segments' && folderTotalPages > 1"
+          class="px-6 py-4 border-t border-border bg-muted/10 flex justify-center"
+        >
           <PaginationFooter
             :current-page="folderCurrentPage"
             :total-pages="folderTotalPages"
-            :total-items="getFolderChildren(folderProject.id).length"
+            :total-items="getEffectiveSegmentCount(folderProject.id)"
             item-label="part"
             @go-to-page="(page) => (folderCurrentPage = page)"
             @previous="folderCurrentPage--"
@@ -1045,7 +1138,7 @@
   import DownloadCard from '@/components/DownloadCard.vue';
   import ClipDetectionConfirmDialog from '@/components/ClipDetectionConfirmDialog.vue';
   import ClipBuildSettingsDialog, { type BuildSettings } from '@/components/ClipBuildSettingsDialog.vue';
-  import ClipPreviewDialog from '@/components/ClipPreviewDialog.vue';
+  import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
   import { useChunkedClipDetection } from '@/composables/useChunkedClipDetection';
   import { useAuthStore } from '@/stores/auth';
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
@@ -1335,6 +1428,30 @@
     return childrenMap.value.get(projectId)?.length || 0;
   }
 
+  // Check if project has videos directly attached (for standalone projects)
+  function hasDirectVideos(projectId: string): boolean {
+    const videos = projectVideos.value[projectId];
+    return videos && videos.length > 0;
+  }
+
+  // Get the effective segments for a project (children if any, or the project itself if standalone with videos)
+  function getEffectiveSegments(projectId: string): Project[] {
+    const children = getFolderChildren(projectId);
+    if (children.length > 0) {
+      return children;
+    }
+    // For standalone projects with videos, return the project itself as a "segment"
+    const project = projects.value.find((p) => p.id === projectId);
+    if (project && hasDirectVideos(projectId)) {
+      return [project];
+    }
+    return [];
+  }
+
+  function getEffectiveSegmentCount(projectId: string): number {
+    return getEffectiveSegments(projectId).length;
+  }
+
   // Folder dialog pagination
   const folderCurrentPage = ref(1);
   const folderItemsPerPage = 6;
@@ -1346,8 +1463,20 @@
   const folderClipToBuild = ref<ClipWithVersionAndSegment | null>(null);
   const showFolderBuildDialog = ref(false);
   const folderDownloadDropdownId = ref<string | null>(null);
+  const folderDropdownButtonRefs = ref<Map<string, HTMLElement>>(new Map());
   const showClipPreview = ref(false);
   const clipToPreview = ref<ClipWithVersionAndSegment | null>(null);
+
+  // Computed property to get video file path for clip preview
+  const clipPreviewVideoPath = computed(() => {
+    if (!clipToPreview.value) return null;
+    const segmentId = clipToPreview.value.segment_id || clipToPreview.value.project_id;
+    const videos = projectVideos.value[segmentId];
+    if (videos && videos.length > 0) {
+      return videos[0].file_path;
+    }
+    return null;
+  });
 
   function getFolderChildren(projectId: string): Project[] {
     return childrenMap.value.get(projectId) || [];
@@ -1366,11 +1495,15 @@
     }
   }
 
-  // Get total clips count for folder
+  // Get total clips count for folder (including standalone projects)
   const folderTotalClipsCount = computed(() => {
     if (!folderProject.value) return 0;
     const children = getFolderChildren(folderProject.value.id);
-    return children.reduce((acc, child) => acc + (clipCounts.value[child.id] || 0), 0);
+    if (children.length > 0) {
+      return children.reduce((acc, child) => acc + (clipCounts.value[child.id] || 0), 0);
+    }
+    // For standalone projects, return clips for the project itself
+    return clipCounts.value[folderProject.value.id] || 0;
   });
 
   // Handle folder tab change
@@ -1508,44 +1641,201 @@
   }
 
   function hasCompletedBuilds(clip: ClipWithVersionAndSegment): boolean {
+    // Check for builds in the builds array
+    if (clip.builds && clip.builds.some((b: any) => b.status === 'completed')) {
+      return true;
+    }
+    // Fallback to legacy built_file_path
     return clip.build_status === 'completed' || Boolean(clip.built_file_path);
+  }
+
+  // Get completed builds from a clip
+  function getCompletedBuilds(clip: ClipWithVersionAndSegment): any[] {
+    if (!clip.builds) return [];
+    return clip.builds.filter((b: any) => b.status === 'completed');
+  }
+
+  // Parse output paths from a build (supports both new output_paths array and legacy single file_path)
+  function getOutputPathsFromBuild(build: any): string[] {
+    // Try parsing output_paths JSON array first
+    if (build.output_paths) {
+      try {
+        const paths = JSON.parse(build.output_paths);
+        if (Array.isArray(paths) && paths.length > 0) {
+          return paths;
+        }
+      } catch {
+        // Fall through to single file_path
+      }
+    }
+    // Fallback to single file_path
+    if (build.file_path) {
+      return [build.file_path];
+    }
+    return [];
+  }
+
+  // Downloadable file interface
+  interface DownloadableFile {
+    build: any;
+    filePath: string;
+    aspectRatio: string | null;
+  }
+
+  // Get all downloadable files from all completed builds for a clip
+  function getDownloadableFiles(clip: ClipWithVersionAndSegment): DownloadableFile[] {
+    const completedBuilds = getCompletedBuilds(clip);
+    const files: DownloadableFile[] = [];
+
+    for (const build of completedBuilds) {
+      const paths = getOutputPathsFromBuild(build);
+      for (const filePath of paths) {
+        // Extract aspect ratio from filename (e.g., "clip_name_16-9_1.mp4" -> "16:9")
+        const fileName = filePath.split(/[/\\]/).pop() || '';
+        const aspectRatioMatch = fileName.match(/_(\d+-\d+)_\d+\.\w+$/);
+        const aspectRatio = aspectRatioMatch ? aspectRatioMatch[1].replace('-', ':') : null;
+
+        files.push({
+          build,
+          filePath,
+          aspectRatio,
+        });
+      }
+    }
+
+    return files;
+  }
+
+  // Get total count of downloadable files for a clip
+  function getDownloadableFilesCount(clip: ClipWithVersionAndSegment): number {
+    return getDownloadableFiles(clip).length;
+  }
+
+  // Get filename from path
+  function getBuildFileName(filePath: string | null): string {
+    if (!filePath) return 'Built clip';
+    return filePath.split(/[/\\]/).pop() || 'Built clip';
+  }
+
+  // Format build date
+  function formatBuildDate(timestamp: number | null): string {
+    if (!timestamp) return '';
+    const date = new Date(timestamp * 1000);
+    return date.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  // Format file size
+  function formatFileSize(bytes: number | null): string {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  }
+
+  // Set dropdown button ref for positioning
+  function setFolderDropdownButtonRef(el: any, clipId: string) {
+    if (el && el instanceof HTMLElement) {
+      folderDropdownButtonRefs.value.set(clipId, el);
+    } else {
+      folderDropdownButtonRefs.value.delete(clipId);
+    }
+  }
+
+  // Get dropdown position for teleported menu
+  function getFolderDropdownPosition(clipId: string): Record<string, string> {
+    const button = folderDropdownButtonRefs.value.get(clipId);
+    if (!button) {
+      return { top: '0px', left: '0px' };
+    }
+
+    const rect = button.getBoundingClientRect();
+    const dropdownWidth = 280;
+    const dropdownMaxHeight = 300;
+    const padding = 8;
+
+    // Calculate horizontal position - align to right edge of button, but keep within viewport
+    let left = rect.right - dropdownWidth;
+
+    if (left < padding) {
+      left = padding;
+    }
+
+    const viewportWidth = window.innerWidth;
+    if (left + dropdownWidth > viewportWidth - padding) {
+      left = viewportWidth - dropdownWidth - padding;
+    }
+
+    // Calculate vertical position - prefer below, but flip above if not enough space
+    let top = rect.bottom + 4;
+    const viewportHeight = window.innerHeight;
+
+    if (top + dropdownMaxHeight > viewportHeight - padding) {
+      top = rect.top - dropdownMaxHeight - 4;
+      if (top < padding) {
+        top = padding;
+      }
+    }
+
+    return {
+      top: `${top}px`,
+      left: `${left}px`,
+    };
+  }
+
+  // Close download dropdown
+  function closeFolderDownloadDropdown() {
+    folderDownloadDropdownId.value = null;
+  }
+
+  // Save a specific file
+  async function onFolderSaveFile(filePath: string) {
+    if (!filePath) return;
+
+    try {
+      const defaultName = filePath.split(/[/\\]/).pop() || 'clip.mp4';
+      const savePath = await save({
+        defaultPath: defaultName,
+        filters: [{ name: 'Video', extensions: ['mp4'] }],
+      });
+
+      if (savePath) {
+        await invoke('copy_file', { source: filePath, destination: savePath });
+        success('Clip saved', 'Your clip has been saved successfully.');
+      }
+    } catch (e) {
+      error('Save failed', 'Failed to save the clip file.');
+    }
   }
 
   const paginatedFolderChildren = computed(() => {
     if (!folderProject.value) return [];
-    const children = getFolderChildren(folderProject.value.id);
+    const segments = getEffectiveSegments(folderProject.value.id);
     const startIndex = (folderCurrentPage.value - 1) * folderItemsPerPage;
-    return children.slice(startIndex, startIndex + folderItemsPerPage);
+    return segments.slice(startIndex, startIndex + folderItemsPerPage);
   });
 
   const folderTotalPages = computed(() => {
     if (!folderProject.value) return 0;
-    return Math.ceil(getFolderChildren(folderProject.value.id).length / folderItemsPerPage);
+    return Math.ceil(getEffectiveSegments(folderProject.value.id).length / folderItemsPerPage);
   });
 
   function handleProjectClick(project: Project) {
-    if (viewMode.value === 'folders' && hasChildren(project.id)) {
-      if (getChildCount(project.id) > 1) {
-        // Open folder dialog if more than 1 child
-        folderProject.value = project;
-        folderCurrentPage.value = 1; // Reset to first page
-        folderActiveTab.value = 'segments'; // Reset to segments tab
-        folderClips.value = []; // Clear clips
-        showFolderDialog.value = true;
-        // Preload clips in background
-        loadFolderClips(project.id);
-      } else {
-        // If only 1 child, open that child directly (or the parent workspace if that's preferred logic)
-        // The user requested "looks like normal project card" if 1 segment.
-        // But structurally it's Parent -> Child.
-        // If we click Parent, we probably want to see the content of the Child.
-        const children = getFolderChildren(project.id);
-        if (children.length > 0) {
-          openWorkspace(children[0]);
-        } else {
-          openWorkspace(project);
-        }
-      }
+    // Open folder dialog for projects with children OR standalone projects with videos
+    // This allows users to review detected clips via the Clips tab
+    if (viewMode.value === 'folders' && (hasChildren(project.id) || hasDirectVideos(project.id))) {
+      folderProject.value = project;
+      folderCurrentPage.value = 1; // Reset to first page
+      folderActiveTab.value = 'segments'; // Reset to segments tab
+      folderClips.value = []; // Clear clips
+      showFolderDialog.value = true;
+      // Preload clips in background
+      loadFolderClips(project.id);
     } else {
       openWorkspace(project);
     }
@@ -1739,6 +2029,7 @@
   watch(showFolderDialog, (isOpen) => {
     if (!isOpen) {
       clearFolderChildSelection();
+      closeFolderDownloadDropdown();
     }
   });
 
@@ -2054,8 +2345,8 @@
       selectedFolderChildren.value.clear();
       await loadProjects();
 
-      // Close folder dialog if all children were deleted
-      if (folderProject.value && getFolderChildren(folderProject.value.id).length === 0) {
+      // Close folder dialog if all segments were deleted
+      if (folderProject.value && getEffectiveSegmentCount(folderProject.value.id) === 0) {
         showFolderDialog.value = false;
         folderProject.value = null;
       }
@@ -2353,6 +2644,16 @@
     }, 1500);
   }
 
+  // Click outside handler for folder download dropdown
+  function handleFolderDropdownClickOutside(event: MouseEvent) {
+    if (folderDownloadDropdownId.value !== null) {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.relative')) {
+        folderDownloadDropdownId.value = null;
+      }
+    }
+  }
+
   onMounted(async () => {
     // Initialize downloads state from persistence
     await initializeDownloads();
@@ -2363,11 +2664,14 @@
     document.addEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener);
     // Add event listener for video added events
     window.addEventListener('video-added', handleVideoAdded as EventListener);
+    // Add click outside handler for folder download dropdown
+    document.addEventListener('click', handleFolderDropdownClickOutside);
   });
 
   onUnmounted(() => {
-    // Clean up event listener
+    // Clean up event listeners
     document.removeEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener);
     window.removeEventListener('video-added', handleVideoAdded as EventListener);
+    document.removeEventListener('click', handleFolderDropdownClickOutside);
   });
 </script>

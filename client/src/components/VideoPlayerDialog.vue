@@ -3,6 +3,7 @@
     <div
       v-if="showVideoPlayer"
       class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50"
+      :class="zIndexClass"
       @click.self="$emit('close')"
     >
       <Transition name="dialog" appear>
@@ -14,11 +15,25 @@
           <div v-if="videoSrc" class="relative w-full h-full flex flex-col">
             <!-- Video Title Header -->
             <div
-              class="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-black/80 to-transparent p-3 pt-4 sm:p-6 sm:pt-8"
+              class="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-black/90 via-black/60 to-transparent p-3 pt-4 sm:p-5 sm:pt-6"
             >
               <h3 class="text-white text-sm sm:text-base lg:text-lg font-semibold truncate pr-10 sm:pr-12">
-                {{ getVideoTitle(video) }}
+                {{ displayTitle }}
               </h3>
+              <!-- Clip metadata (only in clip preview mode) -->
+              <div v-if="isClipPreviewMode" class="flex items-center gap-3 mt-1.5 text-xs text-white/60">
+                <span v-if="clipSegmentName" class="flex items-center gap-1.5">
+                  <FolderOpen class="h-3 w-3" />
+                  {{ clipSegmentName }}
+                </span>
+                <span class="flex items-center gap-1.5">
+                  <Clock class="h-3 w-3" />
+                  {{ formatDuration(effectiveStartTime) }} - {{ formatDuration(effectiveEndTime) }}
+                </span>
+                <span class="text-white/40">
+                  ({{ formatClipDurationLabel(effectiveEndTime - effectiveStartTime) }})
+                </span>
+              </div>
             </div>
             <!-- Close Button (Top Right) -->
             <button
@@ -53,7 +68,7 @@
               </div>
               <!-- Center Play/Pause Overlay -->
               <button
-                v-if="!isVideoLoading"
+                v-if="!isVideoLoading && !showReplayButton"
                 @click="togglePlayPause"
                 class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/30"
                 title="Play/Pause"
@@ -65,6 +80,22 @@
                   <Pause v-else class="h-7 w-7 sm:h-10 sm:w-10 text-white" />
                 </div>
               </button>
+              <!-- Replay Button (shown when clip ends in clip preview mode) -->
+              <Transition name="fade">
+                <button
+                  v-if="showReplayButton && isClipPreviewMode"
+                  @click="replayClip"
+                  class="absolute inset-0 flex items-center justify-center bg-black/50"
+                  title="Replay"
+                >
+                  <div
+                    class="p-4 sm:p-6 bg-violet-500/20 backdrop-blur-md rounded-2xl sm:rounded-3xl hover:bg-violet-500/30 transition-colors border border-violet-500/30 flex flex-col items-center gap-2"
+                  >
+                    <RotateCcw class="h-8 w-8 sm:h-12 sm:w-12 text-violet-400" />
+                    <span class="text-white text-sm font-medium">Replay</span>
+                  </div>
+                </button>
+              </Transition>
             </div>
             <!-- Custom Video Controls -->
             <div
@@ -79,21 +110,22 @@
               >
                 <!-- Background track -->
                 <div class="absolute inset-0 bg-zinc-800 rounded-full"></div>
-                <!-- Buffered segments indicator -->
+                <!-- Buffered segments indicator (only in non-clip mode) -->
                 <div
+                  v-if="!isClipPreviewMode"
                   class="absolute h-full bg-violet-500/30 rounded-full transition-all duration-300"
                   :style="{ width: `${duration ? (buffered / duration) * 100 : 0}%` }"
                 ></div>
                 <!-- Progress Bar -->
                 <div
                   class="absolute h-full bg-gradient-to-r from-violet-500 to-purple-500 rounded-full transition-all duration-100"
-                  :style="{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }"
+                  :style="{ width: `${progressPercent}%` }"
                 ></div>
                 <!-- Seek thumb -->
                 <div
                   class="absolute top-1/2 w-4 h-4 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 border-2 border-violet-500"
                   :style="{
-                    left: `${duration ? (currentTime / duration) * 100 : 0}%`,
+                    left: `${progressPercent}%`,
                     transform: 'translate(-50%, -50%)',
                   }"
                 ></div>
@@ -117,7 +149,7 @@
                   <button
                     @click="togglePlayPause"
                     class="p-2.5 bg-zinc-800/80 hover:bg-zinc-700 rounded-xl transition-all duration-200 border border-zinc-700"
-                    title="Play/Pause"
+                    :title="isPlaying ? 'Pause' : 'Play'"
                   >
                     <Play v-if="!isPlaying" class="h-5 w-5 text-white" />
                     <Pause v-else class="h-5 w-5 text-white" />
@@ -126,7 +158,7 @@
                   <div
                     class="text-white text-sm font-mono font-medium bg-zinc-800/80 px-4 py-2.5 rounded-xl border border-zinc-700"
                   >
-                    {{ formatDuration(currentTime) }} / {{ formatDuration(duration) }}
+                    {{ formatDuration(displayCurrentTime) }} / {{ formatDuration(displayDuration) }}
                   </div>
                 </div>
                 <!-- Right Controls -->
@@ -136,7 +168,7 @@
                     <button
                       @click="toggleMute"
                       class="p-2.5 bg-zinc-800/80 hover:bg-zinc-700 rounded-xl transition-all duration-200 border border-zinc-700"
-                      title="Mute/Unmute"
+                      :title="isMuted ? 'Unmute' : 'Mute'"
                     >
                       <VolumeX v-if="isMuted || volume === 0" class="h-4 w-4 text-white" />
                       <Volume2 v-else class="h-4 w-4 text-white" />
@@ -157,6 +189,15 @@
                       />
                     </div>
                   </div>
+                  <!-- Replay Button (only in clip preview mode) -->
+                  <button
+                    v-if="isClipPreviewMode"
+                    @click="replayClip"
+                    class="p-2.5 bg-zinc-800/80 hover:bg-zinc-700 rounded-xl transition-all duration-200 border border-zinc-700"
+                    title="Replay clip"
+                  >
+                    <RotateCcw class="h-4 w-4 text-white" />
+                  </button>
                 </div>
               </div>
             </div>
@@ -171,21 +212,89 @@
   import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import type { RawVideo, IntroOutro } from '@/services/database';
-  import { X, Loader2, Play, Pause, VolumeX, Volume2 } from 'lucide-vue-next';
+  import { X, Loader2, Play, Pause, VolumeX, Volume2, RotateCcw, FolderOpen, Clock } from 'lucide-vue-next';
 
   type VideoLike = RawVideo | IntroOutro;
 
   interface Props {
     video: VideoLike | null;
     showVideoPlayer: boolean;
+    /** Optional: Video file path for clip preview mode (when video prop is not provided) */
+    videoFilePath?: string | null;
+    /** Optional: Clip start time in seconds (enables clip preview mode) */
+    clipStartTime?: number | null;
+    /** Optional: Clip end time in seconds (enables clip preview mode) */
+    clipEndTime?: number | null;
+    /** Optional: Clip name/title for clip preview mode */
+    clipName?: string | null;
+    /** Optional: Segment name for clip preview mode */
+    clipSegmentName?: string | null;
+    /** Optional: Higher z-index for nested dialogs */
+    zIndex?: number;
   }
 
   interface Emits {
     (e: 'close'): void;
   }
 
-  const props = defineProps<Props>();
+  const props = withDefaults(defineProps<Props>(), {
+    videoFilePath: null,
+    clipStartTime: null,
+    clipEndTime: null,
+    clipName: null,
+    clipSegmentName: null,
+    zIndex: 50,
+  });
   const emit = defineEmits<Emits>();
+
+  // Computed: Detect clip preview mode
+  const isClipPreviewMode = computed(() => {
+    return props.clipStartTime !== null && props.clipEndTime !== null;
+  });
+
+  // Computed: z-index class
+  const zIndexClass = computed(() => {
+    return props.zIndex === 60 ? 'z-[60]' : 'z-50';
+  });
+
+  // Computed: Effective start/end times
+  const effectiveStartTime = computed(() => props.clipStartTime ?? 0);
+  const effectiveEndTime = computed(() => props.clipEndTime ?? duration.value);
+
+  // Computed: Display title (uses clipName in clip mode, otherwise video title)
+  const displayTitle = computed(() => {
+    if (isClipPreviewMode.value && props.clipName) {
+      return props.clipName;
+    }
+    return getVideoTitle(props.video);
+  });
+
+  // Computed: Display current time (relative to clip start in clip mode)
+  const displayCurrentTime = computed(() => {
+    if (isClipPreviewMode.value) {
+      return Math.max(0, currentTime.value - effectiveStartTime.value);
+    }
+    return currentTime.value;
+  });
+
+  // Computed: Display duration (clip duration in clip mode, full duration otherwise)
+  const displayDuration = computed(() => {
+    if (isClipPreviewMode.value) {
+      return effectiveEndTime.value - effectiveStartTime.value;
+    }
+    return duration.value;
+  });
+
+  // Computed: Progress percentage (adjusted for clip mode)
+  const progressPercent = computed(() => {
+    if (isClipPreviewMode.value) {
+      const clipDuration = effectiveEndTime.value - effectiveStartTime.value;
+      if (clipDuration <= 0) return 0;
+      const progress = ((currentTime.value - effectiveStartTime.value) / clipDuration) * 100;
+      return Math.min(100, Math.max(0, progress));
+    }
+    return duration.value ? (currentTime.value / duration.value) * 100 : 0;
+  });
 
   // Video player state
   const videoElement = ref<HTMLVideoElement | null>(null);
@@ -201,6 +310,7 @@
   const videoSrc = ref<string | null>(null);
   const videoWidth = ref(16);
   const videoHeight = ref(9);
+  const showReplayButton = ref(false);
 
   // Compute dialog style based on video aspect ratio
   const dialogStyle = computed(() => {
@@ -261,17 +371,44 @@
     }
   }
 
+  // Helper function to format clip duration as label (e.g. "30s", "1m 30s")
+  function formatClipDurationLabel(seconds: number): string {
+    if (isNaN(seconds) || !isFinite(seconds) || seconds <= 0) return '0s';
+    if (seconds < 60) {
+      return `${Math.round(seconds)}s`;
+    }
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.round(seconds % 60);
+    return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+  }
+
   // Video player methods
   function togglePlayPause() {
     if (!videoElement.value) return;
 
+    showReplayButton.value = false;
+
     if (videoElement.value.paused) {
+      // In clip preview mode, restart from beginning if at or past end
+      if (isClipPreviewMode.value && currentTime.value >= effectiveEndTime.value - 0.1) {
+        videoElement.value.currentTime = effectiveStartTime.value;
+      }
       videoElement.value.play();
       isPlaying.value = true;
     } else {
       videoElement.value.pause();
       isPlaying.value = false;
     }
+  }
+
+  // Replay clip (for clip preview mode)
+  function replayClip() {
+    if (!videoElement.value) return;
+
+    showReplayButton.value = false;
+    videoElement.value.currentTime = effectiveStartTime.value;
+    videoElement.value.play();
+    isPlaying.value = true;
   }
 
   function seekTo(event: MouseEvent) {
@@ -282,26 +419,38 @@
     const clickX = event.clientX - rect.left;
     const clickPercent = Math.max(0, Math.min(1, clickX / rect.width));
 
-    const videoDuration = videoElement.value.duration || duration.value;
-    if (!videoDuration || isNaN(videoDuration)) return;
+    let seekTime: number;
+    if (isClipPreviewMode.value) {
+      // Map click position to time within clip range
+      const clipDuration = effectiveEndTime.value - effectiveStartTime.value;
+      seekTime = effectiveStartTime.value + clickPercent * clipDuration;
+    } else {
+      const videoDuration = videoElement.value.duration || duration.value;
+      if (!videoDuration || isNaN(videoDuration)) return;
+      seekTime = clickPercent * videoDuration;
+    }
 
-    const seekTime = clickPercent * videoDuration;
     videoElement.value.currentTime = seekTime;
     currentTime.value = seekTime;
+    showReplayButton.value = false;
   }
 
   function onTimelineHover(event: MouseEvent) {
-    if (!videoElement.value) return;
-
     const timeline = event.currentTarget as HTMLElement;
     const rect = timeline.getBoundingClientRect();
     const hoverX = event.clientX - rect.left;
     const hoverPercent = Math.max(0, Math.min(1, hoverX / rect.width));
 
-    const videoDuration = videoElement.value.duration || duration.value;
-    if (!videoDuration || isNaN(videoDuration)) return;
-
-    const hoverTimeSeconds = hoverPercent * videoDuration;
+    let hoverTimeSeconds: number;
+    if (isClipPreviewMode.value) {
+      // Show time relative to clip start
+      const clipDuration = effectiveEndTime.value - effectiveStartTime.value;
+      hoverTimeSeconds = hoverPercent * clipDuration;
+    } else {
+      const videoDuration = videoElement.value?.duration || duration.value;
+      if (!videoDuration || isNaN(videoDuration)) return;
+      hoverTimeSeconds = hoverPercent * videoDuration;
+    }
 
     hoverPosition.value = hoverPercent * 100;
     hoverTime.value = hoverTimeSeconds;
@@ -345,6 +494,14 @@
     if (videoElement.value.buffered.length > 0) {
       buffered.value = videoElement.value.buffered.end(videoElement.value.buffered.length - 1);
     }
+
+    // In clip preview mode, stop at clip end time
+    if (isClipPreviewMode.value && currentTime.value >= effectiveEndTime.value) {
+      videoElement.value.pause();
+      videoElement.value.currentTime = effectiveEndTime.value;
+      isPlaying.value = false;
+      showReplayButton.value = true;
+    }
   }
 
   function onLoadedMetadata() {
@@ -357,6 +514,12 @@
     videoWidth.value = videoElement.value.videoWidth || 16;
     videoHeight.value = videoElement.value.videoHeight || 9;
 
+    // In clip preview mode, seek to clip start time
+    if (isClipPreviewMode.value) {
+      videoElement.value.currentTime = effectiveStartTime.value;
+      currentTime.value = effectiveStartTime.value;
+    }
+
     videoElement.value.volume = volume.value;
     videoElement.value.muted = isMuted.value;
 
@@ -366,12 +529,19 @@
 
   function onVideoEnded() {
     isPlaying.value = false;
-    currentTime.value = 0;
+    if (isClipPreviewMode.value) {
+      showReplayButton.value = true;
+    } else {
+      currentTime.value = 0;
+    }
   }
 
   // Initialize video source when video changes
   async function initializeVideo() {
-    if (!props.video) {
+    // Determine the file path from either video prop or videoFilePath prop
+    const filePath = props.video?.file_path || props.videoFilePath;
+
+    if (!filePath) {
       videoSrc.value = null;
       return;
     }
@@ -380,7 +550,7 @@
       resetVideoState();
 
       const port = await invoke<number>('get_video_server_port');
-      const encodedPath = btoa(props.video.file_path);
+      const encodedPath = btoa(filePath);
       // Add a timestamp to prevent caching issues
       const timestamp = Date.now();
       videoSrc.value = `http://localhost:${port}/video/${encodedPath}?t=${timestamp}`;
@@ -400,6 +570,7 @@
     hoverTime.value = null;
     hoverPosition.value = 0;
     videoSrc.value = null;
+    showReplayButton.value = false;
     // Reset to default 16:9 aspect ratio
     videoWidth.value = 16;
     videoHeight.value = 9;
@@ -407,8 +578,8 @@
     videoKey.value = `video-${Date.now()}`;
   }
 
-  // Watch for video changes
-  watch(() => props.video, initializeVideo, { immediate: true });
+  // Watch for video changes (either video prop or videoFilePath prop)
+  watch(() => [props.video, props.videoFilePath], initializeVideo, { immediate: true });
 
   // Watch for dialog open/close to properly handle video state
   watch(
@@ -424,7 +595,7 @@
           videoElement.value.load();
         }
         resetVideoState();
-      } else if (newVal && !oldVal && props.video) {
+      } else if (newVal && !oldVal && (props.video || props.videoFilePath)) {
         // Dialog is opening, ensure video is initialized
         initializeVideo();
       }
@@ -484,6 +655,17 @@
   .dialog-leave-to {
     opacity: 0;
     transform: scale(0.98);
+  }
+
+  /* Fade transition for replay button */
+  .fade-enter-active,
+  .fade-leave-active {
+    transition: opacity 0.3s ease;
+  }
+
+  .fade-enter-from,
+  .fade-leave-to {
+    opacity: 0;
   }
 
   /* Custom range input styling */

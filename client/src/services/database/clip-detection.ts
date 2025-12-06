@@ -310,6 +310,7 @@ export async function getClipsWithVersionsByProjectId(
 
 /**
  * Get all clips for a parent project and all its child projects (segments).
+ * For standalone projects (no children), returns clips for the project itself.
  * Returns clips with segment information so they can be displayed at the folder level.
  */
 export async function getClipsWithVersionsForProjectAndChildren(
@@ -323,13 +324,26 @@ export async function getClipsWithVersionsForProjectAndChildren(
     [parentProjectId]
   );
 
-  if (childProjects.length === 0) {
-    return [];
-  }
-
   // Build list of project IDs to query
-  const projectIds = childProjects.map((p) => p.id);
-  const projectNameMap = new Map(childProjects.map((p) => [p.id, p.name]));
+  let projectIds: string[];
+  let projectNameMap: Map<string, string>;
+
+  if (childProjects.length === 0) {
+    // Standalone project - query clips for the project itself
+    const parentProject = await db.select<{ id: string; name: string }[]>(
+      `SELECT id, name FROM projects WHERE id = ?`,
+      [parentProjectId]
+    );
+    if (parentProject.length === 0) {
+      return [];
+    }
+    projectIds = [parentProjectId];
+    projectNameMap = new Map([[parentProjectId, parentProject[0].name]]);
+  } else {
+    // Parent with children - query clips for all children
+    projectIds = childProjects.map((p) => p.id);
+    projectNameMap = new Map(childProjects.map((p) => [p.id, p.name]));
+  }
 
   // Create placeholders for IN clause
   const placeholders = projectIds.map(() => '?').join(', ');
@@ -375,6 +389,20 @@ export async function getClipsWithVersionsForProjectAndChildren(
       );
       clip.current_version_segments = segments;
     }
+  }
+
+  // Load builds for each clip
+  for (const clip of clips) {
+    const builds = await db.select<any[]>(
+      `SELECT * FROM clip_builds 
+       WHERE clip_id = ? 
+       ORDER BY build_number DESC`,
+      [clip.id]
+    );
+    clip.builds = builds.map((build) => ({
+      ...build,
+      include_subtitles: Boolean(build.include_subtitles),
+    }));
   }
 
   // Map clips with segment info
