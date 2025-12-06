@@ -7,7 +7,8 @@
     >
       <Transition name="dialog" appear>
         <div
-          class="bg-zinc-950 rounded-xl sm:rounded-2xl max-w-5xl lg:max-w-6xl max-h-[calc(100vh-40px)] sm:max-h-[calc(100vh-80px)] w-full mx-2 sm:mx-4 border border-white/10 overflow-hidden"
+          class="bg-zinc-950 rounded-xl sm:rounded-2xl max-h-[calc(100vh-40px)] sm:max-h-[calc(100vh-80px)] mx-2 sm:mx-4 border border-white/10 overflow-hidden"
+          :style="dialogStyle"
         >
           <!-- Custom Video Player -->
           <div v-if="videoSrc" class="relative w-full h-full flex flex-col">
@@ -27,13 +28,14 @@
             >
               <X class="h-4 w-4 sm:h-5 sm:w-5 text-white" />
             </button>
-            <!-- Video Display (16:9 Aspect Ratio) -->
-            <div class="relative flex-1 flex items-center justify-center bg-black aspect-video">
+            <!-- Video Display (Dynamic Aspect Ratio) -->
+            <div class="relative flex-1 flex items-center justify-center bg-black min-h-0 overflow-hidden">
               <video
                 ref="videoElement"
                 :key="videoKey"
                 :src="videoSrc"
-                class="w-full h-full object-contain"
+                class="max-w-full max-h-full"
+                :style="{ aspectRatio: `${videoWidth}/${videoHeight}` }"
                 @timeupdate="onTimeUpdate"
                 @loadedmetadata="onLoadedMetadata"
                 @ended="onVideoEnded"
@@ -65,7 +67,9 @@
               </button>
             </div>
             <!-- Custom Video Controls -->
-            <div class="bg-gradient-to-t from-zinc-950 to-zinc-900/90 backdrop-blur-xl border-t border-white/10">
+            <div
+              class="flex-shrink-0 bg-gradient-to-t from-zinc-950 to-zinc-900/90 backdrop-blur-xl border-t border-white/10"
+            >
               <!-- Timeline/Seek Bar -->
               <div
                 class="relative h-1.5 sm:h-2 cursor-pointer group mx-3 sm:mx-6 mt-3 sm:mt-5"
@@ -164,7 +168,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch, onMounted, onUnmounted } from 'vue';
+  import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import type { RawVideo, IntroOutro } from '@/services/database';
   import { X, Loader2, Play, Pause, VolumeX, Volume2 } from 'lucide-vue-next';
@@ -195,6 +199,36 @@
   const hoverTime = ref<number | null>(null);
   const hoverPosition = ref(0);
   const videoSrc = ref<string | null>(null);
+  const videoWidth = ref(16);
+  const videoHeight = ref(9);
+
+  // Compute dialog style based on video aspect ratio
+  const dialogStyle = computed(() => {
+    const aspectRatio = videoWidth.value / videoHeight.value;
+
+    // For portrait videos (aspect ratio < 1), use narrower dialog with explicit height
+    // For landscape videos, use wider dialog
+    if (aspectRatio < 0.8) {
+      // Portrait (9:16, 4:5, etc.) - use near-full viewport height and calculate width
+      return {
+        height: 'calc(100vh - 80px)',
+        width: `calc((100vh - 80px) * ${aspectRatio})`,
+        maxWidth: '90vw',
+      };
+    } else if (aspectRatio < 1.2) {
+      // Square-ish (1:1, 4:3)
+      return {
+        width: '100%',
+        maxWidth: '800px',
+      };
+    } else {
+      // Landscape (16:9, 21:9)
+      return {
+        width: '100%',
+        maxWidth: '1152px', // lg:max-w-6xl equivalent
+      };
+    }
+  });
 
   // Helper function to get video title for both RawVideo and IntroOutro types
   function getVideoTitle(video: VideoLike | null): string {
@@ -319,6 +353,10 @@
     isVideoLoading.value = false;
     duration.value = videoElement.value.duration;
 
+    // Capture the video's native dimensions for aspect ratio
+    videoWidth.value = videoElement.value.videoWidth || 16;
+    videoHeight.value = videoElement.value.videoHeight || 9;
+
     videoElement.value.volume = volume.value;
     videoElement.value.muted = isMuted.value;
 
@@ -362,6 +400,9 @@
     hoverTime.value = null;
     hoverPosition.value = 0;
     videoSrc.value = null;
+    // Reset to default 16:9 aspect ratio
+    videoWidth.value = 16;
+    videoHeight.value = 9;
     // Generate a new key to force video element recreation
     videoKey.value = `video-${Date.now()}`;
   }
