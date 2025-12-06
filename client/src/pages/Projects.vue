@@ -907,11 +907,6 @@
                     </h3>
                     <p class="text-xs text-muted-foreground flex items-center gap-2">
                       <span class="truncate">{{ clipToPreview.segment_name }}</span>
-                      <span class="text-foreground/30">•</span>
-                      <span class="font-mono tabular-nums">
-                        {{ formatClipTime(clipToPreview.current_version_start_time || 0) }} -
-                        {{ formatClipTime(clipToPreview.current_version_end_time || 0) }}
-                      </span>
                     </p>
                   </div>
                   <button
@@ -923,8 +918,8 @@
                   </button>
                 </div>
 
-                <!-- Video Container - Fixed 16:9 aspect ratio -->
-                <div class="w-full aspect-video bg-black rounded-lg overflow-hidden">
+                <!-- Video Container - Fixed 16:9 aspect ratio with custom controls -->
+                <div class="w-full aspect-video bg-black rounded-lg overflow-hidden relative group">
                   <video
                     v-if="inlineVideoSrc"
                     ref="inlineVideoRef"
@@ -933,13 +928,90 @@
                     @loadedmetadata="onInlineVideoLoaded"
                     @timeupdate="onInlineVideoTimeUpdate"
                     @ended="onInlineVideoEnded"
-                    controls
+                    @click="toggleInlineVideoPlay"
                   ></video>
                   <div v-else-if="inlineVideoLoading" class="w-full h-full flex items-center justify-center">
                     <Loader2 class="h-8 w-8 animate-spin text-muted-foreground" />
                   </div>
                   <div v-else class="w-full h-full flex items-center justify-center">
                     <p class="text-muted-foreground text-sm">No video source available</p>
+                  </div>
+
+                  <!-- Custom Video Controls -->
+                  <div
+                    v-if="inlineVideoSrc"
+                    class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-3 pt-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <!-- Progress Bar -->
+                    <div
+                      class="w-full h-1.5 bg-white/20 rounded-full cursor-pointer mb-3 group/progress"
+                      @click="seekInlineVideo"
+                      @mousedown="startInlineSeekDrag"
+                    >
+                      <div
+                        class="h-full bg-primary rounded-full relative"
+                        :style="{ width: `${inlineVideoProgress}%` }"
+                      >
+                        <div
+                          class="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover/progress:opacity-100 transition-opacity shadow-md"
+                        ></div>
+                      </div>
+                    </div>
+
+                    <!-- Controls Row -->
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-3">
+                        <!-- Play/Pause -->
+                        <button @click="toggleInlineVideoPlay" class="text-white hover:text-primary transition-colors">
+                          <PlayIcon v-if="!inlineVideoPlaying" class="w-5 h-5" />
+                          <Pause v-else class="w-5 h-5" />
+                        </button>
+
+                        <!-- Volume -->
+                        <div class="flex items-center gap-1.5 group/volume">
+                          <button
+                            @click="toggleInlineVideoMute"
+                            class="text-white hover:text-primary transition-colors"
+                          >
+                            <VolumeX v-if="inlineVideoMuted || inlineVideoVolume === 0" class="w-4 h-4" />
+                            <Volume2 v-else class="w-4 h-4" />
+                          </button>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.1"
+                            :value="inlineVideoMuted ? 0 : inlineVideoVolume"
+                            @input="setInlineVideoVolume"
+                            class="w-16 h-1 bg-white/20 rounded-full appearance-none cursor-pointer opacity-0 group-hover/volume:opacity-100 transition-opacity [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full"
+                          />
+                        </div>
+
+                        <!-- Time Display -->
+                        <span class="text-white text-xs font-mono tabular-nums">
+                          {{ formatClipTime(inlineVideoCurrentTime) }} / {{ formatClipTime(inlineVideoClipDuration) }}
+                        </span>
+                      </div>
+
+                      <!-- Fullscreen -->
+                      <button
+                        @click="toggleInlineVideoFullscreen"
+                        class="text-white hover:text-primary transition-colors"
+                      >
+                        <Maximize2 class="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Play overlay when paused -->
+                  <div
+                    v-if="inlineVideoSrc && !inlineVideoPlaying && !inlineVideoLoading"
+                    class="absolute inset-0 flex items-center justify-center cursor-pointer"
+                    @click="toggleInlineVideoPlay"
+                  >
+                    <div class="w-16 h-16 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-sm">
+                      <PlayIcon class="w-8 h-8 text-white ml-1" />
+                    </div>
                   </div>
                 </div>
 
@@ -1180,6 +1252,10 @@
     DownloadIcon,
     ChevronDownIcon,
     BrainIcon,
+    Pause,
+    VolumeX,
+    Volume2,
+    Maximize2,
   } from 'lucide-vue-next';
   import {
     getAllProjects,
@@ -1644,6 +1720,13 @@
   const inlineVideoRef = ref<HTMLVideoElement | null>(null);
   const inlineVideoSrc = ref<string | null>(null);
   const inlineVideoLoading = ref(false);
+  const inlineVideoPlaying = ref(false);
+  const inlineVideoMuted = ref(false);
+  const inlineVideoVolume = ref(1);
+  const inlineVideoCurrentTime = ref(0); // Relative to clip start (0 = clip start)
+  const inlineVideoClipDuration = ref(0);
+  const inlineVideoProgress = ref(0);
+  const inlineSeekDragging = ref(false);
 
   // Prepare video source when clip changes
   async function prepareInlineVideo() {
@@ -1686,34 +1769,139 @@
     }
     clipToPreview.value = null;
     inlineVideoSrc.value = null;
+    inlineVideoPlaying.value = false;
+    inlineVideoCurrentTime.value = 0;
+    inlineVideoProgress.value = 0;
+    inlineVideoClipDuration.value = 0;
+  }
+
+  // Get clip start and end times
+  function getClipStartTime(): number {
+    return clipToPreview.value?.current_version?.start_time ?? clipToPreview.value?.start_time ?? 0;
+  }
+
+  function getClipEndTime(): number {
+    return clipToPreview.value?.current_version?.end_time ?? clipToPreview.value?.end_time ?? 0;
   }
 
   // Handle inline video loaded - seek to clip start time
   function onInlineVideoLoaded() {
     if (inlineVideoRef.value && clipToPreview.value) {
-      const startTime = clipToPreview.value.current_version?.start_time ?? clipToPreview.value.start_time ?? 0;
+      const startTime = getClipStartTime();
+      const endTime = getClipEndTime();
+      inlineVideoClipDuration.value = endTime - startTime;
       inlineVideoRef.value.currentTime = startTime;
+      inlineVideoCurrentTime.value = 0;
+      inlineVideoProgress.value = 0;
       inlineVideoRef.value.play();
+      inlineVideoPlaying.value = true;
     }
   }
 
   // Handle inline video time update - loop within clip bounds
   function onInlineVideoTimeUpdate() {
-    if (inlineVideoRef.value && clipToPreview.value) {
-      const endTime = clipToPreview.value.current_version?.end_time ?? clipToPreview.value.end_time ?? Infinity;
-      if (inlineVideoRef.value.currentTime >= endTime) {
-        const startTime = clipToPreview.value.current_version?.start_time ?? clipToPreview.value.start_time ?? 0;
+    if (inlineVideoRef.value && clipToPreview.value && !inlineSeekDragging.value) {
+      const startTime = getClipStartTime();
+      const endTime = getClipEndTime();
+      const currentTime = inlineVideoRef.value.currentTime;
+
+      // Loop back if past end time
+      if (currentTime >= endTime) {
         inlineVideoRef.value.currentTime = startTime;
+        return;
       }
+
+      // Update relative time display (relative to clip start)
+      inlineVideoCurrentTime.value = Math.max(0, currentTime - startTime);
+      inlineVideoProgress.value =
+        inlineVideoClipDuration.value > 0 ? (inlineVideoCurrentTime.value / inlineVideoClipDuration.value) * 100 : 0;
     }
   }
 
   // Handle inline video ended - loop back to start
   function onInlineVideoEnded() {
     if (inlineVideoRef.value && clipToPreview.value) {
-      const startTime = clipToPreview.value.current_version?.start_time ?? clipToPreview.value.start_time ?? 0;
+      const startTime = getClipStartTime();
       inlineVideoRef.value.currentTime = startTime;
       inlineVideoRef.value.play();
+    }
+  }
+
+  // Toggle play/pause
+  function toggleInlineVideoPlay() {
+    if (!inlineVideoRef.value) return;
+    if (inlineVideoPlaying.value) {
+      inlineVideoRef.value.pause();
+      inlineVideoPlaying.value = false;
+    } else {
+      inlineVideoRef.value.play();
+      inlineVideoPlaying.value = true;
+    }
+  }
+
+  // Toggle mute
+  function toggleInlineVideoMute() {
+    if (!inlineVideoRef.value) return;
+    inlineVideoMuted.value = !inlineVideoMuted.value;
+    inlineVideoRef.value.muted = inlineVideoMuted.value;
+  }
+
+  // Set volume
+  function setInlineVideoVolume(event: Event) {
+    if (!inlineVideoRef.value) return;
+    const value = parseFloat((event.target as HTMLInputElement).value);
+    inlineVideoVolume.value = value;
+    inlineVideoRef.value.volume = value;
+    if (value > 0 && inlineVideoMuted.value) {
+      inlineVideoMuted.value = false;
+      inlineVideoRef.value.muted = false;
+    }
+  }
+
+  // Seek video based on click position
+  function seekInlineVideo(event: MouseEvent) {
+    if (!inlineVideoRef.value || !clipToPreview.value) return;
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const percent = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    const startTime = getClipStartTime();
+    const newTime = startTime + percent * inlineVideoClipDuration.value;
+    inlineVideoRef.value.currentTime = newTime;
+    inlineVideoCurrentTime.value = percent * inlineVideoClipDuration.value;
+    inlineVideoProgress.value = percent * 100;
+  }
+
+  // Start drag seeking
+  function startInlineSeekDrag(event: MouseEvent) {
+    inlineSeekDragging.value = true;
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!inlineVideoRef.value || !clipToPreview.value) return;
+      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+      const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const startTime = getClipStartTime();
+      const newTime = startTime + percent * inlineVideoClipDuration.value;
+      inlineVideoRef.value.currentTime = newTime;
+      inlineVideoCurrentTime.value = percent * inlineVideoClipDuration.value;
+      inlineVideoProgress.value = percent * 100;
+    };
+
+    const onMouseUp = () => {
+      inlineSeekDragging.value = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }
+
+  // Toggle fullscreen
+  function toggleInlineVideoFullscreen() {
+    if (!inlineVideoRef.value) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      inlineVideoRef.value.requestFullscreen();
     }
   }
 
