@@ -310,6 +310,7 @@
             </button>
           </div>
           <div class="flex-1 p-6 overflow-y-auto custom-scrollbar">
+            <!-- VOD Preview -->
             <div class="flex gap-4 p-4 mb-6 border rounded-lg bg-muted/20 border-border/50">
               <div
                 class="relative flex-shrink-0 overflow-hidden rounded bg-black/40 w-28 aspect-video border border-border/50"
@@ -337,82 +338,20 @@
                 </div>
               </div>
             </div>
-            <div class="mb-6 space-y-3">
-              <label class="text-xs font-semibold tracking-wider uppercase text-muted-foreground">
-                Download Format
-              </label>
-              <div class="grid grid-cols-2 gap-4 mt-2">
-                <button
-                  type="button"
-                  @click="useSegmentDownload = false"
-                  class="relative flex flex-col items-center gap-3 p-4 text-center transition-all duration-200 border-2 rounded-xl group"
-                  :class="[
-                    !useSegmentDownload
-                      ? 'border-purple-500 bg-purple-500/5 ring-1 ring-purple-500/20'
-                      : 'border-border bg-card hover:border-purple-500/30 hover:bg-muted/30',
-                  ]"
-                >
-                  <div
-                    class="p-2.5 rounded-full"
-                    :class="!useSegmentDownload ? 'bg-purple-500/20 text-purple-400' : 'bg-muted text-muted-foreground'"
-                  >
-                    <Download class="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div
-                      class="text-sm font-medium"
-                      :class="!useSegmentDownload ? 'text-purple-400' : 'text-foreground'"
-                    >
-                      Full Stream
-                    </div>
-                    <div class="text-[10px] text-muted-foreground mt-0.5">Download entire video</div>
-                  </div>
-                  <div v-if="!useSegmentDownload" class="absolute top-3 right-3">
-                    <div class="bg-purple-500 rounded-full p-0.5 shadow-sm">
-                      <Check class="w-2.5 h-2.5 text-white" />
-                    </div>
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  @click="useSegmentDownload = true"
-                  class="relative flex flex-col items-center gap-3 p-4 text-center transition-all duration-200 border-2 rounded-xl group"
-                  :class="[
-                    useSegmentDownload
-                      ? 'border-purple-500 bg-purple-500/5 ring-1 ring-purple-500/20'
-                      : 'border-border bg-card hover:border-purple-500/30 hover:bg-muted/30',
-                  ]"
-                >
-                  <div
-                    class="p-2.5 rounded-full"
-                    :class="useSegmentDownload ? 'bg-purple-500/20 text-purple-400' : 'bg-muted text-muted-foreground'"
-                  >
-                    <Scissors class="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div
-                      class="text-sm font-medium"
-                      :class="useSegmentDownload ? 'text-purple-400' : 'text-foreground'"
-                    >
-                      Segment
-                    </div>
-                    <div class="text-[10px] text-muted-foreground mt-0.5">Trim and download</div>
-                  </div>
-                  <div v-if="useSegmentDownload" class="absolute top-3 right-3">
-                    <div class="bg-purple-500 rounded-full p-0.5 shadow-sm">
-                      <Check class="w-2.5 h-2.5 text-white" />
-                    </div>
-                  </div>
-                </button>
-              </div>
-            </div>
-            <div v-if="useSegmentDownload" class="space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+
+            <!-- Time Range Selection -->
+            <div class="space-y-3 mb-6">
               <div class="flex items-center justify-between">
-                <label class="text-xs font-semibold tracking-wider uppercase text-muted-foreground">Trim Segment</label>
+                <label class="text-xs font-semibold tracking-wider uppercase text-muted-foreground">Select Range</label>
                 <span
-                  class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20"
+                  class="text-[10px] font-medium px-2 py-0.5 rounded-full border"
+                  :class="
+                    isFullStreamSelected
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                      : 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                  "
                 >
-                  Segment {{ nextSegmentNumber }}
+                  {{ isFullStreamSelected ? 'Full Stream' : formatDuration(selectedDuration) }}
                 </span>
               </div>
               <div class="p-4 border shadow-sm bg-card border-border rounded-xl">
@@ -422,51 +361,57 @@
                   @change="handleTimeRangeChange"
                 />
               </div>
-            </div>
-            <div v-else class="space-y-4 animate-in fade-in duration-200">
-              <div
-                v-if="clipToDownload?.duration && clipToDownload.duration > 900"
-                class="p-4 border border-border rounded-xl bg-card shadow-sm"
+              <button
+                v-if="!isFullStreamSelected"
+                @click="resetToFullStream"
+                class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
               >
-                <div class="flex items-center justify-between mb-3">
-                  <label class="text-sm font-medium text-foreground flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      v-model="autoSegment"
-                      class="w-4 h-4 rounded border-muted-foreground text-purple-600 focus:ring-purple-500 bg-transparent"
-                    />
-                    <span>Auto-segment stream</span>
-                  </label>
-                </div>
-                <div v-if="autoSegment" class="space-y-3 pl-1">
-                  <div class="flex justify-between items-center">
-                    <span class="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                      Segment Duration
-                    </span>
-                    <span
-                      class="text-xs font-medium bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded-full border border-purple-500/20"
-                    >
-                      {{ autoSegmentDuration }} min
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    v-model.number="autoSegmentDuration"
-                    min="15"
-                    max="60"
-                    step="5"
-                    class="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-purple-500"
-                  />
-                  <div class="flex justify-between text-[10px] text-muted-foreground/70 px-0.5">
-                    <span>15m</span>
-                    <span>30m</span>
-                    <span>45m</span>
-                    <span>60m</span>
-                  </div>
-                  <p class="text-[10px] text-muted-foreground mt-1">
-                    Split into ~{{ Math.ceil((clipToDownload.duration || 0) / (autoSegmentDuration * 60)) }} parts
-                  </p>
+                <RotateCcw class="w-3 h-3" />
+                Reset to full stream
+              </button>
+            </div>
 
+            <!-- Auto-Segment Option -->
+            <div
+              v-if="selectedDuration > 900"
+              class="p-4 border border-border rounded-xl bg-card shadow-sm animate-in fade-in duration-200"
+            >
+              <div class="flex items-center justify-between mb-3">
+                <label class="text-sm font-medium text-foreground flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    v-model="autoSegment"
+                    class="w-4 h-4 rounded border-muted-foreground text-purple-600 focus:ring-purple-500 bg-transparent"
+                  />
+                  <span>Auto-segment into parts</span>
+                </label>
+                <span
+                  v-if="autoSegment"
+                  class="text-[10px] font-medium bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded-full border border-purple-500/20"
+                >
+                  ~{{ estimatedParts }} parts
+                </span>
+              </div>
+              <div v-if="autoSegment" class="space-y-3 pl-1 mt-4">
+                <div class="flex justify-between items-center">
+                  <span class="text-xs text-muted-foreground font-medium uppercase tracking-wider">Part Duration</span>
+                  <span class="text-xs font-medium bg-muted text-foreground px-2 py-0.5 rounded-full">
+                    {{ autoSegmentDuration }} min
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  v-model.number="autoSegmentDuration"
+                  min="15"
+                  max="60"
+                  step="5"
+                  class="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-purple-500"
+                />
+                <div class="flex justify-between text-[10px] text-muted-foreground/70 px-0.5">
+                  <span>15m</span>
+                  <span>30m</span>
+                  <span>45m</span>
+                  <span>60m</span>
                 </div>
               </div>
             </div>
@@ -482,9 +427,7 @@
             <button
               class="flex items-center gap-2 px-6 py-2 text-sm font-semibold text-white rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
               @click="downloadClipConfirmed"
-              :disabled="
-                downloadStarting || (useSegmentDownload && selectedTimeRange.endTime <= selectedTimeRange.startTime)
-              "
+              :disabled="downloadStarting || selectedTimeRange.endTime <= selectedTimeRange.startTime"
             >
               <Loader2 v-if="downloadStarting" class="w-4 h-4 animate-spin" />
               <span>{{ downloadStarting ? 'Starting...' : 'Start Download' }}</span>
@@ -533,7 +476,7 @@
     Video,
     Search,
     Loader2,
-    Scissors,
+    RotateCcw,
   } from 'lucide-vue-next';
 
   const router = useRouter();
@@ -645,13 +588,35 @@
   const clipToDownload = ref<PlatformClip | null>(null);
   const downloadStarting = ref(false);
   const showRecentDropdown = ref(false);
-  const useSegmentDownload = ref(false);
   const selectedTimeRange = ref({ startTime: 0, endTime: 0 });
   const nextSegmentNumber = ref(1);
-  const autoSegment = ref(true);
-  const autoSegmentDuration = ref(60);
+  const autoSegment = ref(false);
+  const autoSegmentDuration = ref(30);
   const currentPage = ref(1);
   const clipsPerPage = 20;
+
+  // Computed properties for the unified download UI
+  const isFullStreamSelected = computed(() => {
+    if (!clipToDownload.value?.duration) return true;
+    return (
+      selectedTimeRange.value.startTime === 0 && selectedTimeRange.value.endTime >= clipToDownload.value.duration - 1
+    );
+  });
+
+  const selectedDuration = computed(() => {
+    return selectedTimeRange.value.endTime - selectedTimeRange.value.startTime;
+  });
+
+  const estimatedParts = computed(() => {
+    if (!autoSegment.value) return 1;
+    return Math.ceil(selectedDuration.value / (autoSegmentDuration.value * 60));
+  });
+
+  function resetToFullStream() {
+    if (clipToDownload.value?.duration) {
+      selectedTimeRange.value = { startTime: 0, endTime: clipToDownload.value.duration };
+    }
+  }
 
   // Utility functions
   function truncateId(id: string) {
@@ -793,8 +758,9 @@
 
   function handleDownloadClip(clip: PlatformClip) {
     clipToDownload.value = clip;
-    useSegmentDownload.value = false;
     selectedTimeRange.value = { startTime: 0, endTime: clip.duration || 0 };
+    // Default auto-segment off, user can enable if they want to split
+    autoSegment.value = false;
     calculateNextSegmentNumber(clip.clipId);
     showDownloadDialog.value = true;
   }
@@ -826,9 +792,13 @@
       const videoUrl = clip.mp4Url || clip.playlistUrl;
       if (!videoUrl) throw new Error('No video URL available for this VOD');
 
-      const segmentRange = useSegmentDownload.value
+      // Only pass segment range if user has trimmed the selection (not full stream)
+      const segmentRange = !isFullStreamSelected.value
         ? { startTime: selectedTimeRange.value.startTime, endTime: selectedTimeRange.value.endTime }
         : undefined;
+
+      // Auto-segment applies to the selected range (whether full or trimmed)
+      const shouldAutoSegment = autoSegment.value && selectedDuration.value > 900;
 
       await startDownload(
         clip.title,
@@ -838,24 +808,22 @@
         clip.clipId,
         clip.duration,
         {
-          autoSegment: autoSegment.value,
+          autoSegment: shouldAutoSegment,
           segmentDuration: autoSegmentDuration.value * 60,
           provider: currentPlatformConfig.value.provider as 'pumpfun' | 'kick',
         }
       );
 
-      let downloadType = useSegmentDownload.value ? 'segment' : 'full stream';
-      let downloadMessage = `Downloading ${downloadType} of "${clip.title}". You'll be notified when it completes.`;
+      let downloadMessage: string;
 
-      if (
-        !useSegmentDownload.value &&
-        clip.duration &&
-        autoSegment.value &&
-        clip.duration > autoSegmentDuration.value * 60
-      ) {
-        const numberOfSegments = Math.ceil(clip.duration / (autoSegmentDuration.value * 60));
-        const actualSegmentDuration = Math.round(clip.duration / numberOfSegments / 60);
-        downloadMessage = `Splitting "${clip.title}" into ${numberOfSegments} equal parts (~${actualSegmentDuration} min each).`;
+      if (shouldAutoSegment) {
+        const parts = estimatedParts.value;
+        const rangeLabel = isFullStreamSelected.value ? 'stream' : 'selection';
+        downloadMessage = `Splitting ${rangeLabel} into ~${parts} parts (~${autoSegmentDuration.value} min each).`;
+      } else if (!isFullStreamSelected.value) {
+        downloadMessage = `Downloading ${formatDuration(selectedDuration.value)} segment of "${clip.title}".`;
+      } else {
+        downloadMessage = `Downloading full stream "${clip.title}".`;
       }
 
       success('Download Started', downloadMessage);
