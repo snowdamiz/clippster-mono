@@ -385,7 +385,11 @@
     <!-- Project Dialog -->
     <ProjectDialog v-model="showDialog" :project="selectedProject" @submit="handleProjectSubmit" />
     <!-- Project Workspace Dialog -->
-    <ProjectWorkspaceDialog v-model="showWorkspaceDialog" :project="workspaceProject" />
+    <ProjectWorkspaceDialog
+      v-model="showWorkspaceDialog"
+      :project="workspaceProject"
+      :initial-clip-id="workspaceInitialClipId"
+    />
     <!-- Project-Level Clip Detection Dialog -->
     <ClipDetectionConfirmDialog
       :model-value="showProjectDetectDialog"
@@ -1307,6 +1311,7 @@
   const deleteSegmentsToo = ref(false);
   const showWorkspaceDialog = ref(false);
   const workspaceProject = ref<Project | null>(null);
+  const workspaceInitialClipId = ref<string | null>(null);
   const projectVideos = ref<Record<string, RawVideo[]>>({});
   const thumbnailCache = ref<Map<string, string>>(new Map());
   const clipThumbnailCache = ref<Map<string, string>>(new Map());
@@ -1711,7 +1716,7 @@
     const segmentProject = projects.value.find((p) => p.id === clip.segment_id);
     if (segmentProject) {
       showFolderDialog.value = false;
-      openWorkspace(segmentProject);
+      openWorkspace(segmentProject, clip.id);
     }
   }
 
@@ -1937,19 +1942,105 @@
       }
       const videoPath = videos[0].file_path;
 
-      // Start the build
-      await invoke('build_clip', {
+      // Get or create segments from the clip
+      let segments: any[] = [];
+      if (
+        clip.current_version_segments &&
+        Array.isArray(clip.current_version_segments) &&
+        clip.current_version_segments.length > 0
+      ) {
+        segments = clip.current_version_segments.map((segment: any) => ({
+          id: segment.id,
+          start_time: segment.start_time,
+          end_time: segment.end_time,
+          duration: segment.duration || segment.end_time - segment.start_time,
+          transcript: segment.transcript || null,
+        }));
+      } else {
+        // Fallback: create single segment from clip timing
+        const startTime = clip.current_version?.start_time ?? clip.current_version_start_time ?? 0;
+        const endTime = clip.current_version?.end_time ?? clip.current_version_end_time ?? 0;
+        segments = [
+          {
+            id: `fallback-${clip.id}`,
+            start_time: startTime,
+            end_time: endTime,
+            duration: endTime - startTime,
+            transcript: null,
+          },
+        ];
+      }
+
+      // Update database status to building
+      const { updateClipBuildStatus, createClipBuild, getClipBuilds } = await import('@/services/database');
+      await updateClipBuildStatus(clip.id, 'building', { progress: 0 });
+
+      // Get build number
+      let buildNumber = 1;
+      try {
+        const existingBuilds = await getClipBuilds(clip.id);
+        buildNumber = existingBuilds.length + 1;
+      } catch {
+        buildNumber = 1;
+      }
+
+      // Create build record
+      let buildId: string | null = null;
+      try {
+        buildId = await createClipBuild(clip.id, {
+          aspectRatios: settings.aspectRatios,
+          quality: settings.quality,
+          frameRate: settings.frameRate,
+          outputFormat: settings.format,
+          includeSubtitles: false,
+        });
+      } catch (err) {
+        console.warn('[Projects] Could not create build record:', err);
+      }
+
+      // Prepare watermark settings if enabled
+      let watermarkSettings = null;
+      if (settings.watermark && settings.watermark.enabled && settings.watermark.watermarkId) {
+        const { getWatermarkImage } = await import('@/services/database');
+        const watermarkImage = await getWatermarkImage(settings.watermark.watermarkId);
+        if (watermarkImage) {
+          watermarkSettings = {
+            enabled: true,
+            watermarkId: settings.watermark.watermarkId,
+            filePath: watermarkImage.file_path,
+            positionX: settings.watermark.positionX,
+            positionY: settings.watermark.positionY,
+            opacity: settings.watermark.opacity,
+            scale: settings.watermark.scale,
+          };
+        }
+      }
+
+      // Start the build using the correct command
+      await invoke('build_clip_from_segments', {
+        projectId: clip.segment_id,
         clipId: clip.id,
-        videoPath,
-        startTime: clip.current_version?.start_time ?? clip.start_time ?? 0,
-        endTime: clip.current_version?.end_time ?? clip.end_time ?? 0,
+        clipName: clip.current_version?.name || clip.name || 'Untitled',
+        videoPath: videoPath,
+        segments: segments,
+        subtitleSettings: null, // No subtitles from folder view
+        transcriptWords: [],
+        transcriptSegments: [],
+        maxWords: 3,
         aspectRatios: settings.aspectRatios,
         quality: settings.quality,
         frameRate: settings.frameRate,
         outputFormat: settings.format,
+        runNumber: clip.run_number || null,
+        buildNumber: buildNumber,
+        buildId: buildId,
         introPath: settings.intro?.file_path || null,
+        introDuration: settings.intro?.duration || null,
         outroPath: settings.outro?.file_path || null,
-        watermarkSettings: settings.watermark,
+        outroDuration: settings.outro?.duration || null,
+        watermarkSettings: watermarkSettings,
+        audioSettings: null,
+        framingStrategy: null,
       });
 
       success('Build started', 'Your clip is being built in the background.');
@@ -1961,6 +2052,13 @@
         setTimeout(() => loadFolderClips(folderProject.value!.id), 1000);
       }
     } catch (e) {
+      // Update status to failed if build didn't start
+      try {
+        const { updateClipBuildStatus } = await import('@/services/database');
+        await updateClipBuildStatus(clip.id, 'failed', {
+          error: e instanceof Error ? e.message : 'Build failed to start',
+        });
+      } catch {}
       error('Build failed', e instanceof Error ? e.message : 'An error occurred while building the clip.');
     }
   }
@@ -2409,8 +2507,9 @@
     showDialog.value = true;
   }
 
-  function openWorkspace(project: Project) {
+  function openWorkspace(project: Project, initialClipId?: string | null) {
     workspaceProject.value = project;
+    workspaceInitialClipId.value = initialClipId || null;
     showWorkspaceDialog.value = true;
     showFolderDialog.value = false; // Close folder dialog if open
   }
