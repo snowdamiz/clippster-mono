@@ -43,15 +43,16 @@ export async function getMonitoredStreamerByMint(
 export async function createMonitoredStreamer(
   mintId: string,
   displayName: string,
-  profileImageUrl?: string
+  profileImageUrl?: string,
+  segmentDurationMinutes: number = 5
 ): Promise<string> {
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
 
   await db.execute(
-    'INSERT INTO monitored_streamers (id, mint_id, display_name, last_check_timestamp, is_currently_live, current_session_id, profile_image_url, stream_thumbnail_url, created_at, updated_at) VALUES (?, ?, ?, NULL, 0, NULL, ?, NULL, ?, ?)',
-    [id, mintId, displayName, profileImageUrl || null, now, now]
+    'INSERT INTO monitored_streamers (id, mint_id, display_name, last_check_timestamp, is_currently_live, current_session_id, profile_image_url, stream_thumbnail_url, segment_duration_minutes, created_at, updated_at) VALUES (?, ?, ?, NULL, 0, NULL, ?, NULL, ?, ?, ?)',
+    [id, mintId, displayName, profileImageUrl || null, segmentDurationMinutes, now, now]
   );
 
   return id;
@@ -66,6 +67,7 @@ export async function updateMonitoredStreamer(
     current_session_id: string | null;
     profile_image_url: string | null;
     stream_thumbnail_url: string | null;
+    segment_duration_minutes: number;
   }>
 ): Promise<void> {
   const db = await getDatabase();
@@ -100,6 +102,11 @@ export async function updateMonitoredStreamer(
   if (updates.stream_thumbnail_url !== undefined) {
     fields.push('stream_thumbnail_url = ?');
     values.push(updates.stream_thumbnail_url);
+  }
+
+  if (updates.segment_duration_minutes !== undefined) {
+    fields.push('segment_duration_minutes = ?');
+    values.push(updates.segment_duration_minutes);
   }
 
   if (fields.length === 0) {

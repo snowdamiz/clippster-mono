@@ -12,6 +12,7 @@ export interface MonitoredStreamer {
   isDetecting: boolean;
   profileImageUrl?: string;
   streamThumbnailUrl?: string;
+  segmentDurationMinutes?: number;
 }
 
 export interface LiveStatus {
@@ -41,6 +42,7 @@ export interface LiveSession {
   profileImageUrl?: string;
   detectClips?: boolean;
   isStopping?: boolean;
+  segmentDurationMinutes?: number;
 }
 
 export interface SegmentEventPayload {

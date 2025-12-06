@@ -598,10 +598,14 @@ export function useLivestreamMonitoring() {
         status.streamStartTimestamp ? Math.floor(status.streamStartTimestamp / 1000) : undefined
       );
 
+      // Use the streamer's configured segment duration, defaulting to 5 minutes
+      const segmentDuration = streamer.segmentDurationMinutes ?? 5;
+
       await invoke('start_livestream_recording', {
         mintId: streamer.mintId,
         streamerId: streamer.id,
         sessionId: sessionInfo.sessionId,
+        segmentDurationMinutes: segmentDuration,
       });
 
       activeSessions.value.set(streamer.id, {
@@ -618,6 +622,7 @@ export function useLivestreamMonitoring() {
         platform: streamer.platform,
         profileImageUrl: streamer.profileImageUrl,
         detectClips: options.detectClips,
+        segmentDurationMinutes: segmentDuration,
       });
 
       // Add log

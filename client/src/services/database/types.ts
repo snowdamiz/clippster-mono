@@ -150,6 +150,7 @@ export interface MonitoredStreamerRecord {
   current_session_id: string | null;
   profile_image_url?: string | null;
   stream_thumbnail_url?: string | null;
+  segment_duration_minutes: number;
   created_at: number;
   updated_at: number;
 }

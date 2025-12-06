@@ -456,6 +456,35 @@
                 Coming Soon
               </span>
             </button>
+
+            <!-- Segment Duration Setting (per-link) -->
+            <div
+              v-for="link in creatorToMonitor.platform_links.filter((l) => l.platform === 'pumpfun')"
+              :key="'duration-' + link.id"
+              class="pt-3 mt-2 border-t border-border/40"
+            >
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Clock class="w-3.5 h-3.5" />
+                  <span>Segment Duration</span>
+                </div>
+                <Select
+                  :model-value="String(getLinkSegmentDuration(link))"
+                  @update:model-value="updateLinkSegmentDuration(link, Number($event))"
+                >
+                  <SelectTrigger class="h-8 w-[90px] text-xs" @click.stop>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="3">3 min</SelectItem>
+                    <SelectItem value="5">5 min</SelectItem>
+                    <SelectItem value="10">10 min</SelectItem>
+                    <SelectItem value="15">15 min</SelectItem>
+                    <SelectItem value="30">30 min</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -469,10 +498,17 @@
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
   import { Button } from '@/components/ui/button';
+  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import CreatorProfileDialog from '@/components/CreatorProfileDialog.vue';
   import CreatorDownloadDialog from '@/components/CreatorDownloadDialog.vue';
-  import { getAllCreatorProfiles, deleteCreatorProfile, type CreatorProfileWithLinks } from '@/services/database';
+  import {
+    getAllCreatorProfiles,
+    deleteCreatorProfile,
+    getMonitoredStreamer,
+    updateMonitoredStreamer,
+    type CreatorProfileWithLinks,
+  } from '@/services/database';
   import { useToast } from '@/composables/useToast';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
   import { type PlatformId } from '@/config/platforms';
@@ -494,6 +530,7 @@
     Check,
     X,
     ChevronRight,
+    Clock,
   } from 'lucide-vue-next';
 
   const router = useRouter();
@@ -522,6 +559,9 @@
   // Live status tracking (by platform_id for pumpfun links)
   const liveStatusMap = ref<Map<string, { isLive: boolean; viewerCount?: number; isChecking: boolean }>>(new Map());
   const liveStatusInterval = ref<number | null>(null);
+
+  // Per-link segment duration (keyed by platform link ID)
+  const linkSegmentDurations = ref<Map<string, number>>(new Map());
 
   // Load creators on mount
   onMounted(async () => {
@@ -824,7 +864,7 @@
   }
 
   // Monitoring controls
-  function startCreatorMonitoringDirect(creator: CreatorProfileWithLinks, detectClips: boolean) {
+  async function startCreatorMonitoringDirect(creator: CreatorProfileWithLinks, detectClips: boolean) {
     creatorToMonitor.value = creator;
     platformSelectMode.value = detectClips ? 'detect' : 'record';
 
@@ -837,6 +877,20 @@
       return;
     }
 
+    // Load segment durations for links that have monitored_streamer_id
+    for (const link of monitorableLinks) {
+      if (link.monitored_streamer_id) {
+        try {
+          const streamer = await getMonitoredStreamer(link.monitored_streamer_id);
+          if (streamer) {
+            linkSegmentDurations.value.set(link.id, streamer.segment_duration_minutes ?? 5);
+          }
+        } catch (e) {
+          // Ignore errors, use default
+        }
+      }
+    }
+
     // If multiple platforms configured, show selection dialog (for future integration)
     if (creator.platform_links.length > 1) {
       // Default to first monitorable platform
@@ -846,6 +900,29 @@
       // Only one platform, start directly
       selectedPlatformLinkIndex.value = 0;
       startMonitoringSelectedPlatform();
+    }
+  }
+
+  // Get segment duration for a platform link
+  function getLinkSegmentDuration(link: { id: string; monitored_streamer_id?: string | null }): number {
+    return linkSegmentDurations.value.get(link.id) ?? 5;
+  }
+
+  // Update segment duration for a platform link
+  async function updateLinkSegmentDuration(
+    link: { id: string; monitored_streamer_id?: string | null },
+    duration: number
+  ) {
+    // Update local state immediately
+    linkSegmentDurations.value.set(link.id, duration);
+
+    // If there's a linked monitored streamer, update it in the database
+    if (link.monitored_streamer_id) {
+      try {
+        await updateMonitoredStreamer(link.monitored_streamer_id, { segment_duration_minutes: duration });
+      } catch (e) {
+        console.error('Failed to update segment duration:', e);
+      }
     }
   }
 
@@ -872,22 +949,29 @@
     try {
       let streamerId = link.monitored_streamer_id;
 
+      // Get the configured segment duration for this link (or use default)
+      const segmentDuration = linkSegmentDurations.value.get(link.id) ?? 5;
+
       // If no monitored streamer linked, create one
       if (!streamerId) {
         const { createMonitoredStreamer, updatePlatformLink } = await import('@/services/database');
         streamerId = await createMonitoredStreamer(
           link.platform_id,
           link.display_name || creator.name,
-          link.profile_image_url || undefined
+          link.profile_image_url || undefined,
+          segmentDuration
         );
         // Link the monitored streamer to this platform link
         await updatePlatformLink(link.id, { monitored_streamer_id: streamerId });
         // Update local state
         link.monitored_streamer_id = streamerId;
+      } else {
+        // Update existing streamer's segment duration if it was changed
+        const { updateMonitoredStreamer: updateStreamer } = await import('@/services/database');
+        await updateStreamer(streamerId, { segment_duration_minutes: segmentDuration });
       }
 
       // Get the monitored streamer record
-      const { getMonitoredStreamer } = await import('@/services/database');
       const streamer = await getMonitoredStreamer(streamerId);
 
       if (streamer) {
@@ -905,6 +989,7 @@
               isDetecting: false,
               profileImageUrl: streamer.profile_image_url || undefined,
               streamThumbnailUrl: streamer.stream_thumbnail_url || undefined,
+              segmentDurationMinutes: streamer.segment_duration_minutes ?? 5,
             },
           ],
           { detectClips }

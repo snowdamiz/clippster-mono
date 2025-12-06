@@ -155,24 +155,47 @@
                       <Loader2 class="w-3.5 h-3.5 animate-spin" />
                       <span class="text-xs font-medium">Stopping...</span>
                     </div>
-                    <div v-else class="flex items-center bg-muted/30 rounded-lg p-1 gap-1 border border-border/50">
-                      <button
-                        @click="startStreamer(streamer, false)"
-                        class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all hover:bg-background hover:shadow-sm text-muted-foreground hover:text-foreground"
-                        title="Start Recording Only"
+                    <div v-else class="flex items-center gap-2">
+                      <!-- Segment Duration Selector -->
+                      <Select
+                        :model-value="String(streamer.segmentDurationMinutes)"
+                        @update:model-value="updateSegmentDuration(streamer, Number($event))"
                       >
-                        <Video class="w-3.5 h-3.5" />
-                        Rec
-                      </button>
-                      <div class="w-px h-4 bg-border/50"></div>
-                      <button
-                        @click="startStreamer(streamer, true)"
-                        class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all hover:bg-background hover:shadow-sm text-purple-500 hover:text-purple-600"
-                        title="Start Auto-Detect"
-                      >
-                        <Sparkles class="w-3.5 h-3.5" />
-                        Auto Detect
-                      </button>
+                        <SelectTrigger
+                          class="h-8 w-[72px] bg-muted/30 border-border/50 text-xs"
+                          title="Segment duration for this streamer"
+                        >
+                          <Clock class="w-3 h-3 text-muted-foreground/60 mr-1" />
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="3">3 min</SelectItem>
+                          <SelectItem value="5">5 min</SelectItem>
+                          <SelectItem value="10">10 min</SelectItem>
+                          <SelectItem value="15">15 min</SelectItem>
+                          <SelectItem value="30">30 min</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <!-- Start Buttons -->
+                      <div class="flex items-center bg-muted/30 rounded-lg p-1 gap-1 border border-border/50">
+                        <button
+                          @click="startStreamer(streamer, false)"
+                          class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all hover:bg-background hover:shadow-sm text-muted-foreground hover:text-foreground"
+                          title="Start Recording Only"
+                        >
+                          <Video class="w-3.5 h-3.5" />
+                          Rec
+                        </button>
+                        <div class="w-px h-4 bg-border/50"></div>
+                        <button
+                          @click="startStreamer(streamer, true)"
+                          class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all hover:bg-background hover:shadow-sm text-purple-500 hover:text-purple-600"
+                          title="Start Auto-Detect"
+                        >
+                          <Sparkles class="w-3.5 h-3.5" />
+                          Auto Detect
+                        </button>
+                      </div>
                     </div>
                   </template>
 
@@ -348,11 +371,13 @@
     Video,
     Sparkles,
     RefreshCw,
+    Clock,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   // import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
@@ -381,6 +406,8 @@
     isLive?: boolean;
     viewerCount?: number;
     isCheckingLive?: boolean;
+    // Per-streamer segment duration
+    segmentDurationMinutes: number;
   };
 
   const streamers = ref<ExtendedStreamer[]>([]);
@@ -590,6 +617,7 @@
           isDetecting: !!monitored,
           profileImageUrl: record.profile_image_url || undefined,
           streamThumbnailUrl: record.stream_thumbnail_url || undefined,
+          segmentDurationMinutes: record.segment_duration_minutes ?? 5,
           mode: monitored ? (monitored.options.detectClips ? 'Auto-Detect' : 'Record Only') : null,
           status: session ? 'LIVE' : monitored ? 'WAITING' : 'IDLE',
           selected: false,
@@ -933,6 +961,19 @@
         log.status = 'info';
       }
     });
+  }
+
+  async function updateSegmentDuration(streamer: ExtendedStreamer, duration: number) {
+    try {
+      await updateMonitoredStreamer(streamer.id, { segment_duration_minutes: duration });
+      // Update local state
+      const index = streamers.value.findIndex((s) => s.id === streamer.id);
+      if (index !== -1) {
+        streamers.value[index] = { ...streamers.value[index], segmentDurationMinutes: duration };
+      }
+    } catch (error) {
+      console.error('[LiveClip] Failed to update segment duration', error);
+    }
   }
 </script>
 
