@@ -2,7 +2,6 @@
 mod types;
 mod encoder;
 mod font_manager;
-mod thumbnail;
 mod video_info;
 mod subtitle;
 mod video_processor;

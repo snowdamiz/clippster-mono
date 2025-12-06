@@ -9,6 +9,7 @@ import {
 import { getRawVideosByProjectId } from './raw-videos';
 import { getProject } from './projects';
 import type { ClipWithVersion, ClipSegment, ClipWithVersionAndSegment } from './types';
+import { invoke } from '@tauri-apps/api/core';
 
 // Manual migration fallback function - kept here as it's specifically for clip versioning
 export async function ensureClipVersioningTables(): Promise<void> {
@@ -157,7 +158,8 @@ export async function createVersionedClip(
       transcript?: string;
     }>;
   },
-  filePath?: string
+  filePath?: string,
+  thumbnailPath?: string
 ): Promise<string> {
   const db = await getDatabase();
   const clipId = generateId();
@@ -168,18 +170,19 @@ export async function createVersionedClip(
   const project = await getProject(projectId);
   const projectName = project?.name || null;
 
-  // Create the clip record first
+  // Create the clip record first (thumbnail stored in built_thumbnail_path)
   await db.execute(
     `INSERT INTO clips (
-      id, project_id, project_name, name, file_path, start_time, end_time,
+      id, project_id, project_name, name, file_path, built_thumbnail_path, start_time, end_time,
       detection_session_id, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       clipId,
       projectId,
       projectName,
       clipData.name,
       filePath || '',
+      thumbnailPath || null,
       clipData.startTime,
       clipData.endTime,
       sessionId,
@@ -703,8 +706,34 @@ export async function persistClipDetectionResults(
       segments: clipData.segments || [],
     };
 
+    // Generate thumbnail at the midpoint of the clip
+    let thumbnailPath: string | undefined;
+    if (options?.videoFilePath && startTime !== undefined && endTime !== undefined) {
+      try {
+        const midpoint = startTime + (endTime - startTime) / 2;
+        const clipId = generateId(); // Pre-generate ID for thumbnail filename
+        thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
+          videoPath: options.videoFilePath,
+          timestampSeconds: midpoint,
+          outputFilename: `clip_${clipId}`,
+        });
+        console.log(
+          `[Database] Generated thumbnail for clip ${i + 1} at ${midpoint}s:`,
+          thumbnailPath
+        );
+      } catch (e) {
+        console.warn(`[Database] Failed to generate thumbnail for clip ${i + 1}:`, e);
+      }
+    }
+
     try {
-      await createVersionedClip(projectId, sessionId, clipInfo, options?.videoFilePath);
+      await createVersionedClip(
+        projectId,
+        sessionId,
+        clipInfo,
+        options?.videoFilePath,
+        thumbnailPath
+      );
     } catch (e) {
       console.error(`[Database] Failed to create clip ${i + 1}:`, e);
     }

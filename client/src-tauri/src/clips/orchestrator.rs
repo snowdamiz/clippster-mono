@@ -6,7 +6,6 @@ use super::types::{SubtitleSettings, WordInfo, WhisperSegment, ClipBuildProgress
 use super::video_info::{get_video_info, parse_aspect_ratio, IntroOutroCache};
 use super::subtitle::generate_ass_file;
 use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings, build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy};
-use super::thumbnail::generate_clip_thumbnail_simple;
 use super::font_manager::get_fonts_dir;
 use super::{CancellationToken, is_build_cancelled};
 
@@ -191,7 +190,6 @@ pub async fn build_clip_internal_simple(
     // Track all output paths for the result
     let mut all_output_paths = Vec::new();
     let mut first_output_path: Option<String> = None;
-    let mut first_thumbnail_path: Option<std::path::PathBuf> = None;
     let mut total_file_size: u64 = 0;
     let mut clip_duration: Option<f64> = None;
     
@@ -384,14 +382,6 @@ pub async fn build_clip_internal_simple(
                 let _ = std::fs::remove_file(sub_path);
             }
 
-            // Generate thumbnail for the first aspect ratio
-            let thumbnail = if ratio_idx == 0 {
-                println!("[Rust] Generating thumbnail for first aspect ratio...");
-                generate_clip_thumbnail_simple(&app, &output_path, &clip_id).await?
-            } else {
-                None
-            };
-
             // Get file metadata
             let metadata = std::fs::metadata(&output_path)
                 .map_err(|e| format!("Failed to get output file metadata: {}", e))?;
@@ -404,12 +394,11 @@ pub async fn build_clip_internal_simple(
                 None
             };
 
-            // Return build result
+            // Return build result (thumbnail is generated during detection, not build)
             Ok::<_, String>((
                 output_path.to_string_lossy().to_string(),
                 file_size,
                 duration,
-                thumbnail,
                 ratio_idx
             ))
         }
@@ -421,13 +410,12 @@ pub async fn build_clip_internal_simple(
     // Process results
     for result in build_results {
         match result {
-            Ok((output_path_str, file_size, duration, thumbnail, ratio_idx)) => {
+            Ok((output_path_str, file_size, duration, ratio_idx)) => {
                 all_output_paths.push(output_path_str.clone());
                 total_file_size += file_size;
                 
                 if ratio_idx == 0 {
                     first_output_path = Some(output_path_str);
-                    first_thumbnail_path = thumbnail;
                     clip_duration = duration;
                 }
             },
@@ -450,13 +438,6 @@ pub async fn build_clip_internal_simple(
             }
         }
         
-        // Delete thumbnail if it was generated
-        if let Some(ref thumb_path) = first_thumbnail_path {
-            if let Err(e) = std::fs::remove_file(thumb_path) {
-                println!("[Rust] Warning: Failed to clean up thumbnail: {}", e);
-            }
-        }
-        
         // Try to clean up the clip folder if empty
         let _ = std::fs::remove_dir(&clip_base_dir);
         
@@ -471,7 +452,7 @@ pub async fn build_clip_internal_simple(
         success: true,
         output_path: first_output_path,
         all_output_paths: all_output_paths.clone(),
-        thumbnail_path: first_thumbnail_path.map(|p| p.to_string_lossy().to_string()),
+        thumbnail_path: None, // Thumbnail is generated during detection, not build
         duration: clip_duration,
         file_size: Some(total_file_size),
         error: None,

@@ -408,6 +408,7 @@ pub fn run() {
             storage::copy_clip_to_destination,
             storage::delete_asset_file,
             storage::generate_thumbnail,
+            storage::generate_thumbnail_at_timestamp,
             storage::save_temp_file,
             storage::read_file_as_data_url,
             storage::delete_video_file,

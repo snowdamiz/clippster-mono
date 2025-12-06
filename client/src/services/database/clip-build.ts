@@ -74,25 +74,8 @@ export async function updateClipBuildStatus(
 
     await db.execute(query, params);
 
-    // If build is completed and we have a thumbnail path, also create a thumbnail record
-    if (buildStatus === 'completed' && additionalFields?.builtThumbnailPath) {
-      try {
-        const thumbnailId = generateId();
-        await db.execute(
-          'INSERT INTO thumbnails (id, clip_id, file_path, width, height, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-          [thumbnailId, clipId, additionalFields.builtThumbnailPath, null, null, timestamp()]
-        );
-        console.log(
-          `[Database] Created thumbnail record for clip ${clipId}: ${additionalFields.builtThumbnailPath}`
-        );
-      } catch (thumbnailError) {
-        console.warn(
-          `[Database] Failed to create thumbnail record for clip ${clipId}:`,
-          thumbnailError
-        );
-        // Don't fail the whole operation if thumbnail creation fails
-      }
-    }
+    // Note: Thumbnails are now generated during clip detection, not during build
+    // The built_thumbnail_path field is set when the clip is created
 
     console.log(`[Database] Updated clip build status for ${clipId}: ${buildStatus}`);
   } catch (error) {

@@ -505,7 +505,10 @@
         clip.build_status = 'completed';
         clip.build_progress = 100;
         clip.built_file_path = output_path;
-        clip.built_thumbnail_path = thumbnail_path;
+        // Don't overwrite thumbnail - it's set during detection
+        if (thumbnail_path) {
+          clip.built_thumbnail_path = thumbnail_path;
+        }
         clip.built_duration = duration;
         clip.built_file_size = file_size;
         console.log(`[MediaPanel] Local state updated immediately for clip: ${clip_id}`);
@@ -529,10 +532,11 @@
       console.log(`[MediaPanel] Clip build SUCCEEDED: ${clip_id}`);
 
       // Update clip status (legacy support)
+      // Note: Don't pass thumbnail_path as it's set during detection, not build
       updateClipBuildStatus(clip_id, 'completed', {
         progress: 100,
         builtFilePath: output_path,
-        builtThumbnailPath: thumbnail_path,
+        builtThumbnailPath: thumbnail_path || undefined, // Only update if provided
         builtDuration: duration,
         builtFileSize: file_size,
         error: undefined,
@@ -551,7 +555,7 @@
                 status: 'completed',
                 filePath: output_path,
                 outputPaths: all_output_paths || (output_path ? [output_path] : []),
-                thumbnailPath: thumbnail_path,
+                thumbnailPath: thumbnail_path || undefined, // Don't overwrite if not provided
                 fileSize: file_size,
                 duration: duration,
               });
@@ -565,7 +569,7 @@
                 status: 'completed',
                 filePath: output_path,
                 outputPaths: all_output_paths || (output_path ? [output_path] : []),
-                thumbnailPath: thumbnail_path,
+                thumbnailPath: thumbnail_path || undefined, // Don't overwrite if not provided
                 fileSize: file_size,
                 duration: duration,
               });

@@ -216,6 +216,72 @@ pub async fn generate_thumbnail(app: tauri::AppHandle, video_path: String) -> Re
     Ok(thumbnail_path.to_string_lossy().to_string())
 }
 
+/// Tauri command to generate a thumbnail from a video at a specific timestamp
+/// Used during clip detection to create unique thumbnails for each clip
+#[tauri::command]
+pub async fn generate_thumbnail_at_timestamp(
+    app: tauri::AppHandle,
+    video_path: String,
+    timestamp_seconds: f64,
+    output_filename: Option<String>,
+) -> Result<String, String> {
+    use std::path::Path;
+    use tauri_plugin_shell::ShellExt;
+    
+    let video = Path::new(&video_path);
+    
+    // Validate video file exists
+    if !video.exists() {
+        return Err("Video file does not exist".to_string());
+    }
+    
+    // Get storage paths
+    let paths = init_storage_dirs()?;
+    
+    // Generate thumbnail filename
+    let thumbnail_filename = if let Some(name) = output_filename {
+        format!("{}.jpg", name)
+    } else {
+        let video_stem = video
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or("Failed to get video filename")?;
+        format!("{}_{:.2}_thumb.jpg", video_stem, timestamp_seconds)
+    };
+    
+    let thumbnail_path = paths.thumbnails.join(&thumbnail_filename);
+    
+    // Format timestamp for ffmpeg (HH:MM:SS.mmm format)
+    let hours = (timestamp_seconds / 3600.0).floor() as i32;
+    let minutes = ((timestamp_seconds % 3600.0) / 60.0).floor() as i32;
+    let seconds = timestamp_seconds % 60.0;
+    let timestamp_str = format!("{:02}:{:02}:{:06.3}", hours, minutes, seconds);
+    
+    // Use ffmpeg sidecar to generate thumbnail at specified timestamp
+    let output = app.shell()
+        .sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args([
+            "-hwaccel", "auto",
+            "-ss", &timestamp_str,
+            "-i", &video_path,
+            "-vframes", "1",
+            "-vf", "scale=320:-1",
+            "-y",
+            thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ffmpeg failed: {}", stderr));
+    }
+    
+    Ok(thumbnail_path.to_string_lossy().to_string())
+}
+
 /// Tauri command to read a file as base64 data URL
 #[tauri::command]
 pub fn read_file_as_data_url(file_path: String) -> Result<String, String> {

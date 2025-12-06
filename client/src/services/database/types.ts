@@ -98,7 +98,7 @@ export interface Clip {
   // Build status fields
   build_status: 'pending' | 'building' | 'completed' | 'failed' | null;
   built_file_path: string | null;
-  built_thumbnail_path: string | null;
+  built_thumbnail_path: string | null; // Thumbnail generated during clip detection
   build_progress: number | null;
   build_error: string | null;
   built_at: number | null;

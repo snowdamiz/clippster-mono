@@ -8,11 +8,11 @@
     >
       <Transition name="dialog" appear>
         <div
-          class="bg-zinc-950 rounded-xl sm:rounded-2xl max-h-[calc(100vh-40px)] sm:max-h-[calc(100vh-80px)] mx-2 sm:mx-4 border border-white/10 overflow-hidden"
+          class="bg-zinc-950 rounded-xl sm:rounded-2xl max-h-[calc(100vh-40px)] sm:max-h-[calc(100vh-80px)] mx-2 sm:mx-4 border border-white/10 overflow-hidden flex flex-col"
           :style="dialogStyle"
         >
           <!-- Custom Video Player -->
-          <div v-if="videoSrc" class="relative w-full h-full flex flex-col">
+          <div v-if="videoSrc" class="relative w-full flex-1 min-h-0 flex flex-col">
             <!-- Video Title Header -->
             <div
               class="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-black/90 via-black/60 to-transparent p-3 pt-4 sm:p-5 sm:pt-6"
@@ -326,10 +326,12 @@
         maxWidth: '90vw',
       };
     } else if (aspectRatio < 1.2) {
-      // Square-ish (1:1, 4:3)
+      // Square-ish (1:1, 4:3) - constrain height to ensure controls fit
+      // Account for ~120px of controls/header space
       return {
         width: '100%',
         maxWidth: '800px',
+        maxHeight: 'calc(100vh - 80px)',
       };
     } else {
       // Landscape (16:9, 21:9)
