@@ -57,11 +57,12 @@
           <div class="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 scrollbar-hide">
             <!-- Reset Filters Button -->
             <button
-              v-if="searchQuery || statusFilter !== 'all' || projectFilter !== 'all'"
+              v-if="searchQuery || statusFilter !== 'all' || projectFilter !== 'all' || aspectRatioFilter !== 'all'"
               @click="
                 searchQuery = '';
                 statusFilter = 'all';
                 projectFilter = 'all';
+                aspectRatioFilter = 'all';
               "
               class="text-xs px-2 py-1 text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-md transition-colors whitespace-nowrap font-medium flex items-center gap-1"
             >
@@ -71,6 +72,15 @@
 
             <!-- Status Filter -->
             <CustomDropdown v-model="statusFilter" :options="statusOptions" placeholder="Status" class="w-[140px]" />
+
+            <!-- Aspect Ratio Filter (only in list view, if multiple ratios exist) -->
+            <CustomDropdown
+              v-if="viewMode === 'list' && aspectRatioOptions.length > 2"
+              v-model="aspectRatioFilter"
+              :options="aspectRatioOptions"
+              placeholder="Ratio"
+              class="w-[130px]"
+            />
 
             <!-- Project Filter (only in list view) -->
             <CustomDropdown
@@ -156,8 +166,11 @@
                     :clip-name="item.clipName"
                     :thumbnail-url="item.thumbnailUrl"
                     :project-name="item.projectName"
-                    @play="playBuild"
-                    @save="saveBuild"
+                    :file-path="item.filePath"
+                    :display-aspect-ratio="item.aspectRatio"
+                    :show-build-number="item.hasMultipleBuilds"
+                    @play="(build, filePath) => playBuild(build, filePath || item.filePath)"
+                    @save="(build, filePath) => saveBuild(build, filePath || item.filePath)"
                     @delete="confirmDeleteBuild"
                   />
                 </div>
@@ -259,6 +272,8 @@
             @click="
               searchQuery = '';
               statusFilter = 'all';
+              projectFilter = 'all';
+              aspectRatioFilter = 'all';
             "
             class="text-primary hover:underline text-sm font-medium"
           >
@@ -331,14 +346,39 @@
                 <FolderOpen class="h-4 w-4 text-primary" />
               </div>
               <h2 class="text-md font-medium text-foreground -mt-1">{{ folderProject.name }}</h2>
+              <span class="text-xs text-muted-foreground ml-1">
+                ({{ folderBuilds.length }} file{{ folderBuilds.length !== 1 ? 's' : '' }})
+              </span>
             </template>
           </div>
-          <button
-            @click="showFolderDialog = false"
-            class="p-2 hover:bg-muted rounded-md transition-colors text-muted-foreground hover:text-foreground"
-          >
-            <X class="h-5 w-5" />
-          </button>
+
+          <div class="flex items-center gap-2">
+            <!-- Aspect Ratio Filter (only show if multiple ratios available) -->
+            <div v-if="folderAspectRatioOptions.length > 2" class="flex items-center gap-2">
+              <div class="flex items-center gap-1.5 bg-muted/50 rounded-md p-0.5">
+                <button
+                  v-for="option in folderAspectRatioOptions"
+                  :key="option.value"
+                  @click="folderAspectRatioFilter = option.value"
+                  :class="[
+                    'px-2 py-1 text-xs font-medium rounded transition-all',
+                    folderAspectRatioFilter === option.value
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted',
+                  ]"
+                >
+                  {{ option.value === 'all' ? 'All' : option.label }}
+                </button>
+              </div>
+            </div>
+
+            <button
+              @click="showFolderDialog = false"
+              class="p-2 hover:bg-muted rounded-md transition-colors text-muted-foreground hover:text-foreground"
+            >
+              <X class="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         <!-- Content -->
@@ -370,6 +410,20 @@
                   ),
                 }"
               >
+                <!-- Sibling count badge (shows when filtered and there are other aspect ratios) -->
+                <div
+                  v-if="folderAspectRatioFilter !== 'all' && getBuildSiblingCount(item.build.id) > 1"
+                  class="absolute top-4 left-20 z-20"
+                  :title="`This build has ${getBuildSiblingCount(item.build.id)} aspect ratio variants`"
+                >
+                  <span
+                    class="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/80 text-white font-medium backdrop-blur-sm flex items-center gap-1"
+                  >
+                    <Ratio class="w-2.5 h-2.5" />
+                    {{ getBuildSiblingCount(item.build.id) }}
+                  </span>
+                </div>
+
                 <!-- Selection Checkbox (visible on hover or when selected) -->
                 <div
                   class="absolute top-4 right-4 z-30 transition-opacity"
@@ -395,8 +449,11 @@
                   :clip-name="item.clipName"
                   :thumbnail-url="item.thumbnailUrl"
                   :project-name="null"
-                  @play="playBuild"
-                  @save="saveBuild"
+                  :file-path="item.filePath"
+                  :display-aspect-ratio="item.aspectRatio"
+                  :show-build-number="item.hasMultipleBuilds"
+                  @play="(build, filePath) => playBuild(build, filePath || item.filePath)"
+                  @save="(build, filePath) => saveBuild(build, filePath || item.filePath)"
                   @delete="confirmDeleteBuild"
                 />
               </div>
@@ -534,7 +591,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
   import { save } from '@tauri-apps/plugin-dialog';
-  import { LayoutGrid, Folder, Video, Search, X, List, FolderOpen, Check, Trash2 } from 'lucide-vue-next';
+  import { LayoutGrid, Folder, Video, Search, X, List, FolderOpen, Check, Trash2, Ratio } from 'lucide-vue-next';
   import {
     getAllClipsWithBuilds,
     deleteClipBuild,
@@ -562,9 +619,10 @@
 
   type ClipWithBuilds = Clip & { builds: ClipBuild[] };
 
-  // A displayable item is either a build (from clip_builds table) with clip context
+  // A displayable item represents a single output file from a build
+  // Builds with multiple aspect ratios are expanded into multiple DisplayableBuild items
   interface DisplayableBuild {
-    id: string;
+    id: string; // Unique ID for this displayable item (buildId + fileIndex for multi-file builds)
     build: ClipBuild;
     clip: ClipWithBuilds;
     clipName: string;
@@ -572,6 +630,39 @@
     projectId: string | null;
     thumbnailUrl: string | null;
     createdAt: number; // For sorting - use build completion time
+    /** The specific file path for this item (may differ from build.file_path for multi-file builds) */
+    filePath: string;
+    /** The aspect ratio for this specific file (extracted from filename) */
+    aspectRatio: string | null;
+    /** Whether this clip has multiple builds (to show/hide build number badge) */
+    hasMultipleBuilds: boolean;
+  }
+
+  // Helper function to parse output paths from a build
+  function getOutputPathsFromBuild(build: ClipBuild): string[] {
+    // Try parsing output_paths JSON array first
+    if (build.output_paths) {
+      try {
+        const paths = JSON.parse(build.output_paths);
+        if (Array.isArray(paths) && paths.length > 0) {
+          return paths;
+        }
+      } catch {
+        // Fall through to single file_path
+      }
+    }
+    // Fallback to single file_path
+    if (build.file_path) {
+      return [build.file_path];
+    }
+    return [];
+  }
+
+  // Extract aspect ratio from filename (e.g., "clip_name_16-9_1.mp4" -> "16:9")
+  function extractAspectRatioFromPath(filePath: string): string | null {
+    const fileName = filePath.split(/[/\\]/).pop() || '';
+    const match = fileName.match(/_(\d+-\d+)_\d+\.\w+$/);
+    return match ? match[1].replace('-', ':') : null;
   }
 
   const clips = ref<ClipWithBuilds[]>([]);
@@ -594,6 +685,7 @@
   const folderProject = ref<{ id: string; name: string; clips: ClipWithBuilds[] } | null>(null);
   const folderCurrentPage = ref(1);
   const folderItemsPerPage = 12;
+  const folderAspectRatioFilter = ref<string>('all');
 
   // Multi-select state
   const selectedBuilds = ref<Set<string>>(new Set());
@@ -607,6 +699,7 @@
   const sortBy = ref('created-desc');
   const statusFilter = ref('all');
   const projectFilter = ref('all');
+  const aspectRatioFilter = ref('all');
 
   const statusOptions = [
     { label: 'All Status', value: 'all' },
@@ -661,6 +754,31 @@
     { label: 'Duration: Shortest', value: 'duration-asc' },
   ];
 
+  // Get unique aspect ratios available across all builds
+  const aspectRatioOptions = computed(() => {
+    const ratios = new Set<string>();
+    for (const build of displayableBuilds.value) {
+      if (build.aspectRatio) {
+        ratios.add(build.aspectRatio);
+      }
+    }
+    const options = [{ label: 'All Ratios', value: 'all' }];
+    // Sort ratios in a logical order
+    const sortOrder = ['16:9', '9:16', '4:5', '1:1', '4:3', '3:4', '21:9'];
+    const sortedRatios = Array.from(ratios).sort((a, b) => {
+      const aIdx = sortOrder.indexOf(a);
+      const bIdx = sortOrder.indexOf(b);
+      if (aIdx === -1 && bIdx === -1) return a.localeCompare(b);
+      if (aIdx === -1) return 1;
+      if (bIdx === -1) return -1;
+      return aIdx - bIdx;
+    });
+    for (const ratio of sortedRatios) {
+      options.push({ label: ratio, value: ratio });
+    }
+    return options;
+  });
+
   // Pagination state
   const currentPage = ref(1);
   const clipsPerPage = 20;
@@ -670,7 +788,8 @@
     return displayableBuilds.value.length > 0;
   });
 
-  // Transform clips into displayable builds (each build becomes its own card)
+  // Transform clips into displayable builds (each output file becomes its own card)
+  // Builds with multiple aspect ratios are expanded into separate items
   const displayableBuilds = computed((): DisplayableBuild[] => {
     const builds: DisplayableBuild[] = [];
 
@@ -680,20 +799,39 @@
       const projectName = getClipProjectName(clip);
       const thumbnailUrl = getThumbnailUrl(clip);
 
-      // If clip has builds, create a displayable item for each completed build
+      // Count completed builds for this clip
+      const completedBuildsCount = clip.builds?.filter((b) => b.status === 'completed').length || 0;
+      const hasMultipleBuilds = completedBuildsCount > 1;
+
+      // If clip has builds, create displayable items for each output file
       if (clip.builds && clip.builds.length > 0) {
         for (const build of clip.builds) {
-          if (build.status === 'completed' && build.file_path) {
-            builds.push({
-              id: build.id,
-              build,
-              clip,
-              clipName,
-              projectName,
-              projectId: clip.project_id,
-              thumbnailUrl,
-              createdAt: build.completed_at || build.created_at,
-            });
+          if (build.status === 'completed') {
+            // Get all output paths for this build
+            const outputPaths = getOutputPathsFromBuild(build);
+
+            if (outputPaths.length === 0) continue;
+
+            // Create a displayable item for each output file
+            for (let i = 0; i < outputPaths.length; i++) {
+              const filePath = outputPaths[i];
+              const aspectRatio = extractAspectRatioFromPath(filePath);
+
+              builds.push({
+                // Use build ID + index for unique key when multiple files per build
+                id: outputPaths.length > 1 ? `${build.id}-${i}` : build.id,
+                build,
+                clip,
+                clipName,
+                projectName,
+                projectId: clip.project_id,
+                thumbnailUrl,
+                createdAt: build.completed_at || build.created_at,
+                filePath,
+                aspectRatio,
+                hasMultipleBuilds,
+              });
+            }
           }
         }
       }
@@ -740,7 +878,12 @@
       });
     }
 
-    // 4. Sorting
+    // 4. Aspect Ratio Filter
+    if (aspectRatioFilter.value !== 'all') {
+      result = result.filter((item) => item.aspectRatio === aspectRatioFilter.value);
+    }
+
+    // 5. Sorting
     const [field, direction] = sortBy.value.split('-');
     result = [...result].sort((a, b) => {
       let valA: string | number = '';
@@ -1015,8 +1158,8 @@
     return groups;
   });
 
-  // Get builds for the currently open folder
-  const folderBuilds = computed((): DisplayableBuild[] => {
+  // Get all builds for the currently open folder (expanded by output files)
+  const folderBuildsAll = computed((): DisplayableBuild[] => {
     if (!folderProject.value) return [];
 
     const builds: DisplayableBuild[] = [];
@@ -1024,19 +1167,37 @@
       const clipName = clip.name || 'Untitled Clip';
       const thumbnailUrl = getThumbnailUrl(clip);
 
+      // Count completed builds for this clip
+      const completedBuildsCount = clip.builds?.filter((b) => b.status === 'completed').length || 0;
+      const hasMultipleBuilds = completedBuildsCount > 1;
+
       if (clip.builds && clip.builds.length > 0) {
         for (const build of clip.builds) {
-          if (build.status === 'completed' && build.file_path) {
-            builds.push({
-              id: build.id,
-              build,
-              clip,
-              clipName,
-              projectName: folderProject.value.name,
-              projectId: clip.project_id,
-              thumbnailUrl,
-              createdAt: build.completed_at || build.created_at,
-            });
+          if (build.status === 'completed') {
+            // Get all output paths for this build
+            const outputPaths = getOutputPathsFromBuild(build);
+
+            if (outputPaths.length === 0) continue;
+
+            // Create a displayable item for each output file
+            for (let i = 0; i < outputPaths.length; i++) {
+              const filePath = outputPaths[i];
+              const aspectRatio = extractAspectRatioFromPath(filePath);
+
+              builds.push({
+                id: outputPaths.length > 1 ? `${build.id}-${i}` : build.id,
+                build,
+                clip,
+                clipName,
+                projectName: folderProject.value!.name,
+                projectId: clip.project_id,
+                thumbnailUrl,
+                createdAt: build.completed_at || build.created_at,
+                filePath,
+                aspectRatio,
+                hasMultipleBuilds,
+              });
+            }
           }
         }
       }
@@ -1045,6 +1206,60 @@
     // Sort by creation date descending
     return builds.sort((a, b) => b.createdAt - a.createdAt);
   });
+
+  // Get unique aspect ratios available in the folder for filter options
+  const folderAspectRatioOptions = computed(() => {
+    const ratios = new Set<string>();
+    for (const build of folderBuildsAll.value) {
+      if (build.aspectRatio) {
+        ratios.add(build.aspectRatio);
+      }
+    }
+    const options = [{ label: 'All Ratios', value: 'all' }];
+    // Sort ratios in a logical order
+    const sortOrder = ['16:9', '9:16', '4:5', '1:1', '4:3', '3:4', '21:9'];
+    const sortedRatios = Array.from(ratios).sort((a, b) => {
+      const aIdx = sortOrder.indexOf(a);
+      const bIdx = sortOrder.indexOf(b);
+      if (aIdx === -1 && bIdx === -1) return a.localeCompare(b);
+      if (aIdx === -1) return 1;
+      if (bIdx === -1) return -1;
+      return aIdx - bIdx;
+    });
+    for (const ratio of sortedRatios) {
+      options.push({ label: ratio, value: ratio });
+    }
+    return options;
+  });
+
+  // Filtered folder builds based on aspect ratio filter
+  const folderBuilds = computed((): DisplayableBuild[] => {
+    if (folderAspectRatioFilter.value === 'all') {
+      return folderBuildsAll.value;
+    }
+    return folderBuildsAll.value.filter((b) => b.aspectRatio === folderAspectRatioFilter.value);
+  });
+
+  // Group folder builds by their parent build ID (for visual grouping)
+  const folderBuildGroups = computed(() => {
+    const groups = new Map<string, DisplayableBuild[]>();
+    for (const build of folderBuilds.value) {
+      // Extract the base build ID (remove the -index suffix if present)
+      const baseBuildId = build.build.id;
+      if (!groups.has(baseBuildId)) {
+        groups.set(baseBuildId, []);
+      }
+      groups.get(baseBuildId)!.push(build);
+    }
+    return groups;
+  });
+
+  // Check if a build has siblings (other aspect ratios from the same build)
+  function getBuildSiblingCount(buildId: string): number {
+    const baseBuildId = buildId.split('-')[0];
+    // Look in the unfiltered list to get total siblings
+    return folderBuildsAll.value.filter((b) => b.build.id === baseBuildId).length;
+  }
 
   const paginatedFolderBuilds = computed(() => {
     const startIndex = (folderCurrentPage.value - 1) * folderItemsPerPage;
@@ -1062,15 +1277,22 @@
   function openFolder(group: { id: string; name: string; clips: ClipWithBuilds[] }) {
     folderProject.value = group;
     folderCurrentPage.value = 1;
+    folderAspectRatioFilter.value = 'all';
     showFolderDialog.value = true;
   }
 
-  // Count total completed builds in a project folder
+  // Count total output files in a project folder (counts each aspect ratio variant separately)
   function getFolderBuildsCount(clips: ClipWithBuilds[]): number {
     let count = 0;
     for (const clip of clips) {
       if (clip.builds) {
-        count += clip.builds.filter((b) => b.status === 'completed' && b.file_path).length;
+        for (const build of clip.builds) {
+          if (build.status === 'completed') {
+            // Count each output file (supports multiple aspect ratios per build)
+            const outputPaths = getOutputPathsFromBuild(build);
+            count += outputPaths.length;
+          }
+        }
       }
     }
     return count;
@@ -1111,7 +1333,7 @@
   }
 
   // Reset to first page when clips/builds change or filters change
-  watch([clips, displayableBuilds, searchQuery, sortBy, statusFilter, projectFilter], () => {
+  watch([clips, displayableBuilds, searchQuery, sortBy, statusFilter, projectFilter, aspectRatioFilter], () => {
     currentPage.value = 1;
   });
 
@@ -1354,19 +1576,24 @@
     }
   }
 
-  async function playBuild(build: ClipBuild) {
+  async function playBuild(build: ClipBuild, filePath?: string) {
     try {
-      if (!build.file_path) {
+      const videoPath = filePath || build.file_path;
+      if (!videoPath) {
         showErrorToast('Error', 'No video file available for this build');
         return;
       }
+
+      // Extract aspect ratio from filename for display
+      const aspectRatio = extractAspectRatioFromPath(videoPath);
+      const aspectLabel = aspectRatio ? ` (${aspectRatio})` : '';
 
       // Convert build to RawVideo-like format for the video player
       const buildAsVideo = {
         id: build.id,
         project_id: build.clip_id,
-        file_path: build.file_path,
-        original_filename: `Build #${build.build_number}`,
+        file_path: videoPath,
+        original_filename: `Build #${build.build_number}${aspectLabel}`,
         thumbnail_path: build.thumbnail_path,
         duration: build.duration,
         width: null,
@@ -1393,15 +1620,15 @@
   }
 
   // Build operations
-  async function saveBuild(build: ClipBuild) {
-    if (!build.file_path) {
+  async function saveBuild(build: ClipBuild, filePath?: string) {
+    const sourcePath = filePath || build.file_path;
+    if (!sourcePath) {
       showErrorToast('Error', 'No build file path available');
       return;
     }
 
     try {
       // Extract the filename from the source path
-      const sourcePath = build.file_path;
       const fileName = sourcePath.split(/[/\\]/).pop() || 'clip.mp4';
 
       // Open save dialog so user can choose where to save

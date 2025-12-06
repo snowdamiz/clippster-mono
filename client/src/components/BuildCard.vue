@@ -1,27 +1,27 @@
 <template>
   <div
-    class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
+    class="relative bg-black rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
     @click="$emit('play', build)"
   >
-    <!-- Thumbnail background with vignette -->
-    <div
-      v-if="thumbnailUrl"
-      class="absolute inset-0 z-0"
-      :style="{
-        backgroundImage: `url(${thumbnailUrl})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-      }"
-    >
-      <div class="absolute inset-0 bg-black/10"></div>
+    <!-- Thumbnail with correct aspect ratio (letterboxed/pillarboxed) -->
+    <div v-if="thumbnailUrl" class="absolute inset-0 z-0 flex items-center justify-center">
+      <img
+        :src="thumbnailUrl"
+        :alt="clipName"
+        class="max-w-full max-h-full object-contain"
+        :class="isPortrait ? 'h-full w-auto' : 'w-full h-auto'"
+      />
+      <div class="absolute inset-0 bg-black/10 pointer-events-none"></div>
     </div>
     <div v-else class="absolute inset-0 z-0 bg-muted flex items-center justify-center">
       <Video class="h-12 w-12 text-muted-foreground/30" />
     </div>
 
-    <!-- Top left: Build number badge -->
-    <div class="absolute top-4 left-4 z-10">
+    <!-- Top left: Build number badge (only show if multiple builds exist) -->
+    <div
+      v-if="showBuildNumber !== false && (showBuildNumber || build.build_number > 1)"
+      class="absolute top-4 left-4 z-10"
+    >
       <span
         class="text-xs px-2 py-1 rounded-md border bg-green-600/90 text-white border-green-500 shadow-sm font-medium"
       >
@@ -29,10 +29,10 @@
       </span>
     </div>
 
-    <!-- Top right: File size -->
-    <div v-if="build.file_size" class="absolute top-4 right-4 z-10">
+    <!-- Top right: Duration -->
+    <div v-if="build.duration" class="absolute top-4 right-4 z-10">
       <span class="text-xs px-2 py-1 rounded-md bg-black/60 text-white/90 font-medium backdrop-blur-sm">
-        {{ formatFileSize(build.file_size) }}
+        {{ formatDuration(build.duration) }}
       </span>
     </div>
 
@@ -67,14 +67,14 @@
       <button
         class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
         title="Play"
-        @click.stop="$emit('play', build)"
+        @click.stop="$emit('play', build, filePath)"
       >
         <Play class="h-5 w-5" />
       </button>
       <button
         class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
         title="Save to..."
-        @click.stop="$emit('save', build)"
+        @click.stop="$emit('save', build, filePath)"
       >
         <Download class="h-5 w-5" />
       </button>
@@ -100,11 +100,17 @@
     clipName: string;
     thumbnailUrl: string | null;
     projectName: string | null;
+    /** Override file path (for multi-file builds where each file is shown separately) */
+    filePath?: string;
+    /** Override aspect ratio display */
+    displayAspectRatio?: string;
+    /** Whether to show the build number badge (hide if clip only has one build) */
+    showBuildNumber?: boolean;
   }>();
 
   defineEmits<{
-    (e: 'play', build: ClipBuild): void;
-    (e: 'save', build: ClipBuild): void;
+    (e: 'play', build: ClipBuild, filePath?: string): void;
+    (e: 'save', build: ClipBuild, filePath?: string): void;
     (e: 'delete', build: ClipBuild): void;
   }>();
 
@@ -119,6 +125,9 @@
   });
 
   const aspectRatio = computed(() => {
+    // Use override if provided
+    if (props.displayAspectRatio) return props.displayAspectRatio;
+
     if (!props.build.aspect_ratios) return null;
     try {
       const ratios = JSON.parse(props.build.aspect_ratios);
@@ -128,11 +137,21 @@
     }
   });
 
-  function formatFileSize(bytes: number | null): string {
-    if (!bytes) return '';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  // Check if the aspect ratio is portrait (taller than wide)
+  const isPortrait = computed(() => {
+    const ratio = aspectRatio.value;
+    return ratio === '9:16' || ratio === '4:5' || ratio === '3:4';
+  });
+
+  function formatDuration(seconds: number | null): string {
+    if (!seconds) return '';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    if (mins >= 60) {
+      const hours = Math.floor(mins / 60);
+      const remainingMins = mins % 60;
+      return `${hours}:${remainingMins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 </script>
