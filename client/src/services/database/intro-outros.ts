@@ -87,6 +87,15 @@ export async function updateIntroOutroThumbnailStatus(
   }
 }
 
+export async function getIntroOutroById(id: string): Promise<IntroOutro | null> {
+  const db = await getDatabase();
+  const results = await db.select<IntroOutro[]>(
+    'SELECT * FROM intro_outros WHERE id = ?',
+    [id]
+  );
+  return results[0] || null;
+}
+
 export async function deleteIntroOutro(id: string): Promise<void> {
   const db = await getDatabase();
   await db.execute('DELETE FROM intro_outros WHERE id = ?', [id]);

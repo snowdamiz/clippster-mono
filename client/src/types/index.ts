@@ -230,6 +230,19 @@ export interface MediaPanelProps {
   videoDuration?: number | null; // Duration in seconds
   currentTime?: number | null; // Current video playback time in seconds
   aspectRatio: { width: number; height: number };
+  // Creator profile default assets (auto-applied when building clips)
+  creatorDefaultIntro?: IntroOutroRef | null;
+  creatorDefaultOutro?: IntroOutroRef | null;
+}
+
+// Reference type for intro/outro (matches database IntroOutro type)
+export interface IntroOutroRef {
+  id: string;
+  type: 'intro' | 'outro';
+  name: string;
+  file_path: string;
+  duration: number | null;
+  thumbnail_path?: string | null;
 }
 
 export interface AudioSettings {

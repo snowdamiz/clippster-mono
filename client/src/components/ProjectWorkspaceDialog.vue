@@ -109,6 +109,8 @@
                 :video-duration="duration"
                 :current-time="currentTime"
                 :aspect-ratio="selectedAspectRatio"
+                :creator-default-intro="creatorDefaultIntro"
+                :creator-default-outro="creatorDefaultOutro"
                 @detectClips="onDetectClips"
                 @cancelDetection="onCancelDetection"
                 @clipHover="onClipHover"
@@ -207,10 +209,12 @@
     type Project,
     type ClipWithVersion,
     type CreatorProfileWithLinks,
+    type IntroOutro,
     getClipsWithVersionsByProjectId,
     deleteClip,
     getWatermarkImage,
     getCreatorProfileByProjectId,
+    getIntroOutroById,
     type WatermarkImage,
   } from '@/services/database';
   import { X, Film } from 'lucide-vue-next';
@@ -327,8 +331,8 @@
   const watermarkSettings = ref<WatermarkSettings>({
     enabled: false,
     watermarkId: null,
-    positionX: 90,
-    positionY: 90,
+    positionX: 8,
+    positionY: 92,
     opacity: 80,
     scale: 15,
   });
@@ -341,6 +345,10 @@
 
   // Creator profile associated with this project (for preconfiguring settings)
   const creatorProfile = ref<CreatorProfileWithLinks | null>(null);
+
+  // Creator profile default intro/outro (auto-applied when building clips)
+  const creatorDefaultIntro = ref<IntroOutro | null>(null);
+  const creatorDefaultOutro = ref<IntroOutro | null>(null);
 
   // Use video player composable
   const projectRef = computed(() => props.project);
@@ -1054,6 +1062,10 @@
       const profile = await getCreatorProfileByProjectId(projectId);
       creatorProfile.value = profile;
 
+      // Reset creator defaults
+      creatorDefaultIntro.value = null;
+      creatorDefaultOutro.value = null;
+
       if (profile) {
         console.log('[ProjectWorkspaceDialog] Found creator profile:', profile.name);
 
@@ -1078,12 +1090,29 @@
           }
         }
 
-        // Note: intro_id and outro_id from the creator profile can be used
-        // when building/exporting clips in the future
+        // Load creator's default intro (will be auto-applied when building clips)
+        if (profile.intro_id) {
+          const intro = await getIntroOutroById(profile.intro_id);
+          if (intro) {
+            creatorDefaultIntro.value = intro;
+            console.log('[ProjectWorkspaceDialog] Loaded creator default intro:', intro.name);
+          }
+        }
+
+        // Load creator's default outro (will be auto-applied when building clips)
+        if (profile.outro_id) {
+          const outro = await getIntroOutroById(profile.outro_id);
+          if (outro) {
+            creatorDefaultOutro.value = outro;
+            console.log('[ProjectWorkspaceDialog] Loaded creator default outro:', outro.name);
+          }
+        }
       }
     } catch (error) {
       console.error('[ProjectWorkspaceDialog] Failed to load creator profile:', error);
       creatorProfile.value = null;
+      creatorDefaultIntro.value = null;
+      creatorDefaultOutro.value = null;
     }
   }
 

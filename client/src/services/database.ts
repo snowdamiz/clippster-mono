@@ -37,6 +37,7 @@ export type {
 export {
   createIntroOutro,
   getAllIntroOutros,
+  getIntroOutroById,
   updateIntroOutroCompletion,
   updateIntroOutroThumbnailStatus,
   deleteIntroOutro,

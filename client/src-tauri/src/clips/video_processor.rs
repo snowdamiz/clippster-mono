@@ -869,23 +869,23 @@ pub async fn prepare_intro_outro_for_concat(
     let shell = app.shell();
     println!("[Rust] Preparing {} for concat with aspect ratio {}:{}", file_prefix, aspect_ratio.width, aspect_ratio.height);
 
-    // Get video info for the intro/outro
-    let video_info = get_video_info(app, intro_outro_path).await?;
-    let (crop_x, crop_y) = calculate_crop_position(video_info.width, video_info.height, crop_w, crop_h);
-
     // Detect hardware encoder
     let encoder = detect_hardware_encoder(app, quality).await;
 
     // Create output path in temp directory
     let output_path = temp_dir.join(format!("{}_processed.mp4", file_prefix));
 
-    // Build crop filter
-    let crop_filter = format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y);
+    // Build scale + pad filter to fit intro/outro within target dimensions
+    // This maintains aspect ratio and adds black bars if needed (letterbox/pillarbox)
+    let scale_pad_filter = format!(
+        "scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2:black",
+        crop_w, crop_h, crop_w, crop_h
+    );
 
     // Build encoder-specific args
     let mut args = vec![
         "-i".to_string(), intro_outro_path.to_string(),
-        "-vf".to_string(), crop_filter.clone(),
+        "-vf".to_string(), scale_pad_filter,
         "-c:v".to_string(), encoder.codec.clone(),
     ];
     

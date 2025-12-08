@@ -403,6 +403,9 @@
     <ClipBuildSettingsDialog
       v-model="showFolderBuildDialog"
       :clip="folderClipToBuild"
+      :watermark-settings="folderCreatorWatermarkSettings"
+      :default-intro="folderCreatorDefaultIntro"
+      :default-outro="folderCreatorDefaultOutro"
       @confirm="onFolderBuildConfirm"
     />
 
@@ -1273,9 +1276,14 @@
     hasRawVideosForProject,
     hasClipsForProject,
     deleteClip,
+    getCreatorProfileByProjectId,
+    getIntroOutroById,
+    getWatermarkImage,
     type Project,
     type RawVideo,
     type ClipWithVersionAndSegment,
+    type IntroOutro,
+    type WatermarkSettings,
   } from '@/services/database';
   import { extractMintId } from '@/services/pumpfun';
   import { useFormatters } from '@/composables/useFormatters';
@@ -1554,12 +1562,12 @@
     return thumbnailCache.value.get(projectId) || null;
   }
 
-  // Get thumbnail URL for a clip - prioritizes clip-specific thumbnail, falls back to segment thumbnail
+  // Get thumbnail URL for a clip - uses cached data URLs
   function getClipThumbnailUrl(clip: ClipWithVersionAndSegment): string | null {
-    // First check for clip-specific thumbnail in cache
-    const clipThumbnail = clipThumbnailCache.value.get(clip.id);
-    if (clipThumbnail) {
-      return clipThumbnail;
+    // Check clip thumbnail cache first
+    const cachedThumbnail = clipThumbnailCache.value.get(clip.id);
+    if (cachedThumbnail) {
+      return cachedThumbnail;
     }
     // Fall back to segment thumbnail
     return getThumbnailUrl(clip.segment_id);
@@ -1632,6 +1640,11 @@
   const showFolderBuildDialog = ref(false);
   const folderDownloadDropdownId = ref<string | null>(null);
 
+  // Creator profile defaults for folder dialog builds
+  const folderCreatorDefaultIntro = ref<IntroOutro | null>(null);
+  const folderCreatorDefaultOutro = ref<IntroOutro | null>(null);
+  const folderCreatorWatermarkSettings = ref<WatermarkSettings | null>(null);
+
   // Store unlisten functions for Tauri event cleanup
   const clipBuildUnlistenFunctions = ref<UnlistenFn[]>([]);
 
@@ -1665,85 +1678,113 @@
     return childrenMap.value.get(projectId) || [];
   }
 
-  // Load clips for folder view
+  // Load clips for folder view - loads thumbnails in parallel for better performance
   async function loadFolderClips(projectId: string) {
     folderClipsLoading.value = true;
     try {
+      // Load clips from database
       folderClips.value = await getClipsWithVersionsForProjectAndChildren(projectId);
 
-      // Load clip thumbnails (stored in built_thumbnail_path during detection)
-      // If a clip doesn't have a thumbnail, generate one at the clip's start time
-      for (const clip of folderClips.value) {
-        // Skip if already cached
-        if (clipThumbnailCache.value.has(clip.id)) {
-          continue;
-        }
+      // Load existing thumbnails in parallel (non-blocking, fast)
+      loadClipThumbnailsInParallel();
 
-        // If clip has a thumbnail path, try to load it
-        if (clip.built_thumbnail_path) {
-          try {
-            const dataUrl = await invoke<string>('read_file_as_data_url', {
-              filePath: clip.built_thumbnail_path,
-            });
-            clipThumbnailCache.value.set(clip.id, dataUrl);
-            continue;
-          } catch (err) {
-            console.warn('Failed to load clip thumbnail:', clip.id, err);
-            // Fall through to generate a new one
-          }
-        }
-
-        // Generate thumbnail for clips without one
-        const segmentId = clip.segment_id || clip.project_id;
-        let videos = projectVideos.value[segmentId];
-
-        // Load videos on demand if not cached
-        if (!videos || videos.length === 0) {
-          try {
-            videos = await getRawVideosByProjectId(segmentId);
-            projectVideos.value[segmentId] = videos;
-          } catch {}
-        }
-
-        if (videos && videos.length > 0) {
-          const videoPath = videos[0].file_path;
-          const startTime = clip.current_version?.start_time ?? clip.current_version_start_time ?? clip.start_time ?? 0;
-
-          try {
-            // Generate thumbnail at clip start time (first frame of clip)
-            const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
-              videoPath: videoPath,
-              timestampSeconds: startTime,
-              outputFilename: `clip_${clip.id}`,
-            });
-
-            // Load the generated thumbnail
-            const dataUrl = await invoke<string>('read_file_as_data_url', {
-              filePath: thumbnailPath,
-            });
-            clipThumbnailCache.value.set(clip.id, dataUrl);
-
-            // Update clip's thumbnail path in database (async, non-blocking)
-            (async () => {
-              try {
-                const { updateClipBuildStatus } = await import('@/services/database');
-                await updateClipBuildStatus(clip.id, clip.build_status || 'pending', {
-                  builtThumbnailPath: thumbnailPath,
-                });
-                clip.built_thumbnail_path = thumbnailPath;
-              } catch {}
-            })();
-          } catch (err) {
-            console.warn('Failed to generate clip thumbnail:', clip.id, err);
-          }
-        }
-      }
+      // Generate missing thumbnails in background (non-blocking, slow)
+      generateMissingThumbnailsInBackground();
     } catch (e) {
       console.error('Failed to load folder clips:', e);
       folderClips.value = [];
     } finally {
       folderClipsLoading.value = false;
     }
+  }
+
+  // Load existing clip thumbnails in parallel (fast - just reading files)
+  async function loadClipThumbnailsInParallel() {
+    const clipsWithThumbnails = folderClips.value.filter(
+      (clip) => clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
+    );
+
+    if (clipsWithThumbnails.length === 0) return;
+
+    // Load all thumbnails in parallel
+    await Promise.all(
+      clipsWithThumbnails.map(async (clip) => {
+        try {
+          const dataUrl = await invoke<string>('read_file_as_data_url', {
+            filePath: clip.built_thumbnail_path,
+          });
+          clipThumbnailCache.value.set(clip.id, dataUrl);
+        } catch (err) {
+          console.warn('Failed to load clip thumbnail:', clip.id, err);
+        }
+      })
+    );
+  }
+
+  // Generate thumbnails for clips that don't have one yet (background, non-blocking)
+  async function generateMissingThumbnailsInBackground() {
+    const clipsWithoutThumbnails = folderClips.value.filter((clip) => !clip.built_thumbnail_path);
+
+    if (clipsWithoutThumbnails.length === 0) return;
+
+    console.log(`[Projects] Generating thumbnails for ${clipsWithoutThumbnails.length} clips in background...`);
+
+    // Process in parallel batches for better performance
+    const batchSize = 3;
+    for (let i = 0; i < clipsWithoutThumbnails.length; i += batchSize) {
+      const batch = clipsWithoutThumbnails.slice(i, i + batchSize);
+
+      await Promise.all(
+        batch.map(async (clip) => {
+          try {
+            const segmentId = clip.segment_id || clip.project_id;
+            let videos = projectVideos.value[segmentId];
+
+            // Load videos on demand if not cached
+            if (!videos || videos.length === 0) {
+              try {
+                videos = await getRawVideosByProjectId(segmentId);
+                projectVideos.value[segmentId] = videos;
+              } catch {
+                return;
+              }
+            }
+
+            if (videos && videos.length > 0) {
+              const videoPath = videos[0].file_path;
+              const startTime =
+                clip.current_version?.start_time ?? clip.current_version_start_time ?? clip.start_time ?? 0;
+
+              // Generate thumbnail at clip start time
+              const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
+                videoPath: videoPath,
+                timestampSeconds: startTime,
+                outputFilename: `clip_${clip.id}`,
+              });
+
+              // Load the generated thumbnail into cache
+              const dataUrl = await invoke<string>('read_file_as_data_url', {
+                filePath: thumbnailPath,
+              });
+              clipThumbnailCache.value.set(clip.id, dataUrl);
+
+              // Update the clip's thumbnail path
+              clip.built_thumbnail_path = thumbnailPath;
+
+              // Persist to database (non-blocking)
+              const { updateClipBuildStatus } = await import('@/services/database');
+              await updateClipBuildStatus(clip.id, clip.build_status || 'pending', {
+                builtThumbnailPath: thumbnailPath,
+              });
+            }
+          } catch (err) {
+            console.warn('Failed to generate clip thumbnail:', clip.id, err);
+          }
+        })
+      );
+    }
+
+    console.log('[Projects] Background thumbnail generation complete');
   }
 
   // Handle clip build progress events (for folder dialog builds)
@@ -2097,8 +2138,61 @@
   }
 
   // Build clip from folder view
-  function onFolderBuildClip(clip: ClipWithVersionAndSegment) {
+  async function onFolderBuildClip(clip: ClipWithVersionAndSegment) {
     folderClipToBuild.value = clip;
+
+    // Reset creator defaults
+    folderCreatorDefaultIntro.value = null;
+    folderCreatorDefaultOutro.value = null;
+    folderCreatorWatermarkSettings.value = null;
+
+    // Look up creator profile for this clip's project
+    try {
+      // Use the parent project ID (folder) or the segment's project ID
+      const projectId = clip.project_id || clip.segment_id;
+      const profile = await getCreatorProfileByProjectId(projectId);
+
+      if (profile) {
+        console.log('[Projects] Found creator profile for folder build:', profile.name);
+
+        // Load creator's default intro
+        if (profile.intro_id) {
+          const intro = await getIntroOutroById(profile.intro_id);
+          if (intro) {
+            folderCreatorDefaultIntro.value = intro;
+            console.log('[Projects] Loaded creator default intro:', intro.name);
+          }
+        }
+
+        // Load creator's default outro
+        if (profile.outro_id) {
+          const outro = await getIntroOutroById(profile.outro_id);
+          if (outro) {
+            folderCreatorDefaultOutro.value = outro;
+            console.log('[Projects] Loaded creator default outro:', outro.name);
+          }
+        }
+
+        // Load creator's default watermark settings
+        if (profile.watermark_id) {
+          const watermark = await getWatermarkImage(profile.watermark_id);
+          if (watermark) {
+            folderCreatorWatermarkSettings.value = {
+              enabled: true,
+              watermarkId: profile.watermark_id,
+              positionX: 8,
+              positionY: 92,
+              opacity: 80,
+              scale: 15,
+            };
+            console.log('[Projects] Loaded creator default watermark');
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[Projects] Failed to load creator profile for folder build:', err);
+    }
+
     showFolderBuildDialog.value = true;
   }
 
@@ -2252,10 +2346,11 @@
       });
 
       if (savePath) {
-        await invoke('copy_file', { source: clip.built_file_path, destination: savePath });
+        await invoke('copy_clip_to_destination', { sourcePath: clip.built_file_path, destinationPath: savePath });
         success('Clip saved', 'Your clip has been saved successfully.');
       }
     } catch (e) {
+      console.error('[Projects] Failed to save clip:', e);
       error('Save failed', 'Failed to save the clip file.');
     }
   }
@@ -2450,10 +2545,11 @@
       });
 
       if (savePath) {
-        await invoke('copy_file', { source: filePath, destination: savePath });
+        await invoke('copy_clip_to_destination', { sourcePath: filePath, destinationPath: savePath });
         success('Clip saved', 'Your clip has been saved successfully.');
       }
     } catch (e) {
+      console.error('[Projects] Failed to save file:', e);
       error('Save failed', 'Failed to save the clip file.');
     }
   }

@@ -218,7 +218,15 @@
 
                     <!-- Intro Compact Selector -->
                     <div class="space-y-1.5 sm:space-y-2">
-                      <label class="text-[10px] sm:text-xs font-medium text-muted-foreground">Intro</label>
+                      <div class="flex items-center justify-between">
+                        <label class="text-[10px] sm:text-xs font-medium text-muted-foreground">Intro</label>
+                        <span
+                          v-if="defaultIntro && selectedIntro?.id === defaultIntro.id"
+                          class="text-[9px] px-1.5 py-0.5 bg-violet-500/20 text-violet-400 rounded-full border border-violet-500/30"
+                        >
+                          Creator Default
+                        </span>
+                      </div>
                       <div class="relative">
                         <button
                           ref="introButtonRef"
@@ -289,7 +297,15 @@
 
                     <!-- Outro Compact Selector -->
                     <div class="space-y-1.5 sm:space-y-2">
-                      <label class="text-[10px] sm:text-xs font-medium text-muted-foreground">Outro</label>
+                      <div class="flex items-center justify-between">
+                        <label class="text-[10px] sm:text-xs font-medium text-muted-foreground">Outro</label>
+                        <span
+                          v-if="defaultOutro && selectedOutro?.id === defaultOutro.id"
+                          class="text-[9px] px-1.5 py-0.5 bg-violet-500/20 text-violet-400 rounded-full border border-violet-500/30"
+                        >
+                          Creator Default
+                        </span>
+                      </div>
                       <div class="relative">
                         <button
                           ref="outroButtonRef"
@@ -570,6 +586,9 @@
     modelValue: boolean;
     clip: ClipWithVersion | null;
     watermarkSettings?: WatermarkSettings | null;
+    // Creator profile default assets (auto-applied when dialog opens)
+    defaultIntro?: IntroOutro | null;
+    defaultOutro?: IntroOutro | null;
   }>();
 
   const emit = defineEmits<{
@@ -631,12 +650,34 @@
     return total;
   });
 
-  // Load intros and outros when dialog opens
+  // Load intros and outros when dialog opens, and pre-select creator defaults
   watch(
     () => props.modelValue,
     async (isOpen) => {
-      if (isOpen && intros.value.length === 0 && outros.value.length === 0) {
-        await loadIntroOutros();
+      if (isOpen) {
+        // Load all intros/outros if not already loaded
+        if (intros.value.length === 0 && outros.value.length === 0) {
+          await loadIntroOutros();
+        }
+
+        // Pre-select creator profile defaults
+        if (props.defaultIntro) {
+          // Find the matching intro in the loaded list, or use the prop directly
+          const matchingIntro = intros.value.find((i) => i.id === props.defaultIntro!.id);
+          selectedIntro.value = matchingIntro || props.defaultIntro;
+          console.log('[ClipBuildSettingsDialog] Pre-selected creator default intro:', selectedIntro.value?.name);
+        }
+
+        if (props.defaultOutro) {
+          // Find the matching outro in the loaded list, or use the prop directly
+          const matchingOutro = outros.value.find((o) => o.id === props.defaultOutro!.id);
+          selectedOutro.value = matchingOutro || props.defaultOutro;
+          console.log('[ClipBuildSettingsDialog] Pre-selected creator default outro:', selectedOutro.value?.name);
+        }
+      } else {
+        // Reset selections when dialog closes
+        selectedIntro.value = null;
+        selectedOutro.value = null;
       }
     }
   );

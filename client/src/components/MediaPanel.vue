@@ -48,6 +48,8 @@
       :subtitle-settings="subtitleSettings"
       :max-words-for-aspect-ratio="maxWordsForAspectRatio"
       :watermark-settings="watermarkSettings"
+      :creator-default-intro="creatorDefaultIntro"
+      :creator-default-outro="creatorDefaultOutro"
       @detect-clips="handleDetectClips"
       @cancel-detection="handleCancelDetection"
       @delete-clip="onDeleteClip"
@@ -138,6 +140,8 @@
     videoDuration: null,
     currentTime: null,
     aspectRatio: () => ({ width: 16, height: 9 }),
+    creatorDefaultIntro: null,
+    creatorDefaultOutro: null,
   });
 
   const emit = defineEmits<MediaPanelEmits>();
@@ -219,8 +223,8 @@
   const getDefaultWatermarkSettings = (): WatermarkSettings => ({
     enabled: false,
     watermarkId: null,
-    positionX: 90,
-    positionY: 90,
+    positionX: 8,
+    positionY: 92,
     opacity: 80,
     scale: 15,
   });
