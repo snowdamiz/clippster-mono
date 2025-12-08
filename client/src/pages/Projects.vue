@@ -1672,15 +1672,69 @@
       folderClips.value = await getClipsWithVersionsForProjectAndChildren(projectId);
 
       // Load clip thumbnails (stored in built_thumbnail_path during detection)
+      // If a clip doesn't have a thumbnail, generate one at the clip's start time
       for (const clip of folderClips.value) {
-        if (clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)) {
+        // Skip if already cached
+        if (clipThumbnailCache.value.has(clip.id)) {
+          continue;
+        }
+
+        // If clip has a thumbnail path, try to load it
+        if (clip.built_thumbnail_path) {
           try {
             const dataUrl = await invoke<string>('read_file_as_data_url', {
               filePath: clip.built_thumbnail_path,
             });
             clipThumbnailCache.value.set(clip.id, dataUrl);
+            continue;
           } catch (err) {
             console.warn('Failed to load clip thumbnail:', clip.id, err);
+            // Fall through to generate a new one
+          }
+        }
+
+        // Generate thumbnail for clips without one
+        const segmentId = clip.segment_id || clip.project_id;
+        let videos = projectVideos.value[segmentId];
+
+        // Load videos on demand if not cached
+        if (!videos || videos.length === 0) {
+          try {
+            videos = await getRawVideosByProjectId(segmentId);
+            projectVideos.value[segmentId] = videos;
+          } catch {}
+        }
+
+        if (videos && videos.length > 0) {
+          const videoPath = videos[0].file_path;
+          const startTime = clip.current_version?.start_time ?? clip.current_version_start_time ?? clip.start_time ?? 0;
+
+          try {
+            // Generate thumbnail at clip start time (first frame of clip)
+            const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
+              videoPath: videoPath,
+              timestampSeconds: startTime,
+              outputFilename: `clip_${clip.id}`,
+            });
+
+            // Load the generated thumbnail
+            const dataUrl = await invoke<string>('read_file_as_data_url', {
+              filePath: thumbnailPath,
+            });
+            clipThumbnailCache.value.set(clip.id, dataUrl);
+
+            // Update clip's thumbnail path in database (async, non-blocking)
+            (async () => {
+              try {
+                const { updateClipBuildStatus } = await import('@/services/database');
+                await updateClipBuildStatus(clip.id, clip.build_status || 'pending', {
+                  builtThumbnailPath: thumbnailPath,
+                });
+                clip.built_thumbnail_path = thumbnailPath;
+              } catch {}
+            })();
+          } catch (err) {
+            console.warn('Failed to generate clip thumbnail:', clip.id, err);
           }
         }
       }
