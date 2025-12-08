@@ -4,6 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { useToast } from '@/composables/useToast';
 import { useAudioChunking, type AudioChunk } from './useAudioChunking';
+import { utf8ToBase64 } from '@/utils/encoding';
 
 export function useVideoOperations() {
   const uploading = ref(false);
@@ -199,8 +200,8 @@ export function useVideoOperations() {
     try {
       // Get video server port
       const port = await invoke<number>('get_video_server_port');
-      // Encode file path as base64 for URL
-      const encodedPath = btoa(video.file_path);
+      // Encode file path as base64 for URL (using utf8ToBase64 to handle Unicode)
+      const encodedPath = utf8ToBase64(video.file_path);
       return `http://localhost:${port}/video/${encodedPath}`;
     } catch (err) {
       throw err;

@@ -151,7 +151,7 @@
                   >
                     <div
                       :class="[
-                        'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md',
+                        'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md border border-white/45',
                         isBuildSelected(item.id)
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-black/60 text-white hover:bg-black/80',
@@ -169,7 +169,7 @@
                     :file-path="item.filePath"
                     :display-aspect-ratio="item.aspectRatio ?? undefined"
                     :show-build-number="item.hasMultipleBuilds"
-                    @play="(build, filePath) => playBuild(build, filePath || item.filePath)"
+                    @play="(build, filePath) => playBuild(build, filePath || item.filePath, item.clipName)"
                     @save="(build, filePath) => saveBuild(build, filePath || item.filePath)"
                     @delete="confirmDeleteBuild"
                     @openProject="(build) => openProjectForClip(build, item.clip)"
@@ -202,7 +202,7 @@
                   >
                     <div
                       :class="[
-                        'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md',
+                        'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md border border-white/45',
                         isFolderSelected(group.id)
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-black/60 text-white hover:bg-black/80',
@@ -235,7 +235,7 @@
                     class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-blue-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm"
                   >
                     <FolderOpen class="w-3 h-3" />
-                    <span>{{ getFolderBuildsCount(group.clips) }} Builds</span>
+                    <span>{{ getFolderBuildsCount(group.clips) }} Clips</span>
                   </div>
 
                   <!-- Bottom Info -->
@@ -427,7 +427,7 @@
 
                 <!-- Selection Checkbox (visible on hover or when selected) -->
                 <div
-                  class="absolute top-4 right-4 z-30 transition-opacity"
+                  class="absolute top-4 left-4 z-30 transition-opacity"
                   :class="
                     isFolderDialogBuildSelected(item.id) ? 'opacity-100' : 'opacity-0 group-hover/select:opacity-100'
                   "
@@ -435,7 +435,7 @@
                 >
                   <div
                     :class="[
-                      'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md',
+                      'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md border border-white/45',
                       isFolderDialogBuildSelected(item.id)
                         ? 'bg-primary text-primary-foreground'
                         : 'bg-black/60 text-white hover:bg-black/80',
@@ -453,7 +453,7 @@
                   :file-path="item.filePath"
                   :display-aspect-ratio="item.aspectRatio ?? undefined"
                   :show-build-number="item.hasMultipleBuilds"
-                  @play="(build, filePath) => playBuild(build, filePath || item.filePath)"
+                  @play="(build, filePath) => playBuild(build, filePath || item.filePath, item.clipName)"
                   @save="(build, filePath) => saveBuild(build, filePath || item.filePath)"
                   @delete="confirmDeleteBuild"
                   @openProject="(build) => openProjectForClip(build, item.clip)"
@@ -680,6 +680,7 @@
   const showVideoPlayer = ref(false);
   const clipToPlay = ref<RawVideo | null>(null);
   const thumbnailCache = ref<Map<string, string>>(new Map());
+  const buildThumbnailCache = ref<Map<string, string>>(new Map());
   const rawVideoCache = ref<Map<string, (RawVideo & { thumbnail_path: string | null })[]>>(new Map());
   const projectCache = ref<Map<string, Project>>(new Map());
   const { getRelativeTime } = useFormatters();
@@ -812,7 +813,7 @@
       // Get clip metadata
       const clipName = clip.name || 'Untitled Clip';
       const projectName = getClipProjectName(clip);
-      const thumbnailUrl = getThumbnailUrl(clip);
+      const clipThumbnailUrl = getThumbnailUrl(clip);
 
       // Count completed builds for this clip
       const completedBuildsCount = clip.builds?.filter((b) => b.status === 'completed').length || 0;
@@ -831,6 +832,12 @@
             for (let i = 0; i < outputPaths.length; i++) {
               const filePath = outputPaths[i];
               const aspectRatio = extractAspectRatioFromPath(filePath);
+
+              // Look up thumbnail by file path first (each aspect ratio has its own thumbnail)
+              // Then fall back to build's thumbnail_path, then to clip thumbnail
+              const fileSpecificThumbnail = buildThumbnailCache.value.get(filePath);
+              const buildThumbnail = buildThumbnailCache.value.get(build.id);
+              const thumbnailUrl = fileSpecificThumbnail || buildThumbnail || clipThumbnailUrl;
 
               builds.push({
                 // Use build ID + index for unique key when multiple files per build
@@ -1180,7 +1187,7 @@
     const builds: DisplayableBuild[] = [];
     for (const clip of folderProject.value.clips) {
       const clipName = clip.name || 'Untitled Clip';
-      const thumbnailUrl = getThumbnailUrl(clip);
+      const clipThumbnailUrl = getThumbnailUrl(clip);
 
       // Count completed builds for this clip
       const completedBuildsCount = clip.builds?.filter((b) => b.status === 'completed').length || 0;
@@ -1198,6 +1205,12 @@
             for (let i = 0; i < outputPaths.length; i++) {
               const filePath = outputPaths[i];
               const aspectRatio = extractAspectRatioFromPath(filePath);
+
+              // Look up thumbnail by file path first (each aspect ratio has its own thumbnail)
+              // Then fall back to build's thumbnail_path, then to clip thumbnail
+              const fileSpecificThumbnail = buildThumbnailCache.value.get(filePath);
+              const buildThumbnail = buildThumbnailCache.value.get(build.id);
+              const thumbnailUrl = fileSpecificThumbnail || buildThumbnail || clipThumbnailUrl;
 
               builds.push({
                 id: outputPaths.length > 1 ? `${build.id}-${i}` : build.id,
@@ -1447,6 +1460,24 @@
           // Load raw videos for this project to use as fallback thumbnails
           await loadRawVideosForProject(clip.project_id);
         }
+
+        // Load build thumbnails for this clip - load for each output file
+        if (clip.builds && clip.builds.length > 0) {
+          for (const build of clip.builds) {
+            if (build.status === 'completed') {
+              // Load thumbnails for each output file (each aspect ratio has its own thumbnail)
+              const outputPaths = getOutputPathsFromBuild(build);
+              for (const outputPath of outputPaths) {
+                await loadThumbnailForOutputFile(outputPath);
+              }
+
+              // Also load legacy thumbnail_path if available
+              if (build.thumbnail_path) {
+                await loadBuildThumbnail(build);
+              }
+            }
+          }
+        }
       }
     } catch (error) {
       console.error('Failed to load clips:', error);
@@ -1517,6 +1548,76 @@
       }
     } catch (error) {
       console.error(`Failed to load thumbnail for clip ${clip.id}:`, error);
+    }
+  }
+
+  // Derive the expected thumbnail path from a video file path
+  // Thumbnails are named: {video_filename_without_ext}_thumb.jpg
+  // and stored in the Clippster thumbnails directory
+  async function getThumbnailPathForVideoFile(videoPath: string): Promise<string | null> {
+    try {
+      // Get the thumbnails directory from storage
+      const basePath = await getStoragePath('thumbnails');
+      const videoFileName =
+        videoPath
+          .split(/[/\\]/)
+          .pop()
+          ?.replace(/\.[^.]+$/, '') || '';
+      return `${basePath}/${videoFileName}_thumb.jpg`;
+    } catch {
+      return null;
+    }
+  }
+
+  // Load thumbnail for a specific output file path and cache it
+  async function loadThumbnailForOutputFile(filePath: string): Promise<void> {
+    // Skip if already cached
+    if (buildThumbnailCache.value.has(filePath)) {
+      return;
+    }
+
+    try {
+      // Derive the expected thumbnail path
+      const thumbnailPath = await getThumbnailPathForVideoFile(filePath);
+      if (!thumbnailPath) return;
+
+      // Check if file exists
+      const fileExists = await invoke<boolean>('check_file_exists', {
+        path: thumbnailPath,
+      });
+
+      if (fileExists) {
+        const dataUrl = await invoke<string>('read_file_as_data_url', {
+          filePath: thumbnailPath,
+        });
+        buildThumbnailCache.value.set(filePath, dataUrl);
+      }
+    } catch (error) {
+      console.warn(`Failed to load thumbnail for output file ${filePath}:`, error);
+    }
+  }
+
+  // Legacy function - load a build's thumbnail from its thumbnail_path field
+  async function loadBuildThumbnail(build: ClipBuild): Promise<void> {
+    // Skip if no thumbnail path or already cached
+    if (!build.thumbnail_path || buildThumbnailCache.value.has(build.id)) {
+      return;
+    }
+
+    try {
+      // Check if file exists
+      const fileExists = await invoke<boolean>('check_file_exists', {
+        path: build.thumbnail_path,
+      });
+
+      if (fileExists) {
+        const dataUrl = await invoke<string>('read_file_as_data_url', {
+          filePath: build.thumbnail_path,
+        });
+        buildThumbnailCache.value.set(build.id, dataUrl);
+      }
+    } catch (error) {
+      console.warn(`Failed to load thumbnail for build ${build.id}:`, error);
     }
   }
 
@@ -1591,7 +1692,7 @@
     }
   }
 
-  async function playBuild(build: ClipBuild, filePath?: string) {
+  async function playBuild(build: ClipBuild, filePath?: string, clipName?: string) {
     try {
       const videoPath = filePath || build.file_path;
       if (!videoPath) {
@@ -1603,12 +1704,15 @@
       const aspectRatio = extractAspectRatioFromPath(videoPath);
       const aspectLabel = aspectRatio ? ` (${aspectRatio})` : '';
 
+      // Use the clip name if provided, otherwise fall back to build number
+      const displayName = clipName ? `${clipName}${aspectLabel}` : `Build #${build.build_number}${aspectLabel}`;
+
       // Convert build to RawVideo-like format for the video player
       const buildAsVideo = {
         id: build.id,
         project_id: build.clip_id,
         file_path: videoPath,
-        original_filename: `Build #${build.build_number}${aspectLabel}`,
+        original_filename: displayName,
         thumbnail_path: build.thumbnail_path,
         duration: build.duration,
         width: null,

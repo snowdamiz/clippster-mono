@@ -207,6 +207,7 @@
   import POISourcePanel from './POISourcePanel.vue';
   import POITargetPanel from './POITargetPanel.vue';
   import type { ManualRegion, ManualFramingConfig } from '@/types';
+  import { utf8ToBase64 } from '@/utils/encoding';
 
   interface Props {
     modelValue: boolean;
@@ -267,8 +268,8 @@
       const { invoke } = await import('@tauri-apps/api/core');
       // Get the video server port
       const port = await invoke<number>('get_video_server_port');
-      // Encode the file path as base64
-      const encodedPath = btoa(props.videoPath);
+      // Encode the file path as base64 (using utf8ToBase64 to handle Unicode characters)
+      const encodedPath = utf8ToBase64(props.videoPath);
       // Create the video URL with timestamp to prevent caching
       const timestamp = Date.now();
       videoUrl.value = `http://localhost:${port}/video/${encodedPath}?t=${timestamp}`;
