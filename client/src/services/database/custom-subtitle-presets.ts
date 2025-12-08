@@ -21,11 +21,11 @@ export async function createCustomSubtitlePreset(
       border1_width, border1_color, border2_width, border2_color,
       shadow_offset_x, shadow_offset_y, shadow_blur, shadow_color,
       position, position_percentage, max_width,
-      animation_style,
+      animation_style, highlight_color,
       line_height, letter_spacing, text_align,
       text_offset_x, text_offset_y, padding, border_radius, word_spacing,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       name,
@@ -48,6 +48,7 @@ export async function createCustomSubtitlePreset(
       settings.positionPercentage,
       settings.maxWidth,
       settings.animationStyle,
+      settings.highlightColor,
       settings.lineHeight,
       settings.letterSpacing,
       settings.textAlign,
@@ -160,8 +161,8 @@ export async function updateCustomSubtitlePreset(
     updates.push('position = ?', 'position_percentage = ?', 'max_width = ?');
     values.push(settings.position, settings.positionPercentage, settings.maxWidth);
 
-    updates.push('animation_style = ?');
-    values.push(settings.animationStyle);
+    updates.push('animation_style = ?', 'highlight_color = ?');
+    values.push(settings.animationStyle, settings.highlightColor);
 
     updates.push(
       'line_height = ?',
@@ -223,7 +224,8 @@ export function customPresetToSettings(preset: CustomSubtitlePreset): SubtitleSe
     position: preset.position as 'top' | 'middle' | 'bottom',
     positionPercentage: preset.position_percentage,
     maxWidth: preset.max_width,
-    animationStyle: (preset.animation_style as 'none' | 'fade' | 'word-by-word') || 'none',
+    animationStyle: (preset.animation_style as 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave') || 'none',
+    highlightColor: preset.highlight_color || '#FFFF00',
     lineHeight: preset.line_height,
     letterSpacing: preset.letter_spacing,
     textAlign: preset.text_align as 'left' | 'center' | 'right',

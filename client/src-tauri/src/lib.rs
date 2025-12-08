@@ -422,6 +422,8 @@ pub fn run() {
             storage::copy_watermark_to_storage,
             storage::delete_watermark_file,
             storage::merge_video_segments,
+            storage::copy_font_to_storage,
+            storage::delete_font_file,
 
             // Assets commands
             assets::upload_asset_async,

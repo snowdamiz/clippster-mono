@@ -186,7 +186,8 @@ export interface SubtitleSettings {
   position: 'top' | 'middle' | 'bottom';
   positionPercentage: number;
   maxWidth: number;
-  animationStyle: 'none' | 'fade' | 'word-by-word';
+  animationStyle: 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave';
+  highlightColor: string;
   lineHeight: number;
   letterSpacing: number;
   textAlign: 'left' | 'center' | 'right';
