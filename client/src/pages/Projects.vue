@@ -403,6 +403,9 @@
     <ClipBuildSettingsDialog
       v-model="showFolderBuildDialog"
       :clip="folderClipToBuild"
+      :watermark-settings="folderCreatorWatermarkSettings"
+      :default-intro="folderCreatorDefaultIntro"
+      :default-outro="folderCreatorDefaultOutro"
       @confirm="onFolderBuildConfirm"
     />
 
@@ -1244,6 +1247,7 @@
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
+  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import {
     Folder,
     Plus,
@@ -1284,9 +1288,14 @@
     hasRawVideosForProject,
     hasClipsForProject,
     deleteClip,
+    getCreatorProfileByProjectId,
+    getIntroOutroById,
+    getWatermarkImage,
     type Project,
     type RawVideo,
     type ClipWithVersionAndSegment,
+    type IntroOutro,
+    type WatermarkSettings,
   } from '@/services/database';
   import { extractMintId } from '@/services/pumpfun';
   import { useFormatters } from '@/composables/useFormatters';
@@ -1566,12 +1575,12 @@
     return thumbnailCache.value.get(projectId) || null;
   }
 
-  // Get thumbnail URL for a clip - prioritizes clip-specific thumbnail, falls back to segment thumbnail
+  // Get thumbnail URL for a clip - uses cached data URLs
   function getClipThumbnailUrl(clip: ClipWithVersionAndSegment): string | null {
-    // First check for clip-specific thumbnail in cache
-    const clipThumbnail = clipThumbnailCache.value.get(clip.id);
-    if (clipThumbnail) {
-      return clipThumbnail;
+    // Check clip thumbnail cache first
+    const cachedThumbnail = clipThumbnailCache.value.get(clip.id);
+    if (cachedThumbnail) {
+      return cachedThumbnail;
     }
     // Fall back to segment thumbnail
     return getThumbnailUrl(clip.segment_id);
@@ -1644,6 +1653,14 @@
   const showFolderBuildDialog = ref(false);
   const folderDownloadDropdownId = ref<string | null>(null);
 
+  // Creator profile defaults for folder dialog builds
+  const folderCreatorDefaultIntro = ref<IntroOutro | null>(null);
+  const folderCreatorDefaultOutro = ref<IntroOutro | null>(null);
+  const folderCreatorWatermarkSettings = ref<WatermarkSettings | null>(null);
+
+  // Store unlisten functions for Tauri event cleanup
+  const clipBuildUnlistenFunctions = ref<UnlistenFn[]>([]);
+
   // Computed class for folder dialog width based on active tab and content
   const folderDialogWidthClass = computed(() => {
     if (folderActiveTab.value === 'clips') {
@@ -1675,31 +1692,229 @@
     return childrenMap.value.get(projectId) || [];
   }
 
-  // Load clips for folder view
+  // Load clips for folder view - loads thumbnails in parallel for better performance
   async function loadFolderClips(projectId: string) {
     folderClipsLoading.value = true;
     try {
+      // Load clips from database
       folderClips.value = await getClipsWithVersionsForProjectAndChildren(projectId);
 
-      // Load clip thumbnails (stored in built_thumbnail_path during detection)
-      for (const clip of folderClips.value) {
-        if (clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)) {
-          try {
-            const dataUrl = await invoke<string>('read_file_as_data_url', {
-              filePath: clip.built_thumbnail_path,
-            });
-            clipThumbnailCache.value.set(clip.id, dataUrl);
-          } catch (err) {
-            console.warn('Failed to load clip thumbnail:', clip.id, err);
-          }
-        }
-      }
+      // Load existing thumbnails in parallel (non-blocking, fast)
+      loadClipThumbnailsInParallel();
+
+      // Generate missing thumbnails in background (non-blocking, slow)
+      generateMissingThumbnailsInBackground();
     } catch (e) {
       console.error('Failed to load folder clips:', e);
       folderClips.value = [];
     } finally {
       folderClipsLoading.value = false;
     }
+  }
+
+  // Load existing clip thumbnails in parallel (fast - just reading files)
+  async function loadClipThumbnailsInParallel() {
+    const clipsWithThumbnails = folderClips.value.filter(
+      (clip) => clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
+    );
+
+    if (clipsWithThumbnails.length === 0) return;
+
+    // Load all thumbnails in parallel
+    await Promise.all(
+      clipsWithThumbnails.map(async (clip) => {
+        try {
+          const dataUrl = await invoke<string>('read_file_as_data_url', {
+            filePath: clip.built_thumbnail_path,
+          });
+          clipThumbnailCache.value.set(clip.id, dataUrl);
+        } catch (err) {
+          console.warn('Failed to load clip thumbnail:', clip.id, err);
+        }
+      })
+    );
+  }
+
+  // Generate thumbnails for clips that don't have one yet (background, non-blocking)
+  async function generateMissingThumbnailsInBackground() {
+    const clipsWithoutThumbnails = folderClips.value.filter((clip) => !clip.built_thumbnail_path);
+
+    if (clipsWithoutThumbnails.length === 0) return;
+
+    console.log(`[Projects] Generating thumbnails for ${clipsWithoutThumbnails.length} clips in background...`);
+
+    // Process in parallel batches for better performance
+    const batchSize = 3;
+    for (let i = 0; i < clipsWithoutThumbnails.length; i += batchSize) {
+      const batch = clipsWithoutThumbnails.slice(i, i + batchSize);
+
+      await Promise.all(
+        batch.map(async (clip) => {
+          try {
+            const segmentId = clip.segment_id || clip.project_id;
+            let videos = projectVideos.value[segmentId];
+
+            // Load videos on demand if not cached
+            if (!videos || videos.length === 0) {
+              try {
+                videos = await getRawVideosByProjectId(segmentId);
+                projectVideos.value[segmentId] = videos;
+              } catch {
+                return;
+              }
+            }
+
+            if (videos && videos.length > 0) {
+              const videoPath = videos[0].file_path;
+              const startTime =
+                clip.current_version?.start_time ?? clip.current_version_start_time ?? clip.start_time ?? 0;
+
+              // Generate thumbnail at clip start time
+              const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
+                videoPath: videoPath,
+                timestampSeconds: startTime,
+                outputFilename: `clip_${clip.id}`,
+              });
+
+              // Load the generated thumbnail into cache
+              const dataUrl = await invoke<string>('read_file_as_data_url', {
+                filePath: thumbnailPath,
+              });
+              clipThumbnailCache.value.set(clip.id, dataUrl);
+
+              // Update the clip's thumbnail path
+              clip.built_thumbnail_path = thumbnailPath;
+
+              // Persist to database (non-blocking)
+              const { updateClipBuildStatus } = await import('@/services/database');
+              await updateClipBuildStatus(clip.id, clip.build_status || 'pending', {
+                builtThumbnailPath: thumbnailPath,
+              });
+            }
+          } catch (err) {
+            console.warn('Failed to generate clip thumbnail:', clip.id, err);
+          }
+        })
+      );
+    }
+
+    console.log('[Projects] Background thumbnail generation complete');
+  }
+
+  // Handle clip build progress events (for folder dialog builds)
+  function handleFolderClipBuildProgress(event: any) {
+    const payload = event.payload || event.detail;
+    const { clip_id, progress, stage } = payload;
+
+    // Skip completed stage - let the completion handler deal with it
+    if (stage === 'completed') {
+      return;
+    }
+
+    // Handle cancellation
+    if (stage === 'cancelled') {
+      const clip = folderClips.value.find((c) => c.id === clip_id);
+      if (clip) {
+        clip.build_status = 'pending';
+        clip.build_progress = 0;
+      }
+      return;
+    }
+
+    // Update local state only - no database writes during progress
+    // This keeps UI responsive without causing refreshes
+    const clip = folderClips.value.find((c) => c.id === clip_id);
+    if (clip) {
+      clip.build_status = 'building';
+      clip.build_progress = progress;
+    }
+  }
+
+  // Handle clip build completion events (for folder dialog builds)
+  function handleFolderClipBuildComplete(event: any) {
+    const payload = event.payload || event.detail;
+    if (!payload) return;
+
+    const { clip_id, success: buildSuccess, output_path, all_output_paths, error: buildError } = payload;
+
+    console.log(`[Projects] Clip build complete: ${clip_id}`, { buildSuccess, output_path });
+
+    const clip = folderClips.value.find((c) => c.id === clip_id);
+    const isCancelled = buildError && (buildError.includes('cancelled') || buildError.includes('Cancelled'));
+
+    // Update local state immediately for instant UI feedback
+    if (clip) {
+      if (buildSuccess) {
+        clip.build_status = 'completed';
+        clip.build_progress = 100;
+        clip.built_file_path = output_path;
+        // Update the builds array locally so download dropdown works immediately
+        if (!clip.builds) clip.builds = [];
+        const existingBuildIdx = clip.builds.findIndex((b: any) => b.status === 'building');
+        if (existingBuildIdx >= 0) {
+          clip.builds[existingBuildIdx].status = 'completed';
+          clip.builds[existingBuildIdx].file_path = output_path;
+          clip.builds[existingBuildIdx].output_paths = JSON.stringify(all_output_paths || [output_path]);
+        }
+        console.log(`[Projects] Local state updated for completed clip: ${clip_id}`);
+      } else if (isCancelled) {
+        clip.build_status = 'pending';
+        clip.build_progress = 0;
+      } else {
+        clip.build_status = 'failed';
+        clip.build_error = buildError || 'Unknown build error';
+      }
+    }
+
+    // Update database in the background (non-blocking)
+    // This runs async without awaiting, so UI stays responsive
+    (async () => {
+      if (buildSuccess) {
+        try {
+          const { updateClipBuildStatus, getClipBuilds, updateClipBuild, createClipBuild } = await import(
+            '@/services/database'
+          );
+
+          await updateClipBuildStatus(clip_id, 'completed', {
+            progress: 100,
+            builtFilePath: output_path,
+            error: undefined,
+          });
+
+          // Update the build record
+          const builds = await getClipBuilds(clip_id);
+          const buildingRecord = builds.find((b) => b.status === 'building');
+
+          if (buildingRecord) {
+            await updateClipBuild(buildingRecord.id, {
+              status: 'completed',
+              filePath: output_path,
+              outputPaths: all_output_paths || (output_path ? [output_path] : []),
+            });
+          } else {
+            // Fallback: create a new build record
+            const buildId = await createClipBuild(clip_id, {});
+            await updateClipBuild(buildId, {
+              status: 'completed',
+              filePath: output_path,
+              outputPaths: all_output_paths || (output_path ? [output_path] : []),
+            });
+          }
+
+          console.log(`[Projects] Database updated for clip: ${clip_id}`);
+        } catch (dbError) {
+          console.error('[Projects] Failed to update clip build in database:', dbError);
+        }
+      } else if (!isCancelled) {
+        try {
+          const { updateClipBuildStatus } = await import('@/services/database');
+          await updateClipBuildStatus(clip_id, 'failed', {
+            progress: 0,
+            error: buildError || 'Unknown build error',
+          });
+        } catch {}
+      }
+    })();
   }
 
   // Get total clips count for folder (including standalone projects)
@@ -1937,8 +2152,61 @@
   }
 
   // Build clip from folder view
-  function onFolderBuildClip(clip: ClipWithVersionAndSegment) {
+  async function onFolderBuildClip(clip: ClipWithVersionAndSegment) {
     folderClipToBuild.value = clip;
+
+    // Reset creator defaults
+    folderCreatorDefaultIntro.value = null;
+    folderCreatorDefaultOutro.value = null;
+    folderCreatorWatermarkSettings.value = null;
+
+    // Look up creator profile for this clip's project
+    try {
+      // Use the parent project ID (folder) or the segment's project ID
+      const projectId = clip.project_id || clip.segment_id;
+      const profile = await getCreatorProfileByProjectId(projectId);
+
+      if (profile) {
+        console.log('[Projects] Found creator profile for folder build:', profile.name);
+
+        // Load creator's default intro
+        if (profile.intro_id) {
+          const intro = await getIntroOutroById(profile.intro_id);
+          if (intro) {
+            folderCreatorDefaultIntro.value = intro;
+            console.log('[Projects] Loaded creator default intro:', intro.name);
+          }
+        }
+
+        // Load creator's default outro
+        if (profile.outro_id) {
+          const outro = await getIntroOutroById(profile.outro_id);
+          if (outro) {
+            folderCreatorDefaultOutro.value = outro;
+            console.log('[Projects] Loaded creator default outro:', outro.name);
+          }
+        }
+
+        // Load creator's default watermark settings
+        if (profile.watermark_id) {
+          const watermark = await getWatermarkImage(profile.watermark_id);
+          if (watermark) {
+            folderCreatorWatermarkSettings.value = {
+              enabled: true,
+              watermarkId: profile.watermark_id,
+              positionX: 8,
+              positionY: 92,
+              opacity: 80,
+              scale: 15,
+            };
+            console.log('[Projects] Loaded creator default watermark');
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[Projects] Failed to load creator profile for folder build:', err);
+    }
+
     showFolderBuildDialog.value = true;
   }
 
@@ -2061,9 +2329,12 @@
       showFolderBuildDialog.value = false;
       folderClipToBuild.value = null;
 
-      // Refresh clips to get updated build status
-      if (folderProject.value) {
-        setTimeout(() => loadFolderClips(folderProject.value!.id), 1000);
+      // Update local state immediately to show building status
+      // (Tauri events will handle progress and completion updates)
+      const clipToUpdate = folderClips.value.find((c) => c.id === clip.id);
+      if (clipToUpdate) {
+        clipToUpdate.build_status = 'building';
+        clipToUpdate.build_progress = 0;
       }
     } catch (e) {
       // Update status to failed if build didn't start
@@ -2089,10 +2360,11 @@
       });
 
       if (savePath) {
-        await invoke('copy_file', { source: clip.built_file_path, destination: savePath });
+        await invoke('copy_clip_to_destination', { sourcePath: clip.built_file_path, destinationPath: savePath });
         success('Clip saved', 'Your clip has been saved successfully.');
       }
     } catch (e) {
+      console.error('[Projects] Failed to save clip:', e);
       error('Save failed', 'Failed to save the clip file.');
     }
   }
@@ -2287,10 +2559,11 @@
       });
 
       if (savePath) {
-        await invoke('copy_file', { source: filePath, destination: savePath });
+        await invoke('copy_clip_to_destination', { sourcePath: filePath, destinationPath: savePath });
         success('Clip saved', 'Your clip has been saved successfully.');
       }
     } catch (e) {
+      console.error('[Projects] Failed to save file:', e);
       error('Save failed', 'Failed to save the clip file.');
     }
   }
@@ -3150,6 +3423,16 @@
     window.addEventListener('video-added', handleVideoAdded as EventListener);
     // Add click outside handler for folder download dropdown
     document.addEventListener('click', handleFolderDropdownClickOutside);
+
+    // Add Tauri event listeners for clip build events (folder dialog builds)
+    try {
+      const progressUnlisten = await listen('clip-build-progress', handleFolderClipBuildProgress);
+      const completeUnlisten = await listen('clip-build-complete', handleFolderClipBuildComplete);
+      clipBuildUnlistenFunctions.value = [progressUnlisten, completeUnlisten];
+      console.log('[Projects] Tauri clip build event listeners set up successfully');
+    } catch (error) {
+      console.error('[Projects] Failed to set up Tauri event listeners:', error);
+    }
   });
 
   onUnmounted(() => {
@@ -3157,5 +3440,15 @@
     document.removeEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener);
     window.removeEventListener('video-added', handleVideoAdded as EventListener);
     document.removeEventListener('click', handleFolderDropdownClickOutside);
+
+    // Clean up Tauri event listeners
+    clipBuildUnlistenFunctions.value.forEach((unlisten) => {
+      try {
+        unlisten();
+      } catch (error) {
+        console.error('[Projects] Error cleaning up Tauri listener:', error);
+      }
+    });
+    clipBuildUnlistenFunctions.value = [];
   });
 </script>

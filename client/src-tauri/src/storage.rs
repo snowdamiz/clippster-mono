@@ -77,6 +77,7 @@ pub fn init_storage_dirs() -> Result<StoragePaths, String> {
         intros: base_dir.join("intros"), // Keep for backwards compatibility
         outros: base_dir.join("outros"), // Keep for backwards compatibility
         watermarks: base_dir.join("watermarks"),
+        fonts: base_dir.join("fonts"),
         temp: base_dir.join("temp"),
     };
 
@@ -95,6 +96,8 @@ pub fn init_storage_dirs() -> Result<StoragePaths, String> {
         .map_err(|e| format!("Failed to create outros directory: {}", e))?;
     std::fs::create_dir_all(&paths.watermarks)
         .map_err(|e| format!("Failed to create watermarks directory: {}", e))?;
+    std::fs::create_dir_all(&paths.fonts)
+        .map_err(|e| format!("Failed to create fonts directory: {}", e))?;
     std::fs::create_dir_all(&paths.temp)
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
 
@@ -107,6 +110,7 @@ pub fn init_storage_dirs() -> Result<StoragePaths, String> {
     println!("  Intros: {}", paths.intros.display());
     println!("  Outros: {}", paths.outros.display());
     println!("  Watermarks: {}", paths.watermarks.display());
+    println!("  Fonts: {}", paths.fonts.display());
     println!("  Temp: {}", paths.temp.display());
 
     *cache = Some(paths.clone());
@@ -124,6 +128,7 @@ pub struct StoragePaths {
     pub intros: PathBuf,
     pub outros: PathBuf,
     pub watermarks: PathBuf,
+    pub fonts: PathBuf,
     pub temp: PathBuf,
 }
 
@@ -141,6 +146,7 @@ pub fn get_storage_paths() -> Result<StoragePathsResponse, String> {
         intros: paths.intros.to_string_lossy().to_string(),
         outros: paths.outros.to_string_lossy().to_string(),
         watermarks: paths.watermarks.to_string_lossy().to_string(),
+        fonts: paths.fonts.to_string_lossy().to_string(),
         temp: paths.temp.to_string_lossy().to_string(),
     })
 }
@@ -156,6 +162,7 @@ pub struct StoragePathsResponse {
     pub intros: String,
     pub outros: String,
     pub watermarks: String,
+    pub fonts: String,
     pub temp: String,
 }
 
@@ -843,4 +850,94 @@ pub async fn merge_video_segments(
         duration,
         file_size: metadata.len(),
     })
+}
+
+/// Response structure for copy_font_to_storage
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CopyFontResponse {
+    pub file_path: String,
+    pub file_name: String,
+    pub font_name: String,
+    pub file_type: String,
+}
+
+/// Tauri command to copy a font file to the fonts storage directory
+#[tauri::command]
+pub async fn copy_font_to_storage(source_path: String) -> Result<CopyFontResponse, String> {
+    use std::fs;
+    use std::path::Path;
+    
+    let source = Path::new(&source_path);
+    
+    // Validate the source file exists
+    if !source.exists() {
+        return Err(format!("Source file does not exist: {}", source_path));
+    }
+    
+    // Get the file extension and validate it's a font file
+    let extension = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .ok_or("Could not determine file extension")?;
+    
+    let valid_extensions = ["ttf", "otf", "woff", "woff2"];
+    if !valid_extensions.contains(&extension.as_str()) {
+        return Err(format!(
+            "Invalid font file type: {}. Supported types: ttf, otf, woff, woff2",
+            extension
+        ));
+    }
+    
+    // Get the original filename
+    let original_filename = source
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("Could not determine filename")?
+        .to_string();
+    
+    // Extract font name from filename (remove extension)
+    let font_name = source
+        .file_stem()
+        .and_then(|n| n.to_str())
+        .ok_or("Could not determine font name")?
+        .to_string();
+    
+    // Get storage paths
+    let paths = init_storage_dirs()?;
+    
+    // Generate unique filename to avoid conflicts
+    let unique_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
+    let dest_filename = format!("{}_{}.{}", font_name, unique_id, extension);
+    let dest_path = paths.fonts.join(&dest_filename);
+    
+    // Copy the file
+    fs::copy(&source, &dest_path)
+        .map_err(|e| format!("Failed to copy font file: {}", e))?;
+    
+    println!("[Rust] Font copied: {} -> {}", source_path, dest_path.display());
+    
+    Ok(CopyFontResponse {
+        file_path: dest_path.to_string_lossy().to_string(),
+        file_name: dest_filename,
+        font_name,
+        file_type: extension,
+    })
+}
+
+/// Tauri command to delete a custom font file
+#[tauri::command]
+pub fn delete_font_file(file_path: String) -> Result<(), String> {
+    use std::fs;
+    use std::path::Path;
+    
+    let path = Path::new(&file_path);
+    
+    if path.exists() {
+        fs::remove_file(path)
+            .map_err(|e| format!("Failed to delete font file: {}", e))?;
+        println!("[Rust] Font deleted: {}", file_path);
+    }
+    
+    Ok(())
 }

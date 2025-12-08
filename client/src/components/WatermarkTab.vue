@@ -554,8 +554,8 @@
     settings: () => ({
       enabled: false,
       watermarkId: null,
-      positionX: 90,
-      positionY: 90,
+      positionX: 8,
+      positionY: 92,
       opacity: 80,
       scale: 15,
     }),
@@ -679,8 +679,8 @@
     localSettings.value = {
       enabled: false,
       watermarkId: null,
-      positionX: 90,
-      positionY: 90,
+      positionX: 8,
+      positionY: 92,
       opacity: 80,
       scale: 15,
     };

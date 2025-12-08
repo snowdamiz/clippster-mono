@@ -466,7 +466,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch } from 'vue';
+  import { ref, computed, watch, onUnmounted } from 'vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import { Textarea } from '@/components/ui/textarea';
@@ -521,8 +521,11 @@
   }>();
 
   const { success, error: showError } = useToast();
-  const { uploadAsset: uploadVideoAsset } = useAssetOperations();
+  const { uploadAsset: uploadVideoAsset, onUploadComplete } = useAssetOperations();
   const { uploadWatermark } = useWatermarkOperations();
+
+  // Track pending upload type for auto-selection after async upload completes
+  const pendingUploadType = ref<'intro' | 'outro' | null>(null);
 
   // State
   const saving = ref(false);
@@ -812,18 +815,56 @@
     uploading.value = true;
     try {
       if (type === 'watermark') {
-        await uploadWatermark();
+        const result = await uploadWatermark();
+        // Auto-select the newly uploaded watermark
+        if (result.success && result.watermarkId) {
+          await loadAssets();
+          form.value.watermarkId = result.watermarkId;
+        }
       } else {
+        // Track the upload type for auto-selection when upload completes
+        pendingUploadType.value = type;
         await uploadVideoAsset(type);
+        // Note: For intro/outro, the actual selection happens in onUploadComplete callback
+        // since these uploads are async and the database record is created later
       }
-      // Reload assets after upload
-      await loadAssets();
     } catch (err) {
       console.error('Upload failed:', err);
+      pendingUploadType.value = null;
     } finally {
       uploading.value = false;
     }
   }
+
+  // Register callback for async intro/outro upload completion
+  const unregisterUploadComplete = onUploadComplete(async () => {
+    if (pendingUploadType.value) {
+      const uploadType = pendingUploadType.value;
+      pendingUploadType.value = null;
+      
+      // Reload assets to get the newly uploaded one
+      await loadAssets();
+      
+      // Find the most recently created asset of the uploaded type
+      const assetList = uploadType === 'intro' ? intros.value : outros.value;
+      if (assetList.length > 0) {
+        // Sort by created_at descending to get the newest
+        const newest = assetList.reduce((a, b) => (a.created_at > b.created_at ? a : b));
+        
+        // Auto-select the newest asset
+        if (uploadType === 'intro') {
+          form.value.introId = newest.id;
+        } else {
+          form.value.outroId = newest.id;
+        }
+      }
+    }
+  });
+
+  // Clean up callback registration when component is unmounted
+  onUnmounted(() => {
+    unregisterUploadComplete();
+  });
 
   // Save creator
   async function saveCreator() {

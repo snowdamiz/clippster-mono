@@ -143,69 +143,339 @@
         </div>
       </div>
 
-      <!-- Text Tab -->
+      <!-- Text Tab (Simplified) -->
       <div v-if="activeSubtitleTab === 'text'" class="space-y-6">
-        <!-- Font Section -->
-        <div class="space-y-3">
-          <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Font</h4>
+        <!-- Font Family -->
+        <div class="space-y-2">
+          <label class="text-xs font-semibold text-foreground">Font</label>
+          <div class="relative">
+            <button
+              @click="showFontDropdown = !showFontDropdown"
+              class="w-full px-3 py-2.5 bg-muted/30 border border-border/50 rounded-md text-left flex items-center justify-between hover:border-border hover:bg-muted/40 transition-colors text-sm text-foreground"
+            >
+              <span :style="{ fontFamily: localSettings.fontFamily }">{{ localSettings.fontFamily }}</span>
+              <ChevronDown
+                class="h-4 w-4 text-muted-foreground transition-transform"
+                :class="{ 'rotate-180': showFontDropdown }"
+              />
+            </button>
 
-          <!-- Font Family -->
-          <div class="space-y-2">
-            <label class="text-xs font-semibold text-foreground">Font Family</label>
-            <div class="relative">
+            <!-- Dropdown -->
+            <div
+              v-if="showFontDropdown"
+              class="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-[100] max-h-60 overflow-y-auto custom-scrollbar"
+            >
               <button
-                @click="showFontDropdown = !showFontDropdown"
-                class="w-full px-3 py-2.5 bg-muted/30 border border-border/50 rounded-md text-left flex items-center justify-between hover:border-border hover:bg-muted/40 transition-colors text-sm text-foreground"
+                v-for="font in fontOptions"
+                :key="font"
+                @click="selectFont(font)"
+                class="block w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm"
+                :class="{ 'bg-primary/10 text-primary': localSettings.fontFamily === font }"
+                :style="{ fontFamily: font }"
               >
-                <span>{{ localSettings.fontFamily }}</span>
-                <ChevronDown
-                  class="h-4 w-4 text-muted-foreground transition-transform"
-                  :class="{ 'rotate-180': showFontDropdown }"
-                />
+                {{ font }}
               </button>
-
-              <!-- Dropdown -->
-              <div
-                v-if="showFontDropdown"
-                class="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-[100] max-h-60 overflow-y-auto custom-scrollbar"
-              >
-                <button
-                  v-for="font in fontOptions"
-                  :key="font"
-                  @click="selectFont(font)"
-                  class="block w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm"
-                  :class="{ 'bg-primary/10 text-primary': localSettings.fontFamily === font }"
-                >
-                  {{ font }}
-                </button>
-              </div>
             </div>
           </div>
+        </div>
 
-          <!-- Font Size -->
-          <div class="space-y-2">
-            <div class="flex justify-between items-center">
-              <label class="text-xs font-semibold text-foreground">Font Size</label>
-              <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
-                {{ localSettings.fontSize }}px
-              </span>
+        <!-- Font Size -->
+        <div class="space-y-2">
+          <div class="flex justify-between items-center">
+            <label class="text-xs font-semibold text-foreground">Size</label>
+            <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
+              {{ localSettings.fontSize }}px
+            </span>
+          </div>
+          <div class="relative h-2 bg-muted-foreground/30 rounded-md">
+            <div
+              class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
+              :style="{ width: `${((localSettings.fontSize - 12) / (150 - 12)) * 100}%` }"
+            ></div>
+            <input
+              type="range"
+              v-model.number="localSettings.fontSize"
+              @input="emitSettingsChange"
+              min="12"
+              max="150"
+              step="1"
+              class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+            />
+          </div>
+        </div>
+
+        <!-- Text Color -->
+        <div class="space-y-2">
+          <label class="text-xs font-semibold text-foreground">Color</label>
+          <div class="flex gap-2">
+            <ColorPicker v-model="localSettings.textColor" @update:modelValue="emitSettingsChange" />
+            <input
+              type="text"
+              v-model="localSettings.textColor"
+              @input="emitSettingsChange"
+              class="flex-1 px-3 py-2 bg-muted/50 border border-border rounded-md text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all uppercase"
+              placeholder="#FFFFFF"
+            />
+          </div>
+        </div>
+
+        <!-- Custom Font Upload -->
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-semibold text-foreground">Custom Fonts</label>
+            <span v-if="customFonts.length > 0" class="text-[10px] text-muted-foreground">
+              {{ customFonts.length }} uploaded
+            </span>
+          </div>
+          <div class="flex gap-2">
+            <button
+              @click="uploadCustomFont"
+              class="flex-1 px-3 py-2.5 bg-muted/30 border border-border/50 border-dashed rounded-md text-left flex items-center justify-center gap-2 hover:border-border hover:bg-muted/40 transition-colors text-sm text-muted-foreground hover:text-foreground"
+            >
+              <Upload class="h-4 w-4" />
+              <span>Upload Font</span>
+            </button>
+            <button
+              v-if="customFonts.length > 0"
+              @click="showCustomFontsManager = true"
+              class="px-3 py-2.5 bg-muted/30 border border-border/50 rounded-md flex items-center justify-center hover:border-border hover:bg-muted/40 transition-colors text-muted-foreground hover:text-foreground"
+              title="Manage custom fonts"
+            >
+              <Settings class="h-4 w-4" />
+            </button>
+          </div>
+          <p class="text-[10px] text-muted-foreground">Supports .ttf, .otf, .woff, .woff2</p>
+        </div>
+
+        <!-- Quick tip -->
+        <div class="pt-2 border-t border-border/30">
+          <p class="text-[10px] text-muted-foreground">
+            Need more control? Check the <span class="text-primary cursor-pointer" @click="activeSubtitleTab = 'advanced'">Advanced</span> tab for font weight, alignment, and background options.
+          </p>
+        </div>
+      </div>
+
+      <!-- Effects Tab (Simplified) -->
+      <div v-if="activeSubtitleTab === 'effects'" class="space-y-6">
+        <!-- Border Toggle -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <label class="text-xs font-semibold text-foreground">Text Outline</label>
+              <p class="text-[10px] text-muted-foreground mt-0.5">Add a colored border around text</p>
             </div>
-            <div class="relative h-2 bg-muted-foreground/30 rounded-md">
-              <div
-                class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                :style="{ width: `${((localSettings.fontSize - 12) / (150 - 12)) * 100}%` }"
-              ></div>
+            <button
+              @click="toggleBorder"
+              type="button"
+              :class="[
+                'relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-all duration-200',
+                localSettings.border1Width > 0 ? 'bg-primary' : 'bg-muted-foreground/30',
+              ]"
+            >
+              <span
+                :class="[
+                  'inline-block h-4 w-4 transform rounded-full bg-white shadow-lg transition-all duration-200 ease-in-out',
+                  localSettings.border1Width > 0 ? 'translate-x-[18px]' : 'translate-x-0.5',
+                ]"
+              ></span>
+            </button>
+          </div>
+          <div v-if="localSettings.border1Width > 0" class="space-y-2">
+            <label class="text-xs font-semibold text-foreground">Outline Color</label>
+            <div class="flex gap-2">
+              <ColorPicker v-model="localSettings.border1Color" @update:modelValue="emitSettingsChange" />
               <input
-                type="range"
-                v-model.number="localSettings.fontSize"
+                type="text"
+                v-model="localSettings.border1Color"
                 @input="emitSettingsChange"
-                min="12"
-                max="150"
-                step="1"
-                class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
+                class="flex-1 px-3 py-2 bg-muted/50 border border-border rounded-md text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all uppercase"
+                placeholder="#00FF00"
               />
             </div>
           </div>
+        </div>
+
+        <!-- Shadow Toggle -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <label class="text-xs font-semibold text-foreground">Drop Shadow</label>
+              <p class="text-[10px] text-muted-foreground mt-0.5">Add depth with a shadow effect</p>
+            </div>
+            <button
+              @click="toggleShadow"
+              type="button"
+              :class="[
+                'relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-all duration-200',
+                localSettings.shadowBlur > 0 ? 'bg-primary' : 'bg-muted-foreground/30',
+              ]"
+            >
+              <span
+                :class="[
+                  'inline-block h-4 w-4 transform rounded-full bg-white shadow-lg transition-all duration-200 ease-in-out',
+                  localSettings.shadowBlur > 0 ? 'translate-x-[18px]' : 'translate-x-0.5',
+                ]"
+              ></span>
+            </button>
+          </div>
+          <div v-if="localSettings.shadowBlur > 0" class="space-y-2">
+            <label class="text-xs font-semibold text-foreground">Shadow Color</label>
+            <div class="flex gap-2">
+              <ColorPicker v-model="localSettings.shadowColor" @update:modelValue="emitSettingsChange" />
+              <input
+                type="text"
+                v-model="localSettings.shadowColor"
+                @input="emitSettingsChange"
+                class="flex-1 px-3 py-2 bg-muted/50 border border-border rounded-md text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all uppercase"
+                placeholder="#000000"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Word Animation Style -->
+        <div class="space-y-3">
+          <label class="text-xs font-semibold text-foreground">Word Animation</label>
+          <div class="grid grid-cols-2 gap-2">
+            <button
+              v-for="anim in animationOptions"
+              :key="anim.value"
+              @click="setAnimationStyle(anim.value)"
+              :class="[
+                'px-3 py-2.5 rounded-md text-xs font-medium transition-all text-left',
+                localSettings.animationStyle === anim.value
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted/50 text-muted-foreground hover:bg-muted',
+              ]"
+            >
+              <span class="block">{{ anim.label }}</span>
+              <span class="block text-[9px] opacity-70 mt-0.5">{{ anim.description }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Highlight Color (shown when animation is active) -->
+        <div v-if="localSettings.animationStyle !== 'none'" class="space-y-2">
+          <label class="text-xs font-semibold text-foreground">Highlight Color</label>
+          <div class="flex gap-2">
+            <ColorPicker v-model="localSettings.highlightColor" @update:modelValue="emitSettingsChange" />
+            <input
+              type="text"
+              v-model="localSettings.highlightColor"
+              @input="emitSettingsChange"
+              class="flex-1 px-3 py-2 bg-muted/50 border border-border rounded-md text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all uppercase"
+              placeholder="#FFFF00"
+            />
+          </div>
+          <p class="text-[10px] text-muted-foreground">Used for karaoke color and box highlight</p>
+        </div>
+
+        <!-- Quick tip -->
+        <div class="pt-2 border-t border-border/30">
+          <p class="text-[10px] text-muted-foreground">
+            Need more control? Check the <span class="text-primary cursor-pointer" @click="activeSubtitleTab = 'advanced'">Advanced</span> tab for border widths, shadow offsets, and dual outlines.
+          </p>
+        </div>
+      </div>
+
+      <!-- Position Tab (Simplified) -->
+      <div v-if="activeSubtitleTab === 'position'" class="space-y-6">
+        <!-- Vertical Position -->
+        <div class="space-y-2">
+          <label class="text-xs font-semibold text-foreground">Vertical Position</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button
+              @click="setPosition('top')"
+              :class="[
+                'px-3 py-3 rounded-md text-xs font-medium transition-all',
+                localSettings.position === 'top'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted/50 text-muted-foreground hover:bg-muted',
+              ]"
+            >
+              Top
+            </button>
+            <button
+              @click="setPosition('middle')"
+              :class="[
+                'px-3 py-3 rounded-md text-xs font-medium transition-all',
+                localSettings.position === 'middle'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted/50 text-muted-foreground hover:bg-muted',
+              ]"
+            >
+              Middle
+            </button>
+            <button
+              @click="setPosition('bottom')"
+              :class="[
+                'px-3 py-3 rounded-md text-xs font-medium transition-all',
+                localSettings.position === 'bottom'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted/50 text-muted-foreground hover:bg-muted',
+              ]"
+            >
+              Bottom
+            </button>
+          </div>
+        </div>
+
+        <!-- Horizontal Position (Text Alignment) -->
+        <div class="space-y-2">
+          <label class="text-xs font-semibold text-foreground">Horizontal Position</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button
+              @click="localSettings.textAlign = 'left'; emitSettingsChange();"
+              :class="[
+                'px-3 py-3 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5',
+                localSettings.textAlign === 'left'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted/50 text-muted-foreground hover:bg-muted',
+              ]"
+            >
+              <AlignLeft class="h-3.5 w-3.5" />
+              Left
+            </button>
+            <button
+              @click="localSettings.textAlign = 'center'; emitSettingsChange();"
+              :class="[
+                'px-3 py-3 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5',
+                localSettings.textAlign === 'center'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted/50 text-muted-foreground hover:bg-muted',
+              ]"
+            >
+              <AlignCenter class="h-3.5 w-3.5" />
+              Center
+            </button>
+            <button
+              @click="localSettings.textAlign = 'right'; emitSettingsChange();"
+              :class="[
+                'px-3 py-3 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5',
+                localSettings.textAlign === 'right'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted/50 text-muted-foreground hover:bg-muted',
+              ]"
+            >
+              <AlignRight class="h-3.5 w-3.5" />
+              Right
+            </button>
+          </div>
+        </div>
+
+        <!-- Quick tip -->
+        <div class="pt-2 border-t border-border/30">
+          <p class="text-[10px] text-muted-foreground">
+            Need more control? Check the <span class="text-primary cursor-pointer" @click="activeSubtitleTab = 'advanced'">Advanced</span> tab for precise positioning and width controls.
+          </p>
+        </div>
+      </div>
+
+      <!-- Advanced Tab (All Detailed Settings) -->
+      <div v-if="activeSubtitleTab === 'advanced'" class="space-y-6">
+        <!-- Font Settings -->
+        <div class="space-y-3">
+          <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Font</h4>
 
           <!-- Font Weight -->
           <div class="space-y-2">
@@ -231,36 +501,13 @@
               />
             </div>
           </div>
-        </div>
-
-        <!-- Colors Section -->
-        <div class="space-y-3">
-          <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Colors</h4>
-
-          <!-- Text Color -->
-          <div class="space-y-2">
-            <label class="text-xs font-semibold text-foreground">Text Color</label>
-            <div class="flex gap-2">
-              <ColorPicker v-model="localSettings.textColor" @update:modelValue="emitSettingsChange" />
-              <input
-                type="text"
-                v-model="localSettings.textColor"
-                @input="emitSettingsChange"
-                class="flex-1 px-3 py-2 bg-muted/50 border border-border rounded-md text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all uppercase"
-                placeholder="#FFFFFF"
-              />
-            </div>
-          </div>
 
           <!-- Background Color -->
           <div class="space-y-2">
             <div class="flex items-center justify-between">
               <label class="text-xs font-semibold text-foreground">Background Color</label>
               <button
-                @click="
-                  localSettings.backgroundEnabled = !localSettings.backgroundEnabled;
-                  emitSettingsChange();
-                "
+                @click="localSettings.backgroundEnabled = !localSettings.backgroundEnabled; emitSettingsChange();"
                 type="button"
                 :class="[
                   'relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-all duration-200',
@@ -288,74 +535,13 @@
           </div>
         </div>
 
-        <!-- Alignment Section -->
-        <div class="space-y-3">
-          <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Alignment</h4>
-
-          <!-- Text Alignment -->
-          <div class="space-y-2">
-            <label class="text-xs font-medium text-foreground/80">Text Alignment</label>
-            <div class="grid grid-cols-3 gap-2">
-              <button
-                @click="
-                  localSettings.textAlign = 'left';
-                  emitSettingsChange();
-                "
-                :class="[
-                  'px-3 py-2 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5',
-                  localSettings.textAlign === 'left'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted/50 text-muted-foreground hover:bg-muted',
-                ]"
-              >
-                <AlignLeft class="h-3.5 w-3.5" />
-                Left
-              </button>
-              <button
-                @click="
-                  localSettings.textAlign = 'center';
-                  emitSettingsChange();
-                "
-                :class="[
-                  'px-3 py-2 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5',
-                  localSettings.textAlign === 'center'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted/50 text-muted-foreground hover:bg-muted',
-                ]"
-              >
-                <AlignCenter class="h-3.5 w-3.5" />
-                Center
-              </button>
-              <button
-                @click="
-                  localSettings.textAlign = 'right';
-                  emitSettingsChange();
-                "
-                :class="[
-                  'px-3 py-2 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5',
-                  localSettings.textAlign === 'right'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted/50 text-muted-foreground hover:bg-muted',
-                ]"
-              >
-                <AlignRight class="h-3.5 w-3.5" />
-                Right
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Effects Tab -->
-      <div v-if="activeSubtitleTab === 'effects'" class="space-y-6">
-        <!-- Border 1 (Inner) Section -->
+        <!-- Border 1 (Inner) -->
         <div class="space-y-3">
           <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Border 1 (Inner)</h4>
 
-          <!-- Border 1 Width -->
           <div class="space-y-2">
             <div class="flex justify-between items-center">
-              <label class="text-xs font-semibold text-foreground">Border 1 Width</label>
+              <label class="text-xs font-semibold text-foreground">Width</label>
               <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
                 {{ localSettings.border1Width }}px
               </span>
@@ -377,9 +563,8 @@
             </div>
           </div>
 
-          <!-- Border 1 Color (conditional) -->
           <div v-if="localSettings.border1Width > 0" class="space-y-2">
-            <label class="text-xs font-semibold text-foreground">Border 1 Color</label>
+            <label class="text-xs font-semibold text-foreground">Color</label>
             <div class="flex gap-2">
               <ColorPicker v-model="localSettings.border1Color" @update:modelValue="emitSettingsChange" />
               <input
@@ -393,14 +578,13 @@
           </div>
         </div>
 
-        <!-- Border 2 (Outer) Section -->
+        <!-- Border 2 (Outer) -->
         <div class="space-y-3">
           <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Border 2 (Outer)</h4>
 
-          <!-- Border 2 Width -->
           <div class="space-y-2">
             <div class="flex justify-between items-center">
-              <label class="text-xs font-semibold text-foreground">Border 2 Width</label>
+              <label class="text-xs font-semibold text-foreground">Width</label>
               <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
                 {{ localSettings.border2Width }}px
               </span>
@@ -422,9 +606,8 @@
             </div>
           </div>
 
-          <!-- Border 2 Color (conditional) -->
           <div v-if="localSettings.border2Width > 0" class="space-y-2">
-            <label class="text-xs font-semibold text-foreground">Border 2 Color</label>
+            <label class="text-xs font-semibold text-foreground">Color</label>
             <div class="flex gap-2">
               <ColorPicker v-model="localSettings.border2Color" @update:modelValue="emitSettingsChange" />
               <input
@@ -438,14 +621,13 @@
           </div>
         </div>
 
-        <!-- Shadow Section -->
+        <!-- Shadow Settings -->
         <div class="space-y-3">
           <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Shadow</h4>
 
-          <!-- Shadow Blur -->
           <div class="space-y-2">
             <div class="flex justify-between items-center">
-              <label class="text-xs font-semibold text-foreground">Shadow Blur</label>
+              <label class="text-xs font-semibold text-foreground">Blur</label>
               <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
                 {{ localSettings.shadowBlur }}px
               </span>
@@ -467,9 +649,7 @@
             </div>
           </div>
 
-          <!-- Shadow Settings (conditional) -->
           <div v-if="localSettings.shadowBlur > 0" class="space-y-4">
-            <!-- Shadow Horizontal Offset -->
             <div class="space-y-2">
               <div class="flex justify-between items-center">
                 <label class="text-xs font-semibold text-foreground">Horizontal Offset</label>
@@ -494,7 +674,6 @@
               </div>
             </div>
 
-            <!-- Shadow Vertical Offset -->
             <div class="space-y-2">
               <div class="flex justify-between items-center">
                 <label class="text-xs font-semibold text-foreground">Vertical Offset</label>
@@ -519,9 +698,8 @@
               </div>
             </div>
 
-            <!-- Shadow Color -->
             <div class="space-y-2">
-              <label class="text-xs font-semibold text-foreground">Shadow Color</label>
+              <label class="text-xs font-semibold text-foreground">Color</label>
               <div class="flex gap-2">
                 <ColorPicker v-model="localSettings.shadowColor" @update:modelValue="emitSettingsChange" />
                 <input
@@ -536,71 +714,13 @@
           </div>
         </div>
 
-        <!-- Empty State -->
-        <div
-          v-if="localSettings.border1Width === 0 && localSettings.border2Width === 0 && localSettings.shadowBlur === 0"
-          class="py-8 text-center"
-        >
-          <div
-            class="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-muted/20 to-muted/10 rounded-lg flex items-center justify-center border border-border/30"
-          >
-            <Type class="h-8 w-8 text-muted-foreground/50" />
-          </div>
-          <p class="text-sm text-muted-foreground">No effects applied</p>
-          <p class="text-xs text-muted-foreground/70 mt-1">Adjust the sliders above to add outline or shadow</p>
-        </div>
-      </div>
-
-      <!-- Position Tab -->
-      <div v-if="activeSubtitleTab === 'position'" class="space-y-6">
-        <!-- Vertical Position Section -->
+        <!-- Position Fine-tuning -->
         <div class="space-y-3">
-          <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Vertical Position</h4>
+          <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Position</h4>
 
-          <!-- Position Presets -->
-          <div class="space-y-2">
-            <label class="text-xs font-medium text-foreground/80">Position Presets</label>
-            <div class="grid grid-cols-3 gap-2">
-              <button
-                @click="setPosition('top')"
-                :class="[
-                  'px-3 py-2 rounded-md text-xs font-medium transition-all',
-                  localSettings.position === 'top'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted/50 text-muted-foreground hover:bg-muted',
-                ]"
-              >
-                Top
-              </button>
-              <button
-                @click="setPosition('middle')"
-                :class="[
-                  'px-3 py-2 rounded-md text-xs font-medium transition-all',
-                  localSettings.position === 'middle'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted/50 text-muted-foreground hover:bg-muted',
-                ]"
-              >
-                Middle
-              </button>
-              <button
-                @click="setPosition('bottom')"
-                :class="[
-                  'px-3 py-2 rounded-md text-xs font-medium transition-all',
-                  localSettings.position === 'bottom'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted/50 text-muted-foreground hover:bg-muted',
-                ]"
-              >
-                Bottom
-              </button>
-            </div>
-          </div>
-
-          <!-- Fine-tune Y Position -->
           <div class="space-y-2">
             <div class="flex justify-between items-center">
-              <label class="text-xs font-semibold text-foreground">Vertical Offset</label>
+              <label class="text-xs font-semibold text-foreground">Vertical Position</label>
               <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
                 {{ localSettings.positionPercentage }}%
               </span>
@@ -621,13 +741,7 @@
               />
             </div>
           </div>
-        </div>
 
-        <!-- Width & Positioning Section -->
-        <div class="space-y-3">
-          <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Width & Alignment</h4>
-
-          <!-- Max Width -->
           <div class="space-y-2">
             <div class="flex justify-between items-center">
               <label class="text-xs font-semibold text-foreground">Maximum Width</label>
@@ -652,7 +766,6 @@
             </div>
           </div>
 
-          <!-- Horizontal Offset -->
           <div class="space-y-2">
             <div class="flex justify-between items-center">
               <label class="text-xs font-semibold text-foreground">Horizontal Offset</label>
@@ -677,10 +790,9 @@
             </div>
           </div>
 
-          <!-- Vertical Fine-tune -->
           <div class="space-y-2">
             <div class="flex justify-between items-center">
-              <label class="text-xs font-semibold text-foreground">Vertical Fine-tune</label>
+              <label class="text-xs font-semibold text-foreground">Vertical Offset</label>
               <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
                 {{ localSettings.textOffsetY }}px
               </span>
@@ -702,15 +814,11 @@
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Advanced Tab -->
-      <div v-if="activeSubtitleTab === 'advanced'" class="space-y-6">
-        <!-- Spacing Section -->
+        <!-- Spacing -->
         <div class="space-y-3">
           <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Spacing</h4>
 
-          <!-- Line Height -->
           <div class="space-y-2">
             <div class="flex justify-between items-center">
               <label class="text-xs font-semibold text-foreground">Line Height</label>
@@ -726,12 +834,7 @@
               <input
                 type="range"
                 :value="localSettings.lineHeight"
-                @input="
-                  (e) => {
-                    localSettings.lineHeight = parseFloat((e.target as HTMLInputElement).value);
-                    emitSettingsChange();
-                  }
-                "
+                @input="(e) => { localSettings.lineHeight = parseFloat((e.target as HTMLInputElement).value); emitSettingsChange(); }"
                 min="0.5"
                 max="2.5"
                 step="0.05"
@@ -740,7 +843,6 @@
             </div>
           </div>
 
-          <!-- Letter Spacing -->
           <div class="space-y-2">
             <div class="flex justify-between items-center">
               <label class="text-xs font-semibold text-foreground">Letter Spacing</label>
@@ -765,7 +867,6 @@
             </div>
           </div>
 
-          <!-- Word Spacing -->
           <div class="space-y-2">
             <div class="flex justify-between items-center">
               <label class="text-xs font-semibold text-foreground">Word Spacing</label>
@@ -791,11 +892,10 @@
           </div>
         </div>
 
-        <!-- Background Section -->
+        <!-- Background Box -->
         <div class="space-y-3">
-          <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Background</h4>
+          <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Background Box</h4>
 
-          <!-- Padding -->
           <div class="space-y-2">
             <div class="flex justify-between items-center">
               <label class="text-xs font-semibold text-foreground">Padding</label>
@@ -820,7 +920,6 @@
             </div>
           </div>
 
-          <!-- Border Radius -->
           <div class="space-y-2">
             <div class="flex justify-between items-center">
               <label class="text-xs font-semibold text-foreground">Border Radius</label>
@@ -943,11 +1042,99 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- Custom Fonts Manager Dialog -->
+    <Teleport to="body">
+      <div
+        v-if="showCustomFontsManager"
+        class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]"
+        @click.self="showCustomFontsManager = false"
+      >
+        <div class="bg-card rounded-lg p-6 max-w-md w-full mx-4 border border-border">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold">Custom Fonts</h2>
+            <button
+              @click="showCustomFontsManager = false"
+              class="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div class="space-y-2 max-h-80 overflow-y-auto custom-scrollbar">
+            <div v-if="customFonts.length === 0" class="py-8 text-center">
+              <p class="text-muted-foreground">No custom fonts uploaded yet</p>
+            </div>
+            <div
+              v-for="font in customFonts"
+              :key="font.id"
+              class="flex items-center justify-between p-3 bg-muted/30 rounded-lg group"
+            >
+              <div class="flex-1 min-w-0">
+                <p class="font-medium text-foreground truncate" :style="{ fontFamily: font.name }">
+                  {{ font.name }}
+                </p>
+                <p class="text-xs text-muted-foreground">.{{ font.file_type }}</p>
+              </div>
+              <button
+                @click="fontToDelete = font"
+                class="p-2 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 rounded-md transition-all opacity-0 group-hover:opacity-100"
+                title="Delete font"
+              >
+                <Trash2 class="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div class="mt-4 pt-4 border-t border-border/50">
+            <button
+              @click="uploadCustomFont(); showCustomFontsManager = false;"
+              class="w-full py-2.5 bg-primary text-primary-foreground rounded-md font-medium hover:bg-primary/90 transition-all flex items-center justify-center gap-2"
+            >
+              <Upload class="h-4 w-4" />
+              Upload New Font
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Delete Font Confirmation Dialog -->
+    <Teleport to="body">
+      <div
+        v-if="fontToDelete"
+        class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[70]"
+        @click.self="fontToDelete = null"
+      >
+        <div class="bg-card rounded-lg p-6 max-w-sm w-full mx-4 border border-border">
+          <h2 class="text-lg font-bold mb-3">Delete Font</h2>
+          <p class="text-muted-foreground text-sm mb-4">
+            Delete <span class="font-semibold text-foreground">"{{ fontToDelete.name }}"</span>? This cannot be undone.
+          </p>
+          <div class="flex gap-2">
+            <button
+              @click="fontToDelete = null"
+              class="flex-1 py-2 bg-muted text-foreground rounded-md font-medium hover:bg-muted/80 transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              @click="deleteCustomFontHandler(fontToDelete)"
+              class="flex-1 py-2 bg-red-500 text-white rounded-md font-medium hover:bg-red-600 transition-all"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+  import { invoke } from '@tauri-apps/api/core';
+  import { open } from '@tauri-apps/plugin-dialog';
   import type { SubtitleSettings, SubtitlePreset } from '@/types';
   import type { CustomSubtitlePreset } from '@/services/database';
   import {
@@ -956,6 +1143,10 @@
     updateCustomSubtitlePreset,
     deleteCustomSubtitlePreset as deletePresetFromDb,
     customPresetToSettings,
+    getAllCustomFonts,
+    createCustomFont,
+    deleteCustomFont as deleteCustomFontFromDb,
+    type CustomFont,
   } from '@/services/database';
   import ColorPicker from './ColorPicker.vue';
   import {
@@ -969,6 +1160,7 @@
     AlignCenter,
     AlignRight,
     Type,
+    Settings,
   } from 'lucide-vue-next';
 
   // Props
@@ -999,6 +1191,9 @@
   const presetToDelete = ref<string | null>(null);
   const saveMode = ref<'new' | 'update'>('new');
   const showFontDropdown = ref(false);
+  const customFonts = ref<CustomFont[]>([]);
+  const showCustomFontsManager = ref(false);
+  const fontToDelete = ref<CustomFont | null>(null);
 
   const subtitleTabs = [
     { id: 'presets', label: 'Presets' },
@@ -1008,17 +1203,39 @@
     { id: 'advanced', label: 'Advanced' },
   ];
 
-  const fontOptions = [
+  const baseFontOptions = [
     'Inter',
     'Montserrat',
     'Poppins',
     'Roboto',
     'Open Sans',
+    'Oswald',
+    'Lato',
+    'Bangers',
+    'Anton',
+    'Nunito',
     'Arial',
     'Helvetica',
     'Impact',
     'Bebas Neue',
   ];
+
+  // Combine base fonts with custom fonts
+  const fontOptions = computed(() => {
+    const customFontNames = customFonts.value.map((f) => f.name);
+    return [...baseFontOptions, ...customFontNames];
+  });
+
+  const animationOptions = [
+    { value: 'none', label: 'None', description: 'No animation' },
+    { value: 'karaoke', label: 'Karaoke', description: 'Color change on word' },
+    { value: 'zoom', label: 'Zoom', description: 'Scale up current word' },
+    { value: 'pop', label: 'Pop', description: 'Bouncy pop effect' },
+    { value: 'glow', label: 'Glow', description: 'Glowing emphasis' },
+    { value: 'box-highlight', label: 'Box', description: 'Background highlight' },
+    { value: 'typewriter', label: 'Typewriter', description: 'Words appear as spoken' },
+    { value: 'wave', label: 'Wave', description: 'Floating wave motion' },
+  ] as const;
 
   // Computed
   const allPresets = computed(() => {
@@ -1084,7 +1301,36 @@
     } else if (position === 'middle') {
       localSettings.value.positionPercentage = 50;
     } else {
-      localSettings.value.positionPercentage = 85;
+      localSettings.value.positionPercentage = 97;
+    }
+    emitSettingsChange();
+  }
+
+  function setAnimationStyle(style: 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave') {
+    localSettings.value.animationStyle = style;
+    emitSettingsChange();
+  }
+
+  function toggleBorder() {
+    if (localSettings.value.border1Width > 0) {
+      // Turn off
+      localSettings.value.border1Width = 0;
+    } else {
+      // Turn on with default values
+      localSettings.value.border1Width = 2;
+    }
+    emitSettingsChange();
+  }
+
+  function toggleShadow() {
+    if (localSettings.value.shadowBlur > 0) {
+      // Turn off
+      localSettings.value.shadowBlur = 0;
+    } else {
+      // Turn on with default values
+      localSettings.value.shadowBlur = 4;
+      localSettings.value.shadowOffsetX = 2;
+      localSettings.value.shadowOffsetY = 2;
     }
     emitSettingsChange();
   }
@@ -1107,9 +1353,10 @@
       shadowBlur: 4,
       shadowColor: '#000000',
       position: 'bottom',
-      positionPercentage: 85,
+      positionPercentage: 97,
       maxWidth: 90,
       animationStyle: 'none',
+      highlightColor: '#FFFF00',
       lineHeight: 1.2,
       letterSpacing: 0,
       textAlign: 'center',
@@ -1255,8 +1502,130 @@
     }
   }
 
+  // Custom font management functions
+  async function loadCustomFonts() {
+    try {
+      customFonts.value = await getAllCustomFonts();
+      // Inject CSS for all custom fonts
+      customFonts.value.forEach((font) => injectFontFace(font));
+    } catch (error) {
+      console.error('[SubtitlesTab] Failed to load custom fonts:', error);
+    }
+  }
+
+  function injectFontFace(font: CustomFont) {
+    const styleId = `custom-font-${font.id}`;
+    // Check if already injected
+    if (document.getElementById(styleId)) return;
+
+    const format = font.file_type === 'ttf' ? 'truetype' : 
+                   font.file_type === 'otf' ? 'opentype' : font.file_type;
+    
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      @font-face {
+        font-family: '${font.name}';
+        src: url('file://${font.file_path.replace(/\\/g, '/')}') format('${format}');
+        font-weight: 100 900;
+        font-style: normal;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function removeFontFace(fontId: string) {
+    const styleEl = document.getElementById(`custom-font-${fontId}`);
+    if (styleEl) {
+      styleEl.remove();
+    }
+  }
+
+  async function uploadCustomFont() {
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [
+          {
+            name: 'Font Files',
+            extensions: ['ttf', 'otf', 'woff', 'woff2'],
+          },
+        ],
+      });
+
+      if (!selected) return;
+
+      const filePath = typeof selected === 'string' ? selected : selected[0];
+      
+      // Copy font to storage
+      const result = await invoke<{
+        file_path: string;
+        file_name: string;
+        font_name: string;
+        file_type: string;
+      }>('copy_font_to_storage', { sourcePath: filePath });
+
+      // Save to database
+      const fontId = await createCustomFont(
+        result.font_name,
+        result.file_name,
+        result.file_path,
+        result.file_type
+      );
+
+      // Add to local state
+      const newFont: CustomFont = {
+        id: fontId,
+        name: result.font_name,
+        file_name: result.file_name,
+        file_path: result.file_path,
+        file_type: result.file_type,
+        created_at: Date.now() / 1000,
+        updated_at: Date.now() / 1000,
+      };
+      customFonts.value.push(newFont);
+      
+      // Inject font CSS
+      injectFontFace(newFont);
+
+      await showSuccessMessage('Font Uploaded', `"${result.font_name}" has been added to your fonts.`);
+    } catch (error) {
+      console.error('[SubtitlesTab] Failed to upload font:', error);
+      await showErrorMessage('Upload Failed', 'Could not upload the font file. Please try again.');
+    }
+  }
+
+  async function deleteCustomFontHandler(font: CustomFont) {
+    try {
+      // Delete file from storage
+      await invoke('delete_font_file', { filePath: font.file_path });
+      
+      // Delete from database
+      await deleteCustomFontFromDb(font.id);
+      
+      // Remove CSS
+      removeFontFace(font.id);
+      
+      // Remove from local state
+      customFonts.value = customFonts.value.filter((f) => f.id !== font.id);
+      
+      // If the deleted font was selected, switch to default
+      if (localSettings.value.fontFamily === font.name) {
+        localSettings.value.fontFamily = 'Montserrat';
+        emitSettingsChange();
+      }
+      
+      fontToDelete.value = null;
+      await showSuccessMessage('Font Deleted', `"${font.name}" has been removed.`);
+    } catch (error) {
+      console.error('[SubtitlesTab] Failed to delete font:', error);
+      await showErrorMessage('Delete Failed', 'Could not delete the font. Please try again.');
+    }
+  }
+
   onMounted(async () => {
     await loadCustomPresets();
+    await loadCustomFonts();
     document.addEventListener('click', handleClickOutside);
   });
 

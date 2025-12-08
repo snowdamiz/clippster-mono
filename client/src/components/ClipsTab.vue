@@ -435,6 +435,8 @@
       v-model="showBuildSettingsDialog"
       :clip="clipToBuild"
       :watermark-settings="watermarkSettings"
+      :default-intro="creatorDefaultIntro"
+      :default-outro="creatorDefaultOutro"
       :thumbnail-url="videoThumbnailUrl"
       :subtitle-settings="subtitleSettings"
       @confirm="onBuildConfirm"
@@ -467,7 +469,7 @@
     Sparkles,
   } from 'lucide-vue-next';
   import ClipBuildSettingsDialog, { type BuildSettings } from './ClipBuildSettingsDialog.vue';
-  import type { SubtitleSettings, WatermarkSettings } from '@/types';
+  import type { SubtitleSettings, WatermarkSettings, IntroOutroRef } from '@/types';
   import type { AnalyzeSpeakersResponse } from '@/services/speaker-detection-api';
   import type { FramingStrategy as DbFramingStrategy, ParsedStrategyData } from '@/services/database/speaker-detection';
 
@@ -633,6 +635,9 @@
     subtitleSettings: SubtitleSettings;
     maxWordsForAspectRatio: number;
     watermarkSettings?: WatermarkSettings | null;
+    // Creator profile default assets (auto-applied when building clips)
+    creatorDefaultIntro?: IntroOutroRef | null;
+    creatorDefaultOutro?: IntroOutroRef | null;
     videoThumbnailUrl?: string | null;
   }
 
@@ -651,6 +656,8 @@
     prompts: () => [],
     maxWordsForAspectRatio: 3,
     watermarkSettings: null,
+    creatorDefaultIntro: null,
+    creatorDefaultOutro: null,
     videoThumbnailUrl: null,
   });
 

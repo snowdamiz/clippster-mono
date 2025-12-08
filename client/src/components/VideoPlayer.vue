@@ -103,8 +103,10 @@
             v-for="(wordInfo, index) in visibleWords"
             :key="`subtitle-word-${wordInfo.start}-${index}`"
             class="subtitle-word-stack"
+            :class="getAnimationClass"
             :style="{
               transitionDuration: `${getWordAnimationDuration(wordInfo)}s`,
+              ...getTypewriterStyle(wordInfo, index),
             }"
           >
             <!-- Render word using SVG to allow rounded line joins -->
@@ -183,6 +185,7 @@
                   y="55%"
                   dominant-baseline="middle"
                   text-anchor="middle"
+                  :class="{ 'current-word-text': isCurrentWord(wordInfo) }"
                   :style="{
                     fontFamily: subtitleSettings.fontFamily,
                     fontWeight: subtitleSettings.fontWeight,
@@ -193,6 +196,18 @@
                 >
                   {{ wordInfo.word }}
                 </text>
+
+                <!-- Box highlight background (rendered behind text) -->
+                <rect
+                  v-if="subtitleSettings?.animationStyle === 'box-highlight' && isCurrentWord(wordInfo)"
+                  x="0"
+                  y="15%"
+                  width="100%"
+                  height="80%"
+                  rx="4"
+                  :fill="subtitleSettings?.highlightColor || '#FFFF00'"
+                  :style="{ opacity: 0.3 }"
+                />
               </g>
             </svg>
           </span>
@@ -304,7 +319,8 @@
     position: 'top' | 'middle' | 'bottom';
     positionPercentage: number;
     maxWidth: number;
-    animationStyle: 'none' | 'fade' | 'word-by-word';
+    animationStyle: 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave';
+    highlightColor: string;
     lineHeight: number;
     letterSpacing: number;
     textAlign: 'left' | 'center' | 'right';
@@ -334,9 +350,10 @@
       shadowBlur: 4,
       shadowColor: '#000000',
       position: 'bottom',
-      positionPercentage: 85,
+      positionPercentage: 97,
       maxWidth: 90,
       animationStyle: 'none',
+      highlightColor: '#FFFF00',
       lineHeight: 1.2,
       letterSpacing: 0,
       textAlign: 'center',
@@ -352,8 +369,8 @@
     watermarkSettings: () => ({
       enabled: false,
       watermarkId: null,
-      positionX: 90,
-      positionY: 90,
+      positionX: 8,
+      positionY: 92,
       opacity: 80,
       scale: 15,
     }),
@@ -587,6 +604,50 @@
   function isCurrentWord(word: WordInfo): boolean {
     const time = props.currentTime || 0;
     return time >= word.start && time <= word.end;
+  }
+
+  // Get the animation class based on animation style
+  const getAnimationClass = computed(() => {
+    const style = props.subtitleSettings?.animationStyle;
+    if (!style || style === 'none') return {};
+
+    return {
+      'animation-zoom': style === 'zoom',
+      'animation-karaoke': style === 'karaoke',
+      'animation-pop': style === 'pop',
+      'animation-glow': style === 'glow',
+      'animation-box-highlight': style === 'box-highlight',
+      'animation-typewriter': style === 'typewriter',
+      'animation-wave': style === 'wave',
+    };
+  });
+
+  // Get the fill color for a word (supports karaoke highlight)
+  function getWordFillColor(word: WordInfo): string {
+    const style = props.subtitleSettings?.animationStyle;
+    const textColor = props.subtitleSettings?.textColor || '#FFFFFF';
+    const highlightColor = props.subtitleSettings?.highlightColor || '#FFFF00';
+
+    // Karaoke mode: change color of current word
+    if (style === 'karaoke' && isCurrentWord(word)) {
+      return highlightColor;
+    }
+
+    return textColor;
+  }
+
+  // Get typewriter style (controls visibility for typewriter effect)
+  function getTypewriterStyle(word: WordInfo, index: number): Record<string, string> {
+    const style = props.subtitleSettings?.animationStyle;
+    if (style !== 'typewriter') return {};
+
+    const time = props.currentTime || 0;
+    const isVisible = time >= word.start;
+
+    return {
+      opacity: isVisible ? '1' : '0',
+      transform: isVisible ? 'translateY(0)' : 'translateY(10px)',
+    };
   }
 
   // Calculate animation duration for a specific word based on its timing
@@ -986,7 +1047,7 @@
   .subtitle-text-container {
     display: flex;
     flex-wrap: wrap;
-    justify-content: center;
+    /* justify-content is set dynamically via inline style based on textAlign */
     align-items: center;
   }
 
@@ -994,14 +1055,80 @@
   .subtitle-word-stack {
     position: relative;
     display: inline-block;
-    transition-property: transform;
+    transition-property: transform, opacity, filter;
     transition-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
     transform-origin: center;
-    will-change: transform;
+    will-change: transform, opacity, filter;
   }
 
-  .subtitle-word-stack:has(.current-word) {
+  /* ===== ANIMATION STYLES ===== */
+
+  /* Zoom animation - scale up current word */
+  .subtitle-word-stack.animation-zoom:has(.current-word) {
     transform: scale(1.15);
+  }
+
+  /* Karaoke animation - color change handled via JS, subtle scale */
+  .subtitle-word-stack.animation-karaoke:has(.current-word) {
+    transform: scale(1.05);
+  }
+
+  /* Pop/Bounce animation - bouncy scale effect */
+  .subtitle-word-stack.animation-pop:has(.current-word) {
+    animation: pop-bounce 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+  }
+
+  @keyframes pop-bounce {
+    0% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.25);
+    }
+    100% {
+      transform: scale(1.1);
+    }
+  }
+
+  /* Glow animation - glowing emphasis */
+  .subtitle-word-stack.animation-glow:has(.current-word) {
+    filter: drop-shadow(0 0 8px currentColor) drop-shadow(0 0 16px currentColor);
+    transform: scale(1.05);
+  }
+
+  /* Box highlight - background box (rendered via SVG rect) */
+  .subtitle-word-stack.animation-box-highlight:has(.current-word) {
+    transform: scale(1.02);
+  }
+
+  /* Typewriter animation - words appear as spoken */
+  .subtitle-word-stack.animation-typewriter {
+    transition-property: transform, opacity;
+    transition-duration: 0.15s;
+    transition-timing-function: ease-out;
+  }
+
+  /* Wave animation - wave effect across words */
+  .subtitle-word-stack.animation-wave:has(.current-word) {
+    animation: wave-float 0.4s ease-in-out;
+  }
+
+  @keyframes wave-float {
+    0% {
+      transform: translateY(0) scale(1);
+    }
+    25% {
+      transform: translateY(-8px) scale(1.08);
+    }
+    50% {
+      transform: translateY(-4px) scale(1.05);
+    }
+    75% {
+      transform: translateY(-6px) scale(1.06);
+    }
+    100% {
+      transform: translateY(0) scale(1.03);
+    }
   }
 
   /* Watermark styling */

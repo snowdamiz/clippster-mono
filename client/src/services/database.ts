@@ -37,6 +37,7 @@ export type {
 export {
   createIntroOutro,
   getAllIntroOutros,
+  getIntroOutroById,
   updateIntroOutroCompletion,
   updateIntroOutroThumbnailStatus,
   deleteIntroOutro,
@@ -292,3 +293,13 @@ export {
   type VideoType,
   type ParsedStrategyData,
 } from './database/speaker-detection';
+
+// Custom fonts exports
+export {
+  createCustomFont,
+  getAllCustomFonts,
+  getCustomFontById,
+  deleteCustomFont,
+  updateCustomFontName,
+  type CustomFont,
+} from './database/custom-fonts';

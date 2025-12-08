@@ -636,14 +636,22 @@
                     </div>
 
                     <div class="space-y-3">
-                      <!-- Intro Selector -->
-                      <div class="bg-muted/20 rounded-xl p-4 border border-border/50 space-y-2">
-                        <label class="text-sm font-semibold text-foreground">Intro Clip</label>
+                      <!-- Intro Compact Selector -->
+                      <div class="space-y-1.5 sm:space-y-2">
+                        <div class="flex items-center justify-between">
+                          <label class="text-[10px] sm:text-xs font-medium text-muted-foreground">Intro</label>
+                          <span
+                            v-if="defaultIntro && selectedIntro?.id === defaultIntro.id"
+                            class="text-[9px] px-1.5 py-0.5 bg-violet-500/20 text-violet-400 rounded-full border border-violet-500/30"
+                          >
+                            Creator Default
+                          </span>
+                        </div>
                         <div class="relative">
                           <button
                             ref="introButtonRef"
                             @click="toggleIntroDropdown"
-                            class="w-full px-3 py-2.5 bg-muted/50 border border-border/40 rounded-lg text-left flex items-center justify-between hover:border-border hover:bg-muted/60 transition-all text-sm text-foreground"
+                            class="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 bg-muted/50 border border-border/40 rounded-lg text-left flex items-center justify-between hover:border-border hover:bg-muted/60 transition-all text-xs sm:text-sm text-foreground"
                           >
                             <span class="truncate">
                               {{
@@ -658,6 +666,7 @@
                             />
                           </button>
 
+                          <!-- Dropdown - Teleported -->
                           <Teleport to="body">
                             <div
                               v-if="showIntroDropdown"
@@ -706,14 +715,22 @@
                         </div>
                       </div>
 
-                      <!-- Outro Selector -->
-                      <div class="bg-muted/20 rounded-xl p-4 border border-border/50 space-y-2">
-                        <label class="text-sm font-semibold text-foreground">Outro Clip</label>
+                      <!-- Outro Compact Selector -->
+                      <div class="space-y-1.5 sm:space-y-2">
+                        <div class="flex items-center justify-between">
+                          <label class="text-[10px] sm:text-xs font-medium text-muted-foreground">Outro</label>
+                          <span
+                            v-if="defaultOutro && selectedOutro?.id === defaultOutro.id"
+                            class="text-[9px] px-1.5 py-0.5 bg-violet-500/20 text-violet-400 rounded-full border border-violet-500/30"
+                          >
+                            Creator Default
+                          </span>
+                        </div>
                         <div class="relative">
                           <button
                             ref="outroButtonRef"
                             @click="toggleOutroDropdown"
-                            class="w-full px-3 py-2.5 bg-muted/50 border border-border/40 rounded-lg text-left flex items-center justify-between hover:border-border hover:bg-muted/60 transition-all text-sm text-foreground"
+                            class="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 bg-muted/50 border border-border/40 rounded-lg text-left flex items-center justify-between hover:border-border hover:bg-muted/60 transition-all text-xs sm:text-sm text-foreground"
                           >
                             <span class="truncate">
                               {{
@@ -728,6 +745,7 @@
                             />
                           </button>
 
+                          <!-- Dropdown - Teleported -->
                           <Teleport to="body">
                             <div
                               v-if="showOutroDropdown"
@@ -929,6 +947,9 @@
     modelValue: boolean;
     clip: ClipWithVersion | null;
     watermarkSettings?: WatermarkSettings | null;
+    // Creator profile default assets (auto-applied when dialog opens)
+    defaultIntro?: IntroOutro | null;
+    defaultOutro?: IntroOutro | null;
     thumbnailUrl?: string | null;
     subtitleSettings?: SubtitleSettings | null;
   }>();
@@ -1148,6 +1169,24 @@
           await loadIntroOutros();
         }
 
+        // Pre-select creator profile defaults
+        if (props.defaultIntro) {
+          // Find the matching intro in the loaded list, or use the prop directly
+          const matchingIntro = intros.value.find((i) => i.id === props.defaultIntro!.id);
+          selectedIntro.value = matchingIntro || props.defaultIntro;
+          console.log('[ClipBuildSettingsDialog] Pre-selected creator default intro:', selectedIntro.value?.name);
+        }
+
+        if (props.defaultOutro) {
+          // Find the matching outro in the loaded list, or use the prop directly
+          const matchingOutro = outros.value.find((o) => o.id === props.defaultOutro!.id);
+          selectedOutro.value = matchingOutro || props.defaultOutro;
+          console.log('[ClipBuildSettingsDialog] Pre-selected creator default outro:', selectedOutro.value?.name);
+        }
+      } else {
+        // Reset selections when dialog closes
+        selectedIntro.value = null;
+        selectedOutro.value = null;
         // Load video frame for POI editor preview
         await loadVideoFrame();
       }
