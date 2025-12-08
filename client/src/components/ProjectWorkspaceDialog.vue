@@ -12,19 +12,18 @@
       >
         <!-- Header -->
         <div
-          class="flex items-center justify-between px-4 py-2.5 border-b border-border/60 bg-gradient-to-r from-[#0a0a0a] via-[#0d0d0d] to-[#0a0a0a] rounded-t-lg"
+          class="flex items-center justify-between px-3 py-2 border-b border-border/60 bg-gradient-to-r from-[#0a0a0a] via-[#0d0d0d] to-[#0a0a0a] rounded-t-lg"
         >
           <div class="flex items-center gap-3 min-w-0">
             <div
-              class="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500/20 to-purple-600/20 border border-violet-500/30 flex items-center justify-center"
+              class="w-6 h-6 rounded-sm bg-gradient-to-br from-violet-500/20 to-purple-600/20 border border-violet-500/30 flex items-center justify-center"
             >
-              <Film class="h-4 w-4 text-violet-400" />
+              <Film class="h-3 w-3 text-violet-400" />
             </div>
             <div class="flex flex-col">
               <h2 class="text-sm font-semibold text-foreground tracking-tight truncate">
                 {{ project?.name || 'New Project' }}
               </h2>
-              <span class="text-[10px] text-muted-foreground/70">Workspace</span>
             </div>
           </div>
           <button

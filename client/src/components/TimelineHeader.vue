@@ -91,9 +91,9 @@
       </div>
       <!-- Zoom Slider -->
       <div
-        class="flex items-center gap-2 bg-black/40 backdrop-blur-sm rounded-lg px-2.5 py-1.5 border border-white/[0.04]"
+        class="flex items-center gap-2 bg-black/40 backdrop-blur-sm rounded-lg px-2.5 py-2 border border-white/[0.04]"
       >
-        <ZoomIn :size="12" class="text-white/40" />
+        <ZoomIn :size="18" class="text-white/40" />
         <input
           ref="zoomSlider"
           type="range"
@@ -104,7 +104,7 @@
           class="w-20 h-1 bg-white/10 rounded-full appearance-none cursor-pointer slider-zoom"
           @input="handleZoomChange"
         />
-        <span class="text-[10px] text-white/50 min-w-[2.5rem] text-right font-mono tabular-nums">
+        <span class="text-[12px] text-white/50 text-right font-mono tabular-nums">
           {{ Math.round(zoomLevel * 100) }}%
         </span>
       </div>
@@ -203,7 +203,6 @@
     cursor: pointer;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
     transition: all 0.15s ease;
-    margin-top: -3.5px;
   }
 
   .slider-zoom::-moz-range-thumb {

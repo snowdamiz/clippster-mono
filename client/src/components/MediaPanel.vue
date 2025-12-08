@@ -13,18 +13,15 @@
           activeTab === tab.id ? 'text-foreground' : 'text-muted-foreground hover:text-foreground/80',
         ]"
       >
-        <component
+        <!-- <component
           :is="tab.icon"
           :class="[
             'h-3.5 w-3.5 transition-colors duration-200',
             activeTab === tab.id ? 'text-violet-400' : 'text-muted-foreground group-hover:text-foreground/60',
           ]"
-        />
+        /> -->
         {{ tab.label }}
-        <div
-          v-if="activeTab === tab.id"
-          class="absolute bottom-0 left-2 right-2 h-0.5 bg-gradient-to-r from-violet-500 to-purple-500 rounded-full"
-        ></div>
+        <div v-if="activeTab === tab.id" class="absolute bottom-0 left-2 right-2 h-0.5 bg-white/70 rounded-full"></div>
       </button>
     </div>
 
