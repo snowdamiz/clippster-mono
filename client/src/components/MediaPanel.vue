@@ -432,7 +432,7 @@
   // Handle clip build progress events
   function handleClipBuildProgress(event: any) {
     const payload = event.payload || event.detail;
-    const { clip_id, progress, stage, message } = payload;
+    const { clip_id, progress, stage } = payload;
 
     console.log(`[MediaPanel] Received clip build progress event for: ${clip_id} - stage: ${stage}`);
 

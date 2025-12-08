@@ -622,22 +622,8 @@
     };
   });
 
-  // Get the fill color for a word (supports karaoke highlight)
-  function getWordFillColor(word: WordInfo): string {
-    const style = props.subtitleSettings?.animationStyle;
-    const textColor = props.subtitleSettings?.textColor || '#FFFFFF';
-    const highlightColor = props.subtitleSettings?.highlightColor || '#FFFF00';
-
-    // Karaoke mode: change color of current word
-    if (style === 'karaoke' && isCurrentWord(word)) {
-      return highlightColor;
-    }
-
-    return textColor;
-  }
-
   // Get typewriter style (controls visibility for typewriter effect)
-  function getTypewriterStyle(word: WordInfo, index: number): Record<string, string> {
+  function getTypewriterStyle(word: WordInfo, _index: number): Record<string, string> {
     const style = props.subtitleSettings?.animationStyle;
     if (style !== 'typewriter') return {};
 

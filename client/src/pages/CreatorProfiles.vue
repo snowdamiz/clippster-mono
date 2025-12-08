@@ -628,23 +628,6 @@
     await Promise.all(promises);
   }
 
-  function _getLinkLiveStatus(link: { platform: string; platform_id: string; monitored_streamer_id?: string | null }) {
-    // If monitored and has active session, it's live
-    if (link.monitored_streamer_id) {
-      const session = activeSessions.value.get(link.monitored_streamer_id);
-      if (session && !session.isStopping) {
-        return { isLive: true, viewerCount: undefined, isChecking: false };
-      }
-    }
-
-    // Otherwise check our cached status
-    if (link.platform === 'pumpfun') {
-      return liveStatusMap.value.get(link.platform_id) || { isLive: false, viewerCount: undefined, isChecking: false };
-    }
-
-    return { isLive: false, viewerCount: undefined, isChecking: false };
-  }
-
   async function loadCreators() {
     loading.value = true;
     try {

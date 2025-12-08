@@ -323,6 +323,7 @@ export interface CustomSubtitlePreset {
   max_width: number;
   // Animation
   animation_style: string;
+  highlight_color: string | null;
   // Advanced settings
   line_height: number;
   letter_spacing: number;
@@ -356,7 +357,15 @@ export interface SubtitleSettings {
   position: 'top' | 'middle' | 'bottom';
   positionPercentage: number;
   maxWidth: number;
-  animationStyle: 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave';
+  animationStyle:
+    | 'none'
+    | 'karaoke'
+    | 'zoom'
+    | 'pop'
+    | 'glow'
+    | 'box-highlight'
+    | 'typewriter'
+    | 'wave';
   highlightColor: string;
   lineHeight: number;
   letterSpacing: number;

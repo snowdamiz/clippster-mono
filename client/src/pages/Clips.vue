@@ -982,39 +982,6 @@
     return groups;
   }
 
-  // Keep _groupClips for folder view compatibility
-  function _groupClips(clipsToGroup: Clip[]) {
-    if (sortBy.value.startsWith('name') || sortBy.value.startsWith('duration')) {
-      return [{ dateLabel: 'Clips', clips: clipsToGroup }];
-    }
-
-    const groups: { dateLabel: string; clips: Clip[] }[] = [];
-    let currentLabel = '';
-    let currentClips: Clip[] = [];
-
-    for (const clip of clipsToGroup) {
-      const label = getDateLabel(clip.created_at);
-
-      if (label !== currentLabel) {
-        if (currentLabel) {
-          groups.push({ dateLabel: currentLabel, clips: currentClips });
-        }
-        currentLabel = label;
-        currentClips = [clip];
-      } else {
-        currentClips.push(clip);
-      }
-    }
-
-    if (currentLabel) {
-      groups.push({ dateLabel: currentLabel, clips: currentClips });
-    } else if (clipsToGroup.length > 0 && groups.length === 0) {
-      groups.push({ dateLabel: 'Clips', clips: clipsToGroup });
-    }
-
-    return groups;
-  }
-
   const groupedByProject = computed(() => {
     const groups = new Map<
       string,
@@ -1266,20 +1233,6 @@
       return folderBuildsAll.value;
     }
     return folderBuildsAll.value.filter((b) => b.aspectRatio === folderAspectRatioFilter.value);
-  });
-
-  // Group folder builds by their parent build ID (for visual grouping)
-  const _folderBuildGroups = computed(() => {
-    const groups = new Map<string, DisplayableBuild[]>();
-    for (const build of folderBuilds.value) {
-      // Extract the base build ID (remove the -index suffix if present)
-      const baseBuildId = build.build.id;
-      if (!groups.has(baseBuildId)) {
-        groups.set(baseBuildId, []);
-      }
-      groups.get(baseBuildId)!.push(build);
-    }
-    return groups;
   });
 
   // Check if a build has siblings (other aspect ratios from the same build)
@@ -1663,11 +1616,6 @@
     }
 
     return null;
-  }
-
-  function _getProjectName(projectId: string): string | null {
-    const project = projectCache.value.get(projectId);
-    return project?.name || null;
   }
 
   // Get project name for a clip, with fallback to stored project_name for deleted projects

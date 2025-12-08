@@ -1366,8 +1366,7 @@
   const totalDetectionDuration = ref(0);
   const isDetectingProject = ref(false);
   const authStore = useAuthStore();
-  const { startDetection, updateProgress, completeDetection, isDetectionActive, getDetectionState } =
-    useClipDetectionTracking();
+  const { startDetection, updateProgress, completeDetection, isDetectionActive } = useClipDetectionTracking();
 
   // Filter state
   const searchQuery = ref('');
@@ -1752,6 +1751,8 @@
         batch.map(async (clip) => {
           try {
             const segmentId = clip.segment_id || clip.project_id;
+            if (!segmentId) return;
+
             let videos = projectVideos.value[segmentId];
 
             // Load videos on demand if not cached
@@ -2345,27 +2346,6 @@
         });
       } catch {}
       error('Build failed', e instanceof Error ? e.message : 'An error occurred while building the clip.');
-    }
-  }
-
-  // Download built clip
-  async function _onFolderSaveBuiltClip(clip: ClipWithVersionAndSegment) {
-    if (!clip.built_file_path) return;
-
-    try {
-      const defaultName = `${clip.current_version?.name || clip.name || 'clip'}.mp4`;
-      const savePath = await save({
-        defaultPath: defaultName,
-        filters: [{ name: 'Video', extensions: ['mp4'] }],
-      });
-
-      if (savePath) {
-        await invoke('copy_clip_to_destination', { sourcePath: clip.built_file_path, destinationPath: savePath });
-        success('Clip saved', 'Your clip has been saved successfully.');
-      }
-    } catch (e) {
-      console.error('[Projects] Failed to save clip:', e);
-      error('Save failed', 'Failed to save the clip file.');
     }
   }
 
@@ -3154,34 +3134,6 @@
     return false;
   }
 
-  function _getProjectDetectionProgress(projectId: string): { progress: number; message: string } | null {
-    // Check if the project itself is being detected
-    const selfState = getDetectionState(projectId);
-    if (selfState?.isActive) {
-      return { progress: selfState.progress, message: selfState.message };
-    }
-
-    // Check children and aggregate progress
-    const children = getFolderChildren(projectId);
-    const activeChildren = children.filter((child) => isDetectionActive(child.id));
-
-    if (activeChildren.length > 0) {
-      // Find the currently active child
-      for (const child of activeChildren) {
-        const state = getDetectionState(child.id);
-        if (state?.isActive) {
-          const childIndex = children.findIndex((c) => c.id === child.id);
-          return {
-            progress: state.progress,
-            message: `Segment ${childIndex + 1}/${children.length}: ${state.message}`,
-          };
-        }
-      }
-    }
-
-    return null;
-  }
-
   function canDetectClips(projectId: string): boolean {
     // Check if project has videos directly
     const videos = projectVideos.value[projectId];
@@ -3199,27 +3151,6 @@
     }
 
     return false;
-  }
-
-  function _getProjectTotalDuration(projectId: string): number {
-    let totalDuration = 0;
-
-    // Get duration from direct videos
-    const videos = projectVideos.value[projectId];
-    if (videos) {
-      totalDuration += videos.reduce((acc, v) => acc + (v.duration || 0), 0);
-    }
-
-    // Get duration from children
-    const children = getFolderChildren(projectId);
-    for (const child of children) {
-      const childVideos = projectVideos.value[child.id];
-      if (childVideos) {
-        totalDuration += childVideos.reduce((acc, v) => acc + (v.duration || 0), 0);
-      }
-    }
-
-    return totalDuration;
   }
 
   function startProjectDetection(project: Project) {

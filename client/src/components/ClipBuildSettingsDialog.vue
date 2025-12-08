@@ -922,7 +922,13 @@
   import { getAllIntroOutros, type IntroOutro } from '@/services/database';
   import ManualPOIEditor from './poi/ManualPOIEditor.vue';
   import SubtitleAdjustmentDialog from './SubtitleAdjustmentDialog.vue';
-  import type { ManualFramingConfig, SubtitleOverride, SubtitleOverrides, SubtitleSettings } from '@/types';
+  import type {
+    ManualFramingConfig,
+    SubtitleOverride,
+    SubtitleOverrides,
+    SubtitleSettings,
+    IntroOutroRef,
+  } from '@/types';
 
   // Step definitions
   type StepId = 'platforms' | 'framing' | 'export' | 'addons';
@@ -948,8 +954,8 @@
     clip: ClipWithVersion | null;
     watermarkSettings?: WatermarkSettings | null;
     // Creator profile default assets (auto-applied when dialog opens)
-    defaultIntro?: IntroOutro | null;
-    defaultOutro?: IntroOutro | null;
+    defaultIntro?: IntroOutroRef | null;
+    defaultOutro?: IntroOutroRef | null;
     thumbnailUrl?: string | null;
     subtitleSettings?: SubtitleSettings | null;
   }>();
@@ -1171,17 +1177,21 @@
 
         // Pre-select creator profile defaults
         if (props.defaultIntro) {
-          // Find the matching intro in the loaded list, or use the prop directly
+          // Find the matching intro in the loaded list
           const matchingIntro = intros.value.find((i) => i.id === props.defaultIntro!.id);
-          selectedIntro.value = matchingIntro || props.defaultIntro;
-          console.log('[ClipBuildSettingsDialog] Pre-selected creator default intro:', selectedIntro.value?.name);
+          if (matchingIntro) {
+            selectedIntro.value = matchingIntro;
+            console.log('[ClipBuildSettingsDialog] Pre-selected creator default intro:', selectedIntro.value?.name);
+          }
         }
 
         if (props.defaultOutro) {
-          // Find the matching outro in the loaded list, or use the prop directly
+          // Find the matching outro in the loaded list
           const matchingOutro = outros.value.find((o) => o.id === props.defaultOutro!.id);
-          selectedOutro.value = matchingOutro || props.defaultOutro;
-          console.log('[ClipBuildSettingsDialog] Pre-selected creator default outro:', selectedOutro.value?.name);
+          if (matchingOutro) {
+            selectedOutro.value = matchingOutro;
+            console.log('[ClipBuildSettingsDialog] Pre-selected creator default outro:', selectedOutro.value?.name);
+          }
         }
 
         // Load video frame for POI editor preview
@@ -1222,25 +1232,6 @@
   // Check if a ratio has custom subtitle overrides
   function hasSubtitleOverride(ratio: string): boolean {
     return !!subtitleOverrides.value[ratio as keyof SubtitleOverrides];
-  }
-
-  // Update subtitle override for a specific ratio
-  function updateSubtitleOverride(ratio: string, field: keyof SubtitleOverride, value: number) {
-    const currentOverride = getSubtitleOverrideForRatio(ratio);
-    subtitleOverrides.value = {
-      ...subtitleOverrides.value,
-      [ratio]: {
-        ...currentOverride,
-        [field]: value,
-      },
-    };
-  }
-
-  // Reset subtitle override for a ratio (remove customization)
-  function resetSubtitleOverride(ratio: string) {
-    const newOverrides = { ...subtitleOverrides.value };
-    delete newOverrides[ratio as keyof SubtitleOverrides];
-    subtitleOverrides.value = newOverrides;
   }
 
   // Open subtitle adjustment dialog for a specific ratio

@@ -210,7 +210,6 @@
     getWatermarkImage,
     getCreatorProfileByProjectId,
     getIntroOutroById,
-    type WatermarkImage,
   } from '@/services/database';
   import { X, Film } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
