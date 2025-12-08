@@ -43,7 +43,9 @@
           >
             <!-- Video Player Section -->
             <div
+              ref="videoPlayerSectionRef"
               class="w-3/5 min-w-0 p-5 border-r border-border/40 flex flex-col bg-gradient-to-br from-black/20 to-transparent"
+              :class="{ 'fullscreen-player': isFullscreen }"
             >
               <!-- Video Player Container -->
               <VideoPlayer
@@ -79,10 +81,12 @@
                 :duration="duration"
                 :volume="volume"
                 :is-muted="isMuted"
+                :is-fullscreen="isFullscreen"
                 @togglePlayPause="togglePlayPause"
                 @toggleMute="toggleMute"
                 @updateVolume="updateVolume"
                 @goToBeginning="goToBeginning"
+                @toggleFullscreen="toggleFullscreen"
               />
             </div>
             <!-- Right Side: Media Section -->
@@ -196,10 +200,31 @@
   .z-50 {
     z-index: 50;
   }
+
+  /* Fullscreen player styles */
+  .fullscreen-player {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    max-height: none !important;
+    z-index: 9999 !important;
+    background: #000 !important;
+    padding: 2rem !important;
+    border: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+  }
+
+  .fullscreen-player :deep(.video-crop-container) {
+    max-height: calc(100vh - 8rem) !important;
+  }
 </style>
 
 <script setup lang="ts">
-  import { ref, watch, computed, nextTick } from 'vue';
+  import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue';
   import {
     type Project,
     type ClipWithVersion,
@@ -284,6 +309,10 @@
 
   // Dialog element ref for height tracking
   const dialogElementRef = ref<HTMLElement | null>(null);
+
+  // Video player section ref for fullscreen
+  const videoPlayerSectionRef = ref<HTMLElement | null>(null);
+  const isFullscreen = ref(false);
 
   // Aspect ratio state
   const selectedAspectRatio = ref({ width: 16, height: 9 });
@@ -486,6 +515,43 @@
 
   function close() {
     emit('update:modelValue', false);
+  }
+
+  // Toggle fullscreen for video player section
+  async function toggleFullscreen() {
+    const element = videoPlayerSectionRef.value;
+    if (!element) return;
+
+    try {
+      if (!document.fullscreenElement) {
+        await element.requestFullscreen();
+        isFullscreen.value = true;
+      } else {
+        await document.exitFullscreen();
+        isFullscreen.value = false;
+      }
+    } catch (err) {
+      console.error('[ProjectWorkspaceDialog] Fullscreen error:', err);
+    }
+  }
+
+  // Handle fullscreen change events (e.g., user presses Escape)
+  function handleFullscreenChange() {
+    isFullscreen.value = !!document.fullscreenElement;
+  }
+
+  // Handle keyboard shortcuts for video player
+  function handleKeydown(event: KeyboardEvent) {
+    // Only handle if dialog is open and not typing in an input
+    if (!props.modelValue) return;
+    const target = event.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+
+    // F key for fullscreen
+    if (event.key === 'f' || event.key === 'F') {
+      event.preventDefault();
+      toggleFullscreen();
+    }
   }
 
   function closeProgress() {
@@ -1382,7 +1448,27 @@
       if (!newValue) {
         currentlyPlayingClipId.value = null;
         stopSegmentedPlayback();
+        // Exit fullscreen if dialog closes while in fullscreen
+        if (isFullscreen.value && document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        }
+        isFullscreen.value = false;
       }
     }
   );
+
+  // Set up fullscreen change listener and keyboard shortcuts
+  onMounted(() => {
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('keydown', handleKeydown);
+  });
+
+  onUnmounted(() => {
+    document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    document.removeEventListener('keydown', handleKeydown);
+    // Ensure we exit fullscreen on unmount
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
+  });
 </script>

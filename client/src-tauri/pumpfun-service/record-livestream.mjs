@@ -22,10 +22,16 @@ const VIDEO_QUALITY_HIGH = 2;
 // Positive value = advance audio (audio plays earlier) - fixes "audio behind" issues
 // Adjust this value if audio is consistently behind across all streams.
 // Typical values: 100-300ms
-const AUDIO_ADVANCE_MS = 208; // Advance audio by 200ms to fix sync
+const AUDIO_ADVANCE_MS = 210; // Advance audio by 200ms to fix sync
 
 const AUDIO_FALLBACK_OFFSET_MS = 0; // Only used as fallback if sync setup fails
 const DEBUG_SYNC = true; // Enabled to diagnose video stride issues
+
+// DIAGNOSTIC MODE - Enable comprehensive logging to diagnose green screen / still image issues
+// Set to true when testing problematic streams
+const DIAGNOSTIC_MODE = true;
+const DIAGNOSTIC_LOG_INTERVAL_FRAMES = 30; // Log every N frames (30 = ~1/sec at 30fps)
+const SYNC_HEALTH_INTERVAL_MS = 30000; // Log sync health every 30 seconds
 
 const args = process.argv.slice(2);
 const [mintId, sessionId, outputDirArg, segmentMinutesArg] = args;
@@ -269,6 +275,16 @@ class PumpfunRecorder {
     
     this.pendingResChange = null;
     this.mixerInterval = null;
+    
+    // Diagnostic counters for troubleshooting
+    this._diagnosticVideoFrameCount = 0; // Total video frames received
+    this._diagnosticAudioFrameCount = 0; // Total audio frames received
+    this._diagnosticVideoQueueSkipped = 0; // Frames skipped due to missing timestamp
+    this._diagnosticVideoFrameReuse = 0; // Times lastVideoFrame was reused
+    this._diagnosticStrideIssues = 0; // Frames with stride mismatch detected
+    this._diagnosticLastHealthLog = 0; // Timestamp of last health log
+    this._diagnosticStreamProfile = null; // Captured stream characteristics
+    this._diagnosticPlaneWarnings = new Set(); // Track unique plane warnings
   }
 
   async getHardwareEncoderArgs() {
@@ -445,6 +461,7 @@ class PumpfunRecorder {
         
         const arrivalTime = Date.now();
         this.audioFrameCount++;
+        this._diagnosticAudioFrameCount++;
         
         // Extract audio timestamp from LiveKit frame (similar to video)
         // LiveKit provides timestampUs as BigInt presentation timestamp
@@ -478,6 +495,19 @@ class PumpfunRecorder {
             }
             log('Audio frame structure', frameProps);
             
+            // DIAGNOSTIC: Log audio profile
+            if (DIAGNOSTIC_MODE) {
+                log('DIAG: Stream audio profile', {
+                    mintId: this.mintId,
+                    hasTimestamp: value.timestampUs !== undefined,
+                    timestampSource,
+                    dataSize: value.data?.byteLength || 0,
+                    sampleRate: 48000,
+                    channels: 2,
+                    frameSizeMs: 20
+                });
+            }
+            
             // Also check for nested frame object (some SDKs wrap the data)
             if (value.frame) {
                 const nestedProps = {};
@@ -505,6 +535,18 @@ class PumpfunRecorder {
                     wallClock: arrivalTime 
                 });
             }
+            
+            // DIAGNOSTIC: Additional first audio info
+            if (DIAGNOSTIC_MODE) {
+                log('DIAG: First audio frame', {
+                    hasTimestamp: value.timestampUs !== undefined,
+                    timestampUs: audioTimestampUs.toString(),
+                    timestampSource,
+                    arrivalTime,
+                    note: timestampSource === 'computed' ? 'Using computed timestamps (fallback)' : 'Using LiveKit timestamps'
+                });
+            }
+            
             this.checkSyncAndStart();
         }
         
@@ -575,11 +617,23 @@ class PumpfunRecorder {
         let arrivalTime = Date.now();
         const frame = value.frame;
         const timestampUs = value.timestampUs; // BigInt from LiveKit
+        
+        // Diagnostic: count all received video frames
+        this._diagnosticVideoFrameCount++;
 
         if (!this.firstVideoTime) {
             this.firstVideoTime = arrivalTime;
             if (timestampUs !== undefined) {
                 this.firstVideoTimestampUs = timestampUs;
+            }
+            
+            // DIAGNOSTIC: Log first video frame timestamp info
+            if (DIAGNOSTIC_MODE) {
+                log('DIAG: First video frame', {
+                    hasTimestamp: timestampUs !== undefined,
+                    timestampUs: timestampUs !== undefined ? timestampUs.toString() : 'UNDEFINED',
+                    arrivalTime
+                });
             }
         } else if (this.firstVideoTimestampUs !== null && timestampUs !== undefined) {
             // Use presentation timestamp to calculate precise arrival time
@@ -622,12 +676,103 @@ class PumpfunRecorder {
         const vPlane = converted.getPlane(2);
 
         if (!yPlane || !uPlane || !vPlane) {
+          if (DIAGNOSTIC_MODE && !this._diagnosticPlaneWarnings.has('missing_planes')) {
+              this._diagnosticPlaneWarnings.add('missing_planes');
+              log('DIAG: WARNING - Missing video planes', {
+                  hasY: !!yPlane,
+                  hasU: !!uPlane,
+                  hasV: !!vPlane,
+                  frameCount: this._diagnosticVideoFrameCount
+              });
+          }
           continue;
         }
+        
+        // DIAGNOSTIC: Analyze plane structure for stride issues
+        const analyzePlane = (plane, expectedWidth, expectedHeight, planeName) => {
+            const srcBuffer = Buffer.from(plane.buffer, plane.byteOffset, plane.byteLength);
+            const expectedSize = expectedWidth * expectedHeight;
+            const hasExplicitStride = typeof plane.stride === 'number';
+            const explicitStride = hasExplicitStride ? plane.stride : null;
+            const inferredStride = Math.floor(srcBuffer.length / expectedHeight);
+            const strideSource = hasExplicitStride && plane.stride >= expectedWidth ? 'explicit' : 'inferred';
+            const usedStride = strideSource === 'explicit' ? explicitStride : inferredStride;
+            
+            // Detect potential issues
+            const sizeMatch = srcBuffer.length >= expectedSize;
+            const strideMatch = usedStride === expectedWidth;
+            const hasExtraPadding = srcBuffer.length > expectedSize && !strideMatch;
+            
+            return {
+                planeName,
+                expectedSize,
+                actualSize: srcBuffer.length,
+                sizeMatch,
+                expectedWidth,
+                expectedHeight,
+                explicitStride,
+                inferredStride,
+                strideSource,
+                usedStride,
+                strideMatch,
+                hasExtraPadding,
+                potentialIssue: !sizeMatch || (hasExtraPadding && strideSource === 'inferred')
+            };
+        };
         
         // Debug: Log video frame structure on first frame to diagnose stride issues
         if (!this._loggedVideoFrame) {
             this._loggedVideoFrame = true;
+            
+            const yAnalysis = analyzePlane(yPlane, effectiveWidth, effectiveHeight, 'Y');
+            const uAnalysis = analyzePlane(uPlane, effectiveWidth >> 1, effectiveHeight >> 1, 'U');
+            const vAnalysis = analyzePlane(vPlane, effectiveWidth >> 1, effectiveHeight >> 1, 'V');
+            
+            // Build stream profile for diagnostics
+            this._diagnosticStreamProfile = {
+                resolution: `${effectiveWidth}x${effectiveHeight}`,
+                hasVideoTimestamp: timestampUs !== undefined,
+                yPlane: yAnalysis,
+                uPlane: uAnalysis,
+                vPlane: vAnalysis,
+                potentialGreenScreen: yAnalysis.potentialIssue || uAnalysis.potentialIssue || vAnalysis.potentialIssue
+            };
+            
+            // Log comprehensive stream profile
+            if (DIAGNOSTIC_MODE) {
+                log('DIAG: Stream video profile', {
+                    mintId: this.mintId,
+                    resolution: `${effectiveWidth}x${effectiveHeight}`,
+                    hasVideoTimestamp: timestampUs !== undefined,
+                    timestampType: timestampUs !== undefined ? typeof timestampUs : 'N/A',
+                    Y: {
+                        size: `${yAnalysis.actualSize} (expected ${yAnalysis.expectedSize})`,
+                        stride: `${yAnalysis.usedStride} (${yAnalysis.strideSource})`,
+                        issue: yAnalysis.potentialIssue ? 'POTENTIAL ISSUE' : 'OK'
+                    },
+                    U: {
+                        size: `${uAnalysis.actualSize} (expected ${uAnalysis.expectedSize})`,
+                        stride: `${uAnalysis.usedStride} (${uAnalysis.strideSource})`,
+                        issue: uAnalysis.potentialIssue ? 'POTENTIAL ISSUE' : 'OK'
+                    },
+                    V: {
+                        size: `${vAnalysis.actualSize} (expected ${vAnalysis.expectedSize})`,
+                        stride: `${vAnalysis.usedStride} (${vAnalysis.strideSource})`,
+                        issue: vAnalysis.potentialIssue ? 'POTENTIAL ISSUE' : 'OK'
+                    }
+                });
+                
+                if (this._diagnosticStreamProfile.potentialGreenScreen) {
+                    log('DIAG: WARNING - Potential green screen risk detected', {
+                        reason: 'Plane buffer size or stride mismatch',
+                        yIssue: yAnalysis.potentialIssue,
+                        uIssue: uAnalysis.potentialIssue,
+                        vIssue: vAnalysis.potentialIssue
+                    });
+                }
+            }
+            
+            // Also log in original format for compatibility
             const describePlane = (plane, name, planeHeight) => {
                 return {
                     type: plane.constructor?.name || typeof plane,
@@ -651,27 +796,53 @@ class PumpfunRecorder {
 
         // Extract plane data - handles LiveKit's I420 plane format
         // LiveKit planes are TypedArrays (Uint8Array) with potential stride padding
+        // IMPORTANT: We must COPY the data, not create views, because LiveKit may reuse buffers
         const extractPlane = (plane, w, h, planeType) => {
-             // Convert plane to Buffer - handles TypedArray correctly
-             const srcBuffer = Buffer.from(plane.buffer, plane.byteOffset, plane.byteLength);
+             // FIXED: Create an actual COPY of the plane data, not a view
+             // This avoids issues with shared ArrayBuffers and buffer pooling
+             const srcBuffer = Buffer.from(plane);
              
              // Calculate stride - either explicit or inferred from buffer size
              let stride;
+             let strideSource = 'inferred';
              if (typeof plane.stride === 'number' && plane.stride >= w) {
                  stride = plane.stride;
+                 strideSource = 'explicit';
              } else {
                  // Infer stride from buffer size / height
                  stride = Math.floor(srcBuffer.length / h);
                  if (stride < w) stride = w;
              }
              
-             // Fast path: no padding, direct copy
+             // DIAGNOSTIC: Track stride issues
+             if (DIAGNOSTIC_MODE && strideSource === 'inferred' && stride !== w) {
+                 const warningKey = `stride_${planeType}_${w}_${stride}`;
+                 if (!this._diagnosticPlaneWarnings.has(warningKey)) {
+                     this._diagnosticPlaneWarnings.add(warningKey);
+                     this._diagnosticStrideIssues++;
+                     log('DIAG: Stride inference used', {
+                         plane: planeType,
+                         expectedWidth: w,
+                         inferredStride: stride,
+                         bufferSize: srcBuffer.length,
+                         height: h,
+                         note: stride !== w ? 'PADDING DETECTED' : 'OK'
+                     });
+                 }
+             }
+             
+             // Fast path: no padding, data already copied
              if (stride === w && srcBuffer.length >= w * h) {
-                 return Buffer.from(srcBuffer.buffer, srcBuffer.byteOffset, w * h);
+                 // Return a slice of exactly the right size (srcBuffer is already a copy)
+                 if (srcBuffer.length === w * h) {
+                     return srcBuffer;
+                 }
+                 return srcBuffer.subarray(0, w * h);
              }
              
              // Slow path: remove stride padding row by row
              const tight = Buffer.allocUnsafe(w * h);
+             let outOfBoundsRows = 0;
              
              for (let row = 0; row < h; row++) {
                  const srcStart = row * stride;
@@ -683,6 +854,21 @@ class PumpfunRecorder {
                      // Fill with neutral value if out of bounds
                      const fillValue = planeType === 'Y' ? 16 : 128;
                      tight.fill(fillValue, dstStart, dstStart + w);
+                     outOfBoundsRows++;
+                 }
+             }
+             
+             // DIAGNOSTIC: Warn about out of bounds
+             if (DIAGNOSTIC_MODE && outOfBoundsRows > 0) {
+                 const warningKey = `oob_${planeType}_${outOfBoundsRows}`;
+                 if (!this._diagnosticPlaneWarnings.has(warningKey)) {
+                     this._diagnosticPlaneWarnings.add(warningKey);
+                     log('DIAG: WARNING - Out of bounds rows filled', {
+                         plane: planeType,
+                         outOfBoundsRows,
+                         totalRows: h,
+                         percentFilled: ((outOfBoundsRows / h) * 100).toFixed(1) + '%'
+                     });
                  }
              }
              
@@ -709,6 +895,27 @@ class PumpfunRecorder {
             // Limit queue size to prevent memory issues (keep last 5 seconds approx)
             if (this.videoQueue.length > 150) {
                 this.videoQueue.shift();
+            }
+        } else {
+            // DIAGNOSTIC: Track frames skipped due to missing timestamp
+            this._diagnosticVideoQueueSkipped++;
+            
+            if (DIAGNOSTIC_MODE && this._diagnosticVideoQueueSkipped === 1) {
+                log('DIAG: WARNING - Video frame skipped (no timestamp)', {
+                    hasFirstTimestamp: this.firstVideoTimestampUs !== null,
+                    currentTimestamp: timestampUs !== undefined ? timestampUs.toString() : 'UNDEFINED',
+                    frameNumber: this._diagnosticVideoFrameCount,
+                    note: 'This stream may show STILL IMAGE issue'
+                });
+            }
+            
+            // Log periodically if skipping continues
+            if (DIAGNOSTIC_MODE && this._diagnosticVideoQueueSkipped % 30 === 0) {
+                log('DIAG: Video frames skipped count', {
+                    skipped: this._diagnosticVideoQueueSkipped,
+                    total: this._diagnosticVideoFrameCount,
+                    percentSkipped: ((this._diagnosticVideoQueueSkipped / this._diagnosticVideoFrameCount) * 100).toFixed(1) + '%'
+                });
             }
         }
         
@@ -893,6 +1100,24 @@ class PumpfunRecorder {
         this.videoQueue = [];
         this._loggedAudioFrame = false;
         this._loggedVideoFrame = false;
+        this._videoTimestampOffset = undefined; // Reset timestamp offset for new sync
+        
+        // Reset diagnostic counters on encoder restart
+        if (DIAGNOSTIC_MODE) {
+            log('DIAG: Encoder restarting - resetting counters', {
+                previousVideoFramesReceived: this._diagnosticVideoFrameCount,
+                previousAudioFramesReceived: this._diagnosticAudioFrameCount,
+                previousSkipped: this._diagnosticVideoQueueSkipped,
+                reason: 'resolution_change'
+            });
+        }
+        this._diagnosticVideoFrameCount = 0;
+        this._diagnosticAudioFrameCount = 0;
+        this._diagnosticVideoQueueSkipped = 0;
+        this._diagnosticVideoFrameReuse = 0;
+        this._diagnosticStrideIssues = 0;
+        this._diagnosticPlaneWarnings.clear();
+        this._diagnosticStreamProfile = null;
         
         // Reset mixer state
         this.audioMixer.reset();
@@ -916,6 +1141,59 @@ class PumpfunRecorder {
       const now = Date.now();
       const relativeTime = now - this.referenceTime;
       const currentTimeIndex = Math.floor(relativeTime / 20);
+      
+      // DIAGNOSTIC: Periodic sync health check
+      if (DIAGNOSTIC_MODE && now - this._diagnosticLastHealthLog >= SYNC_HEALTH_INTERVAL_MS) {
+          this._diagnosticLastHealthLog = now;
+          
+          const elapsedSec = relativeTime / 1000;
+          const expectedVideoFrames = Math.floor((this.audioSamplesWritten / 48000) * 30);
+          const actualVideoFrames = this.videoFramesWritten;
+          const videoDrift = actualVideoFrames - expectedVideoFrames;
+          const driftPercent = expectedVideoFrames > 0 ? ((videoDrift / expectedVideoFrames) * 100) : 0;
+          
+          // Expected ratio: 48000 samples / 30 fps = 1600 samples per frame
+          const expectedRatio = 1600;
+          const actualRatio = actualVideoFrames > 0 ? (this.audioSamplesWritten / actualVideoFrames) : 0;
+          
+          log('DIAG: Sync health report', {
+              elapsedSec: elapsedSec.toFixed(1),
+              audioSamplesWritten: this.audioSamplesWritten,
+              videoFramesWritten: actualVideoFrames,
+              expectedVideoFrames,
+              videoDrift,
+              driftPercent: driftPercent.toFixed(2) + '%',
+              expectedRatio,
+              actualRatio: actualRatio.toFixed(1),
+              syncMethod: this.syncMethod,
+              audioTimestampSource: this._audioTimestampSource,
+              videoQueueDepth: this.videoQueue.length,
+              audioMixerChunks: this.audioMixer.chunks.size,
+              // Diagnostic counters
+              totalVideoFramesReceived: this._diagnosticVideoFrameCount,
+              totalAudioFramesReceived: this._diagnosticAudioFrameCount,
+              videoFramesSkipped: this._diagnosticVideoQueueSkipped,
+              videoFrameReuseCount: this._diagnosticVideoFrameReuse,
+              strideIssuesDetected: this._diagnosticStrideIssues
+          });
+          
+          // Warn about potential issues
+          if (this._diagnosticVideoQueueSkipped > 0) {
+              log('DIAG: WARNING - Video frames being skipped', {
+                  skipped: this._diagnosticVideoQueueSkipped,
+                  percentOfTotal: ((this._diagnosticVideoQueueSkipped / this._diagnosticVideoFrameCount) * 100).toFixed(1) + '%',
+                  likelyCause: 'Missing timestamps - may cause STILL IMAGE'
+              });
+          }
+          
+          if (Math.abs(driftPercent) > 5) {
+              log('DIAG: WARNING - Significant A/V drift detected', {
+                  driftPercent: driftPercent.toFixed(2) + '%',
+                  driftFrames: videoDrift,
+                  note: 'Audio/video may be out of sync'
+              });
+          }
+      }
       
       // Get chunks up to (now - 1000ms) to ensure we have buffered enough for jitter
       // But actually, getReadyChunks handles the latencyBuffer logic (50 frames = 1000ms)
@@ -944,6 +1222,33 @@ class PumpfunRecorder {
       // Video queue contains RELATIVE timestamps (relative to first video frame = 0)
       // Audio uses computed relative timestamps (first frame = 0)
       // Both start at 0, so they're naturally aligned
+      
+      // BUGFIX: If frames were queued before encoder started, the queue may have overflowed
+      // and dropped early frames (including timestamp 0). We need to adjust our baseline
+      // to match what's actually in the queue.
+      if (this._videoTimestampOffset === undefined && this.videoQueue.length > 0) {
+          // Find the minimum timestamp in the queue (should be close to 0 if no frames dropped)
+          const queueMinTs = this.videoQueue.reduce(
+              (min, item) => item.timestampUs < min ? item.timestampUs : min, 
+              this.videoQueue[0].timestampUs
+          );
+          
+          // If the minimum is > 0, frames were dropped before encoder started
+          if (queueMinTs > 0n) {
+              this._videoTimestampOffset = queueMinTs;
+              if (DIAGNOSTIC_MODE) {
+                  log('DIAG: Adjusting video timestamp baseline', {
+                      queueMinTs: queueMinTs.toString(),
+                      note: 'Early frames were dropped before encoder started, adjusting baseline'
+                  });
+              }
+          } else {
+              this._videoTimestampOffset = 0n;
+          }
+      }
+      
+      // Default offset to 0 if not set (shouldn't happen but be safe)
+      const timestampOffset = this._videoTimestampOffset || 0n;
 
       // Calculate how many video frames we SHOULD have written to match audio duration
       // Audio Sample Rate: 48000
@@ -954,8 +1259,9 @@ class PumpfunRecorder {
       while (this.videoFramesWritten < targetVideoFrames) {
           // Determine the target RELATIVE timestamp for this specific frame
           // Frame N corresponds to time N * 33333.33 microseconds from encoder start
+          // Add the offset to account for any dropped early frames
           const frameTimeUs = BigInt(Math.floor(this.videoFramesWritten * 33333.33));
-          const targetTimestampUs = frameTimeUs;
+          const targetTimestampUs = frameTimeUs + timestampOffset;
           
           // Find the best matching frame in the queue
           // We want the newest frame that is <= targetTimestampUs
@@ -985,12 +1291,67 @@ class PumpfunRecorder {
           // So we should NOT remove the *bestFrame* yet, only frames strictly older than it that we won't need?
           // Actually, if we use bestFrame, we can discard everything OLDER than bestFrame.
           
+          const usingNewFrame = bestFrame !== null;
+          
           if (bestFrame) {
               this.lastVideoFrame = bestFrame.buffer;
               
               // Cleanup older frames from queue, but keep the bestFrame for potential reuse
               if (bestIndex > 0) {
                    this.videoQueue.splice(0, bestIndex);
+              }
+          } else {
+              // DIAGNOSTIC: Track frame reuse (indicates potential still image issue)
+              this._diagnosticVideoFrameReuse++;
+              
+              // Log first occurrence and periodically
+              if (DIAGNOSTIC_MODE) {
+                  if (this._diagnosticVideoFrameReuse === 1) {
+                      // Log detailed queue analysis on first failure
+                      const queueSample = this.videoQueue.slice(0, 5).map((item, idx) => ({
+                          idx,
+                          ts: item.timestampUs.toString(),
+                          tsType: typeof item.timestampUs
+                      }));
+                      const queueMin = this.videoQueue.length > 0 
+                          ? this.videoQueue.reduce((min, item) => item.timestampUs < min ? item.timestampUs : min, this.videoQueue[0].timestampUs)
+                          : null;
+                      const queueMax = this.videoQueue.length > 0
+                          ? this.videoQueue.reduce((max, item) => item.timestampUs > max ? item.timestampUs : max, this.videoQueue[0].timestampUs)
+                          : null;
+                      
+                      log('DIAG: WARNING - No matching video frame found, reusing last frame', {
+                          targetTimestampUs: targetTimestampUs.toString(),
+                          targetType: typeof targetTimestampUs,
+                          queueLength: this.videoQueue.length,
+                          hasLastFrame: this.lastVideoFrame !== null,
+                          queueMinTs: queueMin !== null ? queueMin.toString() : 'N/A',
+                          queueMaxTs: queueMax !== null ? queueMax.toString() : 'N/A',
+                          queueSample,
+                          firstVideoTimestampUs: this.firstVideoTimestampUs ? this.firstVideoTimestampUs.toString() : 'null',
+                          note: 'If this persists, video may appear frozen'
+                      });
+                      
+                      // Additional debug: check comparison directly
+                      if (this.videoQueue.length > 0) {
+                          const firstItem = this.videoQueue[0];
+                          log('DIAG: Comparison debug', {
+                              firstItemTs: firstItem.timestampUs.toString(),
+                              firstItemTsType: typeof firstItem.timestampUs,
+                              targetTs: targetTimestampUs.toString(),
+                              targetTsType: typeof targetTimestampUs,
+                              comparisonResult: firstItem.timestampUs <= targetTimestampUs,
+                              directComparison: `${firstItem.timestampUs} <= ${targetTimestampUs} = ${firstItem.timestampUs <= targetTimestampUs}`
+                          });
+                      }
+                  } else if (this._diagnosticVideoFrameReuse % 90 === 0) { // ~3 seconds at 30fps
+                      log('DIAG: Video frame reuse count', {
+                          reuseCount: this._diagnosticVideoFrameReuse,
+                          totalWritten: this.videoFramesWritten,
+                          percentReused: ((this._diagnosticVideoFrameReuse / this.videoFramesWritten) * 100).toFixed(1) + '%',
+                          queueLength: this.videoQueue.length
+                      });
+                  }
               }
           }
           
@@ -1208,6 +1569,60 @@ class PumpfunRecorder {
     this.running = false;
     if (this.playlistPoller) clearInterval(this.playlistPoller);
     if (this.mixerInterval) clearInterval(this.mixerInterval);
+
+    // DIAGNOSTIC: Log final session summary
+    if (DIAGNOSTIC_MODE) {
+        const durationSec = this.referenceTime ? (Date.now() - this.referenceTime) / 1000 : 0;
+        const expectedVideoFrames = Math.floor((this.audioSamplesWritten / 48000) * 30);
+        const videoDrift = this.videoFramesWritten - expectedVideoFrames;
+        
+        log('DIAG: Recording session summary', {
+            mintId: this.mintId,
+            sessionId: this.sessionId,
+            durationSec: durationSec.toFixed(1),
+            syncMethod: this.syncMethod,
+            audioTimestampSource: this._audioTimestampSource,
+            // Frame counts
+            totalVideoFramesReceived: this._diagnosticVideoFrameCount,
+            totalAudioFramesReceived: this._diagnosticAudioFrameCount,
+            videoFramesWritten: this.videoFramesWritten,
+            audioSamplesWritten: this.audioSamplesWritten,
+            // Issues detected
+            videoFramesSkipped: this._diagnosticVideoQueueSkipped,
+            videoFrameReuseCount: this._diagnosticVideoFrameReuse,
+            strideIssuesDetected: this._diagnosticStrideIssues,
+            // Sync analysis
+            expectedVideoFrames,
+            videoDrift,
+            driftPercent: expectedVideoFrames > 0 ? ((videoDrift / expectedVideoFrames) * 100).toFixed(2) + '%' : 'N/A',
+            // Stream profile
+            streamProfile: this._diagnosticStreamProfile
+        });
+        
+        // Provide diagnostic verdict
+        const issues = [];
+        if (this._diagnosticVideoQueueSkipped > this._diagnosticVideoFrameCount * 0.1) {
+            issues.push('HIGH VIDEO FRAME SKIP RATE - Likely STILL IMAGE issue');
+        }
+        if (this._diagnosticVideoFrameReuse > this.videoFramesWritten * 0.5) {
+            issues.push('HIGH FRAME REUSE RATE - Video may appear frozen');
+        }
+        if (this._diagnosticStrideIssues > 0) {
+            issues.push('STRIDE ISSUES DETECTED - Potential GREEN SCREEN risk');
+        }
+        if (Math.abs(videoDrift) > expectedVideoFrames * 0.05) {
+            issues.push('SIGNIFICANT A/V DRIFT - Sync may be off');
+        }
+        
+        if (issues.length > 0) {
+            log('DIAG: Session issues detected', {
+                issueCount: issues.length,
+                issues
+            });
+        } else {
+            log('DIAG: Session completed without detected issues');
+        }
+    }
 
     if (this.segmentWatcher) {
       this.segmentWatcher.close();

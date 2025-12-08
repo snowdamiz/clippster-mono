@@ -61,6 +61,21 @@
             />
           </div>
         </div>
+        <!-- Fullscreen Button -->
+        <button
+          @click="toggleFullscreen"
+          class="p-1.5 rounded-md hover:bg-white/[0.08] transition-all duration-200 group ml-1"
+          :title="isFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen (F)'"
+        >
+          <Minimize2
+            v-if="isFullscreen"
+            class="h-4 w-4 text-white/60 group-hover:text-white/90 transition-colors"
+          />
+          <Maximize2
+            v-else
+            class="h-4 w-4 text-white/60 group-hover:text-white/90 transition-colors"
+          />
+        </button>
       </div>
     </div>
   </div>
@@ -68,7 +83,7 @@
 
 <script setup lang="ts">
   import { ref, watch } from 'vue';
-  import { SkipBack, Play, Pause, VolumeX, Volume2 } from 'lucide-vue-next';
+  import { SkipBack, Play, Pause, VolumeX, Volume2, Maximize2, Minimize2 } from 'lucide-vue-next';
 
   interface Props {
     videoSrc: string | null;
@@ -78,15 +93,19 @@
     duration: number;
     volume: number;
     isMuted: boolean;
+    isFullscreen?: boolean;
   }
 
-  const props = defineProps<Props>();
+  const props = withDefaults(defineProps<Props>(), {
+    isFullscreen: false,
+  });
 
   interface Emits {
     (e: 'togglePlayPause'): void;
     (e: 'toggleMute'): void;
     (e: 'updateVolume', value: number): void;
     (e: 'goToBeginning'): void;
+    (e: 'toggleFullscreen'): void;
   }
 
   const emit = defineEmits<Emits>();
@@ -135,6 +154,10 @@
 
   function goToBeginning() {
     emit('goToBeginning');
+  }
+
+  function toggleFullscreen() {
+    emit('toggleFullscreen');
   }
 </script>
 
