@@ -93,6 +93,7 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
       `
       SELECT
         c.*,
+        p.name as project_name,
         cv.id as current_version_id,
         cv.name as current_version_name,
         cv.description as current_version_description,
@@ -118,6 +119,7 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
         END as run_number,
         ROW_NUMBER() OVER (PARTITION BY c.id ORDER BY cv.version_number DESC) as rn
       FROM clips c
+      LEFT JOIN projects p ON c.project_id = p.id
       LEFT JOIN clip_versions cv ON c.id = cv.clip_id
       LEFT JOIN clip_detection_sessions cds ON cv.session_id = cds.id
       WHERE c.project_id = ?
@@ -133,6 +135,7 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
         return {
           id: row.id,
           project_id: row.project_id,
+          project_name: row.project_name,
           name: row.name,
           file_path: row.file_path,
           duration: row.duration,
@@ -231,11 +234,13 @@ export async function getClipWithBuildStatus(clipId: string): Promise<Clip | nul
       `
       SELECT
         c.*,
+        p.name as project_name,
         cv.id as current_version_id,
         cds.created_at as session_created_at,
         cds.run_color as session_run_color,
         cds.prompt as session_prompt
       FROM clips c
+      LEFT JOIN projects p ON c.project_id = p.id
       LEFT JOIN clip_versions cv ON c.id = cv.clip_id
       LEFT JOIN clip_detection_sessions cds ON cv.session_id = cds.id
       WHERE c.id = ?
@@ -254,6 +259,7 @@ export async function getClipWithBuildStatus(clipId: string): Promise<Clip | nul
     return {
       id: row.id,
       project_id: row.project_id,
+      project_name: row.project_name,
       name: row.name,
       file_path: row.file_path,
       duration: row.duration,

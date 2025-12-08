@@ -167,7 +167,7 @@
                     :thumbnail-url="item.thumbnailUrl"
                     :project-name="item.projectName"
                     :file-path="item.filePath"
-                    :display-aspect-ratio="item.aspectRatio"
+                    :display-aspect-ratio="item.aspectRatio ?? undefined"
                     :show-build-number="item.hasMultipleBuilds"
                     @play="(build, filePath) => playBuild(build, filePath || item.filePath)"
                     @save="(build, filePath) => saveBuild(build, filePath || item.filePath)"
@@ -451,7 +451,7 @@
                   :thumbnail-url="item.thumbnailUrl"
                   :project-name="null"
                   :file-path="item.filePath"
-                  :display-aspect-ratio="item.aspectRatio"
+                  :display-aspect-ratio="item.aspectRatio ?? undefined"
                   :show-build-number="item.hasMultipleBuilds"
                   @play="(build, filePath) => playBuild(build, filePath || item.filePath)"
                   @save="(build, filePath) => saveBuild(build, filePath || item.filePath)"
@@ -975,8 +975,8 @@
     return groups;
   }
 
-  // Keep groupClips for folder view compatibility
-  function groupClips(clipsToGroup: Clip[]) {
+  // Keep _groupClips for folder view compatibility
+  function _groupClips(clipsToGroup: Clip[]) {
     if (sortBy.value.startsWith('name') || sortBy.value.startsWith('duration')) {
       return [{ dateLabel: 'Clips', clips: clipsToGroup }];
     }
@@ -1256,7 +1256,7 @@
   });
 
   // Group folder builds by their parent build ID (for visual grouping)
-  const folderBuildGroups = computed(() => {
+  const _folderBuildGroups = computed(() => {
     const groups = new Map<string, DisplayableBuild[]>();
     for (const build of folderBuilds.value) {
       // Extract the base build ID (remove the -index suffix if present)
@@ -1564,7 +1564,7 @@
     return null;
   }
 
-  function getProjectName(projectId: string): string | null {
+  function _getProjectName(projectId: string): string | null {
     const project = projectCache.value.get(projectId);
     return project?.name || null;
   }
@@ -1828,14 +1828,14 @@
   }
 
   // Open project workspace with a specific clip preselected
-  async function openProjectForClip(build: ClipBuild, clip: ClipWithBuilds) {
+  async function openProjectForClip(_build: ClipBuild, clip: ClipWithBuilds) {
     if (!clip.project_id) {
       showErrorToast('Cannot Open Project', 'This clip is not associated with a project.');
       return;
     }
 
     // Get the project from cache or load it
-    let project = projectCache.value.get(clip.project_id);
+    let project: Project | null | undefined = projectCache.value.get(clip.project_id);
 
     if (!project) {
       try {

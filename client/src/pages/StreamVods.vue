@@ -466,18 +466,7 @@
   import { useToast } from '@/composables/useToast';
   import { useDownloads } from '@/composables/useDownloads';
   import { getNextSegmentNumber } from '@/services/database';
-  import {
-    Clock,
-    ChevronDown,
-    Check,
-    X,
-    AlertTriangle,
-    Download,
-    Video,
-    Search,
-    Loader2,
-    RotateCcw,
-  } from 'lucide-vue-next';
+  import { Clock, ChevronDown, X, AlertTriangle, Download, Video, Search, Loader2, RotateCcw } from 'lucide-vue-next';
 
   const router = useRouter();
   const route = useRoute();

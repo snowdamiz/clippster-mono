@@ -13,13 +13,6 @@
           activeTab === tab.id ? 'text-foreground' : 'text-muted-foreground hover:text-foreground/80',
         ]"
       >
-        <!-- <component
-          :is="tab.icon"
-          :class="[
-            'h-3.5 w-3.5 transition-colors duration-200',
-            activeTab === tab.id ? 'text-violet-400' : 'text-muted-foreground group-hover:text-foreground/60',
-          ]"
-        /> -->
         {{ tab.label }}
         <div v-if="activeTab === tab.id" class="absolute bottom-0 left-2 right-2 h-0.5 bg-white/70 rounded-full"></div>
       </button>
@@ -446,7 +439,7 @@
       if (clip) {
         clip.build_status = 'pending';
         clip.build_progress = 0;
-        clip.build_error = undefined;
+        clip.build_error = null;
       }
 
       updateClipBuildStatus(clip_id, 'pending', {
@@ -513,9 +506,9 @@
         // Reset to pending for cancelled builds
         clip.build_status = 'pending';
         clip.build_progress = 0;
-        clip.build_error = undefined;
-        clip.built_file_path = undefined;
-        clip.built_thumbnail_path = undefined;
+        clip.build_error = null;
+        clip.built_file_path = null;
+        clip.built_thumbnail_path = null;
         console.log(`[MediaPanel] Local state reset for cancelled clip: ${clip_id}`);
       } else {
         clip.build_status = 'failed';

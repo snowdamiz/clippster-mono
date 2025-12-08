@@ -456,7 +456,6 @@
     DownloadIcon,
     LoaderIcon,
     CheckIcon,
-    RefreshCw,
     AlertTriangle,
     Trash2,
     Video,
@@ -878,16 +877,6 @@
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-  }
-
-  function formatAspectRatios(aspectRatiosJson: string | null): string {
-    if (!aspectRatiosJson) return '';
-    try {
-      const ratios = JSON.parse(aspectRatiosJson);
-      return Array.isArray(ratios) ? ratios.join(', ') : '';
-    } catch {
-      return '';
-    }
   }
 
   function hasCompletedBuilds(clip: ClipWithVersion): boolean {
@@ -1348,10 +1337,10 @@
           // The backend will handle per-ratio configs during build
           const firstConfiguredRatio = Object.keys(
             settings.manualFramingConfigs!
-          )[0] as keyof typeof settings.manualFramingConfigs;
+          )[0] as keyof import('@/types').ManualFramingConfigs;
           const firstConfig = settings.manualFramingConfigs![firstConfiguredRatio];
 
-          if (firstConfig && firstConfig.regions.length > 0) {
+          if (firstConfig && firstConfig.regions && firstConfig.regions.length > 0) {
             // Convert manual config to framing strategy format
             framingStrategy = {
               mode: 'multi_region',
@@ -1529,14 +1518,6 @@
       // Show error via event
       showError('Build Failed', `Failed to build clip: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }
-
-  async function onSaveBuild(build: ClipBuild) {
-    if (!build.file_path) {
-      console.error('[ClipsTab] No build file path available');
-      return;
-    }
-    await onSaveFile(build.file_path);
   }
 
   async function onSaveFile(filePath: string) {

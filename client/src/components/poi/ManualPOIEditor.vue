@@ -193,7 +193,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch, computed, provide } from 'vue';
+  import { ref, watch, computed } from 'vue';
   import {
     LayoutDashboardIcon,
     XIcon,
@@ -284,11 +284,6 @@
   // Play/Pause toggle
   function togglePlayback() {
     isPlaying.value = !isPlaying.value;
-  }
-
-  // Seek to position (0-1 normalized)
-  function seekTo(position: number) {
-    currentTime.value = position * clipDuration.value;
   }
 
   // Handle time update from video

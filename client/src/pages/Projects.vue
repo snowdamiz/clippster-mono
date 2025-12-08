@@ -1650,6 +1650,7 @@
   const clipPreviewVideoPath = computed(() => {
     if (!clipToPreview.value) return null;
     const segmentId = clipToPreview.value.segment_id || clipToPreview.value.project_id;
+    if (!segmentId) return null;
     const videos = projectVideos.value[segmentId];
     if (videos && videos.length > 0) {
       return videos[0].file_path;
@@ -2064,7 +2065,7 @@
   }
 
   // Download built clip
-  async function onFolderSaveBuiltClip(clip: ClipWithVersionAndSegment) {
+  async function _onFolderSaveBuiltClip(clip: ClipWithVersionAndSegment) {
     if (!clip.built_file_path) return;
 
     try {
@@ -2867,7 +2868,7 @@
     return false;
   }
 
-  function getProjectDetectionProgress(projectId: string): { progress: number; message: string } | null {
+  function _getProjectDetectionProgress(projectId: string): { progress: number; message: string } | null {
     // Check if the project itself is being detected
     const selfState = getDetectionState(projectId);
     if (selfState?.isActive) {
@@ -2914,7 +2915,7 @@
     return false;
   }
 
-  function getProjectTotalDuration(projectId: string): number {
+  function _getProjectTotalDuration(projectId: string): number {
     let totalDuration = 0;
 
     // Get duration from direct videos

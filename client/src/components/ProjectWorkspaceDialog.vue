@@ -206,7 +206,6 @@
     deleteClip,
     getWatermarkImage,
     getCreatorProfileByProjectId,
-    type WatermarkImage,
   } from '@/services/database';
   import { X, Film } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
@@ -235,7 +234,6 @@
     startDetection,
     updateProgress: updateGlobalProgress,
     completeDetection,
-    isDetectionActive,
     getDetectionState,
     hasAnyActiveDetection,
   } = useClipDetectionTracking();
@@ -997,11 +995,6 @@
 
   function getCurrentPlayingClipId(): string | null {
     return currentlyPlayingClipId.value;
-  }
-
-  // Handle aspect ratio change
-  function handleRatioChanged(ratio: { width: number; height: number }) {
-    selectedAspectRatio.value = { width: ratio.width, height: ratio.height };
   }
 
   // Handle subtitle settings change

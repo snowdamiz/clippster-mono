@@ -755,12 +755,6 @@
     return selectedRatios.value.filter((r) => portraitRatios.includes(r));
   });
 
-  // Get the first portrait ratio for the POI editor
-  const primaryPortraitRatio = computed(() => {
-    const portraitRatios = ['9:16', '4:5', '1:1'];
-    return selectedRatios.value.find((r) => portraitRatios.includes(r)) || '9:16';
-  });
-
   // Check if a specific ratio has been configured
   function isRatioConfigured(ratio: string): boolean {
     const config = manualFramingConfigs.value[ratio as keyof import('@/types').ManualFramingConfigs];
