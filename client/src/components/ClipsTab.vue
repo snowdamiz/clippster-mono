@@ -436,6 +436,7 @@
       :clip="clipToBuild"
       :watermark-settings="watermarkSettings"
       :thumbnail-url="videoThumbnailUrl"
+      :subtitle-settings="subtitleSettings"
       @confirm="onBuildConfirm"
     />
   </div>
@@ -1471,6 +1472,7 @@
 
       // Pass all build settings to the backend (including build number for filename)
       // Subtitle settings come directly from SubtitlesTab via props
+      // Subtitle overrides allow per-aspect-ratio customization of size/position
       await invoke('build_clip_from_segments', {
         projectId: props.projectId,
         clipId: clip.id,
@@ -1478,6 +1480,7 @@
         videoPath: projectVideo.file_path,
         segments: segments,
         subtitleSettings: props.subtitleSettings,
+        subtitleOverrides: settings.subtitleOverrides || null,
         transcriptWords: transcriptWords,
         transcriptSegments: transcriptSegments,
         maxWords: props.maxWordsForAspectRatio,

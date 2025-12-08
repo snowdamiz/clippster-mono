@@ -33,6 +33,18 @@ pub struct SubtitleSettings {
     pub word_spacing: f32,
 }
 
+// Per-aspect-ratio subtitle override (only size and position)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubtitleOverride {
+    pub font_size: f32,
+    pub position_percentage: f32,
+}
+
+// Map of aspect ratio string to subtitle override
+// Keys are aspect ratios like "16:9", "9:16", "1:1", "4:5"
+pub type SubtitleOverrides = std::collections::HashMap<String, SubtitleOverride>;
+
 // Word info structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WordInfo {

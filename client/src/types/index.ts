@@ -205,6 +205,21 @@ export interface SubtitlePreset {
   settings: SubtitleSettings;
 }
 
+// Per-aspect-ratio subtitle overrides for export
+// Only includes settings that make sense to adjust per aspect ratio
+export interface SubtitleOverride {
+  fontSize: number; // Override font size for this aspect ratio
+  positionPercentage: number; // Override vertical position (0-100)
+}
+
+// Map of aspect ratio to subtitle overrides
+export interface SubtitleOverrides {
+  '16:9'?: SubtitleOverride;
+  '9:16'?: SubtitleOverride;
+  '1:1'?: SubtitleOverride;
+  '4:5'?: SubtitleOverride;
+}
+
 // Watermark Types
 export interface WatermarkSettings {
   enabled: boolean;

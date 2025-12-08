@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 use tauri::Emitter;
 
-use super::types::{SubtitleSettings, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy};
+use super::types::{SubtitleSettings, SubtitleOverrides, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy};
 use super::video_info::{get_video_info, parse_aspect_ratio, IntroOutroCache};
 use super::subtitle::generate_ass_file;
 use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings, build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy};
@@ -120,6 +120,7 @@ pub async fn build_clip_internal_simple(
     video_path: &str,
     segments: &[serde_json::Value],
     subtitle_settings: Option<SubtitleSettings>,
+    subtitle_overrides: Option<SubtitleOverrides>,
     transcript_words: Option<Vec<WordInfo>>,
     _transcript_segments: Option<Vec<WhisperSegment>>,
     max_words: Option<usize>,
@@ -214,6 +215,7 @@ pub async fn build_clip_internal_simple(
         let clip_base_dir = clip_base_dir.clone();
         let segments = segments.to_vec();
         let subtitle_settings = subtitle_settings.clone();
+        let subtitle_overrides = subtitle_overrides.clone();
         let transcript_words = transcript_words.clone();
         let quality = quality.to_string();
         let output_format = output_format.to_string();
@@ -262,11 +264,27 @@ pub async fn build_clip_internal_simple(
                     // Get fonts directory
                     let fonts_dir = get_fonts_dir(&app).ok();
                     
+                    // Apply per-aspect-ratio overrides if they exist
+                    let effective_settings = if let Some(ref overrides) = subtitle_overrides {
+                        if let Some(override_for_ratio) = overrides.get(&aspect_ratio_str) {
+                            println!("[Rust] Applying subtitle overrides for {}: fontSize={}, positionPercentage={}", 
+                                     aspect_ratio_str, override_for_ratio.font_size, override_for_ratio.position_percentage);
+                            let mut overridden = settings.clone();
+                            overridden.font_size = override_for_ratio.font_size;
+                            overridden.position_percentage = override_for_ratio.position_percentage;
+                            overridden
+                        } else {
+                            settings.clone()
+                        }
+                    } else {
+                        settings.clone()
+                    };
+                    
                     let sub_path = clip_base_dir.join(format!("subtitles_{}.ass", ratio_suffix));
                     // Pass intro_duration as time offset for subtitle timings
                     let subtitle_offset = intro_duration.unwrap_or(0.0);
                     generate_ass_file(
-                        settings, 
+                        &effective_settings, 
                         words, 
                         &segments, 
                         &sub_path, 
