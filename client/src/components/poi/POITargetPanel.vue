@@ -53,8 +53,10 @@
             :src="videoUrl"
             class="absolute max-w-none pointer-events-none"
             :style="getCroppedImageStyle(region)"
+            preload="metadata"
             muted
             playsinline
+            @loadedmetadata="(e) => onVideoLoaded(e.target as HTMLVideoElement)"
           />
           <!-- Thumbnail crop preview (fallback) -->
           <img
@@ -153,10 +155,20 @@
   function setVideoRef(regionId: string, el: HTMLVideoElement | null) {
     if (el) {
       videoRefs.value.set(regionId, el);
-      // Set initial time
-      el.currentTime = props.videoTime;
+      // Note: currentTime will be set in onVideoLoaded after metadata loads
     } else {
       videoRefs.value.delete(regionId);
+    }
+  }
+
+  // Handle video loaded - set initial time after metadata is available
+  function onVideoLoaded(video: HTMLVideoElement) {
+    if (video) {
+      video.currentTime = props.videoTime;
+      // If we're already playing, start this video too
+      if (props.isPlaying) {
+        video.play().catch(console.error);
+      }
     }
   }
 

@@ -1183,12 +1183,14 @@
           selectedOutro.value = matchingOutro || props.defaultOutro;
           console.log('[ClipBuildSettingsDialog] Pre-selected creator default outro:', selectedOutro.value?.name);
         }
+
+        // Load video frame for POI editor preview
+        await loadVideoFrame();
       } else {
         // Reset selections when dialog closes
         selectedIntro.value = null;
         selectedOutro.value = null;
-        // Load video frame for POI editor preview
-        await loadVideoFrame();
+        videoPath.value = null;
       }
     }
   );

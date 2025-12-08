@@ -26,6 +26,8 @@
           ref="videoRef"
           :src="videoUrl"
           class="absolute inset-0 w-full h-full object-cover"
+          preload="metadata"
+          muted
           playsinline
           @timeupdate="onVideoTimeUpdate"
           @loadedmetadata="onVideoLoaded"
@@ -185,7 +187,8 @@
 
   // Handle video loaded
   function onVideoLoaded() {
-    if (videoRef.value && props.videoTime) {
+    if (videoRef.value) {
+      // Always set currentTime, even if it's 0 (0 is falsy but valid)
       videoRef.value.currentTime = props.videoTime;
     }
   }
