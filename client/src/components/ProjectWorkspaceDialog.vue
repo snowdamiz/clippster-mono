@@ -46,10 +46,6 @@
             <div
               class="w-3/5 min-w-0 p-5 border-r border-border/40 flex flex-col bg-gradient-to-br from-black/20 to-transparent"
             >
-              <!-- Aspect Ratio Selector -->
-              <div class="mb-4">
-                <AspectRatioSelector @ratio-changed="handleRatioChanged" />
-              </div>
               <!-- Video Player Container -->
               <VideoPlayer
                 :video-src="videoSrc"
@@ -223,7 +219,6 @@
   import ClipGenerationProgress from './ClipGenerationProgress.vue';
   import ConfirmationModal from './ConfirmationModal.vue';
   import ClipDetectionConfirmDialog from './ClipDetectionConfirmDialog.vue';
-  import AspectRatioSelector from './AspectRatioSelector.vue';
   import { useVideoPlayer } from '@/composables/useVideoPlayer';
   import { useProgressSocket } from '@/composables/useProgressSocket';
   import { useToast } from '@/composables/useToast';
