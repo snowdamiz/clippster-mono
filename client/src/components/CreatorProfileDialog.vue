@@ -466,7 +466,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch } from 'vue';
+  import { ref, computed, watch, onUnmounted } from 'vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import { Textarea } from '@/components/ui/textarea';
@@ -837,7 +837,7 @@
   }
 
   // Register callback for async intro/outro upload completion
-  onUploadComplete(async () => {
+  const unregisterUploadComplete = onUploadComplete(async () => {
     if (pendingUploadType.value) {
       const uploadType = pendingUploadType.value;
       pendingUploadType.value = null;
@@ -859,6 +859,11 @@
         }
       }
     }
+  });
+
+  // Clean up callback registration when component is unmounted
+  onUnmounted(() => {
+    unregisterUploadComplete();
   });
 
   // Save creator
