@@ -186,7 +186,15 @@ export interface SubtitleSettings {
   position: 'top' | 'middle' | 'bottom';
   positionPercentage: number;
   maxWidth: number;
-  animationStyle: 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave';
+  animationStyle:
+    | 'none'
+    | 'karaoke'
+    | 'zoom'
+    | 'pop'
+    | 'glow'
+    | 'box-highlight'
+    | 'typewriter'
+    | 'wave';
   highlightColor: string;
   lineHeight: number;
   letterSpacing: number;
@@ -204,6 +212,21 @@ export interface SubtitlePreset {
   name: string;
   description: string;
   settings: SubtitleSettings;
+}
+
+// Per-aspect-ratio subtitle overrides for export
+// Only includes settings that make sense to adjust per aspect ratio
+export interface SubtitleOverride {
+  fontSize: number; // Override font size for this aspect ratio
+  positionPercentage: number; // Override vertical position (0-100)
+}
+
+// Map of aspect ratio to subtitle overrides
+export interface SubtitleOverrides {
+  '16:9'?: SubtitleOverride;
+  '9:16'?: SubtitleOverride;
+  '1:1'?: SubtitleOverride;
+  '4:5'?: SubtitleOverride;
 }
 
 // Watermark Types
@@ -518,5 +541,49 @@ export interface ActiveDownload {
   // Queue and video info
   videoUrl?: string;
 }
+
+// Manual POI (Point of Interest) Framing Types
+export interface ManualRegionRect {
+  x: number; // Normalized 0-1
+  y: number; // Normalized 0-1
+  width: number; // Normalized 0-1
+  height: number; // Normalized 0-1
+}
+
+export interface ManualRegion {
+  id: string;
+  color: string; // e.g., "#4F9DFF" for visual distinction
+  label?: string; // Optional label like "Speaker", "Gameplay"
+  // Source crop (normalized 0-1 coordinates on source video)
+  source: ManualRegionRect;
+  // Output position (normalized 0-1 coordinates on target canvas)
+  output: ManualRegionRect;
+}
+
+export interface ManualFramingConfig {
+  mode: 'manual';
+  regions: ManualRegion[];
+  targetAspectRatio: string; // "9:16", "4:5", etc.
+  sourceAspectRatio?: string; // "16:9" typically
+}
+
+// Per-aspect-ratio manual framing configurations
+export interface ManualFramingConfigs {
+  '9:16'?: ManualFramingConfig;
+  '4:5'?: ManualFramingConfig;
+  '1:1'?: ManualFramingConfig;
+}
+
+// Predefined colors for POI regions
+export const POI_REGION_COLORS = [
+  '#4F9DFF', // Blue
+  '#FF6B6B', // Red/Coral
+  '#4ECB71', // Green
+  '#FFB84D', // Orange
+  '#A78BFA', // Purple
+  '#F472B6', // Pink
+  '#22D3EE', // Cyan
+  '#FBBF24', // Yellow
+] as const;
 
 // Phoenix types are defined in phoenix.d.ts

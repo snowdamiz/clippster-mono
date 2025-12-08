@@ -6,6 +6,7 @@ import {
   type ClipSegment,
 } from '@/services/database';
 import { invoke } from '@tauri-apps/api/core';
+import { utf8ToBase64 } from '@/utils/encoding';
 
 export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   // Video player state
@@ -358,7 +359,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
       }
 
       const port = await invoke<number>('get_video_server_port');
-      const encodedPath = btoa(videoPath);
+      const encodedPath = utf8ToBase64(videoPath);
       videoSrc.value = `http://localhost:${port}/video/${encodedPath}`;
       videoLoading.value = false;
     } catch (error) {

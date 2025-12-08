@@ -947,7 +947,7 @@ pub async fn prepare_intro_outro_for_concat(
 // when a FramingStrategy is available for portrait (9:16) exports.
 // ============================================================================
 
-use super::types::{FramingStrategy, FramingMode, PanKeyframe};
+use super::types::{FramingStrategy, FramingMode, PanKeyframe, ManualFramingConfig};
 
 /// Builds a split screen clip with two video regions stacked vertically.
 /// 
@@ -1399,6 +1399,178 @@ fn build_pan_expression(
     )
 }
 
+/// Builds a multi-region clip with user-defined crop regions composited together.
+/// 
+/// This is used for manual POI (Point of Interest) framing where the user defines
+/// multiple regions from the source video and their positions in the output canvas.
+/// 
+/// Each region is:
+/// 1. Cropped from the source video
+/// 2. Scaled to fit its output rect
+/// 3. Placed on the output canvas
+pub async fn build_multi_region_clip(
+    app: &tauri::AppHandle,
+    video_path: &str,
+    output_path: &std::path::Path,
+    segment: &serde_json::Value,
+    config: &ManualFramingConfig,
+    target_aspect_ratio: &str,
+    quality: &str,
+    frame_rate: u32,
+    audio_settings: Option<&AudioSettings>,
+) -> Result<(), String> {
+    let shell = app.shell();
+    let start_time: f64 = segment["start_time"].as_f64().ok_or("Invalid start_time")?;
+    let end_time: f64 = segment["end_time"].as_f64().ok_or("Invalid end_time")?;
+    let duration = end_time - start_time;
+
+    if config.regions.is_empty() {
+        return Err("MultiRegion config has no regions defined".to_string());
+    }
+
+    // Parse target aspect ratio
+    let aspect = parse_aspect_ratio_string(target_aspect_ratio)
+        .unwrap_or(super::types::AspectRatio { width: 9.0, height: 16.0 });
+    
+    println!("[Rust] Building multi-region clip with {} regions, aspect: {}:{}", 
+        config.regions.len(), aspect.width, aspect.height);
+
+    // Get video info for pixel calculations
+    let video_info = get_video_info(app, video_path).await?;
+    let source_w = video_info.width as f64;
+    let source_h = video_info.height as f64;
+
+    // Calculate output dimensions (1080p base width)
+    let output_w: u32 = 1080;
+    let output_h: u32 = ((output_w as f32) * aspect.height / aspect.width) as u32;
+
+    println!("[Rust] Output dimensions: {}x{}", output_w, output_h);
+
+    // Build FFmpeg complex filter for multi-region compositing
+    // Strategy:
+    // 1. Input video gets labeled as [v]
+    // 2. For each region, crop from [v] and scale to output size
+    // 3. Create black canvas and overlay each region at its output position
+    
+    let mut filter_parts: Vec<String> = Vec::new();
+    let mut region_labels: Vec<(String, u32, u32)> = Vec::new();
+
+    // For each region, create crop and scale filters
+    for (i, region) in config.regions.iter().enumerate() {
+        // Calculate source crop in pixels
+        let crop_x = (region.source.x * source_w) as u32;
+        let crop_y = (region.source.y * source_h) as u32;
+        let crop_w = (region.source.width * source_w) as u32;
+        let crop_h = (region.source.height * source_h) as u32;
+
+        // Calculate output position and size in pixels
+        let out_x = (region.output.x * output_w as f64) as u32;
+        let out_y = (region.output.y * output_h as f64) as u32;
+        let out_w = (region.output.width * output_w as f64) as u32;
+        let out_h = (region.output.height * output_h as f64) as u32;
+
+        println!("[Rust] Region {}: crop={}:{}:{}:{} -> scale={}:{} @ ({},{})", 
+            i, crop_w, crop_h, crop_x, crop_y, out_w, out_h, out_x, out_y);
+
+        let label = format!("r{}", i);
+        
+        // Crop from input and scale to output size
+        // Using lanczos scaling for better quality
+        filter_parts.push(format!(
+            "[0:v]crop={}:{}:{}:{},scale={}:{}:flags=lanczos[{}]",
+            crop_w, crop_h, crop_x, crop_y, out_w, out_h, label
+        ));
+        
+        region_labels.push((label, out_x, out_y));
+    }
+
+    // Create base canvas (black background)
+    filter_parts.push(format!(
+        "color=c=black:s={}x{}:d={}[base]",
+        output_w, output_h, duration
+    ));
+
+    // Build overlay chain
+    // Start with base canvas, overlay each region
+    let mut current_label = "base".to_string();
+    for (i, (region_label, out_x, out_y)) in region_labels.iter().enumerate() {
+        let next_label = if i == region_labels.len() - 1 {
+            "vout".to_string() // Final output
+        } else {
+            format!("tmp{}", i)
+        };
+
+        filter_parts.push(format!(
+            "[{}][{}]overlay={}:{}[{}]",
+            current_label, region_label, out_x, out_y, next_label
+        ));
+
+        current_label = next_label;
+    }
+
+    let filter_complex = filter_parts.join(";");
+
+    // Detect hardware encoder
+    let encoder = detect_hardware_encoder(app, quality).await;
+
+    // Build FFmpeg args
+    let mut args = vec![
+        "-ss".to_string(), format!("{:.3}", start_time),
+        "-i".to_string(), video_path.to_string(),
+        "-t".to_string(), format!("{:.3}", duration),
+        "-filter_complex".to_string(), filter_complex,
+        "-map".to_string(), "[vout]".to_string(),
+        "-map".to_string(), "0:a?".to_string(), // Map audio if present
+        "-c:v".to_string(), encoder.codec.clone(),
+        "-r".to_string(), frame_rate.to_string(),
+    ];
+
+    // Add encoder preset
+    if let Some(preset) = &encoder.preset {
+        args.push("-preset".to_string());
+        args.push(preset.clone());
+    }
+
+    // Add quality parameter
+    args.push(encoder.quality_param.clone());
+    args.push(encoder.quality_value.clone());
+
+    // Add audio settings
+    args.push("-c:a".to_string());
+    args.push("aac".to_string());
+    args.push("-b:a".to_string());
+    args.push("192k".to_string());
+
+    // Add audio gain if specified
+    if let Some(audio) = audio_settings {
+        if audio.volume != 0.0 {
+            let af = format!("volume={}dB", audio.volume);
+            args.push("-af".to_string());
+            args.push(af);
+        }
+    }
+
+    // Output
+    args.push("-y".to_string());
+    args.push(output_path.to_string_lossy().to_string());
+
+    println!("[Rust] Running FFmpeg multi-region build...");
+    
+    let output = shell.command("ffmpeg")
+        .args(&args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run FFmpeg: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("FFmpeg multi-region build failed: {}", stderr));
+    }
+
+    println!("[Rust] Multi-region clip built successfully");
+    Ok(())
+}
+
 /// Builds a clip with framing strategy applied.
 /// 
 /// This is the main entry point that routes to the appropriate builder
@@ -1494,6 +1666,32 @@ pub async fn build_clip_with_framing_strategy(
                 audio_settings,
             ).await?;
         },
+        FramingMode::MultiRegion => {
+            // Manual multi-region mode with user-defined regions
+            let multi_region_config = strategy.multi_region.as_ref()
+                .ok_or("MultiRegion mode requires multi_region configuration")?;
+
+            let temp_output = if subtitle_path.is_some() {
+                let paths = crate::storage::init_storage_dirs()
+                    .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+                Some(paths.temp.join(format!("multi_region_temp_{}.mp4", uuid::Uuid::new_v4())))
+            } else {
+                None
+            };
+
+            let output_path_buf = output_path.to_path_buf();
+            let build_path = temp_output.as_ref().unwrap_or(&output_path_buf);
+
+            build_multi_region_clip(
+                app, video_path, build_path, segment, multi_region_config, target_aspect_ratio, quality, frame_rate, audio_settings
+            ).await?;
+
+            // Add subtitles if needed
+            if let (Some(temp), Some(sub_path)) = (&temp_output, subtitle_path) {
+                burn_subtitles_to_video(app, temp, output_path, sub_path, quality).await?;
+                let _ = std::fs::remove_file(temp);
+            }
+        },
     }
 
     // Apply watermark if enabled (after all other processing)
@@ -1569,6 +1767,19 @@ pub async fn build_multi_segment_clip_with_framing_strategy(
                     let aspect_ratio = parse_aspect_ratio_string(&target_ar)
                         .unwrap_or(super::types::AspectRatio { width: 9.0, height: 16.0 });
                     extract_segment_with_crop(&app, &video_path, &temp_path, segment, &aspect_ratio, &quality, frame_rate, audio_settings.as_ref()).await?;
+                },
+                FramingMode::MultiRegion => {
+                    // For multi-region mode, use the manual config
+                    if let Some(multi_region) = &strategy.multi_region {
+                        build_multi_region_clip(
+                            &app, &video_path, &temp_path, segment, multi_region, &target_ar, &quality, frame_rate, audio_settings.as_ref()
+                        ).await?;
+                    } else {
+                        // Fallback to static if no multi-region config
+                        let aspect_ratio = parse_aspect_ratio_string(&target_ar)
+                            .unwrap_or(super::types::AspectRatio { width: 9.0, height: 16.0 });
+                        extract_segment_with_crop(&app, &video_path, &temp_path, segment, &aspect_ratio, &quality, frame_rate, audio_settings.as_ref()).await?;
+                    }
                 },
             }
             

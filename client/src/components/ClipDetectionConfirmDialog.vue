@@ -27,7 +27,7 @@
 
               <!-- Multi-Segment Info (project-level detection) -->
               <div
-                v-if="segmentCount > 0"
+                v-if="segmentCount && segmentCount > 0"
                 class="mb-4 sm:mb-5 p-3 sm:p-4 bg-zinc-900/80 rounded-lg sm:rounded-xl border border-zinc-800 space-y-1.5 sm:space-y-2"
               >
                 <div class="flex items-center justify-between text-xs sm:text-sm">

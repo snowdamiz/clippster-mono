@@ -213,6 +213,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import type { RawVideo, IntroOutro } from '@/services/database';
   import { X, Loader2, Play, Pause, VolumeX, Volume2, RotateCcw, FolderOpen, Clock } from 'lucide-vue-next';
+  import { utf8ToBase64 } from '@/utils/encoding';
 
   type VideoLike = RawVideo | IntroOutro;
 
@@ -552,7 +553,8 @@
       resetVideoState();
 
       const port = await invoke<number>('get_video_server_port');
-      const encodedPath = btoa(filePath);
+      // Use utf8ToBase64 to handle Unicode characters (like emojis) in file paths
+      const encodedPath = utf8ToBase64(filePath);
       // Add a timestamp to prevent caching issues
       const timestamp = Date.now();
       videoSrc.value = `http://localhost:${port}/video/${encodedPath}?t=${timestamp}`;

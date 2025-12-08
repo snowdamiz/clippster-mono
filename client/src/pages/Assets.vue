@@ -106,7 +106,7 @@
             >
               <div
                 :class="[
-                  'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md',
+                  'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md border border-white/45',
                   isAssetSelected(asset.id)
                     ? 'bg-primary text-primary-foreground'
                     : 'bg-black/60 text-white hover:bg-black/80',

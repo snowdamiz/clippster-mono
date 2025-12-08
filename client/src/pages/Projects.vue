@@ -145,7 +145,7 @@
               >
                 <div
                   :class="[
-                    'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md',
+                    'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md border border-white/45',
                     isProjectSelected(project.id)
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-black/60 text-white hover:bg-black/80',
@@ -528,7 +528,7 @@
               >
                 <div
                   :class="[
-                    'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md',
+                    'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md border border-white/45',
                     isFolderChildSelected(project.id)
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-black/60 text-white hover:bg-black/80',
@@ -594,6 +594,18 @@
                   @click.stop="openWorkspace(project)"
                 >
                   <Play class="h-5 w-5" />
+                </button>
+                <button
+                  v-if="
+                    canDetectClips(project.id) &&
+                    !isDetectionActive(project.id) &&
+                    !isProjectDetecting(folderProject?.id || '')
+                  "
+                  class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                  title="Detect Clips"
+                  @click.stop="startProjectDetection(project)"
+                >
+                  <Sparkles class="h-5 w-5" />
                 </button>
                 <button
                   v-if="!isDetectionActive(project.id) && !isProjectDetecting(folderProject?.id || '')"
@@ -1306,6 +1318,7 @@
   import { useAuthStore } from '@/stores/auth';
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
   import { Button } from '@/components/ui/button';
+  import { utf8ToBase64 } from '@/utils/encoding';
   import { save } from '@tauri-apps/plugin-dialog';
 
   const projects = ref<Project[]>([]);
@@ -1667,6 +1680,7 @@
   const clipPreviewVideoPath = computed(() => {
     if (!clipToPreview.value) return null;
     const segmentId = clipToPreview.value.segment_id || clipToPreview.value.project_id;
+    if (!segmentId) return null;
     const videos = projectVideos.value[segmentId];
     if (videos && videos.length > 0) {
       return videos[0].file_path;
@@ -1958,7 +1972,7 @@
     inlineVideoLoading.value = true;
     try {
       const port = await invoke<number>('get_video_server_port');
-      const encodedPath = btoa(clipPreviewVideoPath.value);
+      const encodedPath = utf8ToBase64(clipPreviewVideoPath.value);
       const timestamp = Date.now();
       inlineVideoSrc.value = `http://localhost:${port}/video/${encodedPath}?t=${timestamp}`;
     } catch (err) {
@@ -2335,7 +2349,7 @@
   }
 
   // Download built clip
-  async function onFolderSaveBuiltClip(clip: ClipWithVersionAndSegment) {
+  async function _onFolderSaveBuiltClip(clip: ClipWithVersionAndSegment) {
     if (!clip.built_file_path) return;
 
     try {
@@ -3140,7 +3154,7 @@
     return false;
   }
 
-  function getProjectDetectionProgress(projectId: string): { progress: number; message: string } | null {
+  function _getProjectDetectionProgress(projectId: string): { progress: number; message: string } | null {
     // Check if the project itself is being detected
     const selfState = getDetectionState(projectId);
     if (selfState?.isActive) {
@@ -3187,7 +3201,7 @@
     return false;
   }
 
-  function getProjectTotalDuration(projectId: string): number {
+  function _getProjectTotalDuration(projectId: string): number {
     let totalDuration = 0;
 
     // Get duration from direct videos

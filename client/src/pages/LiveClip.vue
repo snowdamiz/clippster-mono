@@ -928,7 +928,7 @@
       mintId: streamer.mintId,
       message: `Started monitoring (${mode}). Waiting for stream to go live...`,
       status: 'loading',
-      profileImageUrl: streamer.imageUrl,
+      profileImageUrl: streamer.profileImageUrl,
     });
 
     await startMonitoring([streamer], { detectClips });

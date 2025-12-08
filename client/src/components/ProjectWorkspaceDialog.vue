@@ -12,19 +12,18 @@
       >
         <!-- Header -->
         <div
-          class="flex items-center justify-between px-4 py-2.5 border-b border-border/60 bg-gradient-to-r from-[#0a0a0a] via-[#0d0d0d] to-[#0a0a0a] rounded-t-lg"
+          class="flex items-center justify-between px-3 py-2 border-b border-border/60 bg-gradient-to-r from-[#0a0a0a] via-[#0d0d0d] to-[#0a0a0a] rounded-t-lg"
         >
           <div class="flex items-center gap-3 min-w-0">
             <div
-              class="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500/20 to-purple-600/20 border border-violet-500/30 flex items-center justify-center"
+              class="w-6 h-6 rounded-sm bg-gradient-to-br from-violet-500/20 to-purple-600/20 border border-violet-500/30 flex items-center justify-center"
             >
-              <Film class="h-4 w-4 text-violet-400" />
+              <Film class="h-3 w-3 text-violet-400" />
             </div>
             <div class="flex flex-col">
               <h2 class="text-sm font-semibold text-foreground tracking-tight truncate">
                 {{ project?.name || 'New Project' }}
               </h2>
-              <span class="text-[10px] text-muted-foreground/70">Workspace</span>
             </div>
           </div>
           <button
@@ -46,10 +45,6 @@
             <div
               class="w-3/5 min-w-0 p-5 border-r border-border/40 flex flex-col bg-gradient-to-br from-black/20 to-transparent"
             >
-              <!-- Aspect Ratio Selector -->
-              <div class="mb-4">
-                <AspectRatioSelector @ratio-changed="handleRatioChanged" />
-              </div>
               <!-- Video Player Container -->
               <VideoPlayer
                 :video-src="videoSrc"
@@ -227,7 +222,6 @@
   import ClipGenerationProgress from './ClipGenerationProgress.vue';
   import ConfirmationModal from './ConfirmationModal.vue';
   import ClipDetectionConfirmDialog from './ClipDetectionConfirmDialog.vue';
-  import AspectRatioSelector from './AspectRatioSelector.vue';
   import { useVideoPlayer } from '@/composables/useVideoPlayer';
   import { useProgressSocket } from '@/composables/useProgressSocket';
   import { useToast } from '@/composables/useToast';
@@ -245,7 +239,6 @@
     startDetection,
     updateProgress: updateGlobalProgress,
     completeDetection,
-    isDetectionActive,
     getDetectionState,
     hasAnyActiveDetection,
   } = useClipDetectionTracking();
@@ -1012,11 +1005,6 @@
 
   function getCurrentPlayingClipId(): string | null {
     return currentlyPlayingClipId.value;
-  }
-
-  // Handle aspect ratio change
-  function handleRatioChanged(ratio: { width: number; height: number }) {
-    selectedAspectRatio.value = { width: ratio.width, height: ratio.height };
   }
 
   // Handle subtitle settings change

@@ -13,18 +13,8 @@
           activeTab === tab.id ? 'text-foreground' : 'text-muted-foreground hover:text-foreground/80',
         ]"
       >
-        <component
-          :is="tab.icon"
-          :class="[
-            'h-3.5 w-3.5 transition-colors duration-200',
-            activeTab === tab.id ? 'text-violet-400' : 'text-muted-foreground group-hover:text-foreground/60',
-          ]"
-        />
         {{ tab.label }}
-        <div
-          v-if="activeTab === tab.id"
-          class="absolute bottom-0 left-2 right-2 h-0.5 bg-gradient-to-r from-violet-500 to-purple-500 rounded-full"
-        ></div>
+        <div v-if="activeTab === tab.id" class="absolute bottom-0 left-2 right-2 h-0.5 bg-white/70 rounded-full"></div>
       </button>
     </div>
 
@@ -454,7 +444,7 @@
       if (clip) {
         clip.build_status = 'pending';
         clip.build_progress = 0;
-        clip.build_error = undefined;
+        clip.build_error = null;
       }
 
       updateClipBuildStatus(clip_id, 'pending', {
@@ -527,9 +517,9 @@
         // Reset to pending for cancelled builds
         clip.build_status = 'pending';
         clip.build_progress = 0;
-        clip.build_error = undefined;
-        clip.built_file_path = undefined;
-        clip.built_thumbnail_path = undefined;
+        clip.build_error = null;
+        clip.built_file_path = null;
+        clip.built_thumbnail_path = null;
         console.log(`[MediaPanel] Local state reset for cancelled clip: ${clip_id}`);
       } else {
         clip.build_status = 'failed';
@@ -555,23 +545,70 @@
         .then(async () => {
           console.log(`[MediaPanel] Database updated successfully for clip: ${clip_id}`);
 
+          // Generate thumbnails for ALL built output files (one per aspect ratio)
+          // Each thumbnail will match the framing/layout of its corresponding video
+          const outputPaths = all_output_paths || (output_path ? [output_path] : []);
+          const generatedThumbnailPaths: string[] = [];
+          let primaryThumbnailPath: string | undefined;
+
+          if (outputPaths.length > 0) {
+            const { invoke } = await import('@tauri-apps/api/core');
+
+            for (const videoPath of outputPaths) {
+              try {
+                // Extract filename without extension for thumbnail naming
+                const outputFileName =
+                  videoPath
+                    .split(/[/\\]/)
+                    .pop()
+                    ?.replace(/\.[^.]+$/, '') || 'build';
+                const thumbnailFilename = `${outputFileName}_thumb`;
+
+                const thumbPath = await invoke<string>('generate_thumbnail_at_timestamp', {
+                  videoPath: videoPath,
+                  timestampSeconds: 1.0, // 1 second into the video
+                  outputFilename: thumbnailFilename,
+                });
+
+                generatedThumbnailPaths.push(thumbPath);
+                console.log(`[MediaPanel] Generated thumbnail for ${videoPath}: ${thumbPath}`);
+
+                // Use the first generated thumbnail as the primary one for the build record
+                if (!primaryThumbnailPath) {
+                  primaryThumbnailPath = thumbPath;
+                }
+              } catch (thumbError) {
+                console.warn(`[MediaPanel] Failed to generate thumbnail for ${videoPath}:`, thumbError);
+              }
+            }
+
+            console.log(
+              `[MediaPanel] Generated ${generatedThumbnailPaths.length} thumbnails for ${outputPaths.length} output files`
+            );
+          }
+
           // Update the existing build record (created by ClipsTab before build started)
           try {
             const builds = await getClipBuilds(clip_id);
             // Find the build with 'building' status (most recently created)
             const buildingRecord = builds.find((b) => b.status === 'building');
 
+            // Use generated thumbnail if available, otherwise use one from event
+            // Note: primaryThumbnailPath is just stored for legacy support -
+            // actual per-file thumbnails are derived from video filenames
+            const finalThumbnailPath = primaryThumbnailPath || thumbnail_path || undefined;
+
             if (buildingRecord) {
               await updateClipBuild(buildingRecord.id, {
                 status: 'completed',
                 filePath: output_path,
                 outputPaths: all_output_paths || (output_path ? [output_path] : []),
-                thumbnailPath: thumbnail_path || undefined, // Don't overwrite if not provided
+                thumbnailPath: finalThumbnailPath,
                 fileSize: file_size,
                 duration: duration,
               });
               console.log(
-                `[MediaPanel] Updated build record ${buildingRecord.id} for clip: ${clip_id} with ${all_output_paths?.length || 1} output paths`
+                `[MediaPanel] Updated build record ${buildingRecord.id} for clip: ${clip_id} with ${all_output_paths?.length || 1} output paths, thumbnail: ${finalThumbnailPath ? 'yes' : 'no'}`
               );
             } else {
               // Fallback: create a new build record if none found (for backwards compatibility)
@@ -580,7 +617,7 @@
                 status: 'completed',
                 filePath: output_path,
                 outputPaths: all_output_paths || (output_path ? [output_path] : []),
-                thumbnailPath: thumbnail_path || undefined, // Don't overwrite if not provided
+                thumbnailPath: finalThumbnailPath,
                 fileSize: file_size,
                 duration: duration,
               });

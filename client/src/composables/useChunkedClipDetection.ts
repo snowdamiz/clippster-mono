@@ -53,8 +53,7 @@ export function useChunkedClipDetection() {
   // Shared transcript cache instance to maintain session state across functions
   const transcriptCache = useChunkedTranscriptCache();
 
-  // Track the current job ID for server-side cancellation
-  let currentJobId: string | null = null;
+  // Track the current project ID for server-side cancellation
   let currentProjectId: string | null = null;
 
   // Cancel the current detection process and request server-side refund
@@ -102,7 +101,6 @@ export function useChunkedClipDetection() {
       creditsRefunded: creditsRefunded,
     };
 
-    currentJobId = null;
     currentProjectId = null;
     isProcessing.value = false;
   }
@@ -133,7 +131,6 @@ export function useChunkedClipDetection() {
 
       // Store project ID for server-side cancellation
       currentProjectId = projectId;
-      currentJobId = null;
 
       isProcessing.value = true;
       progress.value = {
@@ -274,7 +271,6 @@ export function useChunkedClipDetection() {
     } finally {
       isProcessing.value = false;
       abortController = null;
-      currentJobId = null;
       currentProjectId = null;
     }
   }
@@ -341,7 +337,7 @@ export function useChunkedClipDetection() {
         for (let attempt = 0; attempt < maxRetries; attempt++) {
           try {
             checkCancelled();
-            
+
             const response = await api.post('/clips/transcribe', formData, {
               headers: { 'Content-Type': 'multipart/form-data' },
               signal: abortController?.signal,
@@ -355,7 +351,7 @@ export function useChunkedClipDetection() {
             break; // Success, exit retry loop
           } catch (err: any) {
             lastError = err instanceof Error ? err : new Error(String(err));
-            
+
             // Don't retry if cancelled or if it's a non-retryable error (4xx)
             if (err?.name === 'CanceledError' || err?.response?.status === 402) {
               throw err;
@@ -365,13 +361,15 @@ export function useChunkedClipDetection() {
             const isRetryable = !err?.response || err?.response?.status >= 500;
             if (isRetryable && attempt < maxRetries - 1) {
               const delay = Math.min(2000 * Math.pow(2, attempt), 10000); // 2s, 4s, 8s (max 10s)
-              console.log(`[ChunkTranscribe] Chunk ${i + 1} failed (attempt ${attempt + 1}/${maxRetries}), retrying in ${delay}ms...`);
+              console.log(
+                `[ChunkTranscribe] Chunk ${i + 1} failed (attempt ${attempt + 1}/${maxRetries}), retrying in ${delay}ms...`
+              );
               progress.value = {
                 stage: 'transcribing_chunks',
                 progress: 30 + (i / totalChunks) * 20,
                 message: `Chunk ${i + 1} failed, retrying (${attempt + 2}/${maxRetries})...`,
               };
-              await new Promise(resolve => setTimeout(resolve, delay));
+              await new Promise((resolve) => setTimeout(resolve, delay));
             } else {
               throw lastError;
             }
@@ -379,7 +377,10 @@ export function useChunkedClipDetection() {
         }
 
         if (!transcript) {
-          throw lastError || new Error(`Failed to transcribe chunk ${i + 1} after ${maxRetries} attempts`);
+          throw (
+            lastError ||
+            new Error(`Failed to transcribe chunk ${i + 1} after ${maxRetries} attempts`)
+          );
         }
 
         // Store result with the original chunk timing from audio chunking
@@ -600,7 +601,7 @@ export function useChunkedClipDetection() {
     projectId: string,
     prompt: string,
     existingTranscript: any
-  ): Promise<{ success: boolean; sessionId?: string; error?: string }> {
+  ): Promise<{ success: boolean; sessionId?: string; error?: string; cancelled?: boolean }> {
     try {
       progress.value = {
         stage: 'detecting_clips',
@@ -683,7 +684,7 @@ export function useChunkedClipDetection() {
     projectId: string,
     prompt: string,
     projectVideo: RawVideo
-  ): Promise<{ success: boolean; sessionId?: string; error?: string }> {
+  ): Promise<{ success: boolean; sessionId?: string; error?: string; cancelled?: boolean }> {
     try {
       // Trigger focal point detection in background (non-blocking)
       const { detectFocalPointsBackground } = useFocalPointDetection();
@@ -782,7 +783,7 @@ export function useChunkedClipDetection() {
     projectId: string,
     prompt: string,
     projectVideo: RawVideo
-  ): Promise<{ success: boolean; sessionId?: string; error?: string }> {
+  ): Promise<{ success: boolean; sessionId?: string; error?: string; cancelled?: boolean }> {
     try {
       progress.value = {
         stage: 'detecting_clips',
@@ -878,7 +879,6 @@ export function useChunkedClipDetection() {
     isProcessing.value = false;
     isCancelled.value = false;
     abortController = null;
-    currentJobId = null;
     currentProjectId = null;
     progress.value = { stage: 'initializing', progress: 0, message: '' };
   }

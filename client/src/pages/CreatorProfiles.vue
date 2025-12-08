@@ -628,7 +628,7 @@
     await Promise.all(promises);
   }
 
-  function getLinkLiveStatus(link: { platform: string; platform_id: string; monitored_streamer_id?: string | null }) {
+  function _getLinkLiveStatus(link: { platform: string; platform_id: string; monitored_streamer_id?: string | null }) {
     // If monitored and has active session, it's live
     if (link.monitored_streamer_id) {
       const session = activeSessions.value.get(link.monitored_streamer_id);

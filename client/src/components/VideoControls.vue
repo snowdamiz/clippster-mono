@@ -47,7 +47,7 @@
           </button>
           <div class="relative w-24 h-1 bg-white/10 rounded-full">
             <div
-              class="absolute left-0 top-0 h-full bg-gradient-to-r from-violet-500 to-purple-500 rounded-full transition-all duration-150"
+              class="absolute left-0 top-0 h-full bg-white/40 rounded-full transition-all duration-150"
               :style="{ width: `${volume * 100}%` }"
             ></div>
             <input

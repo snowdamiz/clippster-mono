@@ -34,6 +34,7 @@ pub async fn build_clip_from_segments(
     video_path: String,
     segments: Vec<serde_json::Value>,
     subtitle_settings: Option<SubtitleSettings>,
+    subtitle_overrides: Option<SubtitleOverrides>,
     transcript_words: Option<Vec<WordInfo>>,
     transcript_segments: Option<Vec<WhisperSegment>>,
     max_words: Option<usize>,
@@ -60,6 +61,7 @@ pub async fn build_clip_from_segments(
     println!("[Rust]   video_path: {}", video_path);
     println!("[Rust]   segments count: {}", segments.len());
     println!("[Rust]   subtitles enabled: {}", subtitle_settings.as_ref().map(|s| s.enabled).unwrap_or(false));
+    println!("[Rust]   subtitle_overrides: {:?}", subtitle_overrides.as_ref().map(|o| o.keys().collect::<Vec<_>>()));
     println!("[Rust]   max words: {}", max_words.unwrap_or(0));
     println!("[Rust]   aspect_ratios: {:?}", aspect_ratios);
     println!("[Rust]   quality: {}", quality);
@@ -94,6 +96,7 @@ pub async fn build_clip_from_segments(
     let video_path_clone = video_path.clone();
     let segments_clone = segments.clone();
     let subtitle_settings_clone = subtitle_settings.clone();
+    let subtitle_overrides_clone = subtitle_overrides.clone();
     let transcript_words_clone = transcript_words.clone();
     let transcript_segments_clone = transcript_segments.clone();
     let aspect_ratios_clone = aspect_ratios.clone();
@@ -128,6 +131,7 @@ pub async fn build_clip_from_segments(
             &video_path_clone,
             &segments_clone,
             subtitle_settings_clone,
+            subtitle_overrides_clone,
             transcript_words_clone,
             transcript_segments_clone,
             max_words,

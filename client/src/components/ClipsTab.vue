@@ -437,6 +437,8 @@
       :watermark-settings="watermarkSettings"
       :default-intro="creatorDefaultIntro"
       :default-outro="creatorDefaultOutro"
+      :thumbnail-url="videoThumbnailUrl"
+      :subtitle-settings="subtitleSettings"
       @confirm="onBuildConfirm"
     />
   </div>
@@ -457,7 +459,6 @@
     DownloadIcon,
     LoaderIcon,
     CheckIcon,
-    RefreshCw,
     AlertTriangle,
     Trash2,
     Video,
@@ -637,6 +638,7 @@
     // Creator profile default assets (auto-applied when building clips)
     creatorDefaultIntro?: IntroOutroRef | null;
     creatorDefaultOutro?: IntroOutroRef | null;
+    videoThumbnailUrl?: string | null;
   }
 
   const props = withDefaults(defineProps<ClipsTabProps>(), {
@@ -656,6 +658,7 @@
     watermarkSettings: null,
     creatorDefaultIntro: null,
     creatorDefaultOutro: null,
+    videoThumbnailUrl: null,
   });
 
   // Emits
@@ -882,16 +885,6 @@
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-  }
-
-  function formatAspectRatios(aspectRatiosJson: string | null): string {
-    if (!aspectRatiosJson) return '';
-    try {
-      const ratios = JSON.parse(aspectRatiosJson);
-      return Array.isArray(ratios) ? ratios.join(', ') : '';
-    } catch {
-      return '';
-    }
   }
 
   function hasCompletedBuilds(clip: ClipWithVersion): boolean {
@@ -1334,80 +1327,159 @@
       const hasPortraitRatio = settings.aspectRatios.some((ratio) => portraitRatios.includes(ratio));
 
       if (hasPortraitRatio) {
-        try {
-          console.log('[ClipsTab] Portrait ratio detected, analyzing speakers...');
+        // Check if manual framing mode is selected
+        const hasManualConfigs =
+          settings.framingMode === 'manual' &&
+          settings.manualFramingConfigs &&
+          Object.keys(settings.manualFramingConfigs).length > 0;
 
-          // Calculate clip duration from segments
-          const clipDuration = segments.reduce((total, seg) => {
-            return total + (seg.end_time - seg.start_time);
-          }, 0);
+        if (hasManualConfigs) {
+          // For manual mode with per-ratio configs, we'll need to build each ratio separately
+          // The backend will receive the manualFramingConfigs object and use the appropriate config per ratio
+          console.log(
+            '[ClipsTab] Using manual framing configuration with per-ratio configs:',
+            Object.keys(settings.manualFramingConfigs || {})
+          );
 
-          // Only analyze if clip is long enough (3+ seconds)
-          if (clipDuration >= 3) {
-            const { analyzeSpeakers, getRecommendedSampleInterval } = await import('@/services/speaker-detection-api');
-            const { getFramingStrategyWithData, saveFramingStrategy } = await import(
-              '@/services/database/speaker-detection'
-            );
+          // Get the first configured ratio for the primary framing strategy
+          // The backend will handle per-ratio configs during build
+          const firstConfiguredRatio = Object.keys(
+            settings.manualFramingConfigs!
+          )[0] as keyof import('@/types').ManualFramingConfigs;
+          const firstConfig = settings.manualFramingConfigs![firstConfiguredRatio];
 
-            // Check if we already have a cached strategy for this clip
-            const cachedStrategy = await getFramingStrategyWithData(clip.id);
-
-            if (cachedStrategy) {
-              console.log('[ClipsTab] Using cached framing strategy:', cachedStrategy.strategy.mode);
-              framingStrategy = convertToRustFramingStrategy(cachedStrategy.strategy, cachedStrategy.data);
-            } else {
-              // Get segment timing for analysis
-              const firstSegment = segments[0];
-              const lastSegment = segments[segments.length - 1];
-              const startTime = firstSegment.start_time;
-              const endTime = lastSegment.end_time;
-
-              const sampleInterval = getRecommendedSampleInterval(clipDuration);
-
-              console.log('[ClipsTab] Calling speaker detection API...', {
-                clipId: clip.id,
-                startTime,
-                endTime,
-                sampleInterval,
-              });
-
-              const response = await analyzeSpeakers(clip.id, {
-                video_path: projectVideo.file_path,
-                start_time: startTime,
-                end_time: endTime,
-                target_aspect_ratio: '9:16',
-                sample_interval: sampleInterval,
-              });
-
-              console.log('[ClipsTab] Speaker detection response:', response);
-
-              // Save to local database for caching
-              const { convertServerStrategyToStorageFormat } = await import('@/services/speaker-detection-api');
-              await saveFramingStrategy(clip.id, {
-                mode: response.mode,
-                video_type: response.video_type,
-                target_aspect_ratio: response.target_aspect_ratio,
-                confidence: response.confidence,
-                speaker_count: response.speaker_count,
-                strategy_data: convertServerStrategyToStorageFormat(response.strategy),
-                source_width: response.strategy.source_dimensions?.width,
-                source_height: response.strategy.source_dimensions?.height,
-              });
-
-              // Convert to Rust format
-              framingStrategy = convertServerResponseToRustFormat(response);
-            }
-          } else {
-            console.log('[ClipsTab] Clip too short for speaker detection, using default crop');
+          if (firstConfig && firstConfig.regions && firstConfig.regions.length > 0) {
+            // Convert manual config to framing strategy format
+            framingStrategy = {
+              mode: 'multi_region',
+              videoType: 'unknown',
+              speakerCount: 0,
+              confidence: 1.0,
+              targetAspectRatio: firstConfig.targetAspectRatio,
+              isPortrait: true,
+              sourceDimensions: {
+                width: 1920, // Will be updated by backend
+                height: 1080,
+              },
+              ffmpegFilter: '',
+              layout: null,
+              keyframes: null,
+              cropRegion: null,
+              cropCenter: null,
+              speakers: null,
+              contentRegions: null,
+              multiRegion: firstConfig,
+            };
           }
-        } catch (err) {
-          console.warn('[ClipsTab] Speaker detection failed, falling back to center crop:', err);
-          // Continue with null framingStrategy (will use default center crop)
+        } else if (settings.framingMode === 'manual' && settings.manualFramingConfig) {
+          // Legacy single config support
+          console.log(
+            '[ClipsTab] Using manual framing configuration with',
+            settings.manualFramingConfig.regions.length,
+            'regions'
+          );
+
+          // Convert manual config to framing strategy format
+          framingStrategy = {
+            mode: 'multi_region',
+            videoType: 'unknown',
+            speakerCount: 0,
+            confidence: 1.0,
+            targetAspectRatio: settings.manualFramingConfig.targetAspectRatio,
+            isPortrait: true,
+            sourceDimensions: {
+              width: 1920, // Will be updated by backend
+              height: 1080,
+            },
+            ffmpegFilter: '',
+            layout: null,
+            keyframes: null,
+            cropRegion: null,
+            cropCenter: null,
+            speakers: null,
+            contentRegions: null,
+            multiRegion: settings.manualFramingConfig,
+          };
+        } else {
+          // Auto mode - run speaker detection
+          try {
+            console.log('[ClipsTab] Portrait ratio detected, analyzing speakers...');
+
+            // Calculate clip duration from segments
+            const clipDuration = segments.reduce((total, seg) => {
+              return total + (seg.end_time - seg.start_time);
+            }, 0);
+
+            // Only analyze if clip is long enough (3+ seconds)
+            if (clipDuration >= 3) {
+              const { analyzeSpeakers, getRecommendedSampleInterval } = await import(
+                '@/services/speaker-detection-api'
+              );
+              const { getFramingStrategyWithData, saveFramingStrategy } = await import(
+                '@/services/database/speaker-detection'
+              );
+
+              // Check if we already have a cached strategy for this clip
+              const cachedStrategy = await getFramingStrategyWithData(clip.id);
+
+              if (cachedStrategy) {
+                console.log('[ClipsTab] Using cached framing strategy:', cachedStrategy.strategy.mode);
+                framingStrategy = convertToRustFramingStrategy(cachedStrategy.strategy, cachedStrategy.data);
+              } else {
+                // Get segment timing for analysis
+                const firstSegment = segments[0];
+                const lastSegment = segments[segments.length - 1];
+                const startTime = firstSegment.start_time;
+                const endTime = lastSegment.end_time;
+
+                const sampleInterval = getRecommendedSampleInterval(clipDuration);
+
+                console.log('[ClipsTab] Calling speaker detection API...', {
+                  clipId: clip.id,
+                  startTime,
+                  endTime,
+                  sampleInterval,
+                });
+
+                const response = await analyzeSpeakers(clip.id, {
+                  video_path: projectVideo.file_path,
+                  start_time: startTime,
+                  end_time: endTime,
+                  target_aspect_ratio: '9:16',
+                  sample_interval: sampleInterval,
+                });
+
+                console.log('[ClipsTab] Speaker detection response:', response);
+
+                // Save to local database for caching
+                const { convertServerStrategyToStorageFormat } = await import('@/services/speaker-detection-api');
+                await saveFramingStrategy(clip.id, {
+                  mode: response.mode,
+                  video_type: response.video_type,
+                  target_aspect_ratio: response.target_aspect_ratio,
+                  confidence: response.confidence,
+                  speaker_count: response.speaker_count,
+                  strategy_data: convertServerStrategyToStorageFormat(response.strategy),
+                  source_width: response.strategy.source_dimensions?.width,
+                  source_height: response.strategy.source_dimensions?.height,
+                });
+
+                // Convert to Rust format
+                framingStrategy = convertServerResponseToRustFormat(response);
+              }
+            } else {
+              console.log('[ClipsTab] Clip too short for speaker detection, using default crop');
+            }
+          } catch (err) {
+            console.warn('[ClipsTab] Speaker detection failed, falling back to center crop:', err);
+            // Continue with null framingStrategy (will use default center crop)
+          }
         }
       }
 
       // Pass all build settings to the backend (including build number for filename)
       // Subtitle settings come directly from SubtitlesTab via props
+      // Subtitle overrides allow per-aspect-ratio customization of size/position
       await invoke('build_clip_from_segments', {
         projectId: props.projectId,
         clipId: clip.id,
@@ -1415,6 +1487,7 @@
         videoPath: projectVideo.file_path,
         segments: segments,
         subtitleSettings: props.subtitleSettings,
+        subtitleOverrides: settings.subtitleOverrides || null,
         transcriptWords: transcriptWords,
         transcriptSegments: transcriptSegments,
         maxWords: props.maxWordsForAspectRatio,
@@ -1432,6 +1505,7 @@
         watermarkSettings: watermarkSettings,
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,
+        manualFramingConfigs: settings.manualFramingConfigs || null,
       });
 
       console.log('[ClipsTab] Clip build started successfully');
@@ -1454,14 +1528,6 @@
       // Show error via event
       showError('Build Failed', `Failed to build clip: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }
-
-  async function onSaveBuild(build: ClipBuild) {
-    if (!build.file_path) {
-      console.error('[ClipsTab] No build file path available');
-      return;
-    }
-    await onSaveFile(build.file_path);
   }
 
   async function onSaveFile(filePath: string) {
