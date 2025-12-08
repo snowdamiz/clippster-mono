@@ -210,6 +210,109 @@
                     </button>
                   </div>
 
+                  <!-- Framing Mode (only shown when portrait ratios are selected) -->
+                  <Transition name="slide-fade">
+                    <div
+                      v-if="hasPortraitRatio"
+                      class="bg-gradient-to-br from-violet-500/5 to-blue-500/5 rounded-lg sm:rounded-xl p-3 sm:p-4 border border-violet-500/20 space-y-2 sm:space-y-3"
+                    >
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                          <LayoutDashboardIcon class="w-4 h-4 text-violet-400" />
+                          <h4 class="text-xs sm:text-sm font-semibold text-foreground">Framing Mode</h4>
+                        </div>
+                      </div>
+
+                      <p class="text-[10px] text-muted-foreground/80 leading-relaxed">
+                        Choose how to crop your 16:9 content for portrait output
+                      </p>
+
+                      <!-- Mode Toggle -->
+                      <div class="flex gap-2">
+                        <button
+                          @click="framingMode = 'auto'"
+                          :class="[
+                            'flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all',
+                            framingMode === 'auto'
+                              ? 'bg-violet-500/20 text-violet-300 border border-violet-500/40'
+                              : 'bg-muted/30 text-muted-foreground hover:bg-muted/50 border border-transparent',
+                          ]"
+                        >
+                          <SparklesIcon class="w-3.5 h-3.5" />
+                          Auto
+                        </button>
+                        <button
+                          @click="framingMode = 'manual'"
+                          :class="[
+                            'flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all',
+                            framingMode === 'manual'
+                              ? 'bg-violet-500/20 text-violet-300 border border-violet-500/40'
+                              : 'bg-muted/30 text-muted-foreground hover:bg-muted/50 border border-transparent',
+                          ]"
+                        >
+                          <PencilRulerIcon class="w-3.5 h-3.5" />
+                          Manual
+                        </button>
+                      </div>
+
+                      <!-- Manual mode - per ratio configuration -->
+                      <Transition name="slide-fade">
+                        <div v-if="framingMode === 'manual'" class="pt-2 border-t border-violet-500/10 space-y-2">
+                          <p class="text-[10px] text-muted-foreground/70">Configure each aspect ratio:</p>
+
+                          <!-- Per-ratio configuration buttons -->
+                          <div class="space-y-1.5">
+                            <button
+                              v-for="ratio in selectedPortraitRatios"
+                              :key="ratio"
+                              @click="openPOIEditorForRatio(ratio)"
+                              class="w-full flex items-center justify-between px-3 py-2 text-xs font-medium rounded-lg transition-all border"
+                              :class="
+                                isRatioConfigured(ratio)
+                                  ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20'
+                                  : 'bg-muted/30 text-muted-foreground border-border/40 hover:bg-muted/50 hover:border-violet-500/40'
+                              "
+                            >
+                              <div class="flex items-center gap-2">
+                                <div
+                                  class="w-5 h-7 border rounded flex-shrink-0"
+                                  :class="
+                                    isRatioConfigured(ratio) ? 'border-emerald-400' : 'border-muted-foreground/40'
+                                  "
+                                  :style="{
+                                    aspectRatio: ratio.replace(':', '/'),
+                                    height: ratio === '1:1' ? '1.25rem' : '1.75rem',
+                                    width: ratio === '1:1' ? '1.25rem' : 'auto',
+                                  }"
+                                ></div>
+                                <span>{{ ratio }}</span>
+                              </div>
+                              <div class="flex items-center gap-1.5">
+                                <span v-if="isRatioConfigured(ratio)" class="text-[10px] text-emerald-400/80">
+                                  ✓ {{ getConfigForRatio(ratio)?.regions.length }} region{{
+                                    getConfigForRatio(ratio)?.regions.length !== 1 ? 's' : ''
+                                  }}
+                                </span>
+                                <span v-else class="text-[10px] text-muted-foreground/60">Not configured</span>
+                                <PencilRulerIcon class="w-3.5 h-3.5" />
+                              </div>
+                            </button>
+                          </div>
+
+                          <!-- Loading indicator for video frame -->
+                          <div v-if="loadingVideoFrame" class="text-[10px] text-muted-foreground/60 text-center">
+                            Loading video preview...
+                          </div>
+                        </div>
+                      </Transition>
+
+                      <!-- Auto mode info -->
+                      <p v-if="framingMode === 'auto'" class="text-[10px] text-muted-foreground/60 leading-relaxed">
+                        AI will automatically detect speakers and content regions
+                      </p>
+                    </div>
+                  </Transition>
+
                   <!-- Intro/Outro Compact -->
                   <div
                     class="bg-muted/20 rounded-lg sm:rounded-xl p-3 sm:p-4 border border-border/50 space-y-2 sm:space-y-3"
@@ -557,19 +660,43 @@
         </Transition>
       </div>
     </Transition>
+
+    <!-- Manual POI Editor Dialog -->
+    <ManualPOIEditor
+      v-model="showManualPOIEditor"
+      :initial-config="getConfigForRatio(editingAspectRatio)"
+      :target-aspect-ratio="editingAspectRatio"
+      :source-aspect-ratio="'16:9'"
+      :thumbnail-url="videoFrameUrl || thumbnailUrl"
+      :video-path="videoPath"
+      :clip-start-time="clipStartTime"
+      :clip-end-time="clipEndTime"
+      @confirm="onManualConfigConfirm"
+    />
   </Teleport>
 </template>
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-  import { WrenchIcon, CheckIcon, X, ChevronDown } from 'lucide-vue-next';
+  import {
+    WrenchIcon,
+    CheckIcon,
+    X,
+    ChevronDown,
+    LayoutDashboardIcon,
+    SparklesIcon,
+    PencilRulerIcon,
+  } from 'lucide-vue-next';
   import type { ClipWithVersion, WatermarkSettings } from '@/services/database';
   import { getAllIntroOutros, type IntroOutro } from '@/services/database';
+  import ManualPOIEditor from './poi/ManualPOIEditor.vue';
+  import type { ManualFramingConfig } from '@/types';
 
   const props = defineProps<{
     modelValue: boolean;
     clip: ClipWithVersion | null;
     watermarkSettings?: WatermarkSettings | null;
+    thumbnailUrl?: string | null;
   }>();
 
   const emit = defineEmits<{
@@ -585,6 +712,9 @@
     intro: IntroOutro | null;
     outro: IntroOutro | null;
     watermark: WatermarkSettings | null;
+    framingMode?: 'auto' | 'manual';
+    manualFramingConfig?: import('@/types').ManualFramingConfig;
+    manualFramingConfigs?: import('@/types').ManualFramingConfigs;
   }
 
   // State
@@ -599,6 +729,54 @@
   const loadingAssets = ref(false);
   const showIntroDropdown = ref(false);
   const showOutroDropdown = ref(false);
+
+  // Framing mode state
+  const framingMode = ref<'auto' | 'manual'>('auto');
+  const manualFramingConfigs = ref<import('@/types').ManualFramingConfigs>({});
+  const showManualPOIEditor = ref(false);
+  const editingAspectRatio = ref<string>('9:16');
+  const videoFrameUrl = ref<string | null>(null);
+  const loadingVideoFrame = ref(false);
+  const videoPath = ref<string | null>(null);
+
+  // Clip timing for video preview
+  const clipStartTime = computed(() => props.clip?.current_version_start_time || 0);
+  const clipEndTime = computed(() => props.clip?.current_version_end_time || 0);
+
+  // Check if portrait ratios are selected (need framing options)
+  const hasPortraitRatio = computed(() => {
+    const portraitRatios = ['9:16', '4:5', '1:1'];
+    return selectedRatios.value.some((r) => portraitRatios.includes(r));
+  });
+
+  // Get selected portrait ratios that need configuration
+  const selectedPortraitRatios = computed(() => {
+    const portraitRatios = ['9:16', '4:5', '1:1'];
+    return selectedRatios.value.filter((r) => portraitRatios.includes(r));
+  });
+
+  // Get the first portrait ratio for the POI editor
+  const primaryPortraitRatio = computed(() => {
+    const portraitRatios = ['9:16', '4:5', '1:1'];
+    return selectedRatios.value.find((r) => portraitRatios.includes(r)) || '9:16';
+  });
+
+  // Check if a specific ratio has been configured
+  function isRatioConfigured(ratio: string): boolean {
+    const config = manualFramingConfigs.value[ratio as keyof import('@/types').ManualFramingConfigs];
+    return config !== undefined && config.regions.length > 0;
+  }
+
+  // Get config for editing
+  function getConfigForRatio(ratio: string): import('@/types').ManualFramingConfig | null {
+    return manualFramingConfigs.value[ratio as keyof import('@/types').ManualFramingConfigs] || null;
+  }
+
+  // Open POI editor for a specific ratio
+  function openPOIEditorForRatio(ratio: string) {
+    editingAspectRatio.value = ratio;
+    showManualPOIEditor.value = true;
+  }
   const introButtonRef = ref<HTMLElement | null>(null);
   const outroButtonRef = ref<HTMLElement | null>(null);
   const introDropdownRef = ref<HTMLElement | null>(null);
@@ -631,15 +809,67 @@
     return total;
   });
 
-  // Load intros and outros when dialog opens
+  // Load intros and outros when dialog opens, reset framing state
   watch(
     () => props.modelValue,
     async (isOpen) => {
-      if (isOpen && intros.value.length === 0 && outros.value.length === 0) {
-        await loadIntroOutros();
+      if (isOpen) {
+        // Reset framing mode to auto when dialog opens
+        framingMode.value = 'auto';
+        manualFramingConfigs.value = {};
+        videoFrameUrl.value = null;
+
+        if (intros.value.length === 0 && outros.value.length === 0) {
+          await loadIntroOutros();
+        }
+
+        // Load video frame for POI editor preview
+        await loadVideoFrame();
       }
     }
   );
+
+  // Load a frame from the video for the POI editor preview
+  async function loadVideoFrame() {
+    if (!props.clip || loadingVideoFrame.value) return;
+
+    loadingVideoFrame.value = true;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const { getRawVideosByProjectId } = await import('@/services/database');
+
+      // Get the project's raw video
+      const projectId = props.clip.project_id;
+      if (!projectId) return;
+
+      const rawVideos = await getRawVideosByProjectId(projectId);
+      if (rawVideos.length === 0) return;
+
+      const rawVideoPath = rawVideos[0].file_path;
+      videoPath.value = rawVideoPath; // Store video path for POI editor
+      const startTime = props.clip.current_version_start_time || 0;
+
+      // Generate a frame at the clip's start time
+      const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
+        videoPath: rawVideoPath,
+        timestampSeconds: startTime + 1, // 1 second into the clip
+        outputFilename: `poi_preview_${props.clip.id}`,
+      });
+
+      // Convert to data URL for display
+      const dataUrl = await invoke<string>('read_file_as_data_url', {
+        filePath: thumbnailPath,
+      });
+
+      videoFrameUrl.value = dataUrl;
+    } catch (error) {
+      console.warn('[BuildSettings] Failed to load video frame:', error);
+      // Use thumbnail URL prop as fallback
+      videoFrameUrl.value = props.thumbnailUrl || null;
+    } finally {
+      loadingVideoFrame.value = false;
+    }
+  }
 
   onMounted(async () => {
     if (props.modelValue) {
@@ -768,6 +998,16 @@
     showOutroDropdown.value = false;
   }
 
+  // Manual framing config handler - saves to the specific aspect ratio
+  function onManualConfigConfirm(config: ManualFramingConfig) {
+    const ratio = config.targetAspectRatio as keyof import('@/types').ManualFramingConfigs;
+    manualFramingConfigs.value = {
+      ...manualFramingConfigs.value,
+      [ratio]: config,
+    };
+    console.log('[BuildSettings] Manual framing config updated for', ratio, ':', config);
+  }
+
   // Methods
   function toggleRatio(ratio: string) {
     const index = selectedRatios.value.indexOf(ratio);
@@ -797,6 +1037,17 @@
       ? props.watermarkSettings
       : null;
 
+    // Determine framing mode and configs
+    const finalFramingMode = hasPortraitRatio.value ? framingMode.value : undefined;
+    const finalManualConfigs =
+      hasPortraitRatio.value && framingMode.value === 'manual' ? manualFramingConfigs.value : undefined;
+
+    // For backward compatibility, also set the primary config
+    const finalManualConfig =
+      finalManualConfigs && Object.keys(finalManualConfigs).length > 0
+        ? Object.values(finalManualConfigs)[0]
+        : undefined;
+
     const settings: BuildSettings = {
       aspectRatios: selectedRatios.value,
       quality: quality.value,
@@ -805,6 +1056,9 @@
       intro: selectedIntro.value,
       outro: selectedOutro.value,
       watermark: watermarkSettings,
+      framingMode: finalFramingMode,
+      manualFramingConfig: finalManualConfig ?? undefined,
+      manualFramingConfigs: finalManualConfigs,
     };
 
     emit('confirm', settings);
@@ -869,5 +1123,20 @@
   .custom-scrollbar {
     scrollbar-width: thin;
     scrollbar-color: rgb(63 63 70 / 0.5) transparent;
+  }
+
+  /* Slide-fade transition for framing mode section */
+  .slide-fade-enter-active {
+    transition: all 0.3s ease-out;
+  }
+
+  .slide-fade-leave-active {
+    transition: all 0.2s ease-in;
+  }
+
+  .slide-fade-enter-from,
+  .slide-fade-leave-to {
+    opacity: 0;
+    transform: translateY(-10px);
   }
 </style>

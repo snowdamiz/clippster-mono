@@ -131,6 +131,8 @@ pub enum FramingMode {
     DynamicPan,
     /// Static crop centered on detected speaker(s)
     Static,
+    /// Manual multi-region layout defined by user
+    MultiRegion,
 }
 
 impl Default for FramingMode {
@@ -282,6 +284,8 @@ pub struct FramingStrategy {
     pub speakers: Option<Vec<SpeakerRegion>>,
     /// Detected content regions
     pub content_regions: Option<Vec<ContentRegion>>,
+    /// Manual multi-region configuration (only for MultiRegion mode)
+    pub multi_region: Option<ManualFramingConfig>,
 }
 
 impl Default for FramingStrategy {
@@ -301,6 +305,68 @@ impl Default for FramingStrategy {
             crop_center: None,
             speakers: None,
             content_regions: None,
+            multi_region: None,
+        }
+    }
+}
+
+// ============================================================================
+// MANUAL POI / MULTI-REGION FRAMING TYPES
+// ============================================================================
+
+/// A single region for manual multi-region framing
+/// Contains both the source crop and output position
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManualRegion {
+    /// Unique identifier for the region
+    pub id: String,
+    /// Color for visual distinction (hex string)
+    pub color: String,
+    /// Optional label for the region
+    pub label: Option<String>,
+    /// Source crop area (normalized 0-1 coordinates on source video)
+    pub source: NormalizedBBox,
+    /// Output position (normalized 0-1 coordinates on target canvas)
+    pub output: NormalizedBBox,
+}
+
+/// Manual framing configuration with multiple regions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManualFramingConfig {
+    /// Mode identifier (always "manual")
+    pub mode: String,
+    /// List of regions to extract and composite
+    pub regions: Vec<ManualRegion>,
+    /// Target aspect ratio (e.g., "9:16")
+    pub target_aspect_ratio: String,
+    /// Source aspect ratio (e.g., "16:9")
+    pub source_aspect_ratio: Option<String>,
+}
+
+impl ManualFramingConfig {
+    /// Convert manual config to a FramingStrategy with MultiRegion mode
+    pub fn to_framing_strategy(&self, source_width: u32, source_height: u32) -> FramingStrategy {
+        FramingStrategy {
+            mode: FramingMode::MultiRegion,
+            video_type: VideoType::Unknown,
+            speaker_count: 0,
+            confidence: 1.0, // Manual config is always 100% confident
+            target_aspect_ratio: self.target_aspect_ratio.clone(),
+            is_portrait: self.target_aspect_ratio == "9:16" || self.target_aspect_ratio == "4:5",
+            source_dimensions: VideoDimensions {
+                width: source_width,
+                height: source_height,
+            },
+            ffmpeg_filter: String::new(), // Will be generated during processing
+            layout: None,
+            keyframes: None,
+            crop_region: None,
+            crop_center: None,
+            speakers: None,
+            content_regions: None,
+            multi_region: Some(self.clone()),
         }
     }
 }
@@ -357,6 +423,7 @@ impl FramingStrategy {
             crop_center: Some(Point2D { x: 0.5, y: 0.5 }),
             speakers: None,
             content_regions: None,
+            multi_region: None,
         }
     }
 }
