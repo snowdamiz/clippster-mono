@@ -427,15 +427,20 @@
 
   const isDetectingAny = computed(() => monitoredStreamers.value.size > 0 || activeSessions.value.size > 0);
 
-  // Sorted streamers: Live streamers first (alphabetically), then offline (alphabetically)
+  // Sorted streamers: Detecting/Recording first, then Live, then Offline (each group alphabetically)
   const sortedStreamers = computed(() => {
     return [...streamers.value].sort((a, b) => {
-      // First, sort by live/detecting status (live/detecting first)
-      const aIsLive = a.isDetecting || a.isLive;
-      const bIsLive = b.isDetecting || b.isLive;
+      // Priority: 1 = Detecting/Recording, 2 = Live (not detecting), 3 = Offline
+      const getPriority = (s: ExtendedStreamer) => {
+        if (s.isDetecting) return 1; // Actively recording or auto-detecting (highest priority)
+        if (s.isLive) return 2; // Live but not being monitored
+        return 3; // Offline
+      };
 
-      if (aIsLive && !bIsLive) return -1;
-      if (!aIsLive && bIsLive) return 1;
+      const aPriority = getPriority(a);
+      const bPriority = getPriority(b);
+
+      if (aPriority !== bPriority) return aPriority - bPriority;
 
       // Then sort alphabetically by display name (case-insensitive)
       const aName = (a.displayName || a.mintId).toLowerCase();
