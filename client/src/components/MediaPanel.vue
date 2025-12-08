@@ -463,20 +463,26 @@
       return;
     }
 
+    // Skip 'building' status update if stage is 'completed' - the clip-build-complete
+    // event handler will set the final status. This prevents a race condition where
+    // the progress event's 'building' status overwrites the 'completed' status.
+    if (stage === 'completed') {
+      console.log(`[MediaPanel] Skipping progress update for completed stage - will be handled by completion event`);
+      if (clip) {
+        clip.build_progress = progress;
+      }
+      return;
+    }
+
     if (clip) {
       console.log(`[MediaPanel] Clip build progress: ${clip_id} - ${progress}% - ${stage}`);
       clip.build_status = 'building';
       clip.build_progress = progress;
     }
 
-    updateClipBuildStatus(clip_id, 'building', {
-      progress,
-      error: stage === 'error' ? message : undefined,
-    }).catch((error) => {
-      console.error('[MediaPanel] Failed to update clip build progress:', error);
-    });
-
-    refreshClips();
+    // Only update database periodically, not on every progress event
+    // This prevents unnecessary database writes and potential UI refreshes
+    // The completion handler will do the final database update
   }
 
   // Handle clip build completion events

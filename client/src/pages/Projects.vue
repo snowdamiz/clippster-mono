@@ -1232,6 +1232,7 @@
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
+  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import {
     Folder,
     Plus,
@@ -1631,6 +1632,9 @@
   const showFolderBuildDialog = ref(false);
   const folderDownloadDropdownId = ref<string | null>(null);
 
+  // Store unlisten functions for Tauri event cleanup
+  const clipBuildUnlistenFunctions = ref<UnlistenFn[]>([]);
+
   // Computed class for folder dialog width based on active tab and content
   const folderDialogWidthClass = computed(() => {
     if (folderActiveTab.value === 'clips') {
@@ -1686,6 +1690,122 @@
     } finally {
       folderClipsLoading.value = false;
     }
+  }
+
+  // Handle clip build progress events (for folder dialog builds)
+  function handleFolderClipBuildProgress(event: any) {
+    const payload = event.payload || event.detail;
+    const { clip_id, progress, stage } = payload;
+
+    // Skip completed stage - let the completion handler deal with it
+    if (stage === 'completed') {
+      return;
+    }
+
+    // Handle cancellation
+    if (stage === 'cancelled') {
+      const clip = folderClips.value.find((c) => c.id === clip_id);
+      if (clip) {
+        clip.build_status = 'pending';
+        clip.build_progress = 0;
+      }
+      return;
+    }
+
+    // Update local state only - no database writes during progress
+    // This keeps UI responsive without causing refreshes
+    const clip = folderClips.value.find((c) => c.id === clip_id);
+    if (clip) {
+      clip.build_status = 'building';
+      clip.build_progress = progress;
+    }
+  }
+
+  // Handle clip build completion events (for folder dialog builds)
+  function handleFolderClipBuildComplete(event: any) {
+    const payload = event.payload || event.detail;
+    if (!payload) return;
+
+    const { clip_id, success: buildSuccess, output_path, all_output_paths, error: buildError } = payload;
+
+    console.log(`[Projects] Clip build complete: ${clip_id}`, { buildSuccess, output_path });
+
+    const clip = folderClips.value.find((c) => c.id === clip_id);
+    const isCancelled = buildError && (buildError.includes('cancelled') || buildError.includes('Cancelled'));
+
+    // Update local state immediately for instant UI feedback
+    if (clip) {
+      if (buildSuccess) {
+        clip.build_status = 'completed';
+        clip.build_progress = 100;
+        clip.built_file_path = output_path;
+        // Update the builds array locally so download dropdown works immediately
+        if (!clip.builds) clip.builds = [];
+        const existingBuildIdx = clip.builds.findIndex((b: any) => b.status === 'building');
+        if (existingBuildIdx >= 0) {
+          clip.builds[existingBuildIdx].status = 'completed';
+          clip.builds[existingBuildIdx].file_path = output_path;
+          clip.builds[existingBuildIdx].output_paths = JSON.stringify(all_output_paths || [output_path]);
+        }
+        console.log(`[Projects] Local state updated for completed clip: ${clip_id}`);
+      } else if (isCancelled) {
+        clip.build_status = 'pending';
+        clip.build_progress = 0;
+      } else {
+        clip.build_status = 'failed';
+        clip.build_error = buildError || 'Unknown build error';
+      }
+    }
+
+    // Update database in the background (non-blocking)
+    // This runs async without awaiting, so UI stays responsive
+    (async () => {
+      if (buildSuccess) {
+        try {
+          const { updateClipBuildStatus, getClipBuilds, updateClipBuild, createClipBuild } = await import(
+            '@/services/database'
+          );
+
+          await updateClipBuildStatus(clip_id, 'completed', {
+            progress: 100,
+            builtFilePath: output_path,
+            error: undefined,
+          });
+
+          // Update the build record
+          const builds = await getClipBuilds(clip_id);
+          const buildingRecord = builds.find((b) => b.status === 'building');
+
+          if (buildingRecord) {
+            await updateClipBuild(buildingRecord.id, {
+              status: 'completed',
+              filePath: output_path,
+              outputPaths: all_output_paths || (output_path ? [output_path] : []),
+            });
+          } else {
+            // Fallback: create a new build record
+            const buildId = await createClipBuild(clip_id, {});
+            await updateClipBuild(buildId, {
+              status: 'completed',
+              filePath: output_path,
+              outputPaths: all_output_paths || (output_path ? [output_path] : []),
+            });
+          }
+
+          console.log(`[Projects] Database updated for clip: ${clip_id}`);
+        } catch (dbError) {
+          console.error('[Projects] Failed to update clip build in database:', dbError);
+        }
+      } else if (!isCancelled) {
+        try {
+          const { updateClipBuildStatus } = await import('@/services/database');
+          await updateClipBuildStatus(clip_id, 'failed', {
+            progress: 0,
+            error: buildError || 'Unknown build error',
+          });
+        } catch {}
+      }
+    })();
   }
 
   // Get total clips count for folder (including standalone projects)
@@ -2047,9 +2167,12 @@
       showFolderBuildDialog.value = false;
       folderClipToBuild.value = null;
 
-      // Refresh clips to get updated build status
-      if (folderProject.value) {
-        setTimeout(() => loadFolderClips(folderProject.value!.id), 1000);
+      // Update local state immediately to show building status
+      // (Tauri events will handle progress and completion updates)
+      const clipToUpdate = folderClips.value.find((c) => c.id === clip.id);
+      if (clipToUpdate) {
+        clipToUpdate.build_status = 'building';
+        clipToUpdate.build_progress = 0;
       }
     } catch (e) {
       // Update status to failed if build didn't start
@@ -3136,6 +3259,16 @@
     window.addEventListener('video-added', handleVideoAdded as EventListener);
     // Add click outside handler for folder download dropdown
     document.addEventListener('click', handleFolderDropdownClickOutside);
+
+    // Add Tauri event listeners for clip build events (folder dialog builds)
+    try {
+      const progressUnlisten = await listen('clip-build-progress', handleFolderClipBuildProgress);
+      const completeUnlisten = await listen('clip-build-complete', handleFolderClipBuildComplete);
+      clipBuildUnlistenFunctions.value = [progressUnlisten, completeUnlisten];
+      console.log('[Projects] Tauri clip build event listeners set up successfully');
+    } catch (error) {
+      console.error('[Projects] Failed to set up Tauri event listeners:', error);
+    }
   });
 
   onUnmounted(() => {
@@ -3143,5 +3276,15 @@
     document.removeEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener);
     window.removeEventListener('video-added', handleVideoAdded as EventListener);
     document.removeEventListener('click', handleFolderDropdownClickOutside);
+
+    // Clean up Tauri event listeners
+    clipBuildUnlistenFunctions.value.forEach((unlisten) => {
+      try {
+        unlisten();
+      } catch (error) {
+        console.error('[Projects] Error cleaning up Tauri listener:', error);
+      }
+    });
+    clipBuildUnlistenFunctions.value = [];
   });
 </script>

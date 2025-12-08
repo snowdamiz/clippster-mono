@@ -1,0 +1,29 @@
+[33mcommit 551a7998645b2ec4350eb727956a7006a0f58e26[m
+Author: snowdamiz <yurlovandrew@gmail.com>
+Date:   Wed Dec 3 15:45:39 2025 -0800
+
+    audio tab
+
+ .../migrations/045_add_audio_settings.sql          |   4 [32m+[m
+ client/src-tauri/src/clips/mod.rs                  |   6 [32m+[m[31m-[m
+ client/src-tauri/src/clips/orchestrator.rs         |  10 [32m+[m[31m-[m
+ client/src-tauri/src/clips/types.rs                |   8 [32m+[m
+ client/src-tauri/src/clips/video_processor.rs      | 108 [32m+++++[m[31m-[m
+ client/src-tauri/src/lib.rs                        |   6 [32m+[m
+ client/src-tauri/src/video_server.rs               |  14 [32m+[m
+ client/src/components/AudioTab.vue                 | 337 [32m++++++++++++++++[m[31m-[m
+ client/src/components/ClipBuildSettingsDialog.vue  | 126 [32m+++[m[31m----[m
+ client/src/components/ClipsTab.vue                 | 148 [32m++++[m[31m----[m
+ client/src/components/MediaPanel.vue               |   8 [32m+[m[31m-[m
+ client/src/components/ProjectWorkspaceDialog.vue   |  13 [32m+[m[31m-[m
+ client/src/components/SubtitlesTab.vue             | 133 [32m+++[m[31m----[m
+ client/src/components/Timeline.vue                 |   1 [32m+[m
+ client/src/components/TimelineVideoTrack.vue       |  17 [32m+[m[31m-[m
+ client/src/components/TranscriptPanel.vue          |  87 [32m+++[m[31m--[m
+ client/src/components/VideoPlayer.vue              | 407 [32m++++++++++++++++++[m[31m---[m
+ client/src/components/WatermarkTab.vue             | 117 [32m+++[m[31m---[m
+ client/src/services/database.ts                    |   8 [32m+[m
+ client/src/services/database/audio-settings.ts     |  65 [32m++++[m
+ client/src/services/database/types.ts              |   6 [32m+[m
+ client/src/types/index.ts                          |   8 [32m+[m
+ 22 files changed, 1241 insertions(+), 396 deletions(-)
