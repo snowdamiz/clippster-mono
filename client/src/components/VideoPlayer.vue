@@ -98,7 +98,7 @@
         class="absolute subtitle-overlay pointer-events-none z-20"
         :style="getSubtitleContainerStyle"
       >
-        <div class="subtitle-text-container" :style="getSubtitleContainerStyle">
+        <div class="subtitle-text-container" :style="{ ...getSubtitleContainerStyle, gap: wordGapStyle }">
           <span
             v-for="(wordInfo, index) in visibleWords"
             :key="`subtitle-word-${wordInfo.start}-${index}`"
@@ -142,6 +142,7 @@
                     fontFamily: subtitleSettings.fontFamily,
                     fontWeight: subtitleSettings.fontWeight,
                     fontSize: getTextStyle.fontSize,
+                    letterSpacing: svgLetterSpacing,
                     stroke: subtitleSettings.border2Color,
                     strokeWidth:
                       (subtitleSettings.border1Width + subtitleSettings.border2Width) * 2 * finalFontSizeScale + 'px',
@@ -165,6 +166,7 @@
                     fontFamily: subtitleSettings.fontFamily,
                     fontWeight: subtitleSettings.fontWeight,
                     fontSize: getTextStyle.fontSize,
+                    letterSpacing: svgLetterSpacing,
                     stroke: subtitleSettings.border1Color,
                     strokeWidth: subtitleSettings.border1Width * 2 * finalFontSizeScale + 'px',
                     strokeLinejoin: 'round',
@@ -185,6 +187,7 @@
                     fontFamily: subtitleSettings.fontFamily,
                     fontWeight: subtitleSettings.fontWeight,
                     fontSize: getTextStyle.fontSize,
+                    letterSpacing: svgLetterSpacing,
                     fill: subtitleSettings?.textColor || '#FFFFFF',
                   }"
                 >
@@ -634,7 +637,13 @@
     const leftOffset = settings.textOffsetX || 0;
     const topOffset = settings.textOffsetY || 0;
 
-    return {
+    // Calculate scaled values for advanced settings
+    const scaledPadding = Math.round((settings.padding || 0) * finalFontSizeScale.value);
+    const scaledBorderRadius = Math.round((settings.borderRadius || 0) * finalFontSizeScale.value);
+    const scaledLineHeight = settings.lineHeight || 1.2;
+
+    // Base styles
+    const baseStyles: Record<string, string> = {
       top: topPosition,
       left: '50%',
       transform: `translate(calc(-50% + ${leftOffset}%), calc(-50% + ${topOffset}%))`,
@@ -642,7 +651,17 @@
       display: 'flex',
       justifyContent: 'center',
       alignItems: 'center',
+      lineHeight: String(scaledLineHeight),
     };
+
+    // Add background styles if enabled
+    if (settings.backgroundEnabled) {
+      baseStyles.backgroundColor = settings.backgroundColor || '#000000';
+      baseStyles.padding = `${scaledPadding}px`;
+      baseStyles.borderRadius = `${scaledBorderRadius}px`;
+    }
+
+    return baseStyles;
   });
 
   // Calculate the final font size scale factor
@@ -668,13 +687,34 @@
 
     const settings = props.subtitleSettings;
     const adjustedFontSize = Math.round(settings.fontSize * finalFontSizeScale.value);
+    const adjustedLetterSpacing = (settings.letterSpacing || 0) * finalFontSizeScale.value;
 
     return {
       color: settings.textColor,
       fontFamily: `"${settings.fontFamily}", Arial, sans-serif`,
       fontWeight: settings.fontWeight,
       fontSize: `${adjustedFontSize}px`,
+      letterSpacing: `${adjustedLetterSpacing}px`,
     };
+  });
+
+  // Calculate word gap (spacing between words)
+  const wordGapStyle = computed(() => {
+    if (!props.subtitleSettings) return '0.35em';
+
+    const settings = props.subtitleSettings;
+    // wordSpacing is a multiplier (0.1 to 1), convert to em units
+    const wordSpacing = settings.wordSpacing || 0.35;
+    return `${wordSpacing}em`;
+  });
+
+  // Get letter spacing for SVG elements
+  const svgLetterSpacing = computed(() => {
+    if (!props.subtitleSettings) return '0px';
+
+    const settings = props.subtitleSettings;
+    const adjustedLetterSpacing = (settings.letterSpacing || 0) * finalFontSizeScale.value;
+    return `${adjustedLetterSpacing}px`;
   });
 
   // Watermark overlay computed properties
