@@ -143,6 +143,7 @@
             @zoomChanged="handleTimelineZoomChanged"
             @segmentUpdated="onSegmentUpdated"
             @refreshClipsData="onRefreshClipsData"
+            @playFromTime="onPlayFromTime"
           />
         </div>
       </div>
@@ -1176,6 +1177,30 @@
 
       // Seek to the specified time
       videoElement.value.currentTime = time;
+    }
+  }
+
+  // Function to seek to a time and start playback (used by timeline context menu)
+  function onPlayFromTime(time: number) {
+    if (videoElement.value) {
+      // Stop any existing segment playback
+      stopSegmentedPlayback();
+
+      // Clear currently playing clip
+      currentlyPlayingClipId.value = null;
+
+      // Seek to the specified time
+      videoElement.value.currentTime = time;
+
+      // Start playback and update state
+      videoElement.value
+        .play()
+        .then(() => {
+          isPlaying.value = true;
+        })
+        .catch((error) => {
+          console.error('[ProjectWorkspaceDialog] Error playing video:', error);
+        });
     }
   }
 

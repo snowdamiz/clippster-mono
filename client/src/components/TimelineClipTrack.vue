@@ -16,6 +16,7 @@
       <div
         class="absolute inset-0 bg-[#1a1a1a]/30 rounded-md border border-border/20 cursor-pointer"
         @click="onClipTrackClick"
+        @contextmenu="onClipTrackContextMenu($event, clip)"
       ></div>
       <!-- Clip segments on timeline -->
       <div class="absolute inset-0 flex items-center pointer-events-none">
@@ -116,6 +117,7 @@
               ? onSegmentClickForCut($event, clip.id, segIndex, segment)
               : onSegmentMouseDown($event, clip.id, segIndex, segment))
           "
+          @contextmenu="onSegmentContextMenu($event, clip.id, segIndex, segment, clip.title)"
         >
           <span class="text-xs text-white/90 font-medium truncate px-1 drop-shadow-sm">{{ clip.title }}</span>
           <!-- Cut preview indicator -->
@@ -177,7 +179,7 @@
   import { ref } from 'vue';
   import { X } from 'lucide-vue-next';
   import { formatDuration, generateClipGradient, getSegmentDisplayTime } from '../utils/timelineUtils';
-  import type { TimelineClipTrackProps } from '../types';
+  import type { TimelineClipTrackProps, ClipSegment } from '../types';
 
   defineProps<TimelineClipTrackProps>();
 
@@ -187,9 +189,38 @@
     (e: 'clipTrackClick', event: MouseEvent): void;
     (e: 'deselectAllSegments'): void;
     (e: 'update:cutHoverInfo', value: null): void;
+    (
+      e: 'segmentContextMenu',
+      event: MouseEvent,
+      clipId: string,
+      segmentIndex: number,
+      segment: ClipSegment,
+      clipTitle: string
+    ): void;
+    (e: 'clipContextMenu', event: MouseEvent, clipId: string, clipTitle: string): void;
   }
 
   const emit = defineEmits<Emits>();
+
+  // Handle segment context menu (right-click)
+  function onSegmentContextMenu(
+    event: MouseEvent,
+    clipId: string,
+    segmentIndex: number,
+    segment: ClipSegment,
+    clipTitle: string
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    emit('segmentContextMenu', event, clipId, segmentIndex, segment, clipTitle);
+  }
+
+  // Handle clip track context menu (right-click on empty area)
+  function onClipTrackContextMenu(event: MouseEvent, clip: { id: string; title: string }) {
+    event.preventDefault();
+    event.stopPropagation();
+    emit('clipContextMenu', event, clip.id, clip.title);
+  }
 
   // Local state for hover tracking
   const hoveredSegmentKey = ref<string | null>(null);

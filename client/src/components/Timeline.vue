@@ -93,6 +93,8 @@
             @timelineSegmentClick="onTimelineSegmentClick"
             @clipTrackClick="onClipTrackClick"
             @deselectAllSegments="deselectAllSegments"
+            @segmentContextMenu="onSegmentContextMenu"
+            @clipContextMenu="onClipContextMenu"
           />
         </div>
         <!-- End Timeline Content Wrapper -->
@@ -213,6 +215,22 @@
       @create="confirmCreateClip"
       @addSegment="confirmAddSegment"
     />
+
+    <!-- Segment Context Menu -->
+    <TimelineContextMenu
+      :show="showContextMenu"
+      :info="contextMenuInfo"
+      @close="closeContextMenu"
+      @action="handleContextMenuAction"
+    />
+
+    <!-- Clip Context Menu (for right-click on clip track) -->
+    <TimelineClipContextMenu
+      :show="showClipContextMenu"
+      :info="clipContextMenuInfo"
+      @close="closeClipContextMenu"
+      @playClip="handlePlayClip"
+    />
   </div>
 </template>
 
@@ -228,6 +246,8 @@
   import TimelineDragSelection from './TimelineDragSelection.vue';
   import TimelinePlayhead from './TimelinePlayhead.vue';
   import TimelineHoverLine from './TimelineHoverLine.vue';
+  import TimelineContextMenu from './TimelineContextMenu.vue';
+  import TimelineClipContextMenu from './TimelineClipContextMenu.vue';
   import ConfirmationModal from './ConfirmationModal.vue';
   import CreateClipDialog from './CreateClipDialog.vue';
   import {
@@ -236,6 +256,7 @@
     realignClipSegment,
     splitClipSegment,
     deleteClipSegment,
+    deleteClip,
     createManualClip,
     addSegmentToClip,
   } from '../services/database';
@@ -264,6 +285,8 @@
     SegmentToDelete,
     SegmentsToMerge,
     TooltipPosition,
+    ContextMenuInfo,
+    ClipContextMenuInfo,
   } from '../types';
 
   const props = withDefaults(defineProps<TimelineProps>(), {
@@ -492,6 +515,14 @@
   // Warning dialog for last segment protection
   const showWarningDialog = ref(false);
   const warningMessage = ref('');
+
+  // Context menu state (for segments)
+  const showContextMenu = ref(false);
+  const contextMenuInfo = ref<ContextMenuInfo | null>(null);
+
+  // Clip context menu state (for entire clips)
+  const showClipContextMenu = ref(false);
+  const clipContextMenuInfo = ref<ClipContextMenuInfo | null>(null);
 
   // Segment dragging state
   const isDraggingSegment = ref(false);
@@ -2110,20 +2141,33 @@
     const segmentsByClip = getSelectedSegmentsByClip();
     const totalSegments = selectedSegmentKeys.value.size;
 
-    // Check if deleting would leave any clips with no segments
+    // Check if any clips will be fully deleted (all segments selected)
+    const clipsToFullyDelete: string[] = [];
     for (const [clipId, segmentIndices] of segmentsByClip.entries()) {
       const clip = localClips.value.find((c) => c.id === clipId);
       if (clip && clip.segments && segmentIndices.length >= clip.segments.length) {
-        showWarning('Cannot delete all segments from a clip. Each clip must have at least one segment.');
-        return;
+        clipsToFullyDelete.push(clip.title || clipId);
       }
+    }
+
+    // Build descriptive message for the dialog
+    let deleteTitle: string;
+    if (clipsToFullyDelete.length > 0) {
+      // Some clips will be fully deleted
+      if (clipsToFullyDelete.length === 1 && totalSegments === 1) {
+        deleteTitle = `"${clipsToFullyDelete[0]}" (entire clip)`;
+      } else {
+        deleteTitle = `${totalSegments} segment${totalSegments > 1 ? 's' : ''} (will delete ${clipsToFullyDelete.length} clip${clipsToFullyDelete.length > 1 ? 's' : ''})`;
+      }
+    } else {
+      deleteTitle = totalSegments === 1 ? '1 segment' : `${totalSegments} segments`;
     }
 
     // Store the deletion info for the dialog
     segmentToDelete.value = {
       clipId: '', // Not used for multi-delete
       segmentIndex: totalSegments, // Store count instead
-      clipTitle: totalSegments === 1 ? '1 segment' : `${totalSegments} segments`,
+      clipTitle: deleteTitle,
     };
 
     // Show the confirmation dialog
@@ -2141,12 +2185,20 @@
       const sortedEntries = Array.from(segmentsByClip.entries());
 
       for (const [clipId, segmentIndices] of sortedEntries) {
-        // Sort segment indices in descending order
-        const sortedIndices = [...segmentIndices].sort((a, b) => b - a);
+        const clip = localClips.value.find((c) => c.id === clipId);
 
-        for (const segmentIndex of sortedIndices) {
-          await deleteClipSegment(clipId, segmentIndex);
-          console.log(`Deleted segment ${segmentIndex} from clip ${clipId}`);
+        // If deleting all segments of a clip, delete the entire clip instead
+        if (clip && clip.segments && segmentIndices.length >= clip.segments.length) {
+          await deleteClip(clipId);
+          console.log(`Deleted entire clip ${clipId} (all segments selected)`);
+        } else {
+          // Sort segment indices in descending order to avoid index shifting issues
+          const sortedIndices = [...segmentIndices].sort((a, b) => b - a);
+
+          for (const segmentIndex of sortedIndices) {
+            await deleteClipSegment(clipId, segmentIndex);
+            console.log(`Deleted segment ${segmentIndex} from clip ${clipId}`);
+          }
         }
       }
 
@@ -2485,6 +2537,163 @@
       console.error('[Timeline] Error adding segment to clip:', error);
       showWarning(`Failed to add segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  // Context menu functions
+
+  // Handle segment context menu (right-click)
+  function onSegmentContextMenu(
+    event: MouseEvent,
+    clipId: string,
+    segmentIndex: number,
+    segment: ClipSegment,
+    clipTitle: string
+  ) {
+    // Don't show context menu during other operations
+    if (isCutToolActive.value || isDraggingSegment.value || isResizingSegment.value || isAddClipModeActive.value) {
+      return;
+    }
+
+    // Select the segment if not already selected
+    const segmentKey = `${clipId}_${segmentIndex}`;
+    if (!selectedSegmentKeys.value.has(segmentKey)) {
+      selectedSegmentKeys.value.clear();
+      selectedSegmentKeys.value.add(segmentKey);
+    }
+
+    // Set context menu info
+    contextMenuInfo.value = {
+      clipId,
+      segmentIndex,
+      clipTitle,
+      segmentStart: segment.start_time,
+      segmentEnd: segment.end_time,
+      x: event.clientX,
+      y: event.clientY,
+    };
+    showContextMenu.value = true;
+  }
+
+  // Close context menu
+  function closeContextMenu() {
+    showContextMenu.value = false;
+    contextMenuInfo.value = null;
+  }
+
+  // Handle context menu action
+  function handleContextMenuAction(action: string, info: ContextMenuInfo) {
+    console.log(`[Timeline] Context menu action: ${action}`, info);
+
+    switch (action) {
+      case 'play':
+        // Seek to segment start and play the video
+        playSegmentFromTime(info.segmentStart);
+        break;
+
+      case 'split':
+        // Split at the current playhead position if it's within the segment
+        splitSegmentAtPlayhead(info);
+        break;
+
+      case 'delete':
+        // Delete the segment
+        deleteSelectedSegments();
+        break;
+
+      default:
+        console.log(`[Timeline] Unknown context menu action: ${action}`);
+    }
+  }
+
+  // Play video starting from a specific time
+  function playSegmentFromTime(startTime: number) {
+    // Emit event to parent to handle seeking and playback
+    // This ensures the parent's isPlaying state is properly updated
+    emit('playFromTime', startTime);
+  }
+
+  // Split segment at the current playhead position
+  async function splitSegmentAtPlayhead(info: ContextMenuInfo) {
+    const currentTime = props.currentTime;
+
+    // Check if playhead is within the segment bounds
+    if (currentTime <= info.segmentStart || currentTime >= info.segmentEnd) {
+      showWarning(
+        `Cannot split: Playhead must be within the segment (${formatDurationForWarning(info.segmentStart)} - ${formatDurationForWarning(info.segmentEnd)}). Current position: ${formatDurationForWarning(currentTime)}`
+      );
+      return;
+    }
+
+    try {
+      // Perform the split at the current playhead position
+      await splitClipSegment(info.clipId, info.segmentIndex, currentTime);
+
+      // Clear the segment selection
+      selectedSegmentKeys.value.clear();
+
+      // Refresh clips data to show the split segments
+      emit('refreshClipsData');
+
+      console.log(`[Timeline] Split segment at ${currentTime.toFixed(2)}s`);
+    } catch (error) {
+      console.error('[Timeline] Error splitting segment:', error);
+      showWarning(`Failed to split segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Format duration for warning messages
+  function formatDurationForWarning(seconds: number): string {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    const ms = Math.floor((seconds % 1) * 100);
+    return `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+  }
+
+  // Clip context menu functions
+
+  // Handle clip track context menu (right-click on empty area of clip track)
+  function onClipContextMenu(event: MouseEvent, clipId: string, clipTitle: string) {
+    // Don't show context menu during other operations
+    if (isCutToolActive.value || isDraggingSegment.value || isResizingSegment.value || isAddClipModeActive.value) {
+      return;
+    }
+
+    // Close any open segment context menu
+    showContextMenu.value = false;
+    contextMenuInfo.value = null;
+
+    // Set clip context menu info
+    clipContextMenuInfo.value = {
+      clipId,
+      clipTitle,
+      x: event.clientX,
+      y: event.clientY,
+    };
+    showClipContextMenu.value = true;
+  }
+
+  // Close clip context menu
+  function closeClipContextMenu() {
+    showClipContextMenu.value = false;
+    clipContextMenuInfo.value = null;
+  }
+
+  // Handle play clip action from context menu
+  function handlePlayClip(clipId: string) {
+    // Find the clip and get its first segment's start time
+    const clip = localClips.value.find((c) => c.id === clipId);
+    if (!clip || !clip.segments || clip.segments.length === 0) {
+      showWarning('Cannot play clip: No segments found.');
+      return;
+    }
+
+    // Get the earliest start time from all segments
+    const earliestStart = Math.min(...clip.segments.map((s) => s.start_time));
+
+    // Emit play from the start of the clip
+    emit('playFromTime', earliestStart);
+
+    console.log(`[Timeline] Playing clip "${clip.title}" from ${earliestStart.toFixed(2)}s`);
   }
 </script>
 

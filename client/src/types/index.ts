@@ -103,6 +103,7 @@ export interface TimelineEmits {
     newEndTime: number
   ): void;
   (e: 'refreshClipsData'): void;
+  (e: 'playFromTime', time: number): void;
 }
 
 export interface TimelineClipTrackProps {
@@ -379,6 +380,23 @@ export interface SegmentsToMerge {
   clipId: string;
   segmentIndices: number[];
   clipTitle: string;
+}
+
+export interface ContextMenuInfo {
+  clipId: string;
+  segmentIndex: number;
+  clipTitle: string;
+  segmentStart: number;
+  segmentEnd: number;
+  x: number;
+  y: number;
+}
+
+export interface ClipContextMenuInfo {
+  clipId: string;
+  clipTitle: string;
+  x: number;
+  y: number;
 }
 
 // Timeline Component Internal State Types
