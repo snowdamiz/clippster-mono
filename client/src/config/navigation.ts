@@ -25,6 +25,11 @@ export interface NavigationItem {
 
 export const navigationItems: NavigationItem[] = [
   {
+    name: 'Creators',
+    path: '/creators',
+    icon: Users,
+  },
+  {
     name: 'Projects',
     path: '/projects',
     icon: Folder,
@@ -38,11 +43,6 @@ export const navigationItems: NavigationItem[] = [
     name: 'Clip Live',
     path: '/live-clip',
     icon: Radio,
-  },
-  {
-    name: 'Creators',
-    path: '/creators',
-    icon: Users,
   },
   {
     name: 'Stream VODs',
