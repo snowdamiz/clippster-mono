@@ -104,6 +104,7 @@ export interface TimelineEmits {
   ): void;
   (e: 'refreshClipsData'): void;
   (e: 'playFromTime', time: number): void;
+  (e: 'editClip', clipId: string): void;
 }
 
 export interface TimelineClipTrackProps {
@@ -605,3 +606,232 @@ export const POI_REGION_COLORS = [
 ] as const;
 
 // Phoenix types are defined in phoenix.d.ts
+
+// ==========================================
+// Clip Editor Types
+// ==========================================
+
+// Main clip edit configuration
+export interface ClipEdit {
+  id: string;
+  clipId: string;
+  trim: TrimSettings;
+  audioTracks: AudioTrack[];
+  textOverlays: TextOverlay[];
+  stickers: Sticker[];
+  effects: Effect[];
+  filter: FilterSettings | null;
+  speed: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Trim/Cut settings
+export interface TrimSettings {
+  startTime: number;
+  endTime: number;
+  segments?: TrimSegment[]; // For multi-segment clips
+}
+
+export interface TrimSegment {
+  id: string;
+  startTime: number;
+  endTime: number;
+  isDeleted: boolean;
+}
+
+// Audio track for music overlay
+export interface AudioTrack {
+  id: string;
+  filePath: string;
+  name: string;
+  startTime: number; // When audio starts in clip timeline
+  endTime: number;
+  volume: number; // 0-1
+  fadeIn: number; // Duration in seconds
+  fadeOut: number; // Duration in seconds
+  trackOrder: number;
+  isMuted: boolean;
+  isSolo: boolean;
+}
+
+// Text overlay configuration
+export interface TextOverlay {
+  id: string;
+  text: string;
+  startTime: number;
+  endTime: number;
+  position: { x: number; y: number }; // 0-100 percentage
+  style: TextOverlayStyle;
+  animation: TextAnimation;
+}
+
+export interface TextOverlayStyle {
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: number;
+  color: string;
+  backgroundColor: string | null;
+  backgroundEnabled: boolean;
+  borderRadius: number;
+  padding: number;
+  letterSpacing: number;
+  lineHeight: number;
+  textAlign: 'left' | 'center' | 'right';
+  shadowEnabled: boolean;
+  shadowColor: string;
+  shadowBlur: number;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
+  strokeEnabled: boolean;
+  strokeColor: string;
+  strokeWidth: number;
+}
+
+export type TextAnimation =
+  | 'none'
+  | 'fade'
+  | 'slide-up'
+  | 'slide-down'
+  | 'slide-left'
+  | 'slide-right'
+  | 'typewriter'
+  | 'bounce'
+  | 'zoom'
+  | 'pop';
+
+export type TextStylePreset = 'title' | 'lower-third' | 'caption' | 'quote' | 'custom';
+
+// Sticker/emoji overlay
+export interface Sticker {
+  id: string;
+  stickerPath: string; // Path to sticker image or emoji code
+  stickerType: 'emoji' | 'image' | 'gif';
+  startTime: number;
+  endTime: number;
+  position: { x: number; y: number }; // 0-100 percentage
+  scale: number; // 0.1-3
+  rotation: number; // Degrees
+  animation: StickerAnimation;
+}
+
+export type StickerAnimation = 'none' | 'bounce' | 'spin' | 'pulse' | 'shake' | 'float' | 'fade';
+
+// Visual effects
+export interface Effect {
+  id: string;
+  type: EffectType;
+  startTime: number;
+  endTime: number;
+  settings: EffectSettings;
+}
+
+export type EffectType =
+  | 'filter'
+  | 'speed'
+  | 'zoom'
+  | 'pan'
+  | 'transition'
+  | 'blur'
+  | 'freeze'
+  | 'flash'
+  | 'shake';
+
+export interface EffectSettings {
+  // Filter settings
+  filterPreset?: string;
+
+  // Speed settings
+  speedMultiplier?: number;
+  isReverse?: boolean;
+
+  // Zoom/Pan settings (Ken Burns)
+  startZoom?: number;
+  endZoom?: number;
+  startPosition?: { x: number; y: number };
+  endPosition?: { x: number; y: number };
+
+  // Blur settings
+  blurAmount?: number;
+  blurType?: 'gaussian' | 'motion' | 'radial';
+
+  // Transition settings
+  transitionType?: 'fade' | 'dissolve' | 'slide' | 'wipe' | 'zoom';
+  transitionDuration?: number;
+
+  // Flash/Shake settings
+  intensity?: number;
+  frequency?: number;
+
+  // Generic settings for future effects
+  [key: string]: any;
+}
+
+// Filter presets
+export interface FilterSettings {
+  preset: FilterPreset | null;
+  brightness: number; // -100 to 100
+  contrast: number; // -100 to 100
+  saturation: number; // -100 to 100
+  hue: number; // -180 to 180
+  temperature: number; // -100 to 100 (warm/cool)
+  vignette: number; // 0 to 100
+  sharpen: number; // 0 to 100
+  fade: number; // 0 to 100
+}
+
+export type FilterPreset =
+  | 'none'
+  | 'warm'
+  | 'cool'
+  | 'vintage'
+  | 'bw'
+  | 'sepia'
+  | 'dramatic'
+  | 'vivid'
+  | 'muted'
+  | 'cinematic'
+  | 'retro'
+  | 'noir';
+
+// Clip Editor Dialog Props
+export interface ClipEditorDialogProps {
+  modelValue: boolean;
+  clipId: string;
+  videoSrc: string | null;
+  clipStartTime: number;
+  clipEndTime: number;
+  clipTitle: string;
+}
+
+// Editor tab types
+export type ClipEditorTab = 'audio' | 'filters' | 'text' | 'stickers' | 'effects';
+
+// Timeline track types for clip editor
+export interface EditorTimelineTrack {
+  id: string;
+  type: 'video' | 'audio' | 'text' | 'sticker' | 'effect';
+  name: string;
+  items: EditorTimelineItem[];
+  isLocked: boolean;
+  isVisible: boolean;
+  isMuted?: boolean;
+}
+
+export interface EditorTimelineItem {
+  id: string;
+  trackId: string;
+  type: 'video-segment' | 'audio-clip' | 'text-overlay' | 'sticker' | 'effect';
+  startTime: number;
+  endTime: number;
+  data: AudioTrack | TextOverlay | Sticker | Effect | TrimSegment;
+}
+
+// Editor preview state
+export interface EditorPreviewState {
+  isPlaying: boolean;
+  currentTime: number;
+  duration: number;
+  activeOverlays: (TextOverlay | Sticker)[];
+  activeEffects: Effect[];
+}

@@ -230,6 +230,7 @@
       :info="clipContextMenuInfo"
       @close="closeClipContextMenu"
       @playClip="handlePlayClip"
+      @editClip="handleEditClip"
     />
   </div>
 </template>
@@ -2694,6 +2695,12 @@
     emit('playFromTime', earliestStart);
 
     console.log(`[Timeline] Playing clip "${clip.title}" from ${earliestStart.toFixed(2)}s`);
+  }
+
+  // Handle edit clip action from context menu
+  function handleEditClip(clipId: string) {
+    emit('editClip', clipId);
+    console.log(`[Timeline] Opening clip editor for clip "${clipId}"`);
   }
 </script>
 

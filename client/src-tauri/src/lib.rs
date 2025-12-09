@@ -294,6 +294,12 @@ pub fn run() {
                             sql: include_str!("../migrations/048_add_segment_duration_to_monitored_streamers.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 51,
+                            description: "add_clip_edits",
+                            sql: include_str!("../migrations/051_add_clip_edits.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

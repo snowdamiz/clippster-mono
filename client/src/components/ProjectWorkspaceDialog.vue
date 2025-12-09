@@ -144,6 +144,7 @@
             @segmentUpdated="onSegmentUpdated"
             @refreshClipsData="onRefreshClipsData"
             @playFromTime="onPlayFromTime"
+            @editClip="onEditClip"
           />
         </div>
       </div>
@@ -177,6 +178,17 @@
     :is-transcribed="isTranscribed"
     @update:model-value="showDetectConfirmDialog = $event"
     @confirm="onDetectClipsConfirmed"
+  />
+  <!-- Clip Editor Dialog -->
+  <ClipEditorDialog
+    v-model="showClipEditorDialog"
+    :clip-id="clipEditorClipId"
+    :video-src="videoSrc"
+    :clip-start-time="clipEditorStartTime"
+    :clip-end-time="clipEditorEndTime"
+    :clip-title="clipEditorTitle"
+    :clip-segments="clipEditorSegments"
+    @save="onClipEditorSave"
   />
 </template>
 
@@ -222,6 +234,7 @@
   import ClipGenerationProgress from './ClipGenerationProgress.vue';
   import ConfirmationModal from './ConfirmationModal.vue';
   import ClipDetectionConfirmDialog from './ClipDetectionConfirmDialog.vue';
+  import ClipEditorDialog from './clip-editor/ClipEditorDialog.vue';
   import { useVideoPlayer } from '@/composables/useVideoPlayer';
   import { useProgressSocket } from '@/composables/useProgressSocket';
   import { useToast } from '@/composables/useToast';
@@ -264,6 +277,14 @@
 
   // Clip detection confirmation state
   const showDetectConfirmDialog = ref(false);
+
+  // Clip editor dialog state
+  const showClipEditorDialog = ref(false);
+  const clipEditorClipId = ref('');
+  const clipEditorStartTime = ref(0);
+  const clipEditorEndTime = ref(0);
+  const clipEditorTitle = ref('');
+  const clipEditorSegments = ref<{ start_time: number; end_time: number }[]>([]);
 
   // Segmented playback tracking
   const currentlyPlayingClipId = ref<string | null>(null);
@@ -1201,6 +1222,69 @@
         .catch((error) => {
           console.error('[ProjectWorkspaceDialog] Error playing video:', error);
         });
+    }
+  }
+
+  // Function to open the clip editor dialog
+  function onEditClip(clipId: string) {
+    // Find the clip in our local data
+    const clip = timelineClips.value.find((c: any) => c.id === clipId);
+    if (!clip) {
+      console.warn('[ProjectWorkspaceDialog] Clip not found for editing:', clipId);
+      return;
+    }
+
+    // Get the clip's start and end times from segments
+    let startTime = 0;
+    let endTime = duration.value;
+
+    if (clip.segments && clip.segments.length > 0) {
+      startTime = Math.min(...clip.segments.map((s: any) => s.start_time));
+      endTime = Math.max(...clip.segments.map((s: any) => s.end_time));
+    }
+
+    // Set the editor state
+    clipEditorClipId.value = clipId;
+    clipEditorStartTime.value = startTime;
+    clipEditorEndTime.value = endTime;
+    clipEditorTitle.value = clip.title || 'Untitled Clip';
+
+    // Pass the clip's segments if it has multiple segments
+    if (clip.segments && clip.segments.length > 0) {
+      clipEditorSegments.value = clip.segments.map((s: any) => ({
+        start_time: s.start_time,
+        end_time: s.end_time,
+      }));
+    } else {
+      // Single segment clip - create a segment from the clip's start/end times
+      clipEditorSegments.value = [
+        {
+          start_time: startTime,
+          end_time: endTime,
+        },
+      ];
+    }
+
+    // Open the dialog
+    showClipEditorDialog.value = true;
+
+    console.log(
+      `[ProjectWorkspaceDialog] Opening clip editor for "${clip.title}" with ${clipEditorSegments.value.length} segments`
+    );
+  }
+
+  // Function to handle clip editor save
+  async function onClipEditorSave(clipId: string) {
+    console.log(`[ProjectWorkspaceDialog] Clip editor saved for clip ${clipId}`);
+
+    // Refresh clips data
+    if (props.project) {
+      await loadTimelineClips(props.project.id);
+
+      // Refresh MediaPanel
+      if (mediaPanelRef.value) {
+        mediaPanelRef.value.refreshClips();
+      }
     }
   }
 
