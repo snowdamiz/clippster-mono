@@ -423,6 +423,16 @@
                       <Upload class="w-4 h-4" />
                     </Button>
                   </div>
+                  <!-- Position button (shown when watermark is selected) -->
+                  <button
+                    v-if="form.watermarkId"
+                    type="button"
+                    @click="showWatermarkPositionPicker = true"
+                    class="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-md transition-all"
+                  >
+                    <Move class="w-4 h-4" />
+                    Set Position for All Aspect Ratios
+                  </button>
                 </div>
               </div>
             </div>
@@ -461,6 +471,15 @@
           </div>
         </div>
       </Transition>
+
+      <!-- Watermark Position Picker -->
+      <WatermarkPositionPicker
+        :show="showWatermarkPositionPicker"
+        :watermark-file-path="selectedWatermarkFilePath"
+        :settings="form.watermarkSettings"
+        @close="showWatermarkPositionPicker = false"
+        @save="handleWatermarkPositionSave"
+      />
     </div>
   </Transition>
 </template>
@@ -498,7 +517,9 @@
     Play,
     SkipForward,
     Image as ImageIcon,
+    Move,
   } from 'lucide-vue-next';
+  import WatermarkPositionPicker from './WatermarkPositionPicker.vue';
 
   interface PlatformLinkForm {
     id?: string;
@@ -545,14 +566,26 @@
     { id: 'youtube' as PlatformId, name: 'YouTube', disabled: true },
   ];
 
+  // Default watermark settings - only 16:9 enabled by default
+  // null means watermark is disabled for that aspect ratio
+  const defaultWatermarkSettings = {
+    '16:9': { x: 90, y: 10, opacity: 80, scale: 15 },
+    '9:16': null as { x: number; y: number; opacity: number; scale: number } | null,
+    '1:1': null as { x: number; y: number; opacity: number; scale: number } | null,
+    '4:5': null as { x: number; y: number; opacity: number; scale: number } | null,
+  };
+
   const form = ref({
     name: '',
     description: '',
     introId: null as string | null,
     outroId: null as string | null,
     watermarkId: null as string | null,
+    watermarkSettings: { ...defaultWatermarkSettings } as typeof defaultWatermarkSettings,
     platformLinks: [] as PlatformLinkForm[],
   });
+
+  const showWatermarkPositionPicker = ref(false);
 
   const isEditing = computed(() => !!props.creator);
 
@@ -575,12 +608,30 @@
     return true;
   });
 
+  // Parse watermark settings from JSON string
+  function parseWatermarkSettings(settingsJson: string | null | undefined): typeof defaultWatermarkSettings {
+    if (!settingsJson) return { ...defaultWatermarkSettings };
+    try {
+      const parsed = JSON.parse(settingsJson);
+      // Preserve null values (disabled ratios) - only use defaults if key is missing entirely
+      return {
+        '16:9': '16:9' in parsed ? parsed['16:9'] : defaultWatermarkSettings['16:9'],
+        '9:16': '9:16' in parsed ? parsed['9:16'] : defaultWatermarkSettings['9:16'],
+        '1:1': '1:1' in parsed ? parsed['1:1'] : defaultWatermarkSettings['1:1'],
+        '4:5': '4:5' in parsed ? parsed['4:5'] : defaultWatermarkSettings['4:5'],
+      };
+    } catch {
+      return { ...defaultWatermarkSettings };
+    }
+  }
+
   // Watch for dialog open/close to reset form
   watch(
     () => props.show,
     async (show) => {
       if (show) {
         openPlatformDropdown.value = null;
+        showWatermarkPositionPicker.value = false;
         await loadAssets();
         if (props.creator) {
           // Populate form with existing data
@@ -590,6 +641,7 @@
             introId: props.creator.intro_id,
             outroId: props.creator.outro_id,
             watermarkId: props.creator.watermark_id,
+            watermarkSettings: parseWatermarkSettings(props.creator.watermark_settings),
             platformLinks: props.creator.platform_links.map((link) => ({
               id: link.id,
               platform: link.platform,
@@ -607,6 +659,7 @@
             introId: null,
             outroId: null,
             watermarkId: null,
+            watermarkSettings: { ...defaultWatermarkSettings },
             platformLinks: [],
           };
         }
@@ -721,9 +774,26 @@
   }
 
   function selectWatermark(id: string | null) {
+    const previousId = form.value.watermarkId;
     form.value.watermarkId = id;
     openAssetDropdown.value = null;
+    
+    // Open position picker if selecting a new watermark (not clearing)
+    if (id && id !== previousId) {
+      showWatermarkPositionPicker.value = true;
+    }
   }
+
+  function handleWatermarkPositionSave(settings: typeof defaultWatermarkSettings) {
+    form.value.watermarkSettings = settings;
+  }
+
+  // Get the selected watermark's file path for preview
+  const selectedWatermarkFilePath = computed(() => {
+    if (!form.value.watermarkId) return undefined;
+    const wm = watermarks.value.find((w) => w.id === form.value.watermarkId);
+    return wm?.file_path;
+  });
 
   // Platform link management
   function addPlatformLink() {
@@ -909,6 +979,7 @@
           intro_id: form.value.introId,
           outro_id: form.value.outroId,
           watermark_id: form.value.watermarkId,
+          watermark_settings: JSON.stringify(form.value.watermarkSettings),
         });
 
         // Handle platform links
@@ -945,7 +1016,8 @@
           null, // profile_image_path - could add upload later
           form.value.introId,
           form.value.outroId,
-          form.value.watermarkId
+          form.value.watermarkId,
+          JSON.stringify(form.value.watermarkSettings)
         );
 
         // Add platform links

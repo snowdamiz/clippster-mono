@@ -294,6 +294,24 @@ pub fn run() {
                             sql: include_str!("../migrations/048_add_segment_duration_to_monitored_streamers.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 49,
+                            description: "add_highlight_color_to_subtitle_presets",
+                            sql: include_str!("../migrations/049_add_highlight_color_to_subtitle_presets.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 50,
+                            description: "add_custom_fonts",
+                            sql: include_str!("../migrations/050_add_custom_fonts.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 51,
+                            description: "add_creator_watermark_position",
+                            sql: include_str!("../migrations/051_add_creator_watermark_position.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

@@ -97,6 +97,30 @@ pub struct AspectRatio {
     pub height: f32,
 }
 
+// Watermark position for a specific aspect ratio
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatermarkPositionSettings {
+    pub x: u32,
+    pub y: u32,
+    pub opacity: u32,
+    pub scale: u32,
+}
+
+// Per-aspect-ratio watermark settings from creator profile
+// Each ratio can be null/None to indicate watermark is disabled for that ratio
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerRatioWatermarkSettings {
+    #[serde(rename = "16:9")]
+    pub ratio_16_9: Option<WatermarkPositionSettings>,
+    #[serde(rename = "9:16")]
+    pub ratio_9_16: Option<WatermarkPositionSettings>,
+    #[serde(rename = "1:1")]
+    pub ratio_1_1: Option<WatermarkPositionSettings>,
+    #[serde(rename = "4:5")]
+    pub ratio_4_5: Option<WatermarkPositionSettings>,
+}
+
 // Watermark settings structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -108,6 +132,9 @@ pub struct WatermarkSettings {
     pub position_y: u32, // 0-100 (percentage from top)
     pub opacity: u32, // 0-100
     pub scale: u32, // percentage of video width (5-50)
+    // Optional per-aspect-ratio settings from creator profile
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub per_ratio_settings: Option<PerRatioWatermarkSettings>,
 }
 
 // Audio settings structure

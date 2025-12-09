@@ -1307,6 +1307,8 @@
             positionY: settings.watermark.positionY,
             opacity: settings.watermark.opacity,
             scale: settings.watermark.scale,
+            // Include per-aspect-ratio settings if available (from creator profile)
+            perRatioSettings: settings.watermark.perRatioSettings || null,
           };
         }
       }

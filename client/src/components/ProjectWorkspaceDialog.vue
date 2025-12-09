@@ -1126,10 +1126,29 @@
         // Apply watermark settings from creator profile
         if (profile.watermark_id) {
           console.log('[ProjectWorkspaceDialog] Applying creator watermark:', profile.watermark_id);
+          
+          // Parse the creator's per-ratio watermark settings
+          let perRatioSettings = null;
+          let defaultPos = { x: 90, y: 10, opacity: 80, scale: 15 };
+          if (profile.watermark_settings) {
+            try {
+              perRatioSettings = JSON.parse(profile.watermark_settings);
+              // Use 16:9 as the default display position
+              defaultPos = perRatioSettings['16:9'] || defaultPos;
+            } catch (e) {
+              console.warn('[ProjectWorkspaceDialog] Failed to parse creator watermark settings:', e);
+            }
+          }
+          
           const newSettings = {
             ...watermarkSettings.value,
             enabled: true,
             watermarkId: profile.watermark_id,
+            positionX: defaultPos.x,
+            positionY: defaultPos.y,
+            opacity: defaultPos.opacity,
+            scale: defaultPos.scale,
+            perRatioSettings: perRatioSettings,
           };
 
           // Wait for next tick to ensure MediaPanel ref is available

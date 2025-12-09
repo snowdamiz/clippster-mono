@@ -2192,15 +2192,28 @@
         if (profile.watermark_id) {
           const watermark = await getWatermarkImage(profile.watermark_id);
           if (watermark) {
+            // Parse the creator's watermark settings from JSON
+            let creatorSettings = { x: 90, y: 10, opacity: 80, scale: 15 };
+            if (profile.watermark_settings) {
+              try {
+                const parsed = JSON.parse(profile.watermark_settings);
+                // Default to 16:9 settings for now (the build system will use the right one based on aspect ratio)
+                creatorSettings = parsed['16:9'] || creatorSettings;
+              } catch (e) {
+                console.warn('[Projects] Failed to parse creator watermark settings:', e);
+              }
+            }
             folderCreatorWatermarkSettings.value = {
               enabled: true,
               watermarkId: profile.watermark_id,
-              positionX: 8,
-              positionY: 92,
-              opacity: 80,
-              scale: 15,
+              positionX: creatorSettings.x,
+              positionY: creatorSettings.y,
+              opacity: creatorSettings.opacity,
+              scale: creatorSettings.scale,
+              // Store the full per-ratio settings for the build system
+              perRatioSettings: profile.watermark_settings ? JSON.parse(profile.watermark_settings) : null,
             };
-            console.log('[Projects] Loaded creator default watermark');
+            console.log('[Projects] Loaded creator default watermark with custom position');
           }
         }
       }

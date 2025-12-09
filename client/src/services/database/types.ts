@@ -396,11 +396,28 @@ export interface WatermarkSettings {
   positionY: number; // 0-100 (percentage from top)
   opacity: number; // 0-100
   scale: number; // 0-100 (percentage of video width)
+  // Optional per-aspect-ratio settings from creator profile
+  perRatioSettings?: CreatorWatermarkSettings | null;
 }
 
 export interface AudioSettings {
   volume: number; // dB gain (-20 to +20)
   normalize: boolean; // enable audio normalization (export only)
+}
+
+export interface CreatorWatermarkPosition {
+  x: number;
+  y: number;
+  opacity: number;
+  scale: number;
+}
+
+// Settings can be null to indicate watermark is disabled for that ratio
+export interface CreatorWatermarkSettings {
+  '16:9': CreatorWatermarkPosition | null;
+  '9:16': CreatorWatermarkPosition | null;
+  '1:1': CreatorWatermarkPosition | null;
+  '4:5': CreatorWatermarkPosition | null;
 }
 
 export interface CreatorProfile {
@@ -411,6 +428,7 @@ export interface CreatorProfile {
   intro_id: string | null;
   outro_id: string | null;
   watermark_id: string | null;
+  watermark_settings: string | null; // JSON string of WatermarkSettings
   created_at: number;
   updated_at: number;
 }

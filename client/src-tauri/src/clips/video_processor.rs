@@ -45,16 +45,73 @@ fn get_watermark_overlay_position(position_x: u32, position_y: u32) -> String {
     format!("x={}:y={}", x_expr, y_expr)
 }
 
-// Helper function to apply watermark to a video file
-async fn apply_watermark_to_video(
+// Helper function to convert AspectRatio to string format (e.g., "16:9")
+fn aspect_ratio_to_string(aspect_ratio: &AspectRatio) -> String {
+    // Convert float ratio to common aspect ratio strings
+    let ratio = aspect_ratio.width / aspect_ratio.height;
+    
+    if (ratio - 16.0/9.0).abs() < 0.01 {
+        "16:9".to_string()
+    } else if (ratio - 9.0/16.0).abs() < 0.01 {
+        "9:16".to_string()
+    } else if (ratio - 1.0).abs() < 0.01 {
+        "1:1".to_string()
+    } else if (ratio - 4.0/5.0).abs() < 0.01 {
+        "4:5".to_string()
+    } else {
+        format!("{}:{}", aspect_ratio.width as u32, aspect_ratio.height as u32)
+    }
+}
+
+// Helper function to get watermark settings for a specific aspect ratio
+// Returns None if watermark is disabled for this aspect ratio
+fn get_watermark_for_aspect_ratio(watermark: &WatermarkSettings, aspect_ratio: Option<&str>) -> Option<(u32, u32, u32, u32)> {
+    // Check if we have per-ratio settings
+    if let Some(per_ratio) = &watermark.per_ratio_settings {
+        if let Some(ratio) = aspect_ratio {
+            // Try to get the settings for this specific aspect ratio
+            let ratio_settings = match ratio {
+                "16:9" => per_ratio.ratio_16_9.as_ref(),
+                "9:16" => per_ratio.ratio_9_16.as_ref(),
+                "1:1" => per_ratio.ratio_1_1.as_ref(),
+                "4:5" => per_ratio.ratio_4_5.as_ref(),
+                _ => None,
+            };
+            
+            if let Some(settings) = ratio_settings {
+                println!("[Rust] Using per-ratio watermark settings for {}: x={}%, y={}%, opacity={}%, scale={}%", 
+                         ratio, settings.x, settings.y, settings.opacity, settings.scale);
+                return Some((settings.x, settings.y, settings.opacity, settings.scale));
+            } else {
+                // Settings are explicitly null for this ratio - watermark disabled
+                println!("[Rust] Watermark disabled for aspect ratio {}", ratio);
+                return None;
+            }
+        }
+    }
+    
+    // Fall back to default watermark settings (no per-ratio settings provided)
+    Some((watermark.position_x, watermark.position_y, watermark.opacity, watermark.scale))
+}
+
+// Helper function to apply watermark to a video file with aspect ratio awareness
+async fn apply_watermark_to_video_with_ratio(
     app: &tauri::AppHandle,
     input_path: &std::path::Path,
     watermark: &WatermarkSettings,
     quality: &str,
+    aspect_ratio: Option<&str>,
 ) -> Result<(), String> {
     if !watermark.enabled {
         return Ok(());
     }
+
+    // Get the appropriate watermark settings for this aspect ratio
+    // Returns None if watermark is disabled for this ratio
+    let Some((pos_x, pos_y, opacity_pct, scale_pct)) = get_watermark_for_aspect_ratio(watermark, aspect_ratio) else {
+        // Watermark is disabled for this aspect ratio
+        return Ok(());
+    };
 
     let shell = app.shell();
     
@@ -62,13 +119,13 @@ async fn apply_watermark_to_video(
     let video_info = get_video_info(app, input_path.to_str().ok_or("Invalid input path")?).await?;
     
     // Calculate watermark width based on scale percentage of video width
-    let wm_width = (video_info.width as f32 * (watermark.scale as f32 / 100.0)) as u32;
+    let wm_width = (video_info.width as f32 * (scale_pct as f32 / 100.0)) as u32;
     
     // Build the position string using X/Y percentages
-    let position = get_watermark_overlay_position(watermark.position_x, watermark.position_y);
+    let position = get_watermark_overlay_position(pos_x, pos_y);
     
     // Calculate opacity (FFmpeg uses 0-1 range)
-    let opacity = watermark.opacity as f32 / 100.0;
+    let opacity = opacity_pct as f32 / 100.0;
     
     // Create temporary output path
     let temp_output = input_path.with_extension("watermarked.mp4");
@@ -86,7 +143,7 @@ async fn apply_watermark_to_video(
         wm_width, opacity, position
     );
     
-    println!("[Rust] Watermark position: x={}%, y={}%", watermark.position_x, watermark.position_y);
+    println!("[Rust] Watermark position: x={}%, y={}%", pos_x, pos_y);
     
     // Build encoder-specific args
     let mut args = vec![
@@ -418,7 +475,8 @@ pub async fn build_single_segment_clip_with_settings(
         // Apply watermark if enabled (after all other processing)
         if let Some(wm) = watermark_settings {
             if wm.enabled {
-                apply_watermark_to_video(app, output_path, wm, quality).await?;
+                let ar_str = aspect_ratio_to_string(aspect_ratio);
+                apply_watermark_to_video_with_ratio(app, output_path, wm, quality, Some(&ar_str)).await?;
             }
         }
 
@@ -512,7 +570,8 @@ pub async fn build_single_segment_clip_with_settings(
     // Apply watermark if enabled (after all other processing)
     if let Some(wm) = watermark_settings {
         if wm.enabled {
-            apply_watermark_to_video(app, output_path, wm, quality).await?;
+            let ar_str = aspect_ratio_to_string(aspect_ratio);
+            apply_watermark_to_video_with_ratio(app, output_path, wm, quality, Some(&ar_str)).await?;
         }
     }
 
@@ -824,7 +883,8 @@ pub async fn build_multi_segment_clip_with_settings(
     // Apply watermark if enabled (after all other processing)
     if let Some(wm) = watermark_settings {
         if wm.enabled {
-            apply_watermark_to_video(app, output_path, wm, quality).await?;
+            let ar_str = aspect_ratio_to_string(aspect_ratio);
+            apply_watermark_to_video_with_ratio(app, output_path, wm, quality, Some(&ar_str)).await?;
         }
     }
 
@@ -1697,7 +1757,7 @@ pub async fn build_clip_with_framing_strategy(
     // Apply watermark if enabled (after all other processing)
     if let Some(wm) = watermark_settings {
         if wm.enabled {
-            apply_watermark_to_video(app, output_path, wm, quality).await?;
+            apply_watermark_to_video_with_ratio(app, output_path, wm, quality, Some(target_aspect_ratio)).await?;
         }
     }
 
@@ -1887,7 +1947,7 @@ pub async fn build_multi_segment_clip_with_framing_strategy(
     // Apply watermark if enabled
     if let Some(wm) = watermark_settings {
         if wm.enabled {
-            apply_watermark_to_video(app, output_path, wm, quality).await?;
+            apply_watermark_to_video_with_ratio(app, output_path, wm, quality, Some(target_aspect_ratio)).await?;
         }
     }
 
