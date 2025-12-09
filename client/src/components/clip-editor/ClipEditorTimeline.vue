@@ -170,7 +170,7 @@
 
                   <!-- Segment label -->
                   <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                    <span class="text-xs text-white/80 font-medium drop-shadow-sm bg-black/20 px-1.5 py-0.5 rounded">
+                    <span class="text-xs text-white font-medium drop-shadow-md bg-black/60 px-1.5 py-0.5 rounded">
                       {{ formatTime(clipStart + segmentLayout.segment.startTime) }} -
                       {{ formatTime(clipStart + segmentLayout.segment.endTime) }}
                     </span>
@@ -229,34 +229,79 @@
                 <span class="truncate max-w-[40px]">{{ track.name }}</span>
               </div>
             </div>
-            <div class="flex-1 h-8 relative" @click="onTrackContentClick">
+            <div
+              :ref="(el) => setSegmentRef(el, 'audio', track.id)"
+              class="flex-1 h-8 relative"
+              @click="onTrackContentClick"
+            >
               <div class="absolute inset-0 bg-[#1a1a1a]/30 rounded-md cursor-pointer"></div>
-              <div
-                :ref="(el) => setSegmentRef(el, 'audio', track.id)"
-                class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
-                :class="getSegmentClasses('audio', track.id)"
-                :style="getSegmentStyle(track.startTime, track.endTime, 'emerald', 'audio', track.id)"
-                @mousedown="(e) => onSegmentMouseDown(e, 'audio', track.id, track)"
-                @click.stop="selectItem('audio', track.id)"
-              >
-                <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm pointer-events-none">
-                  {{ track.name }}
-                </span>
-                <!-- Left resize handle -->
+
+              <!-- Render audio track as visual segments that split at video segment boundaries -->
+              <template v-for="(visualSeg, segIdx) in getAudioVisualSegments(track)" :key="`${track.id}-vis-${segIdx}`">
+                <!-- Audio visual segment -->
                 <div
-                  class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
-                  @mousedown.stop="(e) => onResizeMouseDown(e, 'audio', track.id, 'left', track)"
+                  class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group cursor-pointer"
+                  :class="getSegmentClasses('audio', track.id)"
+                  :style="getAudioVisualSegmentStyle(track, visualSeg)"
+                  @mousedown="(e) => onSegmentMouseDown(e, 'audio', track.id, track)"
+                  @click.stop="selectItem('audio', track.id)"
                 >
-                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                  <!-- Audio track background gradient -->
+                  <div class="absolute inset-0 bg-gradient-to-r from-emerald-900/30 to-teal-900/20"></div>
+
+                  <!-- Waveform canvas for this visual segment -->
+                  <canvas
+                    :ref="(el) => setAudioSegmentCanvasRef(el, track.id, segIdx)"
+                    class="absolute inset-0 w-full h-full pointer-events-none"
+                    style="mix-blend-mode: normal; z-index: 5"
+                  ></canvas>
+
+                  <!-- Track label (only show in first segment) -->
+                  <div
+                    v-if="visualSeg.isFirst"
+                    class="absolute inset-0 flex items-center justify-center pointer-events-none z-10"
+                  >
+                    <span
+                      class="text-xs text-white font-medium truncate drop-shadow-md bg-black/60 px-1.5 py-0.5 rounded"
+                    >
+                      {{ track.name }}
+                    </span>
+                  </div>
+
+                  <!-- Left resize handle (only on first segment) -->
+                  <div
+                    v-if="visualSeg.isFirst"
+                    class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                    @mousedown.stop="(e) => onResizeMouseDown(e, 'audio', track.id, 'left', track)"
+                  >
+                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                  </div>
+                  <!-- Right resize handle (only on last segment) -->
+                  <div
+                    v-if="visualSeg.isLast"
+                    class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                    @mousedown.stop="(e) => onResizeMouseDown(e, 'audio', track.id, 'right', track)"
+                  >
+                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                  </div>
                 </div>
-                <!-- Right resize handle -->
+
+                <!-- Gap indicator between audio visual segments -->
                 <div
-                  class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
-                  @mousedown.stop="(e) => onResizeMouseDown(e, 'audio', track.id, 'right', track)"
+                  v-if="!visualSeg.isLast"
+                  class="absolute top-1 bottom-1 flex items-center justify-center"
+                  :style="{
+                    left: `${visualSeg.leftPercent + visualSeg.widthPercent}%`,
+                    width: `${GAP_PERCENT}%`,
+                  }"
                 >
-                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                  <div
+                    class="w-full h-full bg-orange-500/5 border-x border-dashed border-orange-400/30 flex items-center justify-center"
+                  >
+                    <Scissors :size="12" class="text-orange-400/40" />
+                  </div>
                 </div>
-              </div>
+              </template>
             </div>
           </div>
 
@@ -495,6 +540,9 @@
   const videoTrackContentRef = ref<HTMLElement | null>(null);
   const segmentRefs = ref<Map<string, HTMLElement>>(new Map());
   const waveformCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map());
+  const audioWaveformCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map());
+  const audioSegmentCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map()); // key: `${trackId}-${segmentIndex}`
+  const audioWaveformData = ref<Map<string, { peaks: { min: number; max: number }[]; duration: number }>>(new Map());
   const zoomLevel = ref(1);
 
   // Selection state
@@ -507,6 +555,9 @@
   // Resize state
   const isResizing = ref(false);
   const resizeInfo = ref<ResizeInfo | null>(null);
+
+  // Preview state for optimistic updates (local-only during drag/resize)
+  const dragPreview = ref<{ type: ItemType; id: string; startTime: number; endTime: number } | null>(null);
 
   // Playhead drag state
   const isDraggingPlayhead = ref(false);
@@ -548,11 +599,26 @@
     return existingSegments;
   });
 
-  // Calculate total duration of all segments
+  // Calculate total duration of video segments only
+  const videoSegmentDuration = computed(() => {
+    return sortedTrimSegments.value.reduce((sum, seg) => sum + (seg.endTime - seg.startTime), 0);
+  });
+
+  // Calculate total duration including audio tracks (use the longest)
   const totalDuration = computed(() => {
-    const segmentDuration = sortedTrimSegments.value.reduce((sum, seg) => sum + (seg.endTime - seg.startTime), 0);
-    // Fallback to prop duration if no segments
-    return segmentDuration > 0 ? segmentDuration : props.duration;
+    const segmentDuration = videoSegmentDuration.value;
+
+    // Find the longest audio track
+    const maxAudioDuration = props.audioTracks.reduce((max, track) => {
+      const trackDuration = track.endTime - track.startTime;
+      return Math.max(max, trackDuration);
+    }, 0);
+
+    // Use the max of video segment duration and longest audio track
+    const maxDuration = Math.max(segmentDuration, maxAudioDuration);
+
+    // Fallback to prop duration if nothing else
+    return maxDuration > 0 ? maxDuration : props.duration;
   });
 
   // Calculate segment layouts with gaps
@@ -636,6 +702,92 @@
     return layouts;
   });
 
+  // Calculate visual segments for an audio track based on video segment overlaps
+  interface AudioVisualSegment {
+    videoSegmentIndex: number;
+    audioStartTime: number; // Time within the audio track
+    audioEndTime: number;
+    leftPercent: number;
+    widthPercent: number;
+    isFirst: boolean;
+    isLast: boolean;
+  }
+
+  function getAudioVisualSegments(track: AudioTrack): AudioVisualSegment[] {
+    const segments = sortedTrimSegments.value;
+    if (segments.length === 0) return [];
+
+    // Use preview position during drag/resize
+    const preview = dragPreview.value;
+    const usePreview = preview && preview.type === 'audio' && preview.id === track.id;
+
+    const audioStart = usePreview ? preview.startTime : track.startTime;
+    const audioEnd = usePreview ? preview.endTime : track.endTime;
+    const audioDuration = audioEnd - audioStart;
+
+    if (audioDuration <= 0) return [];
+
+    const visualSegments: AudioVisualSegment[] = [];
+
+    // Calculate cumulative video time to map to timeline position
+    let cumulativeVideoTime = 0;
+    const totalGapPercent = (segments.length - 1) * GAP_PERCENT;
+    const availablePercent = 100 - totalGapPercent;
+    const totalVideoDuration = videoSegmentDuration.value;
+
+    let audioTimeUsed = 0; // Track how much audio time has been "used" across segments
+
+    segments.forEach((segment, index) => {
+      const segmentDuration = segment.endTime - segment.startTime;
+      const segmentStartInTimeline = cumulativeVideoTime;
+      const segmentEndInTimeline = cumulativeVideoTime + segmentDuration;
+
+      // Check if audio overlaps with this video segment (in virtual timeline time)
+      if (audioStart < segmentEndInTimeline && audioEnd > segmentStartInTimeline) {
+        // Calculate the overlap
+        const overlapStart = Math.max(audioStart, segmentStartInTimeline);
+        const overlapEnd = Math.min(audioEnd, segmentEndInTimeline);
+        const overlapDuration = overlapEnd - overlapStart;
+
+        if (overlapDuration > 0) {
+          // Calculate position within this video segment
+          const segmentLayoutIndex = segmentLayouts.value.findIndex((l) => l.segment.id === segment.id);
+          if (segmentLayoutIndex >= 0) {
+            const segmentLayout = segmentLayouts.value[segmentLayoutIndex];
+
+            // Position within the segment
+            const startWithinSegment = (overlapStart - segmentStartInTimeline) / segmentDuration;
+            const endWithinSegment = (overlapEnd - segmentStartInTimeline) / segmentDuration;
+
+            const leftPercent = segmentLayout.startPercent + startWithinSegment * segmentLayout.widthPercent;
+            const widthPercent = (endWithinSegment - startWithinSegment) * segmentLayout.widthPercent;
+
+            visualSegments.push({
+              videoSegmentIndex: index,
+              audioStartTime: audioTimeUsed,
+              audioEndTime: audioTimeUsed + overlapDuration,
+              leftPercent,
+              widthPercent,
+              isFirst: visualSegments.length === 0,
+              isLast: false, // Will be updated after loop
+            });
+
+            audioTimeUsed += overlapDuration;
+          }
+        }
+      }
+
+      cumulativeVideoTime += segmentDuration;
+    });
+
+    // Mark the last segment
+    if (visualSegments.length > 0) {
+      visualSegments[visualSegments.length - 1].isLast = true;
+    }
+
+    return visualSegments;
+  }
+
   // Convert current time to playhead position (0-1)
   const playheadPosition = computed(() => {
     if (totalDuration.value <= 0) return 0;
@@ -706,6 +858,79 @@
     }
   }
 
+  function setAudioWaveformCanvasRef(el: any, trackId: string) {
+    if (el) {
+      audioWaveformCanvasRefs.value.set(trackId, el as HTMLCanvasElement);
+    }
+  }
+
+  function setAudioSegmentCanvasRef(el: any, trackId: string, segmentIndex: number) {
+    const key = `${trackId}-${segmentIndex}`;
+    if (el) {
+      audioSegmentCanvasRefs.value.set(key, el as HTMLCanvasElement);
+    } else {
+      // Clean up ref when element is unmounted
+      audioSegmentCanvasRefs.value.delete(key);
+    }
+  }
+
+  function getAudioVisualSegmentStyle(track: AudioTrack, visualSeg: AudioVisualSegment): Record<string, string> {
+    const colors = colorMap.emerald;
+    const isSelected = selectedItemKey.value === `audio_${track.id}`;
+
+    return {
+      left: `${visualSeg.leftPercent}%`,
+      width: `${Math.max(visualSeg.widthPercent, 0.5)}%`,
+      background: `linear-gradient(to right, ${colors.bg})`,
+      borderColor: isSelected ? '#3b82f6' : colors.border,
+      borderWidth: '1px',
+      borderStyle: 'solid',
+    };
+  }
+
+  function getAudioSegmentStyle(layout: SegmentLayout, trackId: string): Record<string, string> {
+    const colors = colorMap.emerald;
+    const isSelected = selectedItemKey.value === `audio_${trackId}`;
+
+    return {
+      left: `${layout.startPercent}%`,
+      width: `${layout.widthPercent}%`,
+      background: `linear-gradient(to right, ${colors.bg})`,
+      borderColor: isSelected ? '#3b82f6' : colors.border,
+      borderWidth: '1px',
+      borderStyle: 'solid',
+    };
+  }
+
+  function getAudioTrackStyle(track: AudioTrack): Record<string, string> {
+    const colors = colorMap.emerald;
+    const isSelected = selectedItemKey.value === `audio_${track.id}`;
+
+    // Use preview position during drag/resize, otherwise use actual track position
+    const preview = dragPreview.value;
+    const usePreview = preview && preview.type === 'audio' && preview.id === track.id;
+
+    const startTime = usePreview ? preview.startTime : track.startTime;
+    const endTime = usePreview ? preview.endTime : track.endTime;
+
+    // Calculate position based on track's startTime and duration
+    const trackDuration = endTime - startTime;
+    const effectiveDuration = totalDuration.value;
+
+    // Position based on track's startTime, width based on duration
+    const leftPercent = (startTime / effectiveDuration) * 100;
+    const widthPercent = (trackDuration / effectiveDuration) * 100;
+
+    return {
+      left: `${leftPercent}%`,
+      width: `${Math.max(widthPercent, 1)}%`,
+      background: `linear-gradient(to right, ${colors.bg})`,
+      borderColor: isSelected ? '#3b82f6' : colors.border,
+      borderWidth: '1px',
+      borderStyle: 'solid',
+    };
+  }
+
   function selectItem(type: ItemType, id: string) {
     selectedItemKey.value = `${type}_${id}`;
   }
@@ -762,12 +987,19 @@
     const colors = colorMap[color] || colorMap.violet;
     const isSelected = selectedItemKey.value === `${type}_${id}`;
 
+    // Use preview position during drag/resize
+    const preview = dragPreview.value;
+    const usePreview = preview && preview.type === type && preview.id === id;
+
+    const actualStartTime = usePreview ? preview.startTime : startTime;
+    const actualEndTime = usePreview ? preview.endTime : endTime;
+
     // For non-trim segments, use the total duration for positioning
     const effectiveDuration = totalDuration.value || props.duration;
 
     return {
-      left: `${(startTime / effectiveDuration) * 100}%`,
-      width: `${Math.max(((endTime - startTime) / effectiveDuration) * 100, 1)}%`,
+      left: `${(actualStartTime / effectiveDuration) * 100}%`,
+      width: `${Math.max(((actualEndTime - actualStartTime) / effectiveDuration) * 100, 1)}%`,
       background: `linear-gradient(to right, ${colors.bg})`,
       borderColor: isSelected ? '#3b82f6' : colors.border,
       borderWidth: '1px',
@@ -932,28 +1164,52 @@
   function onDragMove(e: MouseEvent) {
     if (!isDragging.value || !dragInfo.value) return;
 
+    // Use totalDuration for audio tracks, props.duration for others
+    const effectiveDuration = dragInfo.value.type === 'audio' ? totalDuration.value : props.duration;
+
     const deltaX = e.clientX - dragInfo.value.startX;
-    const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * props.duration;
+    const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * effectiveDuration;
 
     const itemDuration = dragInfo.value.originalEndTime - dragInfo.value.originalStartTime;
     let newStartTime = dragInfo.value.originalStartTime + deltaTime;
     let newEndTime = newStartTime + itemDuration;
 
+    // Constrain to timeline bounds
     if (newStartTime < 0) {
       newStartTime = 0;
       newEndTime = itemDuration;
     }
-    if (newEndTime > props.duration) {
-      newEndTime = props.duration;
-      newStartTime = props.duration - itemDuration;
+
+    // For audio tracks, allow positioning anywhere (even beyond video segments)
+    // For other items, constrain to video duration
+    const maxDuration =
+      dragInfo.value.type === 'audio'
+        ? Math.max(effectiveDuration, newEndTime) // Allow extending timeline
+        : props.duration;
+
+    if (newEndTime > maxDuration && dragInfo.value.type !== 'audio') {
+      newEndTime = maxDuration;
+      newStartTime = maxDuration - itemDuration;
     }
 
-    emitUpdate(dragInfo.value.type, dragInfo.value.id, newStartTime, newEndTime);
+    // Update local preview state (no database call)
+    dragPreview.value = {
+      type: dragInfo.value.type,
+      id: dragInfo.value.id,
+      startTime: newStartTime,
+      endTime: newEndTime,
+    };
   }
 
   function onDragEnd() {
+    // Commit the final position to database
+    if (dragPreview.value) {
+      emitUpdate(dragPreview.value.type, dragPreview.value.id, dragPreview.value.startTime, dragPreview.value.endTime);
+    }
+
     isDragging.value = false;
     dragInfo.value = null;
+    dragPreview.value = null;
 
     document.removeEventListener('mousemove', onDragMove);
     document.removeEventListener('mouseup', onDragEnd);
@@ -986,8 +1242,11 @@
   function onResizeMove(e: MouseEvent) {
     if (!isResizing.value || !resizeInfo.value) return;
 
+    // Use totalDuration for audio tracks, props.duration for others
+    const effectiveDuration = resizeInfo.value.type === 'audio' ? totalDuration.value : props.duration;
+
     const deltaX = e.clientX - resizeInfo.value.startX;
-    const deltaTime = (deltaX / resizeInfo.value.trackContentWidth) * props.duration;
+    const deltaTime = (deltaX / resizeInfo.value.trackContentWidth) * effectiveDuration;
 
     let newStartTime = resizeInfo.value.originalStartTime;
     let newEndTime = resizeInfo.value.originalEndTime;
@@ -1000,18 +1259,32 @@
         newStartTime = newEndTime - minDuration;
       }
     } else {
-      newEndTime = Math.min(props.duration, resizeInfo.value.originalEndTime + deltaTime);
+      // For audio tracks, don't constrain to video duration
+      const maxEnd = resizeInfo.value.type === 'audio' ? Infinity : props.duration;
+      newEndTime = Math.min(maxEnd, resizeInfo.value.originalEndTime + deltaTime);
       if (newEndTime - newStartTime < minDuration) {
         newEndTime = newStartTime + minDuration;
       }
     }
 
-    emitUpdate(resizeInfo.value.type, resizeInfo.value.id, newStartTime, newEndTime);
+    // Update local preview state (no database call)
+    dragPreview.value = {
+      type: resizeInfo.value.type,
+      id: resizeInfo.value.id,
+      startTime: newStartTime,
+      endTime: newEndTime,
+    };
   }
 
   function onResizeEnd() {
+    // Commit the final position to database
+    if (dragPreview.value) {
+      emitUpdate(dragPreview.value.type, dragPreview.value.id, dragPreview.value.startTime, dragPreview.value.endTime);
+    }
+
     isResizing.value = false;
     resizeInfo.value = null;
+    dragPreview.value = null;
 
     document.removeEventListener('mousemove', onResizeMove);
     document.removeEventListener('mouseup', onResizeEnd);
@@ -1237,13 +1510,287 @@
     });
   }
 
+  // Audio track waveform functions
+  async function loadAudioWaveform(trackId: string, audioSrc: string): Promise<void> {
+    // Skip if already loaded
+    if (audioWaveformData.value.has(trackId)) return;
+
+    // Check URL type
+    const isDataUrl = audioSrc.startsWith('data:');
+    const isBlobUrl = audioSrc.startsWith('blob:');
+
+    // For blob URLs (legacy/invalid), use simulated waveform
+    if (isBlobUrl) {
+      // Blob URLs from previous sessions are invalid - use simulated waveform
+      generateSimulatedAudioWaveform(trackId);
+      return;
+    }
+
+    try {
+      let arrayBuffer: ArrayBuffer;
+
+      if (isDataUrl) {
+        // Convert data URL to ArrayBuffer
+        arrayBuffer = dataUrlToArrayBuffer(audioSrc);
+      } else {
+        // Fetch from URL
+        const response = await fetch(audioSrc);
+        arrayBuffer = await response.arrayBuffer();
+      }
+
+      const audioContext = new AudioContext();
+
+      // Decode the audio
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+      // Get raw audio data (use first channel)
+      const channelData = audioBuffer.getChannelData(0);
+      const duration = audioBuffer.duration;
+
+      // Generate peaks - aim for about 1000 peaks
+      const targetPeaks = 1000;
+      const samplesPerPeak = Math.floor(channelData.length / targetPeaks);
+      const peaks: { min: number; max: number }[] = [];
+
+      for (let i = 0; i < targetPeaks; i++) {
+        const start = i * samplesPerPeak;
+        const end = Math.min(start + samplesPerPeak, channelData.length);
+
+        let min = 0;
+        let max = 0;
+
+        for (let j = start; j < end; j++) {
+          const value = channelData[j];
+          if (value < min) min = value;
+          if (value > max) max = value;
+        }
+
+        peaks.push({ min, max });
+      }
+
+      audioWaveformData.value.set(trackId, { peaks, duration });
+      audioContext.close();
+
+      // Render the waveform
+      renderAudioWaveform(trackId);
+    } catch (err) {
+      // Silently fall back to simulated waveform
+      generateSimulatedAudioWaveform(trackId);
+    }
+  }
+
+  // Convert a data URL to ArrayBuffer
+  function dataUrlToArrayBuffer(dataUrl: string): ArrayBuffer {
+    // Extract base64 data from data URL
+    const base64 = dataUrl.split(',')[1];
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes.buffer;
+  }
+
+  function generateSimulatedAudioWaveform(trackId: string): void {
+    const track = props.audioTracks.find((t) => t.id === trackId);
+    if (!track) return;
+
+    const duration = track.endTime - track.startTime;
+    const peakCount = Math.max(100, Math.min(1000, Math.floor(duration * 50)));
+    const peaks: { min: number; max: number }[] = [];
+
+    for (let i = 0; i < peakCount; i++) {
+      const t = i / peakCount;
+      const baseAmplitude = 0.3 + Math.random() * 0.3;
+      const variation = Math.sin(t * Math.PI * 6) * 0.15 + Math.random() * 0.1;
+
+      peaks.push({
+        min: -(baseAmplitude + Math.abs(variation)),
+        max: baseAmplitude + Math.abs(variation),
+      });
+    }
+
+    audioWaveformData.value.set(trackId, { peaks, duration });
+    renderAudioWaveform(trackId);
+  }
+
+  function renderAudioWaveform(trackId: string): void {
+    const data = audioWaveformData.value.get(trackId);
+    const track = props.audioTracks.find((t) => t.id === trackId);
+
+    if (!data || !track) return;
+
+    // Get visual segments for this track
+    const visualSegments = getAudioVisualSegments(track);
+
+    // Render each visual segment
+    visualSegments.forEach((visualSeg, segIdx) => {
+      renderAudioVisualSegmentWaveform(trackId, segIdx, visualSeg, data, track);
+    });
+  }
+
+  function renderAudioVisualSegmentWaveform(
+    trackId: string,
+    segIdx: number,
+    visualSeg: AudioVisualSegment,
+    data: { peaks: { min: number; max: number }[]; duration: number },
+    track: AudioTrack
+  ): void {
+    const canvas = audioSegmentCanvasRefs.value.get(`${trackId}-${segIdx}`);
+    if (!canvas) return;
+
+    try {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      ctx.scale(dpr, dpr);
+
+      const { peaks } = data;
+      const width = rect.width;
+      const height = rect.height;
+      const centerY = height / 2;
+      const maxBarHeight = height * 0.8;
+
+      // Calculate which portion of the waveform to show for this visual segment
+      const audioDuration = track.endTime - track.startTime;
+      const segmentStartRatio = visualSeg.audioStartTime / audioDuration;
+      const segmentEndRatio = visualSeg.audioEndTime / audioDuration;
+
+      const startPeakIndex = Math.floor(segmentStartRatio * peaks.length);
+      const endPeakIndex = Math.ceil(segmentEndRatio * peaks.length);
+      const segmentPeaks = peaks.slice(startPeakIndex, Math.max(startPeakIndex + 1, endPeakIndex));
+
+      if (segmentPeaks.length === 0) return;
+
+      // Normalize peaks
+      let maxPeakValue = 0;
+      segmentPeaks.forEach((peak) => {
+        if (Math.abs(peak.max) > maxPeakValue) maxPeakValue = Math.abs(peak.max);
+        if (Math.abs(peak.min) > maxPeakValue) maxPeakValue = Math.abs(peak.min);
+      });
+      const normalizer = maxPeakValue > 0 ? maxPeakValue : 1;
+
+      // Calculate bar dimensions
+      const numPeaks = segmentPeaks.length;
+      let displayPeaks = segmentPeaks;
+      let barWidth: number;
+      let barSpacing: number;
+
+      if (numPeaks > width) {
+        const step = numPeaks / width;
+        displayPeaks = [];
+        for (let i = 0; i < width; i++) {
+          const idx = Math.floor(i * step);
+          if (idx < numPeaks) {
+            displayPeaks.push(segmentPeaks[idx]);
+          }
+        }
+        barWidth = 1;
+        barSpacing = 0;
+      } else {
+        barWidth = 2;
+        const totalBarSpace = numPeaks * barWidth;
+        const remainingSpace = width - totalBarSpace;
+        barSpacing = numPeaks > 1 ? remainingSpace / (numPeaks - 1) : 0;
+        if (barSpacing > barWidth * 2) {
+          const totalWidth = width / numPeaks;
+          barWidth = Math.floor(totalWidth * 0.7);
+          barSpacing = totalWidth - barWidth;
+        }
+      }
+
+      const totalBarWidth = barWidth + barSpacing;
+
+      // Calculate playhead position for this segment
+      let accumulatedAudioTime = 0;
+      const currentVideoTime = props.currentTime;
+
+      for (const segment of sortedTrimSegments.value) {
+        if (currentVideoTime < segment.startTime) {
+          break;
+        } else if (currentVideoTime <= segment.endTime) {
+          accumulatedAudioTime += currentVideoTime - segment.startTime;
+          break;
+        } else {
+          accumulatedAudioTime += segment.endTime - segment.startTime;
+        }
+      }
+
+      // Calculate playhead position within this visual segment
+      const segmentDuration = visualSeg.audioEndTime - visualSeg.audioStartTime;
+      const playheadInSegment = accumulatedAudioTime - visualSeg.audioStartTime;
+      const playheadRatio = Math.max(0, Math.min(1, playheadInSegment / segmentDuration));
+      const playheadPixel = playheadRatio * width;
+
+      ctx.clearRect(0, 0, width, height);
+
+      displayPeaks.forEach((peak, index) => {
+        const x = index * totalBarWidth;
+        if (x >= width) return;
+
+        const barCenter = x + barWidth / 2;
+        const isBeforePlayhead = barCenter < playheadPixel;
+        const color = isBeforePlayhead ? '#e4e4e7' : '#34d399'; // Gray for played, emerald for remaining
+
+        ctx.fillStyle = color;
+
+        const positiveHeight = Math.abs(peak.max / normalizer) * maxBarHeight;
+        const negativeHeight = Math.abs(peak.min / normalizer) * maxBarHeight;
+        const actualBarWidth = Math.min(barWidth, width - x);
+
+        if (positiveHeight > 0 && actualBarWidth > 0) {
+          ctx.fillRect(x, centerY - positiveHeight, actualBarWidth, positiveHeight);
+        }
+        if (negativeHeight > 0 && actualBarWidth > 0) {
+          ctx.fillRect(x, centerY, actualBarWidth, negativeHeight);
+        }
+      });
+    } catch (error) {
+      console.error('[ClipEditorTimeline] Error rendering audio segment waveform:', error);
+    }
+  }
+
+  function renderAllAudioWaveforms(): void {
+    props.audioTracks.forEach((track) => {
+      renderAudioWaveform(track.id);
+    });
+  }
+
+  async function loadAllAudioWaveforms(): Promise<void> {
+    for (const track of props.audioTracks) {
+      if (track.filePath) {
+        await loadAudioWaveform(track.id, track.filePath);
+      }
+    }
+  }
+
   // Setup resize observer for waveform canvases
   function setupResizeObserver() {
     resizeObserver = new ResizeObserver(() => {
       renderAllWaveforms();
+      renderAllAudioWaveforms();
     });
 
     waveformCanvasRefs.value.forEach((canvas) => {
+      if (canvas && resizeObserver) {
+        resizeObserver.observe(canvas);
+      }
+    });
+
+    audioWaveformCanvasRefs.value.forEach((canvas) => {
+      if (canvas && resizeObserver) {
+        resizeObserver.observe(canvas);
+      }
+    });
+
+    audioSegmentCanvasRefs.value.forEach((canvas) => {
       if (canvas && resizeObserver) {
         resizeObserver.observe(canvas);
       }
@@ -1281,13 +1828,62 @@
     { immediate: true }
   );
 
+  // Watch for audio track changes
+  watch(
+    () => props.audioTracks,
+    async (newTracks) => {
+      // Load waveforms for new tracks
+      for (const track of newTracks) {
+        if (track.filePath && !audioWaveformData.value.has(track.id)) {
+          await loadAudioWaveform(track.id, track.filePath);
+        }
+      }
+
+      // Clean up data for removed tracks
+      const trackIds = new Set(newTracks.map((t) => t.id));
+      audioWaveformData.value.forEach((_, id) => {
+        if (!trackIds.has(id)) {
+          audioWaveformData.value.delete(id);
+          audioWaveformCanvasRefs.value.delete(id);
+        }
+      });
+    },
+    { deep: true, immediate: true }
+  );
+
+  // Watch for current time changes to update audio waveforms
+  watch(
+    () => props.currentTime,
+    () => {
+      nextTick(() => {
+        renderAllAudioWaveforms();
+      });
+    }
+  );
+
+  // Watch for drag preview changes to re-render audio waveforms when segments split/merge
+  watch(
+    dragPreview,
+    () => {
+      // Use nextTick + requestAnimationFrame to ensure canvas refs are set up after DOM update
+      nextTick(() => {
+        requestAnimationFrame(() => {
+          renderAllAudioWaveforms();
+        });
+      });
+    },
+    { deep: true }
+  );
+
   // Lifecycle
   onMounted(() => {
-    nextTick(() => {
+    nextTick(async () => {
       setupResizeObserver();
       if (props.videoSrc) {
         loadWaveformFromVideo(props.videoSrc);
       }
+      // Load audio waveforms for existing tracks
+      await loadAllAudioWaveforms();
     });
   });
 

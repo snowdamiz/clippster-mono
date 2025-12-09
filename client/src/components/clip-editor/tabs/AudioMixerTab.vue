@@ -24,8 +24,11 @@
           />
         </button>
       </div>
-      <div class="flex items-center gap-3">
-        <span class="text-xs text-white/50 w-8">{{ Math.round(originalVolume * 100) }}%</span>
+
+      <!-- Volume Slider -->
+      <div class="flex items-center gap-3 mb-3">
+        <span class="text-xs text-white/50 w-12">Volume</span>
+        <span class="text-xs text-white/50 w-10 text-right">{{ Math.round(originalVolume * 100) }}%</span>
         <input
           type="range"
           min="0"
@@ -33,6 +36,21 @@
           step="0.01"
           :value="originalVolume"
           @input="onOriginalVolumeChange"
+          class="flex-1 accent-violet-500"
+        />
+      </div>
+
+      <!-- dB Slider -->
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-white/50 w-12">Gain</span>
+        <span class="text-xs text-white/50 w-10 text-right font-mono">{{ formatDb(originalDb) }}</span>
+        <input
+          type="range"
+          min="-20"
+          max="20"
+          step="0.5"
+          :value="originalDb"
+          @input="onOriginalDbChange"
           class="flex-1 accent-violet-500"
         />
       </div>
@@ -87,9 +105,10 @@
           </div>
         </div>
 
-        <!-- Volume -->
-        <div class="flex items-center gap-3 mb-3">
-          <span class="text-xs text-white/50 w-8">{{ Math.round(track.volume * 100) }}%</span>
+        <!-- Volume Slider -->
+        <div class="flex items-center gap-3 mb-2">
+          <span class="text-xs text-white/50 w-12">Volume</span>
+          <span class="text-xs text-white/50 w-10 text-right">{{ Math.round(track.volume * 100) }}%</span>
           <input
             type="range"
             min="0"
@@ -97,6 +116,21 @@
             step="0.01"
             :value="track.volume"
             @input="(e) => updateTrackVolume(track, e)"
+            class="flex-1 accent-emerald-500"
+          />
+        </div>
+
+        <!-- dB Slider -->
+        <div class="flex items-center gap-3 mb-3">
+          <span class="text-xs text-white/50 w-12">Gain</span>
+          <span class="text-xs text-white/50 w-10 text-right font-mono">{{ formatDb(getTrackDb(track.id)) }}</span>
+          <input
+            type="range"
+            min="-20"
+            max="20"
+            step="0.5"
+            :value="getTrackDb(track.id)"
+            @input="(e) => updateTrackDb(track, e)"
             class="flex-1 accent-emerald-500"
           />
         </div>
@@ -143,24 +177,40 @@
 </template>
 
 <script setup lang="ts">
-  import { ref } from 'vue';
+  import { ref, watch } from 'vue';
   import { Volume2, VolumeX, Music, Plus, Headphones, Trash2 } from 'lucide-vue-next';
   import type { AudioTrack } from '@/types';
 
   const props = defineProps<{
     audioTracks: AudioTrack[];
     originalVolume: number;
+    originalDb: number;
+    trackDbValues: Record<string, number>;
   }>();
 
   const emit = defineEmits<{
-    (e: 'addTrack', filePath: string, name: string): void;
+    (e: 'addTrack', filePath: string, name: string, duration: number): void;
     (e: 'updateTrack', trackId: string, updates: Partial<AudioTrack>): void;
     (e: 'deleteTrack', trackId: string): void;
     (e: 'updateOriginalVolume', volume: number): void;
+    (e: 'updateOriginalDb', db: number): void;
+    (e: 'updateTrackDb', trackId: string, db: number): void;
   }>();
 
   const fileInputRef = ref<HTMLInputElement | null>(null);
   const isOriginalMuted = ref(false);
+  const previousVolume = ref(props.originalVolume || 1);
+
+  // Format dB value for display
+  function formatDb(db: number): string {
+    if (db === 0) return '0 dB';
+    return `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`;
+  }
+
+  // Get dB value for a track
+  function getTrackDb(trackId: string): number {
+    return props.trackDbValues[trackId] ?? 0;
+  }
 
   function handleAddTrack() {
     fileInputRef.value?.click();
@@ -170,16 +220,49 @@
     const target = e.target as HTMLInputElement;
     const file = target.files?.[0];
     if (file) {
-      // In a real implementation, we'd upload the file and get a path
-      // For now, we'll use the file name as a placeholder
-      emit('addTrack', file.name, file.name.replace(/\.[^/.]+$/, ''));
+      // Check file size (warn if > 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        console.warn('[AudioMixerTab] Large audio file selected:', (file.size / 1024 / 1024).toFixed(2), 'MB');
+      }
+
+      // First, get the audio duration using a temporary Audio element
+      const tempUrl = URL.createObjectURL(file);
+      const audio = new Audio(tempUrl);
+
+      audio.onloadedmetadata = () => {
+        const duration = audio.duration;
+        URL.revokeObjectURL(tempUrl); // Clean up temp URL
+
+        // Read file as data URL (base64) so it persists in the database
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          emit('addTrack', dataUrl, file.name.replace(/\.[^/.]+$/, ''), duration);
+        };
+        reader.onerror = () => {
+          console.error('[AudioMixerTab] Error reading audio file');
+        };
+        reader.readAsDataURL(file);
+      };
+
+      audio.onerror = () => {
+        URL.revokeObjectURL(tempUrl);
+        console.error('[AudioMixerTab] Error loading audio file');
+      };
+
       target.value = '';
     }
   }
 
   function toggleOriginalMute() {
-    isOriginalMuted.value = !isOriginalMuted.value;
-    emit('updateOriginalVolume', isOriginalMuted.value ? 0 : props.originalVolume);
+    if (!isOriginalMuted.value) {
+      previousVolume.value = props.originalVolume || 1;
+      isOriginalMuted.value = true;
+      emit('updateOriginalVolume', 0);
+    } else {
+      isOriginalMuted.value = false;
+      emit('updateOriginalVolume', previousVolume.value);
+    }
   }
 
   function onOriginalVolumeChange(e: Event) {
@@ -188,7 +271,14 @@
     emit('updateOriginalVolume', volume);
     if (volume > 0) {
       isOriginalMuted.value = false;
+      previousVolume.value = volume;
     }
+  }
+
+  function onOriginalDbChange(e: Event) {
+    const target = e.target as HTMLInputElement;
+    const db = parseFloat(target.value);
+    emit('updateOriginalDb', db);
   }
 
   function toggleTrackMute(track: AudioTrack) {
@@ -204,6 +294,12 @@
     emit('updateTrack', track.id, { volume: parseFloat(target.value) });
   }
 
+  function updateTrackDb(track: AudioTrack, e: Event) {
+    const target = e.target as HTMLInputElement;
+    const db = parseFloat(target.value);
+    emit('updateTrackDb', track.id, db);
+  }
+
   function updateTrackFadeIn(track: AudioTrack, e: Event) {
     const target = e.target as HTMLInputElement;
     emit('updateTrack', track.id, { fadeIn: parseFloat(target.value) });
@@ -213,4 +309,14 @@
     const target = e.target as HTMLInputElement;
     emit('updateTrack', track.id, { fadeOut: parseFloat(target.value) });
   }
+
+  // Watch for external volume changes
+  watch(
+    () => props.originalVolume,
+    (newVolume) => {
+      if (newVolume > 0) {
+        isOriginalMuted.value = false;
+      }
+    }
+  );
 </script>

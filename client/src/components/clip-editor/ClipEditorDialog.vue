@@ -80,10 +80,14 @@
                   v-if="activeTab === 'audio'"
                   :audio-tracks="audioTracks"
                   :original-volume="originalVolume"
-                  @add-track="addAudioTrack"
+                  :original-db="originalDb"
+                  :track-db-values="trackDbValues"
+                  @add-track="(filePath, name, duration) => addAudioTrack(filePath, name, duration)"
                   @update-track="updateAudioTrackLocal"
                   @delete-track="deleteAudioTrackLocal"
                   @update-original-volume="updateOriginalVolume"
+                  @update-original-db="updateOriginalDb"
+                  @update-track-db="updateTrackDb"
                 />
 
                 <FiltersTab
@@ -218,9 +222,25 @@
   const effects = ref<Effect[]>([]);
   const filterSettings = ref<FilterSettings | null>(null);
   const originalVolume = ref(1);
+  const originalDb = ref(0);
+  const trackDbValues = ref<Record<string, number>>({});
+
+  // Audio playback elements
+  const audioElements = ref<Map<string, HTMLAudioElement>>(new Map());
+  const audioContext = ref<AudioContext | null>(null);
+  const gainNodes = ref<Map<string, GainNode>>(new Map());
 
   // Computed
   const clipDuration = computed(() => props.clipEndTime - props.clipStartTime);
+
+  // Calculate total duration of all segments combined
+  const totalSegmentDuration = computed(() => {
+    const segments = trimSegments.value.filter((s) => !s.isDeleted);
+    if (segments.length === 0) {
+      return clipDuration.value;
+    }
+    return segments.reduce((sum, seg) => sum + (seg.endTime - seg.startTime), 0);
+  });
 
   // Convert absolute time to relative time for the timeline (0 to clipDuration)
   const relativePreviewTime = computed(() => {
@@ -246,6 +266,9 @@
 
   // Methods
   function close() {
+    // Stop all audio playback
+    isPlaying.value = false;
+    audioElements.value.forEach((audio) => audio.pause());
     emit('update:modelValue', false);
   }
 
@@ -259,14 +282,26 @@
 
   function onPreviewTimeUpdate(time: number) {
     previewTime.value = time;
+    // Sync audio tracks with video
+    if (isPlaying.value) {
+      syncAudioWithVideo();
+    }
   }
 
   function togglePlay() {
     if (videoElement.value) {
       if (isPlaying.value) {
         videoElement.value.pause();
+        // Pause all audio tracks
+        audioElements.value.forEach((audio) => audio.pause());
       } else {
         videoElement.value.play();
+        // Resume audio context if suspended
+        if (audioContext.value?.state === 'suspended') {
+          audioContext.value.resume();
+        }
+        // Start audio tracks playback
+        syncAudioWithVideo();
       }
       isPlaying.value = !isPlaying.value;
     }
@@ -290,21 +325,24 @@
   }
 
   // Audio operations
-  async function addAudioTrack(filePath: string, name: string) {
+  async function addAudioTrack(filePath: string, name: string, duration: number) {
     if (!clipEditId.value) return;
+
+    // Use the actual audio file duration for the track end time
+    const trackEndTime = duration;
 
     const track = await createAudioTrack(clipEditId.value, {
       file_path: filePath,
       name,
       start_time: 0,
-      end_time: clipDuration.value,
+      end_time: trackEndTime,
       volume: 1,
       fade_in: 0,
       fade_out: 0,
       track_order: audioTracks.value.length,
     });
 
-    audioTracks.value.push({
+    const newTrack: AudioTrack = {
       id: track.id,
       filePath: track.file_path,
       name: track.name,
@@ -316,7 +354,132 @@
       trackOrder: track.track_order,
       isMuted: !!track.is_muted,
       isSolo: !!track.is_solo,
+    };
+
+    audioTracks.value.push(newTrack);
+
+    // Initialize dB value for this track
+    trackDbValues.value[track.id] = 0;
+
+    // Set up audio element for playback
+    setupAudioElement(newTrack);
+  }
+
+  // Set up audio element for a track
+  function setupAudioElement(track: AudioTrack) {
+    // Initialize audio context if not already
+    if (!audioContext.value) {
+      audioContext.value = new AudioContext();
+    }
+
+    const audio = new Audio(track.filePath);
+    audio.loop = true; // Loop the audio track
+    audio.preload = 'auto';
+
+    // Create Web Audio nodes for gain control
+    const source = audioContext.value.createMediaElementSource(audio);
+    const gainNode = audioContext.value.createGain();
+
+    // Apply initial volume and dB gain
+    const dbValue = trackDbValues.value[track.id] ?? 0;
+    const linearGain = Math.pow(10, dbValue / 20);
+    gainNode.gain.value = track.volume * linearGain;
+
+    source.connect(gainNode);
+    gainNode.connect(audioContext.value.destination);
+
+    audioElements.value.set(track.id, audio);
+    gainNodes.value.set(track.id, gainNode);
+  }
+
+  // Update audio element gain
+  function updateAudioGain(trackId: string) {
+    const gainNode = gainNodes.value.get(trackId);
+    const track = audioTracks.value.find((t) => t.id === trackId);
+    if (!gainNode || !track) return;
+
+    const dbValue = trackDbValues.value[trackId] ?? 0;
+    const linearGain = Math.pow(10, dbValue / 20);
+    gainNode.gain.value = track.isMuted ? 0 : track.volume * linearGain;
+  }
+
+  // Sync audio tracks with video playback
+  function syncAudioWithVideo() {
+    if (!videoElement.value) return;
+
+    const videoTime = videoElement.value.currentTime;
+    const relativeTime = videoTime - props.clipStartTime;
+
+    audioTracks.value.forEach((track) => {
+      const audio = audioElements.value.get(track.id);
+      if (!audio) return;
+
+      // Check if this track should be playing at current time
+      const shouldPlay =
+        relativeTime >= track.startTime && relativeTime <= track.endTime && isPlaying.value && !track.isMuted;
+
+      // Calculate the audio position within its range
+      const audioTime = relativeTime - track.startTime;
+
+      if (shouldPlay) {
+        // Sync audio time if it's drifted too far
+        if (Math.abs(audio.currentTime - audioTime) > 0.1) {
+          audio.currentTime = audioTime % audio.duration || 0;
+        }
+
+        if (audio.paused) {
+          audioContext.value?.resume();
+          audio.play().catch(() => {});
+        }
+
+        // Apply fade in/out
+        applyFades(track, relativeTime);
+      } else {
+        if (!audio.paused) {
+          audio.pause();
+        }
+      }
     });
+  }
+
+  // Apply fade in/out effects
+  function applyFades(track: AudioTrack, currentTime: number) {
+    const gainNode = gainNodes.value.get(track.id);
+    if (!gainNode) return;
+
+    const dbValue = trackDbValues.value[track.id] ?? 0;
+    const baseLinearGain = Math.pow(10, dbValue / 20);
+    let fadeMultiplier = 1;
+
+    const timeInTrack = currentTime - track.startTime;
+    const timeFromEnd = track.endTime - currentTime;
+
+    // Fade in
+    if (track.fadeIn > 0 && timeInTrack < track.fadeIn) {
+      fadeMultiplier = timeInTrack / track.fadeIn;
+    }
+
+    // Fade out
+    if (track.fadeOut > 0 && timeFromEnd < track.fadeOut) {
+      fadeMultiplier = Math.min(fadeMultiplier, timeFromEnd / track.fadeOut);
+    }
+
+    gainNode.gain.value = track.volume * baseLinearGain * Math.max(0, fadeMultiplier);
+  }
+
+  // Clean up audio elements
+  function cleanupAudioElements() {
+    audioElements.value.forEach((audio, trackId) => {
+      audio.pause();
+      audio.src = '';
+    });
+    audioElements.value.clear();
+    gainNodes.value.clear();
+
+    if (audioContext.value) {
+      audioContext.value.close();
+      audioContext.value = null;
+    }
   }
 
   async function updateAudioTrackLocal(trackId: string, updates: Partial<AudioTrack>) {
@@ -335,16 +498,51 @@
     const track = audioTracks.value.find((t) => t.id === trackId);
     if (track) {
       Object.assign(track, updates);
+
+      // Update audio gain if volume or mute changed
+      if (updates.volume !== undefined || updates.isMuted !== undefined) {
+        updateAudioGain(trackId);
+      }
     }
   }
 
   async function deleteAudioTrackLocal(trackId: string) {
     await deleteAudioTrack(trackId);
+
+    // Clean up audio element
+    const audio = audioElements.value.get(trackId);
+    if (audio) {
+      audio.pause();
+      audio.src = '';
+      audioElements.value.delete(trackId);
+    }
+    gainNodes.value.delete(trackId);
+    delete trackDbValues.value[trackId];
+
     audioTracks.value = audioTracks.value.filter((t) => t.id !== trackId);
   }
 
   function updateOriginalVolume(volume: number) {
     originalVolume.value = volume;
+    // Apply to video element
+    if (videoElement.value) {
+      const dbLinearGain = Math.pow(10, originalDb.value / 20);
+      videoElement.value.volume = Math.min(1, volume * dbLinearGain);
+    }
+  }
+
+  function updateOriginalDb(db: number) {
+    originalDb.value = db;
+    // Apply to video element
+    if (videoElement.value) {
+      const dbLinearGain = Math.pow(10, db / 20);
+      videoElement.value.volume = Math.min(1, originalVolume.value * dbLinearGain);
+    }
+  }
+
+  function updateTrackDb(trackId: string, db: number) {
+    trackDbValues.value[trackId] = db;
+    updateAudioGain(trackId);
   }
 
   // Filter operations
@@ -503,6 +701,8 @@
       },
       filter: filterSettings.value,
       originalVolume: originalVolume.value,
+      originalDb: originalDb.value,
+      trackDbValues: trackDbValues.value,
     });
 
     emit('save', props.clipId);
@@ -537,6 +737,12 @@
       }
       if (editData.originalVolume !== undefined) {
         originalVolume.value = editData.originalVolume;
+      }
+      if (editData.originalDb !== undefined) {
+        originalDb.value = editData.originalDb;
+      }
+      if (editData.trackDbValues) {
+        trackDbValues.value = editData.trackDbValues;
       }
 
       audioTracks.value = fullEdit.audioTracks.map((t) => ({
@@ -616,6 +822,23 @@
         await loadEditData();
         // Initialize to clip start time (absolute time)
         previewTime.value = props.clipStartTime;
+
+        // Set up audio elements for existing tracks
+        audioTracks.value.forEach((track) => {
+          if (!audioElements.value.has(track.id)) {
+            setupAudioElement(track);
+          }
+        });
+
+        // Apply initial volume to video
+        if (videoElement.value) {
+          const dbLinearGain = Math.pow(10, originalDb.value / 20);
+          videoElement.value.volume = Math.min(1, originalVolume.value * dbLinearGain);
+        }
+      } else if (!isOpen) {
+        // Clean up when dialog closes
+        cleanupAudioElements();
+        isPlaying.value = false;
       }
     }
   );
@@ -626,6 +849,7 @@
 
   onUnmounted(() => {
     document.removeEventListener('keydown', handleKeyDown);
+    cleanupAudioElements();
   });
 </script>
 
