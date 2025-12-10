@@ -18,11 +18,13 @@ const VIDEO_QUALITY_HIGH = 2;
 // Audio-Video Sync Configuration
 // The sync is now PTS-based (presentation timestamp) for both audio and video.
 //
-// AUDIO_ADVANCE_MS: Manual offset to fix audio being behind video.
-// Positive value = advance audio (audio plays earlier) - fixes "audio behind" issues
-// Adjust this value if audio is consistently behind across all streams.
-// Typical values: 100-300ms
-const AUDIO_ADVANCE_MS = 210; // Advance audio by 200ms to fix sync
+// AUDIO_ADVANCE_MS: Manual offset to adjust audio/video sync.
+// Positive value = advance audio (audio plays earlier) - fixes "audio behind video"
+// Negative value = delay audio (audio plays later) - fixes "video behind audio"
+// NOTE: OBS/RTMP streams with multiple audio sources have DIFFERENT latencies per track
+// This is a compromise value - RASMR=0ms sync, Guest needs ~100ms advance
+// We split the difference to make both "acceptable" rather than one perfect
+const AUDIO_ADVANCE_MS = 75; // Compromise: advance audio 75ms to help guest sync
 
 const AUDIO_FALLBACK_OFFSET_MS = 0; // Only used as fallback if sync setup fails
 const DEBUG_SYNC = true; // Enabled to diagnose video stride issues
@@ -143,32 +145,46 @@ function log(message, context = {}) {
   );
 }
 
-// Software audio mixer
+// Software audio mixer with multi-track support
+// Handles OBS streams that may have multiple audio tracks (mic + desktop, etc.)
 class AudioMixer {
     constructor(frameSize = 3840) {
         this.frameSize = frameSize;
-        this.chunks = new Map(); // timeIndex -> Buffer
+        this.numSamples = frameSize / 2; // 16-bit samples
+        this.chunks = new Map(); // timeIndex -> { samples: Float64Array, contributors: number, trackIds: Set }
         this.lastFlushedIndex = -1;
         // Buffer latency in frames (20ms each). 50 frames = 1000ms jitter buffer
         this.latencyBuffer = 50; 
     }
 
-    mixChunk(timeIndex, buffer) {
+    mixChunk(timeIndex, buffer, trackId = null) {
         if (!this.chunks.has(timeIndex)) {
-            // Allocate new zero-filled buffer (silence)
-            this.chunks.set(timeIndex, Buffer.alloc(this.frameSize));
+            // Use Float64Array for accumulation to prevent clipping during mixing
+            this.chunks.set(timeIndex, {
+                samples: new Float64Array(this.numSamples),
+                contributors: 0,
+                trackIds: new Set()
+            });
         }
         
-        const target = this.chunks.get(timeIndex);
+        const chunk = this.chunks.get(timeIndex);
+        const target = chunk.samples;
         
-        // Mix (add with saturation)
-        for (let i = 0; i < target.length; i += 2) {
-            const val1 = target.readInt16LE(i);
-            const val2 = buffer.readInt16LE(i);
-            let sum = val1 + val2;
-            if (sum > 32767) sum = 32767;
-            if (sum < -32768) sum = -32768;
-            target.writeInt16LE(sum, i);
+        // Track unique contributors (by trackId if provided)
+        if (trackId) {
+            if (chunk.trackIds.has(trackId)) {
+                // Same track already contributed to this time index - skip to avoid doubling
+                return;
+            }
+            chunk.trackIds.add(trackId);
+        }
+        chunk.contributors++;
+        
+        // Accumulate samples in float format (no clipping during accumulation)
+        const numSamples = Math.min(this.numSamples, buffer.length / 2);
+        for (let i = 0; i < numSamples; i++) {
+            const sample = buffer.readInt16LE(i * 2);
+            target[i] += sample;
         }
     }
 
@@ -199,7 +215,19 @@ class AudioMixer {
         for (let i = this.lastFlushedIndex + 1; i <= targetIndex; i++) {
             // Check if we have a chunk at this index
             if (this.chunks.has(i)) {
-                ready.push(this.chunks.get(i));
+                const chunk = this.chunks.get(i);
+                const outBuffer = Buffer.alloc(this.frameSize);
+                
+                // Convert float samples back to Int16, normalizing if multiple tracks contributed
+                const divisor = chunk.contributors > 1 ? chunk.contributors : 1;
+                for (let j = 0; j < this.numSamples; j++) {
+                    // Normalize by dividing by number of contributors, then clamp to Int16 range
+                    let val = Math.round(chunk.samples[j] / divisor);
+                    val = Math.max(-32768, Math.min(32767, val));
+                    outBuffer.writeInt16LE(val, j * 2);
+                }
+                
+                ready.push(outBuffer);
                 this.chunks.delete(i);
             } else {
                 // Gap detected: Fill with silence
@@ -275,6 +303,8 @@ class PumpfunRecorder {
     
     this.pendingResChange = null;
     this.mixerInterval = null;
+    this._loggedResolutionSkip = false; // Track if we've logged resolution skip
+    this._resChangeConsecutiveFrames = 0; // Track consecutive frames at new resolution
     
     // Diagnostic counters for troubleshooting
     this._diagnosticVideoFrameCount = 0; // Total video frames received
@@ -439,7 +469,16 @@ class PumpfunRecorder {
     if (this.audioTracks.has(trackId)) return;
     this.audioTracks.add(trackId);
     
-    // log('Audio track subscribed', { trackId });
+    // Log audio track info for debugging multi-track issues
+    if (DIAGNOSTIC_MODE) {
+        const isFirstTrack = this.audioTracks.size === 1;
+        log('DIAG: Audio track subscribed', {
+            trackId,
+            trackNumber: this.audioTracks.size,
+            isFirstTrack,
+            note: isFirstTrack ? 'Primary audio track' : 'Additional audio track (will be mixed)'
+        });
+    }
 
     try {
       const audioStream = new AudioStream(track, {
@@ -454,25 +493,38 @@ class PumpfunRecorder {
       if (!this.encoderStarted) await this.startEncoderIfReady();
 
       let lastAudioIndex = -1;
+      
+      // CRITICAL FIX: Per-track frame counter for computed PTS
+      // When multiple tracks are active, each track needs its own counter
+      // Otherwise the shared counter causes audio to play at wrong speed
+      let trackFrameCount = 0;
+      let trackFirstArrivalTime = null;
 
       while (this.running) {
         const { value, done } = await reader.read();
         if (done || !value) break;
         
         const arrivalTime = Date.now();
-        this.audioFrameCount++;
+        this.audioFrameCount++; // Global counter for diagnostics only
         this._diagnosticAudioFrameCount++;
+        trackFrameCount++; // Per-track counter for PTS calculation
+        
+        // Capture first frame arrival time for this track
+        if (trackFirstArrivalTime === null) {
+            trackFirstArrivalTime = arrivalTime;
+        }
         
         // Extract audio timestamp from LiveKit frame (similar to video)
         // LiveKit provides timestampUs as BigInt presentation timestamp
-        // If not available, compute from frame count (each frame = 20ms = 20000us)
+        // If not available, compute from per-track frame count or wall-clock
         let audioTimestampUs = value.timestampUs;
         let timestampSource = 'livekit';
         
         if (audioTimestampUs === undefined) {
-            // Compute PTS from frame count: each frame is exactly 20ms (20000 microseconds)
-            // This is reliable because AudioStream is configured with frameSizeMs: 20
-            audioTimestampUs = BigInt((this.audioFrameCount - 1) * 20000);
+            // FIXED: Use per-track frame count, not global counter
+            // Each track sends frames at 20ms intervals, so track frame N = N*20ms
+            // This ensures multiple tracks' frames align at the same time indices
+            audioTimestampUs = BigInt((trackFrameCount - 1) * 20000);
             timestampSource = 'computed';
         }
         
@@ -539,11 +591,13 @@ class PumpfunRecorder {
             // DIAGNOSTIC: Additional first audio info
             if (DIAGNOSTIC_MODE) {
                 log('DIAG: First audio frame', {
+                    trackId,
+                    trackFrameCount,
                     hasTimestamp: value.timestampUs !== undefined,
                     timestampUs: audioTimestampUs.toString(),
                     timestampSource,
                     arrivalTime,
-                    note: timestampSource === 'computed' ? 'Using computed timestamps (fallback)' : 'Using LiveKit timestamps'
+                    note: timestampSource === 'computed' ? 'Using computed timestamps (per-track counter)' : 'Using LiveKit timestamps'
                 });
             }
             
@@ -594,7 +648,7 @@ class PumpfunRecorder {
                  timeIndex = lastAudioIndex + 1;
             }
 
-            this.audioMixer.mixChunk(timeIndex, buffer);
+            this.audioMixer.mixChunk(timeIndex, buffer, trackId);
             lastAudioIndex = timeIndex;
         }
       }
@@ -671,26 +725,40 @@ class PumpfunRecorder {
         const effectiveWidth = width & ~1;
         const effectiveHeight = height & ~1;
 
-        const yPlane = converted.getPlane(0);
-        const uPlane = converted.getPlane(1);
-        const vPlane = converted.getPlane(2);
+        // Get planes and IMMEDIATELY copy them to avoid LiveKit buffer reuse issues
+        // LiveKit may reuse the underlying buffer before we finish processing
+        const yPlaneRaw = converted.getPlane(0);
+        const uPlaneRaw = converted.getPlane(1);
+        const vPlaneRaw = converted.getPlane(2);
 
-        if (!yPlane || !uPlane || !vPlane) {
+        if (!yPlaneRaw || !uPlaneRaw || !vPlaneRaw) {
           if (DIAGNOSTIC_MODE && !this._diagnosticPlaneWarnings.has('missing_planes')) {
               this._diagnosticPlaneWarnings.add('missing_planes');
               log('DIAG: WARNING - Missing video planes', {
-                  hasY: !!yPlane,
-                  hasU: !!uPlane,
-                  hasV: !!vPlane,
+                  hasY: !!yPlaneRaw,
+                  hasU: !!uPlaneRaw,
+                  hasV: !!vPlaneRaw,
                   frameCount: this._diagnosticVideoFrameCount
               });
           }
           continue;
         }
         
+        // CRITICAL: Immediately copy plane data using .slice() to prevent LiveKit buffer reuse
+        // LiveKit may recycle the underlying ArrayBuffer before we finish processing
+        // This was identified as a root cause of green screen corruption in OBS/RTMP streams
+        const yPlane = Buffer.from(yPlaneRaw.slice());
+        const uPlane = Buffer.from(uPlaneRaw.slice());
+        const vPlane = Buffer.from(vPlaneRaw.slice());
+        // Copy stride property if it exists
+        yPlane.stride = yPlaneRaw.stride;
+        uPlane.stride = uPlaneRaw.stride;
+        vPlane.stride = vPlaneRaw.stride;
+        
         // DIAGNOSTIC: Analyze plane structure for stride issues
         const analyzePlane = (plane, expectedWidth, expectedHeight, planeName) => {
-            const srcBuffer = Buffer.from(plane.buffer, plane.byteOffset, plane.byteLength);
+            // plane is already a Buffer copy, use it directly
+            const srcBuffer = plane;
             const expectedSize = expectedWidth * expectedHeight;
             const hasExplicitStride = typeof plane.stride === 'number';
             const explicitStride = hasExplicitStride ? plane.stride : null;
@@ -794,13 +862,11 @@ class PumpfunRecorder {
             });
         }
 
-        // Extract plane data - handles LiveKit's I420 plane format
-        // LiveKit planes are TypedArrays (Uint8Array) with potential stride padding
-        // IMPORTANT: We must COPY the data, not create views, because LiveKit may reuse buffers
+        // Extract plane data - handles I420 plane format with potential stride padding
+        // Input is already a Buffer copy (from .slice() above), so no additional copy needed here
         const extractPlane = (plane, w, h, planeType) => {
-             // FIXED: Create an actual COPY of the plane data, not a view
-             // This avoids issues with shared ArrayBuffers and buffer pooling
-             const srcBuffer = Buffer.from(plane);
+             // plane is already a Buffer copy, use it directly
+             const srcBuffer = plane;
              
              // Calculate stride - either explicit or inferred from buffer size
              let stride;
@@ -831,13 +897,12 @@ class PumpfunRecorder {
                  }
              }
              
-             // Fast path: no padding, data already copied
+             // Fast path: no padding - create a proper COPY (not a view/subarray)
              if (stride === w && srcBuffer.length >= w * h) {
-                 // Return a slice of exactly the right size (srcBuffer is already a copy)
-                 if (srcBuffer.length === w * h) {
-                     return srcBuffer;
-                 }
-                 return srcBuffer.subarray(0, w * h);
+                 // Always allocate new buffer and copy to avoid buffer reuse issues
+                 const result = Buffer.allocUnsafe(w * h);
+                 srcBuffer.copy(result, 0, 0, w * h);
+                 return result;
              }
              
              // Slow path: remove stride padding row by row
@@ -919,28 +984,91 @@ class PumpfunRecorder {
             }
         }
         
-        // Handle resolution changes (simplified)
+        // Handle resolution changes
         if (!this.videoInfo) {
              this.currentWidth = effectiveWidth;
              this.currentHeight = effectiveHeight;
              this.videoInfo = { width: effectiveWidth, height: effectiveHeight };
+             this._resChangeConsecutiveFrames = 0;
              if (this.fpsDetected) {
                this.checkSyncAndStart();
              }
-        } else if (this.encoderStarted && (this.currentWidth !== effectiveWidth || this.currentHeight !== effectiveHeight)) {
-            // Check for stable resolution change
-             if (!this.pendingResChange || 
+        } else if (this.currentWidth !== effectiveWidth || this.currentHeight !== effectiveHeight) {
+            // Resolution mismatch detected
+            
+            // If encoder is running, skip this frame (wrong resolution would corrupt output)
+            if (this.encoderStarted) {
+                if (DIAGNOSTIC_MODE && !this._loggedResolutionSkip) {
+                    this._loggedResolutionSkip = true;
+                    log('DIAG: Resolution change starting - skipping mismatched frames', {
+                        expected: `${this.currentWidth}x${this.currentHeight}`,
+                        received: `${effectiveWidth}x${effectiveHeight}`,
+                        note: 'Waiting for 30 consecutive frames at new resolution'
+                    });
+                }
+            }
+            
+            // Track consecutive frames at new resolution
+            if (!this.pendingResChange || 
                 this.pendingResChange.width !== effectiveWidth || 
                 this.pendingResChange.height !== effectiveHeight) {
+                // New resolution detected, reset counter
                 this.pendingResChange = {
                     width: effectiveWidth,
                     height: effectiveHeight,
+                    consecutiveFrames: 1,
                     start: Date.now()
                 };
-            } else if (Date.now() - this.pendingResChange.start > 2000) {
-                 log('Resolution change detected', { old: `${this.currentWidth}x${this.currentHeight}`, new: `${effectiveWidth}x${effectiveHeight}` });
-                 await this.restartEncoder(effectiveWidth, effectiveHeight);
-                 this.pendingResChange = null;
+            } else {
+                // Same new resolution, increment counter
+                this.pendingResChange.consecutiveFrames++;
+                
+                // Wait for 30 consecutive frames at new resolution before restarting
+                if (this.pendingResChange.consecutiveFrames >= 30) {
+                    if (DIAGNOSTIC_MODE) {
+                        log('DIAG: Resolution change confirmed after 30 frames', {
+                            old: `${this.currentWidth}x${this.currentHeight}`,
+                            new: `${effectiveWidth}x${effectiveHeight}`,
+                            consecutiveFrames: this.pendingResChange.consecutiveFrames,
+                            elapsedMs: Date.now() - this.pendingResChange.start
+                        });
+                    }
+                    
+                    log('Resolution change detected', { 
+                        old: `${this.currentWidth}x${this.currentHeight}`, 
+                        new: `${effectiveWidth}x${effectiveHeight}` 
+                    });
+                    
+                    // Clear video queue of wrong-resolution frames before restart
+                    const queueSizeBefore = this.videoQueue.length;
+                    this.videoQueue = this.videoQueue.filter(
+                        item => item.width === effectiveWidth && item.height === effectiveHeight
+                    );
+                    
+                    if (DIAGNOSTIC_MODE && queueSizeBefore !== this.videoQueue.length) {
+                        log('DIAG: Cleared wrong-resolution frames from queue', {
+                            before: queueSizeBefore,
+                            after: this.videoQueue.length,
+                            removed: queueSizeBefore - this.videoQueue.length
+                        });
+                    }
+                    
+                    await this.restartEncoder(effectiveWidth, effectiveHeight);
+                    this.pendingResChange = null;
+                    this._loggedResolutionSkip = false;
+                }
+            }
+            
+            // Skip adding this frame to queue if resolution doesn't match current encoder
+            // (It will be added after encoder restarts with new resolution)
+            if (this.encoderStarted) {
+                continue;
+            }
+        } else {
+            // Resolution matches - reset pending change if any
+            if (this.pendingResChange) {
+                this.pendingResChange = null;
+                this._loggedResolutionSkip = false;
             }
         }
       }
@@ -1270,18 +1398,19 @@ class PumpfunRecorder {
           let bestFrame = null;
           
           // Iterate queue to find match
-          // Since queue is sorted by timestamp, we can iterate forward
+          // NOTE: Don't assume sorted order - network jitter can cause out-of-order arrival
           let bestIndex = -1;
           
           for (let i = 0; i < this.videoQueue.length; i++) {
               const item = this.videoQueue[i];
               if (item.timestampUs <= targetTimestampUs) {
-                  bestFrame = item;
-                  bestIndex = i;
-              } else {
-                  // Found a frame in the future, stop searching
-                  break;
+                  // Found a candidate - check if it's better (newer) than current best
+                  if (bestFrame === null || item.timestampUs > bestFrame.timestampUs) {
+                      bestFrame = item;
+                      bestIndex = i;
+                  }
               }
+              // Don't break early - frames may be out of order
           }
           
           // If we found a frame, use it. If not, reuse last frame (or black if none).
@@ -1296,11 +1425,49 @@ class PumpfunRecorder {
           if (bestFrame) {
               this.lastVideoFrame = bestFrame.buffer;
               
-              // Cleanup older frames from queue, but keep the bestFrame for potential reuse
-              if (bestIndex > 0) {
-                   this.videoQueue.splice(0, bestIndex);
-              }
+              // Cleanup frames older than bestFrame (they won't be needed anymore)
+              // Filter out frames with timestamps strictly less than bestFrame's timestamp
+              const bestTs = bestFrame.timestampUs;
+              this.videoQueue = this.videoQueue.filter(item => item.timestampUs >= bestTs);
           } else {
+              // No matching frame found - check if we need to catch up
+              // This happens after resolution changes when the queue has newer frames
+              if (this.videoQueue.length > 0) {
+                  const queueMin = this.videoQueue.reduce(
+                      (min, item) => item.timestampUs < min ? item.timestampUs : min, 
+                      this.videoQueue[0].timestampUs
+                  );
+                  
+                  // If the queue's minimum timestamp is ahead of our target, skip ahead
+                  if (queueMin > targetTimestampUs) {
+                      const gapUs = queueMin - targetTimestampUs;
+                      const framesToSkip = Math.floor(Number(gapUs) / 33333.33);
+                      
+                      if (framesToSkip > 0) {
+                          // Track skip-ahead occurrences
+                          this._diagnosticSkipAheadCount = (this._diagnosticSkipAheadCount || 0) + 1;
+                          this._diagnosticSkipAheadFrames = (this._diagnosticSkipAheadFrames || 0) + framesToSkip;
+                          
+                          // Only log first occurrence and then every 100th to reduce spam
+                          if (DIAGNOSTIC_MODE && (this._diagnosticSkipAheadCount === 1 || this._diagnosticSkipAheadCount % 100 === 0)) {
+                              log('DIAG: Skipping ahead to match queue', {
+                                  targetTimestampUs: targetTimestampUs.toString(),
+                                  queueMinTs: queueMin.toString(),
+                                  gapUs: gapUs.toString(),
+                                  framesToSkip,
+                                  totalSkipEvents: this._diagnosticSkipAheadCount,
+                                  totalFramesSkipped: this._diagnosticSkipAheadFrames,
+                                  note: 'Queue is ahead of playback position, catching up'
+                              });
+                          }
+                          
+                          // Skip ahead in frame count to sync with queue
+                          this.videoFramesWritten += framesToSkip;
+                          continue; // Re-evaluate with new frame position
+                      }
+                  }
+              }
+              
               // DIAGNOSTIC: Track frame reuse (indicates potential still image issue)
               this._diagnosticVideoFrameReuse++;
               
