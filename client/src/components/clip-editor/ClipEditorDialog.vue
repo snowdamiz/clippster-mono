@@ -79,13 +79,11 @@
                 <AudioMixerTab
                   v-if="activeTab === 'audio'"
                   :audio-tracks="audioTracks"
-                  :original-volume="originalVolume"
                   :original-db="originalDb"
                   :track-db-values="trackDbValues"
                   @add-track="(filePath, name, duration) => addAudioTrack(filePath, name, duration)"
                   @update-track="updateAudioTrackLocal"
                   @delete-track="deleteAudioTrackLocal"
-                  @update-original-volume="updateOriginalVolume"
                   @update-original-db="updateOriginalDb"
                   @update-track-db="updateTrackDb"
                 />
@@ -125,6 +123,20 @@
                   @update-effect="updateEffectLocal"
                   @delete-effect="deleteEffectLocal"
                 />
+
+                <AspectTab
+                  v-if="activeTab === 'aspect'"
+                  :framing-configs="framingConfigs"
+                  :selected-aspect-ratios="selectedAspectRatios"
+                  :framing-mode-value="framingMode"
+                  :thumbnail-url="thumbnailUrl"
+                  :video-path="videoPath"
+                  :clip-start-time="props.clipStartTime"
+                  :clip-end-time="props.clipEndTime"
+                  @update:framing-configs="updateFramingConfigs"
+                  @update:selected-aspect-ratios="updateSelectedAspectRatios"
+                  @update:framing-mode="updateFramingMode"
+                />
               </div>
             </div>
           </div>
@@ -141,6 +153,8 @@
             :stickers="stickers"
             :effects="effects"
             :video-src="videoSrc"
+            :audio-gain-db="effectiveAudioGainDb"
+            :track-db-values="trackDbValues"
             @seek="seekTo"
             @update-trim-segment="updateTrimSegment"
             @update-audio-track="updateAudioTrackLocal"
@@ -157,7 +171,17 @@
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
   import { Film, X, Save } from 'lucide-vue-next';
-  import type { ClipEditorTab, AudioTrack, TextOverlay, Sticker, Effect, FilterSettings, TrimSegment } from '@/types';
+  import type {
+    ClipEditorTab,
+    AudioTrack,
+    TextOverlay,
+    Sticker,
+    Effect,
+    FilterSettings,
+    TrimSegment,
+    ManualFramingConfigs,
+    ManualFramingConfig,
+  } from '@/types';
   import {
     getOrCreateClipEdit,
     updateClipEdit,
@@ -174,7 +198,13 @@
     createEffect,
     updateEffect,
     deleteEffect,
+    getRawVideosByProjectId,
   } from '@/services/database';
+
+  // Disable attribute inheritance since this component renders a Teleport root
+  defineOptions({
+    inheritAttrs: false,
+  });
   import ClipEditorPreview from './ClipEditorPreview.vue';
   import ClipEditorToolbar from './ClipEditorToolbar.vue';
   import ClipEditorTimeline from './ClipEditorTimeline.vue';
@@ -183,6 +213,7 @@
   import TextOverlayTab from './tabs/TextOverlayTab.vue';
   import StickersTab from './tabs/StickersTab.vue';
   import EffectsTab from './tabs/EffectsTab.vue';
+  import AspectTab from './tabs/AspectTab.vue';
 
   interface ClipSegmentInput {
     start_time: number;
@@ -197,6 +228,7 @@
     clipEndTime: number;
     clipTitle: string;
     clipSegments?: ClipSegmentInput[];
+    projectAudioGainDb?: number; // dB gain from project audio settings
   }>();
 
   const emit = defineEmits<{
@@ -221,9 +253,15 @@
   const stickers = ref<Sticker[]>([]);
   const effects = ref<Effect[]>([]);
   const filterSettings = ref<FilterSettings | null>(null);
-  const originalVolume = ref(1);
   const originalDb = ref(0);
   const trackDbValues = ref<Record<string, number>>({});
+
+  // Aspect ratio framing data
+  const selectedAspectRatios = ref<string[]>([]);
+  const framingMode = ref<'auto' | 'manual'>('auto');
+  const framingConfigs = ref<ManualFramingConfigs>({});
+  const videoPath = ref<string | null>(null);
+  const thumbnailUrl = ref<string | null>(null);
 
   // Audio playback elements
   const audioElements = ref<Map<string, HTMLAudioElement>>(new Map());
@@ -263,6 +301,9 @@
       }))
       .sort((a, b) => a.start_time - b.start_time);
   });
+
+  // Effective audio gain for waveform visualization (uses originalDb which can be initialized from project settings)
+  const effectiveAudioGainDb = computed(() => originalDb.value);
 
   // Methods
   function close() {
@@ -522,21 +563,12 @@
     audioTracks.value = audioTracks.value.filter((t) => t.id !== trackId);
   }
 
-  function updateOriginalVolume(volume: number) {
-    originalVolume.value = volume;
-    // Apply to video element
-    if (videoElement.value) {
-      const dbLinearGain = Math.pow(10, originalDb.value / 20);
-      videoElement.value.volume = Math.min(1, volume * dbLinearGain);
-    }
-  }
-
   function updateOriginalDb(db: number) {
     originalDb.value = db;
-    // Apply to video element
+    // Apply to video element - convert dB to linear gain
     if (videoElement.value) {
-      const dbLinearGain = Math.pow(10, db / 20);
-      videoElement.value.volume = Math.min(1, originalVolume.value * dbLinearGain);
+      const linearGain = Math.pow(10, db / 20);
+      videoElement.value.volume = Math.min(1, linearGain);
     }
   }
 
@@ -548,6 +580,19 @@
   // Filter operations
   function updateFilter(settings: FilterSettings | null) {
     filterSettings.value = settings;
+  }
+
+  // Aspect ratio framing operations
+  function updateFramingConfigs(configs: ManualFramingConfigs) {
+    framingConfigs.value = configs;
+  }
+
+  function updateSelectedAspectRatios(ratios: string[]) {
+    selectedAspectRatios.value = ratios;
+  }
+
+  function updateFramingMode(mode: 'auto' | 'manual') {
+    framingMode.value = mode;
   }
 
   // Text overlay operations
@@ -700,9 +745,14 @@
         segments: trimSegments.value,
       },
       filter: filterSettings.value,
-      originalVolume: originalVolume.value,
       originalDb: originalDb.value,
       trackDbValues: trackDbValues.value,
+      // Aspect ratio framing data
+      aspectFraming: {
+        selectedRatios: selectedAspectRatios.value,
+        framingMode: framingMode.value,
+        configs: framingConfigs.value,
+      },
     });
 
     emit('save', props.clipId);
@@ -735,14 +785,21 @@
       if (editData.filter) {
         filterSettings.value = editData.filter;
       }
-      if (editData.originalVolume !== undefined) {
-        originalVolume.value = editData.originalVolume;
-      }
       if (editData.originalDb !== undefined) {
         originalDb.value = editData.originalDb;
+      } else if (props.projectAudioGainDb !== undefined) {
+        // Initialize from project audio settings if no clip-specific setting exists
+        originalDb.value = props.projectAudioGainDb;
       }
       if (editData.trackDbValues) {
         trackDbValues.value = editData.trackDbValues;
+      }
+
+      // Load aspect framing data
+      if (editData.aspectFraming) {
+        selectedAspectRatios.value = editData.aspectFraming.selectedRatios || [];
+        framingMode.value = editData.aspectFraming.framingMode || 'auto';
+        framingConfigs.value = editData.aspectFraming.configs || {};
       }
 
       audioTracks.value = fullEdit.audioTracks.map((t) => ({
@@ -796,6 +853,62 @@
         endTime: seg.end_time - props.clipStartTime,
         isDeleted: false,
       }));
+      // Initialize audio settings from project if available
+      if (props.projectAudioGainDb !== undefined) {
+        originalDb.value = props.projectAudioGainDb;
+      }
+    } else {
+      // No edit data and no segments, still initialize audio settings from project
+      if (props.projectAudioGainDb !== undefined) {
+        originalDb.value = props.projectAudioGainDb;
+      }
+    }
+  }
+
+  // Load video path and thumbnail for aspect tab
+  async function loadVideoInfo() {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+
+      // We need the project ID to get the raw video path
+      // The clip ID should have a corresponding clip record with project_id
+      // For now, we'll extract it from the videoSrc if available
+      if (props.videoSrc) {
+        // Try to decode the video path from the URL
+        // Format is typically: http://localhost:PORT/video/BASE64_ENCODED_PATH
+        const match = props.videoSrc.match(/\/video\/([^?]+)/);
+        if (match) {
+          try {
+            // Decode base64 path
+            const decoded = atob(match[1]);
+            videoPath.value = decoded;
+          } catch {
+            // If decoding fails, the path might already be plain
+            videoPath.value = null;
+          }
+        }
+      }
+
+      // Generate thumbnail for the aspect tab preview
+      if (videoPath.value) {
+        try {
+          const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
+            videoPath: videoPath.value,
+            timestampSeconds: props.clipStartTime + 1,
+            outputFilename: `aspect_preview_${props.clipId}`,
+          });
+
+          const dataUrl = await invoke<string>('read_file_as_data_url', {
+            filePath: thumbnailPath,
+          });
+
+          thumbnailUrl.value = dataUrl;
+        } catch (err) {
+          console.warn('[ClipEditorDialog] Failed to generate thumbnail:', err);
+        }
+      }
+    } catch (err) {
+      console.error('[ClipEditorDialog] Failed to load video info:', err);
     }
   }
 
@@ -830,15 +943,21 @@
           }
         });
 
-        // Apply initial volume to video
+        // Apply initial volume to video (convert dB to linear gain)
         if (videoElement.value) {
-          const dbLinearGain = Math.pow(10, originalDb.value / 20);
-          videoElement.value.volume = Math.min(1, originalVolume.value * dbLinearGain);
+          const linearGain = Math.pow(10, originalDb.value / 20);
+          videoElement.value.volume = Math.min(1, linearGain);
         }
+
+        // Load video info for aspect tab
+        await loadVideoInfo();
       } else if (!isOpen) {
         // Clean up when dialog closes
         cleanupAudioElements();
         isPlaying.value = false;
+        // Reset aspect tab state
+        videoPath.value = null;
+        thumbnailUrl.value = null;
       }
     }
   );

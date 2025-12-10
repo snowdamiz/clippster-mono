@@ -1,7 +1,7 @@
 <template>
   <div class="flex-1 flex flex-col overflow-hidden">
-    <!-- Header -->
-    <div class="flex items-center justify-between py-3 px-1 border-b border-border/20">
+    <!-- Header (can be hidden when integrated into parent tabs) -->
+    <div v-if="!hideHeader" class="flex items-center justify-between py-3 border-b border-border/20">
       <div class="flex items-center gap-3">
         <div
           class="w-8 h-8 bg-gradient-to-br from-violet-500/15 to-purple-600/15 rounded-lg flex items-center justify-center border border-violet-500/25 shadow-sm shadow-violet-500/5"
@@ -55,7 +55,7 @@
       </button>
     </div>
 
-    <div class="flex-1 overflow-y-auto px-1">
+    <div class="flex-1 overflow-y-auto">
       <!-- Progress State (only when no clips exist yet) -->
       <div v-if="isGenerating && clips.length === 0" class="h-full flex flex-col items-center justify-center px-6">
         <div class="w-full max-w-xs space-y-5">
@@ -139,7 +139,7 @@
         ref="clipsScrollContainer"
       >
         <!-- Clips Grid -->
-        <div class="space-y-3 pb-4">
+        <div class="space-y-3 py-4">
           <div
             v-for="(clip, index) in sortedClips"
             :key="clip.id"
@@ -639,11 +639,13 @@
     creatorDefaultIntro?: IntroOutroRef | null;
     creatorDefaultOutro?: IntroOutroRef | null;
     videoThumbnailUrl?: string | null;
+    hideHeader?: boolean;
   }
 
   const props = withDefaults(defineProps<ClipsTabProps>(), {
     projectId: null,
     clips: () => [],
+    hideHeader: false,
     isGenerating: false,
     generationProgress: 0,
     generationStage: '',

@@ -188,6 +188,7 @@
     :clip-end-time="clipEditorEndTime"
     :clip-title="clipEditorTitle"
     :clip-segments="clipEditorSegments"
+    :project-audio-gain-db="audioGainDb"
     @save="onClipEditorSave"
   />
 </template>

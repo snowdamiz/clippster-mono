@@ -256,10 +256,10 @@
                     style="mix-blend-mode: normal; z-index: 5"
                   ></canvas>
 
-                  <!-- Track label (only show in first segment) -->
+                  <!-- Track label (only show on hover in first segment) -->
                   <div
                     v-if="visualSeg.isFirst"
-                    class="absolute inset-0 flex items-center justify-center pointer-events-none z-10"
+                    class="absolute inset-0 flex items-center justify-center pointer-events-none z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
                   >
                     <span
                       class="text-xs text-white font-medium truncate drop-shadow-md bg-black/60 px-1.5 py-0.5 rounded"
@@ -511,18 +511,26 @@
   // Gap percentage between segments
   const GAP_PERCENT = 2;
 
-  const props = defineProps<{
-    duration: number;
-    currentTime: number;
-    clipStart: number;
-    clipEnd: number;
-    trimSegments: TrimSegment[];
-    audioTracks: AudioTrack[];
-    textOverlays: TextOverlay[];
-    stickers: Sticker[];
-    effects: Effect[];
-    videoSrc?: string;
-  }>();
+  const props = withDefaults(
+    defineProps<{
+      duration: number;
+      currentTime: number;
+      clipStart: number;
+      clipEnd: number;
+      trimSegments: TrimSegment[];
+      audioTracks: AudioTrack[];
+      textOverlays: TextOverlay[];
+      stickers: Sticker[];
+      effects: Effect[];
+      videoSrc?: string;
+      audioGainDb?: number; // dB gain (-20 to +20) to apply to main video waveform visualization
+      trackDbValues?: Record<string, number>; // Per-track dB values for audio track waveforms
+    }>(),
+    {
+      audioGainDb: 0,
+      trackDbValues: () => ({}),
+    }
+  );
 
   const emit = defineEmits<{
     (e: 'seek', time: number): void;
@@ -567,6 +575,11 @@
 
   // Resize observer for waveform canvases
   let resizeObserver: ResizeObserver | null = null;
+
+  // Convert dB to linear gain multiplier
+  function dbToLinear(db: number): number {
+    return Math.pow(10, db / 20);
+  }
 
   // Color mappings
   const colorMap: Record<string, { bg: string; border: string }> = {
@@ -1419,10 +1432,17 @@
         max: peak.max / normalizer,
       }));
 
+      // Apply audio gain to peaks
+      const gainMultiplier = dbToLinear(props.audioGainDb ?? 0);
+      const gainedPeaks = normalizedPeaks.map((peak: any) => ({
+        min: Math.max(-1, peak.min * gainMultiplier), // Clamp to prevent overdrive
+        max: Math.min(1, peak.max * gainMultiplier),
+      }));
+
       renderSegmentWaveform(canvas, {
         width: rect.width,
         height: rect.height,
-        peaks: normalizedPeaks,
+        peaks: gainedPeaks,
         segmentDuration,
         currentTime: props.currentTime,
         segmentStartTime: segment.startTime,
@@ -1677,6 +1697,12 @@
       });
       const normalizer = maxPeakValue > 0 ? maxPeakValue : 1;
 
+      // Apply per-track volume and dB gain (matching audio playback behavior)
+      const trackDbGain = props.trackDbValues?.[trackId] ?? 0;
+      const dbGainMultiplier = dbToLinear(trackDbGain);
+      // Combine volume (0-1) with dB gain for waveform visualization
+      const gainMultiplier = track.volume * dbGainMultiplier;
+
       // Calculate bar dimensions
       const numPeaks = segmentPeaks.length;
       let displayPeaks = segmentPeaks;
@@ -1741,8 +1767,11 @@
 
         ctx.fillStyle = color;
 
-        const positiveHeight = Math.abs(peak.max / normalizer) * maxBarHeight;
-        const negativeHeight = Math.abs(peak.min / normalizer) * maxBarHeight;
+        // Apply gain and clamp to prevent overdrive
+        const gainedMax = Math.min(1, Math.abs(peak.max / normalizer) * gainMultiplier);
+        const gainedMin = Math.min(1, Math.abs(peak.min / normalizer) * gainMultiplier);
+        const positiveHeight = gainedMax * maxBarHeight;
+        const negativeHeight = gainedMin * maxBarHeight;
         const actualBarWidth = Math.min(barWidth, width - x);
 
         if (positiveHeight > 0 && actualBarWidth > 0) {
@@ -1828,7 +1857,30 @@
     { immediate: true }
   );
 
-  // Watch for audio track changes
+  // Watch specifically for audio gain changes to ensure waveform updates
+  watch(
+    () => props.audioGainDb,
+    () => {
+      if (isWaveformLoaded.value && waveformData.value) {
+        nextTick(() => {
+          renderAllWaveforms();
+        });
+      }
+    }
+  );
+
+  // Watch for per-track dB value changes to re-render audio track waveforms
+  watch(
+    () => props.trackDbValues,
+    () => {
+      nextTick(() => {
+        renderAllAudioWaveforms();
+      });
+    },
+    { deep: true }
+  );
+
+  // Watch for audio track changes (including volume, mute, etc.)
   watch(
     () => props.audioTracks,
     async (newTracks) => {
@@ -1846,6 +1898,11 @@
           audioWaveformData.value.delete(id);
           audioWaveformCanvasRefs.value.delete(id);
         }
+      });
+
+      // Re-render all audio waveforms to reflect any property changes (volume, etc.)
+      nextTick(() => {
+        renderAllAudioWaveforms();
       });
     },
     { deep: true, immediate: true }

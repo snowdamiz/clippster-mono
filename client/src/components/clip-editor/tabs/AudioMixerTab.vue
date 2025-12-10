@@ -25,34 +25,47 @@
         </button>
       </div>
 
-      <!-- Volume Slider -->
-      <div class="flex items-center gap-3 mb-3">
-        <span class="text-xs text-white/50 w-12">Volume</span>
-        <span class="text-xs text-white/50 w-10 text-right">{{ Math.round(originalVolume * 100) }}%</span>
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          :value="originalVolume"
-          @input="onOriginalVolumeChange"
-          class="flex-1 accent-violet-500"
-        />
-      </div>
-
-      <!-- dB Slider -->
-      <div class="flex items-center gap-3">
-        <span class="text-xs text-white/50 w-12">Gain</span>
-        <span class="text-xs text-white/50 w-10 text-right font-mono">{{ formatDb(originalDb) }}</span>
-        <input
-          type="range"
-          min="-20"
-          max="20"
-          step="0.5"
-          :value="originalDb"
-          @input="onOriginalDbChange"
-          class="flex-1 accent-violet-500"
-        />
+      <!-- Gain Slider -->
+      <div class="space-y-2">
+        <div class="flex justify-between items-center">
+          <span class="text-xs text-white/50">Gain</span>
+          <span
+            :class="[
+              'text-[10px] font-mono px-1.5 py-0.5 rounded',
+              originalDb === 0
+                ? 'text-white/50 bg-white/5'
+                : originalDb > 0
+                  ? 'text-green-400 bg-green-500/10'
+                  : 'text-orange-400 bg-orange-500/10',
+            ]"
+          >
+            {{ originalDb > 0 ? '+' : '' }}{{ originalDb.toFixed(1) }} dB
+          </span>
+        </div>
+        <div class="relative h-2 bg-white/10 rounded-md">
+          <!-- Track fill - centered at 0 dB -->
+          <div
+            class="absolute top-0 h-full rounded-md transition-all duration-200"
+            :class="originalDb >= 0 ? 'bg-green-500' : 'bg-orange-500'"
+            :style="getGainTrackStyle(originalDb)"
+          ></div>
+          <!-- Center marker (0 dB) -->
+          <div class="absolute top-0 left-1/2 w-0.5 h-full bg-white/20 -translate-x-1/2"></div>
+          <input
+            type="range"
+            min="-20"
+            max="20"
+            step="0.5"
+            :value="originalDb"
+            @input="onOriginalDbChange"
+            class="absolute inset-0 w-full h-full cursor-pointer gain-slider z-10"
+          />
+        </div>
+        <div class="flex justify-between text-[9px] text-white/30 px-0.5">
+          <span>-20 dB</span>
+          <span>0 dB</span>
+          <span>+20 dB</span>
+        </div>
       </div>
     </div>
 
@@ -183,34 +196,47 @@
           </div>
         </div>
 
-        <!-- Volume Slider -->
-        <div class="flex items-center gap-3 mb-2">
-          <span class="text-xs text-white/50 w-12">Volume</span>
-          <span class="text-xs text-white/50 w-10 text-right">{{ Math.round(track.volume * 100) }}%</span>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            :value="track.volume"
-            @input="(e) => updateTrackVolume(track, e)"
-            class="flex-1 accent-emerald-500"
-          />
-        </div>
-
-        <!-- dB Slider -->
-        <div class="flex items-center gap-3 mb-3">
-          <span class="text-xs text-white/50 w-12">Gain</span>
-          <span class="text-xs text-white/50 w-10 text-right font-mono">{{ formatDb(getTrackDb(track.id)) }}</span>
-          <input
-            type="range"
-            min="-20"
-            max="20"
-            step="0.5"
-            :value="getTrackDb(track.id)"
-            @input="(e) => updateTrackDb(track, e)"
-            class="flex-1 accent-emerald-500"
-          />
+        <!-- Gain Slider -->
+        <div class="space-y-2 mb-3">
+          <div class="flex justify-between items-center">
+            <span class="text-xs text-white/50">Gain</span>
+            <span
+              :class="[
+                'text-[10px] font-mono px-1.5 py-0.5 rounded',
+                getTrackDb(track.id) === 0
+                  ? 'text-white/50 bg-white/5'
+                  : getTrackDb(track.id) > 0
+                    ? 'text-green-400 bg-green-500/10'
+                    : 'text-orange-400 bg-orange-500/10',
+              ]"
+            >
+              {{ getTrackDb(track.id) > 0 ? '+' : '' }}{{ getTrackDb(track.id).toFixed(1) }} dB
+            </span>
+          </div>
+          <div class="relative h-2 bg-white/10 rounded-md">
+            <!-- Track fill - centered at 0 dB -->
+            <div
+              class="absolute top-0 h-full rounded-md transition-all duration-200"
+              :class="getTrackDb(track.id) >= 0 ? 'bg-green-500' : 'bg-orange-500'"
+              :style="getGainTrackStyle(getTrackDb(track.id))"
+            ></div>
+            <!-- Center marker (0 dB) -->
+            <div class="absolute top-0 left-1/2 w-0.5 h-full bg-white/20 -translate-x-1/2"></div>
+            <input
+              type="range"
+              min="-20"
+              max="20"
+              step="0.5"
+              :value="getTrackDb(track.id)"
+              @input="(e) => updateTrackDb(track, e)"
+              class="absolute inset-0 w-full h-full cursor-pointer gain-slider z-10"
+            />
+          </div>
+          <div class="flex justify-between text-[9px] text-white/30 px-0.5">
+            <span>-20 dB</span>
+            <span>0 dB</span>
+            <span>+20 dB</span>
+          </div>
         </div>
 
         <!-- Fade Controls -->
@@ -261,7 +287,6 @@
 
   const props = defineProps<{
     audioTracks: AudioTrack[];
-    originalVolume: number;
     originalDb: number;
     trackDbValues: Record<string, number>;
   }>();
@@ -270,13 +295,12 @@
     (e: 'addTrack', filePath: string, name: string, duration: number): void;
     (e: 'updateTrack', trackId: string, updates: Partial<AudioTrack>): void;
     (e: 'deleteTrack', trackId: string): void;
-    (e: 'updateOriginalVolume', volume: number): void;
     (e: 'updateOriginalDb', db: number): void;
     (e: 'updateTrackDb', trackId: string, db: number): void;
   }>();
 
   const isOriginalMuted = ref(false);
-  const previousVolume = ref(props.originalVolume || 1);
+  const previousDb = ref(props.originalDb || 0);
 
   // Audio asset selection state
   const showAudioPicker = ref(false);
@@ -284,12 +308,6 @@
   const loadingAssets = ref(false);
   const isUploading = ref(false);
   const { uploadAudioAsset, onUploadComplete } = useAudioAssetOperations();
-
-  // Format dB value for display
-  function formatDb(db: number): string {
-    if (db === 0) return '0 dB';
-    return `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`;
-  }
 
   // Format duration for display
   function formatDuration(seconds: number): string {
@@ -301,6 +319,27 @@
   // Get dB value for a track
   function getTrackDb(trackId: string): number {
     return props.trackDbValues[trackId] ?? 0;
+  }
+
+  // Get the style for the gain track fill (centered at 0 dB)
+  function getGainTrackStyle(db: number): { left: string; width: string } {
+    const center = 50; // 50% is center (0 dB)
+
+    if (db >= 0) {
+      // Positive: fill from center to right
+      const width = (db / 20) * 50;
+      return {
+        left: `${center}%`,
+        width: `${width}%`,
+      };
+    } else {
+      // Negative: fill from left of center
+      const width = (Math.abs(db) / 20) * 50;
+      return {
+        left: `${center - width}%`,
+        width: `${width}%`,
+      };
+    }
   }
 
   // Audio picker functions
@@ -360,22 +399,12 @@
 
   function toggleOriginalMute() {
     if (!isOriginalMuted.value) {
-      previousVolume.value = props.originalVolume || 1;
+      previousDb.value = props.originalDb || 0;
       isOriginalMuted.value = true;
-      emit('updateOriginalVolume', 0);
+      emit('updateOriginalDb', -60); // Effectively silent
     } else {
       isOriginalMuted.value = false;
-      emit('updateOriginalVolume', previousVolume.value);
-    }
-  }
-
-  function onOriginalVolumeChange(e: Event) {
-    const target = e.target as HTMLInputElement;
-    const volume = parseFloat(target.value);
-    emit('updateOriginalVolume', volume);
-    if (volume > 0) {
-      isOriginalMuted.value = false;
-      previousVolume.value = volume;
+      emit('updateOriginalDb', previousDb.value);
     }
   }
 
@@ -391,11 +420,6 @@
 
   function toggleTrackSolo(track: AudioTrack) {
     emit('updateTrack', track.id, { isSolo: !track.isSolo });
-  }
-
-  function updateTrackVolume(track: AudioTrack, e: Event) {
-    const target = e.target as HTMLInputElement;
-    emit('updateTrack', track.id, { volume: parseFloat(target.value) });
   }
 
   function updateTrackDb(track: AudioTrack, e: Event) {
@@ -414,11 +438,11 @@
     emit('updateTrack', track.id, { fadeOut: parseFloat(target.value) });
   }
 
-  // Watch for external volume changes
+  // Watch for external dB changes
   watch(
-    () => props.originalVolume,
-    (newVolume) => {
-      if (newVolume > 0) {
+    () => props.originalDb,
+    (newDb) => {
+      if (newDb > -60) {
         isOriginalMuted.value = false;
       }
     }
@@ -442,3 +466,68 @@
     }
   });
 </script>
+
+<style scoped>
+  /* Custom gain slider styling */
+  .gain-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+    outline: none;
+  }
+
+  .gain-slider::-webkit-slider-track {
+    background: transparent;
+    height: 8px;
+    border-radius: 4px;
+  }
+
+  .gain-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: white;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
+  }
+
+  .gain-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+
+  .gain-slider::-webkit-slider-thumb:active {
+    transform: scale(1.1);
+  }
+
+  .gain-slider::-moz-range-track {
+    background: transparent;
+    height: 8px;
+    border-radius: 4px;
+    border: none;
+  }
+
+  .gain-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: white;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
+  }
+
+  .gain-slider::-moz-range-thumb:hover {
+    transform: scale(1.2);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+
+  .gain-slider::-moz-range-thumb:active {
+    transform: scale(1.1);
+  }
+</style>

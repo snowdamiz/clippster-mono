@@ -1,7 +1,7 @@
 <template>
   <div class="flex-1 flex flex-col overflow-hidden">
-    <!-- Header -->
-    <div class="flex items-center justify-between py-3 px-1 border-b border-border/30">
+    <!-- Header (can be hidden when integrated into parent tabs) -->
+    <div v-if="!hideHeader" class="flex items-center justify-between py-3 border-b border-border/30">
       <div class="flex items-center gap-3">
         <div
           :class="[
@@ -48,7 +48,7 @@
     </div>
 
     <!-- Sub-tabs -->
-    <div class="flex items-center gap-1 py-2 px-1">
+    <div class="flex items-center gap-1 py-2 mt-2">
       <button
         v-for="tab in subtitleTabs"
         :key="tab.id"
@@ -65,7 +65,7 @@
     </div>
 
     <!-- Tab Content -->
-    <div class="flex-1 overflow-y-auto py-4 px-1 custom-scrollbar">
+    <div class="flex-1 overflow-y-auto py-4 custom-scrollbar">
       <!-- Presets Tab -->
       <div v-if="activeSubtitleTab === 'presets'" class="space-y-4">
         <!-- Save Buttons -->
@@ -250,7 +250,9 @@
         <!-- Quick tip -->
         <div class="pt-2 border-t border-border/30">
           <p class="text-[10px] text-muted-foreground">
-            Need more control? Check the <span class="text-primary cursor-pointer" @click="activeSubtitleTab = 'advanced'">Advanced</span> tab for font weight, alignment, and background options.
+            Need more control? Check the
+            <span class="text-primary cursor-pointer" @click="activeSubtitleTab = 'advanced'">Advanced</span>
+            tab for font weight, alignment, and background options.
           </p>
         </div>
       </div>
@@ -373,7 +375,9 @@
         <!-- Quick tip -->
         <div class="pt-2 border-t border-border/30">
           <p class="text-[10px] text-muted-foreground">
-            Need more control? Check the <span class="text-primary cursor-pointer" @click="activeSubtitleTab = 'advanced'">Advanced</span> tab for border widths, shadow offsets, and dual outlines.
+            Need more control? Check the
+            <span class="text-primary cursor-pointer" @click="activeSubtitleTab = 'advanced'">Advanced</span>
+            tab for border widths, shadow offsets, and dual outlines.
           </p>
         </div>
       </div>
@@ -425,7 +429,10 @@
           <label class="text-xs font-semibold text-foreground">Horizontal Position</label>
           <div class="grid grid-cols-3 gap-2">
             <button
-              @click="localSettings.textAlign = 'left'; emitSettingsChange();"
+              @click="
+                localSettings.textAlign = 'left';
+                emitSettingsChange();
+              "
               :class="[
                 'px-3 py-3 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5',
                 localSettings.textAlign === 'left'
@@ -437,7 +444,10 @@
               Left
             </button>
             <button
-              @click="localSettings.textAlign = 'center'; emitSettingsChange();"
+              @click="
+                localSettings.textAlign = 'center';
+                emitSettingsChange();
+              "
               :class="[
                 'px-3 py-3 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5',
                 localSettings.textAlign === 'center'
@@ -449,7 +459,10 @@
               Center
             </button>
             <button
-              @click="localSettings.textAlign = 'right'; emitSettingsChange();"
+              @click="
+                localSettings.textAlign = 'right';
+                emitSettingsChange();
+              "
               :class="[
                 'px-3 py-3 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5',
                 localSettings.textAlign === 'right'
@@ -466,7 +479,9 @@
         <!-- Quick tip -->
         <div class="pt-2 border-t border-border/30">
           <p class="text-[10px] text-muted-foreground">
-            Need more control? Check the <span class="text-primary cursor-pointer" @click="activeSubtitleTab = 'advanced'">Advanced</span> tab for precise positioning and width controls.
+            Need more control? Check the
+            <span class="text-primary cursor-pointer" @click="activeSubtitleTab = 'advanced'">Advanced</span>
+            tab for precise positioning and width controls.
           </p>
         </div>
       </div>
@@ -507,7 +522,10 @@
             <div class="flex items-center justify-between">
               <label class="text-xs font-semibold text-foreground">Background Color</label>
               <button
-                @click="localSettings.backgroundEnabled = !localSettings.backgroundEnabled; emitSettingsChange();"
+                @click="
+                  localSettings.backgroundEnabled = !localSettings.backgroundEnabled;
+                  emitSettingsChange();
+                "
                 type="button"
                 :class="[
                   'relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-all duration-200',
@@ -834,7 +852,12 @@
               <input
                 type="range"
                 :value="localSettings.lineHeight"
-                @input="(e) => { localSettings.lineHeight = parseFloat((e.target as HTMLInputElement).value); emitSettingsChange(); }"
+                @input="
+                  (e) => {
+                    localSettings.lineHeight = parseFloat((e.target as HTMLInputElement).value);
+                    emitSettingsChange();
+                  }
+                "
                 min="0.5"
                 max="2.5"
                 step="0.05"
@@ -1088,7 +1111,10 @@
 
           <div class="mt-4 pt-4 border-t border-border/50">
             <button
-              @click="uploadCustomFont(); showCustomFontsManager = false;"
+              @click="
+                uploadCustomFont();
+                showCustomFontsManager = false;
+              "
               class="w-full py-2.5 bg-primary text-primary-foreground rounded-md font-medium hover:bg-primary/90 transition-all flex items-center justify-center gap-2"
             >
               <Upload class="h-4 w-4" />
@@ -1109,7 +1135,9 @@
         <div class="bg-card rounded-lg p-6 max-w-sm w-full mx-4 border border-border">
           <h2 class="text-lg font-bold mb-3">Delete Font</h2>
           <p class="text-muted-foreground text-sm mb-4">
-            Delete <span class="font-semibold text-foreground">"{{ fontToDelete.name }}"</span>? This cannot be undone.
+            Delete
+            <span class="font-semibold text-foreground">"{{ fontToDelete.name }}"</span>
+            ? This cannot be undone.
           </p>
           <div class="flex gap-2">
             <button
@@ -1168,11 +1196,13 @@
     projectId: string | null;
     settings: SubtitleSettings;
     aspectRatio: { width: number; height: number };
+    hideHeader?: boolean;
   }
 
   const props = withDefaults(defineProps<SubtitlesTabProps>(), {
     projectId: null,
     aspectRatio: () => ({ width: 16, height: 9 }),
+    hideHeader: false,
   });
 
   // Emits
@@ -1306,7 +1336,9 @@
     emitSettingsChange();
   }
 
-  function setAnimationStyle(style: 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave') {
+  function setAnimationStyle(
+    style: 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave'
+  ) {
     localSettings.value.animationStyle = style;
     emitSettingsChange();
   }
@@ -1518,9 +1550,8 @@
     // Check if already injected
     if (document.getElementById(styleId)) return;
 
-    const format = font.file_type === 'ttf' ? 'truetype' : 
-                   font.file_type === 'otf' ? 'opentype' : font.file_type;
-    
+    const format = font.file_type === 'ttf' ? 'truetype' : font.file_type === 'otf' ? 'opentype' : font.file_type;
+
     const style = document.createElement('style');
     style.id = styleId;
     style.textContent = `
@@ -1556,7 +1587,7 @@
       if (!selected) return;
 
       const filePath = typeof selected === 'string' ? selected : selected[0];
-      
+
       // Copy font to storage
       const result = await invoke<{
         file_path: string;
@@ -1566,12 +1597,7 @@
       }>('copy_font_to_storage', { sourcePath: filePath });
 
       // Save to database
-      const fontId = await createCustomFont(
-        result.font_name,
-        result.file_name,
-        result.file_path,
-        result.file_type
-      );
+      const fontId = await createCustomFont(result.font_name, result.file_name, result.file_path, result.file_type);
 
       // Add to local state
       const newFont: CustomFont = {
@@ -1584,7 +1610,7 @@
         updated_at: Date.now() / 1000,
       };
       customFonts.value.push(newFont);
-      
+
       // Inject font CSS
       injectFontFace(newFont);
 
@@ -1599,22 +1625,22 @@
     try {
       // Delete file from storage
       await invoke('delete_font_file', { filePath: font.file_path });
-      
+
       // Delete from database
       await deleteCustomFontFromDb(font.id);
-      
+
       // Remove CSS
       removeFontFace(font.id);
-      
+
       // Remove from local state
       customFonts.value = customFonts.value.filter((f) => f.id !== font.id);
-      
+
       // If the deleted font was selected, switch to default
       if (localSettings.value.fontFamily === font.name) {
         localSettings.value.fontFamily = 'Montserrat';
         emitSettingsChange();
       }
-      
+
       fontToDelete.value = null;
       await showSuccessMessage('Font Deleted', `"${font.name}" has been removed.`);
     } catch (error) {
@@ -1631,6 +1657,11 @@
 
   onUnmounted(() => {
     document.removeEventListener('click', handleClickOutside);
+  });
+
+  // Expose methods for parent component access
+  defineExpose({
+    resetToDefaults,
   });
 </script>
 

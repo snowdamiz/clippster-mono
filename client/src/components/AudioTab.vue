@@ -1,7 +1,7 @@
 <template>
   <div class="flex-1 flex flex-col overflow-hidden">
-    <!-- Header -->
-    <div class="flex items-center justify-between py-3 px-1 border-b border-border/30">
+    <!-- Header (can be hidden when integrated into parent tabs) -->
+    <div v-if="!hideHeader" class="flex items-center justify-between py-3 border-b border-border/30">
       <div class="flex items-center gap-3">
         <div
           class="w-8 h-8 bg-gradient-to-br from-blue-500/15 to-cyan-500/15 rounded-lg flex items-center justify-center border border-blue-500/20"
@@ -24,7 +24,7 @@
     </div>
 
     <!-- Settings Content -->
-    <div class="flex-1 overflow-y-auto py-4 px-1 custom-scrollbar space-y-6">
+    <div class="flex-1 overflow-y-auto py-4 custom-scrollbar space-y-6">
       <!-- Volume Section -->
       <div class="space-y-3">
         <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Volume</h4>
@@ -148,10 +148,12 @@
   // Props
   interface AudioTabProps {
     projectId: string | null;
+    hideHeader?: boolean;
   }
 
   const props = withDefaults(defineProps<AudioTabProps>(), {
     projectId: null,
+    hideHeader: false,
   });
 
   // Emits
@@ -245,6 +247,11 @@
     if (props.projectId) {
       await loadSettings(props.projectId);
     }
+  });
+
+  // Expose methods for parent component access
+  defineExpose({
+    resetToDefaults,
   });
 </script>
 
