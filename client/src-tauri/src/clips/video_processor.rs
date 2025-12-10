@@ -2,21 +2,39 @@ use tauri_plugin_shell::ShellExt;
 use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 
-use super::types::{AspectRatio, WatermarkSettings, AudioSettings};
+use super::types::{AspectRatio, WatermarkSettings, AudioSettings, MusicTrackSettings};
 use super::encoder::{detect_hardware_encoder, get_quality_settings};
 use super::video_info::{get_video_info, calculate_crop_params, calculate_crop_position, IntroOutroCache};
 use super::font_manager::get_fonts_dir;
 
+// Helper struct to hold audio processing configuration
+pub struct AudioProcessingConfig {
+    // Simple audio filter for original audio (no music tracks)
+    pub simple_filter: Option<String>,
+    // Additional input files for music tracks
+    pub additional_inputs: Vec<String>,
+    // Complex filter graph for mixing audio (when music tracks present)
+    pub complex_filter: Option<String>,
+    // Whether we need to use filter_complex for audio
+    pub needs_complex_audio: bool,
+}
+
 // Helper function to build audio filter string for FFmpeg
 // Combines volume adjustment and normalization
+// This is the simple version for cases without music tracks
 fn build_audio_filter(audio_settings: Option<&AudioSettings>) -> Option<String> {
     let settings = audio_settings?;
     
     let mut filters = Vec::new();
     
+    // Combine clip-level originalAudioDb with project-level volume
+    // Both are in dB, so we add them together
+    let original_db = settings.original_audio_db.unwrap_or(0.0);
+    let total_db = original_db + settings.volume;
+    
     // Volume adjustment (in dB)
-    if settings.volume != 0.0 {
-        filters.push(format!("volume={}dB", settings.volume));
+    if total_db != 0.0 {
+        filters.push(format!("volume={}dB", total_db));
     }
     
     // Normalization (loudnorm filter - industry standard -16 LUFS)
@@ -28,6 +46,128 @@ fn build_audio_filter(audio_settings: Option<&AudioSettings>) -> Option<String> 
         None
     } else {
         Some(filters.join(","))
+    }
+}
+
+// Helper function to build complete audio processing config
+// Handles both simple (no music tracks) and complex (with music tracks) cases
+fn build_audio_processing_config(audio_settings: Option<&AudioSettings>, clip_duration: f64) -> AudioProcessingConfig {
+    let settings = match audio_settings {
+        Some(s) => s,
+        None => return AudioProcessingConfig {
+            simple_filter: None,
+            additional_inputs: Vec::new(),
+            complex_filter: None,
+            needs_complex_audio: false,
+        },
+    };
+
+    // Get non-muted music tracks
+    let music_tracks: Vec<&MusicTrackSettings> = settings.music_tracks
+        .as_ref()
+        .map(|tracks| tracks.iter().filter(|t| !t.is_muted).collect())
+        .unwrap_or_default();
+
+    // If no music tracks, use simple filter
+    if music_tracks.is_empty() {
+        return AudioProcessingConfig {
+            simple_filter: build_audio_filter(audio_settings),
+            additional_inputs: Vec::new(),
+            complex_filter: None,
+            needs_complex_audio: false,
+        };
+    }
+
+    // Build complex audio filter for mixing music tracks
+    let mut filter_parts = Vec::new();
+    let mut additional_inputs = Vec::new();
+    
+    // Calculate total gain for original audio
+    let original_db = settings.original_audio_db.unwrap_or(0.0);
+    let total_db = original_db + settings.volume;
+    
+    // Process original audio (input 0)
+    if total_db != 0.0 {
+        filter_parts.push(format!("[0:a]volume={}dB[orig]", total_db));
+    } else {
+        filter_parts.push("[0:a]acopy[orig]".to_string());
+    }
+    
+    // Process each music track
+    let mut mix_inputs = vec!["[orig]".to_string()];
+    for (i, track) in music_tracks.iter().enumerate() {
+        let input_idx = i + 1; // Input 0 is the video, music tracks start at 1
+        let track_label = format!("music{}", i);
+        
+        // Add input file
+        additional_inputs.push(track.file_path.clone());
+        
+        // Build filter chain for this track:
+        // 1. Apply gain (dB)
+        // 2. Apply fade in/out
+        // 3. Trim/pad to match timing
+        let mut track_filters = Vec::new();
+        
+        // Apply gain
+        if track.gain_db != 0.0 {
+            track_filters.push(format!("volume={}dB", track.gain_db));
+        }
+        
+        // Apply fade in (if > 0)
+        if track.fade_in > 0.0 {
+            track_filters.push(format!("afade=t=in:st=0:d={}", track.fade_in));
+        }
+        
+        // Calculate track duration for fade out
+        let track_duration = track.end_time - track.start_time;
+        if track_duration > 0.0 && track.fade_out > 0.0 {
+            let fade_out_start = (track_duration - track.fade_out).max(0.0);
+            track_filters.push(format!("afade=t=out:st={}:d={}", fade_out_start, track.fade_out));
+        }
+        
+        // Build the filter chain for this track
+        let filter_chain = if track_filters.is_empty() {
+            format!("[{}:a]acopy[{}]", input_idx, track_label)
+        } else {
+            format!("[{}:a]{}[{}]", input_idx, track_filters.join(","), track_label)
+        };
+        filter_parts.push(filter_chain);
+        
+        // Add delay to position the track at the correct time in the clip
+        // adelay uses milliseconds
+        if track.start_time > 0.0 {
+            let delay_ms = (track.start_time * 1000.0) as i64;
+            let delayed_label = format!("{}d", track_label);
+            filter_parts.push(format!("[{}]adelay={}:all=1[{}]", track_label, delay_ms, delayed_label));
+            mix_inputs.push(format!("[{}]", delayed_label));
+        } else {
+            mix_inputs.push(format!("[{}]", track_label));
+        }
+    }
+    
+    // Mix all audio tracks together
+    let mix_input_str = mix_inputs.join("");
+    let num_inputs = music_tracks.len() + 1; // Original + music tracks
+    filter_parts.push(format!(
+        "{}amix=inputs={}:duration=first:dropout_transition=0[mixed]",
+        mix_input_str, num_inputs
+    ));
+    
+    // Apply normalization if enabled (on the final mixed output)
+    if settings.normalize {
+        filter_parts.push("[mixed]loudnorm=I=-16:TP=-1.5:LRA=11[aout]".to_string());
+    } else {
+        filter_parts.push("[mixed]acopy[aout]".to_string());
+    }
+    
+    let complex_filter = filter_parts.join(";");
+    println!("[Rust] Built complex audio filter with {} music tracks: {}", music_tracks.len(), complex_filter);
+    
+    AudioProcessingConfig {
+        simple_filter: None, // Not used when we have complex audio
+        additional_inputs,
+        complex_filter: Some(complex_filter),
+        needs_complex_audio: true,
     }
 }
 

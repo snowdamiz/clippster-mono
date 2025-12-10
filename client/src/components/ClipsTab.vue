@@ -1314,11 +1314,69 @@
       }
 
       // Load audio settings for the project
-      const { getProjectAudioSettings } = await import('@/services/database');
+      const { getProjectAudioSettings, getFullClipEdit } = await import('@/services/database');
       let audioSettings = null;
       try {
-        audioSettings = await getProjectAudioSettings(props.projectId);
-        console.log('[ClipsTab] Loaded audio settings:', audioSettings);
+        // Load project-level audio settings
+        const projectAudioSettings = await getProjectAudioSettings(props.projectId);
+        console.log('[ClipsTab] Loaded project audio settings:', projectAudioSettings);
+
+        // Load clip-level audio settings from clip edit data
+        const clipEdit = await getFullClipEdit(clip.id);
+        let originalAudioDb: number | undefined;
+        let trackDbValues: Record<string, number> = {};
+        let musicTracks: Array<{
+          filePath: string;
+          gainDb: number;
+          fadeIn: number;
+          fadeOut: number;
+          startTime: number;
+          endTime: number;
+          isMuted: boolean;
+        }> = [];
+
+        if (clipEdit) {
+          const editData = JSON.parse(clipEdit.edit.edit_data);
+          originalAudioDb = editData.originalDb;
+          trackDbValues = editData.trackDbValues || {};
+          console.log(
+            '[ClipsTab] Loaded clip edit audio settings - originalDb:',
+            originalAudioDb,
+            'trackDbValues:',
+            trackDbValues
+          );
+
+          // Convert audio tracks to the format needed for FFmpeg
+          // Filter out muted tracks (unless solo mode is active)
+          const hasSoloTrack = clipEdit.audioTracks.some((t) => t.is_solo);
+          musicTracks = clipEdit.audioTracks
+            .filter((track) => {
+              // If any track is solo'd, only include solo'd tracks
+              if (hasSoloTrack) {
+                return track.is_solo && !track.is_muted;
+              }
+              // Otherwise, include all non-muted tracks
+              return !track.is_muted;
+            })
+            .map((track) => ({
+              filePath: track.file_path,
+              gainDb: trackDbValues[track.id] ?? 0,
+              fadeIn: track.fade_in,
+              fadeOut: track.fade_out,
+              startTime: track.start_time,
+              endTime: track.end_time,
+              isMuted: Boolean(track.is_muted),
+            }));
+          console.log('[ClipsTab] Prepared music tracks for export:', musicTracks.length);
+        }
+
+        // Merge project-level and clip-level audio settings
+        audioSettings = {
+          ...projectAudioSettings,
+          originalAudioDb,
+          musicTracks: musicTracks.length > 0 ? musicTracks : undefined,
+        };
+        console.log('[ClipsTab] Final merged audio settings:', audioSettings);
       } catch (err) {
         console.warn('[ClipsTab] Could not load audio settings:', err);
       }

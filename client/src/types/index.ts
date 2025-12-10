@@ -272,8 +272,22 @@ export interface IntroOutroRef {
 }
 
 export interface AudioSettings {
-  volume: number; // dB gain (-20 to +20)
+  volume: number; // dB gain (-20 to +20) - project level
   normalize: boolean; // enable audio normalization (export only)
+  // Clip-level audio mixer settings (optional, from clip editor)
+  originalAudioDb?: number; // dB gain for original audio track (-20 to +20)
+  musicTracks?: MusicTrackSettings[]; // Music tracks to mix in
+}
+
+// Music track settings for export
+export interface MusicTrackSettings {
+  filePath: string; // Path to audio file
+  gainDb: number; // dB gain (-20 to +20)
+  fadeIn: number; // Fade in duration in seconds
+  fadeOut: number; // Fade out duration in seconds
+  startTime: number; // When audio starts in clip timeline
+  endTime: number; // When audio ends in clip timeline
+  isMuted: boolean; // Whether track is muted
 }
 
 export interface MediaPanelEmits {

@@ -110,12 +110,30 @@ pub struct WatermarkSettings {
     pub scale: u32, // percentage of video width (5-50)
 }
 
+// Music track settings for export (from clip editor)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MusicTrackSettings {
+    pub file_path: String,   // Path to audio file
+    pub gain_db: f64,        // dB gain (-20 to +20)
+    pub fade_in: f64,        // Fade in duration in seconds
+    pub fade_out: f64,       // Fade out duration in seconds
+    pub start_time: f64,     // When audio starts in clip timeline
+    pub end_time: f64,       // When audio ends in clip timeline
+    pub is_muted: bool,      // Whether track is muted
+}
+
 // Audio settings structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioSettings {
-    pub volume: f64,     // dB gain (-20 to +20)
+    pub volume: f64,     // dB gain (-20 to +20) - project level
     pub normalize: bool, // enable audio normalization (export only)
+    // Clip-level audio mixer settings (optional, from clip editor)
+    #[serde(default)]
+    pub original_audio_db: Option<f64>, // dB gain for original audio track (-20 to +20)
+    #[serde(default)]
+    pub music_tracks: Option<Vec<MusicTrackSettings>>, // Music tracks to mix in
 }
 
 // Build settings structure (reserved for future use)
