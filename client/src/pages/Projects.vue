@@ -2193,7 +2193,7 @@
           const watermark = await getWatermarkImage(profile.watermark_id);
           if (watermark) {
             // Parse the creator's watermark settings from JSON
-            let creatorSettings = { x: 90, y: 10, opacity: 80, scale: 15 };
+            let creatorSettings = { x: 8, y: 95, opacity: 80, scale: 15 };
             if (profile.watermark_settings) {
               try {
                 const parsed = JSON.parse(profile.watermark_settings);

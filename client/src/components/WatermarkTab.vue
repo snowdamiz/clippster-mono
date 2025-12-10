@@ -555,7 +555,7 @@
       enabled: false,
       watermarkId: null,
       positionX: 8,
-      positionY: 92,
+      positionY: 95,
       opacity: 80,
       scale: 15,
     }),
@@ -680,9 +680,10 @@
       enabled: false,
       watermarkId: null,
       positionX: 8,
-      positionY: 92,
+      positionY: 95,
       opacity: 80,
       scale: 15,
+      perRatioSettings: localSettings.value.perRatioSettings, // Preserve creator profile settings
     };
     selectedWatermark.value = null;
     emitSettings();
@@ -871,10 +872,11 @@
     selectedPreset.value = preset;
     const settings = presetToWatermarkSettings(preset);
 
-    // Apply settings but keep enabled state and find the watermark
+    // Apply settings but keep enabled state and perRatioSettings (from creator profile)
     localSettings.value = {
       ...settings,
       enabled: localSettings.value.enabled,
+      perRatioSettings: localSettings.value.perRatioSettings, // Preserve creator profile settings
     };
 
     // Update selected watermark if preset has one

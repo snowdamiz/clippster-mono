@@ -354,7 +354,7 @@
     enabled: false,
     watermarkId: null,
     positionX: 8,
-    positionY: 92,
+    positionY: 95,
     opacity: 80,
     scale: 15,
   });
@@ -1129,7 +1129,7 @@
           
           // Parse the creator's per-ratio watermark settings
           let perRatioSettings = null;
-          let defaultPos = { x: 90, y: 10, opacity: 80, scale: 15 };
+          let defaultPos = { x: 8, y: 95, opacity: 80, scale: 15 };
           if (profile.watermark_settings) {
             try {
               perRatioSettings = JSON.parse(profile.watermark_settings);
@@ -1150,6 +1150,13 @@
             scale: defaultPos.scale,
             perRatioSettings: perRatioSettings,
           };
+
+          console.log('[ProjectWorkspaceDialog] Applying creator watermark settings:', {
+            watermarkId: newSettings.watermarkId,
+            defaultPos,
+            hasPerRatioSettings: !!perRatioSettings,
+            perRatioSettings,
+          });
 
           // Wait for next tick to ensure MediaPanel ref is available
           await nextTick();

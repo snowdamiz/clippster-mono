@@ -1310,6 +1310,12 @@
             // Include per-aspect-ratio settings if available (from creator profile)
             perRatioSettings: settings.watermark.perRatioSettings || null,
           };
+          console.log('[ClipsTab] Watermark settings for build:', {
+            positionX: watermarkSettings.positionX,
+            positionY: watermarkSettings.positionY,
+            hasPerRatioSettings: !!watermarkSettings.perRatioSettings,
+            perRatioSettings: watermarkSettings.perRatioSettings,
+          });
         }
       }
 

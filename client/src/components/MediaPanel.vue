@@ -215,7 +215,7 @@
     enabled: false,
     watermarkId: null,
     positionX: 8,
-    positionY: 92,
+    positionY: 95,
     opacity: 80,
     scale: 15,
   });

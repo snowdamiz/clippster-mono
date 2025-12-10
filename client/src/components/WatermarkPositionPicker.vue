@@ -331,14 +331,14 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   settings: () => ({
-    '16:9': { x: 90, y: 10, opacity: 80, scale: 15 },
+    '16:9': { x: 8, y: 95, opacity: 80, scale: 15 },
     '9:16': null, // Disabled by default - only 16:9 is enabled
     '1:1': null,
     '4:5': null,
   }),
 });
 
-const defaultPosition: CreatorWatermarkPosition = { x: 90, y: 10, opacity: 80, scale: 15 };
+const defaultPosition: CreatorWatermarkPosition = { x: 8, y: 95, opacity: 80, scale: 15 };
 
 const defaultSettings: CreatorWatermarkSettings = {
   '16:9': { ...defaultPosition },

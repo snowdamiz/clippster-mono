@@ -568,8 +568,9 @@
 
   // Default watermark settings - only 16:9 enabled by default
   // null means watermark is disabled for that aspect ratio
+  // Default position is bottom-left (8% horizontal, 95% vertical, 15% size)
   const defaultWatermarkSettings = {
-    '16:9': { x: 90, y: 10, opacity: 80, scale: 15 },
+    '16:9': { x: 8, y: 95, opacity: 80, scale: 15 },
     '9:16': null as { x: number; y: number; opacity: number; scale: number } | null,
     '1:1': null as { x: number; y: number; opacity: number; scale: number } | null,
     '4:5': null as { x: number; y: number; opacity: number; scale: number } | null,
