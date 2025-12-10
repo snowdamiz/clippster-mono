@@ -938,7 +938,11 @@
                 </div>
 
                 <!-- Video Container - Fixed 16:9 aspect ratio with custom controls -->
-                <div class="w-full aspect-video bg-black rounded-lg overflow-hidden relative group">
+                <div
+                  ref="inlineVideoContainerRef"
+                  class="w-full aspect-video bg-black rounded-lg overflow-hidden relative group"
+                  :class="{ 'inline-video-fullscreen': isInlineVideoFullscreen }"
+                >
                   <video
                     v-if="inlineVideoSrc"
                     ref="inlineVideoRef"
@@ -956,29 +960,66 @@
                     <p class="text-muted-foreground text-sm">No video source available</p>
                   </div>
 
+                  <!-- Watermark Overlay -->
+                  <div
+                    v-if="previewWatermarkData && previewWatermarkSettings && inlineVideoSrc"
+                    class="absolute pointer-events-none z-10 transition-opacity duration-300"
+                    :style="getPreviewWatermarkStyle"
+                  >
+                    <img
+                      :src="previewWatermarkData.dataUrl"
+                      alt="Watermark"
+                      class="max-w-full max-h-full object-contain"
+                      :style="{ opacity: (previewWatermarkSettings.opacity || 80) / 100 }"
+                    />
+                  </div>
+
                   <!-- Custom Video Controls -->
                   <div
                     v-if="inlineVideoSrc"
-                    class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-3 pt-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                    class="absolute bottom-0 left-0 right-0 bg-black/60 backdrop-blur-sm transition-opacity"
+                    :class="isInlineVideoFullscreen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
                   >
-                    <!-- Progress Bar -->
+                    <!-- Full-width Progress Bar -->
                     <div
-                      class="w-full h-1.5 bg-white/20 rounded-full cursor-pointer mb-3 group/progress"
-                      @click="seekInlineVideo"
+                      ref="inlineProgressBarRef"
+                      class="relative h-4 w-full cursor-pointer group/progress flex items-center"
                       @mousedown="startInlineSeekDrag"
+                      @mousemove="onInlineTimelineHover"
+                      @mouseleave="onInlineTimelineLeave"
                     >
-                      <div
-                        class="h-full bg-primary rounded-full relative"
-                        :style="{ width: `${inlineVideoProgress}%` }"
-                      >
+                      <!-- Visual track (centered in larger hit area) -->
+                      <div class="absolute inset-x-0 h-1 top-1/2 -translate-y-1/2">
+                        <!-- Background track -->
+                        <div class="absolute inset-0 bg-white/20"></div>
+                        <!-- Progress Bar -->
                         <div
-                          class="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover/progress:opacity-100 transition-opacity shadow-md"
+                          class="absolute h-full bg-violet-500"
+                          :class="{ 'transition-all duration-75': !inlineSeekDragging }"
+                          :style="{ width: `${inlineVideoProgress}%` }"
                         ></div>
+                      </div>
+                      <!-- Seek thumb - always visible, larger during drag -->
+                      <div
+                        class="absolute top-1/2 bg-violet-400 rounded-full shadow-md pointer-events-none"
+                        :class="[
+                          inlineSeekDragging ? 'w-4 h-4' : 'w-3 h-3',
+                          { 'transition-all duration-75': !inlineSeekDragging }
+                        ]"
+                        :style="{ left: `${inlineVideoProgress}%`, transform: 'translate(-50%, -50%)' }"
+                      ></div>
+                      <!-- Hover/drag time preview -->
+                      <div
+                        v-if="inlineHoverTime !== null || inlineSeekDragging"
+                        class="absolute -top-8 bg-black/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded font-medium whitespace-nowrap z-20 pointer-events-none"
+                        :style="{ left: `${inlineSeekDragging ? inlineVideoProgress : inlineHoverPosition}%`, transform: 'translateX(-50%)' }"
+                      >
+                        {{ formatDuration(inlineSeekDragging ? (inlineVideoProgress / 100) * inlineVideoClipDuration : inlineHoverTime) }}
                       </div>
                     </div>
 
                     <!-- Controls Row -->
-                    <div class="flex items-center justify-between">
+                    <div class="flex items-center justify-between px-3 py-2">
                       <div class="flex items-center gap-3">
                         <!-- Play/Pause -->
                         <button @click="toggleInlineVideoPlay" class="text-white hover:text-primary transition-colors">
@@ -1016,8 +1057,10 @@
                       <button
                         @click="toggleInlineVideoFullscreen"
                         class="text-white hover:text-primary transition-colors"
+                        :title="isInlineVideoFullscreen ? 'Exit Fullscreen' : 'Fullscreen'"
                       >
-                        <Maximize2 class="w-4 h-4" />
+                        <Minimize2 v-if="isInlineVideoFullscreen" class="w-4 h-4" />
+                        <Maximize2 v-else class="w-4 h-4" />
                       </button>
                     </div>
                   </div>
@@ -1276,6 +1319,7 @@
     VolumeX,
     Volume2,
     Maximize2,
+    Minimize2,
   } from 'lucide-vue-next';
   import {
     getAllProjects,
@@ -1687,6 +1731,24 @@
     return null;
   });
 
+  // Computed style for watermark position
+  const getPreviewWatermarkStyle = computed(() => {
+    if (!previewWatermarkSettings.value) return {};
+
+    const settings = previewWatermarkSettings.value;
+    const positionX = settings.positionX ?? 12;
+    const positionY = settings.positionY ?? 92;
+    const scale = settings.scale ?? 20;
+
+    return {
+      left: `${positionX}%`,
+      top: `${positionY}%`,
+      transform: 'translate(-50%, -50%)',
+      width: `${scale}%`,
+      maxWidth: `${scale}%`,
+    };
+  });
+
   function getFolderChildren(projectId: string): Project[] {
     return childrenMap.value.get(projectId) || [];
   }
@@ -1953,6 +2015,8 @@
   // Preview clip in popup player
   // Inline video player state
   const inlineVideoRef = ref<HTMLVideoElement | null>(null);
+  const inlineVideoContainerRef = ref<HTMLElement | null>(null);
+  const isInlineVideoFullscreen = ref(false);
   const inlineVideoSrc = ref<string | null>(null);
   const inlineVideoLoading = ref(false);
   const inlineVideoPlaying = ref(false);
@@ -1962,6 +2026,13 @@
   const inlineVideoClipDuration = ref(0);
   const inlineVideoProgress = ref(0);
   const inlineSeekDragging = ref(false);
+  const inlineProgressBarRef = ref<HTMLElement | null>(null);
+  const inlineHoverTime = ref<number | null>(null);
+  const inlineHoverPosition = ref(0);
+
+  // Watermark state for clip preview
+  const previewWatermarkData = ref<{ dataUrl: string; width?: number; height?: number } | null>(null);
+  const previewWatermarkSettings = ref<WatermarkSettings | null>(null);
 
   // Prepare video source when clip changes
   async function prepareInlineVideo() {
@@ -1984,14 +2055,92 @@
     }
   }
 
-  // Watch for clip changes to prepare video
+  // Watch for clip changes to prepare video and load watermark
   watch(clipToPreview, async (newClip) => {
     if (newClip) {
       await prepareInlineVideo();
+      await loadPreviewWatermark(newClip);
     } else {
       inlineVideoSrc.value = null;
+      previewWatermarkData.value = null;
+      previewWatermarkSettings.value = null;
     }
   });
+
+  // Load watermark for the clip preview based on creator profile
+  async function loadPreviewWatermark(clip: ClipWithVersionAndSegment) {
+    previewWatermarkData.value = null;
+    previewWatermarkSettings.value = null;
+
+    try {
+      // Get the project ID - either from segment_id (for segment clips) or the folder project
+      const projectId = clip.segment_id || selectedFolderProject.value?.id;
+      if (!projectId) return;
+
+      // Find the parent project (folder) to get the creator profile
+      const project = projects.value.find(p => p.id === projectId);
+      const parentProjectId = project?.parent_id || projectId;
+
+      // Get the creator profile for this project
+      const creatorProfile = await getCreatorProfileByProjectId(parentProjectId);
+      if (!creatorProfile || !creatorProfile.watermark_id) return;
+
+      // Load the watermark image
+      const watermark = await getWatermarkImage(creatorProfile.watermark_id);
+      if (!watermark) return;
+
+      // Load watermark data URL
+      const dataUrl = await invoke<string>('read_file_as_data_url', {
+        filePath: watermark.file_path,
+      });
+
+      previewWatermarkData.value = {
+        dataUrl,
+        width: watermark.width || undefined,
+        height: watermark.height || undefined,
+      };
+
+      // Parse watermark settings from creator profile
+      let watermarkSettings: WatermarkSettings = {
+        enabled: true,
+        watermarkId: creatorProfile.watermark_id,
+        positionX: 12,
+        positionY: 92,
+        opacity: 80,
+        scale: 20,
+      };
+
+      // Try to parse stored watermark settings
+      if (creatorProfile.watermark_settings) {
+        try {
+          const parsed = typeof creatorProfile.watermark_settings === 'string'
+            ? JSON.parse(creatorProfile.watermark_settings)
+            : creatorProfile.watermark_settings;
+          
+          // Get the 16:9 settings (default preview aspect ratio)
+          const ratioSettings = parsed['16:9'];
+          if (ratioSettings) {
+            watermarkSettings = {
+              enabled: true,
+              watermarkId: creatorProfile.watermark_id,
+              positionX: ratioSettings.x ?? 12,
+              positionY: ratioSettings.y ?? 92,
+              opacity: ratioSettings.opacity ?? 80,
+              scale: ratioSettings.scale ?? 20,
+            };
+          }
+        } catch (e) {
+          // Use defaults if parsing fails
+        }
+      }
+
+      previewWatermarkSettings.value = watermarkSettings;
+    } catch (error) {
+      console.error('[Projects] Failed to load watermark for preview:', error);
+      previewWatermarkData.value = null;
+      previewWatermarkSettings.value = null;
+    }
+  }
 
   function previewClip(clip: ClipWithVersionAndSegment) {
     clipToPreview.value = clip;
@@ -1999,6 +2148,11 @@
 
   // Close clip preview
   function closeClipPreview() {
+    // Exit fullscreen if in fullscreen mode
+    if (isInlineVideoFullscreen.value && document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+      isInlineVideoFullscreen.value = false;
+    }
     if (inlineVideoRef.value) {
       inlineVideoRef.value.pause();
     }
@@ -2093,51 +2247,90 @@
     }
   }
 
-  // Seek video based on click position
-  function seekInlineVideo(event: MouseEvent) {
+  // Calculate percent from mouse position on progress bar
+  function getInlinePercentFromEvent(event: MouseEvent): number {
+    if (!inlineProgressBarRef.value) return 0;
+    const rect = inlineProgressBarRef.value.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    return Math.max(0, Math.min(100, (x / rect.width) * 100));
+  }
+
+  // Seek video to a specific percent
+  function seekInlineVideoToPercent(percent: number) {
     if (!inlineVideoRef.value || !clipToPreview.value) return;
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const percent = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
     const startTime = getClipStartTime();
-    const newTime = startTime + percent * inlineVideoClipDuration.value;
+    const newTime = startTime + (percent / 100) * inlineVideoClipDuration.value;
     inlineVideoRef.value.currentTime = newTime;
-    inlineVideoCurrentTime.value = percent * inlineVideoClipDuration.value;
-    inlineVideoProgress.value = percent * 100;
+    inlineVideoCurrentTime.value = (percent / 100) * inlineVideoClipDuration.value;
+    inlineVideoProgress.value = percent;
   }
 
   // Start drag seeking
   function startInlineSeekDrag(event: MouseEvent) {
+    if (!inlineVideoRef.value || !clipToPreview.value) return;
+    
     inlineSeekDragging.value = true;
-
-    const onMouseMove = (e: MouseEvent) => {
-      if (!inlineVideoRef.value || !clipToPreview.value) return;
-      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-      const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      const startTime = getClipStartTime();
-      const newTime = startTime + percent * inlineVideoClipDuration.value;
-      inlineVideoRef.value.currentTime = newTime;
-      inlineVideoCurrentTime.value = percent * inlineVideoClipDuration.value;
-      inlineVideoProgress.value = percent * 100;
-    };
-
-    const onMouseUp = () => {
-      inlineSeekDragging.value = false;
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-    };
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
+    const percent = getInlinePercentFromEvent(event);
+    seekInlineVideoToPercent(percent);
+    
+    // Add document-level listeners for drag
+    document.addEventListener('mousemove', onInlineSeekDrag);
+    document.addEventListener('mouseup', stopInlineSeekDrag);
+    
+    event.preventDefault();
   }
 
-  // Toggle fullscreen
-  function toggleInlineVideoFullscreen() {
-    if (!inlineVideoRef.value) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    } else {
-      inlineVideoRef.value.requestFullscreen();
+  // Handle drag movement (called from document listener)
+  function onInlineSeekDrag(event: MouseEvent) {
+    if (!inlineSeekDragging.value) return;
+    const percent = getInlinePercentFromEvent(event);
+    seekInlineVideoToPercent(percent);
+  }
+
+  // Stop drag seeking
+  function stopInlineSeekDrag() {
+    if (!inlineSeekDragging.value) return;
+    inlineSeekDragging.value = false;
+    document.removeEventListener('mousemove', onInlineSeekDrag);
+    document.removeEventListener('mouseup', stopInlineSeekDrag);
+  }
+
+  // Handle hover for time preview
+  function onInlineTimelineHover(event: MouseEvent) {
+    if (inlineSeekDragging.value) return;
+    if (!inlineVideoClipDuration.value) return;
+    
+    const percent = getInlinePercentFromEvent(event);
+    inlineHoverTime.value = (percent / 100) * inlineVideoClipDuration.value;
+    inlineHoverPosition.value = percent;
+  }
+
+  // Clear hover state when leaving timeline
+  function onInlineTimelineLeave() {
+    if (!inlineSeekDragging.value) {
+      inlineHoverTime.value = null;
     }
+  }
+
+  // Toggle fullscreen - use container so custom controls are included
+  async function toggleInlineVideoFullscreen() {
+    if (!inlineVideoContainerRef.value) return;
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        isInlineVideoFullscreen.value = false;
+      } else {
+        await inlineVideoContainerRef.value.requestFullscreen();
+        isInlineVideoFullscreen.value = true;
+      }
+    } catch (err) {
+      console.error('[Projects] Fullscreen error:', err);
+    }
+  }
+
+  // Handle fullscreen change events (e.g., user presses Escape)
+  function handleInlineVideoFullscreenChange() {
+    isInlineVideoFullscreen.value = !!document.fullscreenElement;
   }
 
   // Delete clip from folder view
@@ -3365,6 +3558,8 @@
     document.addEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener);
     // Add event listener for video added events
     window.addEventListener('video-added', handleVideoAdded as EventListener);
+    // Add fullscreen change listener for inline video player
+    document.addEventListener('fullscreenchange', handleInlineVideoFullscreenChange);
     // Add click outside handler for folder download dropdown
     document.addEventListener('click', handleFolderDropdownClickOutside);
 
@@ -3383,7 +3578,16 @@
     // Clean up event listeners
     document.removeEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener);
     window.removeEventListener('video-added', handleVideoAdded as EventListener);
+    document.removeEventListener('fullscreenchange', handleInlineVideoFullscreenChange);
     document.removeEventListener('click', handleFolderDropdownClickOutside);
+    // Cleanup drag listeners
+    document.removeEventListener('mousemove', onInlineSeekDrag);
+    document.removeEventListener('mouseup', stopInlineSeekDrag);
+
+    // Exit fullscreen if unmounting while in fullscreen
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
 
     // Clean up Tauri event listeners
     clipBuildUnlistenFunctions.value.forEach((unlisten) => {
@@ -3396,3 +3600,25 @@
     clipBuildUnlistenFunctions.value = [];
   });
 </script>
+
+<style scoped>
+  /* Fullscreen video player styles */
+  .inline-video-fullscreen {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    max-height: none !important;
+    aspect-ratio: auto !important;
+    z-index: 9999 !important;
+    border-radius: 0 !important;
+    background: black !important;
+  }
+
+  .inline-video-fullscreen video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+  }
+</style>

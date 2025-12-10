@@ -1,7 +1,47 @@
 <template>
-  <div v-if="videoSrc && !videoLoading" class="mt-2 bg-black/40 backdrop-blur-sm rounded-lg border border-white/[0.04]">
+  <div v-if="videoSrc && !videoLoading" class="bg-black/60 backdrop-blur-sm">
+    <!-- Full-width Timeline/Progress Bar -->
+    <div
+      ref="timelineRef"
+      class="relative h-4 w-full cursor-pointer group flex items-center"
+      @mousedown="startDrag($event)"
+      @mousemove="onTimelineHover($event)"
+      @mouseleave="onTimelineLeave"
+    >
+      <!-- Visual track (centered in larger hit area) -->
+      <div class="absolute inset-x-0 h-1 top-1/2 -translate-y-1/2">
+        <!-- Background track -->
+        <div class="absolute inset-0 bg-white/20"></div>
+        <!-- Progress Bar -->
+        <div
+          class="absolute h-full bg-violet-500"
+          :class="{ 'transition-all duration-75': !isDragging }"
+          :style="{ width: `${progressPercent}%` }"
+        ></div>
+      </div>
+      <!-- Seek thumb - always visible, larger during drag -->
+      <div
+        class="absolute top-1/2 bg-violet-400 rounded-full shadow-md pointer-events-none"
+        :class="[
+          isDragging ? 'w-4 h-4' : 'w-3 h-3',
+          { 'transition-all duration-75': !isDragging }
+        ]"
+        :style="{
+          left: `${progressPercent}%`,
+          transform: 'translate(-50%, -50%)',
+        }"
+      ></div>
+      <!-- Hover/drag time preview -->
+      <div
+        v-if="hoverTime !== null || isDragging"
+        class="absolute -top-8 bg-black/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded font-medium whitespace-nowrap z-20 pointer-events-none"
+        :style="{ left: `${isDragging ? progressPercent : hoverPosition}%`, transform: 'translateX(-50%)' }"
+      >
+        {{ formatDuration(isDragging ? (progressPercent / 100) * duration : hoverTime) }}
+      </div>
+    </div>
     <!-- Control Buttons and Time Display -->
-    <div class="flex items-center justify-between px-1.5 py-1.5">
+    <div class="flex items-center justify-between px-2 py-1.5">
       <!-- Left Controls -->
       <div class="flex items-center gap-1">
         <!-- Go to Beginning Button -->
@@ -82,7 +122,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch } from 'vue';
+  import { ref, watch, computed, onUnmounted } from 'vue';
   import { SkipBack, Play, Pause, VolumeX, Volume2, Maximize2, Minimize2 } from 'lucide-vue-next';
 
   interface Props {
@@ -106,12 +146,27 @@
     (e: 'updateVolume', value: number): void;
     (e: 'goToBeginning'): void;
     (e: 'toggleFullscreen'): void;
+    (e: 'seekTo', time: number): void;
   }
 
   const emit = defineEmits<Emits>();
 
   // Local volume state for the slider
   const localVolume = ref(props.volume);
+
+  // Timeline refs and state
+  const timelineRef = ref<HTMLElement | null>(null);
+  const hoverTime = ref<number | null>(null);
+  const hoverPosition = ref(0);
+  const isDragging = ref(false);
+  const dragPercent = ref(0);
+
+  // Progress percentage for timeline (use drag position while dragging)
+  const progressPercent = computed(() => {
+    if (isDragging.value) return dragPercent.value;
+    if (!props.duration || props.duration <= 0) return 0;
+    return Math.min(100, (props.currentTime / props.duration) * 100);
+  });
 
   // Sync local volume with prop changes
   watch(
@@ -159,6 +214,73 @@
   function toggleFullscreen() {
     emit('toggleFullscreen');
   }
+
+  // Calculate percent from mouse position
+  function getPercentFromEvent(event: MouseEvent): number {
+    if (!timelineRef.value) return 0;
+    const rect = timelineRef.value.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    return Math.max(0, Math.min(100, (x / rect.width) * 100));
+  }
+
+  // Start dragging
+  function startDrag(event: MouseEvent) {
+    if (!props.duration || props.duration <= 0) return;
+    
+    isDragging.value = true;
+    dragPercent.value = getPercentFromEvent(event);
+    
+    // Add document-level listeners for drag
+    document.addEventListener('mousemove', onDrag);
+    document.addEventListener('mouseup', stopDrag);
+    
+    // Prevent text selection while dragging
+    event.preventDefault();
+  }
+
+  // Handle drag movement
+  function onDrag(event: MouseEvent) {
+    if (!isDragging.value) return;
+    dragPercent.value = getPercentFromEvent(event);
+  }
+
+  // Stop dragging and seek to final position
+  function stopDrag() {
+    if (!isDragging.value) return;
+    
+    // Seek to the final position
+    const seekTime = (dragPercent.value / 100) * props.duration;
+    emit('seekTo', seekTime);
+    
+    isDragging.value = false;
+    
+    // Remove document-level listeners
+    document.removeEventListener('mousemove', onDrag);
+    document.removeEventListener('mouseup', stopDrag);
+  }
+
+  // Handle hover for time preview
+  function onTimelineHover(event: MouseEvent) {
+    if (isDragging.value) return; // Don't update hover during drag
+    if (!props.duration || props.duration <= 0) return;
+
+    const percent = getPercentFromEvent(event);
+    hoverTime.value = (percent / 100) * props.duration;
+    hoverPosition.value = percent;
+  }
+
+  // Clear hover state when leaving timeline
+  function onTimelineLeave() {
+    if (!isDragging.value) {
+      hoverTime.value = null;
+    }
+  }
+
+  // Cleanup on unmount
+  onUnmounted(() => {
+    document.removeEventListener('mousemove', onDrag);
+    document.removeEventListener('mouseup', stopDrag);
+  });
 </script>
 
 <style scoped>

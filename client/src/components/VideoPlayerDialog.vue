@@ -99,50 +99,56 @@
             </div>
             <!-- Custom Video Controls -->
             <div
-              class="flex-shrink-0 bg-gradient-to-t from-zinc-950 to-zinc-900/90 backdrop-blur-xl border-t border-white/10"
+              class="flex-shrink-0 bg-black/60 backdrop-blur-sm"
             >
-              <!-- Timeline/Seek Bar -->
+              <!-- Full-width Timeline/Seek Bar -->
               <div
-                class="relative h-1.5 sm:h-2 cursor-pointer group mx-3 sm:mx-6 mt-3 sm:mt-5"
-                @click="seekTo($event)"
+                ref="timelineRef"
+                class="relative h-4 w-full cursor-pointer group flex items-center"
+                @mousedown="startDrag($event)"
                 @mousemove="onTimelineHover($event)"
-                @mouseleave="hoverTime = null"
+                @mouseleave="onTimelineLeave"
               >
-                <!-- Background track -->
-                <div class="absolute inset-0 bg-zinc-800 rounded-full"></div>
-                <!-- Buffered segments indicator (only in non-clip mode) -->
+                <!-- Visual track (centered in larger hit area) -->
+                <div class="absolute inset-x-0 h-1 top-1/2 -translate-y-1/2">
+                  <!-- Background track -->
+                  <div class="absolute inset-0 bg-white/20"></div>
+                  <!-- Buffered segments indicator (only in non-clip mode) -->
+                  <div
+                    v-if="!isClipPreviewMode"
+                    class="absolute h-full bg-violet-500/30 transition-all duration-300"
+                    :style="{ width: `${duration ? (buffered / duration) * 100 : 0}%` }"
+                  ></div>
+                  <!-- Progress Bar -->
+                  <div
+                    class="absolute h-full bg-violet-500"
+                    :class="{ 'transition-all duration-75': !isDragging }"
+                    :style="{ width: `${progressPercent}%` }"
+                  ></div>
+                </div>
+                <!-- Seek thumb - always visible, larger during drag -->
                 <div
-                  v-if="!isClipPreviewMode"
-                  class="absolute h-full bg-violet-500/30 rounded-full transition-all duration-300"
-                  :style="{ width: `${duration ? (buffered / duration) * 100 : 0}%` }"
-                ></div>
-                <!-- Progress Bar -->
-                <div
-                  class="absolute h-full bg-gradient-to-r from-violet-500 to-purple-500 rounded-full transition-all duration-100"
-                  :style="{ width: `${progressPercent}%` }"
-                ></div>
-                <!-- Seek thumb -->
-                <div
-                  class="absolute top-1/2 w-4 h-4 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 border-2 border-violet-500"
+                  class="absolute top-1/2 bg-violet-400 rounded-full shadow-md pointer-events-none"
+                  :class="[
+                    isDragging ? 'w-4 h-4' : 'w-3 h-3',
+                    { 'transition-all duration-75': !isDragging }
+                  ]"
                   :style="{
                     left: `${progressPercent}%`,
                     transform: 'translate(-50%, -50%)',
                   }"
                 ></div>
-                <!-- Hover time preview -->
+                <!-- Hover/drag time preview -->
                 <div
-                  v-if="hoverTime !== null"
-                  class="absolute -top-12 bg-zinc-900 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-lg font-medium border border-zinc-800"
-                  :style="{ left: `${hoverPosition}%`, transform: 'translateX(-50%)' }"
+                  v-if="hoverTime !== null || isDragging"
+                  class="absolute -top-8 bg-black/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded font-medium whitespace-nowrap z-20 pointer-events-none"
+                  :style="{ left: `${isDragging ? progressPercent : hoverPosition}%`, transform: 'translateX(-50%)' }"
                 >
-                  {{ formatDuration(hoverTime) }}
-                  <div
-                    class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-zinc-900 border-r border-b border-zinc-800"
-                  ></div>
+                  {{ formatDuration(isDragging ? (progressPercent / 100) * duration : hoverTime) }}
                 </div>
               </div>
               <!-- Control Buttons and Time Display -->
-              <div class="flex items-center justify-between p-5 pb-6">
+              <div class="flex items-center justify-between px-4 py-3">
                 <!-- Left Controls -->
                 <div class="flex items-center gap-4">
                   <!-- Play/Pause Button -->
@@ -286,8 +292,9 @@
     return duration.value;
   });
 
-  // Computed: Progress percentage (adjusted for clip mode)
+  // Computed: Progress percentage (adjusted for clip mode, use drag position while dragging)
   const progressPercent = computed(() => {
+    if (isDragging.value) return dragPercent.value;
     if (isClipPreviewMode.value) {
       const clipDuration = effectiveEndTime.value - effectiveStartTime.value;
       if (clipDuration <= 0) return 0;
@@ -309,6 +316,9 @@
   const hoverTime = ref<number | null>(null);
   const hoverPosition = ref(0);
   const videoSrc = ref<string | null>(null);
+  const timelineRef = ref<HTMLElement | null>(null);
+  const isDragging = ref(false);
+  const dragPercent = ref(0);
   const videoWidth = ref(16);
   const videoHeight = ref(9);
   const showReplayButton = ref(false);
@@ -414,23 +424,27 @@
     isPlaying.value = true;
   }
 
-  function seekTo(event: MouseEvent) {
-    if (!videoElement.value) return;
+  // Calculate percent from mouse position on timeline
+  function getPercentFromEvent(event: MouseEvent): number {
+    if (!timelineRef.value) return 0;
+    const rect = timelineRef.value.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    return Math.max(0, Math.min(100, (x / rect.width) * 100));
+  }
 
-    const timeline = event.currentTarget as HTMLElement;
-    const rect = timeline.getBoundingClientRect();
-    const clickX = event.clientX - rect.left;
-    const clickPercent = Math.max(0, Math.min(1, clickX / rect.width));
+  // Seek video to a specific percent
+  function seekToPercent(percent: number) {
+    if (!videoElement.value) return;
 
     let seekTime: number;
     if (isClipPreviewMode.value) {
-      // Map click position to time within clip range
+      // Map percent to time within clip range
       const clipDuration = effectiveEndTime.value - effectiveStartTime.value;
-      seekTime = effectiveStartTime.value + clickPercent * clipDuration;
+      seekTime = effectiveStartTime.value + (percent / 100) * clipDuration;
     } else {
       const videoDuration = videoElement.value.duration || duration.value;
       if (!videoDuration || isNaN(videoDuration)) return;
-      seekTime = clickPercent * videoDuration;
+      seekTime = (percent / 100) * videoDuration;
     }
 
     videoElement.value.currentTime = seekTime;
@@ -438,25 +452,61 @@
     showReplayButton.value = false;
   }
 
-  function onTimelineHover(event: MouseEvent) {
-    const timeline = event.currentTarget as HTMLElement;
-    const rect = timeline.getBoundingClientRect();
-    const hoverX = event.clientX - rect.left;
-    const hoverPercent = Math.max(0, Math.min(1, hoverX / rect.width));
+  // Start dragging
+  function startDrag(event: MouseEvent) {
+    if (!videoElement.value) return;
+    
+    isDragging.value = true;
+    dragPercent.value = getPercentFromEvent(event);
+    seekToPercent(dragPercent.value);
+    
+    // Add document-level listeners for drag
+    document.addEventListener('mousemove', onDrag);
+    document.addEventListener('mouseup', stopDrag);
+    
+    event.preventDefault();
+  }
 
+  // Handle drag movement
+  function onDrag(event: MouseEvent) {
+    if (!isDragging.value) return;
+    dragPercent.value = getPercentFromEvent(event);
+    seekToPercent(dragPercent.value);
+  }
+
+  // Stop dragging
+  function stopDrag() {
+    if (!isDragging.value) return;
+    isDragging.value = false;
+    document.removeEventListener('mousemove', onDrag);
+    document.removeEventListener('mouseup', stopDrag);
+  }
+
+  function onTimelineHover(event: MouseEvent) {
+    if (isDragging.value) return; // Don't update hover during drag
+    
+    const percent = getPercentFromEvent(event);
+    
     let hoverTimeSeconds: number;
     if (isClipPreviewMode.value) {
       // Show time relative to clip start
       const clipDuration = effectiveEndTime.value - effectiveStartTime.value;
-      hoverTimeSeconds = hoverPercent * clipDuration;
+      hoverTimeSeconds = (percent / 100) * clipDuration;
     } else {
       const videoDuration = videoElement.value?.duration || duration.value;
       if (!videoDuration || isNaN(videoDuration)) return;
-      hoverTimeSeconds = hoverPercent * videoDuration;
+      hoverTimeSeconds = (percent / 100) * videoDuration;
     }
 
-    hoverPosition.value = hoverPercent * 100;
+    hoverPosition.value = percent;
     hoverTime.value = hoverTimeSeconds;
+  }
+
+  // Clear hover state when leaving timeline
+  function onTimelineLeave() {
+    if (!isDragging.value) {
+      hoverTime.value = null;
+    }
   }
 
   function updateVolume() {
@@ -627,6 +677,9 @@
 
   onUnmounted(() => {
     document.removeEventListener('keydown', handleKeydown);
+    // Cleanup drag listeners
+    document.removeEventListener('mousemove', onDrag);
+    document.removeEventListener('mouseup', stopDrag);
   });
 </script>
 

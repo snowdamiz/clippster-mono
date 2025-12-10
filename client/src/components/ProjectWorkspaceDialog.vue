@@ -87,6 +87,7 @@
                 @updateVolume="updateVolume"
                 @goToBeginning="goToBeginning"
                 @toggleFullscreen="toggleFullscreen"
+                @seekTo="seekToTime"
               />
             </div>
             <!-- Right Side: Media Section -->
@@ -465,6 +466,7 @@
     timelineHoverPosition,
     togglePlayPause,
     seekTimeline,
+    seekToTime,
     onTimelineTrackHover,
     onTimelineZoomChanged,
     updateVolume,

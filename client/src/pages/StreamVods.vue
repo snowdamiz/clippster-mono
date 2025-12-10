@@ -700,8 +700,10 @@
       return;
     }
 
-    // Re-detect platform to ensure it's current
-    detectPlatform();
+    // Only auto-detect platform if not already explicitly set (e.g., from query params or recent search)
+    if (!detectedPlatform.value) {
+      detectPlatform();
+    }
 
     if (!detectedPlatform.value) {
       showError(
