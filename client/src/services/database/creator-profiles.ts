@@ -56,9 +56,9 @@ export async function getCreatorProfile(id: string): Promise<CreatorProfileWithL
 
 // Default watermark settings - only 16:9 enabled by default
 // null means watermark is disabled for that aspect ratio
-// Default position is bottom-left (8% horizontal, 95% vertical, 15% size)
+// Default position is bottom-left (12% horizontal, 92% vertical, 20% size)
 const DEFAULT_WATERMARK_SETTINGS = JSON.stringify({
-  '16:9': { x: 8, y: 95, opacity: 80, scale: 15 },
+  '16:9': { x: 12, y: 92, opacity: 80, scale: 20 },
   '9:16': null,
   '1:1': null,
   '4:5': null,

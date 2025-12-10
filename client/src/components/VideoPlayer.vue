@@ -369,10 +369,10 @@
     watermarkSettings: () => ({
       enabled: false,
       watermarkId: null,
-      positionX: 8,
-      positionY: 95,
+      positionX: 12,
+      positionY: 92,
       opacity: 80,
-      scale: 15,
+      scale: 20,
     }),
     watermarkData: null,
     audioGainDb: 0,
@@ -802,23 +802,12 @@
 
     const settings = props.watermarkSettings;
     
-    // Check if we have per-ratio settings and use them if available
-    let positionX = settings.positionX;
-    let positionY = settings.positionY;
-    let scale = settings.scale || 15;
-    let opacity = settings.opacity;
-    
-    const perRatio = settings.perRatioSettings;
-    if (perRatio) {
-      const ratioKey = aspectRatioString.value as keyof typeof perRatio;
-      const ratioSettings = perRatio[ratioKey];
-      if (ratioSettings) {
-        positionX = ratioSettings.x;
-        positionY = ratioSettings.y;
-        scale = ratioSettings.scale;
-        opacity = ratioSettings.opacity;
-      }
-    }
+    // For preview, always use the manual position values (positionX/positionY)
+    // This allows users to make one-off adjustments without changing creator profile defaults
+    // The perRatioSettings are used by the build process for multi-ratio exports
+    const positionX = settings.positionX;
+    const positionY = settings.positionY;
+    const scale = settings.scale || 15;
 
     return {
       width: `${scale}%`,
@@ -828,23 +817,10 @@
     };
   });
 
-  // Get watermark opacity based on aspect ratio
+  // Get watermark opacity - use manual value for preview
   const getWatermarkOpacity = computed(() => {
     if (!props.watermarkSettings) return 1;
-    
-    const settings = props.watermarkSettings;
-    let opacity = settings.opacity || 100;
-    
-    const perRatio = settings.perRatioSettings;
-    if (perRatio) {
-      const ratioKey = aspectRatioString.value as keyof typeof perRatio;
-      const ratioSettings = perRatio[ratioKey];
-      if (ratioSettings) {
-        opacity = ratioSettings.opacity;
-      }
-    }
-    
-    return opacity / 100;
+    return (props.watermarkSettings.opacity || 100) / 100;
   });
 
   // Expose the video element ref to parent

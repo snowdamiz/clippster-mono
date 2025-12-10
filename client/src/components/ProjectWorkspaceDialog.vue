@@ -353,10 +353,10 @@
   const watermarkSettings = ref<WatermarkSettings>({
     enabled: false,
     watermarkId: null,
-    positionX: 8,
-    positionY: 95,
+    positionX: 12,
+    positionY: 92,
     opacity: 80,
-    scale: 15,
+    scale: 20,
   });
 
   // Audio gain state (in dB, -20 to +20)
@@ -1129,7 +1129,7 @@
           
           // Parse the creator's per-ratio watermark settings
           let perRatioSettings = null;
-          let defaultPos = { x: 8, y: 95, opacity: 80, scale: 15 };
+          let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
           if (profile.watermark_settings) {
             try {
               perRatioSettings = JSON.parse(profile.watermark_settings);

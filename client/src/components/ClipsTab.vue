@@ -1299,6 +1299,30 @@
       if (settings.watermark && settings.watermark.enabled && settings.watermark.watermarkId) {
         const watermarkImage = await getWatermarkImage(settings.watermark.watermarkId);
         if (watermarkImage) {
+          // Use the manually adjusted position values for the build
+          // Override perRatioSettings for all selected aspect ratios with the manual values
+          // This allows one-off adjustments without changing creator profile defaults
+          const manualPosition = {
+            x: settings.watermark.positionX,
+            y: settings.watermark.positionY,
+            opacity: settings.watermark.opacity,
+            scale: settings.watermark.scale,
+          };
+          
+          // Create perRatioSettings that uses manual values for all selected aspect ratios
+          const buildPerRatioSettings: Record<string, typeof manualPosition | null> = {};
+          for (const ratio of settings.aspectRatios) {
+            buildPerRatioSettings[ratio] = manualPosition;
+          }
+          // Also include any other ratios from original perRatioSettings (for completeness)
+          if (settings.watermark.perRatioSettings) {
+            for (const [ratio, ratioSettings] of Object.entries(settings.watermark.perRatioSettings)) {
+              if (!(ratio in buildPerRatioSettings)) {
+                buildPerRatioSettings[ratio] = ratioSettings;
+              }
+            }
+          }
+
           watermarkSettings = {
             enabled: true,
             watermarkId: settings.watermark.watermarkId,
@@ -1307,13 +1331,14 @@
             positionY: settings.watermark.positionY,
             opacity: settings.watermark.opacity,
             scale: settings.watermark.scale,
-            // Include per-aspect-ratio settings if available (from creator profile)
-            perRatioSettings: settings.watermark.perRatioSettings || null,
+            // Use manual values for all selected aspect ratios
+            perRatioSettings: buildPerRatioSettings,
           };
           console.log('[ClipsTab] Watermark settings for build:', {
             positionX: watermarkSettings.positionX,
             positionY: watermarkSettings.positionY,
-            hasPerRatioSettings: !!watermarkSettings.perRatioSettings,
+            manualPosition,
+            selectedRatios: settings.aspectRatios,
             perRatioSettings: watermarkSettings.perRatioSettings,
           });
         }

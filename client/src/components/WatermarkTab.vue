@@ -554,10 +554,10 @@
     settings: () => ({
       enabled: false,
       watermarkId: null,
-      positionX: 8,
-      positionY: 95,
+      positionX: 12,
+      positionY: 92,
       opacity: 80,
-      scale: 15,
+      scale: 20,
     }),
     aspectRatio: () => ({ width: 16, height: 9 }),
   });
@@ -596,15 +596,15 @@
   const previewAreaRef = ref<HTMLElement | null>(null);
   const isDragging = ref(false);
 
-  // Position presets
+  // Position presets (using 12/88 for corners, 92 for bottom to match default watermark position)
   const positionPresets = [
-    { name: 'Top Left', x: 8, y: 8 },
+    { name: 'Top Left', x: 12, y: 8 },
     { name: 'Top Center', x: 50, y: 8 },
-    { name: 'Top Right', x: 92, y: 8 },
+    { name: 'Top Right', x: 88, y: 8 },
     { name: 'Center', x: 50, y: 50 },
-    { name: 'Bottom Left', x: 8, y: 92 },
+    { name: 'Bottom Left', x: 12, y: 92 },
     { name: 'Bottom Center', x: 50, y: 92 },
-    { name: 'Bottom Right', x: 92, y: 92 },
+    { name: 'Bottom Right', x: 88, y: 92 },
   ];
 
   // Computed
@@ -679,10 +679,10 @@
     localSettings.value = {
       enabled: false,
       watermarkId: null,
-      positionX: 8,
-      positionY: 95,
+      positionX: 12,
+      positionY: 92,
       opacity: 80,
-      scale: 15,
+      scale: 20,
       perRatioSettings: localSettings.value.perRatioSettings, // Preserve creator profile settings
     };
     selectedWatermark.value = null;

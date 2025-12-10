@@ -331,14 +331,14 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   settings: () => ({
-    '16:9': { x: 8, y: 95, opacity: 80, scale: 15 },
+    '16:9': { x: 12, y: 92, opacity: 80, scale: 20 },
     '9:16': null, // Disabled by default - only 16:9 is enabled
     '1:1': null,
     '4:5': null,
   }),
 });
 
-const defaultPosition: CreatorWatermarkPosition = { x: 8, y: 95, opacity: 80, scale: 15 };
+const defaultPosition: CreatorWatermarkPosition = { x: 12, y: 92, opacity: 80, scale: 20 };
 
 const defaultSettings: CreatorWatermarkSettings = {
   '16:9': { ...defaultPosition },
@@ -385,13 +385,13 @@ const localSettings = reactive<Record<AspectRatioId, CreatorWatermarkPosition>>(
 // Check if any ratio is enabled
 const anyRatioEnabled = computed(() => Object.values(enabledRatios).some(v => v));
 
-// Presets for quick positioning
+// Presets for quick positioning (using 12/88 for corners to match default watermark position)
 const presets = [
-  { name: 'Top Left', x: 10, y: 10 },
-  { name: 'Top Right', x: 90, y: 10 },
+  { name: 'Top Left', x: 12, y: 8 },
+  { name: 'Top Right', x: 88, y: 8 },
   { name: 'Center', x: 50, y: 50 },
-  { name: 'Bottom Left', x: 10, y: 90 },
-  { name: 'Bottom Right', x: 90, y: 90 },
+  { name: 'Bottom Left', x: 12, y: 92 },
+  { name: 'Bottom Right', x: 88, y: 92 },
 ];
 
 // Current aspect ratio settings
