@@ -377,6 +377,7 @@ pub struct ManualFramingConfig {
 
 impl ManualFramingConfig {
     /// Convert manual config to a FramingStrategy with MultiRegion mode
+    #[allow(dead_code)]
     pub fn to_framing_strategy(&self, source_width: u32, source_height: u32) -> FramingStrategy {
         FramingStrategy {
             mode: FramingMode::MultiRegion,

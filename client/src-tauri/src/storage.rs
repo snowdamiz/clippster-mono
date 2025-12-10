@@ -897,7 +897,7 @@ pub async fn copy_font_to_storage(source_path: String) -> Result<CopyFontRespons
     }
     
     // Get the original filename
-    let original_filename = source
+    let _original_filename = source
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or("Could not determine filename")?

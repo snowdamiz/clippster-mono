@@ -4,10 +4,11 @@ use futures::future::join_all;
 
 use super::types::{AspectRatio, WatermarkSettings, AudioSettings, MusicTrackSettings};
 use super::encoder::{detect_hardware_encoder, get_quality_settings};
-use super::video_info::{get_video_info, calculate_crop_params, calculate_crop_position, IntroOutroCache};
+use super::video_info::{get_video_info, calculate_crop_params, IntroOutroCache};
 use super::font_manager::get_fonts_dir;
 
 // Helper struct to hold audio processing configuration
+#[allow(dead_code)]
 pub struct AudioProcessingConfig {
     // Simple audio filter for original audio (no music tracks)
     pub simple_filter: Option<String>,
@@ -51,7 +52,8 @@ fn build_audio_filter(audio_settings: Option<&AudioSettings>) -> Option<String> 
 
 // Helper function to build complete audio processing config
 // Handles both simple (no music tracks) and complex (with music tracks) cases
-fn build_audio_processing_config(audio_settings: Option<&AudioSettings>, clip_duration: f64) -> AudioProcessingConfig {
+#[allow(dead_code)]
+fn build_audio_processing_config(audio_settings: Option<&AudioSettings>, _clip_duration: f64) -> AudioProcessingConfig {
     let settings = match audio_settings {
         Some(s) => s,
         None => return AudioProcessingConfig {
