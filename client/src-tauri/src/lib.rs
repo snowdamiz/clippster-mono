@@ -300,6 +300,12 @@ pub fn run() {
                             sql: include_str!("../migrations/051_add_clip_edits.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 52,
+                            description: "add_audio_assets",
+                            sql: include_str!("../migrations/052_add_audio_assets.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -430,6 +436,8 @@ pub fn run() {
             storage::merge_video_segments,
             storage::copy_font_to_storage,
             storage::delete_font_file,
+            storage::copy_audio_to_storage,
+            storage::delete_audio_file,
 
             // Assets commands
             assets::upload_asset_async,

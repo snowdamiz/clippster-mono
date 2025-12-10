@@ -78,6 +78,7 @@ pub fn init_storage_dirs() -> Result<StoragePaths, String> {
         outros: base_dir.join("outros"), // Keep for backwards compatibility
         watermarks: base_dir.join("watermarks"),
         fonts: base_dir.join("fonts"),
+        audio: base_dir.join("audio"),
         temp: base_dir.join("temp"),
     };
 
@@ -98,6 +99,8 @@ pub fn init_storage_dirs() -> Result<StoragePaths, String> {
         .map_err(|e| format!("Failed to create watermarks directory: {}", e))?;
     std::fs::create_dir_all(&paths.fonts)
         .map_err(|e| format!("Failed to create fonts directory: {}", e))?;
+    std::fs::create_dir_all(&paths.audio)
+        .map_err(|e| format!("Failed to create audio directory: {}", e))?;
     std::fs::create_dir_all(&paths.temp)
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
 
@@ -111,6 +114,7 @@ pub fn init_storage_dirs() -> Result<StoragePaths, String> {
     println!("  Outros: {}", paths.outros.display());
     println!("  Watermarks: {}", paths.watermarks.display());
     println!("  Fonts: {}", paths.fonts.display());
+    println!("  Audio: {}", paths.audio.display());
     println!("  Temp: {}", paths.temp.display());
 
     *cache = Some(paths.clone());
@@ -129,6 +133,7 @@ pub struct StoragePaths {
     pub outros: PathBuf,
     pub watermarks: PathBuf,
     pub fonts: PathBuf,
+    pub audio: PathBuf,
     pub temp: PathBuf,
 }
 
@@ -147,6 +152,7 @@ pub fn get_storage_paths() -> Result<StoragePathsResponse, String> {
         outros: paths.outros.to_string_lossy().to_string(),
         watermarks: paths.watermarks.to_string_lossy().to_string(),
         fonts: paths.fonts.to_string_lossy().to_string(),
+        audio: paths.audio.to_string_lossy().to_string(),
         temp: paths.temp.to_string_lossy().to_string(),
     })
 }
@@ -163,6 +169,7 @@ pub struct StoragePathsResponse {
     pub outros: String,
     pub watermarks: String,
     pub fonts: String,
+    pub audio: String,
     pub temp: String,
 }
 
@@ -939,5 +946,187 @@ pub fn delete_font_file(file_path: String) -> Result<(), String> {
         println!("[Rust] Font deleted: {}", file_path);
     }
     
+    Ok(())
+}
+
+/// Response structure for copy_audio_to_storage
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CopyAudioResponse {
+    pub destination_path: String,
+    pub original_filename: String,
+    pub duration: Option<f64>,
+    pub file_size: Option<u64>,
+    pub sample_rate: Option<u32>,
+    pub channels: Option<u32>,
+}
+
+/// Tauri command to copy an audio file to storage
+#[tauri::command]
+pub async fn copy_audio_to_storage(source_path: String, app: tauri::AppHandle) -> Result<CopyAudioResponse, String> {
+    use std::fs;
+    use std::path::Path;
+    use tauri_plugin_shell::ShellExt;
+
+    let source = Path::new(&source_path);
+
+    // Validate source file exists
+    if !source.exists() {
+        return Err("Source file does not exist".to_string());
+    }
+
+    // Get original filename
+    let original_filename = source
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("Failed to get filename")?;
+
+    // Get file extension
+    let extension = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .ok_or("File has no extension")?
+        .to_lowercase();
+
+    // Validate it's an audio file
+    let valid_extensions = ["mp3", "wav", "flac", "aac", "m4a", "ogg", "wma"];
+    if !valid_extensions.contains(&extension.as_str()) {
+        return Err(format!("Invalid audio format. Supported: {}", valid_extensions.join(", ")));
+    }
+
+    // Get file size
+    let file_size = fs::metadata(&source)
+        .map(|m| m.len())
+        .ok();
+
+    // Generate unique filename using timestamp and random component
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get timestamp: {}", e))?
+        .as_secs();
+
+    let random_suffix: u32 = rand::random();
+    let filename = format!("audio_{}_{}.{}", timestamp, random_suffix, extension);
+
+    // Get storage paths (audio directory is created in init_storage_dirs)
+    let paths = init_storage_dirs()?;
+    let destination = paths.audio.join(&filename);
+
+    // Copy the file
+    fs::copy(source, &destination)
+        .map_err(|e| format!("Failed to copy file: {}", e))?;
+
+    // Try to get audio metadata using FFmpeg
+    let mut duration: Option<f64> = None;
+    let mut sample_rate: Option<u32> = None;
+    let mut channels: Option<u32> = None;
+
+    // Use ffprobe/ffmpeg to get audio info
+    if let Ok(output) = app.shell()
+        .sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args([
+            "-i", destination.to_str().unwrap_or(""),
+            "-f", "null",
+            "-",
+        ])
+        .output()
+        .await
+    {
+        // FFmpeg outputs info to stderr
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        
+        // Parse duration from output like "Duration: 00:03:45.12"
+        for line in stderr.lines() {
+            if line.contains("Duration:") {
+                if let Some(duration_part) = line.split("Duration:").nth(1) {
+                    if let Some(duration_str) = duration_part.split(',').next() {
+                        let duration_str = duration_str.trim();
+                        // Parse HH:MM:SS.ms format
+                        let parts: Vec<&str> = duration_str.split(':').collect();
+                        if parts.len() >= 3 {
+                            if let (Ok(hours), Ok(minutes), Ok(seconds_ms)) = (
+                                parts[0].parse::<f64>(),
+                                parts[1].parse::<f64>(),
+                                parts[2].parse::<f64>(),
+                            ) {
+                                duration = Some(hours * 3600.0 + minutes * 60.0 + seconds_ms);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Parse sample rate and channels from lines like "Stream #0:0: Audio: mp3, 44100 Hz, stereo"
+            if line.contains("Stream") && line.contains("Audio:") {
+                // Look for sample rate (e.g., "44100 Hz")
+                if let Some(hz_pos) = line.find(" Hz") {
+                    let before_hz = &line[..hz_pos];
+                    if let Some(last_space) = before_hz.rfind(|c: char| !c.is_numeric()) {
+                        let sr_str = &before_hz[last_space + 1..];
+                        if let Ok(sr) = sr_str.parse::<u32>() {
+                            sample_rate = Some(sr);
+                        }
+                    }
+                }
+                
+                // Parse channels from "mono", "stereo", or "5.1" etc.
+                if line.contains("mono") {
+                    channels = Some(1);
+                } else if line.contains("stereo") {
+                    channels = Some(2);
+                } else if line.contains("5.1") {
+                    channels = Some(6);
+                } else if line.contains("7.1") {
+                    channels = Some(8);
+                }
+            }
+        }
+    }
+
+    println!("[Rust] Audio copied to storage: {}", destination.display());
+    if let Some(dur) = duration {
+        println!("[Rust] Audio duration: {:.2}s", dur);
+    }
+    if let (Some(sr), Some(ch)) = (sample_rate, channels) {
+        println!("[Rust] Audio: {} Hz, {} channels", sr, ch);
+    }
+
+    Ok(CopyAudioResponse {
+        destination_path: destination.to_string_lossy().to_string(),
+        original_filename: original_filename.to_string(),
+        duration,
+        file_size,
+        sample_rate,
+        channels,
+    })
+}
+
+/// Tauri command to delete an audio file from the filesystem
+#[tauri::command]
+pub fn delete_audio_file(file_path: String) -> Result<(), String> {
+    use std::fs;
+    use std::path::Path;
+
+    let path = Path::new(&file_path);
+
+    // Validate the file path is in the audio directory
+    let paths = init_storage_dirs()?;
+
+    if !path.starts_with(&paths.audio) {
+        return Err("File path is not in the audio directory".to_string());
+    }
+
+    // Check if file exists
+    if !path.exists() {
+        // File already deleted, that's okay
+        println!("[Rust] Audio file already deleted: {}", file_path);
+        return Ok(());
+    }
+
+    // Delete the file
+    fs::remove_file(path)
+        .map_err(|e| format!("Failed to delete file: {}", e))?;
+
+    println!("[Rust] Audio deleted: {}", file_path);
     Ok(())
 }

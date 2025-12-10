@@ -58,12 +58,90 @@
 
     <!-- Add Music Button -->
     <button
-      @click="handleAddTrack"
+      @click="openAudioPicker"
       class="w-full py-3 border-2 border-dashed border-white/20 hover:border-violet-500/50 rounded-lg text-sm text-white/60 hover:text-violet-400 transition-colors flex items-center justify-center gap-2"
     >
       <Plus :size="16" />
       Add Music Track
     </button>
+
+    <!-- Audio Picker Modal -->
+    <Teleport to="body">
+      <div
+        v-if="showAudioPicker"
+        class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60]"
+        @click.self="closeAudioPicker"
+      >
+        <div class="bg-zinc-900 rounded-xl border border-white/10 w-full max-w-md mx-4 overflow-hidden">
+          <!-- Header -->
+          <div class="flex items-center justify-between px-4 py-3 border-b border-white/10">
+            <h3 class="text-sm font-medium text-white">Add Music Track</h3>
+            <button @click="closeAudioPicker" class="p-1 hover:bg-white/10 rounded transition-colors">
+              <X :size="16" class="text-white/60" />
+            </button>
+          </div>
+
+          <!-- Content -->
+          <div class="p-4 space-y-4 max-h-[60vh] overflow-y-auto">
+            <!-- Upload New -->
+            <div>
+              <button
+                @click="handleUploadNew"
+                :disabled="isUploading"
+                class="w-full p-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-lg text-sm text-emerald-400 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                <Loader2 v-if="isUploading" :size="16" class="animate-spin" />
+                <Upload v-else :size="16" />
+                {{ isUploading ? 'Uploading...' : 'Upload New Audio' }}
+              </button>
+              <p class="text-[10px] text-white/40 mt-1.5 text-center">MP3, WAV, FLAC, AAC, M4A, OGG</p>
+            </div>
+
+            <!-- Divider -->
+            <div class="flex items-center gap-3">
+              <div class="h-px flex-1 bg-white/10"></div>
+              <span class="text-xs text-white/40">or select from library</span>
+              <div class="h-px flex-1 bg-white/10"></div>
+            </div>
+
+            <!-- Audio Library -->
+            <div>
+              <div v-if="loadingAssets" class="flex items-center justify-center py-8">
+                <Loader2 :size="20" class="animate-spin text-white/40" />
+              </div>
+
+              <div v-else-if="audioAssets.length === 0" class="py-8 text-center">
+                <Library :size="32" class="mx-auto text-white/20 mb-2" />
+                <p class="text-sm text-white/40">No audio assets yet</p>
+                <p class="text-xs text-white/30 mt-1">Upload audio to build your library</p>
+              </div>
+
+              <div v-else class="space-y-2">
+                <button
+                  v-for="asset in audioAssets"
+                  :key="asset.id"
+                  @click="selectAsset(asset)"
+                  class="w-full p-3 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-emerald-500/30 rounded-lg transition-colors text-left group"
+                >
+                  <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                      <Music :size="14" class="text-emerald-400" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm text-white truncate">{{ asset.name }}</p>
+                      <p class="text-xs text-white/40">
+                        {{ asset.duration ? formatDuration(asset.duration) : 'Unknown duration' }}
+                      </p>
+                    </div>
+                    <Plus :size="16" class="text-white/30 group-hover:text-emerald-400 transition-colors" />
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- Music Tracks -->
     <div v-if="audioTracks.length > 0" class="space-y-3">
@@ -170,16 +248,16 @@
         </div>
       </div>
     </div>
-
-    <!-- Hidden file input -->
-    <input ref="fileInputRef" type="file" accept="audio/*" class="hidden" @change="onFileSelected" />
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, watch } from 'vue';
-  import { Volume2, VolumeX, Music, Plus, Headphones, Trash2 } from 'lucide-vue-next';
+  import { ref, watch, onMounted, onUnmounted } from 'vue';
+  import { Volume2, VolumeX, Music, Plus, Headphones, Trash2, Upload, Library, X, Loader2 } from 'lucide-vue-next';
   import type { AudioTrack } from '@/types';
+  import { getAllAudioAssets, type AudioAsset } from '@/services/database';
+  import { useAudioAssetOperations } from '@/composables/useAudioAssetOperations';
+  import { invoke } from '@tauri-apps/api/core';
 
   const props = defineProps<{
     audioTracks: AudioTrack[];
@@ -197,9 +275,15 @@
     (e: 'updateTrackDb', trackId: string, db: number): void;
   }>();
 
-  const fileInputRef = ref<HTMLInputElement | null>(null);
   const isOriginalMuted = ref(false);
   const previousVolume = ref(props.originalVolume || 1);
+
+  // Audio asset selection state
+  const showAudioPicker = ref(false);
+  const audioAssets = ref<AudioAsset[]>([]);
+  const loadingAssets = ref(false);
+  const isUploading = ref(false);
+  const { uploadAudioAsset, onUploadComplete } = useAudioAssetOperations();
 
   // Format dB value for display
   function formatDb(db: number): string {
@@ -207,50 +291,70 @@
     return `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`;
   }
 
+  // Format duration for display
+  function formatDuration(seconds: number): string {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
   // Get dB value for a track
   function getTrackDb(trackId: string): number {
     return props.trackDbValues[trackId] ?? 0;
   }
 
-  function handleAddTrack() {
-    fileInputRef.value?.click();
+  // Audio picker functions
+  async function openAudioPicker() {
+    showAudioPicker.value = true;
+    await loadAudioAssets();
   }
 
-  function onFileSelected(e: Event) {
-    const target = e.target as HTMLInputElement;
-    const file = target.files?.[0];
-    if (file) {
-      // Check file size (warn if > 10MB)
-      if (file.size > 10 * 1024 * 1024) {
-        console.warn('[AudioMixerTab] Large audio file selected:', (file.size / 1024 / 1024).toFixed(2), 'MB');
+  function closeAudioPicker() {
+    showAudioPicker.value = false;
+  }
+
+  async function loadAudioAssets() {
+    loadingAssets.value = true;
+    try {
+      audioAssets.value = await getAllAudioAssets();
+    } catch (err) {
+      console.error('[AudioMixerTab] Failed to load audio assets:', err);
+    } finally {
+      loadingAssets.value = false;
+    }
+  }
+
+  async function handleUploadNew() {
+    isUploading.value = true;
+    try {
+      const result = await uploadAudioAsset();
+      if (result.success && result.audioAssetId) {
+        // Reload assets and close picker - the asset will be in the list
+        await loadAudioAssets();
+        // Find and select the newly uploaded asset
+        const newAsset = audioAssets.value.find((a) => a.id === result.audioAssetId);
+        if (newAsset) {
+          await selectAsset(newAsset);
+        }
       }
+    } catch (err) {
+      console.error('[AudioMixerTab] Upload failed:', err);
+    } finally {
+      isUploading.value = false;
+    }
+  }
 
-      // First, get the audio duration using a temporary Audio element
-      const tempUrl = URL.createObjectURL(file);
-      const audio = new Audio(tempUrl);
+  async function selectAsset(asset: AudioAsset) {
+    try {
+      // Get the streaming URL for the audio file
+      const port = await invoke<number>('get_video_server_port');
+      const encodedPath = btoa(unescape(encodeURIComponent(asset.file_path)));
+      const audioUrl = `http://localhost:${port}/video/${encodedPath}`;
 
-      audio.onloadedmetadata = () => {
-        const duration = audio.duration;
-        URL.revokeObjectURL(tempUrl); // Clean up temp URL
-
-        // Read file as data URL (base64) so it persists in the database
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result as string;
-          emit('addTrack', dataUrl, file.name.replace(/\.[^/.]+$/, ''), duration);
-        };
-        reader.onerror = () => {
-          console.error('[AudioMixerTab] Error reading audio file');
-        };
-        reader.readAsDataURL(file);
-      };
-
-      audio.onerror = () => {
-        URL.revokeObjectURL(tempUrl);
-        console.error('[AudioMixerTab] Error loading audio file');
-      };
-
-      target.value = '';
+      emit('addTrack', audioUrl, asset.name, asset.duration || 0);
+      closeAudioPicker();
+    } catch (err) {
+      console.error('[AudioMixerTab] Failed to select asset:', err);
     }
   }
 
@@ -319,4 +423,22 @@
       }
     }
   );
+
+  // Register for upload completion to refresh the asset list
+  let unregisterUploadCallback: (() => void) | null = null;
+
+  onMounted(() => {
+    unregisterUploadCallback = onUploadComplete(() => {
+      if (showAudioPicker.value) {
+        loadAudioAssets();
+      }
+    });
+  });
+
+  // Cleanup on unmount
+  onUnmounted(() => {
+    if (unregisterUploadCallback) {
+      unregisterUploadCallback();
+    }
+  });
 </script>

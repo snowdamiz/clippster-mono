@@ -96,7 +96,13 @@
             :key="asset.id"
             class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
             :class="{ 'ring-2 ring-primary ring-offset-2 ring-offset-background': isAssetSelected(asset.id) }"
-            @click="asset.assetType !== 'watermark' ? playAsset(asset as IntroOutro) : null"
+            @click="
+              asset.assetType === 'intro' || asset.assetType === 'outro'
+                ? playAsset(asset as IntroOutro)
+                : asset.assetType === 'audio'
+                  ? toggleAudioPlayback(asset as AudioAsset)
+                  : null
+            "
           >
             <!-- Selection Checkbox (visible on hover or when selected) -->
             <div
@@ -143,11 +149,24 @@
                       ? 'text-white/70 bg-blue-500/20 backdrop-blur-sm'
                       : asset.assetType === 'outro'
                         ? 'text-white/70 bg-purple-500/20 backdrop-blur-sm'
-                        : 'text-white/70 bg-amber-500/20 backdrop-blur-sm',
+                        : asset.assetType === 'audio'
+                          ? 'text-white/70 bg-emerald-500/20 backdrop-blur-sm'
+                          : 'text-white/70 bg-amber-500/20 backdrop-blur-sm',
                 ]"
               >
-                <component :is="asset.assetType === 'watermark' ? ImageIcon : Package" class="h-3 w-3" />
-                {{ asset.assetType === 'intro' ? 'Intro' : asset.assetType === 'outro' ? 'Outro' : 'Watermark' }}
+                <component
+                  :is="asset.assetType === 'watermark' ? ImageIcon : asset.assetType === 'audio' ? Music : Package"
+                  class="h-3 w-3"
+                />
+                {{
+                  asset.assetType === 'intro'
+                    ? 'Intro'
+                    : asset.assetType === 'outro'
+                      ? 'Outro'
+                      : asset.assetType === 'audio'
+                        ? 'Audio'
+                        : 'Watermark'
+                }}
               </span>
             </div>
 
@@ -165,13 +184,16 @@
 
               <!-- Metadata Row -->
               <div class="flex items-center gap-2 text-xs text-white/70 font-medium">
-                <!-- Duration for video assets, dimensions for watermarks -->
+                <!-- Duration for video/audio assets, dimensions for watermarks -->
                 <span v-if="asset.assetType === 'watermark'">
                   {{
                     (asset as WatermarkImage).width && (asset as WatermarkImage).height
                       ? `${(asset as WatermarkImage).width}×${(asset as WatermarkImage).height}`
                       : 'Image'
                   }}
+                </span>
+                <span v-else-if="asset.assetType === 'audio'">
+                  {{ formatDuration((asset as AudioAsset).duration || undefined) }}
                 </span>
                 <span v-else>{{ formatDuration((asset as IntroOutro).duration || undefined) }}</span>
 
@@ -185,15 +207,26 @@
             <!-- Hover Overlay Buttons -->
             <div
               class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-3"
+              :class="{ 'opacity-100': asset.assetType === 'audio' && isAudioPlaying(asset.id) }"
             >
-              <!-- Play button only for video assets -->
+              <!-- Play button for video assets -->
               <button
-                v-if="asset.assetType !== 'watermark'"
+                v-if="asset.assetType === 'intro' || asset.assetType === 'outro'"
                 class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
                 title="Play"
                 @click.stop="playAsset(asset as IntroOutro)"
               >
                 <Play class="h-5 w-5" />
+              </button>
+              <!-- Play/Pause button for audio assets -->
+              <button
+                v-if="asset.assetType === 'audio'"
+                class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                :title="isAudioPlaying(asset.id) ? 'Pause' : 'Play'"
+                @click.stop="toggleAudioPlayback(asset as AudioAsset)"
+              >
+                <Pause v-if="isAudioPlaying(asset.id)" class="h-5 w-5" />
+                <Play v-else class="h-5 w-5" />
               </button>
               <button
                 class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
@@ -210,7 +243,7 @@
         <EmptyState
           v-if="allAssets.length === 0 && !uploading"
           title="No assets yet"
-          description="Upload your first intro, outro, or watermark to get started"
+          description="Upload your first intro, outro, watermark, or audio to get started"
         >
           <template #icon>
             <Package class="h-16 w-16 text-muted-foreground" />
@@ -287,11 +320,30 @@
 
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
-  import { getAllIntroOutros, getAllWatermarkImages, type IntroOutro, type WatermarkImage } from '@/services/database';
-  import { Archive, Folder, Upload, Play, Trash2, Package, Image as ImageIcon, Check } from 'lucide-vue-next';
+  import {
+    getAllIntroOutros,
+    getAllWatermarkImages,
+    getAllAudioAssets,
+    type IntroOutro,
+    type WatermarkImage,
+    type AudioAsset,
+  } from '@/services/database';
+  import {
+    Archive,
+    Folder,
+    Upload,
+    Play,
+    Trash2,
+    Package,
+    Image as ImageIcon,
+    Check,
+    Music,
+    Pause,
+  } from 'lucide-vue-next';
   import { useToast } from '@/composables/useToast';
   import { useAssetOperations } from '@/composables/useAssetOperations';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
+  import { useAudioAssetOperations } from '@/composables/useAudioAssetOperations';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
   import { getStoragePath } from '@/services/storage';
   import { invoke } from '@tauri-apps/api/core';
@@ -305,10 +357,14 @@
   import AssetUploadDialog from '@/components/AssetUploadDialog.vue';
 
   // Combined asset type for display
-  type DisplayAsset = (IntroOutro & { assetType: 'intro' | 'outro' }) | (WatermarkImage & { assetType: 'watermark' });
+  type DisplayAsset =
+    | (IntroOutro & { assetType: 'intro' | 'outro' })
+    | (WatermarkImage & { assetType: 'watermark' })
+    | (AudioAsset & { assetType: 'audio' });
 
   const assets = ref<IntroOutro[]>([]);
   const watermarks = ref<WatermarkImage[]>([]);
+  const audioAssets = ref<AudioAsset[]>([]);
   const loading = ref(true);
   const showDeleteDialog = ref(false);
   const assetToDelete = ref<DisplayAsset | null>(null);
@@ -318,22 +374,29 @@
   const thumbnailCache = ref<Map<string, string>>(new Map());
   const { error, success } = useToast();
 
+  // Audio player state
+  const currentlyPlayingAudio = ref<string | null>(null);
+  const audioElement = ref<HTMLAudioElement | null>(null);
+
   // Multi-select state
   const selectedAssets = ref<Set<string>>(new Set());
   const showBulkDeleteDialog = ref(false);
 
   let unregisterUploadCallback: (() => void) | null = null;
   let unregisterWatermarkCallback: (() => void) | null = null;
+  let unregisterAudioCallback: (() => void) | null = null;
 
   // Asset operations composable
   const { uploading, showSkeletonCard, deleteAsset, onUploadComplete } = useAssetOperations();
   const { deleteWatermark, onUploadComplete: onWatermarkUploadComplete } = useWatermarkOperations();
+  const { deleteAudioAsset, onUploadComplete: onAudioUploadComplete } = useAudioAssetOperations();
 
   // Combined assets for display
   const allAssets = computed<DisplayAsset[]>(() => {
     const introOutros: DisplayAsset[] = assets.value.map((a) => ({ ...a, assetType: a.type as 'intro' | 'outro' }));
     const wms: DisplayAsset[] = watermarks.value.map((w) => ({ ...w, assetType: 'watermark' as const }));
-    return [...introOutros, ...wms];
+    const audios: DisplayAsset[] = audioAssets.value.map((a) => ({ ...a, assetType: 'audio' as const }));
+    return [...introOutros, ...wms, ...audios];
   });
 
   // Pagination state
@@ -452,11 +515,16 @@
   async function loadAssets() {
     loading.value = true;
     try {
-      // Load both intro/outros and watermarks
-      const [introOutros, wms] = await Promise.all([getAllIntroOutros(), getAllWatermarkImages()]);
+      // Load intro/outros, watermarks, and audio assets
+      const [introOutros, wms, audios] = await Promise.all([
+        getAllIntroOutros(),
+        getAllWatermarkImages(),
+        getAllAudioAssets(),
+      ]);
 
       assets.value = introOutros;
       watermarks.value = wms;
+      audioAssets.value = audios;
 
       // Reset pagination to first page when loading new assets
       currentPage.value = 1;
@@ -469,6 +537,11 @@
       // Load thumbnails for watermarks (they are images, so use them directly)
       for (const wm of watermarks.value) {
         await loadWatermarkThumbnail(wm);
+      }
+
+      // Set default icon for audio assets
+      for (const audio of audioAssets.value) {
+        loadAudioThumbnail(audio);
       }
     } catch (err) {
       console.error('Failed to load assets:', err);
@@ -491,6 +564,15 @@
           'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiB2aWV3Qm94PSIwIDAgMjAwIDEyMCIgZmlsbD0ibm9uZSI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiBmaWxsPSIjNzg1MDAwIi8+CjxjaXJjbGUgY3g9IjEwMCIgY3k9IjUwIiByPSIyMCIgZmlsbD0iI0Y1OUUwQiIvPgo8dGV4dCB4PSIxMDAiIHk9Ijk1IiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiNGRkZGRkYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPldhdGVybWFyazwvdGV4dD4KPC9zdmc+';
         thumbnailCache.value.set(watermark.id, defaultIcon);
       }
+    }
+  }
+
+  function loadAudioThumbnail(audio: AudioAsset) {
+    if (!thumbnailCache.value.has(audio.id)) {
+      // Audio assets use a default waveform-style icon
+      const defaultIcon =
+        'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiB2aWV3Qm94PSIwIDAgMjAwIDEyMCIgZmlsbD0ibm9uZSI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiBmaWxsPSIjMDY0RTNCIi8+CjxyZWN0IHg9IjMwIiB5PSI0NSIgd2lkdGg9IjgiIGhlaWdodD0iMzAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjQ1IiB5PSIzNSIgd2lkdGg9IjgiIGhlaWdodD0iNTAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjYwIiB5PSIyNSIgd2lkdGg9IjgiIGhlaWdodD0iNzAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9Ijc1IiB5PSI0MCIgd2lkdGg9IjgiIGhlaWdodD0iNDAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjkwIiB5PSIzMCIgd2lkdGg9IjgiIGhlaWdodD0iNjAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjEwNSIgeT0iMjAiIHdpZHRoPSI4IiBoZWlnaHQ9IjgwIiByeD0iMiIgZmlsbD0iIzEwQjk4MSIvPgo8cmVjdCB4PSIxMjAiIHk9IjM1IiB3aWR0aD0iOCIgaGVpZ2h0PSI1MCIgcng9IjIiIGZpbGw9IiMxMEI5ODEiLz4KPHJlY3QgeD0iMTM1IiB5PSI0NSIgd2lkdGg9IjgiIGhlaWdodD0iMzAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjE1MCIgeT0iMzAiIHdpZHRoPSI4IiBoZWlnaHQ9IjYwIiByeD0iMiIgZmlsbD0iIzEwQjk4MSIvPgo8cmVjdCB4PSIxNjUiIHk9IjQwIiB3aWR0aD0iOCIgaGVpZ2h0PSI0MCIgcng9IjIiIGZpbGw9IiMxMEI5ODEiLz4KPC9zdmc+';
+      thumbnailCache.value.set(audio.id, defaultIcon);
     }
   }
 
@@ -566,6 +648,12 @@
       return null;
     }
 
+    if (asset.assetType === 'audio') {
+      // Audio assets should have been loaded in loadAudioThumbnail
+      loadAudioThumbnail(asset as AudioAsset);
+      return thumbnailCache.value.get(asset.id) || null;
+    }
+
     return getAssetThumbnailUrl(asset as IntroOutro);
   }
 
@@ -613,6 +701,8 @@
     let result;
     if (assetToDelete.value.assetType === 'watermark') {
       result = await deleteWatermark(assetToDelete.value as WatermarkImage);
+    } else if (assetToDelete.value.assetType === 'audio') {
+      result = await deleteAudioAsset(assetToDelete.value as AudioAsset);
     } else {
       result = await deleteAsset(assetToDelete.value as IntroOutro);
     }
@@ -623,6 +713,50 @@
 
     showDeleteDialog.value = false;
     assetToDelete.value = null;
+  }
+
+  // Audio playback functions
+  async function toggleAudioPlayback(audio: AudioAsset) {
+    try {
+      if (currentlyPlayingAudio.value === audio.id) {
+        // Stop playing
+        if (audioElement.value) {
+          audioElement.value.pause();
+          audioElement.value.currentTime = 0;
+        }
+        currentlyPlayingAudio.value = null;
+      } else {
+        // Stop any currently playing audio
+        if (audioElement.value) {
+          audioElement.value.pause();
+        }
+
+        // Get the audio URL
+        const port = await invoke<number>('get_video_server_port');
+        const encodedPath = btoa(unescape(encodeURIComponent(audio.file_path)));
+        const audioUrl = `http://localhost:${port}/video/${encodedPath}`;
+
+        // Create and play new audio
+        audioElement.value = new Audio(audioUrl);
+        audioElement.value.onended = () => {
+          currentlyPlayingAudio.value = null;
+        };
+        audioElement.value.onerror = () => {
+          error('Playback Error', 'Failed to play audio file');
+          currentlyPlayingAudio.value = null;
+        };
+        await audioElement.value.play();
+        currentlyPlayingAudio.value = audio.id;
+      }
+    } catch (err) {
+      console.error('Failed to play audio:', err);
+      error('Playback Error', 'Failed to play audio file');
+      currentlyPlayingAudio.value = null;
+    }
+  }
+
+  function isAudioPlaying(audioId: string): boolean {
+    return currentlyPlayingAudio.value === audioId;
   }
 
   async function openIntrosFolder() {
@@ -691,6 +825,8 @@
         let result;
         if (asset.assetType === 'watermark') {
           result = await deleteWatermark(asset as WatermarkImage);
+        } else if (asset.assetType === 'audio') {
+          result = await deleteAudioAsset(asset as AudioAsset);
         } else {
           result = await deleteAsset(asset as IntroOutro);
         }
@@ -727,6 +863,12 @@
       loadAssets();
     });
 
+    // Register for audio upload completion events
+    unregisterAudioCallback = onAudioUploadComplete(() => {
+      // Reload assets list when audio upload completes
+      loadAssets();
+    });
+
     // Assets will appear automatically when upload completes
   });
 
@@ -737,6 +879,14 @@
     }
     if (unregisterWatermarkCallback) {
       unregisterWatermarkCallback();
+    }
+    if (unregisterAudioCallback) {
+      unregisterAudioCallback();
+    }
+    // Stop any playing audio
+    if (audioElement.value) {
+      audioElement.value.pause();
+      audioElement.value = null;
     }
   });
 </script>

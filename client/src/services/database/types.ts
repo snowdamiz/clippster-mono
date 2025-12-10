@@ -389,6 +389,18 @@ export interface WatermarkImage {
   updated_at: number;
 }
 
+export interface AudioAsset {
+  id: string;
+  name: string;
+  file_path: string;
+  duration: number | null;
+  file_size: number | null;
+  sample_rate: number | null;
+  channels: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface WatermarkSettings {
   enabled: boolean;
   watermarkId: string | null;
