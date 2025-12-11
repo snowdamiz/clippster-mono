@@ -2417,12 +2417,24 @@
     showFolderBuildDialog.value = true;
   }
 
+  // Track if we're currently processing a folder build to prevent duplicates
+  const isFolderBuildInProgress = ref(false);
+
   // Handle build confirmation
   async function onFolderBuildConfirm(settings: BuildSettings) {
     if (!folderClipToBuild.value) return;
+
+    // Prevent duplicate builds
+    if (isFolderBuildInProgress.value) {
+      console.warn('[Projects] Folder build already in progress, ignoring duplicate request');
+      return;
+    }
+    isFolderBuildInProgress.value = true;
+
     const clip = folderClipToBuild.value;
 
     try {
+      console.log('[Projects] Starting folder build with aspectRatios:', settings.aspectRatios);
       // Get the video file for this clip's segment
       const videos = projectVideos.value[clip.segment_id];
       if (!videos || videos.length === 0) {
@@ -2552,6 +2564,9 @@
         });
       } catch {}
       error('Build failed', e instanceof Error ? e.message : 'An error occurred while building the clip.');
+    } finally {
+      // Reset the build in progress flag
+      isFolderBuildInProgress.value = false;
     }
   }
 

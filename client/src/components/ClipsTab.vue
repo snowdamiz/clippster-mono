@@ -1228,6 +1228,9 @@
     showBuildSettingsDialog.value = true;
   }
 
+  // Track if we're currently processing a build to prevent duplicates
+  const isBuildInProgress = ref(false);
+
   async function onBuildConfirm(settings: BuildSettings) {
     const clip = clipToBuild.value;
     if (!clip || !props.projectId) {
@@ -1235,8 +1238,16 @@
       return;
     }
 
+    // Prevent duplicate builds
+    if (isBuildInProgress.value) {
+      console.warn('[ClipsTab] Build already in progress, ignoring duplicate request');
+      return;
+    }
+    isBuildInProgress.value = true;
+
     try {
       console.log('[ClipsTab] Starting clip build for:', clip.id, 'with settings:', settings);
+      console.log('[ClipsTab] Aspect ratios received:', settings.aspectRatios);
 
       const { updateClipBuildStatus, getRawVideosByProjectId, getWatermarkImage, createClipBuild, getClipBuilds } =
         await import('@/services/database');
@@ -1560,6 +1571,9 @@
 
       // Show error via event
       showError('Build Failed', `Failed to build clip: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      // Reset the build in progress flag
+      isBuildInProgress.value = false;
     }
   }
 
