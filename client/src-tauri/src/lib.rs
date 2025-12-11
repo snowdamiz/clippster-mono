@@ -312,6 +312,12 @@ pub fn run() {
                             sql: include_str!("../migrations/051_add_creator_watermark_position.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 52,
+                            description: "add_audio_sync_offset",
+                            sql: include_str!("../migrations/052_add_audio_sync_offset.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

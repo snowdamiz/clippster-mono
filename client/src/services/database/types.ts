@@ -429,9 +429,28 @@ export interface CreatorProfile {
   outro_id: string | null;
   watermark_id: string | null;
   watermark_settings: string | null; // JSON string of WatermarkSettings
+  audio_sync_offset_ms: number | null; // Per-creator audio sync offset (default 215ms)
   created_at: number;
   updated_at: number;
 }
+
+// Audio sync presets for common streaming setups
+export interface AudioSyncPreset {
+  name: string;
+  value: number;
+  description: string;
+}
+
+export const AUDIO_SYNC_PRESETS: AudioSyncPreset[] = [
+  { name: 'Default', value: 215, description: 'Works for most OBS streams' },
+  { name: 'OBS (Standard)', value: 200, description: 'Standard OBS with single audio source' },
+  { name: 'OBS (Multi-track)', value: 250, description: 'OBS with multiple audio sources/guests' },
+  { name: 'LiveU Solo', value: 150, description: 'LiveU Solo IRL streaming encoder' },
+  { name: 'LiveU (Bonded)', value: 180, description: 'LiveU with cellular bonding' },
+  { name: 'Streamlabs', value: 210, description: 'Streamlabs Desktop' },
+  { name: 'Browser/WebRTC', value: 100, description: 'Direct browser streaming' },
+  { name: 'No Offset', value: 0, description: 'No audio adjustment' },
+];
 
 export interface CreatorPlatformLink {
   id: string;

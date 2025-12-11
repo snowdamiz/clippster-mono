@@ -165,6 +165,7 @@ pub async fn start_livestream_recording(
     streamer_id: String,
     session_id: String,
     segment_duration_minutes: Option<u32>,
+    audio_sync_offset_ms: Option<i32>,
 ) -> Result<(), String> {
     {
         let recordings = ACTIVE_RECORDINGS.lock().unwrap();
@@ -197,6 +198,7 @@ pub async fn start_livestream_recording(
     let streamer_clone = streamer_id.clone();
     let session_clone = session_id.clone();
     let segment_duration = segment_duration_minutes.unwrap_or(5); // Default to 5 minutes
+    let audio_sync = audio_sync_offset_ms.unwrap_or(215); // Default to 215ms (works for most streams)
 
     let task = tokio::spawn(async move {
         if let Err(err) = run_recorder_process(
@@ -207,6 +209,7 @@ pub async fn start_livestream_recording(
             session_clone,
             output_str,
             segment_duration,
+            audio_sync,
             stop_rx,
         )
         .await
@@ -269,11 +272,13 @@ async fn run_recorder_process(
     session_id: String,
     output_dir: String,
     segment_duration_minutes: u32,
+    audio_sync_offset_ms: i32,
     mut stop_rx: oneshot::Receiver<()>,
 ) -> Result<(), String> {
     use tauri_plugin_shell::process::CommandEvent;
 
     let segment_duration_str = segment_duration_minutes.to_string();
+    let audio_sync_str = audio_sync_offset_ms.to_string();
 
     // Spawn Node sidecar
     let (mut rx, mut child) = app.shell()
@@ -285,6 +290,7 @@ async fn run_recorder_process(
             &session_id,
             &output_dir,
             &segment_duration_str,
+            &audio_sync_str,
         ])
         .spawn()
         .map_err(|e| format!("Failed to spawn recorder sidecar: {}", e))?;

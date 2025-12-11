@@ -261,8 +261,12 @@ export {
   linkMonitoredStreamer,
   unlinkMonitoredStreamer,
   getCreatorProfileByMonitoredStreamer,
+  getCreatorProfileByPlatformId,
   getCreatorProfileByProjectId,
 } from './database/creator-profiles';
+
+// Audio sync presets
+export { AUDIO_SYNC_PRESETS } from './database/types';
 
 // Audio settings exports
 export {

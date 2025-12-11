@@ -303,6 +303,15 @@
       :creator="creatorToDownload"
       @close="showDownloadDialog = false"
     />
+
+    <!-- Audio Sync Tip Dialog -->
+    <AudioSyncTipDialog
+      :show="showAudioSyncTipDialog"
+      :creator-name="pendingMonitoringCreator?.name ?? 'this creator'"
+      :creator-id="pendingMonitoringCreator?.id ?? ''"
+      @close="showAudioSyncTipDialog = false; pendingMonitoringCreator = null"
+      @continue="handleAudioSyncTipContinue"
+    />
   </div>
 </template>
 
@@ -316,6 +325,7 @@
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import CreatorProfileDialog from '@/components/CreatorProfileDialog.vue';
   import CreatorDownloadDialog from '@/components/CreatorDownloadDialog.vue';
+  import AudioSyncTipDialog from '@/components/AudioSyncTipDialog.vue';
   import {
     getAllCreatorProfiles,
     deleteCreatorProfile,
@@ -355,6 +365,27 @@
   const creatorToDelete = ref<CreatorProfileWithLinks | null>(null);
   const showDownloadDialog = ref(false);
   const creatorToDownload = ref<CreatorProfileWithLinks | null>(null);
+
+  // Audio sync tip dialog state
+  const showAudioSyncTipDialog = ref(false);
+  const pendingMonitoringCreator = ref<CreatorProfileWithLinks | null>(null);
+  const pendingMonitoringDetectClips = ref(false);
+
+  // Local storage key for tracking which creators have seen the audio sync tip
+  const AUDIO_SYNC_TIP_SEEN_KEY = 'clippster_audio_sync_tip_seen';
+  function getSeenAudioTipCreators(): Set<string> {
+    try {
+      const stored = localStorage.getItem(AUDIO_SYNC_TIP_SEEN_KEY);
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  }
+  function markAudioTipSeen(creatorId: string) {
+    const seen = getSeenAudioTipCreators();
+    seen.add(creatorId);
+    localStorage.setItem(AUDIO_SYNC_TIP_SEEN_KEY, JSON.stringify([...seen]));
+  }
 
   // Live status tracking (by platform_id for pumpfun links)
   const liveStatusMap = ref<Map<string, { isLive: boolean; viewerCount?: number; isChecking: boolean }>>(new Map());
@@ -662,6 +693,40 @@
       showError('No Supported Platforms', 'Live monitoring is currently only available for PumpFun streams');
       return;
     }
+
+    // Check if this creator has seen the audio sync tip
+    const seenCreators = getSeenAudioTipCreators();
+    if (!seenCreators.has(creator.id)) {
+      // Show the tip dialog before starting monitoring
+      pendingMonitoringCreator.value = creator;
+      pendingMonitoringDetectClips.value = detectClips;
+      showAudioSyncTipDialog.value = true;
+      return;
+    }
+
+    // Proceed with monitoring
+    await doStartMonitoring(creator, detectClips);
+  }
+
+  // Called after user acknowledges the audio sync tip
+  async function handleAudioSyncTipContinue(dontShowAgain: boolean) {
+    showAudioSyncTipDialog.value = false;
+    
+    if (pendingMonitoringCreator.value) {
+      if (dontShowAgain) {
+        markAudioTipSeen(pendingMonitoringCreator.value.id);
+      }
+      await doStartMonitoring(pendingMonitoringCreator.value, pendingMonitoringDetectClips.value);
+    }
+    
+    pendingMonitoringCreator.value = null;
+    pendingMonitoringDetectClips.value = false;
+  }
+
+  // Actual monitoring start logic
+  async function doStartMonitoring(creator: CreatorProfileWithLinks, detectClips: boolean) {
+    const pumpfunLink = creator.platform_links.find((l) => l.platform === 'pumpfun');
+    if (!pumpfunLink) return;
 
     try {
       let streamerId = pumpfunLink.monitored_streamer_id;
