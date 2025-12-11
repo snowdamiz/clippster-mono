@@ -2324,6 +2324,7 @@
         watermarkSettings: watermarkSettings,
         audioSettings: null,
         framingStrategy: null,
+        videoFilterSegments: null, // No filter segments from folder view
       });
 
       success('Build started', 'Your clip is being built in the background.');

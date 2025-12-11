@@ -437,6 +437,49 @@
             </div>
           </div>
 
+          <!-- Filters Track -->
+          <div v-if="filterSegments.length > 0" class="flex items-center h-12 px-2 border-b border-border/20 relative">
+            <div
+              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-0 z-40 bg-[#101010] backdrop-blur-sm flex-shrink-0"
+            >
+              <div class="font-medium flex items-center gap-1">
+                <Palette :size="12" />
+                Filters
+              </div>
+            </div>
+            <div class="flex-1 h-8 relative" @click="onTrackContentClick">
+              <div class="absolute inset-0 bg-[#1a1a1a]/30 rounded-md cursor-pointer"></div>
+              <div
+                v-for="filterSeg in filterSegments"
+                :key="filterSeg.id"
+                :ref="(el) => setSegmentRef(el, 'filter', filterSeg.id)"
+                class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
+                :class="getSegmentClasses('filter', filterSeg.id)"
+                :style="getFilterSegmentStyle(filterSeg)"
+                @mousedown="(e) => onSegmentMouseDown(e, 'filter', filterSeg.id, filterSeg)"
+                @click.stop="selectItem('filter', filterSeg.id)"
+              >
+                <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm capitalize pointer-events-none">
+                  {{ getFilterPresetName(filterSeg.settings.preset) }}
+                </span>
+                <!-- Left resize handle -->
+                <div
+                  class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
+                  @mousedown.stop="(e) => onResizeMouseDown(e, 'filter', filterSeg.id, 'left', filterSeg)"
+                >
+                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                </div>
+                <!-- Right resize handle -->
+                <div
+                  class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
+                  @mousedown.stop="(e) => onResizeMouseDown(e, 'filter', filterSeg.id, 'right', filterSeg)"
+                >
+                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Playhead Line (inside content wrapper so it scrolls with content) -->
           <div
             v-if="totalDuration > 0"
@@ -468,11 +511,11 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-  import { ZoomIn, Film, Music, Type, Smile, Sparkles, Scissors } from 'lucide-vue-next';
+  import { ZoomIn, Film, Music, Type, Smile, Sparkles, Scissors, Palette } from 'lucide-vue-next';
   import { useAudioWaveform } from '@/composables/useAudioWaveform';
-  import type { TrimSegment, AudioTrack, TextOverlay, Sticker, Effect } from '@/types';
+  import type { TrimSegment, AudioTrack, TextOverlay, Sticker, Effect, FilterSegment } from '@/types';
 
-  type ItemType = 'trim' | 'audio' | 'text' | 'sticker' | 'effect';
+  type ItemType = 'trim' | 'audio' | 'text' | 'sticker' | 'effect' | 'filter';
 
   interface DragInfo {
     type: ItemType;
@@ -522,6 +565,7 @@
       textOverlays: TextOverlay[];
       stickers: Sticker[];
       effects: Effect[];
+      filterSegments: FilterSegment[];
       videoSrc?: string;
       audioGainDb?: number; // dB gain (-20 to +20) to apply to main video waveform visualization
       trackDbValues?: Record<string, number>; // Per-track dB values for audio track waveforms
@@ -529,6 +573,7 @@
     {
       audioGainDb: 0,
       trackDbValues: () => ({}),
+      filterSegments: () => [],
     }
   );
 
@@ -539,6 +584,7 @@
     (e: 'updateTextOverlay', overlayId: string, updates: Partial<TextOverlay>): void;
     (e: 'updateSticker', stickerId: string, updates: Partial<Sticker>): void;
     (e: 'updateEffect', effectId: string, updates: Partial<Effect>): void;
+    (e: 'updateFilterSegment', segmentId: string, updates: Partial<FilterSegment>): void;
   }>();
 
   // Refs
@@ -588,6 +634,7 @@
     amber: { bg: 'rgba(245, 158, 11, 0.4), rgba(245, 158, 11, 0.5)', border: 'rgba(245, 158, 11, 0.6)' },
     pink: { bg: 'rgba(236, 72, 153, 0.4), rgba(236, 72, 153, 0.5)', border: 'rgba(236, 72, 153, 0.6)' },
     cyan: { bg: 'rgba(6, 182, 212, 0.4), rgba(6, 182, 212, 0.5)', border: 'rgba(6, 182, 212, 0.6)' },
+    rose: { bg: 'rgba(244, 63, 94, 0.4), rgba(244, 63, 94, 0.5)', border: 'rgba(244, 63, 94, 0.6)' },
   };
 
   // Sorted trim segments by start time - creates a default segment if none exist
@@ -1020,6 +1067,47 @@
     };
   }
 
+  function getFilterSegmentStyle(filterSeg: FilterSegment): Record<string, string> {
+    const colors = colorMap.rose; // Use rose/pink for filters
+    const isSelected = selectedItemKey.value === `filter_${filterSeg.id}`;
+
+    // Use preview position during drag/resize
+    const preview = dragPreview.value;
+    const usePreview = preview && preview.type === 'filter' && preview.id === filterSeg.id;
+
+    const startTime = usePreview ? preview.startTime : filterSeg.startTime;
+    const endTime = usePreview ? preview.endTime : filterSeg.endTime;
+
+    const effectiveDuration = totalDuration.value || props.duration;
+
+    return {
+      left: `${(startTime / effectiveDuration) * 100}%`,
+      width: `${Math.max(((endTime - startTime) / effectiveDuration) * 100, 1)}%`,
+      background: `linear-gradient(to right, ${colors.bg})`,
+      borderColor: isSelected ? '#3b82f6' : colors.border,
+      borderWidth: '1px',
+      borderStyle: 'solid',
+    };
+  }
+
+  function getFilterPresetName(preset: string | null): string {
+    if (!preset || preset === 'none') return 'Custom';
+    const presetNames: Record<string, string> = {
+      warm: 'Warm',
+      cool: 'Cool',
+      vintage: 'Vintage',
+      bw: 'B&W',
+      sepia: 'Sepia',
+      dramatic: 'Dramatic',
+      vivid: 'Vivid',
+      muted: 'Muted',
+      cinematic: 'Cinematic',
+      retro: 'Retro',
+      noir: 'Noir',
+    };
+    return presetNames[preset] || 'Custom';
+  }
+
   function getTrackContentWidth(): number {
     if (rulerContentRef.value) {
       return rulerContentRef.value.getBoundingClientRect().width;
@@ -1319,6 +1407,9 @@
         break;
       case 'effect':
         emit('updateEffect', id, { startTime, endTime });
+        break;
+      case 'filter':
+        emit('updateFilterSegment', id, { startTime, endTime });
         break;
     }
   }

@@ -794,6 +794,14 @@ export interface FilterSettings {
   fade: number; // 0 to 100
 }
 
+// Time-based filter segment for timeline
+export interface FilterSegment {
+  id: string;
+  startTime: number;
+  endTime: number;
+  settings: FilterSettings;
+}
+
 export type FilterPreset =
   | 'none'
   | 'warm'

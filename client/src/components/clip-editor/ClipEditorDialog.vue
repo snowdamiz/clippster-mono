@@ -26,13 +26,15 @@
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <button
-              @click="handleSave"
-              class="px-3 py-1.5 text-xs font-medium bg-violet-600 hover:bg-violet-500 text-white rounded-md transition-colors flex items-center gap-2"
-            >
-              <Save :size="12" />
-              Save
-            </button>
+            <!-- Auto-save indicator -->
+            <div v-if="isSaving" class="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 :size="12" class="animate-spin" />
+              <span>Saving...</span>
+            </div>
+            <div v-else-if="lastSaved" class="flex items-center gap-1.5 text-xs text-green-500/70">
+              <Check :size="12" />
+              <span>Saved</span>
+            </div>
             <button
               @click="close"
               class="p-2 hover:bg-white/5 rounded-lg transition-all duration-200 group"
@@ -59,7 +61,7 @@
                 :clip-end="clipEndTime"
                 :text-overlays="textOverlays"
                 :stickers="stickers"
-                :filter-settings="filterSettings"
+                :filter-settings="activeFilterSettings"
                 :segments="playbackSegments"
                 @time-update="onPreviewTimeUpdate"
                 @toggle-play="togglePlay"
@@ -90,8 +92,12 @@
 
                 <FiltersTab
                   v-if="activeTab === 'filters'"
-                  :filter-settings="filterSettings"
-                  @update-filter="updateFilter"
+                  :filter-segments="filterSegments"
+                  :current-time="relativePreviewTime"
+                  :duration="clipDuration"
+                  @add-filter="addFilterSegment"
+                  @update-filter="updateFilterSegment"
+                  @delete-filter="deleteFilterSegment"
                 />
 
                 <TextOverlayTab
@@ -152,6 +158,7 @@
             :text-overlays="textOverlays"
             :stickers="stickers"
             :effects="effects"
+            :filter-segments="filterSegments"
             :video-src="videoSrc"
             :audio-gain-db="effectiveAudioGainDb"
             :track-db-values="trackDbValues"
@@ -161,6 +168,7 @@
             @update-text-overlay="updateTextOverlayLocal"
             @update-sticker="updateStickerLocal"
             @update-effect="updateEffectLocal"
+            @update-filter-segment="updateFilterSegment"
           />
         </div>
       </div>
@@ -170,7 +178,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-  import { Film, X, Save } from 'lucide-vue-next';
+  import { Film, X, Loader2, Check } from 'lucide-vue-next';
   import type {
     ClipEditorTab,
     AudioTrack,
@@ -178,6 +186,7 @@
     Sticker,
     Effect,
     FilterSettings,
+    FilterSegment,
     TrimSegment,
     ManualFramingConfigs,
     ManualFramingConfig,
@@ -241,6 +250,12 @@
   const videoElement = ref<HTMLVideoElement | null>(null);
   const clipEditId = ref<string | null>(null);
 
+  // Auto-save state
+  const isSaving = ref(false);
+  const lastSaved = ref(false);
+  let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+  let isInitialLoad = ref(true); // Prevent auto-save during initial data load
+
   // Editor state
   const activeTab = ref<ClipEditorTab>('audio');
   const isPlaying = ref(false);
@@ -252,7 +267,7 @@
   const textOverlays = ref<TextOverlay[]>([]);
   const stickers = ref<Sticker[]>([]);
   const effects = ref<Effect[]>([]);
-  const filterSettings = ref<FilterSettings | null>(null);
+  const filterSegments = ref<FilterSegment[]>([]);
   const originalDb = ref(0);
   const trackDbValues = ref<Record<string, number>>({});
 
@@ -283,6 +298,16 @@
   // Convert absolute time to relative time for the timeline (0 to clipDuration)
   const relativePreviewTime = computed(() => {
     return Math.max(0, Math.min(clipDuration.value, previewTime.value - props.clipStartTime));
+  });
+
+  // Get the active filter settings at the current preview time (relative time)
+  const activeFilterSettings = computed(() => {
+    const relativeTime = relativePreviewTime.value;
+    // Find filter segment that contains the current time
+    const activeSegment = filterSegments.value.find(
+      (seg) => relativeTime >= seg.startTime && relativeTime <= seg.endTime
+    );
+    return activeSegment?.settings || null;
   });
 
   // Get segments in absolute time format for playback
@@ -577,9 +602,28 @@
     updateAudioGain(trackId);
   }
 
-  // Filter operations
-  function updateFilter(settings: FilterSettings | null) {
-    filterSettings.value = settings;
+  // Filter segment operations
+  function addFilterSegment(settings: FilterSettings) {
+    const newSegment: FilterSegment = {
+      id: `filter-${Date.now()}`,
+      startTime: relativePreviewTime.value,
+      endTime: Math.min(relativePreviewTime.value + 5, clipDuration.value), // Default 5 second duration
+      settings,
+    };
+    filterSegments.value.push(newSegment);
+  }
+
+  function updateFilterSegment(segmentId: string, updates: Partial<FilterSegment>) {
+    const segment = filterSegments.value.find((s) => s.id === segmentId);
+    if (segment) {
+      if (updates.startTime !== undefined) segment.startTime = updates.startTime;
+      if (updates.endTime !== undefined) segment.endTime = updates.endTime;
+      if (updates.settings) segment.settings = { ...segment.settings, ...updates.settings };
+    }
+  }
+
+  function deleteFilterSegment(segmentId: string) {
+    filterSegments.value = filterSegments.value.filter((s) => s.id !== segmentId);
   }
 
   // Aspect ratio framing operations
@@ -734,29 +778,67 @@
     effects.value = effects.value.filter((e) => e.id !== effectId);
   }
 
-  // Save all changes
-  async function handleSave() {
+  // Auto-save function (debounced)
+  function triggerAutoSave() {
+    // Don't save during initial load
+    if (isInitialLoad.value) return;
+
+    // Clear any pending save
+    if (saveTimeout) {
+      clearTimeout(saveTimeout);
+    }
+
+    // Debounce: wait 500ms before saving
+    saveTimeout = setTimeout(() => {
+      performSave();
+    }, 500);
+  }
+
+  // Perform the actual save
+  async function performSave() {
     if (!clipEditId.value) return;
 
-    await updateClipEdit(clipEditId.value, {
-      trim: {
-        startTime: props.clipStartTime,
-        endTime: props.clipEndTime,
-        segments: trimSegments.value,
-      },
-      filter: filterSettings.value,
-      originalDb: originalDb.value,
-      trackDbValues: trackDbValues.value,
-      // Aspect ratio framing data
-      aspectFraming: {
-        selectedRatios: selectedAspectRatios.value,
-        framingMode: framingMode.value,
-        configs: framingConfigs.value,
-      },
-    });
+    isSaving.value = true;
+    lastSaved.value = false;
 
-    emit('save', props.clipId);
-    close();
+    try {
+      await updateClipEdit(clipEditId.value, {
+        trim: {
+          startTime: props.clipStartTime,
+          endTime: props.clipEndTime,
+          segments: trimSegments.value,
+        },
+        filterSegments: filterSegments.value,
+        originalDb: originalDb.value,
+        trackDbValues: trackDbValues.value,
+        // Aspect ratio framing data
+        aspectFraming: {
+          selectedRatios: selectedAspectRatios.value,
+          framingMode: framingMode.value,
+          configs: framingConfigs.value,
+        },
+      });
+
+      lastSaved.value = true;
+
+      // Hide "Saved" indicator after 2 seconds
+      setTimeout(() => {
+        lastSaved.value = false;
+      }, 2000);
+    } catch (error) {
+      console.error('[ClipEditorDialog] Auto-save failed:', error);
+    } finally {
+      isSaving.value = false;
+    }
+  }
+
+  // Save immediately (used when closing)
+  async function saveNow() {
+    if (saveTimeout) {
+      clearTimeout(saveTimeout);
+      saveTimeout = null;
+    }
+    await performSave();
   }
 
   // Load existing edit data
@@ -782,8 +864,18 @@
         }));
       }
 
-      if (editData.filter) {
-        filterSettings.value = editData.filter;
+      if (editData.filterSegments && Array.isArray(editData.filterSegments)) {
+        filterSegments.value = editData.filterSegments;
+      } else if (editData.filter) {
+        // Legacy support: convert single filter to a segment covering the entire clip
+        filterSegments.value = [
+          {
+            id: 'filter-legacy',
+            startTime: 0,
+            endTime: clipDuration.value,
+            settings: editData.filter,
+          },
+        ];
       }
       if (editData.originalDb !== undefined) {
         originalDb.value = editData.originalDb;
@@ -923,15 +1015,57 @@
       togglePlay();
     } else if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
-      handleSave();
+      saveNow(); // Save immediately on Ctrl+S
     }
   }
+
+  // Auto-save watchers - trigger save when data changes
+  watch(
+    () => filterSegments.value,
+    () => triggerAutoSave(),
+    { deep: true }
+  );
+
+  watch(
+    () => trimSegments.value,
+    () => triggerAutoSave(),
+    { deep: true }
+  );
+
+  watch(
+    () => originalDb.value,
+    () => triggerAutoSave()
+  );
+
+  watch(
+    () => trackDbValues.value,
+    () => triggerAutoSave(),
+    { deep: true }
+  );
+
+  watch(
+    () => selectedAspectRatios.value,
+    () => triggerAutoSave(),
+    { deep: true }
+  );
+
+  watch(
+    () => framingMode.value,
+    () => triggerAutoSave()
+  );
+
+  watch(
+    () => framingConfigs.value,
+    () => triggerAutoSave(),
+    { deep: true }
+  );
 
   // Lifecycle
   watch(
     () => props.modelValue,
     async (isOpen) => {
       if (isOpen && props.clipId) {
+        isInitialLoad.value = true; // Prevent auto-save during load
         await loadEditData();
         // Initialize to clip start time (absolute time)
         previewTime.value = props.clipStartTime;
@@ -951,13 +1085,29 @@
 
         // Load video info for aspect tab
         await loadVideoInfo();
+
+        // Allow auto-save after initial load is complete
+        setTimeout(() => {
+          isInitialLoad.value = false;
+        }, 100);
       } else if (!isOpen) {
+        // Save any pending changes before closing
+        if (saveTimeout) {
+          clearTimeout(saveTimeout);
+          saveTimeout = null;
+        }
+        await performSave();
+
         // Clean up when dialog closes
         cleanupAudioElements();
         isPlaying.value = false;
         // Reset aspect tab state
         videoPath.value = null;
         thumbnailUrl.value = null;
+        // Reset auto-save state
+        isSaving.value = false;
+        lastSaved.value = false;
+        isInitialLoad.value = true;
       }
     }
   );
@@ -969,6 +1119,10 @@
   onUnmounted(() => {
     document.removeEventListener('keydown', handleKeyDown);
     cleanupAudioElements();
+    // Clear any pending save timeout
+    if (saveTimeout) {
+      clearTimeout(saveTimeout);
+    }
   });
 </script>
 

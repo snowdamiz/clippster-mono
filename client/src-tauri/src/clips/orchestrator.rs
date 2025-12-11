@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 use tauri::Emitter;
 
-use super::types::{SubtitleSettings, SubtitleOverrides, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy};
+use super::types::{SubtitleSettings, SubtitleOverrides, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy, VideoFilterSegment};
 use super::video_info::{get_video_info, parse_aspect_ratio, IntroOutroCache};
 use super::subtitle::generate_ass_file;
 use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings, build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy};
@@ -138,6 +138,7 @@ pub async fn build_clip_internal_simple(
     watermark_settings: Option<WatermarkSettings>,
     audio_settings: Option<AudioSettings>,
     framing_strategy: Option<FramingStrategy>,
+    video_filter_segments: Option<Vec<VideoFilterSegment>>,
     cancel_rx: CancellationToken
 ) -> Result<ClipBuildResult, String> {
 
@@ -228,6 +229,7 @@ pub async fn build_clip_internal_simple(
         let watermark_settings = watermark_settings.clone();
         let audio_settings = audio_settings.clone();
         let framing_strategy = framing_strategy.clone();
+        let video_filter_segments = video_filter_segments.clone();
         let cancel_rx = cancel_rx.clone();
         let build_num = build_num;
         
@@ -335,7 +337,8 @@ pub async fn build_clip_internal_simple(
                         outro_path.as_deref(),
                         intro_outro_cache.clone(),
                         watermark_settings.as_ref(),
-                        audio_settings.as_ref()
+                        audio_settings.as_ref(),
+                        video_filter_segments.as_ref()
                     ).await?;
                 } else {
                     println!("[Rust] Building multi-segment clip for {} with {} segments and framing strategy: {:?}", 
@@ -354,7 +357,8 @@ pub async fn build_clip_internal_simple(
                         outro_path.as_deref(),
                         intro_outro_cache.clone(),
                         watermark_settings.as_ref(),
-                        audio_settings.as_ref()
+                        audio_settings.as_ref(),
+                        video_filter_segments.as_ref()
                     ).await?;
                 }
             } else if segments.len() == 1 {
@@ -373,7 +377,8 @@ pub async fn build_clip_internal_simple(
                     outro_path.as_deref(),
                     intro_outro_cache.clone(),
                     watermark_settings.as_ref(),
-                    audio_settings.as_ref()
+                    audio_settings.as_ref(),
+                    video_filter_segments.as_ref()
                 ).await?;
             } else {
                 println!("[Rust] Building multi-segment clip for {} with {} segments", aspect_ratio_str, segments.len());
@@ -391,7 +396,8 @@ pub async fn build_clip_internal_simple(
                     outro_path.as_deref(),
                     intro_outro_cache.clone(),
                     watermark_settings.as_ref(),
-                    audio_settings.as_ref()
+                    audio_settings.as_ref(),
+                    video_filter_segments.as_ref()
                 ).await?;
             }
 

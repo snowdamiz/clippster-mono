@@ -6,6 +6,7 @@
         ref="videoRef"
         :src="videoSrc || ''"
         class="max-w-full max-h-full object-contain"
+        :style="getVideoFilterStyle()"
         @loadedmetadata="onLoadedMetadata"
         @timeupdate="onTimeUpdate"
         @ended="onEnded"
@@ -45,8 +46,19 @@
         </div>
       </div>
 
-      <!-- Filter Overlay -->
-      <div v-if="filterSettings" class="absolute inset-0 pointer-events-none" :style="getFilterStyle()" />
+      <!-- Vignette Overlay (applied as overlay since it's a radial gradient effect) -->
+      <div
+        v-if="filterSettings?.vignette && filterSettings.vignette > 0"
+        class="absolute inset-0 pointer-events-none"
+        :style="getVignetteStyle()"
+      />
+
+      <!-- Temperature Overlay (warm/cool color tint) -->
+      <div
+        v-if="filterSettings?.temperature && filterSettings.temperature !== 0"
+        class="absolute inset-0 pointer-events-none"
+        :style="getTemperatureStyle()"
+      />
 
       <!-- Play Button Overlay -->
       <button
@@ -366,28 +378,116 @@
     return classes;
   }
 
-  function getFilterStyle(): Record<string, string> {
+  // Apply CSS filters directly to the video element
+  function getVideoFilterStyle(): Record<string, string> {
     if (!props.filterSettings) return {};
 
     const filters: string[] = [];
 
-    if (props.filterSettings.brightness !== 0) {
-      filters.push(`brightness(${100 + props.filterSettings.brightness}%)`);
+    // Brightness: -100 to 100 → 0% to 200% (CSS uses 100% as neutral)
+    const brightness = props.filterSettings.brightness || 0;
+    if (brightness !== 0) {
+      // Map -100..100 to 0..2 (0.5 = -50%, 1.0 = 0%, 1.5 = +50%, 2.0 = +100%)
+      const brightnessValue = 1 + brightness / 100;
+      filters.push(`brightness(${brightnessValue})`);
     }
-    if (props.filterSettings.contrast !== 0) {
-      filters.push(`contrast(${100 + props.filterSettings.contrast}%)`);
+
+    // Contrast: -100 to 100 → 0 to 2 (CSS uses 1 as neutral)
+    const contrast = props.filterSettings.contrast || 0;
+    if (contrast !== 0) {
+      const contrastValue = 1 + contrast / 100;
+      filters.push(`contrast(${contrastValue})`);
     }
-    if (props.filterSettings.saturation !== 0) {
-      filters.push(`saturate(${100 + props.filterSettings.saturation}%)`);
+
+    // Saturation: -100 to 100 → 0 to 2 (CSS uses 1 as neutral)
+    const saturation = props.filterSettings.saturation || 0;
+    if (saturation !== 0) {
+      const saturationValue = 1 + saturation / 100;
+      filters.push(`saturate(${saturationValue})`);
     }
-    if (props.filterSettings.hue !== 0) {
-      filters.push(`hue-rotate(${props.filterSettings.hue}deg)`);
+
+    // Hue rotation: -180 to 180 degrees
+    const hue = props.filterSettings.hue || 0;
+    if (hue !== 0) {
+      filters.push(`hue-rotate(${hue}deg)`);
     }
+
+    // Sharpen: CSS doesn't have native sharpen, but we can approximate with contrast
+    // Higher sharpening = slightly higher contrast gives perception of sharpness
+    const sharpen = props.filterSettings.sharpen || 0;
+    if (sharpen > 0) {
+      // Very subtle contrast boost (max 10% at sharpen=100)
+      const sharpenBoost = 1 + sharpen / 1000;
+      filters.push(`contrast(${sharpenBoost})`);
+    }
+
+    // Fade: reduces contrast and adds a slight washed-out look
+    const fade = props.filterSettings.fade || 0;
+    if (fade > 0) {
+      // Fade reduces contrast (max 30% reduction at fade=100)
+      const fadeContrast = 1 - fade / 333;
+      // Also slightly reduce saturation for that faded film look
+      const fadeSaturation = 1 - fade / 500;
+      filters.push(`contrast(${fadeContrast})`);
+      filters.push(`saturate(${fadeSaturation})`);
+    }
+
+    if (filters.length === 0) return {};
 
     return {
       filter: filters.join(' '),
-      mixBlendMode: 'normal',
     };
+  }
+
+  // Generate vignette overlay style
+  function getVignetteStyle(): Record<string, string> {
+    const vignette = props.filterSettings?.vignette || 0;
+    if (vignette === 0) {
+      return { display: 'none' };
+    }
+
+    // Vignette intensity: 0-100
+    // Map to a radial gradient that darkens the edges
+    const intensity = vignette / 100;
+    // Spread controls how far the vignette reaches toward center
+    // At 0% intensity, spread is 70% (subtle edge darkening)
+    // At 100% intensity, spread is 30% (heavy vignette reaching near center)
+    const innerStop = 70 - intensity * 50; // 70% -> 20%
+    const opacity = 0.3 + intensity * 0.6; // 0.3 -> 0.9 opacity at edge
+
+    return {
+      background: `radial-gradient(ellipse at center, transparent ${innerStop}%, rgba(0,0,0,${opacity}) 100%)`,
+      pointerEvents: 'none',
+    };
+  }
+
+  // Generate temperature overlay style (warm/cool tint)
+  function getTemperatureStyle(): Record<string, string> {
+    const temp = props.filterSettings?.temperature || 0;
+    if (temp === 0) {
+      return { display: 'none' };
+    }
+
+    // Temperature: -100 (cool/blue) to +100 (warm/orange)
+    const intensity = Math.abs(temp) / 100;
+    // Use overlay blend mode for more natural color shift
+    const opacity = intensity * 0.25; // Max 25% opacity for subtlety
+
+    if (temp > 0) {
+      // Warm: orange/amber tint
+      return {
+        backgroundColor: `rgba(255, 140, 50, ${opacity})`,
+        mixBlendMode: 'overlay',
+        pointerEvents: 'none',
+      };
+    } else {
+      // Cool: blue/cyan tint
+      return {
+        backgroundColor: `rgba(80, 140, 255, ${opacity})`,
+        mixBlendMode: 'overlay',
+        pointerEvents: 'none',
+      };
+    }
   }
 
   // Initialize video element

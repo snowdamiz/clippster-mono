@@ -51,7 +51,8 @@ pub async fn build_clip_from_segments(
     outro_duration: Option<f64>,
     watermark_settings: Option<WatermarkSettings>,
     audio_settings: Option<AudioSettings>,
-    framing_strategy: Option<FramingStrategy>
+    framing_strategy: Option<FramingStrategy>,
+    video_filter_segments: Option<Vec<VideoFilterSegment>>
 ) -> Result<(), String> {
 
     println!("[Rust] build_clip_from_segments called with:");
@@ -75,6 +76,7 @@ pub async fn build_clip_from_segments(
     println!("[Rust]   watermark enabled: {}", watermark_settings.as_ref().map(|w| w.enabled).unwrap_or(false));
     println!("[Rust]   audio settings: {:?}", audio_settings);
     println!("[Rust]   framing_strategy: {:?}", framing_strategy.as_ref().map(|s| &s.mode));
+    println!("[Rust]   video_filter_segments count: {}", video_filter_segments.as_ref().map(|v| v.len()).unwrap_or(0));
 
     // Check if clip is already being built and create cancellation token
     let cancel_rx = {
@@ -108,6 +110,7 @@ pub async fn build_clip_from_segments(
     let audio_settings_clone = audio_settings.clone();
     let build_id_clone = build_id.clone();
     let framing_strategy_clone = framing_strategy.clone();
+    let video_filter_segments_clone = video_filter_segments.clone();
 
     // Send initial progress
     let _ = app.emit("clip-build-progress", ClipBuildProgress {
@@ -149,6 +152,7 @@ pub async fn build_clip_from_segments(
             watermark_settings_clone,
             audio_settings_clone,
             framing_strategy_clone,
+            video_filter_segments_clone,
             cancel_rx
         ).await {
             Ok(result) => {

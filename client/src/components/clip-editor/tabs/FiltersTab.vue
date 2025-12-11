@@ -2,23 +2,20 @@
   <div class="space-y-6">
     <div>
       <h3 class="text-sm font-medium text-white mb-3">Filters & Color</h3>
-      <p class="text-xs text-white/50 mb-4">Apply visual filters and adjust color settings.</p>
+      <p class="text-xs text-white/50 mb-4">
+        Add color filters to specific parts of your clip. Filters appear on the timeline and can be resized.
+      </p>
     </div>
 
-    <!-- Filter Presets -->
+    <!-- Add Filter Section -->
     <div>
-      <h4 class="text-sm font-medium text-white mb-3">Presets</h4>
+      <h4 class="text-sm font-medium text-white mb-3">Add Filter Preset</h4>
       <div class="grid grid-cols-4 gap-2">
         <button
-          v-for="preset in filterPresets"
+          v-for="preset in filterPresets.filter((p) => p.id !== 'none')"
           :key="preset.id"
-          @click="selectPreset(preset.id)"
-          :class="[
-            'p-2 rounded-lg border transition-all',
-            currentSettings?.preset === preset.id
-              ? 'border-violet-500 bg-violet-500/20'
-              : 'border-white/10 bg-white/5 hover:border-white/20',
-          ]"
+          @click="addPreset(preset.id)"
+          class="p-2 rounded-lg border border-white/10 bg-white/5 hover:border-violet-500/50 hover:bg-violet-500/10 transition-all"
         >
           <div class="w-full aspect-square rounded bg-gradient-to-br mb-1" :style="preset.preview" />
           <span class="text-xs text-white/70">{{ preset.name }}</span>
@@ -26,160 +23,244 @@
       </div>
     </div>
 
-    <!-- Manual Adjustments -->
-    <div class="border-t border-white/10 pt-4">
-      <h4 class="text-sm font-medium text-white mb-3">Adjustments</h4>
-      <div class="space-y-4">
-        <!-- Brightness -->
-        <div>
-          <div class="flex items-center justify-between mb-1">
-            <label class="text-xs text-white/60">Brightness</label>
-            <span class="text-xs text-white/40">{{ currentSettings?.brightness || 0 }}</span>
-          </div>
-          <input
-            type="range"
-            min="-100"
-            max="100"
-            :value="currentSettings?.brightness || 0"
-            @input="(e) => updateSetting('brightness', e)"
-            class="w-full accent-violet-500"
-          />
-        </div>
+    <!-- Active Filter Segments List -->
+    <div v-if="filterSegments.length > 0" class="border-t border-white/10 pt-4">
+      <h4 class="text-sm font-medium text-white mb-3">Active Filters ({{ filterSegments.length }})</h4>
 
-        <!-- Contrast -->
-        <div>
-          <div class="flex items-center justify-between mb-1">
-            <label class="text-xs text-white/60">Contrast</label>
-            <span class="text-xs text-white/40">{{ currentSettings?.contrast || 0 }}</span>
+      <div class="space-y-3">
+        <div
+          v-for="segment in filterSegments"
+          :key="segment.id"
+          class="p-4 bg-white/5 rounded-lg border border-white/10"
+          :class="{ 'border-violet-500/50 bg-violet-500/10': isSegmentActive(segment) }"
+        >
+          <div class="flex items-start justify-between mb-3">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <div class="w-4 h-4 rounded" :style="getPresetPreview(segment.settings.preset)" />
+                <span class="text-sm text-white font-medium">{{ getPresetName(segment.settings.preset) }}</span>
+                <span
+                  v-if="isSegmentActive(segment)"
+                  class="text-[10px] px-1.5 py-0.5 bg-violet-500/30 text-violet-300 rounded"
+                >
+                  Active
+                </span>
+              </div>
+              <div class="text-xs text-white/50 mt-1">
+                {{ formatTime(segment.startTime) }} - {{ formatTime(segment.endTime) }}
+              </div>
+            </div>
+            <button @click="emit('deleteFilter', segment.id)" class="p-1.5 rounded hover:bg-white/10 transition-colors">
+              <Trash2 :size="14" class="text-red-400" />
+            </button>
           </div>
-          <input
-            type="range"
-            min="-100"
-            max="100"
-            :value="currentSettings?.contrast || 0"
-            @input="(e) => updateSetting('contrast', e)"
-            class="w-full accent-violet-500"
-          />
-        </div>
 
-        <!-- Saturation -->
-        <div>
-          <div class="flex items-center justify-between mb-1">
-            <label class="text-xs text-white/60">Saturation</label>
-            <span class="text-xs text-white/40">{{ currentSettings?.saturation || 0 }}</span>
+          <!-- Timing Controls -->
+          <div class="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label class="block text-xs text-white/60 mb-1">Start</label>
+              <input
+                type="number"
+                :value="segment.startTime.toFixed(1)"
+                @input="(e) => updateTiming(segment.id, 'startTime', parseFloat((e.target as HTMLInputElement).value))"
+                step="0.1"
+                min="0"
+                :max="segment.endTime - 0.1"
+                class="w-full px-2 py-1 bg-white/5 border border-white/10 rounded text-xs text-white"
+              />
+            </div>
+            <div>
+              <label class="block text-xs text-white/60 mb-1">End</label>
+              <input
+                type="number"
+                :value="segment.endTime.toFixed(1)"
+                @input="(e) => updateTiming(segment.id, 'endTime', parseFloat((e.target as HTMLInputElement).value))"
+                step="0.1"
+                :min="segment.startTime + 0.1"
+                :max="duration"
+                class="w-full px-2 py-1 bg-white/5 border border-white/10 rounded text-xs text-white"
+              />
+            </div>
           </div>
-          <input
-            type="range"
-            min="-100"
-            max="100"
-            :value="currentSettings?.saturation || 0"
-            @input="(e) => updateSetting('saturation', e)"
-            class="w-full accent-violet-500"
-          />
-        </div>
 
-        <!-- Hue -->
-        <div>
-          <div class="flex items-center justify-between mb-1">
-            <label class="text-xs text-white/60">Hue</label>
-            <span class="text-xs text-white/40">{{ currentSettings?.hue || 0 }}°</span>
-          </div>
-          <input
-            type="range"
-            min="-180"
-            max="180"
-            :value="currentSettings?.hue || 0"
-            @input="(e) => updateSetting('hue', e)"
-            class="w-full accent-violet-500"
-          />
-        </div>
+          <!-- Adjustments (collapsible) -->
+          <details class="mt-2">
+            <summary class="text-xs text-white/60 cursor-pointer hover:text-white/80">Adjust Settings</summary>
+            <div class="mt-3 space-y-3">
+              <!-- Brightness -->
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <label class="text-xs text-white/60">Brightness</label>
+                  <span class="text-xs text-white/40">{{ segment.settings.brightness }}</span>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  :value="segment.settings.brightness"
+                  @input="
+                    (e) =>
+                      updateSegmentSetting(segment.id, 'brightness', parseInt((e.target as HTMLInputElement).value))
+                  "
+                  class="w-full accent-violet-500"
+                />
+              </div>
 
-        <!-- Temperature -->
-        <div>
-          <div class="flex items-center justify-between mb-1">
-            <label class="text-xs text-white/60">Temperature</label>
-            <span class="text-xs text-white/40">{{ currentSettings?.temperature || 0 }}</span>
-          </div>
-          <input
-            type="range"
-            min="-100"
-            max="100"
-            :value="currentSettings?.temperature || 0"
-            @input="(e) => updateSetting('temperature', e)"
-            class="w-full accent-violet-500"
-          />
-        </div>
+              <!-- Contrast -->
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <label class="text-xs text-white/60">Contrast</label>
+                  <span class="text-xs text-white/40">{{ segment.settings.contrast }}</span>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  :value="segment.settings.contrast"
+                  @input="
+                    (e) => updateSegmentSetting(segment.id, 'contrast', parseInt((e.target as HTMLInputElement).value))
+                  "
+                  class="w-full accent-violet-500"
+                />
+              </div>
 
-        <!-- Vignette -->
-        <div>
-          <div class="flex items-center justify-between mb-1">
-            <label class="text-xs text-white/60">Vignette</label>
-            <span class="text-xs text-white/40">{{ currentSettings?.vignette || 0 }}</span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            :value="currentSettings?.vignette || 0"
-            @input="(e) => updateSetting('vignette', e)"
-            class="w-full accent-violet-500"
-          />
-        </div>
+              <!-- Saturation -->
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <label class="text-xs text-white/60">Saturation</label>
+                  <span class="text-xs text-white/40">{{ segment.settings.saturation }}</span>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  :value="segment.settings.saturation"
+                  @input="
+                    (e) =>
+                      updateSegmentSetting(segment.id, 'saturation', parseInt((e.target as HTMLInputElement).value))
+                  "
+                  class="w-full accent-violet-500"
+                />
+              </div>
 
-        <!-- Sharpen -->
-        <div>
-          <div class="flex items-center justify-between mb-1">
-            <label class="text-xs text-white/60">Sharpen</label>
-            <span class="text-xs text-white/40">{{ currentSettings?.sharpen || 0 }}</span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            :value="currentSettings?.sharpen || 0"
-            @input="(e) => updateSetting('sharpen', e)"
-            class="w-full accent-violet-500"
-          />
-        </div>
+              <!-- Hue -->
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <label class="text-xs text-white/60">Hue</label>
+                  <span class="text-xs text-white/40">{{ segment.settings.hue }}°</span>
+                </div>
+                <input
+                  type="range"
+                  min="-180"
+                  max="180"
+                  :value="segment.settings.hue"
+                  @input="
+                    (e) => updateSegmentSetting(segment.id, 'hue', parseInt((e.target as HTMLInputElement).value))
+                  "
+                  class="w-full accent-violet-500"
+                />
+              </div>
 
-        <!-- Fade -->
-        <div>
-          <div class="flex items-center justify-between mb-1">
-            <label class="text-xs text-white/60">Fade</label>
-            <span class="text-xs text-white/40">{{ currentSettings?.fade || 0 }}</span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            :value="currentSettings?.fade || 0"
-            @input="(e) => updateSetting('fade', e)"
-            class="w-full accent-violet-500"
-          />
+              <!-- Temperature -->
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <label class="text-xs text-white/60">Temperature</label>
+                  <span class="text-xs text-white/40">{{ segment.settings.temperature }}</span>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  :value="segment.settings.temperature"
+                  @input="
+                    (e) =>
+                      updateSegmentSetting(segment.id, 'temperature', parseInt((e.target as HTMLInputElement).value))
+                  "
+                  class="w-full accent-violet-500"
+                />
+              </div>
+
+              <!-- Vignette -->
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <label class="text-xs text-white/60">Vignette</label>
+                  <span class="text-xs text-white/40">{{ segment.settings.vignette }}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  :value="segment.settings.vignette"
+                  @input="
+                    (e) => updateSegmentSetting(segment.id, 'vignette', parseInt((e.target as HTMLInputElement).value))
+                  "
+                  class="w-full accent-violet-500"
+                />
+              </div>
+
+              <!-- Sharpen -->
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <label class="text-xs text-white/60">Sharpen</label>
+                  <span class="text-xs text-white/40">{{ segment.settings.sharpen }}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  :value="segment.settings.sharpen"
+                  @input="
+                    (e) => updateSegmentSetting(segment.id, 'sharpen', parseInt((e.target as HTMLInputElement).value))
+                  "
+                  class="w-full accent-violet-500"
+                />
+              </div>
+
+              <!-- Fade -->
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <label class="text-xs text-white/60">Fade</label>
+                  <span class="text-xs text-white/40">{{ segment.settings.fade }}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  :value="segment.settings.fade"
+                  @input="
+                    (e) => updateSegmentSetting(segment.id, 'fade', parseInt((e.target as HTMLInputElement).value))
+                  "
+                  class="w-full accent-violet-500"
+                />
+              </div>
+            </div>
+          </details>
         </div>
       </div>
     </div>
 
-    <!-- Reset Button -->
-    <button
-      @click="resetFilters"
-      class="w-full py-2 text-sm text-white/60 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-    >
-      Reset to Default
-    </button>
+    <!-- Empty state -->
+    <div v-else class="border-t border-white/10 pt-4 text-center py-8 text-white/40 text-sm">
+      <p>No filters added yet.</p>
+      <p class="text-xs mt-1">Click a preset above to add a filter at the current playhead position.</p>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { computed } from 'vue';
-  import type { FilterSettings, FilterPreset } from '@/types';
+  import { Trash2 } from 'lucide-vue-next';
+  import type { FilterSettings, FilterSegment, FilterPreset } from '@/types';
 
   const props = defineProps<{
-    filterSettings: FilterSettings | null;
+    filterSegments: FilterSegment[];
+    currentTime: number;
+    duration: number;
   }>();
 
   const emit = defineEmits<{
-    (e: 'updateFilter', settings: FilterSettings | null): void;
+    (e: 'addFilter', settings: FilterSettings): void;
+    (e: 'updateFilter', segmentId: string, updates: Partial<FilterSegment>): void;
+    (e: 'deleteFilter', segmentId: string): void;
   }>();
 
   const filterPresets: { id: FilterPreset; name: string; preview: Record<string, string> }[] = [
@@ -201,10 +282,6 @@
     { id: 'noir', name: 'Noir', preview: { background: 'linear-gradient(135deg, #434343 0%, #000000 100%)' } },
   ];
 
-  const currentSettings = computed(() => {
-    return props.filterSettings || getDefaultSettings();
-  });
-
   function getDefaultSettings(): FilterSettings {
     return {
       preset: 'none',
@@ -219,10 +296,9 @@
     };
   }
 
-  function selectPreset(presetId: FilterPreset) {
-    const settings = { ...currentSettings.value, preset: presetId };
+  function getPresetSettings(presetId: FilterPreset): FilterSettings {
+    const settings = { ...getDefaultSettings(), preset: presetId };
 
-    // Apply preset-specific adjustments
     switch (presetId) {
       case 'warm':
         settings.temperature = 30;
@@ -273,22 +349,49 @@
         settings.contrast = 40;
         settings.vignette = 40;
         break;
-      default:
-        // Reset to defaults for 'none'
-        Object.assign(settings, getDefaultSettings(), { preset: presetId });
     }
 
-    emit('updateFilter', settings);
+    return settings;
   }
 
-  function updateSetting(key: keyof FilterSettings, e: Event) {
-    const target = e.target as HTMLInputElement;
-    const value = parseInt(target.value);
-    const settings = { ...currentSettings.value, [key]: value, preset: 'none' as FilterPreset };
-    emit('updateFilter', settings);
+  function addPreset(presetId: FilterPreset) {
+    const settings = getPresetSettings(presetId);
+    emit('addFilter', settings);
   }
 
-  function resetFilters() {
-    emit('updateFilter', null);
+  function isSegmentActive(segment: FilterSegment): boolean {
+    return props.currentTime >= segment.startTime && props.currentTime <= segment.endTime;
+  }
+
+  function getPresetName(preset: FilterPreset | null): string {
+    if (!preset || preset === 'none') return 'Custom';
+    const found = filterPresets.find((p) => p.id === preset);
+    return found?.name || 'Custom';
+  }
+
+  function getPresetPreview(preset: FilterPreset | null): Record<string, string> {
+    if (!preset) return { background: '#444' };
+    const found = filterPresets.find((p) => p.id === preset);
+    return found?.preview || { background: '#444' };
+  }
+
+  function formatTime(seconds: number): string {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    const ms = Math.floor((seconds % 1) * 10);
+    return `${mins}:${secs.toString().padStart(2, '0')}.${ms}`;
+  }
+
+  function updateTiming(segmentId: string, key: 'startTime' | 'endTime', value: number) {
+    if (isNaN(value)) return;
+    emit('updateFilter', segmentId, { [key]: value });
+  }
+
+  function updateSegmentSetting(segmentId: string, key: keyof FilterSettings, value: number) {
+    const segment = props.filterSegments.find((s) => s.id === segmentId);
+    if (!segment) return;
+
+    const updatedSettings = { ...segment.settings, [key]: value, preset: 'none' as FilterPreset };
+    emit('updateFilter', segmentId, { settings: updatedSettings });
   }
 </script>

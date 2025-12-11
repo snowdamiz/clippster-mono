@@ -1316,6 +1316,8 @@
       // Load audio settings for the project
       const { getProjectAudioSettings, getFullClipEdit } = await import('@/services/database');
       let audioSettings = null;
+      let videoFilterSegments = null; // Time-based video filter segments from clip editor
+
       try {
         // Load project-level audio settings
         const projectAudioSettings = await getProjectAudioSettings(props.projectId);
@@ -1339,12 +1341,50 @@
           const editData = JSON.parse(clipEdit.edit.edit_data);
           originalAudioDb = editData.originalDb;
           trackDbValues = editData.trackDbValues || {};
-          console.log(
-            '[ClipsTab] Loaded clip edit audio settings - originalDb:',
-            originalAudioDb,
-            'trackDbValues:',
-            trackDbValues
-          );
+
+          // Extract filter segments for video color grading (assign to outer scope variable)
+          if (editData.filterSegments && Array.isArray(editData.filterSegments)) {
+            // New format: array of filter segments with start/end times
+            videoFilterSegments = editData.filterSegments.map((seg: any) => ({
+              id: seg.id,
+              startTime: seg.startTime,
+              endTime: seg.endTime,
+              settings: {
+                preset: seg.settings?.preset || null,
+                brightness: seg.settings?.brightness || 0,
+                contrast: seg.settings?.contrast || 0,
+                saturation: seg.settings?.saturation || 0,
+                hue: seg.settings?.hue || 0,
+                temperature: seg.settings?.temperature || 0,
+                vignette: seg.settings?.vignette || 0,
+                sharpen: seg.settings?.sharpen || 0,
+                fade: seg.settings?.fade || 0,
+              },
+            }));
+            console.log('[ClipsTab] Loaded video filter segments:', videoFilterSegments);
+          } else if (editData.filter) {
+            // Legacy format: single filter settings covering entire clip
+            const clipDuration = segments.reduce((sum, s) => sum + (s.end_time - s.start_time), 0);
+            videoFilterSegments = [
+              {
+                id: 'filter-legacy',
+                startTime: 0,
+                endTime: clipDuration,
+                settings: {
+                  preset: editData.filter.preset || null,
+                  brightness: editData.filter.brightness || 0,
+                  contrast: editData.filter.contrast || 0,
+                  saturation: editData.filter.saturation || 0,
+                  hue: editData.filter.hue || 0,
+                  temperature: editData.filter.temperature || 0,
+                  vignette: editData.filter.vignette || 0,
+                  sharpen: editData.filter.sharpen || 0,
+                  fade: editData.filter.fade || 0,
+                },
+              },
+            ];
+            console.log('[ClipsTab] Converted legacy filter to segment:', videoFilterSegments);
+          }
 
           // Convert audio tracks to the format needed for FFmpeg
           // Filter out muted tracks (unless solo mode is active)
@@ -1367,7 +1407,6 @@
               endTime: track.end_time,
               isMuted: Boolean(track.is_muted),
             }));
-          console.log('[ClipsTab] Prepared music tracks for export:', musicTracks.length);
         }
 
         // Merge project-level and clip-level audio settings
@@ -1566,6 +1605,7 @@
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,
         manualFramingConfigs: settings.manualFramingConfigs || null,
+        videoFilterSegments: videoFilterSegments,
       });
 
       console.log('[ClipsTab] Clip build started successfully');
