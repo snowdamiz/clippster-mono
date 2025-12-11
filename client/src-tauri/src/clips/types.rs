@@ -725,3 +725,136 @@ impl FramingStrategy {
     }
 }
 
+// ============================================================================
+// TEXT OVERLAY TYPES
+// ============================================================================
+
+/// Text overlay style settings (matches frontend TextOverlayStyle)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextOverlayStyle {
+    pub font_family: String,
+    pub font_size: f32,
+    pub font_weight: u32,
+    pub color: String,  // Text color
+    #[serde(default)]
+    pub background_color: Option<String>,
+    #[serde(default)]
+    pub background_enabled: bool,
+    #[serde(default)]
+    pub highlight_color: Option<String>,
+    // Dual border system
+    #[serde(default)]
+    pub border1_width: f32,
+    #[serde(default)]
+    pub border1_color: Option<String>,
+    #[serde(default)]
+    pub border2_width: f32,
+    #[serde(default)]
+    pub border2_color: Option<String>,
+    // Legacy stroke support
+    #[serde(default)]
+    pub stroke_enabled: bool,
+    #[serde(default)]
+    pub stroke_color: Option<String>,
+    #[serde(default)]
+    pub stroke_width: f32,
+    // Shadow
+    #[serde(default)]
+    pub shadow_enabled: bool,
+    #[serde(default)]
+    pub shadow_color: Option<String>,
+    #[serde(default)]
+    pub shadow_blur: f32,
+    #[serde(default)]
+    pub shadow_offset_x: f32,
+    #[serde(default)]
+    pub shadow_offset_y: f32,
+    // Layout & spacing
+    #[serde(default)]
+    pub border_radius: f32,
+    #[serde(default)]
+    pub padding: f32,
+    #[serde(default)]
+    pub letter_spacing: f32,
+    #[serde(default)]
+    pub line_height: f32,
+    #[serde(default)]
+    pub word_spacing: f32,
+    #[serde(default)]
+    pub text_align: Option<String>,
+    #[serde(default)]
+    pub max_width: f32,
+    #[serde(default)]
+    pub text_offset_x: f32,
+    #[serde(default)]
+    pub text_offset_y: f32,
+}
+
+impl Default for TextOverlayStyle {
+    fn default() -> Self {
+        Self {
+            font_family: "Montserrat".to_string(),
+            font_size: 32.0,
+            font_weight: 700,
+            color: "#ffffff".to_string(),
+            background_color: None,
+            background_enabled: false,
+            highlight_color: Some("#FFFF00".to_string()),
+            border1_width: 2.0,
+            border1_color: Some("#000000".to_string()),
+            border2_width: 0.0,
+            border2_color: Some("#000000".to_string()),
+            stroke_enabled: false,
+            stroke_color: Some("#000000".to_string()),
+            stroke_width: 1.0,
+            shadow_enabled: true,
+            shadow_color: Some("#000000".to_string()),
+            shadow_blur: 4.0,
+            shadow_offset_x: 2.0,
+            shadow_offset_y: 2.0,
+            border_radius: 4.0,
+            padding: 8.0,
+            letter_spacing: 0.0,
+            line_height: 1.2,
+            word_spacing: 0.35,
+            text_align: Some("center".to_string()),
+            max_width: 90.0,
+            text_offset_x: 0.0,
+            text_offset_y: 0.0,
+        }
+    }
+}
+
+/// Per-aspect-ratio configuration for text overlays
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextOverlayRatioConfig {
+    pub position: TextOverlayPosition,
+    pub style: TextOverlayStyle,
+}
+
+/// Text overlay position as x/y coordinates
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextOverlayPosition {
+    pub x: f64,  // 0-100 percentage
+    pub y: f64,  // 0-100 percentage
+}
+
+/// Text overlay settings for export
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextOverlaySettings {
+    pub id: String,
+    pub text: String,
+    pub start_time: f64,
+    pub end_time: f64,
+    pub position_x: f64,  // 0-100 percentage (default position)
+    pub position_y: f64,  // 0-100 percentage (default position)
+    pub style: TextOverlayStyle,
+    pub animation: String,
+    /// Per-aspect-ratio configurations (key is ratio like "16:9", "9:16")
+    #[serde(default)]
+    pub per_ratio_configs: Option<std::collections::HashMap<String, TextOverlayRatioConfig>>,
+}
+

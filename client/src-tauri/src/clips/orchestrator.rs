@@ -2,9 +2,9 @@ use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 use tauri::Emitter;
 
-use super::types::{SubtitleSettings, SubtitleOverrides, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy, VideoFilterSegment};
+use super::types::{SubtitleSettings, SubtitleOverrides, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy, VideoFilterSegment, TextOverlaySettings};
 use super::video_info::{get_video_info, parse_aspect_ratio, IntroOutroCache};
-use super::subtitle::generate_ass_file;
+use super::subtitle::{generate_ass_file, generate_text_overlay_ass_file, merge_text_overlays_into_ass};
 use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings, build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy};
 use super::font_manager::get_fonts_dir;
 use super::{CancellationToken, is_build_cancelled};
@@ -139,6 +139,7 @@ pub async fn build_clip_internal_simple(
     audio_settings: Option<AudioSettings>,
     framing_strategy: Option<FramingStrategy>,
     video_filter_segments: Option<Vec<VideoFilterSegment>>,
+    text_overlays: Option<Vec<TextOverlaySettings>>,
     cancel_rx: CancellationToken
 ) -> Result<ClipBuildResult, String> {
 
@@ -230,6 +231,7 @@ pub async fn build_clip_internal_simple(
         let audio_settings = audio_settings.clone();
         let framing_strategy = framing_strategy.clone();
         let video_filter_segments = video_filter_segments.clone();
+        let text_overlays = text_overlays.clone();
         let cancel_rx = cancel_rx.clone();
         let build_num = build_num;
         
@@ -306,6 +308,46 @@ pub async fn build_clip_internal_simple(
                 None
             };
 
+            // Handle text overlays - either merge into existing subtitle ASS or create new one
+            let final_subtitle_file = if let Some(overlays) = &text_overlays {
+                if !overlays.is_empty() {
+                    let subtitle_offset = intro_duration.unwrap_or(0.0);
+                    
+                    if let Some(ref sub_path) = subtitle_file {
+                        // Merge text overlays into existing subtitle ASS file
+                        println!("[Rust] Merging {} text overlays into subtitle file for aspect ratio {}", overlays.len(), aspect_ratio_str);
+                        merge_text_overlays_into_ass(
+                            sub_path,
+                            overlays,
+                            video_info.width,
+                            video_info.height,
+                            subtitle_offset,
+                            &aspect_ratio_str
+                        ).map_err(|e| format!("Failed to merge text overlays: {}", e))?;
+                        subtitle_file.clone()
+                    } else {
+                        // Generate standalone text overlay ASS file
+                        println!("[Rust] Generating standalone text overlay ASS file with {} overlays for aspect ratio {}", overlays.len(), aspect_ratio_str);
+                        let text_overlay_path = clip_base_dir.join(format!("text_overlays_{}.ass", ratio_suffix));
+                        let text_overlay_fonts_dir = get_fonts_dir(&app).ok();
+                        generate_text_overlay_ass_file(
+                            overlays,
+                            &text_overlay_path,
+                            video_info.width,
+                            video_info.height,
+                            subtitle_offset,
+                            text_overlay_fonts_dir.as_deref(),
+                            &aspect_ratio_str
+                        ).map_err(|e| format!("Failed to generate text overlay file: {}", e))?;
+                        Some(text_overlay_path)
+                    }
+                } else {
+                    subtitle_file.clone()
+                }
+            } else {
+                subtitle_file.clone()
+            };
+
             // Check for cancellation before building
             if is_build_cancelled(&cancel_rx) {
                 return Err::<_, String>("Build cancelled by user".to_string());
@@ -332,7 +374,7 @@ pub async fn build_clip_internal_simple(
                         &aspect_ratio_str,  // Pass the current aspect ratio being built
                         &quality,
                         frame_rate,
-                        subtitle_file.as_deref(),
+                        final_subtitle_file.as_deref(),
                         intro_path.as_deref(),
                         outro_path.as_deref(),
                         intro_outro_cache.clone(),
@@ -352,7 +394,7 @@ pub async fn build_clip_internal_simple(
                         &aspect_ratio_str,  // Pass the current aspect ratio being built
                         &quality,
                         frame_rate,
-                        subtitle_file.as_deref(),
+                        final_subtitle_file.as_deref(),
                         intro_path.as_deref(),
                         outro_path.as_deref(),
                         intro_outro_cache.clone(),
@@ -368,7 +410,7 @@ pub async fn build_clip_internal_simple(
                     &video_path,
                     &output_path,
                     &segments[0],
-                    subtitle_file.as_deref(),
+                    final_subtitle_file.as_deref(),
                     &aspect_ratio,
                     &quality,
                     frame_rate,
@@ -387,7 +429,7 @@ pub async fn build_clip_internal_simple(
                     &video_path,
                     &output_path,
                     &segments,
-                    subtitle_file.as_deref(),
+                    final_subtitle_file.as_deref(),
                     &aspect_ratio,
                     &quality,
                     frame_rate,

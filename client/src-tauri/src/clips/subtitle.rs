@@ -1,5 +1,5 @@
 use std::io::Write;
-use super::types::{SubtitleSettings, WordInfo, AspectRatio};
+use super::types::{SubtitleSettings, WordInfo, AspectRatio, TextOverlaySettings};
 
 // Helper to embed fonts directly in ASS file
 pub fn embed_fonts_in_ass(
@@ -578,5 +578,391 @@ pub fn calculate_animation_duration(word_duration: f64) -> u32 {
     let calculated_duration = word_duration * 0.45;
     let capped_duration = calculated_duration.min(0.2);
     (capped_duration * 1000.0) as u32
+}
+
+// ============================================================================
+// TEXT OVERLAY ASS GENERATION
+// ============================================================================
+
+/// Generate ASS file for text overlays (separate from subtitles)
+/// Text overlays have per-overlay positioning and styling, displayed at specific times
+/// Uses per-aspect-ratio configurations when available
+pub fn generate_text_overlay_ass_file(
+    text_overlays: &[TextOverlaySettings],
+    output_path: &std::path::Path,
+    video_width: u32,
+    video_height: u32,
+    time_offset: f64, // Offset to add to all times (e.g., intro duration)
+    fonts_dir: Option<&std::path::Path>,
+    aspect_ratio: &str, // Current aspect ratio for per-ratio config lookup
+) -> Result<(), String> {
+    if text_overlays.is_empty() {
+        return Ok(()); // Nothing to generate
+    }
+
+    let mut file = std::fs::File::create(output_path)
+        .map_err(|e| format!("Failed to create text overlay ASS file: {}", e))?;
+
+    // Generate ASS header with normalized 1080p height coordinate system
+    let play_res_y = 1080;
+    let play_res_x = (video_width as f64 * (1080.0 / video_height as f64)).round() as u32;
+
+    writeln!(file, "[Script Info]").unwrap();
+    writeln!(file, "ScriptType: v4.00+").unwrap();
+    writeln!(file, "PlayResX: {}", play_res_x).unwrap();
+    writeln!(file, "PlayResY: {}", play_res_y).unwrap();
+    writeln!(file, "WrapStyle: 1").unwrap();
+    writeln!(file, "ScaledBorderAndShadow: yes").unwrap();
+    writeln!(file, "").unwrap();
+
+    // Try to embed fonts if we have unique font families
+    if let Some(fonts_path) = fonts_dir {
+        if fonts_path.exists() {
+            // Create a dummy SubtitleSettings for font embedding
+            // We'll use the first overlay's font family
+            if let Some(first_overlay) = text_overlays.first() {
+                let dummy_settings = SubtitleSettings {
+                    enabled: true,
+                    font_family: first_overlay.style.font_family.clone(),
+                    font_size: first_overlay.style.font_size,
+                    font_weight: first_overlay.style.font_weight,
+                    text_color: first_overlay.style.color.clone(),
+                    background_color: first_overlay.style.background_color.clone().unwrap_or_default(),
+                    background_enabled: first_overlay.style.background_enabled,
+                    border1_width: first_overlay.style.border1_width,
+                    border1_color: first_overlay.style.border1_color.clone().unwrap_or_default(),
+                    border2_width: first_overlay.style.border2_width,
+                    border2_color: first_overlay.style.border2_color.clone().unwrap_or_default(),
+                    shadow_offset_x: first_overlay.style.shadow_offset_x,
+                    shadow_offset_y: first_overlay.style.shadow_offset_y,
+                    shadow_blur: first_overlay.style.shadow_blur,
+                    shadow_color: first_overlay.style.shadow_color.clone().unwrap_or_default(),
+                    position: "middle".to_string(),
+                    position_percentage: 50.0,
+                    max_width: first_overlay.style.max_width,
+                    animation_style: "none".to_string(),
+                    line_height: first_overlay.style.line_height,
+                    letter_spacing: first_overlay.style.letter_spacing,
+                    text_align: first_overlay.style.text_align.clone().unwrap_or_else(|| "center".to_string()),
+                    text_offset_x: first_overlay.style.text_offset_x,
+                    text_offset_y: first_overlay.style.text_offset_y,
+                    padding: first_overlay.style.padding,
+                    border_radius: first_overlay.style.border_radius,
+                    word_spacing: first_overlay.style.word_spacing,
+                };
+                let _ = embed_fonts_in_ass(&mut file, fonts_path, &dummy_settings);
+            }
+        }
+    }
+
+    writeln!(file, "").unwrap();
+
+    // Generate styles for each text overlay (each overlay can have unique styling)
+    writeln!(file, "[V4+ Styles]").unwrap();
+    writeln!(file, "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding").unwrap();
+
+    // Convert colors (Hex #RRGGBB to &HAABBGGRR with alpha)
+    let convert_color = |hex: &str| -> String {
+        let hex = hex.trim_start_matches('#');
+        if hex.len() >= 6 {
+            let r = &hex[0..2];
+            let g = &hex[2..4];
+            let b = &hex[4..6];
+            format!("&H00{}{}{}", b, g, r).to_uppercase()
+        } else {
+            "&H00FFFFFF".to_string()
+        }
+    };
+
+    // Generate a unique style for each overlay (using per-ratio config if available)
+    for (idx, overlay) in text_overlays.iter().enumerate() {
+        // Get style for current aspect ratio (fallback to default)
+        let style = if let Some(ref configs) = overlay.per_ratio_configs {
+            configs.get(aspect_ratio).map(|c| &c.style).unwrap_or(&overlay.style)
+        } else {
+            &overlay.style
+        };
+        let style_name = format!("TextOverlay{}", idx);
+
+        let primary_color = convert_color(&style.color);
+        let outline_color = convert_color(style.border1_color.as_deref().unwrap_or("#000000"));
+        let shadow_color = if style.shadow_enabled {
+            convert_color(style.shadow_color.as_deref().unwrap_or("#000000"))
+        } else {
+            "&H00000000".to_string() // Transparent
+        };
+        let _back_color = if style.background_enabled {
+            convert_color(style.background_color.as_deref().unwrap_or("#000000"))
+        } else {
+            "&H00000000".to_string()
+        };
+
+        let bold = if style.font_weight >= 700 { 1 } else { 0 };
+        let outline_width = if style.border1_width > 0.0 { style.border1_width } else { 0.0 };
+        let shadow_depth = if style.shadow_enabled { 
+            ((style.shadow_offset_x.abs() + style.shadow_offset_y.abs()) / 2.0).max(1.0)
+        } else { 
+            0.0 
+        };
+
+        // Alignment: ASS uses numpad-style alignment (5 = center middle)
+        let alignment = 5; // Center middle (we position with \pos)
+
+        // Scale font size for coordinate system
+        let font_size = style.font_size * (play_res_y as f32 / 1080.0);
+
+        writeln!(
+            file,
+            "Style: {},{},{},{},{},{},{},{},0,0,0,100,100,{},0,1,{},{},{},10,10,10,1",
+            style_name,
+            style.font_family,
+            font_size as u32,
+            primary_color,
+            primary_color, // Secondary
+            outline_color,
+            shadow_color,
+            bold,
+            style.letter_spacing,
+            outline_width,
+            shadow_depth as u32,
+            alignment,
+        ).unwrap();
+    }
+
+    writeln!(file, "").unwrap();
+
+    // Generate Events (dialogue lines)
+    writeln!(file, "[Events]").unwrap();
+    writeln!(file, "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text").unwrap();
+
+    // Format time helper
+    let format_time = |secs: f64| -> String {
+        let h = (secs / 3600.0) as u32;
+        let m = ((secs % 3600.0) / 60.0) as u32;
+        let s = secs % 60.0;
+        format!("{}:{:02}:{:05.2}", h, m, s)
+    };
+
+    // Generate dialogue for each overlay
+    for (idx, overlay) in text_overlays.iter().enumerate() {
+        let style_name = format!("TextOverlay{}", idx);
+        let start_time = overlay.start_time + time_offset;
+        let end_time = overlay.end_time + time_offset;
+
+        // Get position for current aspect ratio (fallback to default)
+        let (pos_x_pct, pos_y_pct) = if let Some(ref configs) = overlay.per_ratio_configs {
+            if let Some(config) = configs.get(aspect_ratio) {
+                (config.position.x, config.position.y)
+            } else {
+                (overlay.position_x, overlay.position_y)
+            }
+        } else {
+            (overlay.position_x, overlay.position_y)
+        };
+
+        // Calculate position in ASS coordinates
+        // Frontend uses 0-100% positioning, ASS uses pixel coordinates based on PlayRes
+        let pos_x = (pos_x_pct / 100.0 * play_res_x as f64) as i32;
+        let pos_y = (pos_y_pct / 100.0 * play_res_y as f64) as i32;
+
+        // Build the text with position override
+        let pos_tag = format!("{{\\pos({},{})}}", pos_x, pos_y);
+
+        // Add animation effects if specified
+        let anim_tag = match overlay.animation.as_str() {
+            "fade" => "{\\fad(300,300)}".to_string(),
+            "slide-up" => format!("{{\\move({},{},{},{},0,300)}}", pos_x, pos_y + 50, pos_x, pos_y),
+            "slide-down" => format!("{{\\move({},{},{},{},0,300)}}", pos_x, pos_y - 50, pos_x, pos_y),
+            "zoom" => "{\\t(0,300,\\fscx120\\fscy120)\\t(300,600,\\fscx100\\fscy100)}".to_string(),
+            "pop" => "{\\t(0,150,\\fscx130\\fscy130)\\t(150,300,\\fscx100\\fscy100)}".to_string(),
+            _ => String::new(),
+        };
+
+        // Escape text for ASS (replace newlines, special chars)
+        let text = overlay.text
+            .replace("\\", "\\\\")
+            .replace("{", "\\{")
+            .replace("}", "\\}");
+
+        writeln!(
+            file,
+            "Dialogue: 0,{},{},{},,0,0,0,,{}{}{}",
+            format_time(start_time),
+            format_time(end_time),
+            style_name,
+            pos_tag,
+            anim_tag,
+            text
+        ).unwrap();
+    }
+
+    println!("[Rust] Generated text overlay ASS file with {} overlays: {}", 
+        text_overlays.len(), output_path.display());
+
+    Ok(())
+}
+
+/// Merge text overlay ASS content into an existing subtitle ASS file
+/// This appends text overlay styles and events to an existing subtitle file
+/// Uses per-aspect-ratio configurations when available
+pub fn merge_text_overlays_into_ass(
+    subtitle_ass_path: &std::path::Path,
+    text_overlays: &[TextOverlaySettings],
+    video_width: u32,
+    video_height: u32,
+    time_offset: f64,
+    aspect_ratio: &str, // Current aspect ratio for per-ratio config lookup
+) -> Result<(), String> {
+    use std::io::Read;
+
+    if text_overlays.is_empty() {
+        return Ok(());
+    }
+
+    // Read existing ASS content
+    let mut existing_content = String::new();
+    {
+        let mut file = std::fs::File::open(subtitle_ass_path)
+            .map_err(|e| format!("Failed to open subtitle ASS file: {}", e))?;
+        file.read_to_string(&mut existing_content)
+            .map_err(|e| format!("Failed to read subtitle ASS file: {}", e))?;
+    }
+
+    // Parse the coordinate system from existing file
+    let play_res_y = 1080;
+    let play_res_x = (video_width as f64 * (1080.0 / video_height as f64)).round() as u32;
+
+    // Convert colors helper
+    let convert_color = |hex: &str| -> String {
+        let hex = hex.trim_start_matches('#');
+        if hex.len() >= 6 {
+            let r = &hex[0..2];
+            let g = &hex[2..4];
+            let b = &hex[4..6];
+            format!("&H00{}{}{}", b, g, r).to_uppercase()
+        } else {
+            "&H00FFFFFF".to_string()
+        }
+    };
+
+    // Format time helper
+    let format_time = |secs: f64| -> String {
+        let h = (secs / 3600.0) as u32;
+        let m = ((secs % 3600.0) / 60.0) as u32;
+        let s = secs % 60.0;
+        format!("{}:{:02}:{:05.2}", h, m, s)
+    };
+
+    // Build new styles (using per-ratio config if available)
+    let mut new_styles = String::new();
+    for (idx, overlay) in text_overlays.iter().enumerate() {
+        // Get style for current aspect ratio (fallback to default)
+        let style = if let Some(ref configs) = overlay.per_ratio_configs {
+            configs.get(aspect_ratio).map(|c| &c.style).unwrap_or(&overlay.style)
+        } else {
+            &overlay.style
+        };
+        let style_name = format!("TextOverlay{}", idx);
+
+        let primary_color = convert_color(&style.color);
+        let outline_color = convert_color(style.border1_color.as_deref().unwrap_or("#000000"));
+        let shadow_color = if style.shadow_enabled {
+            convert_color(style.shadow_color.as_deref().unwrap_or("#000000"))
+        } else {
+            "&H00000000".to_string()
+        };
+
+        let bold = if style.font_weight >= 700 { 1 } else { 0 };
+        let outline_width = if style.border1_width > 0.0 { style.border1_width } else { 0.0 };
+        let shadow_depth = if style.shadow_enabled { 
+            ((style.shadow_offset_x.abs() + style.shadow_offset_y.abs()) / 2.0).max(1.0)
+        } else { 
+            0.0 
+        };
+
+        let font_size = style.font_size * (play_res_y as f32 / 1080.0);
+
+        new_styles.push_str(&format!(
+            "Style: {},{},{},{},{},{},{},{},0,0,0,100,100,{},0,1,{},{},5,10,10,10,1\n",
+            style_name,
+            style.font_family,
+            font_size as u32,
+            primary_color,
+            primary_color,
+            outline_color,
+            shadow_color,
+            bold,
+            style.letter_spacing,
+            outline_width,
+            shadow_depth as u32,
+        ));
+    }
+
+    // Build new events (using per-ratio position if available)
+    let mut new_events = String::new();
+    for (idx, overlay) in text_overlays.iter().enumerate() {
+        let style_name = format!("TextOverlay{}", idx);
+        let start_time = overlay.start_time + time_offset;
+        let end_time = overlay.end_time + time_offset;
+
+        // Get position for current aspect ratio (fallback to default)
+        let (pos_x_pct, pos_y_pct) = if let Some(ref configs) = overlay.per_ratio_configs {
+            if let Some(config) = configs.get(aspect_ratio) {
+                (config.position.x, config.position.y)
+            } else {
+                (overlay.position_x, overlay.position_y)
+            }
+        } else {
+            (overlay.position_x, overlay.position_y)
+        };
+
+        let pos_x = (pos_x_pct / 100.0 * play_res_x as f64) as i32;
+        let pos_y = (pos_y_pct / 100.0 * play_res_y as f64) as i32;
+
+        let pos_tag = format!("{{\\pos({},{})}}", pos_x, pos_y);
+
+        let anim_tag = match overlay.animation.as_str() {
+            "fade" => "{\\fad(300,300)}".to_string(),
+            "slide-up" => format!("{{\\move({},{},{},{},0,300)}}", pos_x, pos_y + 50, pos_x, pos_y),
+            "slide-down" => format!("{{\\move({},{},{},{},0,300)}}", pos_x, pos_y - 50, pos_x, pos_y),
+            "zoom" => "{\\t(0,300,\\fscx120\\fscy120)\\t(300,600,\\fscx100\\fscy100)}".to_string(),
+            "pop" => "{\\t(0,150,\\fscx130\\fscy130)\\t(150,300,\\fscx100\\fscy100)}".to_string(),
+            _ => String::new(),
+        };
+
+        let text = overlay.text
+            .replace("\\", "\\\\")
+            .replace("{", "\\{")
+            .replace("}", "\\}");
+
+        new_events.push_str(&format!(
+            "Dialogue: 10,{},{},{},,0,0,0,,{}{}{}\n",
+            format_time(start_time),
+            format_time(end_time),
+            style_name,
+            pos_tag,
+            anim_tag,
+            text
+        ));
+    }
+
+    // Insert new styles before [Events] section and append new events at the end
+    let modified_content = if let Some(events_pos) = existing_content.find("[Events]") {
+        // Insert styles before [Events]
+        let (before_events, events_and_after) = existing_content.split_at(events_pos);
+        format!("{}\n{}\n{}{}", before_events.trim_end(), new_styles, events_and_after, new_events)
+    } else {
+        // Just append everything at the end
+        format!("{}\n[V4+ Styles]\n{}\n[Events]\n{}", existing_content, new_styles, new_events)
+    };
+
+    // Write back
+    std::fs::write(subtitle_ass_path, modified_content)
+        .map_err(|e| format!("Failed to write merged ASS file: {}", e))?;
+
+    println!("[Rust] Merged {} text overlays into ASS file: {}", 
+        text_overlays.len(), subtitle_ass_path.display());
+
+    Ok(())
 }
 

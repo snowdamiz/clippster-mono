@@ -2,7 +2,7 @@ use tauri_plugin_shell::ShellExt;
 use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 
-use super::types::{AspectRatio, WatermarkSettings, AudioSettings, MusicTrackSettings, VideoFilterSettings, VideoFilterSegment, build_time_based_filter_string};
+use super::types::{AspectRatio, WatermarkSettings, AudioSettings, MusicTrackSettings, VideoFilterSegment, build_time_based_filter_string};
 use super::encoder::{detect_hardware_encoder, get_quality_settings};
 use super::video_info::{get_video_info, calculate_crop_params, IntroOutroCache};
 use super::font_manager::get_fonts_dir;

@@ -205,6 +205,37 @@
       </div>
     </Transition>
 
+    <!-- Preview Selector -->
+    <div v-if="selectedRatios.length > 0" class="space-y-3">
+      <h4 class="text-xs font-medium text-white/70 uppercase tracking-wide">Preview Aspect Ratio</h4>
+      <div class="flex flex-wrap gap-2">
+        <button
+          @click="emit('update:previewAspectRatio', '16:9')"
+          :class="[
+            'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
+            previewAspectRatio === '16:9'
+              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+              : 'bg-white/5 text-white/60 border-white/10 hover:bg-white/10',
+          ]"
+        >
+          16:9 Original
+        </button>
+        <button
+          v-for="ratio in selectedRatios"
+          :key="ratio"
+          @click="emit('update:previewAspectRatio', ratio)"
+          :class="[
+            'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
+            previewAspectRatio === ratio
+              ? 'bg-violet-500/20 text-violet-300 border-violet-500/50'
+              : 'bg-white/5 text-white/60 border-white/10 hover:bg-white/10',
+          ]"
+        >
+          {{ ratio }}
+        </button>
+      </div>
+    </div>
+
     <!-- Status Summary -->
     <div v-if="selectedRatios.length > 0" class="p-3 bg-white/5 rounded-lg border border-white/10">
       <div class="flex items-center gap-2 text-xs">
@@ -254,12 +285,14 @@
     videoPath: string | null;
     clipStartTime: number;
     clipEndTime: number;
+    previewAspectRatio: string;
   }>();
 
   const emit = defineEmits<{
     (e: 'update:framingConfigs', configs: ManualFramingConfigs): void;
     (e: 'update:selectedAspectRatios', ratios: string[]): void;
     (e: 'update:framingMode', mode: 'auto' | 'manual'): void;
+    (e: 'update:previewAspectRatio', ratio: string): void;
   }>();
 
   // Local state
@@ -277,6 +310,8 @@
     set: (val) => emit('update:framingMode', val),
   });
 
+  const previewAspectRatio = computed(() => props.previewAspectRatio);
+
   // Count of configured ratios
   const configuredCount = computed(() => {
     return props.selectedAspectRatios.filter((ratio) => isRatioConfigured(ratio)).length;
@@ -288,8 +323,15 @@
     const index = current.indexOf(ratio);
     if (index > -1) {
       current.splice(index, 1);
+      // If we're removing the currently previewed ratio, switch to 16:9 or the first remaining ratio
+      if (props.previewAspectRatio === ratio) {
+        const newRatio = current.length > 0 ? current[0] : '16:9';
+        emit('update:previewAspectRatio', newRatio);
+      }
     } else {
       current.push(ratio);
+      // Switch preview to the newly selected ratio
+      emit('update:previewAspectRatio', ratio);
     }
     emit('update:selectedAspectRatios', current);
   }

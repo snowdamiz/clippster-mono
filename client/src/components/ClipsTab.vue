@@ -439,6 +439,9 @@
       :default-outro="creatorDefaultOutro"
       :thumbnail-url="videoThumbnailUrl"
       :subtitle-settings="subtitleSettings"
+      :initial-aspect-ratios="savedAspectRatios"
+      :initial-framing-mode="savedFramingMode"
+      :initial-framing-configs="savedFramingConfigs"
       @confirm="onBuildConfirm"
     />
   </div>
@@ -683,6 +686,11 @@
   const clipToBuild = ref<ClipWithVersion | null>(null);
   const openDownloadDropdownId = ref<string | null>(null);
   const dropdownButtonRefs = ref<Map<string, HTMLElement>>(new Map());
+
+  // Aspect framing settings loaded from clip editor
+  const savedAspectRatios = ref<string[] | null>(null);
+  const savedFramingMode = ref<'auto' | 'manual' | null>(null);
+  const savedFramingConfigs = ref<import('@/types').ManualFramingConfigs | null>(null);
 
   // Close dropdown when clicking outside
   function handleClickOutside(event: MouseEvent) {
@@ -1226,6 +1234,42 @@
       return;
     }
 
+    // Load saved aspect framing settings from clip editor
+    try {
+      const { getFullClipEdit } = await import('@/services/database');
+      const clipEdit = await getFullClipEdit(clip.id);
+
+      if (clipEdit) {
+        const editData = JSON.parse(clipEdit.edit.edit_data);
+
+        if (editData.aspectFraming) {
+          savedAspectRatios.value = editData.aspectFraming.selectedRatios || null;
+          savedFramingMode.value = editData.aspectFraming.framingMode || null;
+          savedFramingConfigs.value = editData.aspectFraming.configs || null;
+          console.log('[ClipsTab] Loaded saved aspect framing settings:', {
+            ratios: savedAspectRatios.value,
+            mode: savedFramingMode.value,
+            configCount: savedFramingConfigs.value ? Object.keys(savedFramingConfigs.value).length : 0,
+          });
+        } else {
+          // No saved settings, reset to null
+          savedAspectRatios.value = null;
+          savedFramingMode.value = null;
+          savedFramingConfigs.value = null;
+        }
+      } else {
+        // No clip edit data, reset to null
+        savedAspectRatios.value = null;
+        savedFramingMode.value = null;
+        savedFramingConfigs.value = null;
+      }
+    } catch (err) {
+      console.warn('[ClipsTab] Could not load saved aspect framing settings:', err);
+      savedAspectRatios.value = null;
+      savedFramingMode.value = null;
+      savedFramingConfigs.value = null;
+    }
+
     clipToBuild.value = clip;
     showBuildSettingsDialog.value = true;
   }
@@ -1317,6 +1361,16 @@
       const { getProjectAudioSettings, getFullClipEdit } = await import('@/services/database');
       let audioSettings = null;
       let videoFilterSegments = null; // Time-based video filter segments from clip editor
+      let textOverlaysForExport: Array<{
+        id: string;
+        text: string;
+        startTime: number;
+        endTime: number;
+        positionX: number;
+        positionY: number;
+        style: any;
+        animation: string;
+      }> | null = null;
 
       try {
         // Load project-level audio settings
@@ -1416,6 +1470,21 @@
           musicTracks: musicTracks.length > 0 ? musicTracks : undefined,
         };
         console.log('[ClipsTab] Final merged audio settings:', audioSettings);
+
+        // Extract text overlays for burning into video
+        if (clipEdit && clipEdit.textOverlays && clipEdit.textOverlays.length > 0) {
+          textOverlaysForExport = clipEdit.textOverlays.map((overlay) => ({
+            id: overlay.id,
+            text: overlay.text,
+            startTime: overlay.start_time,
+            endTime: overlay.end_time,
+            positionX: overlay.position_x,
+            positionY: overlay.position_y,
+            style: JSON.parse(overlay.style_data || '{}'),
+            animation: overlay.animation || 'none',
+          }));
+          console.log('[ClipsTab] Loaded text overlays for export:', textOverlaysForExport.length);
+        }
       } catch (err) {
         console.warn('[ClipsTab] Could not load audio settings:', err);
       }
@@ -1606,6 +1675,7 @@
         framingStrategy: framingStrategy,
         manualFramingConfigs: settings.manualFramingConfigs || null,
         videoFilterSegments: videoFilterSegments,
+        textOverlays: textOverlaysForExport,
       });
 
       console.log('[ClipsTab] Clip build started successfully');

@@ -1037,6 +1037,87 @@
     };
   }
 
+  // Convert effective time to visual percentage position (accounting for segment gaps)
+  function effectiveTimeToVisualPercent(effectiveTime: number): number {
+    const segments = sortedTrimSegments.value;
+    if (segments.length === 0 || totalDuration.value <= 0) {
+      return (effectiveTime / (totalDuration.value || 1)) * 100;
+    }
+
+    const totalGapPercent = (segments.length - 1) * GAP_PERCENT;
+    const availablePercent = 100 - totalGapPercent;
+
+    let accumulatedEffectiveTime = 0;
+    let accumulatedPercent = 0;
+
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+      const segmentDuration = segment.endTime - segment.startTime;
+      const segmentWidthPercent = (segmentDuration / totalDuration.value) * availablePercent;
+
+      // Check if effective time falls within this segment's effective range
+      if (effectiveTime < accumulatedEffectiveTime + segmentDuration) {
+        // Time is within this segment
+        const timeIntoSegment = effectiveTime - accumulatedEffectiveTime;
+        const percentIntoSegment = (timeIntoSegment / segmentDuration) * segmentWidthPercent;
+        return accumulatedPercent + percentIntoSegment;
+      }
+
+      accumulatedPercent += segmentWidthPercent;
+      if (i < segments.length - 1) {
+        accumulatedPercent += GAP_PERCENT;
+      }
+      accumulatedEffectiveTime += segmentDuration;
+    }
+
+    // Time is past all segments, clamp to end
+    return Math.min(100, accumulatedPercent);
+  }
+
+  // Convert visual percentage position to effective time (inverse of effectiveTimeToVisualPercent)
+  function visualPercentToEffectiveTime(percent: number): number {
+    const segments = sortedTrimSegments.value;
+    if (segments.length === 0 || totalDuration.value <= 0) {
+      return (percent / 100) * (totalDuration.value || 1);
+    }
+
+    const totalGapPercent = (segments.length - 1) * GAP_PERCENT;
+    const availablePercent = 100 - totalGapPercent;
+
+    let accumulatedEffectiveTime = 0;
+    let accumulatedPercent = 0;
+
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+      const segmentDuration = segment.endTime - segment.startTime;
+      const segmentWidthPercent = (segmentDuration / totalDuration.value) * availablePercent;
+
+      const segmentEndPercent = accumulatedPercent + segmentWidthPercent;
+
+      if (percent >= accumulatedPercent && percent <= segmentEndPercent) {
+        // Position is within this segment
+        const percentIntoSegment = percent - accumulatedPercent;
+        const timeIntoSegment = (percentIntoSegment / segmentWidthPercent) * segmentDuration;
+        return accumulatedEffectiveTime + timeIntoSegment;
+      }
+
+      // Check if position is in gap
+      if (i < segments.length - 1) {
+        const gapEndPercent = segmentEndPercent + GAP_PERCENT;
+        if (percent > segmentEndPercent && percent < gapEndPercent) {
+          // Position is in gap, return end of current segment's effective time
+          return accumulatedEffectiveTime + segmentDuration;
+        }
+      }
+
+      accumulatedPercent = segmentEndPercent + (i < segments.length - 1 ? GAP_PERCENT : 0);
+      accumulatedEffectiveTime += segmentDuration;
+    }
+
+    // Position is past all segments, return total duration
+    return totalDuration.value;
+  }
+
   function getSegmentStyle(
     startTime: number,
     endTime: number,
@@ -1054,12 +1135,14 @@
     const actualStartTime = usePreview ? preview.startTime : startTime;
     const actualEndTime = usePreview ? preview.endTime : endTime;
 
-    // For non-trim segments, use the total duration for positioning
-    const effectiveDuration = totalDuration.value || props.duration;
+    // Convert effective times to visual positions (accounting for gaps)
+    const leftPercent = effectiveTimeToVisualPercent(actualStartTime);
+    const rightPercent = effectiveTimeToVisualPercent(actualEndTime);
+    const widthPercent = Math.max(rightPercent - leftPercent, 1);
 
     return {
-      left: `${(actualStartTime / effectiveDuration) * 100}%`,
-      width: `${Math.max(((actualEndTime - actualStartTime) / effectiveDuration) * 100, 1)}%`,
+      left: `${leftPercent}%`,
+      width: `${widthPercent}%`,
       background: `linear-gradient(to right, ${colors.bg})`,
       borderColor: isSelected ? '#3b82f6' : colors.border,
       borderWidth: '1px',
@@ -1078,11 +1161,14 @@
     const startTime = usePreview ? preview.startTime : filterSeg.startTime;
     const endTime = usePreview ? preview.endTime : filterSeg.endTime;
 
-    const effectiveDuration = totalDuration.value || props.duration;
+    // Convert effective times to visual positions (accounting for gaps)
+    const leftPercent = effectiveTimeToVisualPercent(startTime);
+    const rightPercent = effectiveTimeToVisualPercent(endTime);
+    const widthPercent = Math.max(rightPercent - leftPercent, 1);
 
     return {
-      left: `${(startTime / effectiveDuration) * 100}%`,
-      width: `${Math.max(((endTime - startTime) / effectiveDuration) * 100, 1)}%`,
+      left: `${leftPercent}%`,
+      width: `${widthPercent}%`,
       background: `linear-gradient(to right, ${colors.bg})`,
       borderColor: isSelected ? '#3b82f6' : colors.border,
       borderWidth: '1px',
@@ -1265,32 +1351,56 @@
   function onDragMove(e: MouseEvent) {
     if (!isDragging.value || !dragInfo.value) return;
 
-    // Use totalDuration for audio tracks, props.duration for others
-    const effectiveDuration = dragInfo.value.type === 'audio' ? totalDuration.value : props.duration;
-
-    const deltaX = e.clientX - dragInfo.value.startX;
-    const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * effectiveDuration;
-
     const itemDuration = dragInfo.value.originalEndTime - dragInfo.value.originalStartTime;
-    let newStartTime = dragInfo.value.originalStartTime + deltaTime;
-    let newEndTime = newStartTime + itemDuration;
+    const deltaX = e.clientX - dragInfo.value.startX;
+    const deltaPercent = (deltaX / dragInfo.value.trackContentWidth) * 100;
 
-    // Constrain to timeline bounds
-    if (newStartTime < 0) {
-      newStartTime = 0;
-      newEndTime = itemDuration;
-    }
+    let newStartTime: number;
+    let newEndTime: number;
 
-    // For audio tracks, allow positioning anywhere (even beyond video segments)
-    // For other items, constrain to video duration
-    const maxDuration =
-      dragInfo.value.type === 'audio'
-        ? Math.max(effectiveDuration, newEndTime) // Allow extending timeline
-        : props.duration;
+    // For trim segments and audio, use linear calculation (they have different coordinate systems)
+    if (dragInfo.value.type === 'trim') {
+      const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * props.duration;
+      newStartTime = dragInfo.value.originalStartTime + deltaTime;
+      newEndTime = newStartTime + itemDuration;
 
-    if (newEndTime > maxDuration && dragInfo.value.type !== 'audio') {
-      newEndTime = maxDuration;
-      newStartTime = maxDuration - itemDuration;
+      if (newStartTime < 0) {
+        newStartTime = 0;
+        newEndTime = itemDuration;
+      }
+      if (newEndTime > props.duration) {
+        newEndTime = props.duration;
+        newStartTime = props.duration - itemDuration;
+      }
+    } else if (dragInfo.value.type === 'audio') {
+      // Audio uses simple linear positioning
+      const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * totalDuration.value;
+      newStartTime = dragInfo.value.originalStartTime + deltaTime;
+      newEndTime = newStartTime + itemDuration;
+
+      if (newStartTime < 0) {
+        newStartTime = 0;
+        newEndTime = itemDuration;
+      }
+    } else {
+      // For text, sticker, effect, filter - use gap-aware positioning
+      // Calculate original visual position and new visual position
+      const originalStartPercent = effectiveTimeToVisualPercent(dragInfo.value.originalStartTime);
+      const newStartPercent = Math.max(0, Math.min(100, originalStartPercent + deltaPercent));
+
+      // Convert new visual position back to effective time
+      newStartTime = visualPercentToEffectiveTime(newStartPercent);
+      newEndTime = newStartTime + itemDuration;
+
+      // Constrain to timeline bounds
+      if (newStartTime < 0) {
+        newStartTime = 0;
+        newEndTime = itemDuration;
+      }
+      if (newEndTime > totalDuration.value) {
+        newEndTime = totalDuration.value;
+        newStartTime = totalDuration.value - itemDuration;
+      }
     }
 
     // Update local preview state (no database call)
@@ -1343,28 +1453,60 @@
   function onResizeMove(e: MouseEvent) {
     if (!isResizing.value || !resizeInfo.value) return;
 
-    // Use totalDuration for audio tracks, props.duration for others
-    const effectiveDuration = resizeInfo.value.type === 'audio' ? totalDuration.value : props.duration;
-
     const deltaX = e.clientX - resizeInfo.value.startX;
-    const deltaTime = (deltaX / resizeInfo.value.trackContentWidth) * effectiveDuration;
+    const deltaPercent = (deltaX / resizeInfo.value.trackContentWidth) * 100;
+    const minDuration = 0.1;
 
     let newStartTime = resizeInfo.value.originalStartTime;
     let newEndTime = resizeInfo.value.originalEndTime;
 
-    const minDuration = 0.1;
-
-    if (resizeInfo.value.handle === 'left') {
-      newStartTime = Math.max(0, resizeInfo.value.originalStartTime + deltaTime);
-      if (newEndTime - newStartTime < minDuration) {
-        newStartTime = newEndTime - minDuration;
+    // For trim segments and audio, use linear calculation
+    if (resizeInfo.value.type === 'trim') {
+      const deltaTime = (deltaX / resizeInfo.value.trackContentWidth) * props.duration;
+      if (resizeInfo.value.handle === 'left') {
+        newStartTime = Math.max(0, resizeInfo.value.originalStartTime + deltaTime);
+        if (newEndTime - newStartTime < minDuration) {
+          newStartTime = newEndTime - minDuration;
+        }
+      } else {
+        newEndTime = Math.min(props.duration, resizeInfo.value.originalEndTime + deltaTime);
+        if (newEndTime - newStartTime < minDuration) {
+          newEndTime = newStartTime + minDuration;
+        }
+      }
+    } else if (resizeInfo.value.type === 'audio') {
+      const deltaTime = (deltaX / resizeInfo.value.trackContentWidth) * totalDuration.value;
+      if (resizeInfo.value.handle === 'left') {
+        newStartTime = Math.max(0, resizeInfo.value.originalStartTime + deltaTime);
+        if (newEndTime - newStartTime < minDuration) {
+          newStartTime = newEndTime - minDuration;
+        }
+      } else {
+        newEndTime = resizeInfo.value.originalEndTime + deltaTime;
+        if (newEndTime - newStartTime < minDuration) {
+          newEndTime = newStartTime + minDuration;
+        }
       }
     } else {
-      // For audio tracks, don't constrain to video duration
-      const maxEnd = resizeInfo.value.type === 'audio' ? Infinity : props.duration;
-      newEndTime = Math.min(maxEnd, resizeInfo.value.originalEndTime + deltaTime);
-      if (newEndTime - newStartTime < minDuration) {
-        newEndTime = newStartTime + minDuration;
+      // For text, sticker, effect, filter - use gap-aware positioning
+      if (resizeInfo.value.handle === 'left') {
+        const originalStartPercent = effectiveTimeToVisualPercent(resizeInfo.value.originalStartTime);
+        const newStartPercent = Math.max(0, originalStartPercent + deltaPercent);
+        newStartTime = visualPercentToEffectiveTime(newStartPercent);
+        if (newEndTime - newStartTime < minDuration) {
+          newStartTime = newEndTime - minDuration;
+        }
+      } else {
+        const originalEndPercent = effectiveTimeToVisualPercent(resizeInfo.value.originalEndTime);
+        const newEndPercent = Math.min(100, originalEndPercent + deltaPercent);
+        newEndTime = visualPercentToEffectiveTime(newEndPercent);
+        if (newEndTime - newStartTime < minDuration) {
+          newEndTime = newStartTime + minDuration;
+        }
+        // Constrain to total duration
+        if (newEndTime > totalDuration.value) {
+          newEndTime = totalDuration.value;
+        }
       }
     }
 

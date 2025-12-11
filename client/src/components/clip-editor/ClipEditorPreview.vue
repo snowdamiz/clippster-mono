@@ -1,43 +1,137 @@
 <template>
   <div class="flex-1 flex flex-col min-h-0 p-4">
     <!-- Video Container -->
-    <div class="flex-1 flex items-center justify-center bg-black rounded-lg overflow-hidden relative">
+    <div
+      ref="videoContainerRef"
+      class="flex-1 flex items-center justify-center bg-black rounded-lg overflow-hidden relative"
+    >
+      <!-- Single region mode: Main video with CSS transforms applied directly (no extra decoding) -->
+      <div
+        v-if="showFramedPreview && isSingleRegion"
+        class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-black overflow-hidden cursor-pointer"
+        :style="getFramedContainerStyle()"
+        @click="onVideoClick"
+      >
+        <video
+          ref="videoRef"
+          :src="videoSrc || ''"
+          class="absolute max-w-none"
+          :style="getSingleRegionVideoStyle()"
+          @loadedmetadata="onLoadedMetadata"
+          @timeupdate="onTimeUpdate"
+          @ended="onEnded"
+          @play="onPlay"
+          @pause="onPause"
+        />
+      </div>
+
+      <!-- Multi-region framed container (for manually configured multiple regions) -->
+      <div
+        v-else-if="showFramedPreview"
+        class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-black overflow-hidden"
+        :style="getFramedContainerStyle()"
+      >
+        <!-- Hidden main video for audio/control -->
+        <video
+          ref="videoRef"
+          :src="videoSrc || ''"
+          class="sr-only"
+          @loadedmetadata="onLoadedMetadata"
+          @timeupdate="onTimeUpdate"
+          @ended="onEnded"
+          @play="onPlay"
+          @pause="onPause"
+        />
+
+        <!-- Render each region from the framing config -->
+        <div
+          v-for="(region, idx) in currentFramingConfig?.regions || []"
+          :key="region.id"
+          class="absolute overflow-hidden"
+          :style="getRegionOutputStyle(region)"
+        >
+          <!-- Video crop preview - matches POI editor exactly -->
+          <video
+            :ref="(el) => setRegionVideoRef(idx, el as HTMLVideoElement)"
+            :src="videoSrc || ''"
+            class="absolute max-w-none pointer-events-none"
+            :style="getCroppedVideoStyle(region)"
+            muted
+            playsinline
+            @loadedmetadata="onRegionVideoLoaded"
+          />
+        </div>
+
+        <!-- Click handler overlay -->
+        <div class="absolute inset-0 cursor-pointer" @click="onVideoClick" />
+      </div>
+
+      <!-- Default 16:9 mode: Normal video display -->
       <video
+        v-else
         ref="videoRef"
         :src="videoSrc || ''"
-        class="max-w-full max-h-full object-contain"
+        class="max-w-full max-h-full object-contain cursor-pointer"
         :style="getVideoFilterStyle()"
         @loadedmetadata="onLoadedMetadata"
         @timeupdate="onTimeUpdate"
         @ended="onEnded"
         @play="onPlay"
         @pause="onPause"
+        @click="onVideoClick"
       />
 
-      <!-- Overlay Container -->
+      <!-- Overlay Container - matches video dimensions -->
       <div
         ref="overlayContainerRef"
-        class="absolute inset-0 pointer-events-none overflow-hidden"
-        :style="overlayContainerStyle"
+        class="absolute overflow-hidden"
+        :style="getOverlayContainerPositionStyle()"
+        @click.self="onOverlayContainerClick"
       >
-        <!-- Text Overlays -->
+        <!-- Aspect ratio indicator for framed mode -->
+        <div
+          v-if="showFramedPreview"
+          class="absolute top-2 right-2 px-2 py-1 bg-black/80 rounded text-[10px] text-white font-medium pointer-events-none z-20"
+        >
+          {{ previewAspectRatio }}
+        </div>
+
+        <!-- Text Overlays (Draggable) -->
         <div
           v-for="overlay in visibleTextOverlays"
           :key="overlay.id"
-          class="absolute text-overlay"
+          class="absolute text-overlay select-none"
+          :class="[
+            getTextOverlayClass(overlay),
+            {
+              'cursor-move pointer-events-auto': true,
+              'ring-2 ring-violet-500 ring-offset-2 ring-offset-transparent':
+                dragState.type === 'text' && dragState.id === overlay.id,
+              'hover:ring-2 hover:ring-violet-400/50': dragState.id !== overlay.id,
+            },
+          ]"
           :style="getTextOverlayStyle(overlay)"
-          :class="getTextOverlayClass(overlay)"
+          @mousedown="(e) => startDrag(e, 'text', overlay.id, getOverlayConfigForRatio(overlay).position)"
         >
           {{ overlay.text }}
         </div>
 
-        <!-- Stickers -->
+        <!-- Stickers (Draggable) -->
         <div
           v-for="sticker in visibleStickers"
           :key="sticker.id"
-          class="absolute sticker-overlay"
+          class="absolute sticker-overlay select-none"
+          :class="[
+            getStickerClass(sticker),
+            {
+              'cursor-move pointer-events-auto': true,
+              'ring-2 ring-violet-500 ring-offset-2 ring-offset-transparent':
+                dragState.type === 'sticker' && dragState.id === sticker.id,
+              'hover:ring-2 hover:ring-violet-400/50': dragState.id !== sticker.id,
+            },
+          ]"
           :style="getStickerStyle(sticker)"
-          :class="getStickerClass(sticker)"
+          @mousedown="(e) => startDrag(e, 'sticker', sticker.id, sticker.position)"
         >
           <span v-if="sticker.stickerType === 'emoji'" class="text-4xl">
             {{ sticker.stickerPath }}
@@ -60,15 +154,13 @@
         :style="getTemperatureStyle()"
       />
 
-      <!-- Play Button Overlay -->
+      <!-- Play Button (centered, doesn't block overlay interactions) -->
       <button
         v-if="!isPlaying"
-        @click="emit('togglePlay')"
-        class="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 transition-colors pointer-events-auto"
+        @click.stop="emit('togglePlay')"
+        class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm flex items-center justify-center transition-colors pointer-events-auto z-10"
       >
-        <div class="w-16 h-16 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-          <Play class="w-8 h-8 text-white ml-1" />
-        </div>
+        <Play class="w-8 h-8 text-white ml-1" />
       </button>
     </div>
 
@@ -118,18 +210,28 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch, onMounted } from 'vue';
+  import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
   import { Play, Pause, Volume2, VolumeX } from 'lucide-vue-next';
-  import type { TextOverlay, Sticker, FilterSettings } from '@/types';
+  import type { TextOverlay, Sticker, FilterSettings, ManualFramingConfigs } from '@/types';
 
   interface SegmentInput {
     start_time: number;
     end_time: number;
   }
 
+  interface DragState {
+    isDragging: boolean;
+    type: 'text' | 'sticker' | null;
+    id: string | null;
+    startX: number;
+    startY: number;
+    startPosition: { x: number; y: number };
+  }
+
   const props = defineProps<{
     videoSrc: string | null;
     currentTime: number;
+    effectiveTime: number; // Time position accounting for segment cuts
     isPlaying: boolean;
     clipStart: number;
     clipEnd: number;
@@ -137,21 +239,146 @@
     stickers: Sticker[];
     filterSettings: FilterSettings | null;
     segments?: SegmentInput[];
+    previewAspectRatio: string; // Currently previewed aspect ratio (e.g., "16:9")
+    selectedAspectRatios: string[]; // All selected aspect ratios
+    framingConfigs: ManualFramingConfigs; // Framing configurations per aspect ratio
   }>();
 
   const emit = defineEmits<{
     (e: 'timeUpdate', time: number): void;
     (e: 'togglePlay'): void;
     (e: 'videoElementReady', element: HTMLVideoElement): void;
+    (e: 'updateOverlayPosition', type: 'text' | 'sticker', id: string, position: { x: number; y: number }): void;
+    (e: 'update:previewAspectRatio', ratio: string): void;
   }>();
 
   // Refs
   const videoRef = ref<HTMLVideoElement | null>(null);
+  const videoContainerRef = ref<HTMLElement | null>(null);
   const overlayContainerRef = ref<HTMLElement | null>(null);
+  const regionVideoRefs = ref<(HTMLVideoElement | null)[]>([]);
   const duration = ref(0);
   const volume = ref(1);
   const isMuted = ref(false);
   const isDraggingProgress = ref(false);
+  const containerSize = ref({ width: 0, height: 0 });
+
+  // Store time to restore after aspect ratio switch
+  const pendingSeekTime = ref<number | null>(null);
+
+  // Set region video ref
+  function setRegionVideoRef(index: number, el: HTMLVideoElement | null) {
+    if (el) {
+      regionVideoRefs.value[index] = el;
+      // Set initial time to match main video
+      if (videoRef.value) {
+        el.currentTime = videoRef.value.currentTime;
+      }
+    }
+  }
+
+  // Handle region video loaded - sync time and play state
+  function onRegionVideoLoaded(event: Event) {
+    const regionVideo = event.target as HTMLVideoElement;
+    if (!regionVideo || !videoRef.value) return;
+
+    // Sync time with main video
+    regionVideo.currentTime = videoRef.value.currentTime;
+
+    // If main video is playing, start playing this region video too
+    if (!videoRef.value.paused) {
+      regionVideo.play().catch(() => {});
+    }
+  }
+
+  // Get style for single region video (uses main video element directly - no sync needed)
+  function getSingleRegionVideoStyle(): Record<string, string> {
+    const region = currentFramingConfig.value?.regions?.[0];
+    if (!region) return { display: 'none' };
+
+    const filterStyle = getVideoFilterStyle();
+
+    // Guard against invalid dimensions
+    if (!region.source.width || !region.source.height) {
+      return { display: 'none' };
+    }
+
+    // Same calculation as getCroppedVideoStyle
+    const scaleX = 100 / region.source.width;
+    const scaleY = 100 / region.source.height;
+    const offsetX = -region.source.x * scaleX;
+    const offsetY = -region.source.y * scaleY;
+
+    return {
+      width: `${scaleX}%`,
+      height: `${scaleY}%`,
+      left: `${offsetX}%`,
+      top: `${offsetY}%`,
+      objectFit: 'fill',
+      filter: filterStyle.filter || 'none',
+    };
+  }
+
+  // Sync region videos with main video - only called on seek/play/pause, not continuously
+  // Continuous syncing causes lag due to multiple video decoding
+  function syncRegionVideos(forceTimeSync: boolean = false) {
+    if (!videoRef.value) return;
+    const mainVideo = videoRef.value;
+    const currentTime = mainVideo.currentTime;
+    const isPaused = mainVideo.paused;
+
+    regionVideoRefs.value.forEach((regionVideo) => {
+      if (regionVideo && regionVideo.readyState >= 1) {
+        // Only sync time when explicitly requested (on seek) or if significantly out of sync
+        const timeDiff = Math.abs(regionVideo.currentTime - currentTime);
+        if (forceTimeSync || timeDiff > 0.5) {
+          regionVideo.currentTime = currentTime;
+        }
+
+        // Sync play state
+        if (isPaused) {
+          if (!regionVideo.paused) {
+            regionVideo.pause();
+          }
+        } else {
+          if (regionVideo.paused) {
+            regionVideo.play().catch(() => {});
+          }
+        }
+      }
+    });
+  }
+
+  // Unified sync function - only needed for multi-region mode now
+  // Single region uses the main video directly, no sync needed
+  function syncAllPreviewVideos(forceTimeSync: boolean = false) {
+    if (!showFramedPreview.value || !videoRef.value) return;
+
+    // Only sync if multi-region mode (single region uses main video directly)
+    if (!isSingleRegion.value) {
+      syncRegionVideos(forceTimeSync);
+    }
+  }
+
+  // No longer using animation frame loop - too expensive with multiple videos
+  function startSyncLoop() {
+    // Just do an initial sync, don't start continuous loop
+    syncAllPreviewVideos(true);
+  }
+
+  function stopSyncLoop() {
+    // No-op now, kept for compatibility
+  }
+
+  // Drag state
+  const dragState = reactive<DragState>({
+    isDragging: false,
+    type: null,
+    id: null,
+    startX: 0,
+    startY: 0,
+    startPosition: { x: 0, y: 0 },
+  });
 
   // Computed
   const clipDuration = computed(() => props.clipEnd - props.clipStart);
@@ -159,7 +386,6 @@
   // Get sorted segments for playback control
   const sortedSegments = computed(() => {
     if (!props.segments || props.segments.length === 0) {
-      // Default to single segment if no segments provided
       return [{ start_time: props.clipStart, end_time: props.clipEnd }];
     }
     return [...props.segments].sort((a, b) => a.start_time - b.start_time);
@@ -171,20 +397,255 @@
   });
 
   const visibleTextOverlays = computed(() => {
-    const relativeTime = props.currentTime - props.clipStart;
-    return props.textOverlays.filter((o) => relativeTime >= o.startTime && relativeTime <= o.endTime);
+    // Use effective time (accounts for segment cuts) for visibility
+    const effectiveTime = props.effectiveTime;
+    return props.textOverlays.filter((o) => effectiveTime >= o.startTime && effectiveTime <= o.endTime);
   });
 
   const visibleStickers = computed(() => {
-    const relativeTime = props.currentTime - props.clipStart;
-    return props.stickers.filter((s) => relativeTime >= s.startTime && relativeTime <= s.endTime);
+    // Use effective time (accounts for segment cuts) for visibility
+    const effectiveTime = props.effectiveTime;
+    return props.stickers.filter((s) => effectiveTime >= s.startTime && effectiveTime <= s.endTime);
   });
 
   const overlayContainerStyle = computed(() => {
-    // Match the video element's dimensions
-    if (!videoRef.value) return {};
     return {};
   });
+
+  // Generate a default center-crop region for an aspect ratio
+  function generateDefaultCenterCrop(targetRatio: string): {
+    source: { x: number; y: number; width: number; height: number };
+    output: { x: number; y: number; width: number; height: number };
+    id: string;
+  } {
+    const { width: targetW, height: targetH } = parseAspectRatio(targetRatio);
+    const targetAspect = targetW / targetH;
+
+    // Source is 16:9
+    const sourceAspect = 16 / 9;
+
+    let sourceWidth: number, sourceHeight: number;
+
+    if (targetAspect > sourceAspect) {
+      // Target is wider than source - fit to width, crop top/bottom
+      sourceWidth = 1;
+      sourceHeight = sourceAspect / targetAspect;
+    } else {
+      // Target is taller than source - fit to height, crop left/right
+      sourceHeight = 1;
+      sourceWidth = targetAspect / sourceAspect;
+    }
+
+    // Center the crop
+    const sourceX = (1 - sourceWidth) / 2;
+    const sourceY = (1 - sourceHeight) / 2;
+
+    return {
+      id: 'default-center-crop',
+      source: {
+        x: sourceX,
+        y: sourceY,
+        width: sourceWidth,
+        height: sourceHeight,
+      },
+      output: {
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+      },
+    };
+  }
+
+  // Get current framing config for the selected aspect ratio
+  const currentFramingConfig = computed(() => {
+    if (props.previewAspectRatio === '16:9') return null;
+
+    // Check if this aspect ratio is selected
+    const isSelected = props.selectedAspectRatios.includes(props.previewAspectRatio);
+    if (!isSelected) return null;
+
+    // Check if there's a manual config with regions
+    const manualConfig = props.framingConfigs[props.previewAspectRatio as keyof ManualFramingConfigs];
+    if (manualConfig && manualConfig.regions && manualConfig.regions.length > 0) {
+      return manualConfig;
+    }
+
+    // Generate a default center-crop preview for auto mode or unconfigured manual mode
+    return {
+      mode: 'auto' as const,
+      regions: [generateDefaultCenterCrop(props.previewAspectRatio)],
+      targetAspectRatio: props.previewAspectRatio,
+      sourceAspectRatio: '16:9',
+    };
+  });
+
+  // Check if we should show framed preview (actual export result)
+  const showFramedPreview = computed(() => {
+    return (
+      currentFramingConfig.value !== null &&
+      currentFramingConfig.value.regions &&
+      currentFramingConfig.value.regions.length > 0
+    );
+  });
+
+  // Check if this is a single region layout (can use optimized single video approach)
+  const isSingleRegion = computed(() => {
+    return currentFramingConfig.value?.regions?.length === 1;
+  });
+
+  // Parse aspect ratio string to get width/height ratio
+  function parseAspectRatio(ratio: string): { width: number; height: number } {
+    const [w, h] = ratio.split(':').map(Number);
+    return { width: w || 16, height: h || 9 };
+  }
+
+  // Get the framed container style (maintains target aspect ratio)
+  function getFramedContainerStyle(): Record<string, string> {
+    // Use cached container size to avoid layout thrashing
+    const { width: containerWidth, height: containerHeight } = containerSize.value;
+    if (containerWidth === 0 || containerHeight === 0) {
+      return { width: '100%', height: '100%' };
+    }
+
+    const { width: ratioW, height: ratioH } = parseAspectRatio(props.previewAspectRatio);
+    const targetAspect = ratioW / ratioH;
+    const containerAspect = containerWidth / containerHeight;
+
+    let width: number, height: number;
+
+    if (containerAspect > targetAspect) {
+      // Container is wider than target - fit to height
+      height = containerHeight;
+      width = height * targetAspect;
+    } else {
+      // Container is taller than target - fit to width
+      width = containerWidth;
+      height = width / targetAspect;
+    }
+
+    return {
+      width: `${width}px`,
+      height: `${height}px`,
+    };
+  }
+
+  // Get style for a region's output position in the framed container
+  function getRegionOutputStyle(region: {
+    output: { x: number; y: number; width: number; height: number };
+  }): Record<string, string> {
+    return {
+      left: `${region.output.x * 100}%`,
+      top: `${region.output.y * 100}%`,
+      width: `${region.output.width * 100}%`,
+      height: `${region.output.height * 100}%`,
+    };
+  }
+
+  // Calculate the cropped video style to show only the source selection
+  // EXACT copy of POI editor's getCroppedImageStyle function
+  // The media is scaled up so the source crop fills the output container,
+  // then positioned so the crop area aligns with the container's top-left
+  function getCroppedVideoStyle(region: {
+    source: { x: number; y: number; width: number; height: number };
+  }): Record<string, string> {
+    const filterStyle = getVideoFilterStyle();
+
+    // Guard against invalid dimensions
+    if (!region.source.width || !region.source.height) {
+      return { display: 'none' };
+    }
+
+    // Calculate scale factors - how much to scale the full media
+    // so that the source crop area fills the container (100%)
+    const scaleX = 100 / region.source.width;
+    const scaleY = 100 / region.source.height;
+
+    // Calculate position - offset the media so the crop area starts at 0,0
+    // The offset needs to account for the scaled size
+    const offsetX = -region.source.x * scaleX;
+    const offsetY = -region.source.y * scaleY;
+
+    return {
+      width: `${scaleX}%`,
+      height: `${scaleY}%`,
+      left: `${offsetX}%`,
+      top: `${offsetY}%`,
+      objectFit: 'fill', // Force video/image to fill exact dimensions, ignoring aspect ratio
+      filter: filterStyle.filter || 'none',
+    };
+  }
+
+  // Get overlay container position style (matches the framed container or video)
+  function getOverlayContainerPositionStyle(): Record<string, string> {
+    if (showFramedPreview.value) {
+      // Match the framed container dimensions and center it
+      const frameStyle = getFramedContainerStyle();
+      return {
+        ...frameStyle,
+        left: '50%',
+        top: '50%',
+        transform: 'translate(-50%, -50%)',
+      };
+    }
+    // Default: fill the container to match the video
+    return {
+      inset: '0',
+    };
+  }
+
+  // Drag methods
+  function startDrag(e: MouseEvent, type: 'text' | 'sticker', id: string, position: { x: number; y: number }) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    dragState.isDragging = true;
+    dragState.type = type;
+    dragState.id = id;
+    dragState.startX = e.clientX;
+    dragState.startY = e.clientY;
+    dragState.startPosition = { ...position };
+
+    document.addEventListener('mousemove', onDragMove);
+    document.addEventListener('mouseup', onDragEnd);
+  }
+
+  function onDragMove(e: MouseEvent) {
+    if (!dragState.isDragging || !overlayContainerRef.value) return;
+
+    const container = overlayContainerRef.value;
+    const rect = container.getBoundingClientRect();
+
+    // Calculate delta in pixels
+    const deltaX = e.clientX - dragState.startX;
+    const deltaY = e.clientY - dragState.startY;
+
+    // Convert to percentage
+    const deltaXPercent = (deltaX / rect.width) * 100;
+    const deltaYPercent = (deltaY / rect.height) * 100;
+
+    // Calculate new position
+    let newX = dragState.startPosition.x + deltaXPercent;
+    let newY = dragState.startPosition.y + deltaYPercent;
+
+    // Clamp to bounds (allow some overflow for edge positioning)
+    newX = Math.max(-10, Math.min(110, newX));
+    newY = Math.max(-10, Math.min(110, newY));
+
+    // Emit position update
+    if (dragState.type && dragState.id) {
+      emit('updateOverlayPosition', dragState.type, dragState.id, { x: newX, y: newY });
+    }
+  }
+
+  function onDragEnd() {
+    dragState.isDragging = false;
+    dragState.type = null;
+    dragState.id = null;
+
+    document.removeEventListener('mousemove', onDragMove);
+    document.removeEventListener('mouseup', onDragEnd);
+  }
 
   // Methods
   function formatTime(seconds: number): string {
@@ -196,9 +657,16 @@
   function onLoadedMetadata() {
     if (videoRef.value) {
       duration.value = videoRef.value.duration;
-      // Start at the first segment
-      const firstSegment = sortedSegments.value[0];
-      videoRef.value.currentTime = firstSegment?.start_time || props.clipStart;
+
+      // Check if we have a pending seek time from aspect ratio switch
+      if (pendingSeekTime.value !== null) {
+        videoRef.value.currentTime = pendingSeekTime.value;
+        pendingSeekTime.value = null;
+      } else {
+        const firstSegment = sortedSegments.value[0];
+        videoRef.value.currentTime = firstSegment?.start_time || props.clipStart;
+      }
+
       emit('videoElementReady', videoRef.value);
     }
   }
@@ -208,7 +676,6 @@
       const currentVideoTime = videoRef.value.currentTime;
       const segments = sortedSegments.value;
 
-      // Find which segment we should be in
       let currentSegmentIndex = -1;
       for (let i = 0; i < segments.length; i++) {
         const seg = segments[i];
@@ -218,66 +685,85 @@
         }
       }
 
-      // If we're in a valid segment, emit the time
       if (currentSegmentIndex >= 0) {
         emit('timeUpdate', currentVideoTime);
+        // Note: sync is handled by the animation frame loop during playback
         return;
       }
 
-      // We're not in any segment - find where we should be
-      // Check if we've passed the end of a segment and need to jump to the next
       for (let i = 0; i < segments.length; i++) {
         const seg = segments[i];
 
-        // If we're past this segment's end but before the next segment's start
         if (currentVideoTime > seg.end_time) {
           const nextSegment = segments[i + 1];
 
           if (nextSegment) {
-            // Check if we're in the gap between segments
             if (currentVideoTime < nextSegment.start_time) {
-              // Jump to the start of the next segment
               videoRef.value.currentTime = nextSegment.start_time;
               emit('timeUpdate', nextSegment.start_time);
+              // Sync after segment jump
+              syncAllPreviewVideos(true);
               return;
             }
           } else {
-            // No more segments - we've reached the end
-            // Go back to the first segment and pause
             videoRef.value.currentTime = segments[0].start_time;
             videoRef.value.pause();
             emit('timeUpdate', segments[0].start_time);
+            // Sync after segment jump
+            syncAllPreviewVideos(true);
             return;
           }
         }
       }
 
-      // If we're before the first segment, jump to the first segment
       if (currentVideoTime < segments[0].start_time) {
         videoRef.value.currentTime = segments[0].start_time;
         emit('timeUpdate', segments[0].start_time);
+        // Sync after segment jump
+        syncAllPreviewVideos(true);
         return;
       }
 
-      // Fallback - emit current time
       emit('timeUpdate', currentVideoTime);
     }
   }
 
   function onEnded() {
     if (videoRef.value) {
-      // Go back to the first segment
       const firstSegment = sortedSegments.value[0];
       videoRef.value.currentTime = firstSegment?.start_time || props.clipStart;
     }
+    // Sync after loop back
+    syncAllPreviewVideos(true);
   }
 
   function onPlay() {
-    // Already handled via isPlaying prop
+    // Sync region videos when main video plays (only for multi-region mode)
+    // Single region uses main video directly, no sync needed
+    if (showFramedPreview.value && !isSingleRegion.value) {
+      syncRegionVideos(true);
+    }
   }
 
   function onPause() {
-    // Already handled via isPlaying prop
+    // Pause region videos when main video pauses (only for multi-region mode)
+    if (showFramedPreview.value && !isSingleRegion.value) {
+      syncRegionVideos(false);
+    }
+  }
+
+  function onVideoClick() {
+    // Only toggle play if we're not dragging an overlay
+    if (!dragState.isDragging) {
+      emit('togglePlay');
+    }
+  }
+
+  function onOverlayContainerClick() {
+    // Toggle play when clicking on empty space in overlay container
+    if (!dragState.isDragging) {
+      emit('togglePlay');
+    }
   }
 
   function onProgressClick(e: MouseEvent) {
@@ -287,6 +773,8 @@
     const newTime = props.clipStart + percent * clipDuration.value;
     videoRef.value.currentTime = newTime;
     emit('timeUpdate', newTime);
+    // Sync region videos after seeking
+    syncAllPreviewVideos(true);
   }
 
   function startProgressDrag(e: MouseEvent) {
@@ -298,12 +786,16 @@
       const newTime = props.clipStart + percent * clipDuration.value;
       videoRef.value.currentTime = newTime;
       emit('timeUpdate', newTime);
+      // Sync during drag
+      syncAllPreviewVideos(true);
     };
 
     const onUp = () => {
       isDraggingProgress.value = false;
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
+      // Final sync after drag ends
+      syncAllPreviewVideos(true);
     };
 
     document.addEventListener('mousemove', onMove);
@@ -326,29 +818,64 @@
     }
   }
 
+  // Get the position and style for a text overlay, respecting per-ratio configs
+  function getOverlayConfigForRatio(overlay: TextOverlay): {
+    position: { x: number; y: number };
+    style: typeof overlay.style;
+  } {
+    const ratio = props.previewAspectRatio;
+    const ratioConfig = overlay.perRatioConfigs?.[ratio];
+
+    if (ratioConfig) {
+      return {
+        position: ratioConfig.position,
+        style: ratioConfig.style,
+      };
+    }
+
+    // Fallback to default position/style
+    return {
+      position: overlay.position,
+      style: overlay.style,
+    };
+  }
+
   function getTextOverlayStyle(overlay: TextOverlay): Record<string, string> {
+    const config = getOverlayConfigForRatio(overlay);
+    const overlayStyle = config.style;
+
     const style: Record<string, string> = {
-      left: `${overlay.position.x}%`,
-      top: `${overlay.position.y}%`,
+      left: `${config.position.x}%`,
+      top: `${config.position.y}%`,
       transform: 'translate(-50%, -50%)',
-      fontFamily: overlay.style?.fontFamily || 'sans-serif',
-      fontSize: `${overlay.style?.fontSize || 24}px`,
-      fontWeight: String(overlay.style?.fontWeight || 600),
-      color: overlay.style?.color || '#ffffff',
+      fontFamily: overlayStyle?.fontFamily || 'sans-serif',
+      fontSize: `${overlayStyle?.fontSize || 24}px`,
+      fontWeight: String(overlayStyle?.fontWeight || 600),
+      color: overlayStyle?.color || '#ffffff',
+      maxWidth: `${overlayStyle?.maxWidth || 90}%`,
+      textAlign: overlayStyle?.textAlign || 'center',
+      lineHeight: String(overlayStyle?.lineHeight || 1.2),
+      letterSpacing: `${overlayStyle?.letterSpacing || 0}px`,
     };
 
-    if (overlay.style?.backgroundEnabled && overlay.style?.backgroundColor) {
-      style.backgroundColor = overlay.style.backgroundColor;
-      style.padding = `${overlay.style.padding || 8}px`;
-      style.borderRadius = `${overlay.style.borderRadius || 4}px`;
+    if (overlayStyle?.backgroundEnabled && overlayStyle?.backgroundColor) {
+      style.backgroundColor = overlayStyle.backgroundColor;
+      style.padding = `${overlayStyle.padding || 8}px`;
+      style.borderRadius = `${overlayStyle.borderRadius || 4}px`;
     }
 
-    if (overlay.style?.shadowEnabled) {
-      style.textShadow = `${overlay.style.shadowOffsetX || 2}px ${overlay.style.shadowOffsetY || 2}px ${overlay.style.shadowBlur || 4}px ${overlay.style.shadowColor || '#000000'}`;
+    // Apply shadow
+    if (overlayStyle?.shadowEnabled) {
+      style.textShadow = `${overlayStyle.shadowOffsetX || 2}px ${overlayStyle.shadowOffsetY || 2}px ${overlayStyle.shadowBlur || 4}px ${overlayStyle.shadowColor || '#000000'}`;
     }
 
-    if (overlay.style?.strokeEnabled) {
-      style.webkitTextStroke = `${overlay.style.strokeWidth || 1}px ${overlay.style.strokeColor || '#000000'}`;
+    // Apply border using text-stroke (combining border1 and border2)
+    if (overlayStyle?.border1Width && overlayStyle.border1Width > 0) {
+      style.webkitTextStroke = `${overlayStyle.border1Width}px ${overlayStyle.border1Color || '#000000'}`;
+      style.paintOrder = 'stroke fill';
+    } else if (overlayStyle?.strokeEnabled) {
+      style.webkitTextStroke = `${overlayStyle.strokeWidth || 1}px ${overlayStyle.strokeColor || '#000000'}`;
+      style.paintOrder = 'stroke fill';
     }
 
     return style;
@@ -378,55 +905,43 @@
     return classes;
   }
 
-  // Apply CSS filters directly to the video element
   function getVideoFilterStyle(): Record<string, string> {
     if (!props.filterSettings) return {};
 
     const filters: string[] = [];
 
-    // Brightness: -100 to 100 → 0% to 200% (CSS uses 100% as neutral)
     const brightness = props.filterSettings.brightness || 0;
     if (brightness !== 0) {
-      // Map -100..100 to 0..2 (0.5 = -50%, 1.0 = 0%, 1.5 = +50%, 2.0 = +100%)
       const brightnessValue = 1 + brightness / 100;
       filters.push(`brightness(${brightnessValue})`);
     }
 
-    // Contrast: -100 to 100 → 0 to 2 (CSS uses 1 as neutral)
     const contrast = props.filterSettings.contrast || 0;
     if (contrast !== 0) {
       const contrastValue = 1 + contrast / 100;
       filters.push(`contrast(${contrastValue})`);
     }
 
-    // Saturation: -100 to 100 → 0 to 2 (CSS uses 1 as neutral)
     const saturation = props.filterSettings.saturation || 0;
     if (saturation !== 0) {
       const saturationValue = 1 + saturation / 100;
       filters.push(`saturate(${saturationValue})`);
     }
 
-    // Hue rotation: -180 to 180 degrees
     const hue = props.filterSettings.hue || 0;
     if (hue !== 0) {
       filters.push(`hue-rotate(${hue}deg)`);
     }
 
-    // Sharpen: CSS doesn't have native sharpen, but we can approximate with contrast
-    // Higher sharpening = slightly higher contrast gives perception of sharpness
     const sharpen = props.filterSettings.sharpen || 0;
     if (sharpen > 0) {
-      // Very subtle contrast boost (max 10% at sharpen=100)
       const sharpenBoost = 1 + sharpen / 1000;
       filters.push(`contrast(${sharpenBoost})`);
     }
 
-    // Fade: reduces contrast and adds a slight washed-out look
     const fade = props.filterSettings.fade || 0;
     if (fade > 0) {
-      // Fade reduces contrast (max 30% reduction at fade=100)
       const fadeContrast = 1 - fade / 333;
-      // Also slightly reduce saturation for that faded film look
       const fadeSaturation = 1 - fade / 500;
       filters.push(`contrast(${fadeContrast})`);
       filters.push(`saturate(${fadeSaturation})`);
@@ -439,21 +954,15 @@
     };
   }
 
-  // Generate vignette overlay style
   function getVignetteStyle(): Record<string, string> {
     const vignette = props.filterSettings?.vignette || 0;
     if (vignette === 0) {
       return { display: 'none' };
     }
 
-    // Vignette intensity: 0-100
-    // Map to a radial gradient that darkens the edges
     const intensity = vignette / 100;
-    // Spread controls how far the vignette reaches toward center
-    // At 0% intensity, spread is 70% (subtle edge darkening)
-    // At 100% intensity, spread is 30% (heavy vignette reaching near center)
-    const innerStop = 70 - intensity * 50; // 70% -> 20%
-    const opacity = 0.3 + intensity * 0.6; // 0.3 -> 0.9 opacity at edge
+    const innerStop = 70 - intensity * 50;
+    const opacity = 0.3 + intensity * 0.6;
 
     return {
       background: `radial-gradient(ellipse at center, transparent ${innerStop}%, rgba(0,0,0,${opacity}) 100%)`,
@@ -461,27 +970,22 @@
     };
   }
 
-  // Generate temperature overlay style (warm/cool tint)
   function getTemperatureStyle(): Record<string, string> {
     const temp = props.filterSettings?.temperature || 0;
     if (temp === 0) {
       return { display: 'none' };
     }
 
-    // Temperature: -100 (cool/blue) to +100 (warm/orange)
     const intensity = Math.abs(temp) / 100;
-    // Use overlay blend mode for more natural color shift
-    const opacity = intensity * 0.25; // Max 25% opacity for subtlety
+    const opacity = intensity * 0.25;
 
     if (temp > 0) {
-      // Warm: orange/amber tint
       return {
         backgroundColor: `rgba(255, 140, 50, ${opacity})`,
         mixBlendMode: 'overlay',
         pointerEvents: 'none',
       };
     } else {
-      // Cool: blue/cyan tint
       return {
         backgroundColor: `rgba(80, 140, 255, ${opacity})`,
         mixBlendMode: 'overlay',
@@ -490,10 +994,70 @@
     }
   }
 
-  // Initialize video element
+  // ResizeObserver for container size tracking
+  let resizeObserver: ResizeObserver | null = null;
+
+  function updateContainerSize() {
+    if (videoContainerRef.value) {
+      const rect = videoContainerRef.value.getBoundingClientRect();
+      containerSize.value = { width: rect.width, height: rect.height };
+    }
+  }
+
+  // Watch for framed preview mode changes
+  watch(showFramedPreview, (isFramed) => {
+    if (isFramed) {
+      startSyncLoop();
+      // Clear old refs when switching modes
+      regionVideoRefs.value = [];
+    } else {
+      stopSyncLoop();
+    }
+  });
+
+  // Watch for aspect ratio changes to update container size and preserve time
+  watch(
+    () => props.previewAspectRatio,
+    () => {
+      // Store current video time before aspect ratio change causes video element swap
+      if (videoRef.value && !isNaN(videoRef.value.currentTime)) {
+        pendingSeekTime.value = videoRef.value.currentTime;
+      }
+
+      // Force container size update when aspect ratio changes
+      updateContainerSize();
+      // Clear old refs when aspect ratio changes
+      regionVideoRefs.value = [];
+    }
+  );
+
+  // Cleanup on unmount
+  onUnmounted(() => {
+    document.removeEventListener('mousemove', onDragMove);
+    document.removeEventListener('mouseup', onDragEnd);
+    stopSyncLoop();
+    if (resizeObserver) {
+      resizeObserver.disconnect();
+    }
+  });
+
   onMounted(() => {
     if (videoRef.value) {
       emit('videoElementReady', videoRef.value);
+    }
+
+    // Set up resize observer to track container size changes
+    if (videoContainerRef.value) {
+      updateContainerSize();
+      resizeObserver = new ResizeObserver(() => {
+        updateContainerSize();
+      });
+      resizeObserver.observe(videoContainerRef.value);
+    }
+
+    // Start sync loop if in framed preview mode
+    if (showFramedPreview.value) {
+      startSyncLoop();
     }
   });
 </script>

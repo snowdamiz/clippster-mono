@@ -51,22 +51,40 @@
           <div class="flex min-h-0 border-b border-border flex-1" style="overflow: hidden">
             <!-- Left: Video Preview Section -->
             <div
-              class="w-3/5 min-w-0 p-4 border-r border-border/40 flex flex-col bg-gradient-to-br from-black/20 to-transparent"
+              class="w-3/5 min-w-0 border-r border-border/40 flex flex-col bg-gradient-to-br from-black/20 to-transparent"
             >
-              <ClipEditorPreview
-                :video-src="videoSrc"
-                :current-time="previewTime"
-                :is-playing="isPlaying"
-                :clip-start="clipStartTime"
-                :clip-end="clipEndTime"
-                :text-overlays="textOverlays"
-                :stickers="stickers"
-                :filter-settings="activeFilterSettings"
-                :segments="playbackSegments"
-                @time-update="onPreviewTimeUpdate"
-                @toggle-play="togglePlay"
-                @video-element-ready="onVideoElementReady"
+              <!-- Aspect Ratio Selector (above video) -->
+              <AspectRatioSelector
+                :preview-aspect-ratio="previewAspectRatio"
+                :selected-aspect-ratios="selectedAspectRatios"
+                :framing-configs="framingConfigs"
+                :framing-mode="framingMode"
+                @update:preview-aspect-ratio="(ratio: string) => (previewAspectRatio = ratio)"
+                @open-manual-editor="openManualPOIEditor"
+                @toggle-ratio-selection="toggleAspectRatio"
               />
+
+              <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
+                <ClipEditorPreview
+                  :video-src="videoSrc"
+                  :current-time="previewTime"
+                  :effective-time="effectivePreviewTime"
+                  :is-playing="isPlaying"
+                  :clip-start="clipStartTime"
+                  :clip-end="clipEndTime"
+                  :text-overlays="textOverlays"
+                  :stickers="stickers"
+                  :filter-settings="activeFilterSettings"
+                  :segments="playbackSegments"
+                  :preview-aspect-ratio="previewAspectRatio"
+                  :selected-aspect-ratios="selectedAspectRatios"
+                  :framing-configs="framingConfigs"
+                  @time-update="onPreviewTimeUpdate"
+                  @toggle-play="togglePlay"
+                  @video-element-ready="onVideoElementReady"
+                  @update-overlay-position="onUpdateOverlayPosition"
+                />
+              </div>
             </div>
 
             <!-- Right: Controls Section -->
@@ -93,8 +111,8 @@
                 <FiltersTab
                   v-if="activeTab === 'filters'"
                   :filter-segments="filterSegments"
-                  :current-time="relativePreviewTime"
-                  :duration="clipDuration"
+                  :current-time="effectivePreviewTime"
+                  :duration="totalSegmentDuration"
                   @add-filter="addFilterSegment"
                   @update-filter="updateFilterSegment"
                   @delete-filter="deleteFilterSegment"
@@ -103,18 +121,22 @@
                 <TextOverlayTab
                   v-if="activeTab === 'text'"
                   :text-overlays="textOverlays"
-                  :current-time="previewTime"
-                  :duration="clipDuration"
+                  :current-time="effectivePreviewTime"
+                  :duration="totalSegmentDuration"
+                  :preview-aspect-ratio="previewAspectRatio"
+                  :selected-aspect-ratios="selectedAspectRatios"
+                  :framing-configs="framingConfigs"
                   @add-text="addTextOverlay"
                   @update-text="updateTextOverlayLocal"
                   @delete-text="deleteTextOverlayLocal"
+                  @update:preview-aspect-ratio="(ratio: string) => (previewAspectRatio = ratio)"
                 />
 
                 <StickersTab
                   v-if="activeTab === 'stickers'"
                   :stickers="stickers"
-                  :current-time="previewTime"
-                  :duration="clipDuration"
+                  :current-time="effectivePreviewTime"
+                  :duration="totalSegmentDuration"
                   @add-sticker="addStickerLocal"
                   @update-sticker="updateStickerLocal"
                   @delete-sticker="deleteStickerLocal"
@@ -139,9 +161,11 @@
                   :video-path="videoPath"
                   :clip-start-time="props.clipStartTime"
                   :clip-end-time="props.clipEndTime"
+                  :preview-aspect-ratio="previewAspectRatio"
                   @update:framing-configs="updateFramingConfigs"
                   @update:selected-aspect-ratios="updateSelectedAspectRatios"
                   @update:framing-mode="updateFramingMode"
+                  @update:preview-aspect-ratio="(ratio: string) => (previewAspectRatio = ratio)"
                 />
               </div>
             </div>
@@ -172,6 +196,19 @@
           />
         </div>
       </div>
+
+      <!-- Manual POI Editor Dialog -->
+      <ManualPOIEditor
+        v-model="showManualPOIEditor"
+        :initial-config="getConfigForRatio(editingAspectRatio)"
+        :target-aspect-ratio="editingAspectRatio"
+        :source-aspect-ratio="'16:9'"
+        :thumbnail-url="thumbnailUrl"
+        :video-path="videoPath"
+        :clip-start-time="props.clipStartTime"
+        :clip-end-time="props.clipEndTime"
+        @confirm="onManualPOIConfigConfirm"
+      />
     </div>
   </Teleport>
 </template>
@@ -217,12 +254,14 @@
   import ClipEditorPreview from './ClipEditorPreview.vue';
   import ClipEditorToolbar from './ClipEditorToolbar.vue';
   import ClipEditorTimeline from './ClipEditorTimeline.vue';
+  import AspectRatioSelector from './AspectRatioSelector.vue';
   import AudioMixerTab from './tabs/AudioMixerTab.vue';
   import FiltersTab from './tabs/FiltersTab.vue';
   import TextOverlayTab from './tabs/TextOverlayTab.vue';
   import StickersTab from './tabs/StickersTab.vue';
   import EffectsTab from './tabs/EffectsTab.vue';
   import AspectTab from './tabs/AspectTab.vue';
+  import ManualPOIEditor from '@/components/poi/ManualPOIEditor.vue';
 
   interface ClipSegmentInput {
     start_time: number;
@@ -273,10 +312,15 @@
 
   // Aspect ratio framing data
   const selectedAspectRatios = ref<string[]>([]);
+  const previewAspectRatio = ref<string>('16:9'); // Currently previewed aspect ratio
   const framingMode = ref<'auto' | 'manual'>('auto');
   const framingConfigs = ref<ManualFramingConfigs>({});
   const videoPath = ref<string | null>(null);
   const thumbnailUrl = ref<string | null>(null);
+
+  // Manual POI editor state
+  const showManualPOIEditor = ref(false);
+  const editingAspectRatio = ref<string>('9:16');
 
   // Audio playback elements
   const audioElements = ref<Map<string, HTMLAudioElement>>(new Map());
@@ -300,12 +344,48 @@
     return Math.max(0, Math.min(clipDuration.value, previewTime.value - props.clipStartTime));
   });
 
-  // Get the active filter settings at the current preview time (relative time)
+  // Convert absolute video time to effective timeline time (accounting for segment cuts)
+  // This is the time position in the "edited" timeline where cuts are removed
+  const effectivePreviewTime = computed(() => {
+    const absoluteTime = previewTime.value;
+    const segments = trimSegments.value.filter((s) => !s.isDeleted);
+
+    if (segments.length === 0) {
+      // No segments defined, use simple relative time
+      return Math.max(0, absoluteTime - props.clipStartTime);
+    }
+
+    // Sort segments by start time
+    const sortedSegments = [...segments].sort((a, b) => a.startTime - b.startTime);
+
+    // Convert absolute time to relative time within clip
+    const relativeTime = absoluteTime - props.clipStartTime;
+
+    // Find which segment contains this time and calculate effective position
+    let effectiveTime = 0;
+    for (const segment of sortedSegments) {
+      if (relativeTime < segment.startTime) {
+        // Before this segment - use accumulated time
+        break;
+      } else if (relativeTime >= segment.startTime && relativeTime <= segment.endTime) {
+        // Within this segment
+        effectiveTime += relativeTime - segment.startTime;
+        break;
+      } else {
+        // Past this segment - add its full duration
+        effectiveTime += segment.endTime - segment.startTime;
+      }
+    }
+
+    return effectiveTime;
+  });
+
+  // Get the active filter settings at the current preview time (effective time)
   const activeFilterSettings = computed(() => {
-    const relativeTime = relativePreviewTime.value;
-    // Find filter segment that contains the current time
+    const effectiveTime = effectivePreviewTime.value;
+    // Find filter segment that contains the current effective time
     const activeSegment = filterSegments.value.find(
-      (seg) => relativeTime >= seg.startTime && relativeTime <= seg.endTime
+      (seg) => effectiveTime >= seg.startTime && effectiveTime <= seg.endTime
     );
     return activeSegment?.settings || null;
   });
@@ -604,10 +684,12 @@
 
   // Filter segment operations
   function addFilterSegment(settings: FilterSettings) {
+    const effectiveStartTime = effectivePreviewTime.value;
+    const effectiveEndTime = Math.min(effectiveStartTime + 5, totalSegmentDuration.value); // Default 5 second duration
     const newSegment: FilterSegment = {
       id: `filter-${Date.now()}`,
-      startTime: relativePreviewTime.value,
-      endTime: Math.min(relativePreviewTime.value + 5, clipDuration.value), // Default 5 second duration
+      startTime: effectiveStartTime,
+      endTime: effectiveEndTime,
       settings,
     };
     filterSegments.value.push(newSegment);
@@ -639,16 +721,68 @@
     framingMode.value = mode;
   }
 
+  // Toggle aspect ratio selection (add/remove from selectedAspectRatios)
+  function toggleAspectRatio(ratio: string) {
+    const current = [...selectedAspectRatios.value];
+    const index = current.indexOf(ratio);
+    if (index > -1) {
+      current.splice(index, 1);
+      // If removing the currently previewed ratio, switch to 16:9 or first remaining
+      if (previewAspectRatio.value === ratio) {
+        previewAspectRatio.value = current.length > 0 ? current[0] : '16:9';
+      }
+    } else {
+      current.push(ratio);
+      // Switch preview to the newly selected ratio
+      previewAspectRatio.value = ratio;
+    }
+    selectedAspectRatios.value = current;
+  }
+
+  // Open the manual POI editor for a specific aspect ratio
+  function openManualPOIEditor(ratio: string) {
+    editingAspectRatio.value = ratio;
+    showManualPOIEditor.value = true;
+  }
+
+  // Get config for a specific aspect ratio
+  function getConfigForRatio(ratio: string): ManualFramingConfig | null {
+    return framingConfigs.value[ratio as keyof ManualFramingConfigs] || null;
+  }
+
+  // Handle POI config confirmation from ManualPOIEditor
+  function onManualPOIConfigConfirm(config: ManualFramingConfig) {
+    const ratio = config.targetAspectRatio as keyof ManualFramingConfigs;
+
+    // Ensure the ratio is in selectedAspectRatios
+    if (!selectedAspectRatios.value.includes(config.targetAspectRatio)) {
+      selectedAspectRatios.value = [...selectedAspectRatios.value, config.targetAspectRatio];
+    }
+
+    framingConfigs.value = {
+      ...framingConfigs.value,
+      [ratio]: config,
+    };
+    // Set framing mode to manual since we now have manual config
+    framingMode.value = 'manual';
+    // Switch preview to show the configured ratio
+    previewAspectRatio.value = config.targetAspectRatio;
+  }
+
   // Text overlay operations
   async function addTextOverlay(text: string, style: any) {
     if (!clipEditId.value) return;
 
+    // Use effective time (accounting for segment cuts) for the overlay timing
+    const effectiveStartTime = effectivePreviewTime.value;
+    const effectiveEndTime = Math.min(effectiveStartTime + 3, totalSegmentDuration.value);
+
     const overlay = await createTextOverlay(clipEditId.value, {
       text,
-      start_time: previewTime.value,
-      end_time: Math.min(previewTime.value + 3, clipDuration.value),
+      start_time: effectiveStartTime,
+      end_time: effectiveEndTime,
       position_x: 50,
-      position_y: 80,
+      position_y: 50, // Default to center
       style_data: JSON.stringify(style),
       animation: 'fade',
     });
@@ -690,11 +824,15 @@
   async function addStickerLocal(stickerPath: string, type: 'emoji' | 'image' | 'gif') {
     if (!clipEditId.value) return;
 
+    // Use effective time (accounting for segment cuts) for sticker timing
+    const effectiveStartTime = effectivePreviewTime.value;
+    const effectiveEndTime = Math.min(effectiveStartTime + 3, totalSegmentDuration.value);
+
     const sticker = await createSticker(clipEditId.value, {
       sticker_path: stickerPath,
       sticker_type: type,
-      start_time: previewTime.value,
-      end_time: Math.min(previewTime.value + 3, clipDuration.value),
+      start_time: effectiveStartTime,
+      end_time: effectiveEndTime,
       position_x: 50,
       position_y: 50,
       scale: 1,
@@ -737,6 +875,27 @@
   async function deleteStickerLocal(stickerId: string) {
     await deleteSticker(stickerId);
     stickers.value = stickers.value.filter((s) => s.id !== stickerId);
+  }
+
+  // Handle overlay position updates from preview drag
+  function onUpdateOverlayPosition(type: 'text' | 'sticker', id: string, position: { x: number; y: number }) {
+    if (type === 'text') {
+      // Store position in per-ratio config for the current preview aspect ratio
+      const overlay = textOverlays.value.find((o) => o.id === id);
+      if (overlay) {
+        const ratio = previewAspectRatio.value;
+        const perRatioConfigs = overlay.perRatioConfigs || {};
+        const currentConfig = perRatioConfigs[ratio] || {
+          position: { ...overlay.position },
+          style: { ...overlay.style },
+        };
+        currentConfig.position = position;
+        perRatioConfigs[ratio] = currentConfig;
+        updateTextOverlayLocal(id, { perRatioConfigs });
+      }
+    } else if (type === 'sticker') {
+      updateStickerLocal(id, { position });
+    }
   }
 
   // Effect operations

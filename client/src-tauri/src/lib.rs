@@ -295,6 +295,12 @@ pub fn run() {
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
+                            version: 50,
+                            description: "add_custom_fonts",
+                            sql: include_str!("../migrations/050_add_custom_fonts.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
                             version: 51,
                             description: "add_clip_edits",
                             sql: include_str!("../migrations/051_add_clip_edits.sql"),

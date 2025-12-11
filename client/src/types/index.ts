@@ -669,37 +669,68 @@ export interface AudioTrack {
   isSolo: boolean;
 }
 
+// Per-aspect-ratio configuration for text overlays
+export interface TextOverlayRatioConfig {
+  position: { x: number; y: number }; // 0-100 percentage
+  style: TextOverlayStyle;
+  // Future: could add scale, rotation, etc.
+}
+
 // Text overlay configuration
 export interface TextOverlay {
   id: string;
   text: string;
   startTime: number;
   endTime: number;
-  position: { x: number; y: number }; // 0-100 percentage
-  style: TextOverlayStyle;
+  position: { x: number; y: number }; // 0-100 percentage - default/fallback position
+  style: TextOverlayStyle; // Default/fallback style
   animation: TextAnimation;
+  // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
+  perRatioConfigs?: Record<string, TextOverlayRatioConfig>;
 }
 
 export interface TextOverlayStyle {
+  // Font settings
   fontFamily: string;
   fontSize: number;
   fontWeight: number;
-  color: string;
+
+  // Colors
+  color: string; // Text color (kept for backward compatibility, same as textColor in subtitles)
   backgroundColor: string | null;
   backgroundEnabled: boolean;
-  borderRadius: number;
-  padding: number;
-  letterSpacing: number;
-  lineHeight: number;
-  textAlign: 'left' | 'center' | 'right';
+  highlightColor: string; // Used for animation effects like karaoke, box-highlight
+
+  // Dual border system (matches SubtitleSettings)
+  border1Width: number; // Inner border width
+  border1Color: string; // Inner border color
+  border2Width: number; // Outer border width
+  border2Color: string; // Outer border color
+
+  // Legacy stroke properties (for backward compatibility)
+  strokeEnabled: boolean;
+  strokeColor: string;
+  strokeWidth: number;
+
+  // Shadow
   shadowEnabled: boolean;
   shadowColor: string;
   shadowBlur: number;
   shadowOffsetX: number;
   shadowOffsetY: number;
-  strokeEnabled: boolean;
-  strokeColor: string;
-  strokeWidth: number;
+
+  // Layout & spacing
+  borderRadius: number;
+  padding: number;
+  letterSpacing: number;
+  lineHeight: number;
+  wordSpacing: number;
+  textAlign: 'left' | 'center' | 'right';
+  maxWidth: number; // Maximum width as percentage (0-100)
+
+  // Position offsets (fine-tuning within the overlay)
+  textOffsetX: number;
+  textOffsetY: number;
 }
 
 export type TextAnimation =
@@ -712,7 +743,11 @@ export type TextAnimation =
   | 'typewriter'
   | 'bounce'
   | 'zoom'
-  | 'pop';
+  | 'pop'
+  | 'karaoke'
+  | 'glow'
+  | 'box-highlight'
+  | 'wave';
 
 export type TextStylePreset = 'title' | 'lower-third' | 'caption' | 'quote' | 'custom';
 

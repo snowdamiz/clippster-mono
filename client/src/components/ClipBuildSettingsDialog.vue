@@ -958,6 +958,10 @@
     defaultOutro?: IntroOutroRef | null;
     thumbnailUrl?: string | null;
     subtitleSettings?: SubtitleSettings | null;
+    // Pre-configured aspect ratio settings from ClipEditor's AspectTab
+    initialAspectRatios?: string[] | null;
+    initialFramingMode?: 'auto' | 'manual' | null;
+    initialFramingConfigs?: import('@/types').ManualFramingConfigs | null;
   }>();
 
   const emit = defineEmits<{
@@ -1162,9 +1166,31 @@
         // Reset to first step when dialog opens
         currentStep.value = 'platforms';
 
-        // Reset framing mode to auto when dialog opens
-        framingMode.value = 'auto';
-        manualFramingConfigs.value = {};
+        // Initialize from saved AspectTab settings if available, otherwise use defaults
+        if (props.initialAspectRatios && props.initialAspectRatios.length > 0) {
+          selectedRatios.value = [...props.initialAspectRatios];
+          console.log('[ClipBuildSettingsDialog] Initialized aspect ratios from saved settings:', selectedRatios.value);
+        } else {
+          selectedRatios.value = ['16:9'];
+        }
+
+        if (props.initialFramingMode) {
+          framingMode.value = props.initialFramingMode;
+          console.log('[ClipBuildSettingsDialog] Initialized framing mode from saved settings:', framingMode.value);
+        } else {
+          framingMode.value = 'auto';
+        }
+
+        if (props.initialFramingConfigs && Object.keys(props.initialFramingConfigs).length > 0) {
+          manualFramingConfigs.value = { ...props.initialFramingConfigs };
+          console.log(
+            '[ClipBuildSettingsDialog] Initialized framing configs from saved settings:',
+            Object.keys(manualFramingConfigs.value)
+          );
+        } else {
+          manualFramingConfigs.value = {};
+        }
+
         videoFrameUrl.value = null;
 
         // Reset subtitle overrides
