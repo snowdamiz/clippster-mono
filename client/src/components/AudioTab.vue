@@ -114,23 +114,6 @@
           </button>
         </div>
       </div>
-
-      <!-- Info Section -->
-      <div class="p-3 bg-blue-500/5 rounded-lg border border-blue-500/20">
-        <div class="flex gap-2.5">
-          <Info class="h-3.5 w-3.5 text-blue-400 flex-shrink-0 mt-0.5" />
-          <div class="text-[10px] text-muted-foreground leading-relaxed">
-            <p class="mb-1">
-              <span class="text-foreground font-medium">Volume</span>
-              adjusts in real-time preview.
-            </p>
-            <p>
-              <span class="text-foreground font-medium">Normalize</span>
-              is applied during export only.
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 </template>

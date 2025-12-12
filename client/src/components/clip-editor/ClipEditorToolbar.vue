@@ -35,7 +35,6 @@
     { id: 'filters' as const, label: 'Filters', icon: Palette },
     { id: 'text' as const, label: 'Text', icon: Type },
     { id: 'stickers' as const, label: 'Stickers', icon: Sticker },
-    { id: 'effects' as const, label: 'Effects', icon: Sparkles },
     { id: 'aspect' as const, label: 'Aspect', icon: Crop },
   ];
 </script>

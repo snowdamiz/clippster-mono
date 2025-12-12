@@ -151,6 +151,42 @@
             </div>
           </div>
 
+          <!-- Width Control -->
+          <div>
+            <label class="block text-xs text-white/50 mb-1">Width</label>
+            <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 flex-1">
+                <button
+                  @click="updateStyle('width', undefined)"
+                  :class="[
+                    'px-3 py-1.5 rounded text-xs font-medium transition-colors',
+                    !getStyleForRatio(overlay).width
+                      ? 'bg-violet-500 text-white'
+                      : 'bg-white/10 text-white/60 hover:bg-white/20',
+                  ]"
+                >
+                  Auto
+                </button>
+                <input
+                  type="number"
+                  :value="getStyleForRatio(overlay).width || ''"
+                  @input="
+                    (e) => {
+                      const val = parseInt((e.target as HTMLInputElement).value);
+                      updateStyle('width', val > 0 ? val : undefined);
+                    }
+                  "
+                  min="10"
+                  max="100"
+                  placeholder="Auto"
+                  class="flex-1 px-3 py-1.5 bg-white/5 border border-white/10 rounded-md text-sm text-white"
+                />
+                <span class="text-xs text-white/40">%</span>
+              </div>
+            </div>
+            <p class="text-[10px] text-white/30 mt-1">Drag resize handles in preview or set manually</p>
+          </div>
+
           <!-- Color & Weight Row -->
           <div class="grid grid-cols-2 gap-3">
             <!-- Text Color -->
@@ -577,6 +613,7 @@
     wordSpacing: 0.35,
     textAlign: 'center',
     maxWidth: 90,
+    width: undefined, // Auto-width by default
     textOffsetX: 0,
     textOffsetY: 0,
   };

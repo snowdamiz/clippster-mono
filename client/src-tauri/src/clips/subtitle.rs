@@ -674,6 +674,17 @@ pub fn generate_text_overlay_ass_file(
         }
     };
 
+    // Font sizes in text overlays are defined relative to a 1080p reference height.
+    // The frontend scales: displayedFontSize = configuredFontSize * (containerHeight / 1080)
+    // 
+    // However, there's a difference in how fonts are rendered in the browser vs. FFmpeg/ASS.
+    // We need to apply the same 1.5x correction factor used by subtitles to match the preview.
+    // This accounts for DPI/scaling differences between browser rendering and ASS rendering.
+    let font_correction_factor = 1.5;
+    
+    println!("[Rust] Text overlay generation for {}: play_res_x={}, play_res_y={}, font_correction={}", 
+        aspect_ratio, play_res_x, play_res_y, font_correction_factor);
+
     // Generate a unique style for each overlay (using per-ratio config if available)
     for (idx, overlay) in text_overlays.iter().enumerate() {
         // Get style for current aspect ratio (fallback to default)
@@ -698,31 +709,46 @@ pub fn generate_text_overlay_ass_file(
         };
 
         let bold = if style.font_weight >= 700 { 1 } else { 0 };
-        let outline_width = if style.border1_width > 0.0 { style.border1_width } else { 0.0 };
-        let shadow_depth = if style.shadow_enabled { 
-            ((style.shadow_offset_x.abs() + style.shadow_offset_y.abs()) / 2.0).max(1.0)
+        
+        // Apply the font correction factor to match browser rendering
+        // Font sizes are defined at 1080p reference, scaled by 1.5x for ASS rendering
+        let font_size = (style.font_size * font_correction_factor).round() as u32;
+        
+        // For outline, ASS extends outward only (vs CSS text-stroke which is centered)
+        // So we use 0.5 factor to match visual appearance, plus the font correction
+        let outline_width = if style.border1_width > 0.0 { 
+            (style.border1_width * font_correction_factor * 0.5).max(0.5) 
         } else { 
             0.0 
         };
+        
+        let shadow_depth = if style.shadow_enabled { 
+            let shadow_magnitude = (style.shadow_offset_x.powi(2) + style.shadow_offset_y.powi(2)).sqrt();
+            (shadow_magnitude * font_correction_factor).max(1.0)
+        } else { 
+            0.0 
+        };
+        
+        let letter_spacing = (style.letter_spacing * font_correction_factor).round() as i32;
 
         // Alignment: ASS uses numpad-style alignment (5 = center middle)
         let alignment = 5; // Center middle (we position with \pos)
-
-        // Scale font size for coordinate system
-        let font_size = style.font_size * (play_res_y as f32 / 1080.0);
+        
+        println!("[Rust] Text overlay {}: font_size={} (raw {} * {:.1}), outline={:.1}, shadow={:.1}", 
+            idx, font_size, style.font_size, font_correction_factor, outline_width, shadow_depth);
 
         writeln!(
             file,
             "Style: {},{},{},{},{},{},{},{},0,0,0,100,100,{},0,1,{},{},{},10,10,10,1",
             style_name,
             style.font_family,
-            font_size as u32,
+            font_size,
             primary_color,
             primary_color, // Secondary
             outline_color,
             shadow_color,
             bold,
-            style.letter_spacing,
+            letter_spacing,
             outline_width,
             shadow_depth as u32,
             alignment,
@@ -873,26 +899,36 @@ pub fn merge_text_overlays_into_ass(
         };
 
         let bold = if style.font_weight >= 700 { 1 } else { 0 };
-        let outline_width = if style.border1_width > 0.0 { style.border1_width } else { 0.0 };
+        
+        // Apply 1.5x correction factor to match browser rendering (same as generate_text_overlay_ass_file)
+        let font_correction_factor = 1.5_f32;
+        
+        let outline_width = if style.border1_width > 0.0 { 
+            (style.border1_width * font_correction_factor * 0.5).max(0.5) 
+        } else { 
+            0.0 
+        };
         let shadow_depth = if style.shadow_enabled { 
-            ((style.shadow_offset_x.abs() + style.shadow_offset_y.abs()) / 2.0).max(1.0)
+            let shadow_magnitude = (style.shadow_offset_x.powi(2) + style.shadow_offset_y.powi(2)).sqrt();
+            (shadow_magnitude * font_correction_factor).max(1.0)
         } else { 
             0.0 
         };
 
-        let font_size = style.font_size * (play_res_y as f32 / 1080.0);
+        let font_size = (style.font_size * font_correction_factor).round() as u32;
+        let letter_spacing = (style.letter_spacing * font_correction_factor).round() as i32;
 
         new_styles.push_str(&format!(
             "Style: {},{},{},{},{},{},{},{},0,0,0,100,100,{},0,1,{},{},5,10,10,10,1\n",
             style_name,
             style.font_family,
-            font_size as u32,
+            font_size,
             primary_color,
             primary_color,
             outline_color,
             shadow_color,
             bold,
-            style.letter_spacing,
+            letter_spacing,
             outline_width,
             shadow_depth as u32,
         ));

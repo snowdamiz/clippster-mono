@@ -96,24 +96,42 @@
           {{ previewAspectRatio }}
         </div>
 
-        <!-- Text Overlays (Draggable) -->
+        <!-- Text Overlays (Draggable with Resize Handles) -->
         <div
           v-for="overlay in visibleTextOverlays"
           :key="overlay.id"
-          class="absolute text-overlay select-none"
+          :data-overlay-id="overlay.id"
+          class="absolute text-overlay select-none group"
           :class="[
             getTextOverlayClass(overlay),
             {
               'cursor-move pointer-events-auto': true,
               'ring-2 ring-violet-500 ring-offset-2 ring-offset-transparent':
-                dragState.type === 'text' && dragState.id === overlay.id,
-              'hover:ring-2 hover:ring-violet-400/50': dragState.id !== overlay.id,
+                (dragState.type === 'text' && dragState.id === overlay.id) || resizeState.id === overlay.id,
+              'hover:ring-2 hover:ring-violet-400/50': dragState.id !== overlay.id && resizeState.id !== overlay.id,
             },
           ]"
           :style="getTextOverlayStyle(overlay)"
           @mousedown="(e) => startDrag(e, 'text', overlay.id, getOverlayConfigForRatio(overlay).position)"
         >
-          {{ overlay.text }}
+          <!-- Left Resize Handle -->
+          <div
+            class="absolute left-0 top-0 bottom-0 w-2 -ml-1 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10"
+            @mousedown.stop="(e) => startResize(e, overlay.id, 'left')"
+          >
+            <div class="w-1 h-8 bg-violet-500 rounded-full shadow-lg"></div>
+          </div>
+
+          <!-- Text Content -->
+          <span class="pointer-events-none">{{ overlay.text }}</span>
+
+          <!-- Right Resize Handle -->
+          <div
+            class="absolute right-0 top-0 bottom-0 w-2 -mr-1 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10"
+            @mousedown.stop="(e) => startResize(e, overlay.id, 'right')"
+          >
+            <div class="w-1 h-8 bg-violet-500 rounded-full shadow-lg"></div>
+          </div>
         </div>
 
         <!-- Stickers (Draggable) -->
@@ -228,6 +246,15 @@
     startPosition: { x: number; y: number };
   }
 
+  interface ResizeState {
+    isResizing: boolean;
+    id: string | null;
+    side: 'left' | 'right' | null;
+    startX: number;
+    startWidth: number; // Width as percentage
+    startPositionX: number; // Position X as percentage
+  }
+
   const props = defineProps<{
     videoSrc: string | null;
     currentTime: number;
@@ -249,6 +276,7 @@
     (e: 'togglePlay'): void;
     (e: 'videoElementReady', element: HTMLVideoElement): void;
     (e: 'updateOverlayPosition', type: 'text' | 'sticker', id: string, position: { x: number; y: number }): void;
+    (e: 'updateOverlayWidth', id: string, width: number): void;
     (e: 'update:previewAspectRatio', ratio: string): void;
   }>();
 
@@ -380,6 +408,19 @@
     startPosition: { x: 0, y: 0 },
   });
 
+  // Resize state for text overlay width handles
+  const resizeState = reactive<ResizeState>({
+    isResizing: false,
+    id: null,
+    side: null,
+    startX: 0,
+    startWidth: 0,
+    startPositionX: 0,
+  });
+
+  // Local width tracking to prevent reflow during drag (before Vue updates)
+  const localDragWidths = ref<Record<string, number>>({});
+
   // Computed
   const clipDuration = computed(() => props.clipEnd - props.clipStart);
 
@@ -406,10 +447,6 @@
     // Use effective time (accounts for segment cuts) for visibility
     const effectiveTime = props.effectiveTime;
     return props.stickers.filter((s) => effectiveTime >= s.startTime && effectiveTime <= s.endTime);
-  });
-
-  const overlayContainerStyle = computed(() => {
-    return {};
   });
 
   // Generate a default center-crop region for an aspect ratio
@@ -588,9 +625,38 @@
         transform: 'translate(-50%, -50%)',
       };
     }
-    // Default: fill the container to match the video
+
+    // Non-framed mode: Calculate actual video bounds within the container
+    // The video uses object-contain, so it fits within container while maintaining aspect ratio
+    const { width: containerWidth, height: containerHeight } = containerSize.value;
+    if (containerWidth === 0 || containerHeight === 0 || !videoRef.value) {
+      return { inset: '0' };
+    }
+
+    // Get the video's intrinsic aspect ratio
+    const videoWidth = videoRef.value.videoWidth || 1920;
+    const videoHeight = videoRef.value.videoHeight || 1080;
+    const videoAspect = videoWidth / videoHeight;
+    const containerAspect = containerWidth / containerHeight;
+
+    let displayWidth: number, displayHeight: number;
+
+    if (containerAspect > videoAspect) {
+      // Container is wider than video - video is constrained by height
+      displayHeight = containerHeight;
+      displayWidth = displayHeight * videoAspect;
+    } else {
+      // Container is taller than video - video is constrained by width
+      displayWidth = containerWidth;
+      displayHeight = displayWidth / videoAspect;
+    }
+
     return {
-      inset: '0',
+      width: `${displayWidth}px`,
+      height: `${displayHeight}px`,
+      left: '50%',
+      top: '50%',
+      transform: 'translate(-50%, -50%)',
     };
   }
 
@@ -598,6 +664,26 @@
   function startDrag(e: MouseEvent, type: 'text' | 'sticker', id: string, position: { x: number; y: number }) {
     e.preventDefault();
     e.stopPropagation();
+
+    // For text overlays, capture and lock the current width to prevent auto-resizing during drag
+    if (type === 'text' && overlayContainerRef.value) {
+      const overlay = props.textOverlays.find((o) => o.id === id);
+      if (overlay) {
+        const config = getOverlayConfigForRatio(overlay);
+        // Only capture width if not already explicitly set
+        if (config.style?.width === undefined || config.style.width <= 0) {
+          const overlayEl = overlayContainerRef.value.querySelector(`[data-overlay-id="${id}"]`) as HTMLElement;
+          if (overlayEl) {
+            const containerRect = overlayContainerRef.value.getBoundingClientRect();
+            const capturedWidth = (overlayEl.offsetWidth / containerRect.width) * 100;
+            // Set local width immediately to prevent reflow during drag
+            localDragWidths.value[id] = capturedWidth;
+            // Also emit width update to persist it
+            emit('updateOverlayWidth', id, capturedWidth);
+          }
+        }
+      }
+    }
 
     dragState.isDragging = true;
     dragState.type = type;
@@ -647,6 +733,80 @@
     document.removeEventListener('mouseup', onDragEnd);
   }
 
+  // Resize handlers for text overlay width
+  function startResize(e: MouseEvent, overlayId: string, side: 'left' | 'right') {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const overlay = props.textOverlays.find((o) => o.id === overlayId);
+    if (!overlay || !overlayContainerRef.value) return;
+
+    const config = getOverlayConfigForRatio(overlay);
+    const currentStyle = config.style;
+
+    // Get current width - use explicit width or calculate from element
+    let currentWidth = currentStyle?.width;
+    if (currentWidth === undefined || currentWidth <= 0) {
+      // Calculate initial width from the element's actual rendered size
+      const overlayEl = overlayContainerRef.value.querySelector(`[data-overlay-id="${overlayId}"]`) as HTMLElement;
+      if (overlayEl) {
+        const containerRect = overlayContainerRef.value.getBoundingClientRect();
+        currentWidth = (overlayEl.offsetWidth / containerRect.width) * 100;
+      } else {
+        currentWidth = 30; // Default starting width
+      }
+    }
+
+    resizeState.isResizing = true;
+    resizeState.id = overlayId;
+    resizeState.side = side;
+    resizeState.startX = e.clientX;
+    resizeState.startWidth = currentWidth;
+    resizeState.startPositionX = config.position.x;
+
+    document.addEventListener('mousemove', onResizeMove);
+    document.addEventListener('mouseup', onResizeEnd);
+  }
+
+  function onResizeMove(e: MouseEvent) {
+    if (!resizeState.isResizing || !overlayContainerRef.value || !resizeState.id) return;
+
+    const container = overlayContainerRef.value;
+    const rect = container.getBoundingClientRect();
+
+    // Calculate delta in percentage
+    const deltaX = e.clientX - resizeState.startX;
+    const deltaXPercent = (deltaX / rect.width) * 100;
+
+    let newWidth: number;
+
+    if (resizeState.side === 'right') {
+      // Dragging right handle: increase width when moving right
+      newWidth = resizeState.startWidth + deltaXPercent * 2; // *2 because we're resizing from center
+    } else {
+      // Dragging left handle: increase width when moving left
+      newWidth = resizeState.startWidth - deltaXPercent * 2; // *2 because we're resizing from center
+    }
+
+    // Clamp width to reasonable bounds (10% to 100%)
+    newWidth = Math.max(10, Math.min(100, newWidth));
+
+    // Set local width immediately for instant feedback
+    localDragWidths.value[resizeState.id] = newWidth;
+
+    // Emit width update to persist it
+    emit('updateOverlayWidth', resizeState.id, newWidth);
+  }
+
+  function onResizeEnd() {
+    resizeState.isResizing = false;
+    resizeState.id = null;
+    resizeState.side = null;
+
+    document.removeEventListener('mousemove', onResizeMove);
+    document.removeEventListener('mouseup', onResizeEnd);
+  }
+
   // Methods
   function formatTime(seconds: number): string {
     const mins = Math.floor(seconds / 60);
@@ -666,6 +826,10 @@
         const firstSegment = sortedSegments.value[0];
         videoRef.value.currentTime = firstSegment?.start_time || props.clipStart;
       }
+
+      // Update container size now that we know the video dimensions
+      // This ensures the overlay container matches the video bounds
+      updateContainerSize();
 
       emit('videoElementReady', videoRef.value);
     }
@@ -840,41 +1004,111 @@
     };
   }
 
+  // Calculate overlay scale factor based on container height
+  // All text overlay sizes are defined relative to a 1080p reference height
+  // This ensures the preview matches what the export will look like
+  const overlayScaleFactor = computed(() => {
+    const { width: containerWidth, height: containerHeight } = containerSize.value;
+    if (containerWidth === 0 || containerHeight === 0) return 1;
+
+    let overlayHeight: number;
+
+    if (showFramedPreview.value) {
+      // In framed mode, use the framed container height
+      const { width: ratioW, height: ratioH } = parseAspectRatio(props.previewAspectRatio);
+      const targetAspect = ratioW / ratioH;
+      const containerAspect = containerWidth / containerHeight;
+
+      if (containerAspect > targetAspect) {
+        overlayHeight = containerHeight;
+      } else {
+        overlayHeight = containerWidth / targetAspect;
+      }
+    } else {
+      // In non-framed mode, calculate actual video display height
+      const videoWidth = videoRef.value?.videoWidth || 1920;
+      const videoHeight = videoRef.value?.videoHeight || 1080;
+      const videoAspect = videoWidth / videoHeight;
+      const containerAspect = containerWidth / containerHeight;
+
+      if (containerAspect > videoAspect) {
+        overlayHeight = containerHeight;
+      } else {
+        overlayHeight = containerWidth / videoAspect;
+      }
+    }
+
+    // Scale relative to 1080p reference (same as subtitle scaling)
+    // When overlay container is 1080px tall, scale is 1.0
+    // When overlay container is 540px tall, scale is 0.5 (font appears half size)
+    return overlayHeight / 1080;
+  });
+
   function getTextOverlayStyle(overlay: TextOverlay): Record<string, string> {
     const config = getOverlayConfigForRatio(overlay);
     const overlayStyle = config.style;
+
+    // Get the scale factor for this container size
+    const scale = overlayScaleFactor.value;
+
+    // Scale all size-related properties
+    const scaledFontSize = Math.round((overlayStyle?.fontSize || 24) * scale);
+    const scaledLetterSpacing = (overlayStyle?.letterSpacing || 0) * scale;
+    const scaledPadding = Math.round((overlayStyle?.padding || 8) * scale);
+    const scaledBorderRadius = Math.round((overlayStyle?.borderRadius || 4) * scale);
+    const scaledBorderWidth = (overlayStyle?.border1Width || 0) * scale;
+    const scaledShadowOffsetX = (overlayStyle?.shadowOffsetX || 2) * scale;
+    const scaledShadowOffsetY = (overlayStyle?.shadowOffsetY || 2) * scale;
+    const scaledShadowBlur = (overlayStyle?.shadowBlur || 4) * scale;
+    const scaledStrokeWidth = (overlayStyle?.strokeWidth || 1) * scale;
 
     const style: Record<string, string> = {
       left: `${config.position.x}%`,
       top: `${config.position.y}%`,
       transform: 'translate(-50%, -50%)',
       fontFamily: overlayStyle?.fontFamily || 'sans-serif',
-      fontSize: `${overlayStyle?.fontSize || 24}px`,
+      fontSize: `${scaledFontSize}px`,
       fontWeight: String(overlayStyle?.fontWeight || 600),
       color: overlayStyle?.color || '#ffffff',
-      maxWidth: `${overlayStyle?.maxWidth || 90}%`,
       textAlign: overlayStyle?.textAlign || 'center',
       lineHeight: String(overlayStyle?.lineHeight || 1.2),
-      letterSpacing: `${overlayStyle?.letterSpacing || 0}px`,
+      letterSpacing: `${scaledLetterSpacing}px`,
     };
+
+    // Check for local drag width first (immediately applied to prevent reflow)
+    const localWidth = localDragWidths.value[overlay.id];
+
+    // Use explicit width if set (from style or local drag), otherwise use maxWidth for auto-sizing
+    // When width is set, it prevents the text from resizing during drag
+    if (localWidth !== undefined && localWidth > 0) {
+      style.width = `${localWidth}%`;
+      style.maxWidth = `${localWidth}%`;
+    } else if (overlayStyle?.width !== undefined && overlayStyle.width > 0) {
+      style.width = `${overlayStyle.width}%`;
+      style.maxWidth = `${overlayStyle.width}%`;
+    } else {
+      style.maxWidth = `${overlayStyle?.maxWidth || 90}%`;
+      // Use fit-content for auto-sizing when no explicit width is set
+      style.width = 'fit-content';
+    }
 
     if (overlayStyle?.backgroundEnabled && overlayStyle?.backgroundColor) {
       style.backgroundColor = overlayStyle.backgroundColor;
-      style.padding = `${overlayStyle.padding || 8}px`;
-      style.borderRadius = `${overlayStyle.borderRadius || 4}px`;
+      style.padding = `${scaledPadding}px`;
+      style.borderRadius = `${scaledBorderRadius}px`;
     }
 
-    // Apply shadow
+    // Apply shadow (scaled)
     if (overlayStyle?.shadowEnabled) {
-      style.textShadow = `${overlayStyle.shadowOffsetX || 2}px ${overlayStyle.shadowOffsetY || 2}px ${overlayStyle.shadowBlur || 4}px ${overlayStyle.shadowColor || '#000000'}`;
+      style.textShadow = `${scaledShadowOffsetX}px ${scaledShadowOffsetY}px ${scaledShadowBlur}px ${overlayStyle.shadowColor || '#000000'}`;
     }
 
-    // Apply border using text-stroke (combining border1 and border2)
+    // Apply border using text-stroke (scaled)
     if (overlayStyle?.border1Width && overlayStyle.border1Width > 0) {
-      style.webkitTextStroke = `${overlayStyle.border1Width}px ${overlayStyle.border1Color || '#000000'}`;
+      style.webkitTextStroke = `${scaledBorderWidth}px ${overlayStyle.border1Color || '#000000'}`;
       style.paintOrder = 'stroke fill';
     } else if (overlayStyle?.strokeEnabled) {
-      style.webkitTextStroke = `${overlayStyle.strokeWidth || 1}px ${overlayStyle.strokeColor || '#000000'}`;
+      style.webkitTextStroke = `${scaledStrokeWidth}px ${overlayStyle.strokeColor || '#000000'}`;
       style.paintOrder = 'stroke fill';
     }
 
@@ -1015,6 +1249,19 @@
     }
   });
 
+  // Watch for text overlay changes to clear local drag widths when the parent updates
+  watch(
+    () => props.textOverlays,
+    () => {
+      // Clear local widths that now have real values from parent
+      // This prevents stale local values from overriding parent updates
+      if (!dragState.isDragging && !resizeState.isResizing) {
+        localDragWidths.value = {};
+      }
+    },
+    { deep: true }
+  );
+
   // Watch for aspect ratio changes to update container size and preserve time
   watch(
     () => props.previewAspectRatio,
@@ -1035,6 +1282,8 @@
   onUnmounted(() => {
     document.removeEventListener('mousemove', onDragMove);
     document.removeEventListener('mouseup', onDragEnd);
+    document.removeEventListener('mousemove', onResizeMove);
+    document.removeEventListener('mouseup', onResizeEnd);
     stopSyncLoop();
     if (resizeObserver) {
       resizeObserver.disconnect();
@@ -1059,6 +1308,18 @@
     if (showFramedPreview.value) {
       startSyncLoop();
     }
+  });
+
+  // Get the current overlay container height for font scaling calculations
+  function getOverlayContainerHeight(): number {
+    if (!overlayContainerRef.value) return 400; // Fallback
+    const rect = overlayContainerRef.value.getBoundingClientRect();
+    return rect.height;
+  }
+
+  // Expose functions for parent component access
+  defineExpose({
+    getOverlayContainerHeight,
   });
 </script>
 

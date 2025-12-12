@@ -205,50 +205,6 @@
       </div>
     </Transition>
 
-    <!-- Preview Selector -->
-    <div v-if="selectedRatios.length > 0" class="space-y-3">
-      <h4 class="text-xs font-medium text-white/70 uppercase tracking-wide">Preview Aspect Ratio</h4>
-      <div class="flex flex-wrap gap-2">
-        <button
-          @click="emit('update:previewAspectRatio', '16:9')"
-          :class="[
-            'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
-            previewAspectRatio === '16:9'
-              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-              : 'bg-white/5 text-white/60 border-white/10 hover:bg-white/10',
-          ]"
-        >
-          16:9 Original
-        </button>
-        <button
-          v-for="ratio in selectedRatios"
-          :key="ratio"
-          @click="emit('update:previewAspectRatio', ratio)"
-          :class="[
-            'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
-            previewAspectRatio === ratio
-              ? 'bg-violet-500/20 text-violet-300 border-violet-500/50'
-              : 'bg-white/5 text-white/60 border-white/10 hover:bg-white/10',
-          ]"
-        >
-          {{ ratio }}
-        </button>
-      </div>
-    </div>
-
-    <!-- Status Summary -->
-    <div v-if="selectedRatios.length > 0" class="p-3 bg-white/5 rounded-lg border border-white/10">
-      <div class="flex items-center gap-2 text-xs">
-        <Layers :size="14" class="text-violet-400" />
-        <span class="text-white/70">
-          {{ selectedRatios.length }} aspect ratio{{ selectedRatios.length > 1 ? 's' : '' }} selected
-          <span v-if="framingMode === 'manual'" class="text-violet-400">
-            • {{ configuredCount }}/{{ selectedRatios.length }} configured
-          </span>
-        </span>
-      </div>
-    </div>
-
     <!-- Empty State -->
     <div v-if="selectedRatios.length === 0" class="py-6 text-center">
       <Crop :size="32" class="mx-auto text-white/20 mb-3" />

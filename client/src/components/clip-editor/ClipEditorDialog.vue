@@ -66,6 +66,7 @@
 
               <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
                 <ClipEditorPreview
+                  ref="previewRef"
                   :video-src="videoSrc"
                   :current-time="previewTime"
                   :effective-time="effectivePreviewTime"
@@ -83,6 +84,7 @@
                   @toggle-play="togglePlay"
                   @video-element-ready="onVideoElementReady"
                   @update-overlay-position="onUpdateOverlayPosition"
+                  @update-overlay-width="onUpdateOverlayWidth"
                 />
               </div>
             </div>
@@ -259,7 +261,6 @@
   import FiltersTab from './tabs/FiltersTab.vue';
   import TextOverlayTab from './tabs/TextOverlayTab.vue';
   import StickersTab from './tabs/StickersTab.vue';
-  import EffectsTab from './tabs/EffectsTab.vue';
   import AspectTab from './tabs/AspectTab.vue';
   import ManualPOIEditor from '@/components/poi/ManualPOIEditor.vue';
 
@@ -286,6 +287,7 @@
 
   // Refs
   const dialogRef = ref<HTMLElement | null>(null);
+  const previewRef = ref<InstanceType<typeof ClipEditorPreview> | null>(null);
   const videoElement = ref<HTMLVideoElement | null>(null);
   const clipEditId = ref<string | null>(null);
 
@@ -777,6 +779,9 @@
     const effectiveStartTime = effectivePreviewTime.value;
     const effectiveEndTime = Math.min(effectiveStartTime + 3, totalSegmentDuration.value);
 
+    // Get the current preview container height for proper font scaling on export
+    const currentPreviewHeight = previewRef.value?.getOverlayContainerHeight() ?? 400;
+
     const overlay = await createTextOverlay(clipEditId.value, {
       text,
       start_time: effectiveStartTime,
@@ -785,6 +790,7 @@
       position_y: 50, // Default to center
       style_data: JSON.stringify(style),
       animation: 'fade',
+      preview_height: currentPreviewHeight,
     });
 
     textOverlays.value.push({
@@ -795,10 +801,17 @@
       position: { x: overlay.position_x, y: overlay.position_y },
       style,
       animation: overlay.animation as any,
+      previewHeight: currentPreviewHeight,
     });
   }
 
   async function updateTextOverlayLocal(overlayId: string, updates: Partial<TextOverlay>) {
+    // If style is being updated (font size, etc.), capture current preview height
+    let currentPreviewHeight: number | undefined;
+    if (updates.style || updates.perRatioConfigs) {
+      currentPreviewHeight = previewRef.value?.getOverlayContainerHeight() ?? undefined;
+    }
+
     await updateTextOverlay(overlayId, {
       text: updates.text,
       start_time: updates.startTime,
@@ -806,12 +819,17 @@
       position_x: updates.position?.x,
       position_y: updates.position?.y,
       style_data: updates.style ? JSON.stringify(updates.style) : undefined,
+      per_ratio_configs_data: updates.perRatioConfigs ? JSON.stringify(updates.perRatioConfigs) : undefined,
+      preview_height: currentPreviewHeight,
       animation: updates.animation,
     });
 
     const overlay = textOverlays.value.find((o) => o.id === overlayId);
     if (overlay) {
       Object.assign(overlay, updates);
+      if (currentPreviewHeight !== undefined) {
+        overlay.previewHeight = currentPreviewHeight;
+      }
     }
   }
 
@@ -895,6 +913,22 @@
       }
     } else if (type === 'sticker') {
       updateStickerLocal(id, { position });
+    }
+  }
+
+  function onUpdateOverlayWidth(id: string, width: number) {
+    // Store width in per-ratio config for the current preview aspect ratio
+    const overlay = textOverlays.value.find((o) => o.id === id);
+    if (overlay) {
+      const ratio = previewAspectRatio.value;
+      const perRatioConfigs = overlay.perRatioConfigs || {};
+      const currentConfig = perRatioConfigs[ratio] || {
+        position: { ...overlay.position },
+        style: { ...overlay.style },
+      };
+      currentConfig.style = { ...currentConfig.style, width };
+      perRatioConfigs[ratio] = currentConfig;
+      updateTextOverlayLocal(id, { perRatioConfigs });
     }
   }
 
@@ -1074,6 +1108,8 @@
         endTime: o.end_time,
         position: { x: o.position_x, y: o.position_y },
         style: JSON.parse(o.style_data || '{}'),
+        perRatioConfigs: o.per_ratio_configs_data ? JSON.parse(o.per_ratio_configs_data) : undefined,
+        previewHeight: o.preview_height ?? undefined,
         animation: o.animation as any,
       }));
 

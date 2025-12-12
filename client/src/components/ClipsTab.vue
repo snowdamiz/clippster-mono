@@ -1370,6 +1370,8 @@
         positionY: number;
         style: any;
         animation: string;
+        perRatioConfigs?: Record<string, { position: { x: number; y: number }; style: any }>;
+        previewHeight?: number; // Height of preview container for proper font scaling
       }> | null = null;
 
       try {
@@ -1482,6 +1484,8 @@
             positionY: overlay.position_y,
             style: JSON.parse(overlay.style_data || '{}'),
             animation: overlay.animation || 'none',
+            // Include per-aspect-ratio configurations for correct text placement in each output
+            perRatioConfigs: overlay.per_ratio_configs_data ? JSON.parse(overlay.per_ratio_configs_data) : undefined,
           }));
           console.log('[ClipsTab] Loaded text overlays for export:', textOverlaysForExport.length);
         }

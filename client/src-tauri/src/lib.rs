@@ -312,6 +312,18 @@ pub fn run() {
                             sql: include_str!("../migrations/052_add_audio_assets.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 53,
+                            description: "add_per_ratio_configs_to_text_overlays",
+                            sql: include_str!("../migrations/053_add_per_ratio_configs_to_text_overlays.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 54,
+                            description: "add_preview_height_to_text_overlays",
+                            sql: include_str!("../migrations/054_add_preview_height_to_text_overlays.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

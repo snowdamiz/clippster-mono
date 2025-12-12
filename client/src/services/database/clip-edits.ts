@@ -37,6 +37,8 @@ export interface ClipTextOverlayRecord {
   position_x: number;
   position_y: number;
   style_data: string; // JSON string
+  per_ratio_configs_data?: string; // JSON string for per-aspect-ratio configurations
+  preview_height?: number; // Height of preview container for proper font scaling
   animation: string;
   created_at: number;
 }
@@ -252,8 +254,8 @@ export async function createTextOverlay(
 
   await db.execute(
     `INSERT INTO clip_text_overlays 
-     (id, clip_edit_id, text, start_time, end_time, position_x, position_y, style_data, animation, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, clip_edit_id, text, start_time, end_time, position_x, position_y, style_data, animation, preview_height, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       clipEditId,
@@ -264,6 +266,7 @@ export async function createTextOverlay(
       data.position_y ?? 50,
       data.style_data || '{}',
       data.animation || 'none',
+      data.preview_height ?? null,
       now,
     ]
   );
@@ -323,6 +326,14 @@ export async function updateTextOverlay(
   if (data.style_data !== undefined) {
     updates.push('style_data = ?');
     values.push(data.style_data);
+  }
+  if (data.per_ratio_configs_data !== undefined) {
+    updates.push('per_ratio_configs_data = ?');
+    values.push(data.per_ratio_configs_data);
+  }
+  if (data.preview_height !== undefined) {
+    updates.push('preview_height = ?');
+    values.push(data.preview_height);
   }
   if (data.animation !== undefined) {
     updates.push('animation = ?');

@@ -687,6 +687,8 @@ export interface TextOverlay {
   animation: TextAnimation;
   // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
   perRatioConfigs?: Record<string, TextOverlayRatioConfig>;
+  // Height of preview container when overlay was configured (for proper font scaling on export)
+  previewHeight?: number;
 }
 
 export interface TextOverlayStyle {
@@ -727,6 +729,7 @@ export interface TextOverlayStyle {
   wordSpacing: number;
   textAlign: 'left' | 'center' | 'right';
   maxWidth: number; // Maximum width as percentage (0-100)
+  width?: number; // Explicit width as percentage (0-100), undefined means auto-size
 
   // Position offsets (fine-tuning within the overlay)
   textOffsetX: number;

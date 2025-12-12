@@ -785,6 +785,9 @@ pub struct TextOverlayStyle {
     pub text_align: Option<String>,
     #[serde(default)]
     pub max_width: f32,
+    /// Explicit width as percentage (0-100), if set overrides auto-sizing
+    #[serde(default)]
+    pub width: Option<f32>,
     #[serde(default)]
     pub text_offset_x: f32,
     #[serde(default)]
@@ -820,6 +823,7 @@ impl Default for TextOverlayStyle {
             word_spacing: 0.35,
             text_align: Some("center".to_string()),
             max_width: 90.0,
+            width: None,
             text_offset_x: 0.0,
             text_offset_y: 0.0,
         }
@@ -856,5 +860,10 @@ pub struct TextOverlaySettings {
     /// Per-aspect-ratio configurations (key is ratio like "16:9", "9:16")
     #[serde(default)]
     pub per_ratio_configs: Option<std::collections::HashMap<String, TextOverlayRatioConfig>>,
+    /// The height of the preview container in pixels when the overlay was configured.
+    /// This is used to calculate the correct scaling factor for export.
+    /// Font sizes are relative to this height, so we scale by (output_height / preview_height).
+    #[serde(default)]
+    pub preview_height: Option<f64>,
 }
 
