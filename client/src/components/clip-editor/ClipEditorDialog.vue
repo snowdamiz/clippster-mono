@@ -75,6 +75,7 @@
                   :clip-end="clipEndTime"
                   :text-overlays="textOverlays"
                   :stickers="stickers"
+                  :watermarks="watermarks"
                   :filter-settings="activeFilterSettings"
                   :segments="playbackSegments"
                   :preview-aspect-ratio="previewAspectRatio"
@@ -87,6 +88,7 @@
                   @update-overlay-width="onUpdateOverlayWidth"
                   @update-sticker-scale="onUpdateStickerScale"
                   @update-sticker-rotation="onUpdateStickerRotation"
+                  @update-watermark-scale="onUpdateWatermarkScale"
                 />
               </div>
             </div>
@@ -150,6 +152,20 @@
                   @update:preview-aspect-ratio="previewAspectRatio = $event"
                 />
 
+                <WatermarkTab
+                  v-if="activeTab === 'watermark'"
+                  :watermarks="watermarks"
+                  :current-time="effectivePreviewTime"
+                  :duration="totalSegmentDuration"
+                  :preview-aspect-ratio="previewAspectRatio"
+                  :selected-aspect-ratios="selectedAspectRatios"
+                  :framing-configs="framingConfigs"
+                  @add-watermark="addWatermarkLocal"
+                  @update-watermark="updateWatermarkLocal"
+                  @delete-watermark="deleteWatermarkLocal"
+                  @update:preview-aspect-ratio="previewAspectRatio = $event"
+                />
+
                 <!-- EffectsTab - TODO: Create this component when effects feature is implemented
                 <EffectsTab
                   v-if="activeTab === 'effects'"
@@ -200,6 +216,7 @@
             :audio-tracks="audioTracks"
             :text-overlays="textOverlays"
             :stickers="stickers"
+            :watermarks="watermarks"
             :effects="effects"
             :filter-segments="filterSegments"
             :video-src="videoSrc"
@@ -210,6 +227,7 @@
             @update-audio-track="updateAudioTrackLocal"
             @update-text-overlay="updateTextOverlayLocal"
             @update-sticker="updateStickerLocal"
+            @update-watermark="updateWatermarkLocal"
             @update-effect="updateEffectLocal"
             @update-filter-segment="updateFilterSegment"
           />
@@ -246,6 +264,8 @@
     TrimSegment,
     ManualFramingConfigs,
     ManualFramingConfig,
+    ClipWatermark,
+    WatermarkRatioConfig,
   } from '@/types';
   import {
     getOrCreateClipEdit,
@@ -263,6 +283,9 @@
     createEffect,
     updateEffect,
     deleteEffect,
+    createWatermark,
+    updateWatermarkRecord,
+    deleteWatermarkRecord,
     getRawVideosByProjectId,
     getClipWithBuildStatus,
   } from '@/services/database';
@@ -279,6 +302,7 @@
   import FiltersTab from './tabs/FiltersTab.vue';
   import TextOverlayTab from './tabs/TextOverlayTab.vue';
   import StickersTab from './tabs/StickersTab.vue';
+  import WatermarkTab from './tabs/WatermarkTab.vue';
   import AspectTab from './tabs/AspectTab.vue';
   import TranscriptTab from './tabs/TranscriptTab.vue';
   import ManualPOIEditor from '@/components/poi/ManualPOIEditor.vue';
@@ -326,6 +350,7 @@
   const textOverlays = ref<TextOverlay[]>([]);
   const stickers = ref<Sticker[]>([]);
   const effects = ref<Effect[]>([]);
+  const watermarks = ref<ClipWatermark[]>([]);
   const filterSegments = ref<FilterSegment[]>([]);
   const originalDb = ref(0);
   const trackDbValues = ref<Record<string, number>>({});
@@ -925,8 +950,68 @@
     stickers.value = stickers.value.filter((s) => s.id !== stickerId);
   }
 
+  // Watermark operations
+  async function addWatermarkLocal(watermarkId: string, filePath: string, previewUrl: string) {
+    if (!clipEditId.value) return;
+
+    // By default, watermark spans the entire clip duration (100% of clip)
+    const startTime = 0;
+    const endTime = totalSegmentDuration.value;
+
+    // Store the actual file path for export, and previewUrl for display
+    const watermark = await createWatermark(clipEditId.value, {
+      watermark_id: watermarkId,
+      watermark_path: filePath, // File path for FFmpeg export
+      start_time: startTime,
+      end_time: endTime,
+      position_x: 8,
+      position_y: 92,
+      scale: 15,
+      opacity: 80,
+    });
+
+    watermarks.value.push({
+      id: watermark.id,
+      watermarkId: watermark.watermark_id,
+      watermarkPath: previewUrl, // Data URL for preview display
+      startTime: watermark.start_time,
+      endTime: watermark.end_time,
+      position: { x: watermark.position_x, y: watermark.position_y },
+      scale: watermark.scale,
+      opacity: watermark.opacity,
+    });
+  }
+
+  async function updateWatermarkLocal(watermarkId: string, updates: Partial<ClipWatermark>) {
+    await updateWatermarkRecord(watermarkId, {
+      watermark_id: updates.watermarkId,
+      watermark_path: updates.watermarkPath,
+      start_time: updates.startTime,
+      end_time: updates.endTime,
+      position_x: updates.position?.x,
+      position_y: updates.position?.y,
+      scale: updates.scale,
+      opacity: updates.opacity,
+      per_ratio_configs_data: updates.perRatioConfigs ? JSON.stringify(updates.perRatioConfigs) : undefined,
+    });
+
+    const watermark = watermarks.value.find((w) => w.id === watermarkId);
+    if (watermark) {
+      Object.assign(watermark, updates);
+    }
+  }
+
+  async function deleteWatermarkLocal(watermarkId: string) {
+    await deleteWatermarkRecord(watermarkId);
+    watermarks.value = watermarks.value.filter((w) => w.id !== watermarkId);
+  }
+
   // Handle overlay position updates from preview drag
-  function onUpdateOverlayPosition(type: 'text' | 'sticker', id: string, position: { x: number; y: number }) {
+  function onUpdateOverlayPosition(
+    type: 'text' | 'sticker' | 'watermark',
+    id: string,
+    position: { x: number; y: number }
+  ) {
     if (type === 'text') {
       // Store position in per-ratio config for the current preview aspect ratio
       const overlay = textOverlays.value.find((o) => o.id === id);
@@ -955,6 +1040,21 @@
         currentConfig.position = position;
         perRatioConfigs[ratio] = currentConfig;
         updateStickerLocal(id, { perRatioConfigs });
+      }
+    } else if (type === 'watermark') {
+      // Store position in per-ratio config for the current preview aspect ratio
+      const watermark = watermarks.value.find((w) => w.id === id);
+      if (watermark) {
+        const ratio = previewAspectRatio.value;
+        const perRatioConfigs = watermark.perRatioConfigs || {};
+        const currentConfig = perRatioConfigs[ratio] || {
+          position: { ...watermark.position },
+          scale: watermark.scale,
+          opacity: watermark.opacity,
+        };
+        currentConfig.position = position;
+        perRatioConfigs[ratio] = currentConfig;
+        updateWatermarkLocal(id, { perRatioConfigs });
       }
     }
   }
@@ -1006,6 +1106,23 @@
       currentConfig.rotation = rotation;
       perRatioConfigs[ratio] = currentConfig;
       updateStickerLocal(id, { perRatioConfigs });
+    }
+  }
+
+  function onUpdateWatermarkScale(id: string, scale: number) {
+    // Store scale in per-ratio config for the current preview aspect ratio
+    const watermark = watermarks.value.find((w) => w.id === id);
+    if (watermark) {
+      const ratio = previewAspectRatio.value;
+      const perRatioConfigs = watermark.perRatioConfigs || {};
+      const currentConfig = perRatioConfigs[ratio] || {
+        position: { ...watermark.position },
+        scale: watermark.scale,
+        opacity: watermark.opacity,
+      };
+      currentConfig.scale = scale;
+      perRatioConfigs[ratio] = currentConfig;
+      updateWatermarkLocal(id, { perRatioConfigs });
     }
   }
 
@@ -1213,6 +1330,18 @@
         rotation: s.rotation,
         animation: s.animation as any,
         perRatioConfigs: s.per_ratio_configs_data ? JSON.parse(s.per_ratio_configs_data) : undefined,
+      }));
+
+      watermarks.value = fullEdit.watermarks.map((w) => ({
+        id: w.id,
+        watermarkId: w.watermark_id,
+        watermarkPath: w.watermark_path,
+        startTime: w.start_time,
+        endTime: w.end_time,
+        position: { x: w.position_x, y: w.position_y },
+        scale: w.scale,
+        opacity: w.opacity,
+        perRatioConfigs: w.per_ratio_configs_data ? JSON.parse(w.per_ratio_configs_data) : undefined,
       }));
 
       effects.value = fullEdit.effects.map((e) => ({

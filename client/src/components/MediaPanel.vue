@@ -108,37 +108,6 @@
             />
           </div>
         </template>
-
-        <!-- Watermark Tab Actions -->
-        <template v-if="activeTab === 'watermark'">
-          <div class="flex items-center gap-1.5">
-            <span class="text-[10px] font-medium text-muted-foreground">On</span>
-            <button
-              @click="toggleWatermark"
-              type="button"
-              :class="[
-                'relative inline-flex h-4 w-7 flex-shrink-0 items-center rounded-full transition-all duration-200',
-                watermarkSettings.enabled ? 'bg-primary' : 'bg-muted-foreground/30',
-              ]"
-              :title="watermarkSettings.enabled ? 'Disable watermark' : 'Enable watermark'"
-            >
-              <span
-                :class="[
-                  'inline-block h-3 w-3 transform rounded-full bg-white shadow-lg transition-all duration-200 ease-in-out',
-                  watermarkSettings.enabled ? 'translate-x-[14px]' : 'translate-x-0.5',
-                ]"
-              ></span>
-            </button>
-          </div>
-          <button
-            @click="watermarkTabRef?.resetToDefaults?.()"
-            class="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground bg-muted/30 hover:bg-muted/50 rounded-md transition-all border border-border/40 hover:border-border/60"
-            title="Reset to defaults"
-          >
-            <RotateCcw class="h-3 w-3" />
-            Reset
-          </button>
-        </template>
       </div>
     </div>
 
@@ -197,17 +166,6 @@
       :hide-header="true"
       @settings-changed="onSubtitleSettingsChanged"
     />
-
-    <!-- Watermark Tab Content -->
-    <WatermarkTab
-      v-if="activeTab === 'watermark'"
-      ref="watermarkTabRef"
-      :project-id="projectId"
-      :settings="watermarkSettings"
-      :aspect-ratio="aspectRatio"
-      :hide-header="true"
-      @settings-changed="onWatermarkSettingsChanged"
-    />
   </div>
 </template>
 
@@ -230,26 +188,14 @@
   import ClipsTab from './ClipsTab.vue';
   import TranscriptPanel from './TranscriptPanel.vue';
   import SubtitlesTab from './SubtitlesTab.vue';
-  import WatermarkTab from './WatermarkTab.vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
-  import {
-    Video,
-    FileText,
-    Type,
-    Image,
-    Sparkles,
-    RotateCcw,
-    X as XIcon,
-    Loader as LoaderIcon,
-    Search,
-  } from 'lucide-vue-next';
+  import { Video, Type, Sparkles, RotateCcw, X as XIcon, Loader as LoaderIcon, Search } from 'lucide-vue-next';
 
   // Tab configuration
   const tabs = [
     { id: 'clips', label: 'Clips', icon: markRaw(Video) },
     // { id: 'transcript', label: 'Transcript', icon: markRaw(FileText) },
     { id: 'subtitles', label: 'Subtitles', icon: markRaw(Type) },
-    { id: 'watermark', label: 'Watermark', icon: markRaw(Image) },
   ];
 
   const props = withDefaults(defineProps<MediaPanelProps>(), {
@@ -290,9 +236,6 @@
 
   // Ref for TranscriptPanel component
   const transcriptPanelRef = ref<InstanceType<typeof TranscriptPanel> | null>(null);
-
-  // Ref for WatermarkTab component
-  const watermarkTabRef = ref<InstanceType<typeof WatermarkTab> | null>(null);
 
   // Ref for SubtitlesTab component
   const subtitlesTabRef = ref<InstanceType<typeof SubtitlesTab> | null>(null);
@@ -554,22 +497,11 @@
     emit('subtitleSettingsChanged', settings);
   }
 
-  function onWatermarkSettingsChanged(settings: WatermarkSettings) {
-    watermarkSettings.value = settings;
-    emit('watermarkSettingsChanged', settings);
-  }
-
   // Toggle functions for header controls
   function toggleSubtitles() {
     const newSettings = { ...subtitleSettings.value, enabled: !subtitleSettings.value.enabled };
     subtitleSettings.value = newSettings;
     emit('subtitleSettingsChanged', newSettings);
-  }
-
-  function toggleWatermark() {
-    const newSettings = { ...watermarkSettings.value, enabled: !watermarkSettings.value.enabled };
-    watermarkSettings.value = newSettings;
-    emit('watermarkSettingsChanged', newSettings);
   }
 
   // Event listener for fallback refresh mechanism
@@ -837,7 +769,6 @@
       watermarkSettings.value = settings;
       emit('watermarkSettingsChanged', settings);
     },
-    getWatermarkTabRef: () => watermarkTabRef.value,
   });
 </script>
 

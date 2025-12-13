@@ -1388,6 +1388,18 @@
         perRatioConfigs?: Record<string, { position: { x: number; y: number }; scale: number; rotation: number }>;
       }> | null = null;
 
+      let clipWatermarksForExport: Array<{
+        id: string;
+        watermarkPath: string;
+        startTime: number;
+        endTime: number;
+        positionX: number;
+        positionY: number;
+        scale: number;
+        opacity: number;
+        perRatioConfigs?: Record<string, { position: { x: number; y: number }; scale: number; opacity: number }>;
+      }> | null = null;
+
       try {
         // Load project-level audio settings
         const projectAudioSettings = await getProjectAudioSettings(props.projectId);
@@ -1521,6 +1533,25 @@
             perRatioConfigs: sticker.per_ratio_configs_data ? JSON.parse(sticker.per_ratio_configs_data) : undefined,
           }));
           console.log('[ClipsTab] Loaded stickers for export:', stickersForExport.length);
+        }
+
+        // Extract clip watermarks for burning into video
+        if (clipEdit && clipEdit.watermarks && clipEdit.watermarks.length > 0) {
+          clipWatermarksForExport = clipEdit.watermarks.map((watermark) => ({
+            id: watermark.id,
+            watermarkPath: watermark.watermark_path,
+            startTime: watermark.start_time,
+            endTime: watermark.end_time,
+            positionX: watermark.position_x,
+            positionY: watermark.position_y,
+            scale: watermark.scale,
+            opacity: watermark.opacity,
+            // Include per-aspect-ratio configurations for correct watermark placement in each output
+            perRatioConfigs: watermark.per_ratio_configs_data
+              ? JSON.parse(watermark.per_ratio_configs_data)
+              : undefined,
+          }));
+          console.log('[ClipsTab] Loaded clip watermarks for export:', clipWatermarksForExport.length);
         }
       } catch (err) {
         console.warn('[ClipsTab] Could not load audio settings:', err);
@@ -1714,6 +1745,7 @@
         videoFilterSegments: videoFilterSegments,
         textOverlays: textOverlaysForExport,
         stickers: stickersForExport,
+        clipWatermarks: clipWatermarksForExport,
       });
 
       console.log('[ClipsTab] Clip build started successfully');

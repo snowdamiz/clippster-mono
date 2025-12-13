@@ -2,10 +2,10 @@ use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 use tauri::Emitter;
 
-use super::types::{SubtitleSettings, SubtitleOverrides, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy, VideoFilterSegment, TextOverlaySettings, StickerSettings};
+use super::types::{SubtitleSettings, SubtitleOverrides, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy, VideoFilterSegment, TextOverlaySettings, StickerSettings, ClipWatermarkSettings};
 use super::video_info::{get_video_info, parse_aspect_ratio, IntroOutroCache};
 use super::subtitle::{generate_ass_file, generate_text_overlay_ass_file, merge_text_overlays_into_ass};
-use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings, build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy, apply_stickers_to_video};
+use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings, build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy, apply_stickers_to_video, apply_clip_watermarks_to_video};
 use super::font_manager::get_fonts_dir;
 use super::{CancellationToken, is_build_cancelled};
 
@@ -141,6 +141,7 @@ pub async fn build_clip_internal_simple(
     video_filter_segments: Option<Vec<VideoFilterSegment>>,
     text_overlays: Option<Vec<TextOverlaySettings>>,
     stickers: Option<Vec<StickerSettings>>,
+    clip_watermarks: Option<Vec<ClipWatermarkSettings>>,
     cancel_rx: CancellationToken
 ) -> Result<ClipBuildResult, String> {
 
@@ -234,6 +235,7 @@ pub async fn build_clip_internal_simple(
         let video_filter_segments = video_filter_segments.clone();
         let text_overlays = text_overlays.clone();
         let stickers = stickers.clone();
+        let clip_watermarks = clip_watermarks.clone();
         let cancel_rx = cancel_rx.clone();
         let build_num = build_num;
         
@@ -453,6 +455,20 @@ pub async fn build_clip_internal_simple(
                         &app,
                         &output_path,
                         sticker_list,
+                        &aspect_ratio_str,
+                        &quality
+                    ).await?;
+                }
+            }
+
+            // Apply clip watermarks if present (from clip editor)
+            if let Some(ref watermark_list) = clip_watermarks.as_ref() {
+                if !watermark_list.is_empty() {
+                    println!("[Rust] Applying {} clip watermarks to {} clip", watermark_list.len(), aspect_ratio_str);
+                    apply_clip_watermarks_to_video(
+                        &app,
+                        &output_path,
+                        watermark_list,
                         &aspect_ratio_str,
                         &quality
                     ).await?;

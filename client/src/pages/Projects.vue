@@ -2327,6 +2327,7 @@
         videoFilterSegments: null, // No filter segments from folder view
         textOverlays: null, // No text overlays from folder view
         stickers: null, // No stickers from folder view
+        clipWatermarks: null, // No clip watermarks from folder view
       });
 
       success('Build started', 'Your clip is being built in the background.');

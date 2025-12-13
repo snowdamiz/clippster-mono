@@ -777,6 +777,27 @@ export interface Sticker {
 
 export type StickerAnimation = 'none' | 'bounce' | 'spin' | 'pulse' | 'shake' | 'float' | 'fade';
 
+// Per-aspect-ratio configuration for watermarks
+export interface WatermarkRatioConfig {
+  position: { x: number; y: number }; // 0-100 percentage
+  scale: number; // 0-100 (percentage of video width)
+  opacity: number; // 0-100
+}
+
+// Watermark overlay for clip editor (time-based)
+export interface ClipWatermark {
+  id: string;
+  watermarkId: string; // Reference to watermark image asset
+  watermarkPath: string; // File path or URL for preview
+  startTime: number;
+  endTime: number;
+  position: { x: number; y: number }; // 0-100 percentage - default/fallback position
+  scale: number; // 0-100 (percentage of video width) - default/fallback scale
+  opacity: number; // 0-100 - default/fallback opacity
+  // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
+  perRatioConfigs?: Record<string, WatermarkRatioConfig>;
+}
+
 // Visual effects
 export interface Effect {
   id: string;
@@ -878,7 +899,7 @@ export type ClipEditorTab =
   | 'filters'
   | 'text'
   | 'stickers'
-  | 'effects'
+  | 'watermark'
   | 'aspect'
   | 'transcript';
 

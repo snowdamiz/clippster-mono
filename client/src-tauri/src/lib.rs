@@ -336,6 +336,12 @@ pub fn run() {
                             sql: include_str!("../migrations/056_add_image_assets.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 57,
+                            description: "add_clip_watermarks",
+                            sql: include_str!("../migrations/057_add_clip_watermarks.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

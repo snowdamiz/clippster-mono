@@ -69,6 +69,21 @@ export interface ClipEffectRecord {
   created_at: number;
 }
 
+export interface ClipWatermarkRecord {
+  id: string;
+  clip_edit_id: string;
+  watermark_id: string; // Reference to watermark_images table
+  watermark_path: string; // File path for rendering
+  start_time: number;
+  end_time: number;
+  position_x: number;
+  position_y: number;
+  scale: number;
+  opacity: number;
+  per_ratio_configs_data?: string; // JSON string for per-aspect-ratio configurations
+  created_at: number;
+}
+
 // ==========================================
 // Clip Edit CRUD Operations
 // ==========================================
@@ -547,6 +562,118 @@ export async function deleteEffect(id: string): Promise<void> {
 }
 
 // ==========================================
+// Watermark Operations
+// ==========================================
+
+export async function createWatermark(
+  clipEditId: string,
+  data: Partial<ClipWatermarkRecord>
+): Promise<ClipWatermarkRecord> {
+  const db = await getDatabase();
+  const id = generateId();
+  const now = timestamp();
+
+  await db.execute(
+    `INSERT INTO clip_watermarks 
+     (id, clip_edit_id, watermark_id, watermark_path, start_time, end_time, position_x, position_y, scale, opacity, per_ratio_configs_data, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      clipEditId,
+      data.watermark_id || '',
+      data.watermark_path || '',
+      data.start_time || 0,
+      data.end_time || 0,
+      data.position_x ?? 8,
+      data.position_y ?? 92,
+      data.scale ?? 15,
+      data.opacity ?? 80,
+      data.per_ratio_configs_data || null,
+      now,
+    ]
+  );
+
+  return {
+    id,
+    clip_edit_id: clipEditId,
+    watermark_id: data.watermark_id || '',
+    watermark_path: data.watermark_path || '',
+    start_time: data.start_time || 0,
+    end_time: data.end_time || 0,
+    position_x: data.position_x ?? 8,
+    position_y: data.position_y ?? 92,
+    scale: data.scale ?? 15,
+    opacity: data.opacity ?? 80,
+    per_ratio_configs_data: data.per_ratio_configs_data,
+    created_at: now,
+  };
+}
+
+export async function getWatermarksByEditId(clipEditId: string): Promise<ClipWatermarkRecord[]> {
+  const db = await getDatabase();
+  return await db.select<ClipWatermarkRecord[]>(
+    `SELECT * FROM clip_watermarks WHERE clip_edit_id = ? ORDER BY start_time`,
+    [clipEditId]
+  );
+}
+
+export async function updateWatermarkRecord(
+  id: string,
+  data: Partial<ClipWatermarkRecord>
+): Promise<void> {
+  const db = await getDatabase();
+  const updates: string[] = [];
+  const values: any[] = [];
+
+  if (data.watermark_id !== undefined) {
+    updates.push('watermark_id = ?');
+    values.push(data.watermark_id);
+  }
+  if (data.watermark_path !== undefined) {
+    updates.push('watermark_path = ?');
+    values.push(data.watermark_path);
+  }
+  if (data.start_time !== undefined) {
+    updates.push('start_time = ?');
+    values.push(data.start_time);
+  }
+  if (data.end_time !== undefined) {
+    updates.push('end_time = ?');
+    values.push(data.end_time);
+  }
+  if (data.position_x !== undefined) {
+    updates.push('position_x = ?');
+    values.push(data.position_x);
+  }
+  if (data.position_y !== undefined) {
+    updates.push('position_y = ?');
+    values.push(data.position_y);
+  }
+  if (data.scale !== undefined) {
+    updates.push('scale = ?');
+    values.push(data.scale);
+  }
+  if (data.opacity !== undefined) {
+    updates.push('opacity = ?');
+    values.push(data.opacity);
+  }
+  if (data.per_ratio_configs_data !== undefined) {
+    updates.push('per_ratio_configs_data = ?');
+    values.push(data.per_ratio_configs_data);
+  }
+
+  if (updates.length > 0) {
+    values.push(id);
+    await db.execute(`UPDATE clip_watermarks SET ${updates.join(', ')} WHERE id = ?`, values);
+  }
+}
+
+export async function deleteWatermarkRecord(id: string): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(`DELETE FROM clip_watermarks WHERE id = ?`, [id]);
+}
+
+// ==========================================
 // Full Clip Edit with All Data
 // ==========================================
 
@@ -556,17 +683,19 @@ export interface FullClipEdit {
   textOverlays: ClipTextOverlayRecord[];
   stickers: ClipStickerRecord[];
   effects: ClipEffectRecord[];
+  watermarks: ClipWatermarkRecord[];
 }
 
 export async function getFullClipEdit(clipId: string): Promise<FullClipEdit | null> {
   const edit = await getClipEditByClipId(clipId);
   if (!edit) return null;
 
-  const [audioTracks, textOverlays, stickers, effects] = await Promise.all([
+  const [audioTracks, textOverlays, stickers, effects, watermarks] = await Promise.all([
     getAudioTracksByEditId(edit.id),
     getTextOverlaysByEditId(edit.id),
     getStickersByEditId(edit.id),
     getEffectsByEditId(edit.id),
+    getWatermarksByEditId(edit.id),
   ]);
 
   return {
@@ -575,6 +704,7 @@ export async function getFullClipEdit(clipId: string): Promise<FullClipEdit | nu
     textOverlays,
     stickers,
     effects,
+    watermarks,
   };
 }
 

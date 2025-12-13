@@ -55,6 +55,7 @@ pub async fn build_clip_from_segments(
     video_filter_segments: Option<Vec<VideoFilterSegment>>,
     text_overlays: Option<Vec<TextOverlaySettings>>,
     stickers: Option<Vec<StickerSettings>>,
+    clip_watermarks: Option<Vec<ClipWatermarkSettings>>,
 ) -> Result<(), String> {
 
     println!("[Rust] build_clip_from_segments called with:");
@@ -81,6 +82,7 @@ pub async fn build_clip_from_segments(
     println!("[Rust]   video_filter_segments count: {}", video_filter_segments.as_ref().map(|v| v.len()).unwrap_or(0));
     println!("[Rust]   text_overlays count: {}", text_overlays.as_ref().map(|v| v.len()).unwrap_or(0));
     println!("[Rust]   stickers count: {}", stickers.as_ref().map(|v| v.len()).unwrap_or(0));
+    println!("[Rust]   clip_watermarks count: {}", clip_watermarks.as_ref().map(|v| v.len()).unwrap_or(0));
 
     // Check if clip is already being built and create cancellation token
     let cancel_rx = {
@@ -117,6 +119,7 @@ pub async fn build_clip_from_segments(
     let video_filter_segments_clone = video_filter_segments.clone();
     let text_overlays_clone = text_overlays.clone();
     let stickers_clone = stickers.clone();
+    let clip_watermarks_clone = clip_watermarks.clone();
 
     // Send initial progress
     let _ = app.emit("clip-build-progress", ClipBuildProgress {
@@ -161,6 +164,7 @@ pub async fn build_clip_from_segments(
             video_filter_segments_clone,
             text_overlays_clone,
             stickers_clone,
+            clip_watermarks_clone,
             cancel_rx
         ).await {
             Ok(result) => {

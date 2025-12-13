@@ -394,6 +394,49 @@
             </div>
           </div>
 
+          <!-- Watermarks Track -->
+          <div v-if="watermarks.length > 0" class="flex items-center h-12 px-2 border-b border-border/20 relative">
+            <div
+              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-0 z-40 bg-[#101010] backdrop-blur-sm flex-shrink-0"
+            >
+              <div class="font-medium flex items-center gap-1">
+                <Droplet :size="12" />
+                Watermark
+              </div>
+            </div>
+            <div class="flex-1 h-8 relative" @click="onTrackContentClick">
+              <div class="absolute inset-0 bg-[#1a1a1a]/30 rounded-md cursor-pointer"></div>
+              <div
+                v-for="watermark in watermarks"
+                :key="watermark.id"
+                :ref="(el) => setSegmentRef(el, 'watermark', watermark.id)"
+                class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
+                :class="getSegmentClasses('watermark', watermark.id)"
+                :style="getSegmentStyle(watermark.startTime, watermark.endTime, 'cyan', 'watermark', watermark.id)"
+                @mousedown="(e) => onSegmentMouseDown(e, 'watermark', watermark.id, watermark)"
+                @click.stop="selectItem('watermark', watermark.id)"
+              >
+                <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm pointer-events-none">
+                  Watermark
+                </span>
+                <!-- Left resize handle -->
+                <div
+                  class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
+                  @mousedown.stop="(e) => onResizeMouseDown(e, 'watermark', watermark.id, 'left', watermark)"
+                >
+                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                </div>
+                <!-- Right resize handle -->
+                <div
+                  class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
+                  @mousedown.stop="(e) => onResizeMouseDown(e, 'watermark', watermark.id, 'right', watermark)"
+                >
+                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Effects Track -->
           <div v-if="effects.length > 0" class="flex items-center h-12 px-2 border-b border-border/20 relative">
             <div
@@ -511,11 +554,11 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-  import { ZoomIn, Film, Music, Type, Smile, Sparkles, Scissors, Palette } from 'lucide-vue-next';
+  import { ZoomIn, Film, Music, Type, Smile, Sparkles, Scissors, Palette, Droplet } from 'lucide-vue-next';
   import { useAudioWaveform } from '@/composables/useAudioWaveform';
-  import type { TrimSegment, AudioTrack, TextOverlay, Sticker, Effect, FilterSegment } from '@/types';
+  import type { TrimSegment, AudioTrack, TextOverlay, Sticker, Effect, FilterSegment, ClipWatermark } from '@/types';
 
-  type ItemType = 'trim' | 'audio' | 'text' | 'sticker' | 'effect' | 'filter';
+  type ItemType = 'trim' | 'audio' | 'text' | 'sticker' | 'watermark' | 'effect' | 'filter';
 
   interface DragInfo {
     type: ItemType;
@@ -564,6 +607,7 @@
       audioTracks: AudioTrack[];
       textOverlays: TextOverlay[];
       stickers: Sticker[];
+      watermarks: ClipWatermark[];
       effects: Effect[];
       filterSegments: FilterSegment[];
       videoSrc?: string;
@@ -574,6 +618,7 @@
       audioGainDb: 0,
       trackDbValues: () => ({}),
       filterSegments: () => [],
+      watermarks: () => [],
     }
   );
 
@@ -583,6 +628,7 @@
     (e: 'updateAudioTrack', trackId: string, updates: Partial<AudioTrack>): void;
     (e: 'updateTextOverlay', overlayId: string, updates: Partial<TextOverlay>): void;
     (e: 'updateSticker', stickerId: string, updates: Partial<Sticker>): void;
+    (e: 'updateWatermark', watermarkId: string, updates: Partial<ClipWatermark>): void;
     (e: 'updateEffect', effectId: string, updates: Partial<Effect>): void;
     (e: 'updateFilterSegment', segmentId: string, updates: Partial<FilterSegment>): void;
   }>();
@@ -893,6 +939,7 @@
       props.audioTracks.length +
       (props.textOverlays.length > 0 ? 1 : 0) +
       (props.stickers.length > 0 ? 1 : 0) +
+      (props.watermarks.length > 0 ? 1 : 0) +
       (props.effects.length > 0 ? 1 : 0);
 
     return headerHeight + rulerHeight + videoTrackHeight + otherTracksCount * otherTrackHeight + padding;
@@ -1546,6 +1593,9 @@
         break;
       case 'sticker':
         emit('updateSticker', id, { startTime, endTime });
+        break;
+      case 'watermark':
+        emit('updateWatermark', id, { startTime, endTime });
         break;
       case 'effect':
         emit('updateEffect', id, { startTime, endTime });

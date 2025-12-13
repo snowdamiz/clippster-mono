@@ -220,6 +220,69 @@
             @mousedown.stop="(e) => startStickerResize(e, sticker)"
           />
         </div>
+
+        <!-- Watermarks (Draggable with Resize Handles - like stickers) -->
+        <div
+          v-for="watermark in visibleWatermarks"
+          :key="watermark.id"
+          :data-watermark-id="watermark.id"
+          class="absolute watermark-overlay select-none group pointer-events-auto"
+          :style="getWatermarkWrapperStyle(watermark)"
+        >
+          <!-- Watermark Content (scaled) -->
+          <div
+            class="cursor-move"
+            :style="getWatermarkContentStyle(watermark)"
+            @mousedown="(e) => startWatermarkDrag(e, watermark)"
+          >
+            <img
+              :src="watermark.watermarkPath"
+              class="max-w-none pointer-events-none select-none"
+              :style="getWatermarkImageStyle(watermark)"
+              draggable="false"
+              alt="Watermark"
+              @load="(e) => onWatermarkImageLoad(watermark.id, e)"
+            />
+          </div>
+
+          <!-- Selection border (dashed, like stickers) -->
+          <div
+            class="absolute inset-0 border border-dashed rounded-sm pointer-events-none transition-opacity"
+            :class="[
+              (dragState.type === 'watermark' && dragState.id === watermark.id) ||
+              watermarkResizeState.id === watermark.id
+                ? 'border-violet-400 opacity-100'
+                : 'border-white/40 opacity-0 group-hover:opacity-100',
+            ]"
+            :style="getWatermarkBoundsStyle(watermark)"
+          />
+
+          <!-- Corner Resize Handles (like stickers) -->
+          <div
+            class="absolute w-2.5 h-2.5 rounded-full bg-violet-500 hover:bg-violet-400 cursor-nwse-resize opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-sm"
+            :class="{ '!opacity-100': watermarkResizeState.id === watermark.id }"
+            :style="getWatermarkResizeHandleStyle(watermark, 'se')"
+            @mousedown.stop="(e) => startWatermarkResize(e, watermark)"
+          />
+          <div
+            class="absolute w-2.5 h-2.5 rounded-full bg-violet-500 hover:bg-violet-400 cursor-nesw-resize opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-sm"
+            :class="{ '!opacity-100': watermarkResizeState.id === watermark.id }"
+            :style="getWatermarkResizeHandleStyle(watermark, 'sw')"
+            @mousedown.stop="(e) => startWatermarkResize(e, watermark)"
+          />
+          <div
+            class="absolute w-2.5 h-2.5 rounded-full bg-violet-500 hover:bg-violet-400 cursor-nesw-resize opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-sm"
+            :class="{ '!opacity-100': watermarkResizeState.id === watermark.id }"
+            :style="getWatermarkResizeHandleStyle(watermark, 'ne')"
+            @mousedown.stop="(e) => startWatermarkResize(e, watermark)"
+          />
+          <div
+            class="absolute w-2.5 h-2.5 rounded-full bg-violet-500 hover:bg-violet-400 cursor-nw-resize opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-sm"
+            :class="{ '!opacity-100': watermarkResizeState.id === watermark.id }"
+            :style="getWatermarkResizeHandleStyle(watermark, 'nw')"
+            @mousedown.stop="(e) => startWatermarkResize(e, watermark)"
+          />
+        </div>
       </div>
 
       <!-- Vignette Overlay (applied as overlay since it's a radial gradient effect) -->
@@ -247,45 +310,68 @@
     </div>
 
     <!-- Controls Bar -->
-    <div class="mt-3 flex items-center gap-3">
-      <button @click="emit('togglePlay')" class="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
-        <Play v-if="!isPlaying" class="w-5 h-5 text-white" />
-        <Pause v-else class="w-5 h-5 text-white" />
-      </button>
-
-      <!-- Time Display -->
-      <div class="text-sm text-white/70 font-mono min-w-[100px]">
-        {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
-      </div>
-
-      <!-- Progress Bar -->
-      <div
-        class="flex-1 h-1 bg-white/10 rounded-full cursor-pointer relative group"
-        @click="onProgressClick"
-        @mousedown="startProgressDrag"
-      >
-        <div class="absolute inset-y-0 left-0 bg-violet-500 rounded-full" :style="{ width: `${progressPercent}%` }" />
-        <div
-          class="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
-          :style="{ left: `calc(${progressPercent}% - 6px)` }"
-        />
-      </div>
-
-      <!-- Volume Control -->
-      <div class="flex items-center gap-2">
-        <button @click="toggleMute" class="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
-          <VolumeX v-if="isMuted" class="w-5 h-5 text-white/50" />
-          <Volume2 v-else class="w-5 h-5 text-white" />
-        </button>
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.1"
-          :value="volume"
-          @input="onVolumeChange"
-          class="w-20 accent-violet-500"
-        />
+    <div class="mt-2 bg-black/40 backdrop-blur-sm rounded-lg border border-white/[0.04]">
+      <div class="flex items-center justify-between px-1.5 py-1.5">
+        <!-- Left Controls -->
+        <div class="flex items-center gap-1">
+          <!-- Go to Beginning Button -->
+          <button
+            @click="goToBeginning"
+            class="p-2.5 hover:bg-white/[0.08] rounded-lg transition-all duration-200 group"
+            title="Go to Beginning"
+          >
+            <SkipBack class="h-4 w-4 text-white/60 group-hover:text-white transition-colors" />
+          </button>
+          <!-- Play/Pause Button -->
+          <button
+            @click="emit('togglePlay')"
+            class="p-2.5 hover:bg-white/[0.08] rounded-lg transition-all duration-200 group"
+            title="Play/Pause (Space)"
+          >
+            <Play v-if="!isPlaying" class="h-4 w-4 text-white/60 group-hover:text-white transition-colors" />
+            <Pause v-else class="h-4 w-4 text-white/60 group-hover:text-white transition-colors" />
+          </button>
+          <!-- Time Display -->
+          <div
+            class="text-white/80 text-xs font-mono bg-white/[0.04] px-3 py-2 rounded-lg ml-1 tabular-nums tracking-tight"
+          >
+            <span class="text-white/90">{{ formatDuration(currentTime) }}</span>
+            <span class="text-white/40 mx-1">/</span>
+            <span class="text-white/50">{{ formatDuration(duration) }}</span>
+          </div>
+        </div>
+        <!-- Right Controls -->
+        <div class="flex items-center gap-2 pr-1">
+          <!-- Volume Control -->
+          <div class="flex items-center gap-2 px-2 py-1.5">
+            <button
+              @click="toggleMute"
+              class="p-1.5 rounded-md hover:bg-white/[0.08] transition-all duration-200 group"
+              title="Mute/Unmute"
+            >
+              <VolumeX
+                v-if="isMuted || volume === 0"
+                class="h-4 w-4 text-white/50 group-hover:text-white/80 transition-colors"
+              />
+              <Volume2 v-else class="h-4 w-4 text-white/60 group-hover:text-white/90 transition-colors" />
+            </button>
+            <div class="relative w-24 h-1 bg-white/10 rounded-full">
+              <div
+                class="absolute left-0 top-0 h-full bg-white/40 rounded-full transition-all duration-150"
+                :style="{ width: `${volume * 100}%` }"
+              ></div>
+              <input
+                :value="volume"
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                class="absolute inset-0 w-full h-full cursor-pointer slider z-10 pt-0.5"
+                @input="onVolumeChange"
+              />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -293,8 +379,15 @@
 
 <script setup lang="ts">
   import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
-  import { Play, Pause, Volume2, VolumeX, RotateCw } from 'lucide-vue-next';
-  import type { TextOverlay, Sticker, FilterSettings, ManualFramingConfigs } from '@/types';
+  import { Play, Pause, Volume2, VolumeX, RotateCw, SkipBack } from 'lucide-vue-next';
+  import type {
+    TextOverlay,
+    Sticker,
+    FilterSettings,
+    ManualFramingConfigs,
+    ClipWatermark,
+    WatermarkRatioConfig,
+  } from '@/types';
 
   interface SegmentInput {
     start_time: number;
@@ -303,11 +396,20 @@
 
   interface DragState {
     isDragging: boolean;
-    type: 'text' | 'sticker' | null;
+    type: 'text' | 'sticker' | 'watermark' | null;
     id: string | null;
     startX: number;
     startY: number;
     startPosition: { x: number; y: number };
+  }
+
+  interface WatermarkResizeState {
+    isResizing: boolean;
+    id: string | null;
+    centerX: number;
+    centerY: number;
+    startDistance: number;
+    startScale: number;
   }
 
   interface ResizeState {
@@ -337,30 +439,42 @@
     centerY: number;
   }
 
-  const props = defineProps<{
-    videoSrc: string | null;
-    currentTime: number;
-    effectiveTime: number; // Time position accounting for segment cuts
-    isPlaying: boolean;
-    clipStart: number;
-    clipEnd: number;
-    textOverlays: TextOverlay[];
-    stickers: Sticker[];
-    filterSettings: FilterSettings | null;
-    segments?: SegmentInput[];
-    previewAspectRatio: string; // Currently previewed aspect ratio (e.g., "16:9")
-    selectedAspectRatios: string[]; // All selected aspect ratios
-    framingConfigs: ManualFramingConfigs; // Framing configurations per aspect ratio
-  }>();
+  const props = withDefaults(
+    defineProps<{
+      videoSrc: string | null;
+      currentTime: number;
+      effectiveTime: number; // Time position accounting for segment cuts
+      isPlaying: boolean;
+      clipStart: number;
+      clipEnd: number;
+      textOverlays: TextOverlay[];
+      stickers: Sticker[];
+      watermarks?: ClipWatermark[];
+      filterSettings: FilterSettings | null;
+      segments?: SegmentInput[];
+      previewAspectRatio: string; // Currently previewed aspect ratio (e.g., "16:9")
+      selectedAspectRatios: string[]; // All selected aspect ratios
+      framingConfigs: ManualFramingConfigs; // Framing configurations per aspect ratio
+    }>(),
+    {
+      watermarks: () => [],
+    }
+  );
 
   const emit = defineEmits<{
     (e: 'timeUpdate', time: number): void;
     (e: 'togglePlay'): void;
     (e: 'videoElementReady', element: HTMLVideoElement): void;
-    (e: 'updateOverlayPosition', type: 'text' | 'sticker', id: string, position: { x: number; y: number }): void;
+    (
+      e: 'updateOverlayPosition',
+      type: 'text' | 'sticker' | 'watermark',
+      id: string,
+      position: { x: number; y: number }
+    ): void;
     (e: 'updateOverlayWidth', id: string, width: number): void;
     (e: 'updateStickerScale', id: string, scale: number): void;
     (e: 'updateStickerRotation', id: string, rotation: number): void;
+    (e: 'updateWatermarkScale', id: string, scale: number): void;
     (e: 'update:previewAspectRatio', ratio: string): void;
   }>();
 
@@ -529,6 +643,22 @@
   const localStickerScales = ref<Record<string, number>>({});
   const localStickerRotations = ref<Record<string, number>>({});
 
+  // Watermark resize state (for scale)
+  const watermarkResizeState = reactive<WatermarkResizeState>({
+    isResizing: false,
+    id: null,
+    centerX: 0,
+    centerY: 0,
+    startDistance: 0,
+    startScale: 1,
+  });
+
+  // Track actual image dimensions for watermarks (watermarkId -> {width, height})
+  const watermarkImageDimensions = ref<Record<string, { width: number; height: number }>>({});
+
+  // Local watermark scale tracking for instant feedback during drag
+  const localWatermarkScales = ref<Record<string, number>>({});
+
   // Local width tracking to prevent reflow during drag (before Vue updates)
   const localDragWidths = ref<Record<string, number>>({});
 
@@ -559,6 +689,230 @@
     const effectiveTime = props.effectiveTime;
     return props.stickers.filter((s) => effectiveTime >= s.startTime && effectiveTime <= s.endTime);
   });
+
+  // Get visible watermarks for current time
+  const visibleWatermarks = computed(() => {
+    // Use effective time (accounts for segment cuts) for visibility
+    const effectiveTime = props.effectiveTime;
+    return (props.watermarks || []).filter((w) => effectiveTime >= w.startTime && effectiveTime <= w.endTime);
+  });
+
+  // Get watermark config for current aspect ratio
+  function getWatermarkConfigForRatio(watermark: ClipWatermark): WatermarkRatioConfig {
+    const ratio = props.previewAspectRatio;
+    const perRatioConfig = watermark.perRatioConfigs?.[ratio];
+
+    if (perRatioConfig) {
+      return perRatioConfig;
+    }
+
+    // Fall back to default values
+    return {
+      position: watermark.position,
+      scale: watermark.scale,
+      opacity: watermark.opacity,
+    };
+  }
+
+  // Handle watermark image load to capture actual dimensions
+  function onWatermarkImageLoad(watermarkId: string, event: Event) {
+    const img = event.target as HTMLImageElement;
+    if (img && img.naturalWidth && img.naturalHeight) {
+      watermarkImageDimensions.value[watermarkId] = {
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+      };
+    }
+  }
+
+  // Base width for watermarks = 15% of 1080p height = 162px (matching export default)
+  const WATERMARK_BASE_WIDTH = 162;
+
+  // Get the wrapper style for watermark positioning (no scale)
+  function getWatermarkWrapperStyle(watermark: ClipWatermark): Record<string, string> {
+    const config = getWatermarkConfigForRatio(watermark);
+    return {
+      left: `${config.position.x}%`,
+      top: `${config.position.y}%`,
+      transform: 'translate(-50%, -50%)',
+      opacity: String(config.opacity / 100),
+    };
+  }
+
+  // Get the content style for watermark scaling
+  function getWatermarkContentStyle(watermark: ClipWatermark): Record<string, string> {
+    const config = getWatermarkConfigForRatio(watermark);
+    // Use local value during drag for instant feedback
+    const watermarkScale = localWatermarkScales.value[watermark.id] ?? config.scale / 15; // Convert from percentage to multiplier
+
+    return {
+      transform: `scale(${watermarkScale})`,
+    };
+  }
+
+  // Get the style for watermark image (scales width to base size, height auto)
+  function getWatermarkImageStyle(watermark: ClipWatermark): Record<string, string> {
+    const containerScale = overlayScaleFactor.value;
+    // Base width at current container scale
+    const baseWidth = WATERMARK_BASE_WIDTH * containerScale;
+
+    // Get cached dimensions for this watermark
+    const dims = watermarkImageDimensions.value[watermark.id];
+
+    if (dims) {
+      // Scale width to baseWidth, calculate height to maintain aspect ratio
+      const aspectRatio = dims.width / dims.height;
+      const width = baseWidth;
+      const height = baseWidth / aspectRatio;
+
+      return {
+        width: `${width}px`,
+        height: `${height}px`,
+      };
+    }
+
+    // Fallback before image loads
+    return {
+      width: `${baseWidth}px`,
+      height: 'auto',
+    };
+  }
+
+  // Calculate the bounding box size in pixels for a watermark
+  function getWatermarkBoundsPx(watermark: ClipWatermark): { width: number; height: number } {
+    const config = getWatermarkConfigForRatio(watermark);
+    const containerScale = overlayScaleFactor.value;
+    const watermarkScale = localWatermarkScales.value[watermark.id] ?? config.scale / 15;
+
+    const dims = watermarkImageDimensions.value[watermark.id];
+    const baseWidth = WATERMARK_BASE_WIDTH * containerScale;
+
+    if (dims) {
+      const aspectRatio = dims.width / dims.height;
+      const width = baseWidth * watermarkScale;
+      const height = (baseWidth / aspectRatio) * watermarkScale;
+
+      return { width, height };
+    }
+
+    // Fallback before image loads (assume square)
+    return { width: baseWidth * watermarkScale, height: baseWidth * watermarkScale };
+  }
+
+  // Get the style for the selection border that surrounds the scaled watermark
+  function getWatermarkBoundsStyle(watermark: ClipWatermark): Record<string, string> {
+    const bounds = getWatermarkBoundsPx(watermark);
+    const padding = 2; // Tight padding around content
+
+    return {
+      width: `${bounds.width + padding * 2}px`,
+      height: `${bounds.height + padding * 2}px`,
+      left: '50%',
+      top: '50%',
+      transform: 'translate(-50%, -50%)',
+    };
+  }
+
+  // Get the style for corner resize handles
+  function getWatermarkResizeHandleStyle(
+    watermark: ClipWatermark,
+    corner: 'nw' | 'ne' | 'sw' | 'se'
+  ): Record<string, string> {
+    const bounds = getWatermarkBoundsPx(watermark);
+    const halfW = bounds.width / 2;
+    const halfH = bounds.height / 2;
+
+    // Corner offsets relative to center
+    const cornerOffsets: Record<string, { x: number; y: number }> = {
+      nw: { x: -halfW, y: -halfH },
+      ne: { x: halfW, y: -halfH },
+      sw: { x: -halfW, y: halfH },
+      se: { x: halfW, y: halfH },
+    };
+
+    const offset = cornerOffsets[corner];
+
+    return {
+      left: `calc(50% + ${offset.x}px)`,
+      top: `calc(50% + ${offset.y}px)`,
+      transform: 'translate(-50%, -50%)',
+    };
+  }
+
+  // Helper to start watermark drag (position)
+  function startWatermarkDrag(e: MouseEvent, watermark: ClipWatermark) {
+    const config = getWatermarkConfigForRatio(watermark);
+    startDrag(e, 'watermark', watermark.id, config.position);
+  }
+
+  // Watermark resize handlers (for scale) - uses distance from center for intuitive resizing
+  function startWatermarkResize(e: MouseEvent, watermark: ClipWatermark) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Get the watermark element to find its center
+    const watermarkEl = (e.target as HTMLElement).closest('[data-watermark-id]') as HTMLElement;
+    if (!watermarkEl) return;
+
+    const rect = watermarkEl.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    // Calculate initial distance from center to mouse
+    const startDistance = Math.sqrt(Math.pow(e.clientX - centerX, 2) + Math.pow(e.clientY - centerY, 2));
+
+    const config = getWatermarkConfigForRatio(watermark);
+
+    watermarkResizeState.isResizing = true;
+    watermarkResizeState.id = watermark.id;
+    watermarkResizeState.centerX = centerX;
+    watermarkResizeState.centerY = centerY;
+    watermarkResizeState.startDistance = startDistance;
+    watermarkResizeState.startScale = config.scale / 15; // Convert from percentage to multiplier
+
+    document.addEventListener('mousemove', onWatermarkResizeMove);
+    document.addEventListener('mouseup', onWatermarkResizeEnd);
+  }
+
+  function onWatermarkResizeMove(e: MouseEvent) {
+    if (!watermarkResizeState.isResizing || !watermarkResizeState.id) return;
+
+    // Calculate current distance from center to mouse
+    const currentDistance = Math.sqrt(
+      Math.pow(e.clientX - watermarkResizeState.centerX, 2) + Math.pow(e.clientY - watermarkResizeState.centerY, 2)
+    );
+
+    // Scale is proportional to distance ratio
+    const distanceRatio =
+      watermarkResizeState.startDistance > 0 ? currentDistance / watermarkResizeState.startDistance : 1;
+
+    let newScaleMultiplier = watermarkResizeState.startScale * distanceRatio;
+
+    // Clamp scale multiplier to reasonable bounds (0.2x to 5x)
+    newScaleMultiplier = Math.max(0.2, Math.min(5, newScaleMultiplier));
+
+    // Convert back to percentage for storage (multiply by 15 to get back to percentage scale)
+    const newScalePercent = Math.round(newScaleMultiplier * 15);
+
+    // Set local scale immediately for instant feedback
+    localWatermarkScales.value[watermarkResizeState.id] = newScaleMultiplier;
+
+    // Emit scale update
+    emit('updateWatermarkScale', watermarkResizeState.id, newScalePercent);
+  }
+
+  function onWatermarkResizeEnd() {
+    if (watermarkResizeState.id) {
+      // Clear local scale after emit completes
+      delete localWatermarkScales.value[watermarkResizeState.id];
+    }
+
+    watermarkResizeState.isResizing = false;
+    watermarkResizeState.id = null;
+
+    document.removeEventListener('mousemove', onWatermarkResizeMove);
+    document.removeEventListener('mouseup', onWatermarkResizeEnd);
+  }
 
   // Generate a default center-crop region for an aspect ratio
   function generateDefaultCenterCrop(targetRatio: string): {
@@ -1055,6 +1409,34 @@
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  function formatDuration(seconds: number): string {
+    if (isNaN(seconds) || !isFinite(seconds)) return '0:00';
+
+    const totalSeconds = Math.floor(seconds);
+
+    if (totalSeconds < 60) {
+      return `0:${totalSeconds.toString().padStart(2, '0')}`;
+    } else if (totalSeconds < 3600) {
+      const minutes = Math.floor(totalSeconds / 60);
+      const remainingSeconds = totalSeconds % 60;
+      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    } else {
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const remainingSeconds = totalSeconds % 60;
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }
+  }
+
+  function goToBeginning() {
+    if (videoRef.value) {
+      const firstSegment = sortedSegments.value[0];
+      videoRef.value.currentTime = firstSegment?.start_time || props.clipStart;
+      emit('timeUpdate', videoRef.value.currentTime);
+      syncAllPreviewVideos(true);
+    }
   }
 
   function onLoadedMetadata() {
@@ -1728,6 +2110,8 @@
     document.removeEventListener('mouseup', onStickerResizeEnd);
     document.removeEventListener('mousemove', onStickerRotateMove);
     document.removeEventListener('mouseup', onStickerRotateEnd);
+    document.removeEventListener('mousemove', onWatermarkResizeMove);
+    document.removeEventListener('mouseup', onWatermarkResizeEnd);
     stopSyncLoop();
     if (resizeObserver) {
       resizeObserver.disconnect();
@@ -1938,5 +2322,76 @@
 
   .sticker-overlay:hover {
     z-index: 20;
+  }
+
+  /* Watermark overlay styling */
+  .watermark-overlay {
+    z-index: 10;
+  }
+
+  .watermark-overlay:hover {
+    z-index: 20;
+  }
+
+  /* Custom range input styling */
+  input[type='range'].slider {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+    margin: 0;
+  }
+
+  input[type='range'].slider::-webkit-slider-track {
+    background: transparent;
+    height: 4px;
+    border-radius: 2px;
+  }
+
+  input[type='range'].slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    background: white;
+    height: 10px;
+    width: 10px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    margin-top: -3px;
+  }
+
+  input[type='range'].slider::-webkit-slider-thumb:hover {
+    background: #f3f4f6;
+    transform: scale(1.15);
+    box-shadow: 0 3px 8px rgba(139, 92, 246, 0.4);
+  }
+
+  input[type='range'].slider::-moz-range-track {
+    background: transparent;
+    height: 4px;
+    border-radius: 2px;
+  }
+
+  input[type='range'].slider::-moz-range-thumb {
+    border: none;
+    background: white;
+    height: 10px;
+    width: 10px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+
+  input[type='range'].slider::-moz-range-thumb:hover {
+    background: #f3f4f6;
+    transform: scale(1.15);
+    box-shadow: 0 3px 8px rgba(139, 92, 246, 0.4);
+  }
+
+  /* Backdrop blur effects */
+  .backdrop-blur-sm {
+    backdrop-filter: blur(8px);
   }
 </style>

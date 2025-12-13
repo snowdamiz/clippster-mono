@@ -906,3 +906,29 @@ pub struct StickerSettings {
     pub per_ratio_configs: Option<std::collections::HashMap<String, StickerRatioConfig>>,
 }
 
+/// Clip watermark ratio config for per-aspect-ratio positioning
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipWatermarkRatioConfig {
+    pub position: StickerPosition, // Reuse StickerPosition (x/y percentage)
+    pub scale: f64,   // percentage of video width
+    pub opacity: f64, // 0-100
+}
+
+/// Clip watermark overlay settings for export (from clip editor)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipWatermarkSettings {
+    pub id: String,
+    pub watermark_path: String,  // Path to watermark image file
+    pub start_time: f64,
+    pub end_time: f64,
+    pub position_x: f64,  // 0-100 percentage (default position)
+    pub position_y: f64,  // 0-100 percentage (default position)
+    pub scale: f64,       // percentage of video width (default scale)
+    pub opacity: f64,     // 0-100 (default opacity)
+    /// Per-aspect-ratio configurations (key is ratio like "16:9", "9:16")
+    #[serde(default)]
+    pub per_ratio_configs: Option<std::collections::HashMap<String, ClipWatermarkRatioConfig>>,
+}
+

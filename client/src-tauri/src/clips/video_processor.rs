@@ -2595,3 +2595,159 @@ pub async fn apply_stickers_to_video(
     Ok(())
 }
 
+/// Apply clip watermark overlays to a video file
+/// This handles watermarks from the clip editor with position, scale, opacity and timing
+pub async fn apply_clip_watermarks_to_video(
+    app: &tauri::AppHandle,
+    input_path: &std::path::Path,
+    watermarks: &[super::types::ClipWatermarkSettings],
+    aspect_ratio: &str,
+    quality: &str,
+) -> Result<(), String> {
+    if watermarks.is_empty() {
+        return Ok(());
+    }
+
+    let shell = app.shell();
+    
+    // Get video info for calculating watermark positions
+    let video_info = get_video_info(app, input_path.to_str().ok_or("Invalid input path")?).await?;
+    let video_width = video_info.width as f64;
+    let video_height = video_info.height as f64;
+    
+    // Detect hardware encoder
+    let encoder = detect_hardware_encoder(app, quality).await;
+    
+    // Create temporary output path
+    let temp_output = input_path.with_extension("watermarks.mp4");
+    
+    // Build filter complex for watermarks
+    let mut filter_parts: Vec<String> = Vec::new();
+    let mut input_count = 1; // Start from 1 (0 is the main video)
+    let mut overlay_inputs: Vec<String> = Vec::new();
+    
+    // Label the main video
+    filter_parts.push("[0:v]null[base]".to_string());
+    let mut current_label = "base".to_string();
+    
+    // Process watermarks using overlay filter
+    for (idx, watermark) in watermarks.iter().enumerate() {
+        // Get position and settings for this aspect ratio (fallback to default)
+        let (pos_x_pct, pos_y_pct, scale, opacity) = if let Some(ref configs) = watermark.per_ratio_configs {
+            if let Some(config) = configs.get(aspect_ratio) {
+                (config.position.x, config.position.y, config.scale, config.opacity)
+            } else {
+                (watermark.position_x, watermark.position_y, watermark.scale, watermark.opacity)
+            }
+        } else {
+            (watermark.position_x, watermark.position_y, watermark.scale, watermark.opacity)
+        };
+        
+        // Calculate pixel position (center-anchored)
+        let pos_x = (pos_x_pct / 100.0 * video_width) as i32;
+        let pos_y = (pos_y_pct / 100.0 * video_height) as i32;
+        
+        // Calculate scaled width (scale is percentage of video width)
+        let scaled_width = (video_width * scale / 100.0).round() as i32;
+        
+        // Calculate alpha (opacity is 0-100)
+        let alpha = opacity / 100.0;
+        
+        let watermark_label = format!("wm{}", idx);
+        let next_label = format!("wo{}", idx);
+        
+        // Build watermark preprocessing filter with scale and alpha
+        // format=rgba ensures we have alpha channel, colorchannelmixer modifies the alpha
+        let watermark_filter = format!(
+            "[{}:v]scale={}:-1,format=rgba,colorchannelmixer=aa={}[{}]",
+            input_count, scaled_width, alpha, watermark_label
+        );
+        
+        filter_parts.push(watermark_filter);
+        
+        // Overlay with timing and center-anchor positioning
+        let overlay = format!(
+            "[{}][{}]overlay=x={}-(overlay_w/2):y={}-(overlay_h/2):enable='between(t,{:.3},{:.3})'[{}]",
+            current_label,
+            watermark_label,
+            pos_x,
+            pos_y,
+            watermark.start_time,
+            watermark.end_time,
+            next_label
+        );
+        
+        filter_parts.push(overlay);
+        current_label = next_label;
+        
+        overlay_inputs.push(watermark.watermark_path.clone());
+        input_count += 1;
+    }
+    
+    // If we have no filters, return early
+    if filter_parts.len() <= 1 {
+        return Ok(());
+    }
+    
+    // Build FFmpeg args
+    let mut args = vec![
+        "-i".to_string(), input_path.to_string_lossy().to_string(),
+    ];
+    
+    // Add watermark image inputs
+    for watermark_path in &overlay_inputs {
+        args.push("-i".to_string());
+        args.push(watermark_path.clone());
+    }
+    
+    // Build filter complex string
+    let filter_complex = filter_parts.join(";");
+    
+    args.extend(vec![
+        "-filter_complex".to_string(), filter_complex,
+        "-map".to_string(), format!("[{}]", current_label),
+        "-map".to_string(), "0:a?".to_string(), // Map audio if present
+        "-c:v".to_string(), encoder.codec.clone(),
+    ]);
+    
+    // Add preset if applicable
+    if let Some(preset) = &encoder.preset {
+        args.push("-preset".to_string());
+        args.push(preset.clone());
+    }
+    
+    // Add quality parameter
+    args.push(encoder.quality_param.clone());
+    args.push(encoder.quality_value.clone());
+    
+    // Add audio settings
+    args.push("-c:a".to_string());
+    args.push("aac".to_string());
+    args.push("-y".to_string());
+    args.push(temp_output.to_string_lossy().to_string());
+    
+    println!("[Rust] Applying {} clip watermarks to video", watermarks.len());
+    
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to apply clip watermarks: {}", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        println!("[Rust] FFmpeg clip watermark overlay stderr: {}", stderr);
+        return Err(format!("FFmpeg clip watermark overlay failed: {}", stderr));
+    }
+    
+    // Replace original with watermark-overlayed version
+    std::fs::remove_file(input_path)
+        .map_err(|e| format!("Failed to remove original file: {}", e))?;
+    std::fs::rename(&temp_output, input_path)
+        .map_err(|e| format!("Failed to rename watermark output: {}", e))?;
+    
+    println!("[Rust] Clip watermarks applied successfully");
+    Ok(())
+}
+
