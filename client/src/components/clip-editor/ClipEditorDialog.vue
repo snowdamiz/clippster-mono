@@ -81,6 +81,9 @@
                   :preview-aspect-ratio="previewAspectRatio"
                   :selected-aspect-ratios="selectedAspectRatios"
                   :framing-configs="framingConfigs"
+                  :subtitle-settings="subtitleSettings"
+                  :transcript-words="transcriptWords"
+                  :transcript-segments="transcriptSegments"
                   @time-update="onPreviewTimeUpdate"
                   @toggle-play="togglePlay"
                   @video-element-ready="onVideoElementReady"
@@ -89,6 +92,7 @@
                   @update-sticker-scale="onUpdateStickerScale"
                   @update-sticker-rotation="onUpdateStickerRotation"
                   @update-watermark-scale="onUpdateWatermarkScale"
+                  @update-subtitle-position="onUpdateSubtitlePosition"
                 />
               </div>
             </div>
@@ -163,6 +167,16 @@
                   @add-watermark="addWatermarkLocal"
                   @update-watermark="updateWatermarkLocal"
                   @delete-watermark="deleteWatermarkLocal"
+                  @update:preview-aspect-ratio="previewAspectRatio = $event"
+                />
+
+                <SubtitlesTab
+                  v-if="activeTab === 'subtitles'"
+                  :settings="subtitleSettings"
+                  :preview-aspect-ratio="previewAspectRatio"
+                  :selected-aspect-ratios="selectedAspectRatios"
+                  :framing-configs="framingConfigs"
+                  @settings-changed="updateSubtitleSettings"
                   @update:preview-aspect-ratio="previewAspectRatio = $event"
                 />
 
@@ -266,6 +280,9 @@
     ManualFramingConfig,
     ClipWatermark,
     WatermarkRatioConfig,
+    ClipSubtitleSettings,
+    ClipSubtitleRatioConfig,
+    WordInfo,
   } from '@/types';
   import {
     getOrCreateClipEdit,
@@ -303,9 +320,11 @@
   import TextOverlayTab from './tabs/TextOverlayTab.vue';
   import StickersTab from './tabs/StickersTab.vue';
   import WatermarkTab from './tabs/WatermarkTab.vue';
+  import SubtitlesTab from './tabs/SubtitlesTab.vue';
   import AspectTab from './tabs/AspectTab.vue';
   import TranscriptTab from './tabs/TranscriptTab.vue';
   import ManualPOIEditor from '@/components/poi/ManualPOIEditor.vue';
+  import { useTranscriptData } from '@/composables/useTranscriptData';
 
   interface ClipSegmentInput {
     start_time: number;
@@ -355,6 +374,40 @@
   const originalDb = ref(0);
   const trackDbValues = ref<Record<string, number>>({});
 
+  // Subtitle settings
+  const getDefaultSubtitleSettings = (): ClipSubtitleSettings => ({
+    enabled: false,
+    fontFamily: 'Montserrat',
+    fontSize: 32,
+    fontWeight: 700,
+    textColor: '#FFFFFF',
+    backgroundColor: '#000000',
+    backgroundEnabled: false,
+    border1Width: 2,
+    border1Color: '#00FF00',
+    border2Width: 4,
+    border2Color: '#000000',
+    shadowOffsetX: 2,
+    shadowOffsetY: 2,
+    shadowBlur: 4,
+    shadowColor: '#000000',
+    position: 'bottom',
+    positionX: 50,
+    positionY: 85,
+    maxWidth: 90,
+    animationStyle: 'none',
+    highlightColor: '#FFFF00',
+    lineHeight: 1.2,
+    letterSpacing: 0,
+    textAlign: 'center',
+    padding: 16,
+    borderRadius: 8,
+    wordSpacing: 0.35,
+    selectedPresetId: null,
+    perRatioConfigs: {},
+  });
+  const subtitleSettings = ref<ClipSubtitleSettings>(getDefaultSubtitleSettings());
+
   // Aspect ratio framing data
   const selectedAspectRatios = ref<string[]>([]);
   const previewAspectRatio = ref<string>('16:9'); // Currently previewed aspect ratio
@@ -369,6 +422,31 @@
 
   // Project ID for transcript loading (fetched from clip)
   const projectId = ref<string | null>(null);
+
+  // Use transcript data composable for subtitle display
+  const { transcriptData, loadTranscriptData } = useTranscriptData(computed(() => projectId.value));
+
+  // Get transcript words for subtitle display (filtered to clip range)
+  const transcriptWords = computed<WordInfo[]>(() => {
+    if (!transcriptData.value?.words?.length) return [];
+
+    return transcriptData.value.words.filter((word: WordInfo) => {
+      const wordStart = word.start ?? 0;
+      const wordEnd = word.end ?? wordStart;
+      // Include words that overlap with the clip range
+      return wordEnd >= props.clipStartTime && wordStart <= props.clipEndTime;
+    });
+  });
+
+  // Get transcript segments for subtitle display (filtered to clip range)
+  const transcriptSegments = computed(() => {
+    if (!transcriptData.value?.whisperSegments?.length) return [];
+
+    return transcriptData.value.whisperSegments.filter((segment) => {
+      // Include segments that overlap with the clip range
+      return segment.end >= props.clipStartTime && segment.start <= props.clipEndTime;
+    });
+  });
 
   // Audio playback elements
   const audioElements = ref<Map<string, HTMLAudioElement>>(new Map());
@@ -1006,6 +1084,33 @@
     watermarks.value = watermarks.value.filter((w) => w.id !== watermarkId);
   }
 
+  // Handle subtitle settings changes from SubtitlesTab
+  function updateSubtitleSettings(newSettings: ClipSubtitleSettings) {
+    subtitleSettings.value = newSettings;
+    triggerAutoSave();
+  }
+
+  // Handle subtitle position updates from preview drag
+  function onUpdateSubtitlePosition(position: { x: number; y: number }) {
+    const ratio = previewAspectRatio.value;
+    const settings = subtitleSettings.value;
+
+    // Update per-ratio config for the current aspect ratio
+    const perRatioConfigs = { ...settings.perRatioConfigs };
+    const currentConfig = perRatioConfigs[ratio] || {
+      position: { x: settings.positionX, y: settings.positionY },
+      fontSize: settings.fontSize,
+    };
+    currentConfig.position = position;
+    perRatioConfigs[ratio] = currentConfig;
+
+    subtitleSettings.value = {
+      ...settings,
+      perRatioConfigs,
+    };
+    triggerAutoSave();
+  }
+
   // Handle overlay position updates from preview drag
   function onUpdateOverlayPosition(
     type: 'text' | 'sticker' | 'watermark',
@@ -1204,6 +1309,8 @@
           framingMode: framingMode.value,
           configs: framingConfigs.value,
         },
+        // Subtitle settings
+        subtitleSettings: subtitleSettings.value,
       });
 
       lastSaved.value = true;
@@ -1291,6 +1398,14 @@
         selectedAspectRatios.value = editData.aspectFraming.selectedRatios || [];
         framingMode.value = editData.aspectFraming.framingMode || 'auto';
         framingConfigs.value = editData.aspectFraming.configs || {};
+      }
+
+      // Load subtitle settings
+      if (editData.subtitleSettings) {
+        subtitleSettings.value = {
+          ...getDefaultSubtitleSettings(),
+          ...editData.subtitleSettings,
+        };
       }
 
       audioTracks.value = fullEdit.audioTracks.map((t) => ({

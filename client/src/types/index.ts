@@ -242,8 +242,6 @@ export interface WatermarkSettings {
 }
 
 export interface MediaPanelProps {
-  transcriptCollapsed: boolean;
-  clipsCollapsed: boolean;
   isGenerating?: boolean;
   generationProgress?: number;
   generationStage?: string;
@@ -299,7 +297,6 @@ export interface MediaPanelEmits {
   (e: 'deleteClip', clipId: string): void;
   (e: 'playClip', clip: any): void; // Using any for ClipWithVersion for now
   (e: 'seekVideo', time: number): void;
-  (e: 'subtitleSettingsChanged', settings: SubtitleSettings): void;
   (e: 'watermarkSettingsChanged', settings: WatermarkSettings): void;
 }
 
@@ -900,6 +897,7 @@ export type ClipEditorTab =
   | 'text'
   | 'stickers'
   | 'watermark'
+  | 'subtitles'
   | 'aspect'
   | 'transcript';
 
@@ -930,4 +928,58 @@ export interface EditorPreviewState {
   duration: number;
   activeOverlays: (TextOverlay | Sticker)[];
   activeEffects: Effect[];
+}
+
+// ==========================================
+// Clip Subtitle Types (for Clip Editor)
+// ==========================================
+
+// Per-aspect-ratio configuration for subtitles (position and size overrides)
+export interface ClipSubtitleRatioConfig {
+  position: { x: number; y: number }; // 0-100 percentage (center point)
+  fontSize: number; // Font size for this aspect ratio
+}
+
+// Clip-level subtitle settings stored in clip edit data
+export interface ClipSubtitleSettings {
+  enabled: boolean;
+  // Base style settings (applies to all aspect ratios unless overridden)
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: number;
+  textColor: string;
+  backgroundColor: string;
+  backgroundEnabled: boolean;
+  border1Width: number;
+  border1Color: string;
+  border2Width: number;
+  border2Color: string;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
+  shadowBlur: number;
+  shadowColor: string;
+  position: 'top' | 'middle' | 'bottom';
+  positionX: number; // 0-100 percentage (horizontal center point)
+  positionY: number; // 0-100 percentage (vertical center point)
+  maxWidth: number;
+  animationStyle:
+    | 'none'
+    | 'karaoke'
+    | 'zoom'
+    | 'pop'
+    | 'glow'
+    | 'box-highlight'
+    | 'typewriter'
+    | 'wave';
+  highlightColor: string;
+  lineHeight: number;
+  letterSpacing: number;
+  textAlign: 'left' | 'center' | 'right';
+  padding: number;
+  borderRadius: number;
+  wordSpacing: number;
+  // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
+  perRatioConfigs?: Record<string, ClipSubtitleRatioConfig>;
+  // Selected preset ID (for tracking which preset was applied)
+  selectedPresetId?: string | null;
 }

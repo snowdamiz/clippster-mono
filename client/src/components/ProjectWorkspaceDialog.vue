@@ -53,10 +53,6 @@
                 :is-playing="isPlaying"
                 :aspect-ratio="selectedAspectRatio"
                 :focal-point="currentFocalPoint"
-                :subtitle-settings="subtitleSettings"
-                :transcript-words="transcriptData?.words || []"
-                :transcript-segments="transcriptData?.whisperSegments || []"
-                :current-time="currentTime"
                 :watermark-settings="watermarkSettings"
                 :watermark-data="currentWatermarkData"
                 @togglePlayPause="togglePlayPause"
@@ -89,8 +85,6 @@
               <!-- Media Section -->
               <MediaPanel
                 ref="mediaPanelRef"
-                :transcript-collapsed="transcriptCollapsed"
-                :clips-collapsed="clipsCollapsed"
                 :is-generating="clipGenerationInProgress"
                 :generation-progress="clipProgress"
                 :generation-stage="clipStage"
@@ -112,7 +106,6 @@
                 @deleteClip="onDeleteClip"
                 @playClip="onPlayClip"
                 @seekVideo="onSeekVideo"
-                @subtitleSettingsChanged="onSubtitleSettingsChanged"
                 @watermarkSettingsChanged="onWatermarkSettingsChanged"
               />
             </div>
@@ -223,7 +216,7 @@
   } from '@/services/database';
   import { X, Film } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
-  import type { SubtitleSettings, WatermarkSettings } from '@/types';
+  import type { WatermarkSettings } from '@/types';
   import VideoPlayer from './VideoPlayer.vue';
   import VideoControls from './VideoControls.vue';
   import MediaPanel from './MediaPanel.vue';
@@ -286,10 +279,6 @@
   // Segmented playback tracking
   const currentlyPlayingClipId = ref<string | null>(null);
 
-  // Panel collapse state
-  const transcriptCollapsed = ref(false);
-  const clipsCollapsed = ref(false);
-
   // Timeline clips state
   const timelineClips = ref<any[]>([]);
 
@@ -306,38 +295,6 @@
 
   // Aspect ratio state
   const selectedAspectRatio = ref({ width: 16, height: 9 });
-
-  // Subtitle settings state
-  const subtitleSettings = ref<SubtitleSettings>({
-    enabled: false,
-    fontFamily: 'Montserrat',
-    fontSize: 32,
-    fontWeight: 700,
-    textColor: '#FFFFFF',
-    backgroundColor: '#000000',
-    backgroundEnabled: false,
-    border1Width: 2,
-    border1Color: '#00FF00',
-    border2Width: 4,
-    border2Color: '#000000',
-    shadowOffsetX: 2,
-    shadowOffsetY: 2,
-    shadowBlur: 4,
-    shadowColor: '#000000',
-    position: 'bottom',
-    positionPercentage: 97,
-    maxWidth: 90,
-    animationStyle: 'none',
-    highlightColor: '#FFFF00',
-    lineHeight: 1.2,
-    letterSpacing: 0,
-    textAlign: 'center',
-    textOffsetX: 0,
-    textOffsetY: 0,
-    padding: 16,
-    borderRadius: 8,
-    wordSpacing: 0.35,
-  });
 
   // Watermark settings state
   const watermarkSettings = ref<WatermarkSettings>({
@@ -827,8 +784,15 @@
     // Then set the new state
     hoveredClipId.value = clipId;
 
-    // Scroll to the clip
-    scrollToClipInTimeline(clipId);
+    // Reveal the clip in the timeline (makes it visible if hidden)
+    if (timelineRef.value) {
+      timelineRef.value.revealClip(clipId);
+    }
+
+    // Scroll to the clip after DOM updates (wait for clip to be rendered)
+    nextTick(() => {
+      scrollToClipInTimeline(clipId);
+    });
   }
 
   // Timeline clip hover/click event handler
@@ -1022,11 +986,6 @@
     return currentlyPlayingClipId.value;
   }
 
-  // Handle subtitle settings change
-  function onSubtitleSettingsChanged(settings: SubtitleSettings) {
-    subtitleSettings.value = settings;
-  }
-
   // Handle watermark settings change
   async function onWatermarkSettingsChanged(settings: WatermarkSettings) {
     watermarkSettings.value = settings;
@@ -1130,8 +1089,15 @@
     // Track the currently playing clip
     currentlyPlayingClipId.value = clip.id;
 
-    // Scroll timeline to the clip
-    scrollToClipInTimeline(clip.id);
+    // Reveal the clip in the timeline (makes it visible if hidden)
+    if (timelineRef.value) {
+      timelineRef.value.revealClip(clip.id);
+    }
+
+    // Scroll timeline to the clip (after revealing, wait for DOM to update)
+    nextTick(() => {
+      scrollToClipInTimeline(clip.id);
+    });
 
     // Get segments from the clip
     let segments: any[] = [];
@@ -1295,8 +1261,15 @@
           mediaPanelRef.value.scrollClipIntoView(clipId);
         }
 
-        // Scroll in Timeline
-        scrollToClipInTimeline(clipId);
+        // Reveal the clip in the timeline (makes it visible if hidden)
+        if (timelineRef.value) {
+          timelineRef.value.revealClip(clipId);
+        }
+
+        // Scroll in Timeline (after revealing, wait for DOM to update)
+        nextTick(() => {
+          scrollToClipInTimeline(clipId);
+        });
 
         // Set BOTH hover states to highlight the clip in both places
         // hoveredClipId highlights in ClipsTab, hoveredTimelineClipId highlights in Timeline

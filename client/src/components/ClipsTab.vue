@@ -635,8 +635,8 @@
     videoDuration: number;
     prompts: Prompt[];
     transcriptData: any;
-    subtitleSettings: SubtitleSettings;
-    maxWordsForAspectRatio: number;
+    subtitleSettings?: SubtitleSettings | null;
+    maxWordsForAspectRatio?: number;
     watermarkSettings?: WatermarkSettings | null;
     // Creator profile default assets (auto-applied when building clips)
     creatorDefaultIntro?: IntroOutroRef | null;
@@ -659,6 +659,7 @@
     hoveredTimelineClipId: null,
     videoDuration: 0,
     prompts: () => [],
+    subtitleSettings: null,
     maxWordsForAspectRatio: 3,
     watermarkSettings: null,
     creatorDefaultIntro: null,

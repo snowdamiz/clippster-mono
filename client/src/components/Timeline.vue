@@ -425,6 +425,9 @@
   // Local reactive copy of clips for immediate visual updates (sorted)
   const localClips = ref(props.clips ? sortClips(props.clips) : []);
 
+  // Track which clips are visible in the timeline (by default, none are visible)
+  const visibleClipIds = ref<Set<string>>(new Set());
+
   // Sync localClips with props.clips (sorted)
   watch(
     () => props.clips,
@@ -437,7 +440,7 @@
   );
 
   // Computed clips that updates during dragging or resizing
-  const displayClips = computed(() => {
+  const allClipsWithUpdates = computed(() => {
     // Handle dragging
     if (isDraggingSegment.value && draggedSegmentInfo.value) {
       const updatedClips = [...localClips.value];
@@ -483,6 +486,16 @@
     }
 
     return localClips.value;
+  });
+
+  // Filter clips to only show visible ones (clips are hidden by default until selected)
+  const displayClips = computed(() => {
+    // If no clips are explicitly visible, show none
+    if (visibleClipIds.value.size === 0) {
+      return [];
+    }
+    // Filter to only show visible clips, maintaining their original order
+    return allClipsWithUpdates.value.filter((clip) => visibleClipIds.value.has(clip.id));
   });
 
   // Global playhead state
@@ -710,11 +723,37 @@
     }
   }
 
+  // Reveal a clip in the timeline (makes it visible, hides all others)
+  function revealClip(clipId: string) {
+    // Clear all previously visible clips - only one clip visible at a time
+    visibleClipIds.value.clear();
+    visibleClipIds.value.add(clipId);
+  }
+
+  // Hide a clip from the timeline
+  function hideClip(clipId: string) {
+    visibleClipIds.value.delete(clipId);
+  }
+
+  // Hide all clips from the timeline
+  function hideAllClips() {
+    visibleClipIds.value.clear();
+  }
+
+  // Check if a clip is visible
+  function isClipVisible(clipId: string): boolean {
+    return visibleClipIds.value.has(clipId);
+  }
+
   // Expose functions to parent
   defineExpose({
     scrollTimelineClipIntoView,
     zoomLevel,
     loadTranscriptData,
+    revealClip,
+    hideClip,
+    hideAllClips,
+    isClipVisible,
   });
 
   // formatDuration is now imported from timelineUtils

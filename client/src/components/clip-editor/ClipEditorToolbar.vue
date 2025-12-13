@@ -19,7 +19,7 @@
 </template>
 
 <script setup lang="ts">
-  import { Music, Palette, Type, Sticker, Sparkles, Crop, FileText, Droplet } from 'lucide-vue-next';
+  import { Music, Palette, Type, Sticker, Sparkles, Crop, FileText, Droplet, Captions } from 'lucide-vue-next';
   import type { ClipEditorTab } from '@/types';
 
   defineProps<{
@@ -36,6 +36,7 @@
     { id: 'text' as const, label: 'Text', icon: Type },
     { id: 'stickers' as const, label: 'Stickers', icon: Sticker },
     { id: 'watermark' as const, label: 'Watermark', icon: Droplet },
+    { id: 'subtitles' as const, label: 'Subtitles', icon: Captions },
     { id: 'aspect' as const, label: 'Aspect', icon: Crop },
     { id: 'transcript' as const, label: 'Transcript', icon: FileText },
   ];

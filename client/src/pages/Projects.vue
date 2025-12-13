@@ -1,10 +1,5 @@
 <template>
-  <PageLayout
-    title="Projects"
-    description="Manage and organize your video projects"
-    :show-header="projects.length > 0"
-    :icon="Folder"
-  >
+  <PageLayout title="Projects" description="Manage and organize your video projects" :show-header="true" :icon="Folder">
     <template #actions>
       <Button @click="openCreateDialog" class="flex items-center gap-2">
         <Plus class="h-5 w-5" />
@@ -375,13 +370,17 @@
     </div>
 
     <!-- Empty State -->
-    <EmptyState
-      v-else
-      title="No projects found"
-      description="Create a new project to get started"
-      button-text="Create Project"
-      @action="openCreateDialog"
-    />
+    <EmptyState v-else title="No projects found" description="Create a new project to get started">
+      <template #icon>
+        <Folder class="h-16 w-16 text-muted-foreground" />
+      </template>
+      <template #default>
+        <Button @click="openCreateDialog" class="mt-6 flex items-center gap-2">
+          <Plus class="w-4 h-4" />
+          Create Project
+        </Button>
+      </template>
+    </EmptyState>
     <!-- Project Dialog -->
     <ProjectDialog v-model="showDialog" :project="selectedProject" @submit="handleProjectSubmit" />
     <!-- Project Workspace Dialog -->

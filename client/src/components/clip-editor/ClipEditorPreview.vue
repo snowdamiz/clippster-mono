@@ -283,6 +283,136 @@
             @mousedown.stop="(e) => startWatermarkResize(e, watermark)"
           />
         </div>
+
+        <!-- Subtitles (Draggable) -->
+        <div
+          v-if="subtitleSettings?.enabled && visibleSubtitleWords.length > 0"
+          class="absolute subtitle-overlay select-none cursor-move group pointer-events-auto"
+          :class="{
+            'ring-2 ring-purple-500 ring-offset-2 ring-offset-transparent': dragState.type === 'subtitle',
+            'hover:ring-2 hover:ring-purple-400/50': dragState.type !== 'subtitle',
+          }"
+          :style="getSubtitleContainerStyle()"
+          @mousedown="startSubtitleDrag"
+        >
+          <div class="subtitle-text-container pointer-events-none" :style="{ gap: wordGapStyle }">
+            <span
+              v-for="(wordInfo, index) in visibleSubtitleWords"
+              :key="`subtitle-word-${wordInfo.start}-${index}`"
+              class="subtitle-word-stack"
+              :class="getSubtitleAnimationClass"
+              :style="{
+                transitionDuration: `${getWordAnimationDuration(wordInfo)}s`,
+                ...getTypewriterStyle(wordInfo),
+              }"
+            >
+              <!-- Hidden span for sizing -->
+              <span
+                class="invisible pointer-events-none select-none"
+                :class="{ 'current-word': isCurrentWord(wordInfo) }"
+                :style="getWordTextStyle"
+              >
+                {{ wordInfo.word }}
+              </span>
+
+              <!-- SVG-based text rendering for proper borders -->
+              <svg class="absolute inset-0 w-full h-full overflow-visible" style="pointer-events: none">
+                <defs>
+                  <filter :id="`clip-shadow-${index}`" x="-50%" y="-50%" width="200%" height="200%">
+                    <feDropShadow
+                      v-if="subtitleSettings?.shadowBlur > 0"
+                      :dx="subtitleSettings.shadowOffsetX * overlayScaleFactor"
+                      :dy="subtitleSettings.shadowOffsetY * overlayScaleFactor"
+                      :stdDeviation="subtitleSettings.shadowBlur * overlayScaleFactor"
+                      :flood-color="subtitleSettings.shadowColor"
+                    />
+                  </filter>
+                </defs>
+
+                <g :style="{ transformOrigin: 'center', transformBox: 'fill-box' }">
+                  <!-- Layer 1: Outer border (Border 2) with shadow -->
+                  <text
+                    v-if="subtitleSettings && (subtitleSettings.border2Width > 0 || subtitleSettings.border1Width > 0)"
+                    x="50%"
+                    y="55%"
+                    dominant-baseline="middle"
+                    text-anchor="middle"
+                    :style="{
+                      fontFamily: subtitleSettings.fontFamily,
+                      fontWeight: subtitleSettings.fontWeight,
+                      fontSize: scaledFontSize + 'px',
+                      letterSpacing: scaledLetterSpacing + 'px',
+                      stroke: subtitleSettings.border2Color,
+                      strokeWidth:
+                        (subtitleSettings.border1Width + subtitleSettings.border2Width) * 2 * overlayScaleFactor + 'px',
+                      strokeLinejoin: 'round',
+                      strokeLinecap: 'round',
+                      fill: 'none',
+                      filter: `url(#clip-shadow-${index})`,
+                    }"
+                  >
+                    {{ wordInfo.word }}
+                  </text>
+
+                  <!-- Layer 2: Inner border (Border 1) -->
+                  <text
+                    v-if="subtitleSettings && subtitleSettings.border1Width > 0"
+                    x="50%"
+                    y="55%"
+                    dominant-baseline="middle"
+                    text-anchor="middle"
+                    :style="{
+                      fontFamily: subtitleSettings.fontFamily,
+                      fontWeight: subtitleSettings.fontWeight,
+                      fontSize: scaledFontSize + 'px',
+                      letterSpacing: scaledLetterSpacing + 'px',
+                      stroke: subtitleSettings.border1Color,
+                      strokeWidth: subtitleSettings.border1Width * 2 * overlayScaleFactor + 'px',
+                      strokeLinejoin: 'round',
+                      strokeLinecap: 'round',
+                      fill: 'none',
+                    }"
+                  >
+                    {{ wordInfo.word }}
+                  </text>
+
+                  <!-- Layer 3: Fill text -->
+                  <text
+                    x="50%"
+                    y="55%"
+                    dominant-baseline="middle"
+                    text-anchor="middle"
+                    :class="{ 'current-word-text': isCurrentWord(wordInfo) }"
+                    :style="{
+                      fontFamily: subtitleSettings.fontFamily,
+                      fontWeight: subtitleSettings.fontWeight,
+                      fontSize: scaledFontSize + 'px',
+                      letterSpacing: scaledLetterSpacing + 'px',
+                      fill:
+                        isCurrentWord(wordInfo) && subtitleSettings?.animationStyle === 'karaoke'
+                          ? subtitleSettings?.highlightColor || '#FFFF00'
+                          : subtitleSettings?.textColor || '#FFFFFF',
+                    }"
+                  >
+                    {{ wordInfo.word }}
+                  </text>
+
+                  <!-- Box highlight background -->
+                  <rect
+                    v-if="subtitleSettings?.animationStyle === 'box-highlight' && isCurrentWord(wordInfo)"
+                    x="0"
+                    y="15%"
+                    width="100%"
+                    height="80%"
+                    rx="4"
+                    :fill="subtitleSettings?.highlightColor || '#FFFF00'"
+                    :style="{ opacity: 0.3 }"
+                  />
+                </g>
+              </svg>
+            </span>
+          </div>
+        </div>
       </div>
 
       <!-- Vignette Overlay (applied as overlay since it's a radial gradient effect) -->
@@ -387,6 +517,10 @@
     ManualFramingConfigs,
     ClipWatermark,
     WatermarkRatioConfig,
+    ClipSubtitleSettings,
+    ClipSubtitleRatioConfig,
+    WordInfo,
+    WhisperSegment,
   } from '@/types';
 
   interface SegmentInput {
@@ -396,7 +530,7 @@
 
   interface DragState {
     isDragging: boolean;
-    type: 'text' | 'sticker' | 'watermark' | null;
+    type: 'text' | 'sticker' | 'watermark' | 'subtitle' | null;
     id: string | null;
     startX: number;
     startY: number;
@@ -455,9 +589,16 @@
       previewAspectRatio: string; // Currently previewed aspect ratio (e.g., "16:9")
       selectedAspectRatios: string[]; // All selected aspect ratios
       framingConfigs: ManualFramingConfigs; // Framing configurations per aspect ratio
+      // Subtitle settings
+      subtitleSettings?: ClipSubtitleSettings | null;
+      transcriptWords?: WordInfo[]; // Words from transcript for subtitle display
+      transcriptSegments?: WhisperSegment[]; // Segments from transcript for word grouping
     }>(),
     {
       watermarks: () => [],
+      subtitleSettings: null,
+      transcriptWords: () => [],
+      transcriptSegments: () => [],
     }
   );
 
@@ -476,6 +617,7 @@
     (e: 'updateStickerRotation', id: string, rotation: number): void;
     (e: 'updateWatermarkScale', id: string, scale: number): void;
     (e: 'update:previewAspectRatio', ratio: string): void;
+    (e: 'updateSubtitlePosition', position: { x: number; y: number }): void;
   }>();
 
   // Refs
@@ -697,6 +839,271 @@
     return (props.watermarks || []).filter((w) => effectiveTime >= w.startTime && effectiveTime <= w.endTime);
   });
 
+  // Calculate max words based on aspect ratio (matches VideoPlayer)
+  const maxWordsForAspectRatio = computed(() => {
+    // Parse preview aspect ratio (e.g., "16:9" -> 16/9)
+    const parts = props.previewAspectRatio.split(':').map(Number);
+    const aspectRatioValue = parts.length === 2 && parts[1] !== 0 ? parts[0] / parts[1] : 16 / 9;
+
+    if (aspectRatioValue > 1.5) {
+      return 6; // wide formats (16:9, 21:9)
+    } else if (aspectRatioValue > 0.9) {
+      return 4; // squarish (1:1, 4:3)
+    } else {
+      return 3; // vertical (9:16, 4:5)
+    }
+  });
+
+  // Find the current whisper segment (matches VideoPlayer)
+  const currentSegment = computed((): WhisperSegment | null => {
+    if (!props.subtitleSettings?.enabled || !props.transcriptSegments || props.transcriptSegments.length === 0) {
+      return null;
+    }
+
+    const time = props.currentTime || 0;
+
+    // Find segment that contains the current time
+    for (const segment of props.transcriptSegments) {
+      if (time >= segment.start && time <= segment.end) {
+        return segment;
+      }
+    }
+
+    // Return null if in dead space between segments
+    return null;
+  });
+
+  // Get all words from the current segment (matches VideoPlayer)
+  const segmentWords = computed((): WordInfo[] => {
+    if (!currentSegment.value) return [];
+
+    // If segment has words attached, use those
+    if (currentSegment.value.words && currentSegment.value.words.length > 0) {
+      return currentSegment.value.words;
+    }
+
+    // Otherwise, filter from all transcript words
+    if (!props.transcriptWords || props.transcriptWords.length === 0) return [];
+
+    const segment = currentSegment.value;
+    return props.transcriptWords.filter((word) => {
+      // Include word if it starts within segment OR ends within segment OR spans the entire segment
+      return (
+        (word.start >= segment.start && word.start < segment.end) ||
+        (word.end > segment.start && word.end <= segment.end) ||
+        (word.start <= segment.start && word.end >= segment.end)
+      );
+    });
+  });
+
+  // Get visible words (chunked display - matches VideoPlayer)
+  const visibleSubtitleWords = computed((): WordInfo[] => {
+    const allSegmentWords = segmentWords.value;
+    if (allSegmentWords.length === 0) return [];
+
+    const maxWords = maxWordsForAspectRatio.value;
+    const time = props.currentTime || 0;
+
+    // If segment has fewer words than the limit, show all
+    if (allSegmentWords.length <= maxWords) {
+      return allSegmentWords;
+    }
+
+    // Find the current word being spoken
+    let currentWordIndex = -1;
+    for (let i = 0; i < allSegmentWords.length; i++) {
+      const word = allSegmentWords[i];
+      if (time >= word.start && time < word.end) {
+        currentWordIndex = i;
+        break;
+      }
+    }
+
+    // If no word is currently being spoken, find the next upcoming word
+    if (currentWordIndex === -1) {
+      for (let i = 0; i < allSegmentWords.length; i++) {
+        if (allSegmentWords[i].start > time) {
+          currentWordIndex = i;
+          break;
+        }
+      }
+    }
+
+    // If still no match, default to first chunk
+    if (currentWordIndex === -1) {
+      currentWordIndex = 0;
+    }
+
+    // Calculate which "chunk" (page) this word belongs to
+    const chunkIndex = Math.floor(currentWordIndex / maxWords);
+    const startIndex = chunkIndex * maxWords;
+    const endIndex = Math.min(startIndex + maxWords, allSegmentWords.length);
+
+    return allSegmentWords.slice(startIndex, endIndex);
+  });
+
+  // Check if a word is currently being spoken
+  function isCurrentWord(word: { start: number; end: number }): boolean {
+    const time = props.currentTime || 0;
+    return time >= word.start && time <= word.end;
+  }
+
+  // Get the animation class based on animation style
+  const getSubtitleAnimationClass = computed(() => {
+    const style = props.subtitleSettings?.animationStyle;
+    if (!style || style === 'none') return {};
+
+    return {
+      'animation-zoom': style === 'zoom',
+      'animation-karaoke': style === 'karaoke',
+      'animation-pop': style === 'pop',
+      'animation-glow': style === 'glow',
+      'animation-box-highlight': style === 'box-highlight',
+      'animation-typewriter': style === 'typewriter',
+      'animation-wave': style === 'wave',
+    };
+  });
+
+  // Get typewriter style (controls visibility for typewriter effect)
+  function getTypewriterStyle(word: { start: number; end: number }): Record<string, string> {
+    const style = props.subtitleSettings?.animationStyle;
+    if (style !== 'typewriter') return {};
+
+    const time = props.currentTime || 0;
+    const isVisible = time >= word.start;
+
+    return {
+      opacity: isVisible ? '1' : '0',
+      transform: isVisible ? 'translateY(0)' : 'translateY(10px)',
+    };
+  }
+
+  // Calculate animation duration for a specific word based on its timing
+  function getWordAnimationDuration(word: { start: number; end: number }): number {
+    const wordDuration = word.end - word.start;
+
+    // For very short words (under 50ms), use instant transition
+    if (wordDuration < 0.05) return 0;
+    // For short words (50-100ms), use 30% of duration
+    if (wordDuration < 0.1) return wordDuration * 0.3;
+    // For medium words (100-200ms), use 35% of duration
+    if (wordDuration < 0.2) return wordDuration * 0.35;
+    // For normal words (200-400ms), use 40% of duration
+    if (wordDuration < 0.4) return wordDuration * 0.4;
+    // For longer words (400ms+), use 45% but cap at 200ms
+    const calculatedDuration = wordDuration * 0.45;
+    return Math.min(0.2, calculatedDuration);
+  }
+
+  // Calculate word gap (spacing between words) - matches VideoPlayer implementation
+  const wordGapStyle = computed(() => {
+    if (!props.subtitleSettings) return '0.35em';
+    const wordSpacing = props.subtitleSettings.wordSpacing || 0.35;
+    return `${wordSpacing}em`;
+  });
+
+  // Scaled font size for SVG text
+  const scaledFontSize = computed(() => {
+    const fontSize = subtitleFontSizeForRatio.value;
+    return Math.round(fontSize * overlayScaleFactor.value);
+  });
+
+  // Scaled letter spacing for SVG text
+  const scaledLetterSpacing = computed(() => {
+    if (!props.subtitleSettings) return 0;
+    return (props.subtitleSettings.letterSpacing || 0) * overlayScaleFactor.value;
+  });
+
+  // Style for hidden sizing span
+  const getWordTextStyle = computed(() => {
+    if (!props.subtitleSettings) return {};
+
+    const settings = props.subtitleSettings;
+
+    return {
+      color: settings.textColor,
+      fontFamily: `"${settings.fontFamily}", Arial, sans-serif`,
+      fontWeight: String(settings.fontWeight),
+      fontSize: `${scaledFontSize.value}px`,
+      letterSpacing: `${scaledLetterSpacing.value}px`,
+    };
+  });
+
+  // Get subtitle container style (position, width, background)
+  function getSubtitleContainerStyle(): Record<string, string> {
+    if (!props.subtitleSettings) return {};
+
+    const settings = props.subtitleSettings;
+    const position = subtitlePositionForRatio.value;
+    const scale = overlayScaleFactor.value;
+
+    // Calculate scaled values
+    const scaledPadding = Math.round((settings.padding || 0) * scale);
+    const scaledBorderRadius = Math.round((settings.borderRadius || 0) * scale);
+    const scaledLineHeight = settings.lineHeight || 1.2;
+
+    // Determine text alignment for flex justify-content
+    let justifyContent = 'center';
+    if (settings.textAlign === 'left') justifyContent = 'flex-start';
+    else if (settings.textAlign === 'right') justifyContent = 'flex-end';
+
+    const baseStyles: Record<string, string> = {
+      top: `${position.y}%`,
+      left: `${position.x}%`,
+      transform: 'translate(-50%, -50%)',
+      width: `${settings.maxWidth}%`,
+      display: 'flex',
+      justifyContent,
+      alignItems: 'center',
+      lineHeight: String(scaledLineHeight),
+      textAlign: settings.textAlign,
+    };
+
+    // Add background styles if enabled
+    if (settings.backgroundEnabled) {
+      baseStyles.backgroundColor = settings.backgroundColor || '#000000';
+      baseStyles.padding = `${scaledPadding}px`;
+      baseStyles.borderRadius = `${scaledBorderRadius}px`;
+    }
+
+    return baseStyles;
+  }
+
+  // Get subtitle position for current aspect ratio
+  const subtitlePositionForRatio = computed(() => {
+    if (!props.subtitleSettings) {
+      return { x: 50, y: 85 };
+    }
+
+    const ratio = props.previewAspectRatio;
+    const ratioConfig = props.subtitleSettings.perRatioConfigs?.[ratio];
+
+    if (ratioConfig?.position) {
+      return ratioConfig.position;
+    }
+
+    return {
+      x: props.subtitleSettings.positionX,
+      y: props.subtitleSettings.positionY,
+    };
+  });
+
+  // Get subtitle font size for current aspect ratio
+  const subtitleFontSizeForRatio = computed(() => {
+    if (!props.subtitleSettings) {
+      return 32;
+    }
+
+    const ratio = props.previewAspectRatio;
+    const ratioConfig = props.subtitleSettings.perRatioConfigs?.[ratio];
+
+    if (ratioConfig?.fontSize) {
+      return ratioConfig.fontSize;
+    }
+
+    return props.subtitleSettings.fontSize;
+  });
+
   // Get watermark config for current aspect ratio
   function getWatermarkConfigForRatio(watermark: ClipWatermark): WatermarkRatioConfig {
     const ratio = props.previewAspectRatio;
@@ -912,6 +1319,55 @@
 
     document.removeEventListener('mousemove', onWatermarkResizeMove);
     document.removeEventListener('mouseup', onWatermarkResizeEnd);
+  }
+
+  // Start subtitle drag
+  function startSubtitleDrag(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const position = subtitlePositionForRatio.value;
+
+    dragState.isDragging = true;
+    dragState.type = 'subtitle';
+    dragState.id = 'subtitle';
+    dragState.startX = e.clientX;
+    dragState.startY = e.clientY;
+    dragState.startPosition = { ...position };
+
+    document.addEventListener('mousemove', onSubtitleDragMove);
+    document.addEventListener('mouseup', onSubtitleDragEnd);
+  }
+
+  function onSubtitleDragMove(e: MouseEvent) {
+    if (!dragState.isDragging || dragState.type !== 'subtitle' || !overlayContainerRef.value) return;
+
+    const container = overlayContainerRef.value;
+    const rect = container.getBoundingClientRect();
+
+    const deltaX = e.clientX - dragState.startX;
+    const deltaY = e.clientY - dragState.startY;
+
+    const deltaXPercent = (deltaX / rect.width) * 100;
+    const deltaYPercent = (deltaY / rect.height) * 100;
+
+    let newX = dragState.startPosition.x + deltaXPercent;
+    let newY = dragState.startPosition.y + deltaYPercent;
+
+    // Clamp to bounds
+    newX = Math.max(5, Math.min(95, newX));
+    newY = Math.max(5, Math.min(95, newY));
+
+    emit('updateSubtitlePosition', { x: newX, y: newY });
+  }
+
+  function onSubtitleDragEnd() {
+    dragState.isDragging = false;
+    dragState.type = null;
+    dragState.id = null;
+
+    document.removeEventListener('mousemove', onSubtitleDragMove);
+    document.removeEventListener('mouseup', onSubtitleDragEnd);
   }
 
   // Generate a default center-crop region for an aspect ratio
@@ -2112,6 +2568,8 @@
     document.removeEventListener('mouseup', onStickerRotateEnd);
     document.removeEventListener('mousemove', onWatermarkResizeMove);
     document.removeEventListener('mouseup', onWatermarkResizeEnd);
+    document.removeEventListener('mousemove', onSubtitleDragMove);
+    document.removeEventListener('mouseup', onSubtitleDragEnd);
     stopSyncLoop();
     if (resizeObserver) {
       resizeObserver.disconnect();
@@ -2331,6 +2789,102 @@
 
   .watermark-overlay:hover {
     z-index: 20;
+  }
+
+  /* Subtitle overlay styling */
+  .subtitle-overlay {
+    z-index: 30;
+  }
+
+  .subtitle-overlay:hover {
+    z-index: 40;
+  }
+
+  /* Subtitle text container - matches VideoPlayer implementation */
+  .subtitle-text-container {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  /* Subtitle word stack - layered SVG rendering */
+  .subtitle-word-stack {
+    position: relative;
+    display: inline-block;
+    transition-property: transform, opacity, filter;
+    transition-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+    transform-origin: center;
+    will-change: transform, opacity, filter;
+  }
+
+  /* ===== ANIMATION STYLES (matches VideoPlayer) ===== */
+
+  /* Zoom animation - scale up current word */
+  .subtitle-word-stack.animation-zoom:has(.current-word) {
+    transform: scale(1.15);
+  }
+
+  /* Karaoke animation - color change handled via SVG fill, subtle scale */
+  .subtitle-word-stack.animation-karaoke:has(.current-word) {
+    transform: scale(1.05);
+  }
+
+  /* Pop/Bounce animation - bouncy scale effect */
+  .subtitle-word-stack.animation-pop:has(.current-word) {
+    animation: pop-bounce 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+  }
+
+  @keyframes pop-bounce {
+    0% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.25);
+    }
+    100% {
+      transform: scale(1.1);
+    }
+  }
+
+  /* Glow animation - glowing emphasis */
+  .subtitle-word-stack.animation-glow:has(.current-word) {
+    filter: drop-shadow(0 0 8px currentColor) drop-shadow(0 0 16px currentColor);
+    transform: scale(1.05);
+  }
+
+  /* Box highlight - background box (rendered via SVG rect) */
+  .subtitle-word-stack.animation-box-highlight:has(.current-word) {
+    transform: scale(1.02);
+  }
+
+  /* Typewriter animation - words appear as spoken */
+  .subtitle-word-stack.animation-typewriter {
+    transition-property: transform, opacity;
+    transition-duration: 0.15s;
+    transition-timing-function: ease-out;
+  }
+
+  /* Wave animation - wave effect across words */
+  .subtitle-word-stack.animation-wave:has(.current-word) {
+    animation: wave-float 0.4s ease-in-out;
+  }
+
+  @keyframes wave-float {
+    0% {
+      transform: translateY(0) scale(1);
+    }
+    25% {
+      transform: translateY(-8px) scale(1.08);
+    }
+    50% {
+      transform: translateY(-4px) scale(1.05);
+    }
+    75% {
+      transform: translateY(-6px) scale(1.06);
+    }
+    100% {
+      transform: translateY(0) scale(1.03);
+    }
   }
 
   /* Custom range input styling */

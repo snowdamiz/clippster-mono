@@ -1,119 +1,58 @@
 <template>
   <div class="px-4 flex flex-col flex-1 h-full" data-media-panel>
-    <!-- Tabs Header -->
-    <div class="flex items-center justify-between gap-2 p-1.5 border-b border-white/10 -mx-4 px-1.5 bg-[#0d0d0d]">
-      <!-- Tab Buttons -->
-      <div class="flex items-center gap-0.5">
-        <button
-          v-for="tab in tabs"
-          :key="tab.id"
-          @click="activeTab = tab.id"
-          :title="tab.label"
-          :class="[
-            'flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all',
-            activeTab === tab.id
-              ? 'bg-violet-500/20 text-violet-400 border border-violet-500/30 px-2.5'
-              : 'text-white/50 hover:text-white hover:bg-white/5 px-2',
-          ]"
-        >
-          <component :is="tab.icon" :size="14" />
-          <span v-if="activeTab === tab.id" class="whitespace-nowrap">{{ tab.label }}</span>
-        </button>
+    <!-- Header -->
+    <div class="flex items-center justify-between gap-2 py-2.5 border-b border-white/10 -mx-4 px-4 bg-[#0d0d0d]">
+      <!-- Title -->
+      <div class="flex flex-col">
+        <h3 class="text-sm font-semibold text-foreground">Clips</h3>
+        <p class="text-[10px] text-muted-foreground">
+          {{ clips.length }} clip{{ clips.length !== 1 ? 's' : '' }} detected
+        </p>
       </div>
 
-      <!-- Tab-specific Actions (Right Side) -->
+      <!-- Actions -->
       <div class="flex items-center gap-2">
-        <!-- Clips Tab Actions -->
-        <template v-if="activeTab === 'clips'">
-          <!-- Progress Bar (when detecting) -->
-          <div v-if="isGenerating && clips.length > 0" class="flex items-center gap-2 min-w-[140px]">
-            <div class="flex-1 space-y-0.5">
-              <div class="h-1 w-full bg-white/5 rounded-full overflow-hidden">
-                <div
-                  class="h-full bg-gradient-to-r from-violet-500 to-purple-500 transition-all duration-500 ease-out"
-                  :class="{ 'animate-pulse': generationProgress === 0 }"
-                  :style="{ width: `${Math.max(generationProgress, 5)}%` }"
-                ></div>
-              </div>
-              <div class="flex justify-between items-center text-[9px] text-muted-foreground/70">
-                <span class="flex items-center gap-1">
-                  <LoaderIcon class="w-2 h-2 animate-spin text-violet-400" />
-                  <span class="truncate max-w-[60px]">{{ generationStage || 'Processing' }}</span>
-                </span>
-                <span class="font-mono tabular-nums">{{ Math.round(generationProgress) }}%</span>
-              </div>
+        <!-- Progress Bar (when detecting) -->
+        <div v-if="isGenerating && clips.length > 0" class="flex items-center gap-2 min-w-[140px]">
+          <div class="flex-1 space-y-0.5">
+            <div class="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+              <div
+                class="h-full bg-gradient-to-r from-violet-500 to-purple-500 transition-all duration-500 ease-out"
+                :class="{ 'animate-pulse': generationProgress === 0 }"
+                :style="{ width: `${Math.max(generationProgress, 5)}%` }"
+              ></div>
             </div>
-            <button
-              @click="handleCancelDetection"
-              class="p-1 hover:bg-red-500/15 rounded transition-colors text-muted-foreground/60 hover:text-red-400"
-              title="Cancel detection"
-            >
-              <XIcon class="h-3 w-3" />
-            </button>
-          </div>
-          <!-- Detect Button (when not detecting and has clips) -->
-          <button
-            v-else-if="clips.length > 0"
-            @click="handleDetectClips"
-            class="group flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-muted-foreground/80 hover:text-foreground bg-white/[0.03] hover:bg-white/[0.06] rounded-md transition-all border border-white/[0.06] hover:border-white/[0.1]"
-            title="Run clip detection again"
-          >
-            <Sparkles class="h-3 w-3 group-hover:text-violet-400 transition-colors" />
-            Detect
-          </button>
-        </template>
-
-        <!-- Subtitles Tab Actions -->
-        <template v-if="activeTab === 'subtitles'">
-          <div class="flex items-center gap-1.5">
-            <span class="text-[10px] font-medium text-muted-foreground">On</span>
-            <button
-              @click="toggleSubtitles"
-              type="button"
-              :class="[
-                'relative inline-flex h-4 w-7 flex-shrink-0 items-center rounded-full transition-all duration-200',
-                subtitleSettings.enabled ? 'bg-primary' : 'bg-muted-foreground/30',
-              ]"
-              :title="subtitleSettings.enabled ? 'Disable subtitles' : 'Enable subtitles'"
-            >
-              <span
-                :class="[
-                  'inline-block h-3 w-3 transform rounded-full bg-white shadow-lg transition-all duration-200 ease-in-out',
-                  subtitleSettings.enabled ? 'translate-x-[14px]' : 'translate-x-0.5',
-                ]"
-              ></span>
-            </button>
+            <div class="flex justify-between items-center text-[9px] text-muted-foreground/70">
+              <span class="flex items-center gap-1">
+                <LoaderIcon class="w-2 h-2 animate-spin text-violet-400" />
+                <span class="truncate max-w-[60px]">{{ generationStage || 'Processing' }}</span>
+              </span>
+              <span class="font-mono tabular-nums">{{ Math.round(generationProgress) }}%</span>
+            </div>
           </div>
           <button
-            @click="subtitlesTabRef?.resetToDefaults?.()"
-            class="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground bg-muted/30 hover:bg-muted/50 rounded-md transition-all border border-border/40 hover:border-border/60"
-            title="Reset to defaults"
+            @click="handleCancelDetection"
+            class="p-1 hover:bg-red-500/15 rounded transition-colors text-muted-foreground/60 hover:text-red-400"
+            title="Cancel detection"
           >
-            <RotateCcw class="h-3 w-3" />
-            Reset
+            <XIcon class="h-3 w-3" />
           </button>
-        </template>
-
-        <!-- Transcript Tab Actions -->
-        <template v-if="activeTab === 'transcript'">
-          <div class="relative">
-            <div class="absolute left-2 top-1/2 transform -translate-y-1/2 pointer-events-none">
-              <Search class="h-3 w-3 text-muted-foreground/50" />
-            </div>
-            <input
-              v-model="transcriptSearchQuery"
-              type="text"
-              placeholder="Search..."
-              class="w-32 pl-6 pr-2 py-1 text-[10px] bg-muted/30 border border-border/40 rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all placeholder:text-muted-foreground/50"
-            />
-          </div>
-        </template>
+        </div>
+        <!-- Detect Button (when not detecting and has clips) -->
+        <button
+          v-else-if="clips.length > 0"
+          @click="handleDetectClips"
+          class="group flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium text-muted-foreground/80 hover:text-foreground bg-white/[0.03] hover:bg-white/[0.06] rounded-md transition-all border border-white/[0.06] hover:border-white/[0.1]"
+          title="Run clip detection again"
+        >
+          <Sparkles class="h-3 w-3 group-hover:text-violet-400 transition-colors" />
+          Detect
+        </button>
       </div>
     </div>
 
-    <!-- Clips Tab Content -->
+    <!-- Clips Content -->
     <ClipsTab
-      v-if="activeTab === 'clips'"
       ref="clipsTabRef"
       :project-id="projectId"
       :clips="clips"
@@ -128,8 +67,6 @@
       :video-duration="videoDuration || 0"
       :prompts="prompts"
       :transcript-data="transcriptData"
-      :subtitle-settings="subtitleSettings"
-      :max-words-for-aspect-ratio="maxWordsForAspectRatio"
       :watermark-settings="watermarkSettings"
       :creator-default-intro="creatorDefaultIntro"
       :creator-default-outro="creatorDefaultOutro"
@@ -143,34 +80,11 @@
       @scroll-to-timeline="onScrollToTimeline"
       @refresh-clips="refreshClips"
     />
-
-    <!-- Transcript Tab Content - use v-show to keep mounted so it receives events -->
-    <!-- <TranscriptPanel
-      v-show="activeTab === 'transcript'"
-      ref="transcriptPanelRef"
-      :project-id="projectId"
-      :current-time="currentTime || undefined"
-      :duration="videoDuration || undefined"
-      :hide-header="true"
-      :search-query="transcriptSearchQuery"
-      @seekVideo="onSeekVideo"
-    /> -->
-
-    <!-- Subtitles Tab Content -->
-    <SubtitlesTab
-      v-if="activeTab === 'subtitles'"
-      ref="subtitlesTabRef"
-      :project-id="projectId"
-      :settings="subtitleSettings"
-      :aspect-ratio="aspectRatio"
-      :hide-header="true"
-      @settings-changed="onSubtitleSettingsChanged"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, computed, watch, onUnmounted, markRaw } from 'vue';
+  import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import {
     getClipDetectionSessionsByProjectId,
@@ -184,19 +98,10 @@
     type ClipDetectionSession,
     type Prompt,
   } from '@/services/database';
-  import type { MediaPanelProps, MediaPanelEmits, SubtitleSettings, WatermarkSettings } from '../types';
+  import type { MediaPanelProps, MediaPanelEmits, WatermarkSettings } from '../types';
   import ClipsTab from './ClipsTab.vue';
-  import TranscriptPanel from './TranscriptPanel.vue';
-  import SubtitlesTab from './SubtitlesTab.vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
-  import { Video, Type, Sparkles, RotateCcw, X as XIcon, Loader as LoaderIcon, Search } from 'lucide-vue-next';
-
-  // Tab configuration
-  const tabs = [
-    { id: 'clips', label: 'Clips', icon: markRaw(Video) },
-    // { id: 'transcript', label: 'Transcript', icon: markRaw(FileText) },
-    { id: 'subtitles', label: 'Subtitles', icon: markRaw(Type) },
-  ];
+  import { Sparkles, X as XIcon, Loader as LoaderIcon } from 'lucide-vue-next';
 
   const props = withDefaults(defineProps<MediaPanelProps>(), {
     isGenerating: false,
@@ -217,12 +122,6 @@
 
   const emit = defineEmits<MediaPanelEmits>();
 
-  // Tab state
-  const activeTab = ref('clips');
-
-  // Transcript search state
-  const transcriptSearchQuery = ref('');
-
   // Prompts state for matching prompt names to session prompts
   const prompts = ref<Prompt[]>([]);
 
@@ -234,65 +133,11 @@
   // Ref for ClipsTab component
   const clipsTabRef = ref<InstanceType<typeof ClipsTab> | null>(null);
 
-  // Ref for TranscriptPanel component
-  const transcriptPanelRef = ref<InstanceType<typeof TranscriptPanel> | null>(null);
-
-  // Ref for SubtitlesTab component
-  const subtitlesTabRef = ref<InstanceType<typeof SubtitlesTab> | null>(null);
-
   // Store unlisten functions for cleanup
   const unlistenFunctions = ref<UnlistenFn[]>([]);
 
   // Use transcript data composable
   const { transcriptData } = useTranscriptData(computed(() => props.projectId || null));
-
-  // Calculate max words based on aspect ratio (matches VideoPlayer.vue logic)
-  const maxWordsForAspectRatio = computed(() => {
-    const aspectRatioValue = props.aspectRatio.width / props.aspectRatio.height;
-
-    if (aspectRatioValue > 1.5) {
-      return 6; // wide formats (16:9, 21:9)
-    } else if (aspectRatioValue > 0.9) {
-      return 4; // squarish (1:1, 4:3)
-    } else {
-      return 3; // vertical (9:16, 4:5)
-    }
-  });
-
-  // Subtitle state
-  const getDefaultSubtitleSettings = (): SubtitleSettings => ({
-    enabled: false,
-    fontFamily: 'Montserrat',
-    fontSize: 32,
-    fontWeight: 700,
-    textColor: '#FFFFFF',
-    backgroundColor: '#000000',
-    backgroundEnabled: false,
-    border1Width: 2,
-    border1Color: '#00FF00',
-    border2Width: 4,
-    border2Color: '#000000',
-    shadowOffsetX: 2,
-    shadowOffsetY: 2,
-    shadowBlur: 4,
-    shadowColor: '#000000',
-    position: 'bottom',
-    positionPercentage: 97,
-    maxWidth: 90,
-    animationStyle: 'none',
-    highlightColor: '#FFFF00',
-    lineHeight: 1.2,
-    letterSpacing: 0,
-    textAlign: 'center',
-    textOffsetX: 0,
-    textOffsetY: 0,
-    padding: 16,
-    borderRadius: 8,
-    wordSpacing: 0.35,
-    selectedPresetId: null,
-  });
-
-  const subtitleSettings = ref<SubtitleSettings>(getDefaultSubtitleSettings());
 
   // Watermark state
   const getDefaultWatermarkSettings = (): WatermarkSettings => ({
@@ -309,27 +154,6 @@
   onMounted(async () => {
     // Load prompts for name matching
     await loadPrompts();
-
-    // Load subtitle settings from localStorage
-    try {
-      const saved = localStorage.getItem('subtitle-settings');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Restore all settings from localStorage but always default subtitles to off
-        // Preserve selectedPresetId if it exists in localStorage
-        const { selectedPresetId: savedPresetId } = parsed;
-        subtitleSettings.value = {
-          ...getDefaultSubtitleSettings(),
-          ...parsed,
-          enabled: false,
-          selectedPresetId: savedPresetId || null,
-        };
-        // Emit to sync with VideoPlayer
-        emit('subtitleSettingsChanged', subtitleSettings.value);
-      }
-    } catch (error) {
-      console.error('[MediaPanel] Failed to load subtitle settings:', error);
-    }
 
     // Load watermark settings from localStorage
     try {
@@ -405,19 +229,6 @@
     }
   });
 
-  // Watch for subtitle settings changes and save to localStorage
-  watch(
-    subtitleSettings,
-    (newSettings) => {
-      try {
-        localStorage.setItem('subtitle-settings', JSON.stringify(newSettings));
-      } catch (error) {
-        console.error('[MediaPanel] Failed to save subtitle settings:', error);
-      }
-    },
-    { deep: true }
-  );
-
   // Watch for watermark settings changes and save to localStorage
   watch(
     watermarkSettings,
@@ -490,18 +301,6 @@
 
   function onScrollToTimeline() {
     emit('scrollToTimeline');
-  }
-
-  function onSubtitleSettingsChanged(settings: SubtitleSettings) {
-    subtitleSettings.value = settings;
-    emit('subtitleSettingsChanged', settings);
-  }
-
-  // Toggle functions for header controls
-  function toggleSubtitles() {
-    const newSettings = { ...subtitleSettings.value, enabled: !subtitleSettings.value.enabled };
-    subtitleSettings.value = newSettings;
-    emit('subtitleSettingsChanged', newSettings);
   }
 
   // Event listener for fallback refresh mechanism
