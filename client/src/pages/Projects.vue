@@ -1196,8 +1196,9 @@
             </p>
           </div>
           <button
-            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
+            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             @click="deleteProjectConfirmed"
+            :disabled="deletingProject"
           >
             {{
               deleteSegmentsToo && hasChildren(projectToDelete?.id || '')
@@ -1235,8 +1236,9 @@
           </p>
 
           <button
-            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
+            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             @click="bulkDeleteConfirmed"
+            :disabled="bulkDeleting"
           >
             Delete {{ selectedProjects.size }} Projects
           </button>
@@ -1396,6 +1398,9 @@
   const viewMode = ref<'folders' | 'list'>('folders');
   const showFolderDialog = ref(false);
   const folderProject = ref<Project | null>(null);
+  // Delete state
+  const deletingProject = ref(false);
+  const bulkDeleting = ref(false);
 
   // Multi-select state
   const selectedProjects = ref<Set<string>>(new Set());
@@ -3149,7 +3154,10 @@
   }
 
   async function deleteProjectConfirmed() {
-    if (!projectToDelete.value) return;
+    if (!projectToDelete.value || deletingProject.value) return;
+    deletingProject.value = true;
+    // Close the dialog immediately to avoid duplicate clicks while deletion runs
+    showDeleteDialog.value = false;
 
     const deletedProjectName = projectToDelete.value.name;
     const projectId = projectToDelete.value.id;
@@ -3185,7 +3193,7 @@
     } catch (err) {
       error('Failed to delete project', 'An error occurred while deleting the project. Please try again.');
     } finally {
-      showDeleteDialog.value = false;
+      deletingProject.value = false;
       projectHasVideos.value = false;
       projectHasClips.value = false;
       deleteSegmentsToo.value = false;
@@ -3227,6 +3235,8 @@
   }
 
   async function bulkDeleteConfirmed() {
+    if (bulkDeleting.value) return;
+    bulkDeleting.value = true;
     const projectIds = Array.from(selectedProjects.value);
     let deletedCount = 0;
 
@@ -3256,6 +3266,7 @@
       error('Failed to delete projects', 'An error occurred while deleting the projects.');
     } finally {
       showBulkDeleteDialog.value = false;
+      bulkDeleting.value = false;
     }
   }
 
