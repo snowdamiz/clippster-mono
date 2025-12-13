@@ -320,6 +320,7 @@
     getAllCreatorProfiles,
     deleteCreatorProfile,
     getMonitoredStreamer,
+    getMonitoredStreamerByMint,
     type CreatorProfileWithLinks,
   } from '@/services/database';
   import { useToast } from '@/composables/useToast';
@@ -662,10 +663,26 @@
       showError('No Supported Platforms', 'Live monitoring is currently only available for PumpFun streams');
       return;
     }
+    if (!pumpfunLink.platform_id) {
+      showError('Missing PumpFun Mint/ID', 'Add the PumpFun mint ID on this creator before starting monitoring.');
+      return;
+    }
 
     try {
       let streamerId = pumpfunLink.monitored_streamer_id;
 
+      // Reuse an existing monitored_streamer by mintId to avoid UNIQUE constraint errors
+      if (!streamerId) {
+        const existingByMint = await getMonitoredStreamerByMint(pumpfunLink.platform_id);
+        if (existingByMint) {
+          const { updatePlatformLink } = await import('@/services/database');
+          streamerId = existingByMint.id;
+          await updatePlatformLink(pumpfunLink.id, { monitored_streamer_id: streamerId });
+          pumpfunLink.monitored_streamer_id = streamerId;
+        }
+      }
+
+      // If still none, create a new monitored_streamer
       if (!streamerId) {
         const { createMonitoredStreamer, updatePlatformLink } = await import('@/services/database');
         streamerId = await createMonitoredStreamer(
@@ -705,7 +722,13 @@
       success('Monitoring Started', `Now monitoring "${creator.name}" (${mode})`);
     } catch (err) {
       console.error('Failed to start monitoring:', err);
-      showError('Monitoring Failed', 'Failed to start monitoring');
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string'
+            ? err
+            : 'Failed to start monitoring';
+      showError('Monitoring Failed', message);
     }
   }
 
