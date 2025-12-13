@@ -1716,7 +1716,26 @@
 
       // Pass all build settings to the backend (including build number for filename)
       // Subtitle settings come directly from SubtitlesTab via props
-      // Subtitle overrides allow per-aspect-ratio customization of size/position
+      // Merge perRatioConfigs from clip editor with subtitleOverrides from build settings
+      // perRatioConfigs from clip editor takes precedence (user configured in editor)
+      let finalSubtitleOverrides = settings.subtitleOverrides || null;
+      if (props.subtitleSettings?.perRatioConfigs) {
+        const editorOverrides: Record<string, { fontSize: number; positionPercentage: number; maxWidth?: number }> = {};
+        for (const [ratio, config] of Object.entries(props.subtitleSettings.perRatioConfigs)) {
+          editorOverrides[ratio] = {
+            fontSize: config.fontSize,
+            positionPercentage: config.position.y, // Use Y position as the vertical position percentage
+            maxWidth: config.maxWidth,
+          };
+        }
+        // Merge: editor configs override build settings configs
+        finalSubtitleOverrides = {
+          ...(settings.subtitleOverrides || {}),
+          ...editorOverrides,
+        };
+        console.log('[ClipsTab] Merged subtitle overrides from clip editor:', finalSubtitleOverrides);
+      }
+
       await invoke('build_clip_from_segments', {
         projectId: props.projectId,
         clipId: clip.id,
@@ -1724,7 +1743,7 @@
         videoPath: projectVideo.file_path,
         segments: segments,
         subtitleSettings: props.subtitleSettings,
-        subtitleOverrides: settings.subtitleOverrides || null,
+        subtitleOverrides: finalSubtitleOverrides,
         transcriptWords: transcriptWords,
         transcriptSegments: transcriptSegments,
         maxWords: props.maxWordsForAspectRatio,

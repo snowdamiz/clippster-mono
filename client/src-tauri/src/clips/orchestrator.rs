@@ -275,11 +275,15 @@ pub async fn build_clip_internal_simple(
                     // Apply per-aspect-ratio overrides if they exist
                     let effective_settings = if let Some(ref overrides) = subtitle_overrides {
                         if let Some(override_for_ratio) = overrides.get(&aspect_ratio_str) {
-                            println!("[Rust] Applying subtitle overrides for {}: fontSize={}, positionPercentage={}", 
-                                     aspect_ratio_str, override_for_ratio.font_size, override_for_ratio.position_percentage);
+                            println!("[Rust] Applying subtitle overrides for {}: fontSize={}, positionPercentage={}, maxWidth={:?}", 
+                                     aspect_ratio_str, override_for_ratio.font_size, override_for_ratio.position_percentage, override_for_ratio.max_width);
                             let mut overridden = settings.clone();
                             overridden.font_size = override_for_ratio.font_size;
                             overridden.position_percentage = override_for_ratio.position_percentage;
+                            // Apply max_width override if specified
+                            if let Some(max_width) = override_for_ratio.max_width {
+                                overridden.max_width = max_width;
+                            }
                             overridden
                         } else {
                             settings.clone()

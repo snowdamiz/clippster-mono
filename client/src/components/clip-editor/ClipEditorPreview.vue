@@ -284,18 +284,27 @@
           />
         </div>
 
-        <!-- Subtitles (Draggable) -->
+        <!-- Subtitles (Draggable with Resize Handles) -->
         <div
           v-if="subtitleSettings?.enabled && visibleSubtitleWords.length > 0"
           class="absolute subtitle-overlay select-none cursor-move group pointer-events-auto"
           :class="{
-            'ring-2 ring-purple-500 ring-offset-2 ring-offset-transparent': dragState.type === 'subtitle',
-            'hover:ring-2 hover:ring-purple-400/50': dragState.type !== 'subtitle',
+            'ring-2 ring-purple-500 ring-offset-2 ring-offset-transparent':
+              dragState.type === 'subtitle' || subtitleResizeState.isResizing,
+            'hover:ring-2 hover:ring-purple-400/50': dragState.type !== 'subtitle' && !subtitleResizeState.isResizing,
           }"
           :style="getSubtitleContainerStyle()"
           @mousedown="startSubtitleDrag"
         >
-          <div class="subtitle-text-container pointer-events-none" :style="{ gap: wordGapStyle }">
+          <!-- Left Resize Handle -->
+          <div
+            class="absolute left-0 top-0 bottom-0 w-2 -ml-1 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10 pointer-events-auto"
+            @mousedown.stop="(e) => startSubtitleResize(e, 'left')"
+          >
+            <div class="w-1 h-8 bg-purple-500 rounded-full shadow-lg"></div>
+          </div>
+
+          <div class="subtitle-text-container pointer-events-none" :style="getSubtitleTextContainerStyle()">
             <span
               v-for="(wordInfo, index) in visibleSubtitleWords"
               :key="`subtitle-word-${wordInfo.start}-${index}`"
@@ -412,6 +421,14 @@
               </svg>
             </span>
           </div>
+
+          <!-- Right Resize Handle -->
+          <div
+            class="absolute right-0 top-0 bottom-0 w-2 -mr-1 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10 pointer-events-auto"
+            @mousedown.stop="(e) => startSubtitleResize(e, 'right')"
+          >
+            <div class="w-1 h-8 bg-purple-500 rounded-full shadow-lg"></div>
+          </div>
         </div>
       </div>
 
@@ -518,7 +535,6 @@
     ClipWatermark,
     WatermarkRatioConfig,
     ClipSubtitleSettings,
-    ClipSubtitleRatioConfig,
     WordInfo,
     WhisperSegment,
   } from '@/types';
@@ -573,6 +589,13 @@
     centerY: number;
   }
 
+  interface SubtitleResizeState {
+    isResizing: boolean;
+    side: 'left' | 'right' | null;
+    startX: number;
+    startWidth: number; // Width as percentage (maxWidth)
+  }
+
   const props = withDefaults(
     defineProps<{
       videoSrc: string | null;
@@ -618,6 +641,7 @@
     (e: 'updateWatermarkScale', id: string, scale: number): void;
     (e: 'update:previewAspectRatio', ratio: string): void;
     (e: 'updateSubtitlePosition', position: { x: number; y: number }): void;
+    (e: 'updateSubtitleMaxWidth', maxWidth: number): void;
   }>();
 
   // Refs
@@ -801,23 +825,27 @@
   // Local watermark scale tracking for instant feedback during drag
   const localWatermarkScales = ref<Record<string, number>>({});
 
+  // Subtitle resize state (for maxWidth)
+  const subtitleResizeState = reactive<SubtitleResizeState>({
+    isResizing: false,
+    side: null,
+    startX: 0,
+    startWidth: 90,
+  });
+
+  // Local subtitle maxWidth tracking for instant feedback during resize
+  const localSubtitleMaxWidth = ref<number | null>(null);
+
   // Local width tracking to prevent reflow during drag (before Vue updates)
   const localDragWidths = ref<Record<string, number>>({});
 
   // Computed
-  const clipDuration = computed(() => props.clipEnd - props.clipStart);
-
   // Get sorted segments for playback control
   const sortedSegments = computed(() => {
     if (!props.segments || props.segments.length === 0) {
       return [{ start_time: props.clipStart, end_time: props.clipEnd }];
     }
     return [...props.segments].sort((a, b) => a.start_time - b.start_time);
-  });
-
-  const progressPercent = computed(() => {
-    if (clipDuration.value <= 0) return 0;
-    return ((props.currentTime - props.clipStart) / clipDuration.value) * 100;
   });
 
   const visibleTextOverlays = computed(() => {
@@ -1042,6 +1070,9 @@
     const scaledBorderRadius = Math.round((settings.borderRadius || 0) * scale);
     const scaledLineHeight = settings.lineHeight || 1.2;
 
+    // Use local maxWidth during resize for instant feedback, otherwise use per-ratio config
+    const maxWidth = localSubtitleMaxWidth.value ?? subtitleMaxWidthForRatio.value;
+
     // Determine text alignment for flex justify-content
     let justifyContent = 'center';
     if (settings.textAlign === 'left') justifyContent = 'flex-start';
@@ -1051,7 +1082,7 @@
       top: `${position.y}%`,
       left: `${position.x}%`,
       transform: 'translate(-50%, -50%)',
-      width: `${settings.maxWidth}%`,
+      width: `${maxWidth}%`,
       display: 'flex',
       justifyContent,
       alignItems: 'center',
@@ -1067,6 +1098,23 @@
     }
 
     return baseStyles;
+  }
+
+  // Get subtitle text container style (inner flex container for word alignment)
+  function getSubtitleTextContainerStyle(): Record<string, string> {
+    if (!props.subtitleSettings) return { gap: wordGapStyle.value };
+
+    const settings = props.subtitleSettings;
+
+    // Determine text alignment for flex justify-content
+    let justifyContent = 'center';
+    if (settings.textAlign === 'left') justifyContent = 'flex-start';
+    else if (settings.textAlign === 'right') justifyContent = 'flex-end';
+
+    return {
+      gap: wordGapStyle.value,
+      justifyContent,
+    };
   }
 
   // Get subtitle position for current aspect ratio
@@ -1102,6 +1150,22 @@
     }
 
     return props.subtitleSettings.fontSize;
+  });
+
+  // Get subtitle max width for current aspect ratio
+  const subtitleMaxWidthForRatio = computed(() => {
+    if (!props.subtitleSettings) {
+      return 90;
+    }
+
+    const ratio = props.previewAspectRatio;
+    const ratioConfig = props.subtitleSettings.perRatioConfigs?.[ratio];
+
+    if (ratioConfig?.maxWidth !== undefined) {
+      return ratioConfig.maxWidth;
+    }
+
+    return props.subtitleSettings.maxWidth;
   });
 
   // Get watermark config for current aspect ratio
@@ -1370,6 +1434,63 @@
     document.removeEventListener('mouseup', onSubtitleDragEnd);
   }
 
+  // Subtitle resize handlers (for maxWidth)
+  function startSubtitleResize(e: MouseEvent, side: 'left' | 'right') {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!props.subtitleSettings) return;
+
+    subtitleResizeState.isResizing = true;
+    subtitleResizeState.side = side;
+    subtitleResizeState.startX = e.clientX;
+    subtitleResizeState.startWidth = localSubtitleMaxWidth.value ?? subtitleMaxWidthForRatio.value;
+
+    document.addEventListener('mousemove', onSubtitleResizeMove);
+    document.addEventListener('mouseup', onSubtitleResizeEnd);
+  }
+
+  function onSubtitleResizeMove(e: MouseEvent) {
+    if (!subtitleResizeState.isResizing || !overlayContainerRef.value) return;
+
+    const container = overlayContainerRef.value;
+    const rect = container.getBoundingClientRect();
+
+    // Calculate delta in percentage
+    const deltaX = e.clientX - subtitleResizeState.startX;
+    const deltaXPercent = (deltaX / rect.width) * 100;
+
+    let newWidth: number;
+
+    if (subtitleResizeState.side === 'right') {
+      // Dragging right handle: increase width when moving right
+      newWidth = subtitleResizeState.startWidth + deltaXPercent * 2; // *2 because we're resizing from center
+    } else {
+      // Dragging left handle: increase width when moving left
+      newWidth = subtitleResizeState.startWidth - deltaXPercent * 2; // *2 because we're resizing from center
+    }
+
+    // Clamp width to reasonable bounds (20% to 100%)
+    newWidth = Math.max(20, Math.min(100, newWidth));
+
+    // Set local width immediately for instant feedback
+    localSubtitleMaxWidth.value = newWidth;
+
+    // Emit width update
+    emit('updateSubtitleMaxWidth', Math.round(newWidth));
+  }
+
+  function onSubtitleResizeEnd() {
+    // Clear local width after emit completes
+    localSubtitleMaxWidth.value = null;
+
+    subtitleResizeState.isResizing = false;
+    subtitleResizeState.side = null;
+
+    document.removeEventListener('mousemove', onSubtitleResizeMove);
+    document.removeEventListener('mouseup', onSubtitleResizeEnd);
+  }
+
   // Generate a default center-crop region for an aspect ratio
   function generateDefaultCenterCrop(targetRatio: string): {
     source: { x: number; y: number; width: number; height: number };
@@ -1582,7 +1703,12 @@
   }
 
   // Drag methods
-  function startDrag(e: MouseEvent, type: 'text' | 'sticker', id: string, position: { x: number; y: number }) {
+  function startDrag(
+    e: MouseEvent,
+    type: 'text' | 'sticker' | 'watermark',
+    id: string,
+    position: { x: number; y: number }
+  ) {
     e.preventDefault();
     e.stopPropagation();
 
@@ -1639,8 +1765,8 @@
     newX = Math.max(-10, Math.min(110, newX));
     newY = Math.max(-10, Math.min(110, newY));
 
-    // Emit position update
-    if (dragState.type && dragState.id) {
+    // Emit position update (only for text, sticker, watermark - subtitle has its own handler)
+    if (dragState.type && dragState.id && dragState.type !== 'subtitle') {
       emit('updateOverlayPosition', dragState.type, dragState.id, { x: newX, y: newY });
     }
   }
@@ -1861,12 +1987,6 @@
   }
 
   // Methods
-  function formatTime(seconds: number): string {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  }
-
   function formatDuration(seconds: number): string {
     if (isNaN(seconds) || !isFinite(seconds)) return '0:00';
 
@@ -2009,42 +2129,6 @@
     if (!dragState.isDragging) {
       emit('togglePlay');
     }
-  }
-
-  function onProgressClick(e: MouseEvent) {
-    if (!videoRef.value) return;
-    const rect = (e.target as HTMLElement).getBoundingClientRect();
-    const percent = (e.clientX - rect.left) / rect.width;
-    const newTime = props.clipStart + percent * clipDuration.value;
-    videoRef.value.currentTime = newTime;
-    emit('timeUpdate', newTime);
-    // Sync region videos after seeking
-    syncAllPreviewVideos(true);
-  }
-
-  function startProgressDrag(e: MouseEvent) {
-    isDraggingProgress.value = true;
-    const onMove = (moveEvent: MouseEvent) => {
-      if (!videoRef.value) return;
-      const rect = (e.target as HTMLElement).getBoundingClientRect();
-      const percent = Math.max(0, Math.min(1, (moveEvent.clientX - rect.left) / rect.width));
-      const newTime = props.clipStart + percent * clipDuration.value;
-      videoRef.value.currentTime = newTime;
-      emit('timeUpdate', newTime);
-      // Sync during drag
-      syncAllPreviewVideos(true);
-    };
-
-    const onUp = () => {
-      isDraggingProgress.value = false;
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      // Final sync after drag ends
-      syncAllPreviewVideos(true);
-    };
-
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
   }
 
   function toggleMute() {
@@ -2570,6 +2654,8 @@
     document.removeEventListener('mouseup', onWatermarkResizeEnd);
     document.removeEventListener('mousemove', onSubtitleDragMove);
     document.removeEventListener('mouseup', onSubtitleDragEnd);
+    document.removeEventListener('mousemove', onSubtitleResizeMove);
+    document.removeEventListener('mouseup', onSubtitleResizeEnd);
     stopSyncLoop();
     if (resizeObserver) {
       resizeObserver.disconnect();

@@ -1,10 +1,16 @@
 <template>
-  <div class="space-y-6">
+  <div class="space-y-4">
     <div>
-      <div class="flex items-center justify-between mb-3">
-        <div>
-          <h3 class="text-sm font-medium text-white">Subtitles</h3>
-          <p class="text-xs text-white/50">Word-by-word subtitles from transcript. Drag in preview to reposition.</p>
+      <h3 class="text-sm font-medium text-white mb-3">Subtitles</h3>
+      <p class="text-xs text-white/50 mb-4">Word-by-word subtitles from transcript. Drag in preview to reposition.</p>
+    </div>
+
+    <!-- Enable Subtitles Card -->
+    <div class="p-4 bg-white/5 rounded-lg border border-white/10">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <Type :size="16" class="text-violet-400" />
+          <span class="text-sm font-medium text-white">Enable Subtitles</span>
         </div>
         <button
           @click="toggleSubtitles"
@@ -24,214 +30,175 @@
       </div>
     </div>
 
-    <!-- Sub-tabs -->
-    <div class="flex items-center gap-1">
-      <button
-        v-for="tab in subtitleTabs"
-        :key="tab.id"
-        @click="activeSubtitleTab = tab.id"
-        :class="[
-          'px-3 py-1.5 text-[11px] font-semibold rounded-md transition-all',
-          activeSubtitleTab === tab.id
-            ? 'text-violet-400 bg-violet-500/20 border border-violet-500/30'
-            : 'text-white/50 hover:text-white hover:bg-white/10 border border-transparent',
-        ]"
-      >
-        {{ tab.label }}
-      </button>
-    </div>
-
-    <!-- Per-Ratio Configuration Buttons -->
-    <div v-if="configuredAspectRatios.length > 0" class="flex flex-wrap items-center gap-2">
-      <span class="text-[10px] text-white/40 uppercase tracking-wide">Configure for:</span>
-      <button
-        @click="switchToRatio('16:9')"
-        :class="[
-          'px-2 py-1 rounded text-[10px] font-medium transition-all',
-          previewAspectRatio === '16:9'
-            ? 'bg-violet-500 text-white ring-2 ring-violet-400 ring-offset-1 ring-offset-zinc-900'
-            : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white',
-        ]"
-      >
-        16:9
-      </button>
-      <button
-        v-for="ratio in configuredAspectRatios"
-        :key="ratio"
-        @click="switchToRatio(ratio)"
-        :class="[
-          'px-2 py-1 rounded text-[10px] font-medium transition-all flex items-center gap-1',
-          previewAspectRatio === ratio
-            ? 'bg-violet-500 text-white ring-2 ring-violet-400 ring-offset-1 ring-offset-zinc-900'
-            : localSettings.perRatioConfigs?.[ratio]
-              ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
-              : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white',
-        ]"
-      >
-        {{ ratio }}
-        <span v-if="localSettings.perRatioConfigs?.[ratio]" class="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span>
-      </button>
-    </div>
-
-    <!-- Tab Content -->
-    <div class="overflow-y-auto custom-scrollbar" style="max-height: calc(100vh - 500px)">
-      <!-- Presets Tab -->
-      <div v-if="activeSubtitleTab === 'presets'" class="space-y-4">
-        <!-- Save Buttons -->
-        <div class="flex items-center gap-2">
+    <!-- Main Subtitle Style Card (like TextOverlayTab) -->
+    <div class="p-4 bg-white/5 rounded-lg border border-white/10">
+      <!-- Header -->
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2 flex-1 min-w-0">
+          <Type :size="16" class="text-violet-400 flex-shrink-0" />
+          <span class="text-sm text-white truncate">Subtitle Style</span>
+        </div>
+        <div class="flex items-center gap-1">
           <button
             @click="openSaveDialog('new')"
-            class="flex-1 py-2 px-3 rounded-lg transition-all flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white/60 hover:text-white"
+            class="p-1.5 rounded hover:bg-white/10 transition-colors"
+            title="Save as Preset"
           >
-            <Plus :size="14" />
-            <span class="text-xs font-medium">New</span>
+            <Plus :size="14" class="text-white/50 hover:text-violet-400" />
           </button>
           <button
-            v-if="selectedPreset"
-            @click="openSaveDialog('update')"
-            class="flex-1 py-2 px-3 rounded-lg transition-all flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white/60 hover:text-white"
+            @click="resetToDefaults"
+            class="p-1.5 rounded hover:bg-white/10 transition-colors"
+            title="Reset to Defaults"
           >
-            <Upload :size="14" />
-            <span class="text-xs font-medium">Update</span>
-          </button>
-        </div>
-
-        <!-- Empty State -->
-        <div v-if="allPresets.length === 0" class="py-8 text-center">
-          <div
-            class="w-12 h-12 mx-auto mb-3 bg-gradient-to-br from-violet-500/10 to-purple-500/10 rounded-lg flex items-center justify-center border border-violet-500/20"
-          >
-            <Star :size="20" class="text-violet-400/60" />
-          </div>
-          <p class="text-sm text-white/50 mb-1">No presets saved yet</p>
-          <p class="text-xs text-white/30">Customize settings and save them as presets</p>
-        </div>
-
-        <!-- Preset List -->
-        <div v-else class="space-y-2">
-          <button
-            v-for="preset in allPresets"
-            :key="preset.id"
-            @click="applyPreset(preset)"
-            :class="[
-              'group w-full relative rounded-sm transition-all text-left overflow-hidden p-3 flex items-center gap-3',
-              isCurrentPreset(preset)
-                ? 'bg-white/10 border-l-2 border-l-violet-500'
-                : 'bg-white/5 border-l-2 border-l-transparent hover:bg-white/10 hover:border-l-white/30',
-            ]"
-          >
-            <div class="flex-1 min-w-0">
-              <h4 class="text-sm font-medium text-white truncate mb-0.5">{{ preset.name }}</h4>
-              <p v-if="preset.description" class="text-xs text-white/40 line-clamp-1">{{ preset.description }}</p>
-            </div>
-            <div
-              @click.stop="presetToDelete = preset.id"
-              class="flex-shrink-0 w-7 h-7 rounded-md flex items-center justify-center transition-all text-white/30 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 cursor-pointer"
-              title="Delete preset"
-            >
-              <Trash2 :size="14" />
-            </div>
+            <RotateCcw :size="14" class="text-white/50 hover:text-red-400" />
           </button>
         </div>
       </div>
 
-      <!-- Text Tab -->
-      <div v-if="activeSubtitleTab === 'text'" class="space-y-4">
-        <!-- Font Family -->
-        <div class="space-y-2">
-          <label class="text-xs font-medium text-white/60">Font</label>
-          <div class="relative">
-            <button
-              @click="showFontDropdown = !showFontDropdown"
-              class="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-md text-left flex items-center justify-between hover:bg-white/10 transition-colors text-sm text-white"
-            >
-              <span :style="{ fontFamily: localSettings.fontFamily }">{{ localSettings.fontFamily }}</span>
-              <ChevronDown
-                :size="14"
-                class="text-white/40 transition-transform"
-                :class="{ 'rotate-180': showFontDropdown }"
-              />
-            </button>
-            <div
-              v-if="showFontDropdown"
-              class="absolute top-full left-0 right-0 mt-1 bg-zinc-900 border border-white/10 rounded-md shadow-lg z-50 max-h-48 overflow-y-auto"
-            >
+      <!-- Quick Info -->
+      <div class="flex items-center gap-3 text-xs text-white/40">
+        <span>{{ currentFontSize }}px</span>
+        <span>{{ localSettings.fontFamily }}</span>
+        <span
+          class="w-2.5 h-2.5 rounded-sm border border-white/10"
+          :style="{ backgroundColor: localSettings.textColor }"
+        ></span>
+      </div>
+
+      <!-- Aspect Ratio Configuration Buttons -->
+      <div v-if="configuredAspectRatios.length > 0" class="mt-3 flex flex-wrap items-center gap-2">
+        <span class="text-[10px] text-white/40 uppercase tracking-wide">Configure for:</span>
+        <button
+          @click="switchToRatio('16:9')"
+          :class="[
+            'px-2 py-1 rounded text-[10px] font-medium transition-all flex items-center gap-1',
+            previewAspectRatio === '16:9'
+              ? 'bg-violet-500 text-white ring-2 ring-violet-400 ring-offset-1 ring-offset-zinc-900'
+              : hasPerRatioConfig('16:9')
+                ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
+                : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white',
+          ]"
+        >
+          16:9
+          <span v-if="hasPerRatioConfig('16:9')" class="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span>
+        </button>
+        <button
+          v-for="ratio in configuredAspectRatios"
+          :key="ratio"
+          @click="switchToRatio(ratio)"
+          :class="[
+            'px-2 py-1 rounded text-[10px] font-medium transition-all flex items-center gap-1',
+            previewAspectRatio === ratio
+              ? 'bg-violet-500 text-white ring-2 ring-violet-400 ring-offset-1 ring-offset-zinc-900'
+              : hasPerRatioConfig(ratio)
+                ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
+                : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white',
+          ]"
+        >
+          {{ ratio }}
+          <span v-if="hasPerRatioConfig(ratio)" class="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span>
+        </button>
+      </div>
+
+      <!-- Settings Panel -->
+      <div class="mt-4 pt-4 border-t border-white/10 space-y-4">
+        <!-- Font Row -->
+        <div class="grid grid-cols-2 gap-3">
+          <!-- Font Family -->
+          <div>
+            <label class="block text-xs text-white/50 mb-1">Font</label>
+            <div class="relative">
               <button
-                v-for="font in fontOptions"
-                :key="font"
-                @click="selectFont(font)"
-                class="block w-full text-left px-3 py-2 hover:bg-white/10 transition-colors text-sm text-white"
-                :class="{ 'bg-violet-500/20 text-violet-400': localSettings.fontFamily === font }"
-                :style="{ fontFamily: font }"
+                @click="showFontDropdown = !showFontDropdown"
+                class="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-md text-left text-sm text-white hover:bg-white/10 transition-colors flex items-center justify-between"
               >
-                {{ font }}
+                <span class="truncate" :style="{ fontFamily: localSettings.fontFamily }">
+                  {{ localSettings.fontFamily }}
+                </span>
+                <ChevronDown
+                  :size="14"
+                  class="text-white/40 transition-transform flex-shrink-0 ml-2"
+                  :class="{ 'rotate-180': showFontDropdown }"
+                />
               </button>
+              <div
+                v-if="showFontDropdown"
+                class="absolute top-full left-0 right-0 mt-1 bg-zinc-900 border border-white/10 rounded-md shadow-lg z-50 max-h-48 overflow-y-auto"
+              >
+                <button
+                  v-for="font in fontOptions"
+                  :key="font"
+                  @click="selectFont(font)"
+                  class="block w-full text-left px-3 py-2 hover:bg-white/10 transition-colors text-sm text-white"
+                  :class="{ 'bg-violet-500/20 text-violet-400': localSettings.fontFamily === font }"
+                  :style="{ fontFamily: font }"
+                >
+                  {{ font }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Font Size -->
+          <div>
+            <label class="block text-xs text-white/50 mb-1">Size</label>
+            <div class="flex items-center gap-2">
+              <input
+                type="number"
+                :value="currentFontSize"
+                @input="(e) => updateFontSize(parseInt((e.target as HTMLInputElement).value))"
+                min="12"
+                max="150"
+                class="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-md text-sm text-white"
+              />
+              <span class="text-xs text-white/40">px</span>
             </div>
           </div>
         </div>
 
-        <!-- Font Size -->
-        <div class="space-y-2">
-          <div class="flex justify-between items-center">
-            <label class="text-xs font-medium text-white/60">Size</label>
-            <span class="text-xs font-mono text-white/50 bg-white/5 px-2 py-1 rounded">
-              {{ getCurrentFontSize() }}px
-            </span>
+        <!-- Color & Weight Row -->
+        <div class="grid grid-cols-2 gap-3">
+          <!-- Text Color -->
+          <div>
+            <label class="block text-xs text-white/50 mb-1">Color</label>
+            <div class="flex gap-2">
+              <ColorPicker v-model="localSettings.textColor" @update:modelValue="emitSettingsChange" />
+              <input
+                type="text"
+                v-model="localSettings.textColor"
+                @input="emitSettingsChange"
+                class="flex-1 px-2 py-2 bg-white/5 border border-white/10 rounded-md text-xs text-white font-mono uppercase"
+              />
+            </div>
           </div>
-          <input
-            type="range"
-            :value="getCurrentFontSize()"
-            @input="(e) => updateFontSize(parseInt((e.target as HTMLInputElement).value))"
-            min="12"
-            max="150"
-            step="1"
-            class="w-full h-2 bg-white/10 rounded-md appearance-none cursor-pointer slider"
-          />
-        </div>
 
-        <!-- Text Color -->
-        <div class="space-y-2">
-          <label class="text-xs font-medium text-white/60">Color</label>
-          <div class="flex gap-2">
-            <ColorPicker v-model="localSettings.textColor" @update:modelValue="emitSettingsChange" />
-            <input
-              type="text"
-              v-model="localSettings.textColor"
-              @input="emitSettingsChange"
-              class="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-md text-sm text-white font-mono uppercase"
-              placeholder="#FFFFFF"
-            />
+          <!-- Font Weight -->
+          <div>
+            <label class="block text-xs text-white/50 mb-1">Weight</label>
+            <select
+              v-model.number="localSettings.fontWeight"
+              @change="emitSettingsChange"
+              class="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-md text-sm text-white"
+            >
+              <option value="100">Thin</option>
+              <option value="300">Light</option>
+              <option value="400">Normal</option>
+              <option value="500">Medium</option>
+              <option value="600">Semi Bold</option>
+              <option value="700">Bold</option>
+              <option value="900">Black</option>
+            </select>
           </div>
         </div>
 
-        <!-- Font Weight -->
-        <div class="space-y-2">
-          <label class="text-xs font-medium text-white/60">Weight</label>
-          <select
-            v-model.number="localSettings.fontWeight"
-            @change="emitSettingsChange"
-            class="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-md text-sm text-white"
-          >
-            <option value="100">Thin</option>
-            <option value="300">Light</option>
-            <option value="400">Normal</option>
-            <option value="500">Medium</option>
-            <option value="600">Semi Bold</option>
-            <option value="700">Bold</option>
-            <option value="900">Black</option>
-          </select>
-        </div>
-      </div>
+        <!-- Effects Section -->
+        <div class="space-y-3 pt-3 border-t border-white/10">
+          <h5 class="text-xs font-medium text-white/70">Effects</h5>
 
-      <!-- Effects Tab -->
-      <div v-if="activeSubtitleTab === 'effects'" class="space-y-4">
-        <!-- Outline Toggle -->
-        <div class="space-y-3">
+          <!-- Outline Toggle -->
           <div class="flex items-center justify-between">
-            <div>
-              <label class="text-xs font-medium text-white/60">Text Outline</label>
-              <p class="text-[10px] text-white/30 mt-0.5">Add a colored border around text</p>
-            </div>
+            <span class="text-xs text-white/50">Text Outline</span>
             <button
               @click="toggleBorder"
               type="button"
@@ -261,15 +228,10 @@
             />
             <span class="text-xs text-white/40 self-center">px</span>
           </div>
-        </div>
 
-        <!-- Shadow Toggle -->
-        <div class="space-y-3">
+          <!-- Shadow Toggle -->
           <div class="flex items-center justify-between">
-            <div>
-              <label class="text-xs font-medium text-white/60">Drop Shadow</label>
-              <p class="text-[10px] text-white/30 mt-0.5">Add depth with a shadow effect</p>
-            </div>
+            <span class="text-xs text-white/50">Drop Shadow</span>
             <button
               @click="toggleShadow"
               type="button"
@@ -299,52 +261,10 @@
             />
             <span class="text-xs text-white/40 self-center">blur</span>
           </div>
-        </div>
 
-        <!-- Word Animation Style -->
-        <div class="space-y-3">
-          <label class="text-xs font-medium text-white/60">Word Animation</label>
-          <div class="grid grid-cols-2 gap-2">
-            <button
-              v-for="anim in animationOptions"
-              :key="anim.value"
-              @click="setAnimationStyle(anim.value)"
-              :class="[
-                'px-3 py-2.5 rounded-md text-xs font-medium transition-all text-left',
-                localSettings.animationStyle === anim.value
-                  ? 'bg-violet-500 text-white'
-                  : 'bg-white/5 text-white/50 hover:bg-white/10',
-              ]"
-            >
-              <span class="block">{{ anim.label }}</span>
-              <span class="block text-[9px] opacity-70 mt-0.5">{{ anim.description }}</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Highlight Color (shown when animation is active) -->
-        <div v-if="localSettings.animationStyle !== 'none'" class="space-y-2">
-          <label class="text-xs font-medium text-white/60">Highlight Color</label>
-          <div class="flex gap-2">
-            <ColorPicker v-model="localSettings.highlightColor" @update:modelValue="emitSettingsChange" />
-            <input
-              type="text"
-              v-model="localSettings.highlightColor"
-              @input="emitSettingsChange"
-              class="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-md text-sm text-white font-mono uppercase"
-              placeholder="#FFFF00"
-            />
-          </div>
-          <p class="text-[10px] text-white/30">Used for karaoke color and box highlight</p>
-        </div>
-
-        <!-- Background Toggle -->
-        <div class="space-y-3">
+          <!-- Background Toggle -->
           <div class="flex items-center justify-between">
-            <div>
-              <label class="text-xs font-medium text-white/60">Background</label>
-              <p class="text-[10px] text-white/30 mt-0.5">Add a background behind text</p>
-            </div>
+            <span class="text-xs text-white/50">Background</span>
             <button
               @click="
                 localSettings.backgroundEnabled = !localSettings.backgroundEnabled;
@@ -374,18 +294,53 @@
             />
           </div>
         </div>
-      </div>
 
-      <!-- Position Tab -->
-      <div v-if="activeSubtitleTab === 'position'" class="space-y-4">
-        <!-- Quick Position Buttons -->
-        <div class="space-y-2">
-          <label class="text-xs font-medium text-white/60">Vertical Position</label>
+        <!-- Animation Section -->
+        <div class="space-y-3 pt-3 border-t border-white/10">
+          <h5 class="text-xs font-medium text-white/70">Animation</h5>
+          <div class="grid grid-cols-2 gap-2">
+            <button
+              v-for="anim in animationOptions"
+              :key="anim.value"
+              @click="setAnimationStyle(anim.value)"
+              :class="[
+                'px-3 py-2.5 rounded-md text-xs font-medium transition-all text-left',
+                localSettings.animationStyle === anim.value
+                  ? 'bg-violet-500 text-white'
+                  : 'bg-white/5 text-white/50 hover:bg-white/10',
+              ]"
+            >
+              <span class="block">{{ anim.label }}</span>
+              <span class="block text-[9px] opacity-70 mt-0.5">{{ anim.description }}</span>
+            </button>
+          </div>
+
+          <!-- Highlight Color (shown when animation is active) -->
+          <div v-if="localSettings.animationStyle !== 'none'" class="pt-3 border-t border-white/10">
+            <label class="block text-xs text-white/50 mb-1">Highlight Color</label>
+            <div class="flex gap-2">
+              <ColorPicker v-model="localSettings.highlightColor" @update:modelValue="emitSettingsChange" />
+              <input
+                type="text"
+                v-model="localSettings.highlightColor"
+                @input="emitSettingsChange"
+                class="flex-1 px-2 py-1.5 bg-white/5 border border-white/10 rounded text-xs text-white font-mono uppercase"
+                placeholder="#FFFF00"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Position Section -->
+        <div class="space-y-3 pt-3 border-t border-white/10">
+          <h5 class="text-xs font-medium text-white/70">Position</h5>
+
+          <!-- Quick Position Buttons -->
           <div class="grid grid-cols-3 gap-2">
             <button
               @click="setPosition('top')"
               :class="[
-                'px-3 py-3 rounded-md text-xs font-medium transition-all',
+                'px-3 py-2 rounded-md text-xs font-medium transition-all',
                 localSettings.position === 'top'
                   ? 'bg-violet-500 text-white'
                   : 'bg-white/5 text-white/50 hover:bg-white/10',
@@ -396,7 +351,7 @@
             <button
               @click="setPosition('middle')"
               :class="[
-                'px-3 py-3 rounded-md text-xs font-medium transition-all',
+                'px-3 py-2 rounded-md text-xs font-medium transition-all',
                 localSettings.position === 'middle'
                   ? 'bg-violet-500 text-white'
                   : 'bg-white/5 text-white/50 hover:bg-white/10',
@@ -407,7 +362,7 @@
             <button
               @click="setPosition('bottom')"
               :class="[
-                'px-3 py-3 rounded-md text-xs font-medium transition-all',
+                'px-3 py-2 rounded-md text-xs font-medium transition-all',
                 localSettings.position === 'bottom'
                   ? 'bg-violet-500 text-white'
                   : 'bg-white/5 text-white/50 hover:bg-white/10',
@@ -416,11 +371,8 @@
               Bottom
             </button>
           </div>
-        </div>
 
-        <!-- Text Alignment -->
-        <div class="space-y-2">
-          <label class="text-xs font-medium text-white/60">Horizontal Alignment</label>
+          <!-- Text Alignment -->
           <div class="grid grid-cols-3 gap-2">
             <button
               @click="
@@ -428,14 +380,13 @@
                 emitSettingsChange();
               "
               :class="[
-                'px-3 py-3 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5',
+                'px-3 py-2 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5',
                 localSettings.textAlign === 'left'
                   ? 'bg-violet-500 text-white'
                   : 'bg-white/5 text-white/50 hover:bg-white/10',
               ]"
             >
               <AlignLeft :size="14" />
-              Left
             </button>
             <button
               @click="
@@ -443,14 +394,13 @@
                 emitSettingsChange();
               "
               :class="[
-                'px-3 py-3 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5',
+                'px-3 py-2 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5',
                 localSettings.textAlign === 'center'
                   ? 'bg-violet-500 text-white'
                   : 'bg-white/5 text-white/50 hover:bg-white/10',
               ]"
             >
               <AlignCenter :size="14" />
-              Center
             </button>
             <button
               @click="
@@ -458,152 +408,213 @@
                 emitSettingsChange();
               "
               :class="[
-                'px-3 py-3 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5',
+                'px-3 py-2 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5',
                 localSettings.textAlign === 'right'
                   ? 'bg-violet-500 text-white'
                   : 'bg-white/5 text-white/50 hover:bg-white/10',
               ]"
             >
               <AlignRight :size="14" />
-              Right
             </button>
           </div>
+
+          <p class="text-[10px] text-white/30">
+            💡 Drag subtitles in preview to reposition, use side handles to resize width
+          </p>
         </div>
 
-        <!-- Max Width -->
-        <div class="space-y-2">
-          <div class="flex justify-between items-center">
-            <label class="text-xs font-medium text-white/60">Maximum Width</label>
-            <span class="text-xs font-mono text-white/50 bg-white/5 px-2 py-1 rounded">
-              {{ localSettings.maxWidth }}%
-            </span>
+        <!-- Advanced Section -->
+        <div class="space-y-3 pt-3 border-t border-white/10">
+          <h5 class="text-xs font-medium text-white/70">Advanced</h5>
+
+          <!-- Line Height -->
+          <div>
+            <div class="flex justify-between items-center mb-1">
+              <label class="text-xs text-white/50">Line Height</label>
+              <span class="text-xs font-mono text-white/50 bg-white/5 px-2 py-0.5 rounded">
+                {{ Number(localSettings.lineHeight).toFixed(1) }}
+              </span>
+            </div>
+            <input
+              type="range"
+              :value="localSettings.lineHeight"
+              @input="
+                (e) => {
+                  localSettings.lineHeight = parseFloat((e.target as HTMLInputElement).value);
+                  emitSettingsChange();
+                }
+              "
+              min="0.5"
+              max="2.5"
+              step="0.05"
+              class="slider"
+            />
           </div>
-          <input
-            type="range"
-            v-model.number="localSettings.maxWidth"
-            @input="emitSettingsChange"
-            min="40"
-            max="100"
-            step="5"
-            class="w-full h-2 bg-white/10 rounded-md appearance-none cursor-pointer slider"
-          />
-        </div>
 
-        <p class="text-[10px] text-white/30 pt-2">
-          💡 Tip: Drag the subtitles in the preview to fine-tune position for each aspect ratio.
-        </p>
+          <!-- Letter Spacing -->
+          <div>
+            <div class="flex justify-between items-center mb-1">
+              <label class="text-xs text-white/50">Letter Spacing</label>
+              <span class="text-xs font-mono text-white/50 bg-white/5 px-2 py-0.5 rounded">
+                {{ localSettings.letterSpacing }}px
+              </span>
+            </div>
+            <input
+              type="range"
+              v-model.number="localSettings.letterSpacing"
+              @input="emitSettingsChange"
+              min="-2"
+              max="10"
+              step="0.5"
+              class="slider"
+            />
+          </div>
+
+          <!-- Word Spacing -->
+          <div>
+            <div class="flex justify-between items-center mb-1">
+              <label class="text-xs text-white/50">Word Spacing</label>
+              <span class="text-xs font-mono text-white/50 bg-white/5 px-2 py-0.5 rounded">
+                {{ localSettings.wordSpacing.toFixed(2) }}
+              </span>
+            </div>
+            <input
+              type="range"
+              v-model.number="localSettings.wordSpacing"
+              @input="emitSettingsChange"
+              min="0.1"
+              max="1"
+              step="0.05"
+              class="slider"
+            />
+          </div>
+
+          <!-- Padding -->
+          <div>
+            <div class="flex justify-between items-center mb-1">
+              <label class="text-xs text-white/50">Padding</label>
+              <span class="text-xs font-mono text-white/50 bg-white/5 px-2 py-0.5 rounded">
+                {{ localSettings.padding }}px
+              </span>
+            </div>
+            <input
+              type="range"
+              v-model.number="localSettings.padding"
+              @input="emitSettingsChange"
+              min="0"
+              max="40"
+              step="2"
+              class="slider"
+            />
+          </div>
+
+          <!-- Border Radius -->
+          <div>
+            <div class="flex justify-between items-center mb-1">
+              <label class="text-xs text-white/50">Border Radius</label>
+              <span class="text-xs font-mono text-white/50 bg-white/5 px-2 py-0.5 rounded">
+                {{ localSettings.borderRadius }}px
+              </span>
+            </div>
+            <input
+              type="range"
+              v-model.number="localSettings.borderRadius"
+              @input="emitSettingsChange"
+              min="0"
+              max="20"
+              step="1"
+              class="slider"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Presets Section -->
+    <div class="space-y-3">
+      <h4 class="text-sm font-medium text-white">Presets</h4>
+
+      <!-- Preset List -->
+      <div v-if="allPresets.length > 0" class="space-y-2">
+        <div
+          v-for="preset in allPresets"
+          :key="preset.id"
+          @click="applyPreset(preset)"
+          :class="[
+            'relative overflow-hidden rounded-lg cursor-pointer transition-all duration-200 group border',
+            isCurrentPreset(preset)
+              ? 'bg-white/[0.08] border-violet-500/50'
+              : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20',
+          ]"
+        >
+          <div class="flex items-stretch">
+            <!-- Style Preview -->
+            <div
+              class="w-14 flex-shrink-0 flex items-center justify-center rounded-l-lg"
+              :style="{
+                background: preset.settings.backgroundEnabled
+                  ? preset.settings.backgroundColor
+                  : 'rgba(255,255,255,0.03)',
+              }"
+            >
+              <span
+                class="text-base font-bold select-none"
+                :style="{
+                  fontFamily: preset.settings.fontFamily,
+                  color: preset.settings.textColor,
+                  textShadow:
+                    preset.settings.shadowBlur > 0
+                      ? `${preset.settings.shadowOffsetX}px ${preset.settings.shadowOffsetY}px ${preset.settings.shadowBlur}px ${preset.settings.shadowColor}`
+                      : 'none',
+                  WebkitTextStroke:
+                    preset.settings.border1Width > 0
+                      ? `${Math.min(preset.settings.border1Width, 1.5)}px ${preset.settings.border1Color}`
+                      : 'none',
+                }"
+              >
+                Aa
+              </span>
+            </div>
+
+            <!-- Content -->
+            <div class="flex-1 py-2.5 px-3 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-medium text-white truncate">{{ preset.name }}</span>
+                <span
+                  v-if="isCurrentPreset(preset)"
+                  class="px-1.5 py-0.5 text-[9px] font-medium bg-violet-500/20 text-violet-400 rounded"
+                >
+                  Active
+                </span>
+              </div>
+              <div class="flex items-center gap-1.5 text-[10px] text-white/40 mt-0.5">
+                <span>{{ preset.settings.fontFamily }}</span>
+                <span class="text-white/20">•</span>
+                <span>{{ preset.settings.fontSize }}px</span>
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex items-center pr-2">
+              <button
+                @click.stop="presetToDelete = preset.id"
+                class="p-1.5 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10 transition-all"
+                title="Delete"
+              >
+                <Trash2 :size="14" class="text-red-400/70 hover:text-red-400" />
+              </button>
+            </div>
+          </div>
+
+          <!-- Active indicator bar -->
+          <div v-if="isCurrentPreset(preset)" class="absolute left-0 top-0 bottom-0 w-0.5 bg-violet-500"></div>
+        </div>
       </div>
 
-      <!-- Advanced Tab -->
-      <div v-if="activeSubtitleTab === 'advanced'" class="space-y-4">
-        <!-- Line Height -->
-        <div class="space-y-2">
-          <div class="flex justify-between items-center">
-            <label class="text-xs font-medium text-white/60">Line Height</label>
-            <span class="text-xs font-mono text-white/50 bg-white/5 px-2 py-1 rounded">
-              {{ Number(localSettings.lineHeight).toFixed(1) }}
-            </span>
-          </div>
-          <input
-            type="range"
-            :value="localSettings.lineHeight"
-            @input="
-              (e) => {
-                localSettings.lineHeight = parseFloat((e.target as HTMLInputElement).value);
-                emitSettingsChange();
-              }
-            "
-            min="0.5"
-            max="2.5"
-            step="0.05"
-            class="w-full h-2 bg-white/10 rounded-md appearance-none cursor-pointer slider"
-          />
-        </div>
-
-        <!-- Letter Spacing -->
-        <div class="space-y-2">
-          <div class="flex justify-between items-center">
-            <label class="text-xs font-medium text-white/60">Letter Spacing</label>
-            <span class="text-xs font-mono text-white/50 bg-white/5 px-2 py-1 rounded">
-              {{ localSettings.letterSpacing }}px
-            </span>
-          </div>
-          <input
-            type="range"
-            v-model.number="localSettings.letterSpacing"
-            @input="emitSettingsChange"
-            min="-2"
-            max="10"
-            step="0.5"
-            class="w-full h-2 bg-white/10 rounded-md appearance-none cursor-pointer slider"
-          />
-        </div>
-
-        <!-- Word Spacing -->
-        <div class="space-y-2">
-          <div class="flex justify-between items-center">
-            <label class="text-xs font-medium text-white/60">Word Spacing</label>
-            <span class="text-xs font-mono text-white/50 bg-white/5 px-2 py-1 rounded">
-              {{ localSettings.wordSpacing.toFixed(2) }}
-            </span>
-          </div>
-          <input
-            type="range"
-            v-model.number="localSettings.wordSpacing"
-            @input="emitSettingsChange"
-            min="0.1"
-            max="1"
-            step="0.05"
-            class="w-full h-2 bg-white/10 rounded-md appearance-none cursor-pointer slider"
-          />
-        </div>
-
-        <!-- Padding -->
-        <div class="space-y-2">
-          <div class="flex justify-between items-center">
-            <label class="text-xs font-medium text-white/60">Padding</label>
-            <span class="text-xs font-mono text-white/50 bg-white/5 px-2 py-1 rounded">
-              {{ localSettings.padding }}px
-            </span>
-          </div>
-          <input
-            type="range"
-            v-model.number="localSettings.padding"
-            @input="emitSettingsChange"
-            min="0"
-            max="40"
-            step="2"
-            class="w-full h-2 bg-white/10 rounded-md appearance-none cursor-pointer slider"
-          />
-        </div>
-
-        <!-- Border Radius -->
-        <div class="space-y-2">
-          <div class="flex justify-between items-center">
-            <label class="text-xs font-medium text-white/60">Border Radius</label>
-            <span class="text-xs font-mono text-white/50 bg-white/5 px-2 py-1 rounded">
-              {{ localSettings.borderRadius }}px
-            </span>
-          </div>
-          <input
-            type="range"
-            v-model.number="localSettings.borderRadius"
-            @input="emitSettingsChange"
-            min="0"
-            max="20"
-            step="1"
-            class="w-full h-2 bg-white/10 rounded-md appearance-none cursor-pointer slider"
-          />
-        </div>
-
-        <!-- Reset Button -->
-        <button
-          @click="resetToDefaults"
-          class="w-full py-2.5 mt-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-md text-xs font-medium text-white/60 hover:text-white transition-all flex items-center justify-center gap-2"
-        >
-          <RotateCcw :size="14" />
-          Reset to Defaults
-        </button>
+      <!-- Empty State -->
+      <div v-else class="py-6 text-center bg-white/5 rounded-lg border border-white/10">
+        <Sparkles :size="24" class="mx-auto text-white/20 mb-2" />
+        <p class="text-xs text-white/40">No presets saved yet</p>
       </div>
     </div>
 
@@ -704,7 +715,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-  import type { ClipSubtitleSettings, ClipSubtitleRatioConfig, ManualFramingConfigs } from '@/types';
+  import type { ClipSubtitleSettings, ManualFramingConfigs } from '@/types';
   import type { CustomSubtitlePreset } from '@/services/database';
   import {
     getAllCustomSubtitlePresets,
@@ -719,7 +730,6 @@
   import {
     Plus,
     Upload,
-    Star,
     ChevronDown,
     Trash2,
     AlignLeft,
@@ -727,6 +737,8 @@
     AlignRight,
     RotateCcw,
     X,
+    Type,
+    Sparkles,
   } from 'lucide-vue-next';
 
   interface SubtitlePresetUI {
@@ -750,7 +762,6 @@
 
   // Local state
   const localSettings = ref<ClipSubtitleSettings>({ ...props.settings });
-  const activeSubtitleTab = ref('presets');
   const customPresets = ref<CustomSubtitlePreset[]>([]);
   const selectedPresetId = ref<string | null>(props.settings.selectedPresetId || null);
   const showSavePresetDialog = ref(false);
@@ -760,14 +771,6 @@
   const saveMode = ref<'new' | 'update'>('new');
   const showFontDropdown = ref(false);
   const customFonts = ref<CustomFont[]>([]);
-
-  const subtitleTabs = [
-    { id: 'presets', label: 'Presets' },
-    { id: 'text', label: 'Text' },
-    { id: 'effects', label: 'Effects' },
-    { id: 'position', label: 'Position' },
-    { id: 'advanced', label: 'Advanced' },
-  ];
 
   const baseFontOptions = [
     'Inter',
@@ -855,6 +858,52 @@
       return !!(config && config.regions && config.regions.length > 0);
     });
   });
+
+  // Get font size for current preview ratio (always uses per-ratio config pattern)
+  const currentFontSize = computed(() => {
+    const ratio = props.previewAspectRatio;
+    return getFontSizeForRatio(ratio);
+  });
+
+  // Get font size for a specific ratio
+  function getFontSizeForRatio(ratio: string): number {
+    const ratioConfig = localSettings.value.perRatioConfigs?.[ratio];
+    if (ratioConfig?.fontSize !== undefined) {
+      return ratioConfig.fontSize;
+    }
+    return localSettings.value.fontSize;
+  }
+
+  // Update font size for current ratio (always uses per-ratio config, like TextOverlayTab)
+  function updateFontSize(value: number) {
+    const ratio = props.previewAspectRatio;
+    ensurePerRatioConfig(ratio);
+    localSettings.value.perRatioConfigs![ratio].fontSize = value;
+    emitSettingsChange();
+  }
+
+  // Ensure per-ratio config exists for a given ratio
+  function ensurePerRatioConfig(ratio: string) {
+    if (!localSettings.value.perRatioConfigs) {
+      localSettings.value.perRatioConfigs = {};
+    }
+    if (!localSettings.value.perRatioConfigs[ratio]) {
+      // Initialize with current base values as defaults
+      localSettings.value.perRatioConfigs[ratio] = {
+        position: {
+          x: localSettings.value.positionX,
+          y: localSettings.value.positionY,
+        },
+        fontSize: localSettings.value.fontSize,
+        maxWidth: localSettings.value.maxWidth,
+      };
+    }
+  }
+
+  // Check if a ratio has custom per-ratio config
+  function hasPerRatioConfig(ratio: string): boolean {
+    return !!localSettings.value.perRatioConfigs?.[ratio];
+  }
 
   // Watch for external settings changes
   watch(
@@ -981,33 +1030,6 @@
   function selectFont(font: string) {
     localSettings.value.fontFamily = font;
     showFontDropdown.value = false;
-    emitSettingsChange();
-  }
-
-  // Get font size for current aspect ratio
-  function getCurrentFontSize(): number {
-    const ratio = props.previewAspectRatio;
-    const ratioConfig = localSettings.value.perRatioConfigs?.[ratio];
-    return ratioConfig?.fontSize || localSettings.value.fontSize;
-  }
-
-  // Update font size for current aspect ratio
-  function updateFontSize(size: number) {
-    const ratio = props.previewAspectRatio;
-    if (ratio === '16:9') {
-      // Update base font size
-      localSettings.value.fontSize = size;
-    } else {
-      // Update per-ratio font size
-      const perRatioConfigs = localSettings.value.perRatioConfigs || {};
-      const currentConfig = perRatioConfigs[ratio] || {
-        position: { x: localSettings.value.positionX, y: localSettings.value.positionY },
-        fontSize: localSettings.value.fontSize,
-      };
-      currentConfig.fontSize = size;
-      perRatioConfigs[ratio] = currentConfig;
-      localSettings.value.perRatioConfigs = perRatioConfigs;
-    }
     emitSettingsChange();
   }
 
@@ -1215,25 +1237,58 @@
   }
 
   /* Slider styling */
+  .slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    outline: none;
+    cursor: pointer;
+  }
+
   .slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     background: white;
     cursor: pointer;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  .slider::-webkit-slider-thumb:hover {
+    box-shadow: 0 2px 8px rgba(139, 92, 246, 0.5);
+  }
+
+  .slider::-webkit-slider-thumb:active {
+    background: #e0e0e0;
   }
 
   .slider::-moz-range-thumb {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     background: white;
     cursor: pointer;
     border: none;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  .slider::-moz-range-thumb:hover {
+    box-shadow: 0 2px 8px rgba(139, 92, 246, 0.5);
+  }
+
+  .slider::-moz-range-thumb:active {
+    background: #e0e0e0;
+  }
+
+  .slider::-moz-range-track {
+    background: rgba(255, 255, 255, 0.1);
+    height: 8px;
+    border-radius: 4px;
   }
 
   /* Select styling */

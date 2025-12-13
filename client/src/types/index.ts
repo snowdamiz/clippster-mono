@@ -934,10 +934,11 @@ export interface EditorPreviewState {
 // Clip Subtitle Types (for Clip Editor)
 // ==========================================
 
-// Per-aspect-ratio configuration for subtitles (position and size overrides)
+// Per-aspect-ratio configuration for subtitles (position, size, and width overrides)
 export interface ClipSubtitleRatioConfig {
   position: { x: number; y: number }; // 0-100 percentage (center point)
   fontSize: number; // Font size for this aspect ratio
+  maxWidth?: number; // Max width percentage for this aspect ratio (0-100)
 }
 
 // Clip-level subtitle settings stored in clip edit data

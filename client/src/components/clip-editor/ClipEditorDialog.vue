@@ -93,6 +93,7 @@
                   @update-sticker-rotation="onUpdateStickerRotation"
                   @update-watermark-scale="onUpdateWatermarkScale"
                   @update-subtitle-position="onUpdateSubtitlePosition"
+                  @update-subtitle-max-width="onUpdateSubtitleMaxWidth"
                 />
               </div>
             </div>
@@ -1106,6 +1107,28 @@
 
     subtitleSettings.value = {
       ...settings,
+      perRatioConfigs,
+    };
+    triggerAutoSave();
+  }
+
+  // Handle subtitle max width updates from preview resize
+  function onUpdateSubtitleMaxWidth(maxWidth: number) {
+    const ratio = previewAspectRatio.value;
+    const settings = subtitleSettings.value;
+
+    // Update per-ratio config for the current aspect ratio
+    const perRatioConfigs = { ...settings.perRatioConfigs };
+    const currentConfig = perRatioConfigs[ratio] || {
+      position: { x: settings.positionX, y: settings.positionY },
+      fontSize: settings.fontSize,
+    };
+    currentConfig.maxWidth = maxWidth;
+    perRatioConfigs[ratio] = currentConfig;
+
+    subtitleSettings.value = {
+      ...settings,
+      maxWidth, // Also update base maxWidth for display
       perRatioConfigs,
     };
     triggerAutoSave();
