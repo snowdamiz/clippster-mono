@@ -63,18 +63,6 @@
           </button>
         </template>
 
-        <!-- Audio Tab Actions -->
-        <template v-if="activeTab === 'audio'">
-          <button
-            @click="audioTabRef?.resetToDefaults?.()"
-            class="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground bg-muted/30 hover:bg-muted/50 rounded-md transition-all border border-border/40 hover:border-border/60"
-            title="Reset to defaults"
-          >
-            <RotateCcw class="h-3 w-3" />
-            Reset
-          </button>
-        </template>
-
         <!-- Subtitles Tab Actions -->
         <template v-if="activeTab === 'subtitles'">
           <div class="flex items-center gap-1.5">
@@ -187,15 +175,6 @@
       @refresh-clips="refreshClips"
     />
 
-    <!-- Audio Tab Content -->
-    <AudioTab
-      v-if="activeTab === 'audio'"
-      ref="audioTabRef"
-      :project-id="projectId"
-      @settings-changed="onAudioSettingsChanged"
-      :hide-header="true"
-    />
-
     <!-- Transcript Tab Content - use v-show to keep mounted so it receives events -->
     <TranscriptPanel
       v-show="activeTab === 'transcript'"
@@ -247,16 +226,14 @@
     type ClipDetectionSession,
     type Prompt,
   } from '@/services/database';
-  import type { MediaPanelProps, MediaPanelEmits, SubtitleSettings, WatermarkSettings, AudioSettings } from '../types';
+  import type { MediaPanelProps, MediaPanelEmits, SubtitleSettings, WatermarkSettings } from '../types';
   import ClipsTab from './ClipsTab.vue';
-  import AudioTab from './AudioTab.vue';
   import TranscriptPanel from './TranscriptPanel.vue';
   import SubtitlesTab from './SubtitlesTab.vue';
   import WatermarkTab from './WatermarkTab.vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
   import {
     Video,
-    Volume2,
     FileText,
     Type,
     Image,
@@ -270,7 +247,6 @@
   // Tab configuration
   const tabs = [
     { id: 'clips', label: 'Clips', icon: markRaw(Video) },
-    { id: 'audio', label: 'Audio', icon: markRaw(Volume2) },
     { id: 'transcript', label: 'Transcript', icon: markRaw(FileText) },
     { id: 'subtitles', label: 'Subtitles', icon: markRaw(Type) },
     { id: 'watermark', label: 'Watermark', icon: markRaw(Image) },
@@ -317,9 +293,6 @@
 
   // Ref for WatermarkTab component
   const watermarkTabRef = ref<InstanceType<typeof WatermarkTab> | null>(null);
-
-  // Ref for AudioTab component
-  const audioTabRef = ref<InstanceType<typeof AudioTab> | null>(null);
 
   // Ref for SubtitlesTab component
   const subtitlesTabRef = ref<InstanceType<typeof SubtitlesTab> | null>(null);
@@ -597,10 +570,6 @@
     const newSettings = { ...watermarkSettings.value, enabled: !watermarkSettings.value.enabled };
     watermarkSettings.value = newSettings;
     emit('watermarkSettingsChanged', newSettings);
-  }
-
-  function onAudioSettingsChanged(settings: AudioSettings) {
-    emit('audioSettingsChanged', settings);
   }
 
   // Event listener for fallback refresh mechanism

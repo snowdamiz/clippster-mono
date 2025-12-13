@@ -301,7 +301,6 @@ export interface MediaPanelEmits {
   (e: 'seekVideo', time: number): void;
   (e: 'subtitleSettingsChanged', settings: SubtitleSettings): void;
   (e: 'watermarkSettingsChanged', settings: WatermarkSettings): void;
-  (e: 'audioSettingsChanged', settings: AudioSettings): void;
 }
 
 export interface TimelinePlayheadProps {

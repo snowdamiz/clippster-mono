@@ -59,7 +59,6 @@
                 :current-time="currentTime"
                 :watermark-settings="watermarkSettings"
                 :watermark-data="currentWatermarkData"
-                :audio-gain-db="audioGainDb"
                 @togglePlayPause="togglePlayPause"
                 @timeUpdate="onTimeUpdate"
                 @loadedMetadata="onLoadedMetadata"
@@ -115,7 +114,6 @@
                 @seekVideo="onSeekVideo"
                 @subtitleSettingsChanged="onSubtitleSettingsChanged"
                 @watermarkSettingsChanged="onWatermarkSettingsChanged"
-                @audioSettingsChanged="onAudioSettingsChanged"
               />
             </div>
           </div>
@@ -133,7 +131,6 @@
             :currently-playing-clip-id="currentlyPlayingClipId"
             :project-id="project?.id"
             :dialog-height="dialogHeight"
-            :audio-gain-db="audioGainDb"
             @seekTimeline="seekTimeline"
             @timelineTrackHover="onTimelineTrackHover"
             @timelineMouseLeave="onTimelineMouseLeave"
@@ -188,7 +185,6 @@
     :clip-end-time="clipEditorEndTime"
     :clip-title="clipEditorTitle"
     :clip-segments="clipEditorSegments"
-    :project-audio-gain-db="audioGainDb"
     @save="onClipEditorSave"
   />
 </template>
@@ -227,7 +223,7 @@
   } from '@/services/database';
   import { X, Film } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
-  import type { SubtitleSettings, WatermarkSettings, AudioSettings } from '@/types';
+  import type { SubtitleSettings, WatermarkSettings } from '@/types';
   import VideoPlayer from './VideoPlayer.vue';
   import VideoControls from './VideoControls.vue';
   import MediaPanel from './MediaPanel.vue';
@@ -352,9 +348,6 @@
     opacity: 80,
     scale: 15,
   });
-
-  // Audio gain state (in dB, -20 to +20)
-  const audioGainDb = ref(0);
 
   // Current watermark image data (for VideoPlayer)
   const currentWatermarkData = ref<{ dataUrl: string; width?: number; height?: number } | null>(null);
@@ -1060,11 +1053,6 @@
     } else {
       currentWatermarkData.value = null;
     }
-  }
-
-  // Handle audio settings changed from MediaPanel
-  function onAudioSettingsChanged(settings: AudioSettings) {
-    audioGainDb.value = settings.volume;
   }
 
   // Load creator profile and apply their default settings

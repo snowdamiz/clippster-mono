@@ -284,7 +284,6 @@
     clipEndTime: number;
     clipTitle: string;
     clipSegments?: ClipSegmentInput[];
-    projectAudioGainDb?: number; // dB gain from project audio settings
   }>();
 
   const emit = defineEmits<{
@@ -1127,9 +1126,6 @@
       }
       if (editData.originalDb !== undefined) {
         originalDb.value = editData.originalDb;
-      } else if (props.projectAudioGainDb !== undefined) {
-        // Initialize from project audio settings if no clip-specific setting exists
-        originalDb.value = props.projectAudioGainDb;
       }
       if (editData.trackDbValues) {
         trackDbValues.value = editData.trackDbValues;
@@ -1196,15 +1192,6 @@
         endTime: seg.end_time - props.clipStartTime,
         isDeleted: false,
       }));
-      // Initialize audio settings from project if available
-      if (props.projectAudioGainDb !== undefined) {
-        originalDb.value = props.projectAudioGainDb;
-      }
-    } else {
-      // No edit data and no segments, still initialize audio settings from project
-      if (props.projectAudioGainDb !== undefined) {
-        originalDb.value = props.projectAudioGainDb;
-      }
     }
   }
 
