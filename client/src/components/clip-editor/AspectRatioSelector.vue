@@ -1,7 +1,5 @@
 <template>
-  <div class="flex items-center gap-2 px-3 py-1.5 bg-black/40 border-b border-white/5 flex-shrink-0">
-    <span class="text-[10px] text-white/40 uppercase tracking-wider font-medium mr-2">Preview</span>
-
+  <div class="flex items-center gap-2 px-4.5 mt-4 -mb-1.5 flex-shrink-0">
     <!-- 16:9 Original (always available) -->
     <button
       @click="selectRatio('16:9')"
@@ -16,8 +14,6 @@
       <span>16:9</span>
       <span v-if="previewAspectRatio === '16:9'" class="text-[9px] text-emerald-400/70">Original</span>
     </button>
-
-    <div class="w-px h-4 bg-white/10 mx-1"></div>
 
     <!-- Other aspect ratios -->
     <button

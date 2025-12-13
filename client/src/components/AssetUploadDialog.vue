@@ -32,7 +32,7 @@
                 <div class="h-px flex-1 bg-gradient-to-r from-transparent via-zinc-700 to-transparent" />
               </div>
 
-              <div class="grid grid-cols-4 gap-2">
+              <div class="grid grid-cols-5 gap-2">
                 <!-- Intro -->
                 <button
                   @click="selectedType = 'intro'"
@@ -209,6 +209,50 @@
                     </div>
                   </Transition>
                 </button>
+
+                <!-- Image -->
+                <button
+                  @click="selectedType = 'image'"
+                  :class="[
+                    'group relative p-2 rounded-lg border transition-all duration-300 text-center overflow-hidden',
+                    selectedType === 'image'
+                      ? 'border-cyan-500/50 bg-cyan-500/10'
+                      : 'border-zinc-800 hover:border-zinc-700 bg-zinc-900/50 hover:bg-zinc-800/50',
+                  ]"
+                >
+                  <div class="relative">
+                    <div
+                      :class="[
+                        'w-8 h-8 mx-auto rounded-lg flex items-center justify-center mb-1.5 transition-all duration-300',
+                        selectedType === 'image' ? 'bg-cyan-500' : 'bg-zinc-800 group-hover:bg-zinc-700',
+                      ]"
+                    >
+                      <ImageIcon
+                        :class="[
+                          'h-4 w-4 transition-colors',
+                          selectedType === 'image' ? 'text-white' : 'text-cyan-400',
+                        ]"
+                      />
+                    </div>
+                    <span
+                      :class="[
+                        'font-medium text-[11px] block transition-colors',
+                        selectedType === 'image' ? 'text-cyan-400' : 'text-white',
+                      ]"
+                    >
+                      Image
+                    </span>
+                  </div>
+
+                  <Transition name="check">
+                    <div
+                      v-if="selectedType === 'image'"
+                      class="absolute top-1 right-1 w-3.5 h-3.5 bg-cyan-500 rounded-full flex items-center justify-center"
+                    >
+                      <Check class="h-2 w-2 text-white" />
+                    </div>
+                  </Transition>
+                </button>
               </div>
             </div>
 
@@ -227,7 +271,9 @@
                             ? 'bg-amber-500/20'
                             : selectedType === 'audio'
                               ? 'bg-emerald-500/20'
-                              : 'bg-zinc-800',
+                              : selectedType === 'image'
+                                ? 'bg-cyan-500/20'
+                                : 'bg-zinc-800',
                     ]"
                   >
                     <FileVideo
@@ -239,6 +285,7 @@
                     />
                     <ImageIcon v-else-if="selectedType === 'watermark'" class="h-4 w-4 text-amber-400" />
                     <Music v-else-if="selectedType === 'audio'" class="h-4 w-4 text-emerald-400" />
+                    <ImageIcon v-else-if="selectedType === 'image'" class="h-4 w-4 text-cyan-400" />
                     <FileVideo v-else class="h-4 w-4 text-zinc-500" />
                   </div>
                   <div class="flex-1 min-w-0">
@@ -254,6 +301,15 @@
                           v-for="format in ['PNG', 'JPG', 'WebP', 'GIF']"
                           :key="format"
                           class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                        >
+                          {{ format }}
+                        </span>
+                      </template>
+                      <template v-else-if="selectedType === 'image'">
+                        <span
+                          v-for="format in ['PNG', 'JPG', 'WebP', 'GIF', 'BMP', 'TIFF']"
+                          :key="format"
+                          class="inline-flex px-1.5 py-0.5 rounded text-[9px] font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"
                         >
                           {{ format }}
                         </span>
@@ -308,6 +364,7 @@
                   selectedType === 'outro' && 'bg-gradient-to-r from-violet-600 to-violet-500',
                   selectedType === 'watermark' && 'bg-gradient-to-r from-amber-600 to-amber-500',
                   selectedType === 'audio' && 'bg-gradient-to-r from-emerald-600 to-emerald-500',
+                  selectedType === 'image' && 'bg-gradient-to-r from-cyan-600 to-cyan-500',
                 ]"
               >
                 <!-- Shine effect -->
@@ -335,6 +392,7 @@
   import { useAssetOperations } from '@/composables/useAssetOperations';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
   import { useAudioAssetOperations } from '@/composables/useAudioAssetOperations';
+  import { useImageAssetOperations } from '@/composables/useImageAssetOperations';
 
   const emit = defineEmits<{
     close: [];
@@ -348,10 +406,13 @@
   const { uploading: assetUploading, uploadAsset } = useAssetOperations();
   const { uploading: watermarkUploading, uploadWatermark } = useWatermarkOperations();
   const { uploading: audioUploading, uploadAudioAsset } = useAudioAssetOperations();
+  const { uploading: imageUploading, uploadImageAsset } = useImageAssetOperations();
 
-  const selectedType = ref<'intro' | 'outro' | 'watermark' | 'audio' | null>(null);
+  const selectedType = ref<'intro' | 'outro' | 'watermark' | 'audio' | 'image' | null>(null);
 
-  const isUploading = computed(() => assetUploading.value || watermarkUploading.value || audioUploading.value);
+  const isUploading = computed(
+    () => assetUploading.value || watermarkUploading.value || audioUploading.value || imageUploading.value
+  );
 
   function handleUpload() {
     if (!selectedType.value) return;
@@ -381,6 +442,17 @@
           })
           .catch((error) => {
             console.error('Audio upload failed:', error);
+          });
+      } else if (selectedType.value === 'image') {
+        // Upload image file
+        uploadImageAsset()
+          .then((result) => {
+            if (result.success) {
+              emit('uploaded');
+            }
+          })
+          .catch((error) => {
+            console.error('Image upload failed:', error);
           });
       } else {
         // Upload intro/outro video

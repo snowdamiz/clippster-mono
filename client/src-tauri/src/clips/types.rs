@@ -867,3 +867,42 @@ pub struct TextOverlaySettings {
     pub preview_height: Option<f64>,
 }
 
+// ============================================================================
+// STICKER OVERLAY TYPES
+// ============================================================================
+
+/// Per-aspect-ratio configuration for stickers
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StickerRatioConfig {
+    pub position: StickerPosition,
+    pub scale: f64,
+    pub rotation: f64,
+}
+
+/// Sticker position as x/y coordinates
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StickerPosition {
+    pub x: f64,  // 0-100 percentage
+    pub y: f64,  // 0-100 percentage
+}
+
+/// Sticker overlay settings for export
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StickerSettings {
+    pub id: String,
+    pub sticker_path: String,  // Path to sticker image or emoji character
+    pub sticker_type: String,  // "emoji" | "image" | "gif"
+    pub start_time: f64,
+    pub end_time: f64,
+    pub position_x: f64,  // 0-100 percentage (default position)
+    pub position_y: f64,  // 0-100 percentage (default position)
+    pub scale: f64,       // 0.1-3 (default scale)
+    pub rotation: f64,    // Degrees (default rotation)
+    pub animation: String,
+    /// Per-aspect-ratio configurations (key is ratio like "16:9", "9:16")
+    #[serde(default)]
+    pub per_ratio_configs: Option<std::collections::HashMap<String, StickerRatioConfig>>,
+}
+

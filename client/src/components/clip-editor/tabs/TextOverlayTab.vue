@@ -385,13 +385,6 @@
       </div>
     </div>
 
-    <!-- Empty State -->
-    <div v-else class="py-8 text-center">
-      <Type :size="32" class="mx-auto text-white/20 mb-2" />
-      <p class="text-sm text-white/40">No text overlays yet</p>
-      <p class="text-xs text-white/30 mt-1">Click "Add Text" to create one</p>
-    </div>
-
     <!-- Add Text Dialog -->
     <Teleport to="body">
       <div

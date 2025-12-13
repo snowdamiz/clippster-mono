@@ -79,6 +79,7 @@ pub fn init_storage_dirs() -> Result<StoragePaths, String> {
         watermarks: base_dir.join("watermarks"),
         fonts: base_dir.join("fonts"),
         audio: base_dir.join("audio"),
+        images: base_dir.join("images"),
         temp: base_dir.join("temp"),
     };
 
@@ -101,6 +102,8 @@ pub fn init_storage_dirs() -> Result<StoragePaths, String> {
         .map_err(|e| format!("Failed to create fonts directory: {}", e))?;
     std::fs::create_dir_all(&paths.audio)
         .map_err(|e| format!("Failed to create audio directory: {}", e))?;
+    std::fs::create_dir_all(&paths.images)
+        .map_err(|e| format!("Failed to create images directory: {}", e))?;
     std::fs::create_dir_all(&paths.temp)
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
 
@@ -134,6 +137,7 @@ pub struct StoragePaths {
     pub watermarks: PathBuf,
     pub fonts: PathBuf,
     pub audio: PathBuf,
+    pub images: PathBuf,
     pub temp: PathBuf,
 }
 
@@ -153,6 +157,7 @@ pub fn get_storage_paths() -> Result<StoragePathsResponse, String> {
         watermarks: paths.watermarks.to_string_lossy().to_string(),
         fonts: paths.fonts.to_string_lossy().to_string(),
         audio: paths.audio.to_string_lossy().to_string(),
+        images: paths.images.to_string_lossy().to_string(),
         temp: paths.temp.to_string_lossy().to_string(),
     })
 }
@@ -170,6 +175,7 @@ pub struct StoragePathsResponse {
     pub watermarks: String,
     pub fonts: String,
     pub audio: String,
+    pub images: String,
     pub temp: String,
 }
 
@@ -752,6 +758,179 @@ pub fn delete_watermark_file(file_path: String) -> Result<(), String> {
         .map_err(|e| format!("Failed to delete file: {}", e))?;
 
     println!("[Rust] Watermark deleted: {}", file_path);
+    Ok(())
+}
+
+/// Response structure for copy_image_to_storage
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CopyImageResponse {
+    pub destination_path: String,
+    pub original_filename: String,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub file_size: Option<u64>,
+    pub mime_type: Option<String>,
+}
+
+/// Tauri command to copy an image file to storage
+#[tauri::command]
+pub async fn copy_image_to_storage(source_path: String, app: tauri::AppHandle) -> Result<CopyImageResponse, String> {
+    use std::fs;
+    use std::path::Path;
+    use tauri_plugin_shell::ShellExt;
+
+    let source = Path::new(&source_path);
+
+    // Validate source file exists
+    if !source.exists() {
+        return Err("Source file does not exist".to_string());
+    }
+
+    // Get original filename
+    let original_filename = source
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("Failed to get filename")?;
+
+    // Get file extension
+    let extension = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .ok_or("File has no extension")?
+        .to_lowercase();
+
+    // Validate it's an image file
+    let valid_extensions = ["png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff", "tif"];
+    if !valid_extensions.contains(&extension.as_str()) {
+        return Err(format!("Invalid image format. Supported: {}", valid_extensions.join(", ")));
+    }
+
+    // Determine MIME type
+    let mime_type = match extension.as_str() {
+        "png" => Some("image/png".to_string()),
+        "jpg" | "jpeg" => Some("image/jpeg".to_string()),
+        "webp" => Some("image/webp".to_string()),
+        "gif" => Some("image/gif".to_string()),
+        "bmp" => Some("image/bmp".to_string()),
+        "tiff" | "tif" => Some("image/tiff".to_string()),
+        _ => None,
+    };
+
+    // Get file size
+    let file_size = fs::metadata(&source)
+        .map(|m| m.len())
+        .ok();
+
+    // Generate unique filename using timestamp and random component
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get timestamp: {}", e))?
+        .as_secs();
+
+    let random_suffix: u32 = rand::random();
+    let filename = format!("image_{}_{}.{}", timestamp, random_suffix, extension);
+
+    // Get storage paths
+    let paths = init_storage_dirs()?;
+    let destination = paths.images.join(&filename);
+
+    // Copy the file
+    fs::copy(source, &destination)
+        .map_err(|e| format!("Failed to copy file: {}", e))?;
+
+    // Try to get image dimensions using FFmpeg
+    let mut width: Option<u32> = None;
+    let mut height: Option<u32> = None;
+
+    // Use ffmpeg to get image info (reads from stderr)
+    if let Ok(output) = app.shell()
+        .sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args([
+            "-i", destination.to_str().unwrap_or(""),
+            "-f", "null",
+            "-",
+        ])
+        .output()
+        .await
+    {
+        // FFmpeg outputs info to stderr
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        
+        // Parse dimensions from output like "Stream #0:0: Video: png, rgba, 1920x1080"
+        for line in stderr.lines() {
+            if line.contains("Stream") && line.contains("Video:") {
+                let parts: Vec<&str> = line.split(',').collect();
+                for part in parts {
+                    let trimmed = part.trim();
+                    // Check if this looks like dimensions (e.g., "1920x1080")
+                    if trimmed.contains('x') && !trimmed.contains("0x") {
+                        let dim_parts: Vec<&str> = trimmed.split('x').collect();
+                        if dim_parts.len() == 2 {
+                            if let (Ok(w), Ok(h)) = (
+                                dim_parts[0].trim().parse::<u32>(),
+                                dim_parts[1].split(|c: char| !c.is_numeric()).next().unwrap_or("").parse::<u32>()
+                            ) {
+                                if w > 0 && h > 0 && w < 100000 && h < 100000 {
+                                    width = Some(w);
+                                    height = Some(h);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                if width.is_some() {
+                    break;
+                }
+            }
+        }
+    }
+
+    println!("[Rust] Image copied to storage: {}", destination.display());
+    if let (Some(w), Some(h)) = (width, height) {
+        println!("[Rust] Image dimensions: {}x{}", w, h);
+    } else {
+        println!("[Rust] Could not determine image dimensions (this is OK)");
+    }
+
+    Ok(CopyImageResponse {
+        destination_path: destination.to_string_lossy().to_string(),
+        original_filename: original_filename.to_string(),
+        width,
+        height,
+        file_size,
+        mime_type,
+    })
+}
+
+/// Tauri command to delete an image file from the filesystem
+#[tauri::command]
+pub fn delete_image_file(file_path: String) -> Result<(), String> {
+    use std::fs;
+    use std::path::Path;
+
+    let path = Path::new(&file_path);
+
+    // Validate the file path is in the images directory
+    let paths = init_storage_dirs()?;
+
+    if !path.starts_with(&paths.images) {
+        return Err("File path is not in the images directory".to_string());
+    }
+
+    // Check if file exists
+    if !path.exists() {
+        // File already deleted, that's okay
+        println!("[Rust] Image file already deleted: {}", file_path);
+        return Ok(());
+    }
+
+    // Delete the file
+    fs::remove_file(path)
+        .map_err(|e| format!("Failed to delete file: {}", e))?;
+
+    println!("[Rust] Image deleted: {}", file_path);
     Ok(())
 }
 

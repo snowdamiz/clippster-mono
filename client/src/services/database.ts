@@ -29,6 +29,7 @@ export type {
   WatermarkSettings,
   AudioSettings,
   AudioAsset,
+  ImageAsset,
   CreatorProfile,
   CreatorPlatformLink,
   CreatorProfileWithLinks,
@@ -280,6 +281,15 @@ export {
   updateAudioAsset,
   deleteAudioAsset,
 } from './database/audio-assets';
+
+// Image assets exports
+export {
+  createImageAsset,
+  getAllImageAssets,
+  getImageAsset,
+  updateImageAsset,
+  deleteImageAsset,
+} from './database/image-assets';
 
 // Speaker detection exports
 export {

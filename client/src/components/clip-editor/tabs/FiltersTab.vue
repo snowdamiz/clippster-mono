@@ -238,12 +238,6 @@
         </div>
       </div>
     </div>
-
-    <!-- Empty state -->
-    <div v-else class="border-t border-white/10 pt-4 text-center py-8 text-white/40 text-sm">
-      <p>No filters added yet.</p>
-      <p class="text-xs mt-1">Click a preset above to add a filter at the current playhead position.</p>
-    </div>
   </div>
 </template>
 

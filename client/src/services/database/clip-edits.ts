@@ -55,6 +55,7 @@ export interface ClipStickerRecord {
   scale: number;
   rotation: number;
   animation: string;
+  per_ratio_configs_data?: string; // JSON string for per-aspect-ratio configurations
   created_at: number;
 }
 
@@ -365,8 +366,8 @@ export async function createSticker(
 
   await db.execute(
     `INSERT INTO clip_stickers 
-     (id, clip_edit_id, sticker_path, sticker_type, start_time, end_time, position_x, position_y, scale, rotation, animation, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, clip_edit_id, sticker_path, sticker_type, start_time, end_time, position_x, position_y, scale, rotation, animation, per_ratio_configs_data, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       clipEditId,
@@ -379,6 +380,7 @@ export async function createSticker(
       data.scale ?? 1.0,
       data.rotation || 0,
       data.animation || 'none',
+      data.per_ratio_configs_data || null,
       now,
     ]
   );
@@ -395,6 +397,7 @@ export async function createSticker(
     scale: data.scale ?? 1.0,
     rotation: data.rotation || 0,
     animation: data.animation || 'none',
+    per_ratio_configs_data: data.per_ratio_configs_data,
     created_at: now,
   };
 }
@@ -447,6 +450,10 @@ export async function updateSticker(id: string, data: Partial<ClipStickerRecord>
   if (data.animation !== undefined) {
     updates.push('animation = ?');
     values.push(data.animation);
+  }
+  if (data.per_ratio_configs_data !== undefined) {
+    updates.push('per_ratio_configs_data = ?');
+    values.push(data.per_ratio_configs_data);
   }
 
   if (updates.length > 0) {

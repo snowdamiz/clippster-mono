@@ -85,6 +85,8 @@
                   @video-element-ready="onVideoElementReady"
                   @update-overlay-position="onUpdateOverlayPosition"
                   @update-overlay-width="onUpdateOverlayWidth"
+                  @update-sticker-scale="onUpdateStickerScale"
+                  @update-sticker-rotation="onUpdateStickerRotation"
                 />
               </div>
             </div>
@@ -139,11 +141,16 @@
                   :stickers="stickers"
                   :current-time="effectivePreviewTime"
                   :duration="totalSegmentDuration"
+                  :preview-aspect-ratio="previewAspectRatio"
+                  :selected-aspect-ratios="selectedAspectRatios"
+                  :framing-configs="framingConfigs"
                   @add-sticker="addStickerLocal"
                   @update-sticker="updateStickerLocal"
                   @delete-sticker="deleteStickerLocal"
+                  @update:preview-aspect-ratio="previewAspectRatio = $event"
                 />
 
+                <!-- EffectsTab - TODO: Create this component when effects feature is implemented
                 <EffectsTab
                   v-if="activeTab === 'effects'"
                   :effects="effects"
@@ -152,7 +159,7 @@
                   @add-effect="addEffectLocal"
                   @update-effect="updateEffectLocal"
                   @delete-effect="deleteEffectLocal"
-                />
+                /> -->
 
                 <AspectTab
                   v-if="activeTab === 'aspect'"
@@ -882,6 +889,7 @@
       scale: updates.scale,
       rotation: updates.rotation,
       animation: updates.animation,
+      per_ratio_configs_data: updates.perRatioConfigs ? JSON.stringify(updates.perRatioConfigs) : undefined,
     });
 
     const sticker = stickers.value.find((s) => s.id === stickerId);
@@ -912,7 +920,20 @@
         updateTextOverlayLocal(id, { perRatioConfigs });
       }
     } else if (type === 'sticker') {
-      updateStickerLocal(id, { position });
+      // Store position in per-ratio config for the current preview aspect ratio
+      const sticker = stickers.value.find((s) => s.id === id);
+      if (sticker) {
+        const ratio = previewAspectRatio.value;
+        const perRatioConfigs = sticker.perRatioConfigs || {};
+        const currentConfig = perRatioConfigs[ratio] || {
+          position: { ...sticker.position },
+          scale: sticker.scale,
+          rotation: sticker.rotation,
+        };
+        currentConfig.position = position;
+        perRatioConfigs[ratio] = currentConfig;
+        updateStickerLocal(id, { perRatioConfigs });
+      }
     }
   }
 
@@ -929,6 +950,40 @@
       currentConfig.style = { ...currentConfig.style, width };
       perRatioConfigs[ratio] = currentConfig;
       updateTextOverlayLocal(id, { perRatioConfigs });
+    }
+  }
+
+  function onUpdateStickerScale(id: string, scale: number) {
+    // Store scale in per-ratio config for the current preview aspect ratio
+    const sticker = stickers.value.find((s) => s.id === id);
+    if (sticker) {
+      const ratio = previewAspectRatio.value;
+      const perRatioConfigs = sticker.perRatioConfigs || {};
+      const currentConfig = perRatioConfigs[ratio] || {
+        position: { ...sticker.position },
+        scale: sticker.scale,
+        rotation: sticker.rotation,
+      };
+      currentConfig.scale = scale;
+      perRatioConfigs[ratio] = currentConfig;
+      updateStickerLocal(id, { perRatioConfigs });
+    }
+  }
+
+  function onUpdateStickerRotation(id: string, rotation: number) {
+    // Store rotation in per-ratio config for the current preview aspect ratio
+    const sticker = stickers.value.find((s) => s.id === id);
+    if (sticker) {
+      const ratio = previewAspectRatio.value;
+      const perRatioConfigs = sticker.perRatioConfigs || {};
+      const currentConfig = perRatioConfigs[ratio] || {
+        position: { ...sticker.position },
+        scale: sticker.scale,
+        rotation: sticker.rotation,
+      };
+      currentConfig.rotation = rotation;
+      perRatioConfigs[ratio] = currentConfig;
+      updateStickerLocal(id, { perRatioConfigs });
     }
   }
 
@@ -1123,6 +1178,7 @@
         scale: s.scale,
         rotation: s.rotation,
         animation: s.animation as any,
+        perRatioConfigs: s.per_ratio_configs_data ? JSON.parse(s.per_ratio_configs_data) : undefined,
       }));
 
       effects.value = fullEdit.effects.map((e) => ({

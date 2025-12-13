@@ -2,10 +2,10 @@ use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 use tauri::Emitter;
 
-use super::types::{SubtitleSettings, SubtitleOverrides, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy, VideoFilterSegment, TextOverlaySettings};
+use super::types::{SubtitleSettings, SubtitleOverrides, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy, VideoFilterSegment, TextOverlaySettings, StickerSettings};
 use super::video_info::{get_video_info, parse_aspect_ratio, IntroOutroCache};
 use super::subtitle::{generate_ass_file, generate_text_overlay_ass_file, merge_text_overlays_into_ass};
-use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings, build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy};
+use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings, build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy, apply_stickers_to_video};
 use super::font_manager::get_fonts_dir;
 use super::{CancellationToken, is_build_cancelled};
 
@@ -140,6 +140,7 @@ pub async fn build_clip_internal_simple(
     framing_strategy: Option<FramingStrategy>,
     video_filter_segments: Option<Vec<VideoFilterSegment>>,
     text_overlays: Option<Vec<TextOverlaySettings>>,
+    stickers: Option<Vec<StickerSettings>>,
     cancel_rx: CancellationToken
 ) -> Result<ClipBuildResult, String> {
 
@@ -232,6 +233,7 @@ pub async fn build_clip_internal_simple(
         let framing_strategy = framing_strategy.clone();
         let video_filter_segments = video_filter_segments.clone();
         let text_overlays = text_overlays.clone();
+        let stickers = stickers.clone();
         let cancel_rx = cancel_rx.clone();
         let build_num = build_num;
         
@@ -441,6 +443,20 @@ pub async fn build_clip_internal_simple(
                     audio_settings.as_ref(),
                     video_filter_segments.as_ref()
                 ).await?;
+            }
+
+            // Apply stickers if present
+            if let Some(ref sticker_list) = stickers.as_ref() {
+                if !sticker_list.is_empty() {
+                    println!("[Rust] Applying {} stickers to {} clip", sticker_list.len(), aspect_ratio_str);
+                    apply_stickers_to_video(
+                        &app,
+                        &output_path,
+                        sticker_list,
+                        &aspect_ratio_str,
+                        &quality
+                    ).await?;
+                }
             }
 
             // Clean up subtitle file

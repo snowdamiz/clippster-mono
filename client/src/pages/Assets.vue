@@ -2,7 +2,7 @@
   <div class="assets-page">
     <PageLayout
       title="Assets"
-      description="Manage your intros, outros, and watermarks"
+      description="Manage your intros, outros, watermarks, and images"
       :show-header="true"
       :icon="Archive"
     >
@@ -128,10 +128,11 @@
               class="absolute inset-0 z-0"
               :style="{
                 backgroundImage: `url(${getThumbnailUrl(asset)})`,
-                backgroundSize: asset.assetType === 'watermark' ? 'contain' : 'cover',
+                backgroundSize: asset.assetType === 'watermark' || asset.assetType === 'image' ? 'contain' : 'cover',
                 backgroundPosition: 'center',
                 backgroundRepeat: 'no-repeat',
-                backgroundColor: asset.assetType === 'watermark' ? '#1a1a1a' : 'transparent',
+                backgroundColor:
+                  asset.assetType === 'watermark' || asset.assetType === 'image' ? '#1a1a1a' : 'transparent',
               }"
             >
               <!-- Dark vignette overlay handled by bottom gradient now, but keep subtle global one -->
@@ -151,11 +152,19 @@
                         ? 'text-white/70 bg-purple-500/20 backdrop-blur-sm'
                         : asset.assetType === 'audio'
                           ? 'text-white/70 bg-emerald-500/20 backdrop-blur-sm'
-                          : 'text-white/70 bg-amber-500/20 backdrop-blur-sm',
+                          : asset.assetType === 'image'
+                            ? 'text-white/70 bg-cyan-500/20 backdrop-blur-sm'
+                            : 'text-white/70 bg-amber-500/20 backdrop-blur-sm',
                 ]"
               >
                 <component
-                  :is="asset.assetType === 'watermark' ? ImageIcon : asset.assetType === 'audio' ? Music : Package"
+                  :is="
+                    asset.assetType === 'watermark' || asset.assetType === 'image'
+                      ? ImageIcon
+                      : asset.assetType === 'audio'
+                        ? Music
+                        : Package
+                  "
                   class="h-3 w-3"
                 />
                 {{
@@ -165,7 +174,9 @@
                       ? 'Outro'
                       : asset.assetType === 'audio'
                         ? 'Audio'
-                        : 'Watermark'
+                        : asset.assetType === 'image'
+                          ? 'Image'
+                          : 'Watermark'
                 }}
               </span>
             </div>
@@ -184,11 +195,18 @@
 
               <!-- Metadata Row -->
               <div class="flex items-center gap-2 text-xs text-white/70 font-medium">
-                <!-- Duration for video/audio assets, dimensions for watermarks -->
+                <!-- Duration for video/audio assets, dimensions for watermarks/images -->
                 <span v-if="asset.assetType === 'watermark'">
                   {{
                     (asset as WatermarkImage).width && (asset as WatermarkImage).height
                       ? `${(asset as WatermarkImage).width}×${(asset as WatermarkImage).height}`
+                      : 'Image'
+                  }}
+                </span>
+                <span v-else-if="asset.assetType === 'image'">
+                  {{
+                    (asset as ImageAsset).width && (asset as ImageAsset).height
+                      ? `${(asset as ImageAsset).width}×${(asset as ImageAsset).height}`
                       : 'Image'
                   }}
                 </span>
@@ -243,7 +261,7 @@
         <EmptyState
           v-if="allAssets.length === 0 && !uploading"
           title="No assets yet"
-          description="Upload your first intro, outro, watermark, or audio to get started"
+          description="Upload your first intro, outro, watermark, audio, or image to get started"
         >
           <template #icon>
             <Package class="h-16 w-16 text-muted-foreground" />
@@ -324,9 +342,11 @@
     getAllIntroOutros,
     getAllWatermarkImages,
     getAllAudioAssets,
+    getAllImageAssets,
     type IntroOutro,
     type WatermarkImage,
     type AudioAsset,
+    type ImageAsset,
   } from '@/services/database';
   import {
     Archive,
@@ -344,6 +364,7 @@
   import { useAssetOperations } from '@/composables/useAssetOperations';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
   import { useAudioAssetOperations } from '@/composables/useAudioAssetOperations';
+  import { useImageAssetOperations } from '@/composables/useImageAssetOperations';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
   import { getStoragePath } from '@/services/storage';
   import { invoke } from '@tauri-apps/api/core';
@@ -360,11 +381,13 @@
   type DisplayAsset =
     | (IntroOutro & { assetType: 'intro' | 'outro' })
     | (WatermarkImage & { assetType: 'watermark' })
-    | (AudioAsset & { assetType: 'audio' });
+    | (AudioAsset & { assetType: 'audio' })
+    | (ImageAsset & { assetType: 'image' });
 
   const assets = ref<IntroOutro[]>([]);
   const watermarks = ref<WatermarkImage[]>([]);
   const audioAssets = ref<AudioAsset[]>([]);
+  const imageAssets = ref<ImageAsset[]>([]);
   const loading = ref(true);
   const showDeleteDialog = ref(false);
   const assetToDelete = ref<DisplayAsset | null>(null);
@@ -385,18 +408,21 @@
   let unregisterUploadCallback: (() => void) | null = null;
   let unregisterWatermarkCallback: (() => void) | null = null;
   let unregisterAudioCallback: (() => void) | null = null;
+  let unregisterImageCallback: (() => void) | null = null;
 
   // Asset operations composable
   const { uploading, showSkeletonCard, deleteAsset, onUploadComplete } = useAssetOperations();
   const { deleteWatermark, onUploadComplete: onWatermarkUploadComplete } = useWatermarkOperations();
   const { deleteAudioAsset, onUploadComplete: onAudioUploadComplete } = useAudioAssetOperations();
+  const { deleteImageAsset, onUploadComplete: onImageUploadComplete } = useImageAssetOperations();
 
   // Combined assets for display
   const allAssets = computed<DisplayAsset[]>(() => {
     const introOutros: DisplayAsset[] = assets.value.map((a) => ({ ...a, assetType: a.type as 'intro' | 'outro' }));
     const wms: DisplayAsset[] = watermarks.value.map((w) => ({ ...w, assetType: 'watermark' as const }));
     const audios: DisplayAsset[] = audioAssets.value.map((a) => ({ ...a, assetType: 'audio' as const }));
-    return [...introOutros, ...wms, ...audios];
+    const images: DisplayAsset[] = imageAssets.value.map((i) => ({ ...i, assetType: 'image' as const }));
+    return [...introOutros, ...wms, ...audios, ...images];
   });
 
   // Pagination state
@@ -515,16 +541,18 @@
   async function loadAssets() {
     loading.value = true;
     try {
-      // Load intro/outros, watermarks, and audio assets
-      const [introOutros, wms, audios] = await Promise.all([
+      // Load intro/outros, watermarks, audio assets, and image assets
+      const [introOutros, wms, audios, imgs] = await Promise.all([
         getAllIntroOutros(),
         getAllWatermarkImages(),
         getAllAudioAssets(),
+        getAllImageAssets(),
       ]);
 
       assets.value = introOutros;
       watermarks.value = wms;
       audioAssets.value = audios;
+      imageAssets.value = imgs;
 
       // Reset pagination to first page when loading new assets
       currentPage.value = 1;
@@ -542,6 +570,11 @@
       // Set default icon for audio assets
       for (const audio of audioAssets.value) {
         loadAudioThumbnail(audio);
+      }
+
+      // Load thumbnails for image assets (they are images, so use them directly)
+      for (const img of imageAssets.value) {
+        await loadImageThumbnail(img);
       }
     } catch (err) {
       console.error('Failed to load assets:', err);
@@ -573,6 +606,23 @@
       const defaultIcon =
         'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiB2aWV3Qm94PSIwIDAgMjAwIDEyMCIgZmlsbD0ibm9uZSI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiBmaWxsPSIjMDY0RTNCIi8+CjxyZWN0IHg9IjMwIiB5PSI0NSIgd2lkdGg9IjgiIGhlaWdodD0iMzAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjQ1IiB5PSIzNSIgd2lkdGg9IjgiIGhlaWdodD0iNTAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjYwIiB5PSIyNSIgd2lkdGg9IjgiIGhlaWdodD0iNzAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9Ijc1IiB5PSI0MCIgd2lkdGg9IjgiIGhlaWdodD0iNDAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjkwIiB5PSIzMCIgd2lkdGg9IjgiIGhlaWdodD0iNjAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjEwNSIgeT0iMjAiIHdpZHRoPSI4IiBoZWlnaHQ9IjgwIiByeD0iMiIgZmlsbD0iIzEwQjk4MSIvPgo8cmVjdCB4PSIxMjAiIHk9IjM1IiB3aWR0aD0iOCIgaGVpZ2h0PSI1MCIgcng9IjIiIGZpbGw9IiMxMEI5ODEiLz4KPHJlY3QgeD0iMTM1IiB5PSI0NSIgd2lkdGg9IjgiIGhlaWdodD0iMzAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjE1MCIgeT0iMzAiIHdpZHRoPSI4IiBoZWlnaHQ9IjYwIiByeD0iMiIgZmlsbD0iIzEwQjk4MSIvPgo8cmVjdCB4PSIxNjUiIHk9IjQwIiB3aWR0aD0iOCIgaGVpZ2h0PSI0MCIgcng9IjIiIGZpbGw9IiMxMEI5ODEiLz4KPC9zdmc+';
       thumbnailCache.value.set(audio.id, defaultIcon);
+    }
+  }
+
+  async function loadImageThumbnail(image: ImageAsset) {
+    if (!thumbnailCache.value.has(image.id)) {
+      try {
+        const dataUrl = await invoke<string>('read_file_as_data_url', {
+          filePath: image.file_path,
+        });
+        thumbnailCache.value.set(image.id, dataUrl);
+      } catch (err) {
+        console.warn('Failed to load image thumbnail:', image.id, err);
+        // Use a default image icon
+        const defaultIcon =
+          'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiB2aWV3Qm94PSIwIDAgMjAwIDEyMCIgZmlsbD0ibm9uZSI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiBmaWxsPSIjMzc0MTUxIi8+CjxyZWN0IHg9IjYwIiB5PSIzMCIgd2lkdGg9IjgwIiBoZWlnaHQ9IjYwIiByeD0iNCIgZmlsbD0iIzRCNTU2MyIvPgo8Y2lyY2xlIGN4PSI3NSIgY3k9IjQ1IiByPSI4IiBmaWxsPSIjRkJCRjI0Ii8+Cjxwb2x5Z29uIHBvaW50cz0iNjAsOTAgOTAsNjAgMTIwLDkwIiBmaWxsPSIjMTBCOTgxIi8+Cjxwb2x5Z29uIHBvaW50cz0iMTAwLDkwIDEyMCw3MCAxNDAsOTAiIGZpbGw9IiMwNTk2NjkiLz4KPC9zdmc+';
+        thumbnailCache.value.set(image.id, defaultIcon);
+      }
     }
   }
 
@@ -654,6 +704,11 @@
       return thumbnailCache.value.get(asset.id) || null;
     }
 
+    if (asset.assetType === 'image') {
+      // Image assets should have been loaded in loadImageThumbnail
+      return thumbnailCache.value.get(asset.id) || null;
+    }
+
     return getAssetThumbnailUrl(asset as IntroOutro);
   }
 
@@ -703,6 +758,8 @@
       result = await deleteWatermark(assetToDelete.value as WatermarkImage);
     } else if (assetToDelete.value.assetType === 'audio') {
       result = await deleteAudioAsset(assetToDelete.value as AudioAsset);
+    } else if (assetToDelete.value.assetType === 'image') {
+      result = await deleteImageAsset(assetToDelete.value as ImageAsset);
     } else {
       result = await deleteAsset(assetToDelete.value as IntroOutro);
     }
@@ -827,6 +884,8 @@
           result = await deleteWatermark(asset as WatermarkImage);
         } else if (asset.assetType === 'audio') {
           result = await deleteAudioAsset(asset as AudioAsset);
+        } else if (asset.assetType === 'image') {
+          result = await deleteImageAsset(asset as ImageAsset);
         } else {
           result = await deleteAsset(asset as IntroOutro);
         }
@@ -869,6 +928,12 @@
       loadAssets();
     });
 
+    // Register for image upload completion events
+    unregisterImageCallback = onImageUploadComplete(() => {
+      // Reload assets list when image upload completes
+      loadAssets();
+    });
+
     // Assets will appear automatically when upload completes
   });
 
@@ -882,6 +947,9 @@
     }
     if (unregisterAudioCallback) {
       unregisterAudioCallback();
+    }
+    if (unregisterImageCallback) {
+      unregisterImageCallback();
     }
     // Stop any playing audio
     if (audioElement.value) {

@@ -134,27 +134,91 @@
           </div>
         </div>
 
-        <!-- Stickers (Draggable) -->
+        <!-- Stickers (Draggable with Resize and Rotate Handles) -->
+        <!-- Wrapper element for positioning (handles stay fixed size) -->
         <div
           v-for="sticker in visibleStickers"
           :key="sticker.id"
-          class="absolute sticker-overlay select-none"
-          :class="[
-            getStickerClass(sticker),
-            {
-              'cursor-move pointer-events-auto': true,
-              'ring-2 ring-violet-500 ring-offset-2 ring-offset-transparent':
-                dragState.type === 'sticker' && dragState.id === sticker.id,
-              'hover:ring-2 hover:ring-violet-400/50': dragState.id !== sticker.id,
-            },
-          ]"
-          :style="getStickerStyle(sticker)"
-          @mousedown="(e) => startDrag(e, 'sticker', sticker.id, sticker.position)"
+          :data-sticker-id="sticker.id"
+          class="absolute sticker-overlay select-none group pointer-events-auto"
+          :style="getStickerWrapperStyle(sticker)"
         >
-          <span v-if="sticker.stickerType === 'emoji'" class="text-4xl">
-            {{ sticker.stickerPath }}
-          </span>
-          <img v-else :src="sticker.stickerPath" class="w-full h-full object-contain" alt="Sticker" />
+          <!-- Sticker Content (scaled and rotated) -->
+          <div
+            :class="[getStickerClass(sticker), 'cursor-move']"
+            :style="getStickerContentStyle(sticker)"
+            @mousedown="(e) => startStickerDrag(e, sticker)"
+          >
+            <span v-if="sticker.stickerType === 'emoji'" class="sticker-emoji pointer-events-none select-none">
+              {{ sticker.stickerPath }}
+            </span>
+            <img
+              v-else
+              :src="sticker.stickerPath"
+              class="max-w-none pointer-events-none select-none"
+              :style="getStickerImageStyle(sticker)"
+              draggable="false"
+              alt="Sticker"
+              @load="(e) => onStickerImageLoad(sticker.id, e)"
+            />
+          </div>
+
+          <!-- Selection border (dashed, like POI regions) -->
+          <div
+            class="absolute inset-0 border border-dashed rounded-sm pointer-events-none transition-opacity"
+            :class="[
+              (dragState.type === 'sticker' && dragState.id === sticker.id) ||
+              stickerResizeState.id === sticker.id ||
+              stickerRotateState.id === sticker.id
+                ? 'border-violet-400 opacity-100'
+                : 'border-white/40 opacity-0 group-hover:opacity-100',
+            ]"
+            :style="getStickerBoundsStyle(sticker)"
+          />
+
+          <!-- Rotation Handle (positioned above sticker, rotates with it) -->
+          <div
+            class="absolute w-5 h-5 rounded-full bg-violet-500 hover:bg-violet-400 cursor-grab active:cursor-grabbing flex items-center justify-center transition-colors shadow-sm opacity-0 group-hover:opacity-100 z-20"
+            :class="{ '!opacity-100': stickerRotateState.id === sticker.id }"
+            :style="getRotationHandleStyle(sticker)"
+            @mousedown.stop="
+              (e) =>
+                startStickerRotate(
+                  e,
+                  sticker.id,
+                  (e.target as HTMLElement).closest('[data-sticker-id]') as HTMLElement,
+                  getStickerConfigForRatio(sticker).rotation
+                )
+            "
+          >
+            <RotateCw class="w-2.5 h-2.5 text-white" />
+          </div>
+
+          <!-- Corner Resize Handles (like POI regions) -->
+          <div
+            class="absolute w-2.5 h-2.5 rounded-full bg-violet-500 hover:bg-violet-400 cursor-nwse-resize opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-sm"
+            :class="{ '!opacity-100': stickerResizeState.id === sticker.id }"
+            :style="getResizeHandleStyle(sticker, 'se')"
+            @mousedown.stop="(e) => startStickerResize(e, sticker)"
+          />
+          <div
+            class="absolute w-2.5 h-2.5 rounded-full bg-violet-500 hover:bg-violet-400 cursor-nesw-resize opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-sm"
+            :class="{ '!opacity-100': stickerResizeState.id === sticker.id }"
+            :style="getResizeHandleStyle(sticker, 'sw')"
+            @mousedown.stop="(e) => startStickerResize(e, sticker)"
+          />
+          <div
+            class="absolute w-2.5 h-2.5 rounded-full bg-violet-500 hover:bg-violet-400 cursor-nesw-resize opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-sm"
+            :class="{ '!opacity-100': stickerResizeState.id === sticker.id }"
+            :style="getResizeHandleStyle(sticker, 'ne')"
+            @mousedown.stop="(e) => startStickerResize(e, sticker)"
+          />
+          <div
+            class="absolute w-2.5 h-2.5 rounded-full bg-violet-500 hover:bg-violet-400 cursor-nw-resize opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-sm"
+            :class="{ '!opacity-100': stickerResizeState.id === sticker.id }"
+            :style="getResizeHandleStyle(sticker, 'nw')"
+            @mousedown.stop="(e) => startStickerResize(e, sticker)"
+          />
         </div>
       </div>
 
@@ -229,7 +293,7 @@
 
 <script setup lang="ts">
   import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
-  import { Play, Pause, Volume2, VolumeX } from 'lucide-vue-next';
+  import { Play, Pause, Volume2, VolumeX, RotateCw } from 'lucide-vue-next';
   import type { TextOverlay, Sticker, FilterSettings, ManualFramingConfigs } from '@/types';
 
   interface SegmentInput {
@@ -255,6 +319,24 @@
     startPositionX: number; // Position X as percentage
   }
 
+  interface StickerResizeState {
+    isResizing: boolean;
+    id: string | null;
+    centerX: number;
+    centerY: number;
+    startDistance: number;
+    startScale: number;
+  }
+
+  interface StickerRotateState {
+    isRotating: boolean;
+    id: string | null;
+    startAngle: number;
+    startRotation: number;
+    centerX: number;
+    centerY: number;
+  }
+
   const props = defineProps<{
     videoSrc: string | null;
     currentTime: number;
@@ -277,6 +359,8 @@
     (e: 'videoElementReady', element: HTMLVideoElement): void;
     (e: 'updateOverlayPosition', type: 'text' | 'sticker', id: string, position: { x: number; y: number }): void;
     (e: 'updateOverlayWidth', id: string, width: number): void;
+    (e: 'updateStickerScale', id: string, scale: number): void;
+    (e: 'updateStickerRotation', id: string, rotation: number): void;
     (e: 'update:previewAspectRatio', ratio: string): void;
   }>();
 
@@ -290,6 +374,9 @@
   const isMuted = ref(false);
   const isDraggingProgress = ref(false);
   const containerSize = ref({ width: 0, height: 0 });
+
+  // Track actual image dimensions for stickers (stickerId -> {width, height})
+  const stickerImageDimensions = ref<Record<string, { width: number; height: number }>>({});
 
   // Store time to restore after aspect ratio switch
   const pendingSeekTime = ref<number | null>(null);
@@ -417,6 +504,30 @@
     startWidth: 0,
     startPositionX: 0,
   });
+
+  // Sticker resize state (for scale)
+  const stickerResizeState = reactive<StickerResizeState>({
+    isResizing: false,
+    id: null,
+    centerX: 0,
+    centerY: 0,
+    startDistance: 0,
+    startScale: 1,
+  });
+
+  // Sticker rotate state
+  const stickerRotateState = reactive<StickerRotateState>({
+    isRotating: false,
+    id: null,
+    startAngle: 0,
+    startRotation: 0,
+    centerX: 0,
+    centerY: 0,
+  });
+
+  // Local sticker scale/rotation tracking for instant feedback during drag
+  const localStickerScales = ref<Record<string, number>>({});
+  const localStickerRotations = ref<Record<string, number>>({});
 
   // Local width tracking to prevent reflow during drag (before Vue updates)
   const localDragWidths = ref<Record<string, number>>({});
@@ -807,6 +918,138 @@
     document.removeEventListener('mouseup', onResizeEnd);
   }
 
+  // Helper to start sticker drag (position)
+  function startStickerDrag(e: MouseEvent, sticker: Sticker) {
+    const config = getStickerConfigForRatio(sticker);
+    startDrag(e, 'sticker', sticker.id, config.position);
+  }
+
+  // Sticker resize handlers (for scale) - uses distance from center for intuitive resizing
+  function startStickerResize(e: MouseEvent, sticker: Sticker) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Get the sticker element to find its center
+    const stickerEl = (e.target as HTMLElement).closest('[data-sticker-id]') as HTMLElement;
+    if (!stickerEl) return;
+
+    const rect = stickerEl.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    // Calculate initial distance from center to mouse
+    const startDistance = Math.sqrt(Math.pow(e.clientX - centerX, 2) + Math.pow(e.clientY - centerY, 2));
+
+    const config = getStickerConfigForRatio(sticker);
+
+    stickerResizeState.isResizing = true;
+    stickerResizeState.id = sticker.id;
+    stickerResizeState.centerX = centerX;
+    stickerResizeState.centerY = centerY;
+    stickerResizeState.startDistance = startDistance;
+    stickerResizeState.startScale = config.scale;
+
+    document.addEventListener('mousemove', onStickerResizeMove);
+    document.addEventListener('mouseup', onStickerResizeEnd);
+  }
+
+  function onStickerResizeMove(e: MouseEvent) {
+    if (!stickerResizeState.isResizing || !stickerResizeState.id) return;
+
+    // Calculate current distance from center to mouse
+    const currentDistance = Math.sqrt(
+      Math.pow(e.clientX - stickerResizeState.centerX, 2) + Math.pow(e.clientY - stickerResizeState.centerY, 2)
+    );
+
+    // Scale is proportional to distance ratio
+    // When mouse moves further from center, scale increases
+    const distanceRatio = stickerResizeState.startDistance > 0 ? currentDistance / stickerResizeState.startDistance : 1;
+
+    let newScale = stickerResizeState.startScale * distanceRatio;
+
+    // Only enforce minimum scale (0.1x), no maximum limit
+    newScale = Math.max(0.1, newScale);
+
+    // Set local scale immediately for instant feedback
+    localStickerScales.value[stickerResizeState.id] = newScale;
+
+    // Emit scale update
+    emit('updateStickerScale', stickerResizeState.id, newScale);
+  }
+
+  function onStickerResizeEnd() {
+    if (stickerResizeState.id) {
+      // Clear local scale after emit completes
+      delete localStickerScales.value[stickerResizeState.id];
+    }
+
+    stickerResizeState.isResizing = false;
+    stickerResizeState.id = null;
+
+    document.removeEventListener('mousemove', onStickerResizeMove);
+    document.removeEventListener('mouseup', onStickerResizeEnd);
+  }
+
+  // Sticker rotation handlers
+  function startStickerRotate(e: MouseEvent, stickerId: string, stickerEl: HTMLElement, currentRotation: number) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Get the center of the sticker element
+    const rect = stickerEl.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    // Calculate initial angle from center to mouse
+    const startAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * (180 / Math.PI);
+
+    stickerRotateState.isRotating = true;
+    stickerRotateState.id = stickerId;
+    stickerRotateState.startAngle = startAngle;
+    stickerRotateState.startRotation = currentRotation;
+    stickerRotateState.centerX = centerX;
+    stickerRotateState.centerY = centerY;
+
+    document.addEventListener('mousemove', onStickerRotateMove);
+    document.addEventListener('mouseup', onStickerRotateEnd);
+  }
+
+  function onStickerRotateMove(e: MouseEvent) {
+    if (!stickerRotateState.isRotating || !stickerRotateState.id) return;
+
+    // Calculate current angle from center to mouse
+    const currentAngle =
+      Math.atan2(e.clientY - stickerRotateState.centerY, e.clientX - stickerRotateState.centerX) * (180 / Math.PI);
+
+    // Calculate rotation delta
+    const angleDelta = currentAngle - stickerRotateState.startAngle;
+    // Apply delta - sticker rotates to follow the mouse movement
+    let newRotation = stickerRotateState.startRotation + angleDelta;
+
+    // Normalize rotation to -180 to 180 range
+    while (newRotation > 180) newRotation -= 360;
+    while (newRotation < -180) newRotation += 360;
+
+    // Set local rotation immediately for instant feedback
+    localStickerRotations.value[stickerRotateState.id] = newRotation;
+
+    // Emit rotation update
+    emit('updateStickerRotation', stickerRotateState.id, Math.round(newRotation));
+  }
+
+  function onStickerRotateEnd() {
+    if (stickerRotateState.id) {
+      // Clear local rotation after emit completes
+      delete localStickerRotations.value[stickerRotateState.id];
+    }
+
+    stickerRotateState.isRotating = false;
+    stickerRotateState.id = null;
+
+    document.removeEventListener('mousemove', onStickerRotateMove);
+    document.removeEventListener('mouseup', onStickerRotateEnd);
+  }
+
   // Methods
   function formatTime(seconds: number): string {
     const mins = Math.floor(seconds / 60);
@@ -1123,11 +1366,208 @@
     return classes;
   }
 
-  function getStickerStyle(sticker: Sticker): Record<string, string> {
+  // Get the position, scale, and rotation for a sticker, respecting per-ratio configs
+  function getStickerConfigForRatio(sticker: Sticker): {
+    position: { x: number; y: number };
+    scale: number;
+    rotation: number;
+  } {
+    const ratio = props.previewAspectRatio;
+    const ratioConfig = sticker.perRatioConfigs?.[ratio];
+
+    if (ratioConfig) {
+      return {
+        position: ratioConfig.position,
+        scale: ratioConfig.scale,
+        rotation: ratioConfig.rotation,
+      };
+    }
+
+    // Fallback to default position/scale/rotation
     return {
-      left: `${sticker.position.x}%`,
-      top: `${sticker.position.y}%`,
-      transform: `translate(-50%, -50%) scale(${sticker.scale}) rotate(${sticker.rotation}deg)`,
+      position: sticker.position,
+      scale: sticker.scale,
+      rotation: sticker.rotation,
+    };
+  }
+
+  // Get the wrapper style for sticker positioning (no scale/rotation)
+  function getStickerWrapperStyle(sticker: Sticker): Record<string, string> {
+    const config = getStickerConfigForRatio(sticker);
+    return {
+      left: `${config.position.x}%`,
+      top: `${config.position.y}%`,
+      transform: 'translate(-50%, -50%)',
+    };
+  }
+
+  // Base sizes for different sticker types at 1080p reference
+  const EMOJI_BASE_SIZE = 48;
+  // Image base width = 10% of 1080p height = 108px (matches export: video_height * 0.1)
+  const IMAGE_BASE_WIDTH = 108;
+
+  // Handle image sticker load to capture actual dimensions
+  function onStickerImageLoad(stickerId: string, event: Event) {
+    const img = event.target as HTMLImageElement;
+    if (img && img.naturalWidth && img.naturalHeight) {
+      stickerImageDimensions.value[stickerId] = {
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+      };
+    }
+  }
+
+  // Get the style for image stickers (scales width to base size, height auto - matches export)
+  function getStickerImageStyle(sticker: Sticker): Record<string, string> {
+    const containerScale = overlayScaleFactor.value;
+    // Base width at current container scale (export uses video_height * 0.1 for width)
+    const baseWidth = IMAGE_BASE_WIDTH * containerScale;
+
+    // Get cached dimensions for this sticker
+    const dims = stickerImageDimensions.value[sticker.id];
+
+    if (dims) {
+      // Scale width to baseWidth, calculate height to maintain aspect ratio
+      // This matches FFmpeg's scale=width:-1 behavior
+      const aspectRatio = dims.width / dims.height;
+      const width = baseWidth;
+      const height = baseWidth / aspectRatio;
+
+      return {
+        width: `${width}px`,
+        height: `${height}px`,
+      };
+    }
+
+    // Fallback before image loads
+    return {
+      width: `${baseWidth}px`,
+      height: 'auto',
+    };
+  }
+
+  // Get the content style for sticker scaling and rotation
+  function getStickerContentStyle(sticker: Sticker): Record<string, string> {
+    const config = getStickerConfigForRatio(sticker);
+
+    // Get the scale factor for this container size (same as text overlays)
+    const containerScale = overlayScaleFactor.value;
+
+    // Use local values during drag for instant feedback, otherwise use config values
+    const stickerScale = localStickerScales.value[sticker.id] ?? config.scale;
+    const stickerRotation = localStickerRotations.value[sticker.id] ?? config.rotation;
+
+    // Base size for emojis
+    const baseSize = EMOJI_BASE_SIZE * containerScale;
+
+    return {
+      transform: `scale(${stickerScale}) rotate(${stickerRotation}deg)`,
+      fontSize: `${baseSize}px`,
+    };
+  }
+
+  // Calculate the bounding box size in pixels for a sticker
+  function getStickerBoundsPx(sticker: Sticker): { width: number; height: number } {
+    const config = getStickerConfigForRatio(sticker);
+    const containerScale = overlayScaleFactor.value;
+    const stickerScale = localStickerScales.value[sticker.id] ?? config.scale;
+
+    const isEmoji = sticker.stickerType === 'emoji';
+
+    if (isEmoji) {
+      // Emojis use font-size based dimensions
+      const baseSize = EMOJI_BASE_SIZE * containerScale;
+      const scaledSize = baseSize * stickerScale;
+      return { width: scaledSize, height: scaledSize };
+    }
+
+    // For images, use actual dimensions if available
+    const dims = stickerImageDimensions.value[sticker.id];
+    const baseWidth = IMAGE_BASE_WIDTH * containerScale;
+
+    if (dims) {
+      // Scale width to baseWidth, calculate height to maintain aspect ratio
+      // This matches FFmpeg's scale=width:-1 behavior and the export
+      const aspectRatio = dims.width / dims.height;
+      const width = baseWidth * stickerScale;
+      const height = (baseWidth / aspectRatio) * stickerScale;
+
+      return { width, height };
+    }
+
+    // Fallback before image loads (assume square)
+    return { width: baseWidth * stickerScale, height: baseWidth * stickerScale };
+  }
+
+  // Get the current rotation for a sticker
+  function getStickerRotation(sticker: Sticker): number {
+    const config = getStickerConfigForRatio(sticker);
+    return localStickerRotations.value[sticker.id] ?? config.rotation;
+  }
+
+  // Get the style for the selection border that surrounds the scaled sticker
+  function getStickerBoundsStyle(sticker: Sticker): Record<string, string> {
+    const bounds = getStickerBoundsPx(sticker);
+    const rotation = getStickerRotation(sticker);
+    const padding = 2; // Tight padding around content
+
+    return {
+      width: `${bounds.width + padding * 2}px`,
+      height: `${bounds.height + padding * 2}px`,
+      left: '50%',
+      top: '50%',
+      transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
+    };
+  }
+
+  // Get the style for rotation handle positioning (above the sticker)
+  function getRotationHandleStyle(sticker: Sticker): Record<string, string> {
+    const bounds = getStickerBoundsPx(sticker);
+    const rotation = getStickerRotation(sticker);
+    const offset = bounds.height / 2 + 2; // Position just above the sticker
+
+    // Calculate rotated position for the handle
+    // CSS rotation is clockwise for positive angles
+    const angleRad = (rotation * Math.PI) / 180;
+    const handleDistance = offset + 20; // Distance from center to handle
+    // At 0°: handle at top (x=0, y=-distance)
+    // At 90° (clockwise): handle at right (x=+distance, y=0)
+    const x = Math.sin(angleRad) * handleDistance;
+    const y = -Math.cos(angleRad) * handleDistance;
+
+    return {
+      left: `calc(50% + ${x}px)`,
+      top: `calc(50% + ${y}px)`,
+      transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
+    };
+  }
+
+  // Get the style for corner resize handles (rotated with sticker)
+  function getResizeHandleStyle(sticker: Sticker, corner: 'nw' | 'ne' | 'sw' | 'se'): Record<string, string> {
+    const bounds = getStickerBoundsPx(sticker);
+    const rotation = getStickerRotation(sticker);
+    const halfW = bounds.width / 2;
+    const halfH = bounds.height / 2;
+
+    // Corner offsets relative to center (before rotation)
+    const cornerOffsets: Record<string, { x: number; y: number }> = {
+      nw: { x: -halfW, y: -halfH },
+      ne: { x: halfW, y: -halfH },
+      sw: { x: -halfW, y: halfH },
+      se: { x: halfW, y: halfH },
+    };
+
+    const offset = cornerOffsets[corner];
+    const angleRad = (rotation * Math.PI) / 180;
+
+    // Rotate the corner position (standard 2D rotation for CSS clockwise convention)
+    const rotatedX = offset.x * Math.cos(angleRad) - offset.y * Math.sin(angleRad);
+    const rotatedY = offset.x * Math.sin(angleRad) + offset.y * Math.cos(angleRad);
+
+    return {
+      left: `calc(50% + ${rotatedX}px)`,
+      top: `calc(50% + ${rotatedY}px)`,
+      transform: 'translate(-50%, -50%)',
     };
   }
 
@@ -1284,6 +1724,10 @@
     document.removeEventListener('mouseup', onDragEnd);
     document.removeEventListener('mousemove', onResizeMove);
     document.removeEventListener('mouseup', onResizeEnd);
+    document.removeEventListener('mousemove', onStickerResizeMove);
+    document.removeEventListener('mouseup', onStickerResizeEnd);
+    document.removeEventListener('mousemove', onStickerRotateMove);
+    document.removeEventListener('mouseup', onStickerRotateEnd);
     stopSyncLoop();
     if (resizeObserver) {
       resizeObserver.disconnect();
@@ -1485,5 +1929,14 @@
     50% {
       transform: translate(-50%, -50%) translateY(-10px);
     }
+  }
+
+  /* Sticker overlay styling */
+  .sticker-overlay {
+    z-index: 10;
+  }
+
+  .sticker-overlay:hover {
+    z-index: 20;
   }
 </style>

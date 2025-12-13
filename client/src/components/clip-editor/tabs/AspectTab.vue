@@ -205,13 +205,6 @@
       </div>
     </Transition>
 
-    <!-- Empty State -->
-    <div v-if="selectedRatios.length === 0" class="py-6 text-center">
-      <Crop :size="32" class="mx-auto text-white/20 mb-3" />
-      <p class="text-sm text-white/50">No aspect ratios selected</p>
-      <p class="text-xs text-white/30 mt-1">Select target formats above to configure custom framing</p>
-    </div>
-
     <!-- Manual POI Editor Dialog -->
     <ManualPOIEditor
       v-model="showPOIEditor"

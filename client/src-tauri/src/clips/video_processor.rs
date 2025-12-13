@@ -2,7 +2,7 @@ use tauri_plugin_shell::ShellExt;
 use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 
-use super::types::{AspectRatio, WatermarkSettings, AudioSettings, MusicTrackSettings, VideoFilterSegment, build_time_based_filter_string};
+use super::types::{AspectRatio, WatermarkSettings, AudioSettings, MusicTrackSettings, VideoFilterSegment, build_time_based_filter_string, StickerSettings};
 use super::encoder::{detect_hardware_encoder, get_quality_settings};
 use super::video_info::{get_video_info, calculate_crop_params, IntroOutroCache};
 use super::font_manager::get_fonts_dir;
@@ -2373,6 +2373,225 @@ async fn burn_subtitles_to_video(
         return Err(format!("FFmpeg subtitle burning failed: {}", stderr));
     }
 
+    Ok(())
+}
+
+/// Apply sticker overlays to a video file
+/// This handles emoji, image, and gif stickers with position, scale, rotation and timing
+pub async fn apply_stickers_to_video(
+    app: &tauri::AppHandle,
+    input_path: &std::path::Path,
+    stickers: &[StickerSettings],
+    aspect_ratio: &str,
+    quality: &str,
+) -> Result<(), String> {
+    if stickers.is_empty() {
+        return Ok(());
+    }
+
+    let shell = app.shell();
+    
+    // Get video info for calculating sticker positions
+    let video_info = get_video_info(app, input_path.to_str().ok_or("Invalid input path")?).await?;
+    let video_width = video_info.width as f64;
+    let video_height = video_info.height as f64;
+    
+    // Detect hardware encoder
+    let encoder = detect_hardware_encoder(app, quality).await;
+    
+    // Create temporary output path
+    let temp_output = input_path.with_extension("stickers.mp4");
+    
+    // Separate emoji and image stickers
+    let emoji_stickers: Vec<_> = stickers.iter()
+        .filter(|s| s.sticker_type == "emoji")
+        .collect();
+    let image_stickers: Vec<_> = stickers.iter()
+        .filter(|s| s.sticker_type == "image" || s.sticker_type == "gif")
+        .collect();
+    
+    // Build filter complex for stickers
+    let mut filter_parts: Vec<String> = Vec::new();
+    let mut input_count = 1; // Start from 1 (0 is the main video)
+    let mut overlay_inputs: Vec<String> = Vec::new();
+    
+    // Label the main video
+    filter_parts.push("[0:v]null[base]".to_string());
+    let mut current_label = "base".to_string();
+    
+    // Process emoji stickers using drawtext filter
+    for (idx, sticker) in emoji_stickers.iter().enumerate() {
+        // Get position for this aspect ratio (fallback to default)
+        let (pos_x_pct, pos_y_pct, scale, rotation) = if let Some(ref configs) = sticker.per_ratio_configs {
+            if let Some(config) = configs.get(aspect_ratio) {
+                (config.position.x, config.position.y, config.scale, config.rotation)
+            } else {
+                (sticker.position_x, sticker.position_y, sticker.scale, sticker.rotation)
+            }
+        } else {
+            (sticker.position_x, sticker.position_y, sticker.scale, sticker.rotation)
+        };
+        
+        // Calculate pixel position (center-anchored)
+        let pos_x = (pos_x_pct / 100.0 * video_width) as i32;
+        let pos_y = (pos_y_pct / 100.0 * video_height) as i32;
+        
+        // Base font size for emojis at 1080p (48px scaled)
+        let base_font_size = 48.0 * (video_height / 1080.0) * scale;
+        let font_size = base_font_size.round() as u32;
+        
+        // Escape the emoji text for FFmpeg
+        let emoji_escaped = sticker.sticker_path
+            .replace("'", "'\\''")
+            .replace(":", "\\:");
+        
+        let next_label = format!("e{}", idx);
+        
+        // Build drawtext filter with enable expression for timing
+        // Note: drawtext doesn't support rotation well, so we use it only for basic emoji display
+        let drawtext = format!(
+            "[{}]drawtext=text='{}':fontsize={}:x={}-(text_w/2):y={}-(text_h/2):enable='between(t,{:.3},{:.3})'[{}]",
+            current_label,
+            emoji_escaped,
+            font_size,
+            pos_x,
+            pos_y,
+            sticker.start_time,
+            sticker.end_time,
+            next_label
+        );
+        
+        filter_parts.push(drawtext);
+        current_label = next_label;
+    }
+    
+    // Process image stickers using overlay filter
+    for (idx, sticker) in image_stickers.iter().enumerate() {
+        // Get position for this aspect ratio (fallback to default)
+        let (pos_x_pct, pos_y_pct, scale, rotation) = if let Some(ref configs) = sticker.per_ratio_configs {
+            if let Some(config) = configs.get(aspect_ratio) {
+                (config.position.x, config.position.y, config.scale, config.rotation)
+            } else {
+                (sticker.position_x, sticker.position_y, sticker.scale, sticker.rotation)
+            }
+        } else {
+            (sticker.position_x, sticker.position_y, sticker.scale, sticker.rotation)
+        };
+        
+        // Calculate pixel position (center-anchored)
+        let pos_x = (pos_x_pct / 100.0 * video_width) as i32;
+        let pos_y = (pos_y_pct / 100.0 * video_height) as i32;
+        
+        // Calculate scaled size (base size is 10% of video height, then apply scale)
+        let base_size = (video_height * 0.1) as i32;
+        let scaled_size = (base_size as f64 * scale).round() as i32;
+        
+        let sticker_label = format!("st{}", idx);
+        let next_label = format!("o{}", idx);
+        
+        // Scale and rotate the sticker image
+        // Note: rotation in FFmpeg is in radians, frontend uses degrees
+        let rotation_rad = rotation * std::f64::consts::PI / 180.0;
+        
+        // Build sticker preprocessing filter
+        let sticker_filter = if rotation.abs() > 0.01 {
+            format!(
+                "[{}:v]scale={}:-1,rotate={}:c=none:ow=rotw({}):oh=roth({})[{}]",
+                input_count, scaled_size, rotation_rad, rotation_rad, rotation_rad, sticker_label
+            )
+        } else {
+            format!(
+                "[{}:v]scale={}:-1[{}]",
+                input_count, scaled_size, sticker_label
+            )
+        };
+        
+        filter_parts.push(sticker_filter);
+        
+        // Overlay with timing and center-anchor positioning
+        // x and y are adjusted to center the sticker on the position
+        let overlay = format!(
+            "[{}][{}]overlay=x={}-(overlay_w/2):y={}-(overlay_h/2):enable='between(t,{:.3},{:.3})'[{}]",
+            current_label,
+            sticker_label,
+            pos_x,
+            pos_y,
+            sticker.start_time,
+            sticker.end_time,
+            next_label
+        );
+        
+        filter_parts.push(overlay);
+        current_label = next_label;
+        
+        overlay_inputs.push(sticker.sticker_path.clone());
+        input_count += 1;
+    }
+    
+    // If we have no filters, return early
+    if filter_parts.len() <= 1 {
+        return Ok(());
+    }
+    
+    // Build FFmpeg args
+    let mut args = vec![
+        "-i".to_string(), input_path.to_string_lossy().to_string(),
+    ];
+    
+    // Add image sticker inputs
+    for sticker_path in &overlay_inputs {
+        args.push("-i".to_string());
+        args.push(sticker_path.clone());
+    }
+    
+    // Build filter complex string
+    let filter_complex = filter_parts.join(";");
+    
+    args.extend(vec![
+        "-filter_complex".to_string(), filter_complex,
+        "-map".to_string(), format!("[{}]", current_label),
+        "-map".to_string(), "0:a?".to_string(), // Map audio if present
+        "-c:v".to_string(), encoder.codec.clone(),
+    ]);
+    
+    // Add preset if applicable
+    if let Some(preset) = &encoder.preset {
+        args.push("-preset".to_string());
+        args.push(preset.clone());
+    }
+    
+    // Add quality parameter
+    args.push(encoder.quality_param.clone());
+    args.push(encoder.quality_value.clone());
+    
+    // Add audio settings
+    args.push("-c:a".to_string());
+    args.push("aac".to_string());
+    args.push("-y".to_string());
+    args.push(temp_output.to_string_lossy().to_string());
+    
+    println!("[Rust] Applying {} stickers to video", stickers.len());
+    
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to apply stickers: {}", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        println!("[Rust] FFmpeg sticker overlay stderr: {}", stderr);
+        return Err(format!("FFmpeg sticker overlay failed: {}", stderr));
+    }
+    
+    // Replace original with sticker-overlayed version
+    std::fs::remove_file(input_path)
+        .map_err(|e| format!("Failed to remove original file: {}", e))?;
+    std::fs::rename(&temp_output, input_path)
+        .map_err(|e| format!("Failed to rename sticker output: {}", e))?;
+    
+    println!("[Rust] Stickers applied successfully");
     Ok(())
 }
 

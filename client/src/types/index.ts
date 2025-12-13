@@ -754,6 +754,13 @@ export type TextAnimation =
 
 export type TextStylePreset = 'title' | 'lower-third' | 'caption' | 'quote' | 'custom';
 
+// Per-aspect-ratio configuration for stickers
+export interface StickerRatioConfig {
+  position: { x: number; y: number }; // 0-100 percentage
+  scale: number; // 0.1-3
+  rotation: number; // Degrees
+}
+
 // Sticker/emoji overlay
 export interface Sticker {
   id: string;
@@ -761,10 +768,12 @@ export interface Sticker {
   stickerType: 'emoji' | 'image' | 'gif';
   startTime: number;
   endTime: number;
-  position: { x: number; y: number }; // 0-100 percentage
-  scale: number; // 0.1-3
-  rotation: number; // Degrees
+  position: { x: number; y: number }; // 0-100 percentage - default/fallback position
+  scale: number; // 0.1-3 - default/fallback scale
+  rotation: number; // Degrees - default/fallback rotation
   animation: StickerAnimation;
+  // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
+  perRatioConfigs?: Record<string, StickerRatioConfig>;
 }
 
 export type StickerAnimation = 'none' | 'bounce' | 'spin' | 'pulse' | 'shake' | 'float' | 'fade';

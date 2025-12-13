@@ -1374,6 +1374,20 @@
         previewHeight?: number; // Height of preview container for proper font scaling
       }> | null = null;
 
+      let stickersForExport: Array<{
+        id: string;
+        stickerPath: string;
+        stickerType: string;
+        startTime: number;
+        endTime: number;
+        positionX: number;
+        positionY: number;
+        scale: number;
+        rotation: number;
+        animation: string;
+        perRatioConfigs?: Record<string, { position: { x: number; y: number }; scale: number; rotation: number }>;
+      }> | null = null;
+
       try {
         // Load project-level audio settings
         const projectAudioSettings = await getProjectAudioSettings(props.projectId);
@@ -1488,6 +1502,25 @@
             perRatioConfigs: overlay.per_ratio_configs_data ? JSON.parse(overlay.per_ratio_configs_data) : undefined,
           }));
           console.log('[ClipsTab] Loaded text overlays for export:', textOverlaysForExport.length);
+        }
+
+        // Extract stickers for burning into video
+        if (clipEdit && clipEdit.stickers && clipEdit.stickers.length > 0) {
+          stickersForExport = clipEdit.stickers.map((sticker) => ({
+            id: sticker.id,
+            stickerPath: sticker.sticker_path,
+            stickerType: sticker.sticker_type,
+            startTime: sticker.start_time,
+            endTime: sticker.end_time,
+            positionX: sticker.position_x,
+            positionY: sticker.position_y,
+            scale: sticker.scale,
+            rotation: sticker.rotation,
+            animation: sticker.animation || 'none',
+            // Include per-aspect-ratio configurations for correct sticker placement in each output
+            perRatioConfigs: sticker.per_ratio_configs_data ? JSON.parse(sticker.per_ratio_configs_data) : undefined,
+          }));
+          console.log('[ClipsTab] Loaded stickers for export:', stickersForExport.length);
         }
       } catch (err) {
         console.warn('[ClipsTab] Could not load audio settings:', err);
@@ -1680,6 +1713,7 @@
         manualFramingConfigs: settings.manualFramingConfigs || null,
         videoFilterSegments: videoFilterSegments,
         textOverlays: textOverlaysForExport,
+        stickers: stickersForExport,
       });
 
       console.log('[ClipsTab] Clip build started successfully');

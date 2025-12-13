@@ -324,6 +324,18 @@ pub fn run() {
                             sql: include_str!("../migrations/054_add_preview_height_to_text_overlays.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 55,
+                            description: "add_per_ratio_configs_to_stickers",
+                            sql: include_str!("../migrations/055_add_per_ratio_configs_to_stickers.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 56,
+                            description: "add_image_assets",
+                            sql: include_str!("../migrations/056_add_image_assets.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -456,6 +468,8 @@ pub fn run() {
             storage::delete_font_file,
             storage::copy_audio_to_storage,
             storage::delete_audio_file,
+            storage::copy_image_to_storage,
+            storage::delete_image_file,
 
             // Assets commands
             assets::upload_asset_async,

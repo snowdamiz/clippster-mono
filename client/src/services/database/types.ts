@@ -401,6 +401,18 @@ export interface AudioAsset {
   updated_at: number;
 }
 
+export interface ImageAsset {
+  id: string;
+  name: string;
+  file_path: string;
+  width: number | null;
+  height: number | null;
+  file_size: number | null;
+  mime_type: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface WatermarkSettings {
   enabled: boolean;
   watermarkId: string | null;
