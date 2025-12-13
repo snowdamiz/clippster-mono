@@ -117,31 +117,60 @@ async fn apply_watermark_to_video_with_ratio(
     
     // Get video info for calculating watermark size
     let video_info = get_video_info(app, input_path.to_str().ok_or("Invalid input path")?).await?;
+    let video_width = video_info.width;
+    let video_height = video_info.height;
     
-    // Calculate watermark width based on scale percentage of video width
-    let wm_width = (video_info.width as f32 * (scale_pct as f32 / 100.0)) as u32;
-    
-    // Build the position string using X/Y percentages
-    let position = get_watermark_overlay_position(pos_x, pos_y);
+    // Detect if this watermark is effectively a full-frame 16:9 canvas.
+    // Accept common HD+ sizes to avoid strict 1920x1080 requirement (e.g., 2560x1440 will still scale down).
+    let is_full_frame_watermark = match (watermark.width, watermark.height) {
+        (Some(w), Some(h)) => {
+            let ratio = (w as f32) / (h as f32);
+            (ratio - (16.0 / 9.0)).abs() < 0.02 && w >= 1600 && h >= 900
+        }
+        _ => false,
+    };
     
     // Calculate opacity (FFmpeg uses 0-1 range)
     let opacity = opacity_pct as f32 / 100.0;
+    
+    // Build the filter_complex for watermark overlay
+    // Full-frame 1920x1080 watermarks are scaled to the output frame and pinned to 0,0.
+    // Standard PNGs keep the existing percentage-based position/scale behavior.
+    let filter_complex = if is_full_frame_watermark {
+        let wm_width = video_width;
+        let wm_height = video_height;
+        println!(
+            "[Rust] Full-frame watermark detected ({}x{}), scaling to output {}x{}",
+            wm_width, wm_height, video_width, video_height
+        );
+        
+        format!(
+            "[1:v]scale={}:{},format=rgba,colorchannelmixer=aa={}[wm];[0:v][wm]overlay=0:0",
+            wm_width, wm_height, opacity
+        )
+    } else {
+        // Calculate watermark width based on scale percentage of video width
+        let wm_width = (video_width as f32 * (scale_pct as f32 / 100.0)) as u32;
+        
+        // Build the position string using X/Y percentages
+        let position = get_watermark_overlay_position(pos_x, pos_y);
+        
+        println!(
+            "[Rust] Standard watermark placement: width={} ({}%), pos=({}, {}), opacity={}",
+            wm_width, scale_pct, pos_x, pos_y, opacity_pct
+        );
+        
+        format!(
+            "[1:v]scale={}:-1,format=rgba,colorchannelmixer=aa={}[wm];[0:v][wm]overlay={}",
+            wm_width, opacity, position
+        )
+    };
     
     // Create temporary output path
     let temp_output = input_path.with_extension("watermarked.mp4");
     
     // Detect hardware encoder
     let encoder = detect_hardware_encoder(app, quality).await;
-    
-    // Build the filter_complex for watermark overlay
-    // [1:v] is the watermark input
-    // scale: resize watermark to percentage of video width
-    // colorchannelmixer: apply opacity
-    // overlay: position the watermark
-    let filter_complex = format!(
-        "[1:v]scale={}:-1,format=rgba,colorchannelmixer=aa={}[wm];[0:v][wm]overlay={}",
-        wm_width, opacity, position
-    );
     
     println!("[Rust] Watermark position: x={}%, y={}%", pos_x, pos_y);
     

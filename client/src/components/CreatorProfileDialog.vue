@@ -436,120 +436,6 @@
                 </div>
               </div>
             </div>
-
-            <!-- Audio Sync Section -->
-            <div class="space-y-4">
-              <div class="flex items-center gap-2">
-                <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Audio Sync</h3>
-                <div class="group relative">
-                  <Info class="w-4 h-4 text-muted-foreground/50 cursor-help" />
-                  <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                    <p class="text-xs text-zinc-300 leading-relaxed">
-                      <strong class="text-white">Why audio might be out of sync:</strong><br><br>
-                      Different streaming software and hardware have varying audio processing delays:
-                    </p>
-                    <ul class="mt-2 text-xs text-zinc-400 space-y-1">
-                      <li>• <strong class="text-zinc-300">OBS</strong> - Multiple audio tracks (mic + desktop) have different latencies</li>
-                      <li>• <strong class="text-zinc-300">LiveU</strong> - IRL encoders add encoding delay</li>
-                      <li>• <strong class="text-zinc-300">Streamlabs</strong> - Similar to OBS but may vary</li>
-                      <li>• <strong class="text-zinc-300">Browser/WebRTC</strong> - Direct streaming has minimal delay</li>
-                    </ul>
-                    <p class="mt-2 text-xs text-zinc-400">
-                      <strong class="text-amber-400">Tip:</strong> Record a 1-minute test clip and check if lips match the audio. Adjust as needed.
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <p class="text-xs text-muted-foreground -mt-2">
-                Adjust audio timing for this creator's live recordings. Test with a short recording first.
-              </p>
-
-              <div class="p-4 bg-muted/20 border border-border/50 rounded-lg space-y-4">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    <div class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30">
-                      <Volume2 class="w-4 h-4 text-emerald-400" />
-                    </div>
-                    <div>
-                      <p class="text-sm font-medium text-foreground">Audio Offset</p>
-                      <p class="text-xs text-muted-foreground">
-                        {{ form.audioSyncOffsetMs > 0 ? 'Audio advanced' : form.audioSyncOffsetMs < 0 ? 'Audio delayed' : 'No offset' }}
-                      </p>
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <input
-                      v-model.number="form.audioSyncOffsetMs"
-                      type="number"
-                      class="w-20 px-2 py-1 text-sm text-right bg-muted border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
-                      min="-500"
-                      max="500"
-                      step="5"
-                    />
-                    <span class="text-xs text-muted-foreground">ms</span>
-                  </div>
-                </div>
-
-                <!-- Slider with preset markers -->
-                <div class="relative pt-6 pb-2">
-                  <!-- Preset markers (only show main 4 presets) -->
-                  <div class="absolute top-0 left-0 right-0 flex justify-between px-1">
-                    <button
-                      v-for="preset in AUDIO_SYNC_PRESETS.filter(p => ['Default', 'OBS (Standard)', 'LiveU Solo', 'No Offset'].includes(p.name))"
-                      :key="preset.name"
-                      type="button"
-                      @click="form.audioSyncOffsetMs = preset.value"
-                      class="group relative flex flex-col items-center"
-                      :style="{ left: `${((preset.value + 500) / 1000) * 100}%`, position: 'absolute', transform: 'translateX(-50%)' }"
-                    >
-                      <div 
-                        class="w-1 h-2 rounded-full transition-colors"
-                        :class="form.audioSyncOffsetMs === preset.value ? 'bg-emerald-400' : 'bg-zinc-600 group-hover:bg-zinc-400'"
-                      />
-                      <span 
-                        class="absolute top-full mt-8 text-[9px] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-700 z-10"
-                        :class="form.audioSyncOffsetMs === preset.value ? 'text-emerald-400' : 'text-zinc-400'"
-                      >
-                        {{ preset.name }}
-                      </span>
-                    </button>
-                  </div>
-
-                  <!-- Slider track -->
-                  <input
-                    v-model.number="form.audioSyncOffsetMs"
-                    type="range"
-                    min="-500"
-                    max="500"
-                    step="5"
-                    class="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-emerald-500 slider-thumb"
-                  />
-
-                  <!-- Labels -->
-                  <div class="flex justify-between mt-1 text-[10px] text-muted-foreground">
-                    <span>-500ms (delay)</span>
-                    <span class="text-emerald-400">{{ form.audioSyncOffsetMs }}ms</span>
-                    <span>+500ms (advance)</span>
-                  </div>
-                </div>
-
-                <!-- Quick preset buttons -->
-                <div class="flex flex-wrap gap-1.5">
-                  <button
-                    v-for="preset in AUDIO_SYNC_PRESETS.filter(p => ['Default', 'OBS (Standard)', 'LiveU Solo', 'No Offset'].includes(p.name))"
-                    :key="preset.name"
-                    type="button"
-                    @click="form.audioSyncOffsetMs = preset.value"
-                    class="px-2.5 py-1 text-xs rounded-md border transition-all"
-                    :class="form.audioSyncOffsetMs === preset.value 
-                      ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' 
-                      : 'bg-muted/50 border-border/50 text-muted-foreground hover:bg-muted hover:text-foreground'"
-                  >
-                    {{ preset.name }} ({{ preset.value }}ms)
-                  </button>
-                </div>
-              </div>
-            </div>
           </div>
 
           <!-- Footer -->
@@ -590,6 +476,8 @@
       <WatermarkPositionPicker
         :show="showWatermarkPositionPicker"
         :watermark-file-path="selectedWatermarkFilePath"
+        :watermark-width="selectedWatermarkDimensions.width"
+        :watermark-height="selectedWatermarkDimensions.height"
         :settings="form.watermarkSettings"
         @close="showWatermarkPositionPicker = false"
         @save="handleWatermarkPositionSave"
@@ -613,7 +501,6 @@
     type CreatorProfileWithLinks,
     type IntroOutro,
     type WatermarkImage,
-    AUDIO_SYNC_PRESETS,
   } from '@/services/database';
   import { extractMintId, searchPumpFunTokens, fetchTokenMetadataFromServer } from '@/services/pumpfun';
   import { extractChannelSlug } from '@/services/kick';
@@ -633,8 +520,6 @@
     SkipForward,
     Image as ImageIcon,
     Move,
-    Volume2,
-    Info,
   } from 'lucide-vue-next';
   import WatermarkPositionPicker from './WatermarkPositionPicker.vue';
 
@@ -700,7 +585,6 @@
     outroId: null as string | null,
     watermarkId: null as string | null,
     watermarkSettings: { ...defaultWatermarkSettings } as typeof defaultWatermarkSettings,
-    audioSyncOffsetMs: 215 as number, // Default to 215ms (works for most streams)
     platformLinks: [] as PlatformLinkForm[],
   });
 
@@ -761,7 +645,6 @@
             outroId: props.creator.outro_id,
             watermarkId: props.creator.watermark_id,
             watermarkSettings: parseWatermarkSettings(props.creator.watermark_settings),
-            audioSyncOffsetMs: props.creator.audio_sync_offset_ms ?? 215,
             platformLinks: props.creator.platform_links.map((link) => ({
               id: link.id,
               platform: link.platform,
@@ -780,7 +663,6 @@
             outroId: null,
             watermarkId: null,
             watermarkSettings: { ...defaultWatermarkSettings },
-            audioSyncOffsetMs: 215,
             platformLinks: [],
           };
         }
@@ -914,6 +796,12 @@
     if (!form.value.watermarkId) return undefined;
     const wm = watermarks.value.find((w) => w.id === form.value.watermarkId);
     return wm?.file_path;
+  });
+
+  const selectedWatermarkDimensions = computed(() => {
+    if (!form.value.watermarkId) return { width: null, height: null };
+    const wm = watermarks.value.find((w) => w.id === form.value.watermarkId);
+    return { width: wm?.width ?? null, height: wm?.height ?? null };
   });
 
   // Platform link management
@@ -1101,7 +989,6 @@
           outro_id: form.value.outroId,
           watermark_id: form.value.watermarkId,
           watermark_settings: JSON.stringify(form.value.watermarkSettings),
-          audio_sync_offset_ms: form.value.audioSyncOffsetMs,
         });
 
         // Handle platform links
@@ -1139,8 +1026,7 @@
           form.value.introId,
           form.value.outroId,
           form.value.watermarkId,
-          JSON.stringify(form.value.watermarkSettings),
-          form.value.audioSyncOffsetMs
+          JSON.stringify(form.value.watermarkSettings)
         );
 
         // Add platform links
@@ -1170,48 +1056,6 @@
 </script>
 
 <style scoped>
-  /* Range slider styling */
-  input[type='range'].slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    background: linear-gradient(to right, #3f3f46 0%, #3f3f46 100%);
-    border-radius: 0.5rem;
-  }
-
-  input[type='range'].slider-thumb::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    cursor: pointer;
-    border: 2px solid #fff;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-    transition: all 0.15s ease;
-  }
-
-  input[type='range'].slider-thumb::-webkit-slider-thumb:hover {
-    transform: scale(1.1);
-    box-shadow: 0 3px 10px rgba(16, 185, 129, 0.4);
-  }
-
-  input[type='range'].slider-thumb::-moz-range-thumb {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    cursor: pointer;
-    border: 2px solid #fff;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-    transition: all 0.15s ease;
-  }
-
-  input[type='range'].slider-thumb::-moz-range-thumb:hover {
-    transform: scale(1.1);
-    box-shadow: 0 3px 10px rgba(16, 185, 129, 0.4);
-  }
-
   /* Modal backdrop transition */
   .modal-enter-active,
   .modal-leave-active {

@@ -608,11 +608,30 @@
   ];
 
   // Computed
-  const getWatermarkPreviewStyle = computed(() => {
-    // Calculate size based on scale (percentage of container width)
-    const sizePercent = localSettings.value.scale;
+  const measuredWidth = ref<number | null>(null);
+  const measuredHeight = ref<number | null>(null);
 
-    // Use drag refs during dragging for smooth preview, otherwise use localSettings
+  const isFullFrameWatermark = computed(() => {
+    if (!selectedWatermark.value) return false;
+    const w = selectedWatermark.value.width ?? measuredWidth.value;
+    const h = selectedWatermark.value.height ?? measuredHeight.value;
+    return w === 1920 && h === 1080;
+  });
+
+  const getWatermarkPreviewStyle = computed(() => {
+    // When the watermark is a full-frame 1920x1080 canvas, show it filling the preview
+    if (isFullFrameWatermark.value) {
+      return {
+        width: '100%',
+        height: '100%',
+        left: '0%',
+        top: '0%',
+        transform: 'none',
+      };
+    }
+
+    // Standard behavior: scale relative to container width and center on X/Y percentages
+    const sizePercent = localSettings.value.scale;
     const posX = isDragging.value ? dragPositionX.value : localSettings.value.positionX;
     const posY = isDragging.value ? dragPositionY.value : localSettings.value.positionY;
 
@@ -658,6 +677,11 @@
         filePath: wm.file_path,
       });
       watermarkThumbnailCache.value.set(wm.id, dataUrl);
+
+      // If this watermark is selected, also measure its intrinsic size for full-frame detection
+      if (selectedWatermark.value?.id === wm.id) {
+        await measureSelectedWatermark(dataUrl);
+      }
     } catch (error) {
       console.warn('[WatermarkTab] Failed to load watermark thumbnail:', wm.id, error);
     }
@@ -714,11 +738,57 @@
     showDropdown.value = !showDropdown.value;
   }
 
-  function selectWatermark(wm: WatermarkImage | null) {
+  async function measureSelectedWatermark(dataUrl: string) {
+    await new Promise<void>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        measuredWidth.value = img.naturalWidth || null;
+        measuredHeight.value = img.naturalHeight || null;
+        resolve();
+      };
+      img.onerror = () => resolve();
+      img.src = dataUrl;
+    });
+  }
+
+  async function selectWatermark(wm: WatermarkImage | null) {
     selectedWatermark.value = wm;
+    measuredWidth.value = wm?.width ?? null;
+    measuredHeight.value = wm?.height ?? null;
     localSettings.value.watermarkId = wm?.id || null;
     showDropdown.value = false;
+    if (wm) {
+      const dataUrl = watermarkThumbnailCache.value.get(wm.id);
+      if (dataUrl) {
+        await measureSelectedWatermark(dataUrl);
+      } else {
+        // Load thumbnail (and measure) if not already cached
+        await loadWatermarkThumbnail(wm);
+        const loaded = watermarkThumbnailCache.value.get(wm.id);
+        if (loaded) {
+          await measureSelectedWatermark(loaded);
+        }
+      }
+    }
     emitSettings();
+  }
+
+  // Ensure measurement when a selected watermark already exists (e.g., from creator profile defaults)
+  async function ensureMeasurementForSelected() {
+    if (!selectedWatermark.value) return;
+    // If dimensions are already known and match 1920x1080, keep them
+    if (selectedWatermark.value.width && selectedWatermark.value.height) {
+      measuredWidth.value = selectedWatermark.value.width;
+      measuredHeight.value = selectedWatermark.value.height;
+      return;
+    }
+    const cached = watermarkThumbnailCache.value.get(selectedWatermark.value.id);
+    if (cached) {
+      await measureSelectedWatermark(cached);
+      return;
+    }
+    // Fallback: load and measure
+    await loadWatermarkThumbnail(selectedWatermark.value);
   }
 
   // Position preset handling
@@ -834,6 +904,7 @@
         const found = watermarks.value.find((w) => w.id === newSettings.watermarkId);
         if (found) {
           selectedWatermark.value = found;
+          ensureMeasurementForSelected();
         }
       } else {
         selectedWatermark.value = null;
@@ -962,6 +1033,7 @@
 
   onMounted(async () => {
     await Promise.all([loadWatermarks(), loadPresets()]);
+    await ensureMeasurementForSelected();
     document.addEventListener('click', handleClickOutside);
   });
 

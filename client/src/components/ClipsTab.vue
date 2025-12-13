@@ -1338,6 +1338,8 @@
             enabled: true,
             watermarkId: settings.watermark.watermarkId,
             filePath: watermarkImage.file_path,
+            width: watermarkImage.width ?? null,
+            height: watermarkImage.height ?? null,
             positionX: settings.watermark.positionX,
             positionY: settings.watermark.positionY,
             opacity: settings.watermark.opacity,

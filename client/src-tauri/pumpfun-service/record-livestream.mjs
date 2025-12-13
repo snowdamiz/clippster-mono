@@ -22,9 +22,9 @@ const VIDEO_QUALITY_HIGH = 2;
 // Positive value = advance audio (audio plays earlier) - fixes "audio behind video"
 // Negative value = delay audio (audio plays later) - fixes "video behind audio"
 // NOTE: OBS/RTMP streams with multiple audio sources have DIFFERENT latencies per track
-// This default value is a compromise - RASMR=0ms sync, Guest needs ~100ms advance
-// Users can override this per-creator via the creator profile settings
-const AUDIO_ADVANCE_MS_DEFAULT = 215; // Default: works for most OBS streams
+// This is a compromise value - RASMR=0ms sync, Guest needs ~100ms advance
+// We split the difference to make both "acceptable" rather than one perfect
+const AUDIO_ADVANCE_MS = 215; // Compromise: advance audio 75ms to help guest sync
 
 const AUDIO_FALLBACK_OFFSET_MS = 0; // Only used as fallback if sync setup fails
 const DEBUG_SYNC = true; // Enabled to diagnose video stride issues
@@ -36,13 +36,13 @@ const DIAGNOSTIC_LOG_INTERVAL_FRAMES = 30; // Log every N frames (30 = ~1/sec at
 const SYNC_HEALTH_INTERVAL_MS = 30000; // Log sync health every 30 seconds
 
 const args = process.argv.slice(2);
-const [mintId, sessionId, outputDirArg, segmentMinutesArg, audioSyncOffsetArg] = args;
+const [mintId, sessionId, outputDirArg, segmentMinutesArg] = args;
 
 if (!mintId || !sessionId || !outputDirArg) {
   console.error(
     JSON.stringify({
       type: 'error',
-      message: 'Usage: record-livestream.mjs <mintId> <sessionId> <outputDir> [segmentMinutes] [audioSyncOffsetMs]',
+      message: 'Usage: record-livestream.mjs <mintId> <sessionId> <outputDir> [segmentMinutes]',
     })
   );
   process.exit(1);
@@ -51,17 +51,6 @@ if (!mintId || !sessionId || !outputDirArg) {
 const segmentMinutes = Math.max(parseInt(segmentMinutesArg || '5', 10), 1);
 const segmentDurationSeconds = segmentMinutes * 60;
 const outputDir = path.resolve(outputDirArg);
-
-// Audio sync offset from creator profile (passed via CLI), defaults to 215ms
-const AUDIO_ADVANCE_MS_OVERRIDE = audioSyncOffsetArg !== undefined ? parseInt(audioSyncOffsetArg, 10) : null;
-// Use override from creator profile if provided, otherwise use default
-const AUDIO_ADVANCE_MS = AUDIO_ADVANCE_MS_OVERRIDE !== null ? AUDIO_ADVANCE_MS_OVERRIDE : AUDIO_ADVANCE_MS_DEFAULT;
-
-// Log the audio sync configuration at startup
-console.log(JSON.stringify({
-  type: 'log',
-  message: `Audio sync configured: ${AUDIO_ADVANCE_MS}ms ${AUDIO_ADVANCE_MS_OVERRIDE !== null ? '(from creator profile)' : '(default)'}`,
-}));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -444,35 +433,12 @@ class PumpfunRecorder {
     
     // Start mixer flush loop
     this.mixerInterval = setInterval(() => this.flushMixer(), 20);
-    
-    // Warn if no video track arrives within 10 seconds
-    setTimeout(() => {
-      if (!this.videoReader && this.running) {
-        log('WARNING: No video track received after 10 seconds', {
-          audioTracksReceived: this.audioTracks.size,
-          note: 'Stream may be audio-only, or video track failed to subscribe. For still image streams, the video track should still be present.',
-          possibleCauses: [
-            'Streamer is not publishing video',
-            'LiveKit video track subscription failed',
-            'Network issue preventing video track delivery'
-          ]
-        });
-      }
-    }, 10000);
   }
 
   async startRoom(url, token) {
     this.room = new Room();
     this.room
       .on(RoomEvent.TrackSubscribed, (track) => this.handleTrackSubscribed(track))
-      .on(RoomEvent.TrackUnsubscribed, (track) => {
-        if (DIAGNOSTIC_MODE) {
-          log('DIAG: Track unsubscribed', {
-            trackId: track.sid,
-            kind: track.kind === TrackKind.KIND_AUDIO ? 'audio' : track.kind === TrackKind.KIND_VIDEO ? 'video' : 'unknown'
-          });
-        }
-      })
       .on(RoomEvent.Disconnected, () => {
         this.emitEvent({
           type: 'stream_ended',
@@ -483,50 +449,18 @@ class PumpfunRecorder {
       });
 
     await this.room.connect(url, token, { autoSubscribe: true });
-    
-    // Log room state after connection
-    if (DIAGNOSTIC_MODE) {
-      const participants = this.room.remoteParticipants;
-      const participantCount = participants ? participants.size : 0;
-      log('DIAG: Room connected', {
-        participantCount,
-        note: participantCount === 0 ? 'No remote participants yet - waiting for streamer' : 'Streamer present'
-      });
-    }
   }
 
   handleTrackSubscribed(track) {
     if (track.kind === TrackKind.KIND_AUDIO) {
       this.bindAudioStream(track);
-    } else if (track.kind === TrackKind.KIND_VIDEO) {
-      if (this.videoReader) {
-        if (DIAGNOSTIC_MODE) {
-          log('DIAG: Video track received but already have one', {
-            trackId: track.sid,
-            note: 'Ignoring duplicate video track'
-          });
-        }
-        return;
-      }
-      if (DIAGNOSTIC_MODE) {
-        log('DIAG: Video track subscribed', {
-          trackId: track.sid,
-          note: 'Primary video track - will begin receiving frames'
-        });
-      }
+    } else if (track.kind === TrackKind.KIND_VIDEO && !this.videoReader) {
       try {
           if (track.setVideoQuality) {
               track.setVideoQuality(VIDEO_QUALITY_HIGH);
           }
       } catch(e) {}
       this.bindVideoStream(track);
-    } else {
-      if (DIAGNOSTIC_MODE) {
-        log('DIAG: Unknown track type received', {
-          trackId: track.sid,
-          kind: track.kind
-        });
-      }
     }
   }
 

@@ -128,6 +128,10 @@ pub struct WatermarkSettings {
     pub enabled: bool,
     pub watermark_id: String,
     pub file_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
     pub position_x: u32, // 0-100 (percentage from left)
     pub position_y: u32, // 0-100 (percentage from top)
     pub opacity: u32, // 0-100

@@ -236,6 +236,7 @@
     getWatermarkImage,
     getCreatorProfileByProjectId,
     getIntroOutroById,
+    getProject,
   } from '@/services/database';
   import { X, Film } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
@@ -1079,6 +1080,29 @@
     subtitleSettings.value = settings;
   }
 
+  // Measure image dimensions if DB values are missing
+  async function measureWatermarkDimensions(filePath: string): Promise<{ width?: number; height?: number }> {
+    try {
+      const dataUrl = await invoke<string>('read_file_as_data_url', { filePath });
+      await new Promise<void>((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          resolve();
+        };
+        img.onerror = () => resolve();
+        img.src = dataUrl;
+      });
+      const img = new Image();
+      img.src = dataUrl;
+      return {
+        width: img.naturalWidth || undefined,
+        height: img.naturalHeight || undefined,
+      };
+    } catch {
+      return {};
+    }
+  }
+
   // Handle watermark settings change
   async function onWatermarkSettingsChanged(settings: WatermarkSettings) {
     watermarkSettings.value = settings;
@@ -1092,10 +1116,17 @@
           const dataUrl = await invoke<string>('read_file_as_data_url', {
             filePath: watermark.file_path,
           });
+
+          // If width/height missing in DB, measure from the actual file so full-frame detection works
+          const measured =
+            !watermark.width || !watermark.height
+              ? await measureWatermarkDimensions(watermark.file_path)
+              : { width: watermark.width, height: watermark.height };
+
           currentWatermarkData.value = {
             dataUrl,
-            width: watermark.width || undefined,
-            height: watermark.height || undefined,
+            width: measured.width || watermark.width || undefined,
+            height: measured.height || watermark.height || undefined,
           };
         }
       } catch (error) {
@@ -1112,10 +1143,34 @@
     audioGainDb.value = settings.volume;
   }
 
+  async function findCreatorProfileUpTree(projectId: string | null | undefined) {
+    let currentId = projectId || null;
+    const visited = new Set<string>();
+    while (currentId) {
+      if (visited.has(currentId)) break;
+      visited.add(currentId);
+
+      const profile = await getCreatorProfileByProjectId(currentId);
+      if (profile) return profile;
+
+      try {
+        const project = await getProject(currentId);
+        if (project?.parent_id) {
+          currentId = project.parent_id;
+        } else {
+          break;
+        }
+      } catch {
+        break;
+      }
+    }
+    return null;
+  }
+
   // Load creator profile and apply their default settings
   async function loadCreatorProfileSettings(projectId: string) {
     try {
-      const profile = await getCreatorProfileByProjectId(projectId);
+      const profile = await findCreatorProfileUpTree(projectId);
       creatorProfile.value = profile;
 
       // Reset creator defaults
@@ -1166,10 +1221,10 @@
           // Update MediaPanel's internal state if ref is available
           if (mediaPanelRef.value) {
             mediaPanelRef.value.setWatermarkSettings(newSettings);
-          } else {
-            // Fallback: just update parent state directly
-            await onWatermarkSettingsChanged(newSettings);
           }
+
+          // Always ensure parent state gets updated so VideoPlayer receives the watermark immediately
+          await onWatermarkSettingsChanged(newSettings);
         }
 
         // Load creator's default intro (will be auto-applied when building clips)
@@ -1382,6 +1437,28 @@
           resetProgress();
         }
       }
+    }
+  );
+
+  // When switching projects while dialog is open, reload video, clips, and creator watermark defaults
+  watch(
+    () => props.project?.id,
+    async (newProjectId, oldProjectId) => {
+      if (!props.modelValue) return;
+      if (!newProjectId || newProjectId === oldProjectId) return;
+
+      // Reset local playback state
+      resetVideoState();
+      timelineClips.value = [];
+      hoveredClipId.value = null;
+      hoveredTimelineClipId.value = null;
+      currentlyPlayingClipId.value = null;
+
+      // Reload assets for the new project
+      await loadVideos();
+      await loadVideoForProject();
+      await loadTimelineClips(newProjectId);
+      await loadCreatorProfileSettings(newProjectId);
     }
   );
 

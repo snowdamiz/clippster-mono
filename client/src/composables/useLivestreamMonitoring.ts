@@ -11,7 +11,6 @@ import {
   hasClipsForProject,
   hasChildProjects,
   getSegmentsBySession,
-  getCreatorProfileByPlatformId,
 } from '@/services/database';
 import type {
   LiveSession,
@@ -602,23 +601,11 @@ export function useLivestreamMonitoring() {
       // Use the streamer's configured segment duration, defaulting to 5 minutes
       const segmentDuration = streamer.segmentDurationMinutes ?? 5;
 
-      // Look up creator profile to get custom audio sync offset
-      let audioSyncOffsetMs = 215; // Default value that works for most streams
-      try {
-        const creatorProfile = await getCreatorProfileByPlatformId('pumpfun', streamer.mintId);
-        if (creatorProfile && creatorProfile.audio_sync_offset_ms !== null) {
-          audioSyncOffsetMs = creatorProfile.audio_sync_offset_ms;
-        }
-      } catch (err) {
-        console.warn('[LiveMonitor] Failed to lookup creator profile for audio sync, using default', err);
-      }
-
       await invoke('start_livestream_recording', {
         mintId: streamer.mintId,
         streamerId: streamer.id,
         sessionId: sessionInfo.sessionId,
         segmentDurationMinutes: segmentDuration,
-        audioSyncOffsetMs,
       });
 
       activeSessions.value.set(streamer.id, {

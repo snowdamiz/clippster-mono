@@ -326,6 +326,8 @@ export interface CreatorWatermarkSettings {
 interface Props {
   show: boolean;
   watermarkFilePath?: string;
+  watermarkWidth?: number | null;
+  watermarkHeight?: number | null;
   settings?: CreatorWatermarkSettings;
 }
 
@@ -364,7 +366,14 @@ const previewContainer = ref<HTMLElement | null>(null);
 const isDragging = ref(false);
 const watermarkDataUrl = ref<string | null>(null);
 const loadingWatermark = ref(false);
+const measuredWidth = ref<number | null>(null);
+const measuredHeight = ref<number | null>(null);
 const currentAspectRatio = ref<AspectRatioId>('16:9');
+const isFullFrameWatermark = computed(() => {
+  const w = props.watermarkWidth ?? measuredWidth.value;
+  const h = props.watermarkHeight ?? measuredHeight.value;
+  return w === 1920 && h === 1080;
+});
 
 // Track which aspect ratios have watermark enabled
 const enabledRatios = reactive<Record<AspectRatioId, boolean>>({
@@ -421,6 +430,18 @@ const previewContainerStyle = computed(() => {
 // Computed watermark style
 const watermarkStyle = computed(() => {
   const settings = currentSettings.value;
+
+  // Full-frame 1920x1080 canvases should fill the frame and sit at 0,0 so the baked position is preserved.
+  if (isFullFrameWatermark.value) {
+    return {
+      left: '0%',
+      top: '0%',
+      transform: 'none',
+      width: '100%',
+      height: '100%',
+    };
+  }
+
   return {
     left: `${settings.x}%`,
     top: `${settings.y}%`,
@@ -434,6 +455,8 @@ const watermarkStyle = computed(() => {
 async function loadWatermarkImage() {
   if (!props.watermarkFilePath) {
     watermarkDataUrl.value = null;
+    measuredWidth.value = null;
+    measuredHeight.value = null;
     return;
   }
 
@@ -443,9 +466,23 @@ async function loadWatermarkImage() {
       filePath: props.watermarkFilePath,
     });
     watermarkDataUrl.value = dataUrl;
+
+    // Also measure dimensions from the loaded image so we can detect 1920x1080 even if metadata is missing.
+    await new Promise<void>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        measuredWidth.value = img.naturalWidth || null;
+        measuredHeight.value = img.naturalHeight || null;
+        resolve();
+      };
+      img.onerror = () => resolve();
+      img.src = dataUrl;
+    });
   } catch (err) {
     console.error('[WatermarkPositionPicker] Failed to load watermark:', err);
     watermarkDataUrl.value = null;
+    measuredWidth.value = null;
+    measuredHeight.value = null;
   } finally {
     loadingWatermark.value = false;
   }

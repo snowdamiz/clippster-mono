@@ -254,6 +254,8 @@ export interface WatermarkSettings {
   positionY: number; // 0-100 (percentage from top)
   opacity: number; // 0-100
   scale: number; // 0-100 (percentage of video width)
+  width?: number | null; // original watermark width (px) if known
+  height?: number | null; // original watermark height (px) if known
   // Optional per-aspect-ratio settings from creator profile
   perRatioSettings?: PerRatioWatermarkSettings | null;
 }

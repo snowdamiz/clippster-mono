@@ -71,16 +71,15 @@ export async function createCreatorProfile(
   introId?: string | null,
   outroId?: string | null,
   watermarkId?: string | null,
-  watermarkSettings?: string | null,
-  audioSyncOffsetMs?: number | null
+  watermarkSettings?: string | null
 ): Promise<string> {
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
 
   await db.execute(
-    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, audio_sync_offset_ms, created_at, updated_at) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, created_at, updated_at) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       name,
@@ -90,7 +89,6 @@ export async function createCreatorProfile(
       outroId || null,
       watermarkId || null,
       watermarkSettings || DEFAULT_WATERMARK_SETTINGS,
-      audioSyncOffsetMs ?? 215, // Default to 215ms (works for most streams)
       now,
       now,
     ]
@@ -109,7 +107,6 @@ export async function updateCreatorProfile(
     outro_id: string | null;
     watermark_id: string | null;
     watermark_settings: string | null;
-    audio_sync_offset_ms: number | null;
   }>
 ): Promise<void> {
   const db = await getDatabase();
@@ -149,11 +146,6 @@ export async function updateCreatorProfile(
   if (updates.watermark_settings !== undefined) {
     fields.push('watermark_settings = ?');
     values.push(updates.watermark_settings);
-  }
-
-  if (updates.audio_sync_offset_ms !== undefined) {
-    fields.push('audio_sync_offset_ms = ?');
-    values.push(updates.audio_sync_offset_ms);
   }
 
   if (fields.length === 0) {
@@ -324,24 +316,6 @@ export async function getCreatorProfileByMonitoredStreamer(
   const links = await db.select<CreatorPlatformLink[]>(
     'SELECT * FROM creator_platform_links WHERE monitored_streamer_id = ?',
     [monitoredStreamerId]
-  );
-
-  if (links.length === 0) {
-    return null;
-  }
-
-  return await getCreatorProfile(links[0].creator_profile_id);
-}
-
-export async function getCreatorProfileByPlatformId(
-  platform: CreatorPlatformLink['platform'],
-  platformId: string
-): Promise<CreatorProfileWithLinks | null> {
-  const db = await getDatabase();
-
-  const links = await db.select<CreatorPlatformLink[]>(
-    'SELECT * FROM creator_platform_links WHERE platform = ? AND platform_id = ?',
-    [platform, platformId]
   );
 
   if (links.length === 0) {

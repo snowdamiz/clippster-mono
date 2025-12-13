@@ -801,10 +801,33 @@
     if (!props.watermarkSettings) return {};
 
     const settings = props.watermarkSettings;
-    
+    const wmWidth = props.watermarkData?.width ?? null;
+    const wmHeight = props.watermarkData?.height ?? null;
+    const ratio = wmWidth && wmHeight ? wmWidth / wmHeight : null;
+    const is16x9 = ratio ? Math.abs(ratio - 16 / 9) < 0.02 : false;
+    // Treat HD+ 16:9 watermarks as full-frame so baked positions land correctly, even if not exactly 1920x1080.
+    const isFullFrame =
+      is16x9 &&
+      wmWidth !== null &&
+      wmHeight !== null &&
+      wmWidth >= 1600 &&
+      wmHeight >= 900 &&
+      props.aspectRatio.width === 16 &&
+      props.aspectRatio.height === 9;
+
+    // Full-frame 1920x1080 overlays fill the frame and sit at 0,0
+    if (isFullFrame) {
+      return {
+        width: '100%',
+        height: '100%',
+        left: '0%',
+        top: '0%',
+        transform: 'none',
+      };
+    }
+
     // For preview, always use the manual position values (positionX/positionY)
-    // This allows users to make one-off adjustments without changing creator profile defaults
-    // The perRatioSettings are used by the build process for multi-ratio exports
+    // Use live-updated position/scale from props (reflects slider/drag changes)
     const positionX = settings.positionX;
     const positionY = settings.positionY;
     const scale = settings.scale || 15;
