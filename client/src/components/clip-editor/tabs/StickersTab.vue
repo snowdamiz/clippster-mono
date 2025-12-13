@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-6">
     <div>
-      <h3 class="text-sm font-medium text-white mb-3">Stickers & Emojis</h3>
+      <h3 class="text-sm font-medium text-white mb-1">Stickers & Emojis</h3>
       <p class="text-xs text-white/50 mb-4">
         Add emojis, stickers, and images to your clip. Drag in preview to reposition.
       </p>

@@ -30,7 +30,7 @@ export const navigationItems: NavigationItem[] = [
     icon: Users,
   },
   {
-    name: 'Projects',
+    name: 'Clip Projects',
     path: '/projects',
     icon: Folder,
   },

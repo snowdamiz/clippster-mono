@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-6">
     <div>
-      <h3 class="text-sm font-medium text-white mb-3">Watermark</h3>
+      <h3 class="text-sm font-medium text-white mb-1">Watermark</h3>
       <p class="text-xs text-white/50 mb-4">Add a watermark to your clip. Position and configure per aspect ratio.</p>
     </div>
 

@@ -20,9 +20,10 @@
             >
               <Film class="h-3 w-3 text-violet-400" />
             </div>
-            <div class="flex flex-col">
+            <div class="flex gap-3">
               <h2 class="text-sm font-semibold text-foreground tracking-tight">Edit Clip</h2>
-              <p class="text-xs text-foreground/50 truncate max-w-[300px]">{{ clipTitle }}</p>
+              <Separator class="h-4 w-px bg-foreground/10" orientation="vertical" />
+              <p class="text-xs text-foreground/50 truncate max-w-[300px] mt-0.5">{{ clipTitle }}</p>
             </div>
           </div>
           <div class="flex items-center gap-2">
@@ -51,7 +52,7 @@
           <div class="flex min-h-0 border-b border-border flex-1" style="overflow: hidden">
             <!-- Left: Video Preview Section -->
             <div
-              class="w-3/5 min-w-0 border-r border-border/40 flex flex-col bg-gradient-to-br from-black/20 to-transparent"
+              class="w-3/5 min-w-0 border-r border-border flex flex-col bg-gradient-to-br from-black/20 to-transparent"
             >
               <!-- Aspect Ratio Selector (above video) -->
               <AspectRatioSelector

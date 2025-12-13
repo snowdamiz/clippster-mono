@@ -53,10 +53,14 @@
         >
           <!-- Segmented Timestamp Ruler -->
           <div
-            class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 px-2 sticky top-0 z-50 backdrop-blur-sm timeline-ruler"
+            class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 sticky top-0 z-50 backdrop-blur-sm timeline-ruler"
+            @wheel="onRulerWheel"
+            title="Scroll to zoom"
           >
             <!-- Track label spacer -->
-            <div class="w-16 pr-2 flex items-center justify-center flex-shrink-0">
+            <div
+              class="w-16 h-7 pr-2 mr-0.5 flex items-center justify-center flex-shrink-0 sticky left-0 z-[70] bg-[#0a0a0a]"
+            >
               <span class="text-xs text-muted-foreground/50 font-medium">Time</span>
             </div>
             <!-- Segmented timestamp ruler -->
@@ -81,8 +85,8 @@
                     :style="{ left: '0%', transform: 'translateX(-50%)', bottom: '0' }"
                   >
                     <div class="w-px bg-violet-400/60 h-4"></div>
-                    <span class="text-[10px] text-violet-400/80 whitespace-nowrap font-medium mt-0.5">
-                      {{ formatTime(clipStart + segmentLayout.segment.startTime) }}
+                    <span class="text-[10px] text-violet-400/80 whitespace-nowrap font-medium mt-0.5 ml-4">
+                      {{ formatTime(segmentLayout.effectiveStartTime) }}
                     </span>
                   </div>
 
@@ -98,33 +102,20 @@
                       v-if="tick.isMajor"
                       class="text-[10px] text-foreground/40 whitespace-nowrap font-normal mt-0.5"
                     >
-                      {{ formatTime(clipStart + tick.time) }}
+                      {{ formatTime(tick.time) }}
                     </span>
                   </div>
 
-                  <!-- Segment end time (always shown) -->
+                  <!-- Segment end time (only shown for last segment to avoid duplicate labels) -->
                   <div
+                    v-if="index === segmentLayouts.length - 1"
                     class="absolute flex flex-col items-center"
                     :style="{ left: '100%', transform: 'translateX(-50%)', bottom: '0' }"
                   >
                     <div class="w-px bg-violet-400/60 h-4"></div>
                     <span class="text-[10px] text-violet-400/80 whitespace-nowrap font-medium mt-0.5">
-                      {{ formatTime(clipStart + segmentLayout.segment.endTime) }}
+                      {{ formatTime(segmentLayout.effectiveEndTime) }}
                     </span>
-                  </div>
-                </div>
-
-                <!-- Gap indicator between segments -->
-                <div
-                  v-if="index < segmentLayouts.length - 1"
-                  class="absolute h-full flex items-center justify-center bg-orange-500/5"
-                  :style="{
-                    left: `${segmentLayout.startPercent + segmentLayout.widthPercent}%`,
-                    width: `${GAP_PERCENT}%`,
-                  }"
-                >
-                  <div class="flex flex-col items-center">
-                    <Scissors :size="12" class="text-orange-400/70" />
                   </div>
                 </div>
               </template>
@@ -132,9 +123,9 @@
           </div>
 
           <!-- Video Track -->
-          <div class="flex items-center h-12 px-2 border-b border-border/20 relative">
+          <div class="flex items-center h-12 border-b border-border/20 relative">
             <div
-              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-0 z-40 bg-[#101010] backdrop-blur-sm flex-shrink-0"
+              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0"
             >
               <div>
                 <div class="font-medium flex items-center gap-1">
@@ -168,11 +159,11 @@
                     style="mix-blend-mode: normal; z-index: 5"
                   ></canvas>
 
-                  <!-- Segment label -->
+                  <!-- Segment label (shows effective timeline times) -->
                   <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                     <span class="text-xs text-white font-medium drop-shadow-md bg-black/60 px-1.5 py-0.5 rounded">
-                      {{ formatTime(clipStart + segmentLayout.segment.startTime) }} -
-                      {{ formatTime(clipStart + segmentLayout.segment.endTime) }}
+                      {{ formatTime(segmentLayout.effectiveStartTime) }} -
+                      {{ formatTime(segmentLayout.effectiveEndTime) }}
                     </span>
                   </div>
 
@@ -195,22 +186,6 @@
                     <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
                   </div>
                 </div>
-
-                <!-- Gap indicator between segments on video track -->
-                <div
-                  v-if="index < segmentLayouts.length - 1"
-                  class="absolute top-1 bottom-1 flex items-center justify-center"
-                  :style="{
-                    left: `${segmentLayout.startPercent + segmentLayout.widthPercent}%`,
-                    width: `${GAP_PERCENT}%`,
-                  }"
-                >
-                  <div
-                    class="w-full h-full bg-orange-500/5 border-x border-dashed border-orange-400/30 flex items-center justify-center"
-                  >
-                    <Scissors :size="12" class="text-orange-400/40" />
-                  </div>
-                </div>
               </template>
             </div>
           </div>
@@ -222,7 +197,7 @@
             class="flex items-center h-12 px-2 border-b border-border/20 relative"
           >
             <div
-              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-0 z-40 bg-[#101010] backdrop-blur-sm flex-shrink-0"
+              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-2 z-[70] bg-[#101010] flex-shrink-0"
             >
               <div class="font-medium flex items-center gap-1 truncate">
                 <Music :size="12" />
@@ -285,22 +260,6 @@
                     <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
                   </div>
                 </div>
-
-                <!-- Gap indicator between audio visual segments -->
-                <div
-                  v-if="!visualSeg.isLast"
-                  class="absolute top-1 bottom-1 flex items-center justify-center"
-                  :style="{
-                    left: `${visualSeg.leftPercent + visualSeg.widthPercent}%`,
-                    width: `${GAP_PERCENT}%`,
-                  }"
-                >
-                  <div
-                    class="w-full h-full bg-orange-500/5 border-x border-dashed border-orange-400/30 flex items-center justify-center"
-                  >
-                    <Scissors :size="12" class="text-orange-400/40" />
-                  </div>
-                </div>
               </template>
             </div>
           </div>
@@ -308,7 +267,7 @@
           <!-- Text Overlays Track -->
           <div v-if="textOverlays.length > 0" class="flex items-center h-12 px-2 border-b border-border/20 relative">
             <div
-              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-0 z-40 bg-[#101010] backdrop-blur-sm flex-shrink-0"
+              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-2 z-[70] bg-[#101010] flex-shrink-0"
             >
               <div class="font-medium flex items-center gap-1">
                 <Type :size="12" />
@@ -351,7 +310,7 @@
           <!-- Stickers Track -->
           <div v-if="stickers.length > 0" class="flex items-center h-12 px-2 border-b border-border/20 relative">
             <div
-              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-0 z-40 bg-[#101010] backdrop-blur-sm flex-shrink-0"
+              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-2 z-[70] bg-[#101010] flex-shrink-0"
             >
               <div class="font-medium flex items-center gap-1">
                 <Smile :size="12" />
@@ -397,7 +356,7 @@
           <!-- Watermarks Track -->
           <div v-if="watermarks.length > 0" class="flex items-center h-12 px-2 border-b border-border/20 relative">
             <div
-              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-0 z-40 bg-[#101010] backdrop-blur-sm flex-shrink-0"
+              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-2 z-[70] bg-[#101010] flex-shrink-0"
             >
               <div class="font-medium flex items-center gap-1">
                 <Droplet :size="12" />
@@ -440,7 +399,7 @@
           <!-- Effects Track -->
           <div v-if="effects.length > 0" class="flex items-center h-12 px-2 border-b border-border/20 relative">
             <div
-              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-0 z-40 bg-[#101010] backdrop-blur-sm flex-shrink-0"
+              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-2 z-[70] bg-[#101010] flex-shrink-0"
             >
               <div class="font-medium flex items-center gap-1">
                 <Sparkles :size="12" />
@@ -483,7 +442,7 @@
           <!-- Filters Track -->
           <div v-if="filterSegments.length > 0" class="flex items-center h-12 px-2 border-b border-border/20 relative">
             <div
-              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-0 z-40 bg-[#101010] backdrop-blur-sm flex-shrink-0"
+              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-2 z-[70] bg-[#101010] flex-shrink-0"
             >
               <div class="font-medium flex items-center gap-1">
                 <Palette :size="12" />
@@ -554,7 +513,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-  import { ZoomIn, Film, Music, Type, Smile, Sparkles, Scissors, Palette, Droplet } from 'lucide-vue-next';
+  import { ZoomIn, Film, Music, Type, Smile, Sparkles, Palette, Droplet } from 'lucide-vue-next';
   import { useAudioWaveform } from '@/composables/useAudioWaveform';
   import type { TrimSegment, AudioTrack, TextOverlay, Sticker, Effect, FilterSegment, ClipWatermark } from '@/types';
 
@@ -592,10 +551,12 @@
     startPercent: number;
     widthPercent: number;
     ticks: SegmentTick[];
+    effectiveStartTime: number; // Cumulative time from start of timeline
+    effectiveEndTime: number; // Cumulative time at end of this segment
   }
 
-  // Gap percentage between segments
-  const GAP_PERCENT = 2;
+  // Gap percentage between segments (0 = segments are butted up against each other)
+  const GAP_PERCENT = 0;
 
   const props = withDefaults(
     defineProps<{
@@ -727,7 +688,7 @@
     return maxDuration > 0 ? maxDuration : props.duration;
   });
 
-  // Calculate segment layouts with gaps
+  // Calculate segment layouts (segments are butted up against each other)
   const segmentLayouts = computed((): SegmentLayout[] => {
     const segments = sortedTrimSegments.value;
     if (segments.length === 0) return [];
@@ -741,53 +702,81 @@
 
     const layouts: SegmentLayout[] = [];
     let currentPercent = 0;
+    let cumulativeTime = 0; // Track cumulative effective time
 
     segments.forEach((segment, index) => {
       const segmentDuration = segment.endTime - segment.startTime;
       const widthPercent = (segmentDuration / totalSegmentDuration) * availablePercent;
 
-      // Generate ticks for this segment - similar to main timeline
+      // Calculate effective times (cumulative from start of timeline)
+      const effectiveStartTime = cumulativeTime;
+      const effectiveEndTime = cumulativeTime + segmentDuration;
+
+      // Generate ticks for this segment using effective times
       const ticks: SegmentTick[] = [];
 
       // Determine optimal intervals based on segment duration and zoom
+      // More granular intervals for shorter durations
       let majorInterval: number;
       let minorInterval: number;
-      const effectiveDuration = segmentDuration / zoomLevel.value;
+      const effectiveDurationForZoom = segmentDuration / zoomLevel.value;
 
-      if (effectiveDuration < 10) {
-        majorInterval = 2;
-        minorInterval = 1;
-      } else if (effectiveDuration < 30) {
+      if (effectiveDurationForZoom < 2) {
+        // Very short: major every 0.5s, minor every 0.1s
+        majorInterval = 0.5;
+        minorInterval = 0.1;
+      } else if (effectiveDurationForZoom < 5) {
+        // Short: major every 1s, minor every 0.25s
+        majorInterval = 1;
+        minorInterval = 0.25;
+      } else if (effectiveDurationForZoom < 10) {
+        // Medium-short: major every 1s, minor every 0.5s
+        majorInterval = 1;
+        minorInterval = 0.5;
+      } else if (effectiveDurationForZoom < 30) {
+        // Medium: major every 5s, minor every 1s
         majorInterval = 5;
         minorInterval = 1;
-      } else if (effectiveDuration < 120) {
+      } else if (effectiveDurationForZoom < 60) {
+        // Medium-long: major every 10s, minor every 2s
         majorInterval = 10;
+        minorInterval = 2;
+      } else if (effectiveDurationForZoom < 120) {
+        // Long: major every 15s, minor every 5s
+        majorInterval = 15;
         minorInterval = 5;
-      } else if (effectiveDuration < 600) {
+      } else if (effectiveDurationForZoom < 600) {
+        // Very long: major every 30s, minor every 10s
         majorInterval = 30;
         minorInterval = 10;
       } else {
+        // Extra long: major every 60s, minor every 20s
         majorInterval = 60;
         minorInterval = 20;
       }
 
-      // Generate intermediate ticks (excluding exact start and end times which are shown separately)
-      // Round to nearest interval for cleaner numbers
-      const startTick = Math.ceil(segment.startTime / minorInterval) * minorInterval;
+      // Generate intermediate ticks using effective times
+      // Start from the first interval after effectiveStartTime
+      const startTick = Math.ceil(effectiveStartTime / minorInterval) * minorInterval;
 
-      for (let t = startTick; t < segment.endTime; t += minorInterval) {
-        // Skip if too close to start or end (within 0.5 seconds)
-        if (Math.abs(t - segment.startTime) < 0.5 || Math.abs(t - segment.endTime) < 0.5) {
+      // Calculate minimum distance from edges based on duration (shorter clips = tighter margins)
+      const edgeMargin = Math.min(0.3, segmentDuration * 0.05);
+
+      for (let t = startTick; t < effectiveEndTime; t += minorInterval) {
+        // Skip if too close to start or end
+        if (Math.abs(t - effectiveStartTime) < edgeMargin || Math.abs(t - effectiveEndTime) < edgeMargin) {
           continue;
         }
 
-        const posInSegment = ((t - segment.startTime) / segmentDuration) * 100;
+        const posInSegment = ((t - effectiveStartTime) / segmentDuration) * 100;
         // Only include ticks in the middle of the segment (not at edges)
-        if (posInSegment > 2 && posInSegment < 98) {
+        if (posInSegment > 1 && posInSegment < 99) {
+          // Use a small epsilon for floating point comparison
+          const isMajor = Math.abs(t % majorInterval) < 0.001 || Math.abs((t % majorInterval) - majorInterval) < 0.001;
           ticks.push({
-            time: t,
+            time: t, // This is now the effective time
             positionInSegment: posInSegment,
-            isMajor: t % majorInterval === 0,
+            isMajor,
           });
         }
       }
@@ -797,9 +786,12 @@
         startPercent: currentPercent,
         widthPercent,
         ticks,
+        effectiveStartTime,
+        effectiveEndTime,
       });
 
       currentPercent += widthPercent;
+      cumulativeTime += segmentDuration;
       if (index < segments.length - 1) {
         currentPercent += GAP_PERCENT;
       }
@@ -949,8 +941,15 @@
   function formatTime(seconds: number): string {
     if (isNaN(seconds) || !isFinite(seconds)) return '0:00';
     const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    const secs = seconds % 60;
+
+    // For short durations (< 60s total), show decimal precision if there's a fractional part
+    if (totalDuration.value < 60 && secs % 1 !== 0) {
+      // Show one decimal place
+      return `${mins}:${secs.toFixed(1).padStart(4, '0')}`;
+    }
+
+    return `${mins}:${Math.floor(secs).toString().padStart(2, '0')}`;
   }
 
   function setSegmentRef(el: any, type: ItemType, id: string) {
@@ -1059,7 +1058,7 @@
     }
 
     if (selectedItemKey.value === key) {
-      classes.push('ring-2', 'ring-blue-400', 'ring-offset-1', 'ring-offset-transparent', 'selected-segment');
+      classes.push('selected-segment');
     }
 
     return classes;
@@ -1347,13 +1346,56 @@
   function onPlayheadDragMove(e: MouseEvent) {
     if (!isDraggingPlayhead.value || totalDuration.value <= 0) return;
 
-    if (!videoTrackContentRef.value) return;
+    if (!videoTrackContentRef.value || !timelineScrollContainer.value) return;
+
+    const scrollContainer = timelineScrollContainer.value;
+    const containerRect = scrollContainer.getBoundingClientRect();
     const trackRect = videoTrackContentRef.value.getBoundingClientRect();
 
-    const x = e.clientX - trackRect.left;
+    // The label area width (sticky labels take up this space: w-16 = 64px + padding)
+    const labelAreaWidth = 72;
+
+    // Left edge of the visible track area (where content can appear, past the labels)
+    const visibleTrackLeft = containerRect.left + labelAreaWidth;
+    const visibleTrackRight = containerRect.right;
+
+    // Cursor position in viewport coords
+    const cursorX = e.clientX;
+
+    // Auto-scroll when cursor is near/past edges
+    if (cursorX < visibleTrackLeft) {
+      // Cursor is in or past the label area - auto-scroll left
+      const distance = visibleTrackLeft - cursorX;
+      const speed = Math.min(30, Math.max(5, distance * 0.3));
+      scrollContainer.scrollLeft = Math.max(0, scrollContainer.scrollLeft - speed);
+
+      // Set playhead to the time at the left edge of visible track
+      const leftEdgeX = visibleTrackLeft - trackRect.left;
+      const percent = Math.max(0, Math.min(1, leftEdgeX / trackRect.width));
+      const time = clickPositionToTime(percent);
+      emit('seek', Math.max(0, time));
+      return;
+    }
+
+    if (cursorX > visibleTrackRight) {
+      // Cursor is past the right edge - auto-scroll right
+      const distance = cursorX - visibleTrackRight;
+      const speed = Math.min(30, Math.max(5, distance * 0.3));
+      const maxScroll = scrollContainer.scrollWidth - scrollContainer.clientWidth;
+      scrollContainer.scrollLeft = Math.min(maxScroll, scrollContainer.scrollLeft + speed);
+
+      // Set playhead to the time at the right edge of visible track
+      const rightEdgeX = visibleTrackRight - trackRect.left;
+      const percent = Math.max(0, Math.min(1, rightEdgeX / trackRect.width));
+      const time = clickPositionToTime(percent);
+      emit('seek', time);
+      return;
+    }
+
+    // Cursor is within the visible track area - normal behavior
+    const x = cursorX - trackRect.left;
     const percent = Math.max(0, Math.min(1, x / trackRect.width));
     const time = clickPositionToTime(percent);
-
     emit('seek', Math.max(0, time));
   }
 
@@ -1370,6 +1412,63 @@
 
   function onTimelineMouseLeave() {
     // Could be used for hover effects
+  }
+
+  function onRulerWheel(event: WheelEvent) {
+    event.preventDefault();
+
+    if (!timelineScrollContainer.value) return;
+
+    const scrollContainer = timelineScrollContainer.value;
+    const containerRect = scrollContainer.getBoundingClientRect();
+
+    // Cursor position relative to the scroll container's viewport
+    const cursorXInContainer = event.clientX - containerRect.left;
+
+    // Current scroll position and content width
+    const scrollLeft = scrollContainer.scrollLeft;
+    const contentWidth = scrollContainer.scrollWidth;
+
+    // Position in the full content (scroll + cursor offset)
+    const contentX = scrollLeft + cursorXInContainer;
+
+    // Calculate the "logical" position (0-1 range, independent of zoom)
+    const logicalPosition = contentX / contentWidth;
+
+    // Apply zoom
+    const oldZoom = zoomLevel.value;
+    const delta = event.deltaY > 0 ? -0.1 : 0.1;
+    const newZoom = Math.max(1, Math.min(5, oldZoom + delta));
+
+    if (newZoom === oldZoom) return;
+
+    zoomLevel.value = newZoom;
+
+    // After zoom, adjust scroll to keep cursor position stable AND ensure playhead is visible
+    nextTick(() => {
+      const newContentWidth = scrollContainer.scrollWidth;
+      const newContentX = logicalPosition * newContentWidth;
+      let newScrollLeft = newContentX - cursorXInContainer;
+
+      // Label area width (sticky labels)
+      const labelAreaWidth = 72;
+
+      // Calculate playhead position in content
+      // From the style: left: calc(72px + (100% - 80px) * playheadPosition)
+      // 100% = newContentWidth
+      const playheadInContent = 72 + (newContentWidth - 80) * playheadPosition.value;
+
+      // Playhead position in viewport after the proposed scroll
+      const playheadInViewport = playheadInContent - newScrollLeft;
+
+      // If playhead would be in or behind the label area, scroll to bring it visible
+      if (playheadInViewport < labelAreaWidth) {
+        // Scroll so playhead is just past the label area
+        newScrollLeft = playheadInContent - labelAreaWidth - 5;
+      }
+
+      scrollContainer.scrollLeft = Math.max(0, newScrollLeft);
+    });
   }
 
   // Segment dragging
@@ -2247,6 +2346,13 @@
     user-select: none;
   }
 
+  /* Sticky track labels - prevent sub-pixel jitter during scroll */
+  :deep(.sticky) {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+
   .timeline-tick {
     transition: all 0.2s ease;
   }
@@ -2286,23 +2392,7 @@
   /* Selected segment styling */
   .clip-segment.selected-segment {
     z-index: 15;
-    transform: translateY(-1px);
-    box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);
     border-color: #3b82f6 !important;
-  }
-
-  .clip-segment.selected-segment:not(.dragging):not(.resizing) {
-    animation: selection-pulse 2s ease-in-out infinite;
-  }
-
-  @keyframes selection-pulse {
-    0%,
-    100% {
-      box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);
-    }
-    50% {
-      box-shadow: 0 8px 25px rgba(59, 130, 246, 0.5);
-    }
   }
 
   /* Active resize handle styling */
@@ -2314,7 +2404,6 @@
 
   .clip-segment.dragging {
     cursor: grabbing !important;
-    transform: scale(1.02);
   }
 
   /* Smooth transitions for non-dragging states */

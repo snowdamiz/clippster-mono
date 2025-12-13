@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-4">
     <div>
-      <h3 class="text-sm font-medium text-white mb-3">Subtitles</h3>
+      <h3 class="text-sm font-medium text-white mb-1">Subtitles</h3>
       <p class="text-xs text-white/50 mb-4">Word-by-word subtitles from transcript. Drag in preview to reposition.</p>
     </div>
 
