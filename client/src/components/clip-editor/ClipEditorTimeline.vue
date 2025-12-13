@@ -113,7 +113,7 @@
                     :style="{ left: '100%', transform: 'translateX(-50%)', bottom: '0' }"
                   >
                     <div class="w-px bg-violet-400/60 h-4"></div>
-                    <span class="text-[10px] text-violet-400/80 whitespace-nowrap font-medium mt-0.5">
+                    <span class="text-[10px] text-violet-400/80 whitespace-nowrap font-medium mt-0.5 -ml-6">
                       {{ formatTime(segmentLayout.effectiveEndTime) }}
                     </span>
                   </div>
@@ -488,7 +488,7 @@
             class="absolute top-0 bottom-0 z-[60] cursor-ew-resize group"
             :class="{ 'cursor-grabbing': isDraggingPlayhead }"
             :style="{
-              left: `calc(72px + (100% - 80px) * ${playheadPosition})`,
+              left: `calc(66px + (100% - 80px) * ${playheadPosition})`,
               width: '12px',
               marginLeft: '-6px',
             }"
@@ -497,11 +497,11 @@
             <div class="absolute inset-x-[5px] inset-y-0 bg-white/80 shadow-lg group-hover:bg-white transition-colors">
               <!-- Top circle -->
               <div
-                class="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 bg-white rounded-full shadow-md group-hover:scale-110 transition-transform"
+                class="absolute top-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-white rounded-full shadow-md group-hover:scale-110 transition-transform"
               ></div>
               <!-- Bottom circle -->
               <div
-                class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-3 bg-white/80 rounded-full shadow-md group-hover:scale-110 transition-transform"
+                class="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-white/80 rounded-full shadow-md group-hover:scale-110 transition-transform"
               ></div>
             </div>
           </div>

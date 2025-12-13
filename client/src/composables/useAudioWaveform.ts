@@ -298,6 +298,9 @@ export function useAudioWaveform() {
             { name: 'high', samples: 2000 },
             { name: 'ultra', samples: 4000 },
             { name: 'extreme', samples: 8000 },
+            { name: 'maximum', samples: 16000 },
+            { name: 'insane', samples: 32000 },
+            { name: 'godlike', samples: 64000 },
           ];
 
           const resolutions: Record<string, WaveformResolution> = {};
@@ -377,8 +380,14 @@ export function useAudioWaveform() {
       return 'high'; // 2000 peaks - normal
     } else if (samplesPerPixel > 300) {
       return 'ultra'; // 4000 peaks - zoomed in
-    } else {
+    } else if (samplesPerPixel > 120) {
       return 'extreme'; // 8000 peaks - very zoomed in
+    } else if (samplesPerPixel > 50) {
+      return 'maximum'; // 16000 peaks - maximum zoom
+    } else if (samplesPerPixel > 20) {
+      return 'insane'; // 32000 peaks - extreme detail
+    } else {
+      return 'godlike'; // 64000 peaks - sample-level precision
     }
   }
 
