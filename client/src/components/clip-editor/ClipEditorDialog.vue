@@ -176,6 +176,16 @@
                   @update:framing-mode="updateFramingMode"
                   @update:preview-aspect-ratio="(ratio: string) => (previewAspectRatio = ratio)"
                 />
+
+                <TranscriptTab
+                  v-if="activeTab === 'transcript'"
+                  :project-id="projectId"
+                  :current-time="effectivePreviewTime"
+                  :clip-start-time="props.clipStartTime"
+                  :clip-end-time="props.clipEndTime"
+                  :duration="totalSegmentDuration"
+                  @seek-video="seekToAbsoluteTime"
+                />
               </div>
             </div>
           </div>
@@ -254,6 +264,7 @@
     updateEffect,
     deleteEffect,
     getRawVideosByProjectId,
+    getClipWithBuildStatus,
   } from '@/services/database';
 
   // Disable attribute inheritance since this component renders a Teleport root
@@ -269,6 +280,7 @@
   import TextOverlayTab from './tabs/TextOverlayTab.vue';
   import StickersTab from './tabs/StickersTab.vue';
   import AspectTab from './tabs/AspectTab.vue';
+  import TranscriptTab from './tabs/TranscriptTab.vue';
   import ManualPOIEditor from '@/components/poi/ManualPOIEditor.vue';
 
   interface ClipSegmentInput {
@@ -329,6 +341,9 @@
   // Manual POI editor state
   const showManualPOIEditor = ref(false);
   const editingAspectRatio = ref<string>('9:16');
+
+  // Project ID for transcript loading (fetched from clip)
+  const projectId = ref<string | null>(null);
 
   // Audio playback elements
   const audioElements = ref<Map<string, HTMLAudioElement>>(new Map());
@@ -467,6 +482,14 @@
       const absoluteTime = props.clipStartTime + time;
       videoElement.value.currentTime = absoluteTime;
       previewTime.value = absoluteTime; // Store absolute time
+    }
+  }
+
+  // Seek to absolute time (used by transcript tab)
+  function seekToAbsoluteTime(time: number) {
+    if (videoElement.value) {
+      videoElement.value.currentTime = time;
+      previewTime.value = time;
     }
   }
 
@@ -1088,6 +1111,21 @@
     await performSave();
   }
 
+  // Load project ID from clip (needed for transcript)
+  async function loadProjectId() {
+    if (!props.clipId) {
+      projectId.value = null;
+      return;
+    }
+    try {
+      const clip = await getClipWithBuildStatus(props.clipId);
+      projectId.value = clip?.project_id || null;
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to load project ID:', error);
+      projectId.value = null;
+    }
+  }
+
   // Load existing edit data
   async function loadEditData() {
     const editRecord = await getOrCreateClipEdit(props.clipId);
@@ -1305,6 +1343,7 @@
       if (isOpen && props.clipId) {
         isInitialLoad.value = true; // Prevent auto-save during load
         await loadEditData();
+        await loadProjectId();
         // Initialize to clip start time (absolute time)
         previewTime.value = props.clipStartTime;
 
@@ -1342,6 +1381,8 @@
         // Reset aspect tab state
         videoPath.value = null;
         thumbnailUrl.value = null;
+        // Reset transcript state
+        projectId.value = null;
         // Reset auto-save state
         isSaving.value = false;
         lastSaved.value = false;

@@ -176,7 +176,7 @@
     />
 
     <!-- Transcript Tab Content - use v-show to keep mounted so it receives events -->
-    <TranscriptPanel
+    <!-- <TranscriptPanel
       v-show="activeTab === 'transcript'"
       ref="transcriptPanelRef"
       :project-id="projectId"
@@ -185,7 +185,7 @@
       :hide-header="true"
       :search-query="transcriptSearchQuery"
       @seekVideo="onSeekVideo"
-    />
+    /> -->
 
     <!-- Subtitles Tab Content -->
     <SubtitlesTab
@@ -247,7 +247,7 @@
   // Tab configuration
   const tabs = [
     { id: 'clips', label: 'Clips', icon: markRaw(Video) },
-    { id: 'transcript', label: 'Transcript', icon: markRaw(FileText) },
+    // { id: 'transcript', label: 'Transcript', icon: markRaw(FileText) },
     { id: 'subtitles', label: 'Subtitles', icon: markRaw(Type) },
     { id: 'watermark', label: 'Watermark', icon: markRaw(Image) },
   ];

@@ -873,7 +873,14 @@ export interface ClipEditorDialogProps {
 }
 
 // Editor tab types
-export type ClipEditorTab = 'audio' | 'filters' | 'text' | 'stickers' | 'effects' | 'aspect';
+export type ClipEditorTab =
+  | 'audio'
+  | 'filters'
+  | 'text'
+  | 'stickers'
+  | 'effects'
+  | 'aspect'
+  | 'transcript';
 
 // Timeline track types for clip editor
 export interface EditorTimelineTrack {
