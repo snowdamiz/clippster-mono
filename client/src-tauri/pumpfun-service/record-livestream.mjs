@@ -26,6 +26,17 @@ const VIDEO_QUALITY_HIGH = 2;
 // We split the difference to make both "acceptable" rather than one perfect
 const AUDIO_ADVANCE_MS = 215; // Compromise: advance audio 75ms to help guest sync
 
+// Per-mint overrides for outlier streams (e.g., OBS Virtual Cam + Voicemeeter)
+// Key is the mintId, value is the desired audio advance in ms
+// Positive = advance audio (plays earlier), Negative = delay audio (plays later)
+const AUDIO_ADVANCE_OVERRIDES_MS = {
+  // Streamer uses OBS virtual camera + Voicemeeter - audio significantly behind video
+  '5Ds4L5uhoqtkRhTi6n77KYWBdNEpQG5ZUi4uG3yjpump': 700,
+};
+
+const getAudioAdvanceMs = (mintId) =>
+  AUDIO_ADVANCE_OVERRIDES_MS[mintId] ?? AUDIO_ADVANCE_MS;
+
 const AUDIO_FALLBACK_OFFSET_MS = 0; // Only used as fallback if sync setup fails
 const DEBUG_SYNC = true; // Enabled to diagnose video stride issues
 
@@ -251,6 +262,14 @@ class PumpfunRecorder {
     this.sessionId = sessionId;
     this.outputDir = outputDir;
     this.segmentDurationSeconds = segmentDuration;
+    this.audioAdvanceMs = getAudioAdvanceMs(mintId);
+    if (DIAGNOSTIC_MODE && this.audioAdvanceMs !== AUDIO_ADVANCE_MS) {
+        log('DIAG: Audio advance override applied', {
+            mintId,
+            audioAdvanceMs: this.audioAdvanceMs,
+            defaultAudioAdvanceMs: AUDIO_ADVANCE_MS,
+        });
+    }
     this.ffmpegPath = resolveFfmpegBinary();
     this.segmentPrefix = `${this.mintId}_${this.sessionId}_segment_`;
     this.playlistPath = path.join(this.outputDir, 'playlist.csv');
@@ -305,6 +324,9 @@ class PumpfunRecorder {
     this.mixerInterval = null;
     this._loggedResolutionSkip = false; // Track if we've logged resolution skip
     this._resChangeConsecutiveFrames = 0; // Track consecutive frames at new resolution
+    
+    // Encoder epoch - incremented on restart so audio loops can reset their counters
+    this._encoderEpoch = 0;
     
     // Diagnostic counters for troubleshooting
     this._diagnosticVideoFrameCount = 0; // Total video frames received
@@ -425,7 +447,11 @@ class PumpfunRecorder {
       throw new Error('Failed to obtain LiveKit token');
     }
 
-    const livekitUrl = await getPreferredRegion(token);
+    // Use serverUrl from response if available, otherwise try to get preferred region
+    let livekitUrl = joinData?.serverUrl || joinData?.url || joinData?.wsUrl;
+    if (!livekitUrl) {
+      livekitUrl = await getPreferredRegion(token);
+    }
     this.running = true;
 
     await this.startRoom(livekitUrl, token);
@@ -439,6 +465,17 @@ class PumpfunRecorder {
     this.room = new Room();
     this.room
       .on(RoomEvent.TrackSubscribed, (track) => this.handleTrackSubscribed(track))
+      .on(RoomEvent.TrackPublished, (publication, participant) => {
+        // DIAGNOSTIC: Log when tracks are published (before subscription)
+        if (DIAGNOSTIC_MODE) {
+            log('DIAG: TrackPublished event', {
+                publicationSid: publication?.sid,
+                kind: publication?.kind,
+                participantIdentity: participant?.identity,
+                isSubscribed: publication?.isSubscribed
+            });
+        }
+      })
       .on(RoomEvent.Disconnected, () => {
         this.emitEvent({
           type: 'stream_ended',
@@ -449,9 +486,56 @@ class PumpfunRecorder {
       });
 
     await this.room.connect(url, token, { autoSubscribe: true });
+    
+    // DIAGNOSTIC: Log room state after connection
+    if (DIAGNOSTIC_MODE) {
+        log('DIAG: Room connected', {
+            participantCount: this.room?.remoteParticipants?.size || 0,
+            localParticipantSid: this.room?.localParticipant?.sid
+        });
+        
+        // Check for existing participants and their tracks
+        if (this.room?.remoteParticipants) {
+            for (const [sid, participant] of this.room.remoteParticipants) {
+                const trackInfo = [];
+                if (participant?.trackPublications) {
+                    for (const [trackSid, publication] of participant.trackPublications) {
+                        trackInfo.push({
+                            sid: trackSid,
+                            kind: publication?.kind,
+                            isSubscribed: publication?.isSubscribed,
+                            hasTrack: !!publication?.track
+                        });
+                        // If track exists but wasn't auto-subscribed, manually handle it
+                        if (publication?.track && !publication?.isSubscribed) {
+                            log('DIAG: Manually processing existing track', { trackSid });
+                            this.handleTrackSubscribed(publication.track);
+                        }
+                    }
+                }
+                log('DIAG: Remote participant', {
+                    identity: participant?.identity,
+                    sid,
+                    tracks: trackInfo
+                });
+            }
+        }
+    }
   }
 
   handleTrackSubscribed(track) {
+    // DIAGNOSTIC: Log ALL track subscriptions to debug missing video
+    if (DIAGNOSTIC_MODE) {
+        log('DIAG: TrackSubscribed event', {
+            trackSid: track?.sid,
+            trackKind: track?.kind,
+            kindIsAudio: track?.kind === TrackKind.KIND_AUDIO,
+            kindIsVideo: track?.kind === TrackKind.KIND_VIDEO,
+            hasVideoReader: !!this.videoReader,
+            willProcessVideo: track?.kind === TrackKind.KIND_VIDEO && !this.videoReader
+        });
+    }
+    
     if (track.kind === TrackKind.KIND_AUDIO) {
       this.bindAudioStream(track);
     } else if (track.kind === TrackKind.KIND_VIDEO && !this.videoReader) {
@@ -461,6 +545,13 @@ class PumpfunRecorder {
           }
       } catch(e) {}
       this.bindVideoStream(track);
+    } else if (track.kind === TrackKind.KIND_VIDEO && this.videoReader) {
+      // Video track received but we already have a reader - log this case
+      if (DIAGNOSTIC_MODE) {
+          log('DIAG: Video track skipped (already have reader)', {
+              trackSid: track?.sid
+          });
+      }
     }
   }
 
@@ -499,10 +590,25 @@ class PumpfunRecorder {
       // Otherwise the shared counter causes audio to play at wrong speed
       let trackFrameCount = 0;
       let trackFirstArrivalTime = null;
+      let trackEncoderEpoch = this._encoderEpoch; // Track which encoder epoch we're in
 
       while (this.running) {
         const { value, done } = await reader.read();
         if (done || !value) break;
+        
+        // Check if encoder restarted (resolution change) - reset per-track counters
+        if (trackEncoderEpoch !== this._encoderEpoch) {
+            trackEncoderEpoch = this._encoderEpoch;
+            trackFrameCount = 0;
+            trackFirstArrivalTime = null;
+            lastAudioIndex = -1;
+            if (DIAGNOSTIC_MODE) {
+                log('DIAG: Audio track reset for new encoder epoch', {
+                    trackId,
+                    newEpoch: trackEncoderEpoch
+                });
+            }
+        }
         
         const arrivalTime = Date.now();
         this.audioFrameCount++; // Global counter for diagnostics only
@@ -619,13 +725,13 @@ class PumpfunRecorder {
                 // Calculate time relative to first audio frame using PTS
                 const diffUs = audioTimestampUs - this.firstAudioTimestampUs;
                 const diffMs = Number(diffUs) / 1000;
-                // Apply sync offset: subtract AUDIO_ADVANCE_MS to make audio play earlier
+                // Apply sync offset: subtract per-stream audioAdvanceMs to make audio play earlier
                 // (smaller time index = audio chunk is output sooner)
-                const relativeTime = diffMs + this.audioOffsetFromRef - AUDIO_ADVANCE_MS;
+                const relativeTime = diffMs + this.audioOffsetFromRef - this.audioAdvanceMs;
                 timeIndex = Math.floor(relativeTime / 20);
             } else {
                 // Fallback: wall-clock based timing (only if sync setup failed)
-                const relativeTime = arrivalTime - this.referenceTime + AUDIO_FALLBACK_OFFSET_MS - AUDIO_ADVANCE_MS;
+                const relativeTime = arrivalTime - this.referenceTime + AUDIO_FALLBACK_OFFSET_MS - this.audioAdvanceMs;
                 timeIndex = Math.floor(relativeTime / 20);
             }
 
@@ -1113,7 +1219,7 @@ class PumpfunRecorder {
             log('A/V sync initialized', {
                 method: this.syncMethod,
                 audioSource: this._audioTimestampSource,
-                audioAdvanceMs: AUDIO_ADVANCE_MS,
+                audioAdvanceMs: this.audioAdvanceMs,
                 wallClockDiffMs: wallClockOffsetMs.toFixed(1)
             });
         } else {
@@ -1225,10 +1331,12 @@ class PumpfunRecorder {
         this.syncMethod = 'unknown';
         this._audioTimestampSource = 'none';
         this.fpsDetected = false;
+        this.fpsSamples = []; // CRITICAL: Reset FPS samples to avoid stale timestamps
         this.videoQueue = [];
         this._loggedAudioFrame = false;
         this._loggedVideoFrame = false;
         this._videoTimestampOffset = undefined; // Reset timestamp offset for new sync
+        this._encoderEpoch++; // Signal audio loops to reset their frame counters
         
         // Reset diagnostic counters on encoder restart
         if (DIAGNOSTIC_MODE) {

@@ -1741,6 +1741,26 @@
     if (!previewWatermarkSettings.value) return {};
 
     const settings = previewWatermarkSettings.value;
+    
+    // Check if this is a full-frame 1920x1080 watermark (16:9 overlay)
+    const wmWidth = previewWatermarkData.value?.width ?? null;
+    const wmHeight = previewWatermarkData.value?.height ?? null;
+    const ratio = wmWidth && wmHeight ? wmWidth / wmHeight : null;
+    const is16x9 = ratio ? Math.abs(ratio - 16 / 9) < 0.02 : false;
+    const isFullFrame = is16x9 && wmWidth !== null && wmHeight !== null && wmWidth >= 1600 && wmHeight >= 900;
+
+    // Full-frame watermarks fill the entire video and sit at 0,0
+    if (isFullFrame) {
+      return {
+        width: '100%',
+        height: '100%',
+        left: '0%',
+        top: '0%',
+        transform: 'none',
+      };
+    }
+
+    // Standard watermarks use percentage-based positioning
     const positionX = settings.positionX ?? 12;
     const positionY = settings.positionY ?? 92;
     const scale = settings.scale ?? 20;
@@ -2078,17 +2098,31 @@
     previewWatermarkSettings.value = null;
 
     try {
-      // Get the project ID - either from segment_id (for segment clips) or the folder project
-      const projectId = clip.segment_id || selectedFolderProject.value?.id;
-      if (!projectId) return;
+      // Get the segment's project ID - this is where the creator profile is linked
+      const segmentProjectId = clip.segment_id;
+      if (!segmentProjectId) {
+        console.log('[Projects] loadPreviewWatermark: No segment_id found');
+        return;
+      }
+      console.log('[Projects] loadPreviewWatermark: Loading for segment:', segmentProjectId);
 
-      // Find the parent project (folder) to get the creator profile
-      const project = projects.value.find(p => p.id === projectId);
-      const parentProjectId = project?.parent_id || projectId;
-
-      // Get the creator profile for this project
-      const creatorProfile = await getCreatorProfileByProjectId(parentProjectId);
-      if (!creatorProfile || !creatorProfile.watermark_id) return;
+      // Get the creator profile for the segment (not the parent folder)
+      let creatorProfile = await getCreatorProfileByProjectId(segmentProjectId);
+      console.log('[Projects] loadPreviewWatermark: Creator profile for segment', segmentProjectId, ':', creatorProfile);
+      
+      // If no creator profile on segment, try the parent folder as fallback
+      if (!creatorProfile) {
+        const project = projects.value.find(p => p.id === segmentProjectId);
+        if (project?.parent_id) {
+          creatorProfile = await getCreatorProfileByProjectId(project.parent_id);
+          console.log('[Projects] loadPreviewWatermark: Fallback to parent', project.parent_id, ':', creatorProfile);
+        }
+      }
+      
+      if (!creatorProfile || !creatorProfile.watermark_id) {
+        console.log('[Projects] loadPreviewWatermark: No creator profile or watermark_id');
+        return;
+      }
 
       // Load the watermark image
       const watermark = await getWatermarkImage(creatorProfile.watermark_id);
@@ -2099,11 +2133,34 @@
         filePath: watermark.file_path,
       });
 
+      // Get dimensions from database or measure the image
+      let wmWidth = watermark.width || undefined;
+      let wmHeight = watermark.height || undefined;
+      
+      // If dimensions not in database, measure the image
+      if (!wmWidth || !wmHeight) {
+        try {
+          const measured = await new Promise<{ width: number; height: number } | null>((resolve) => {
+            const img = new Image();
+            img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+            img.onerror = () => resolve(null);
+            img.src = dataUrl;
+          });
+          if (measured) {
+            wmWidth = measured.width;
+            wmHeight = measured.height;
+          }
+        } catch {
+          // Ignore measurement errors
+        }
+      }
+
       previewWatermarkData.value = {
         dataUrl,
-        width: watermark.width || undefined,
-        height: watermark.height || undefined,
+        width: wmWidth,
+        height: wmHeight,
       };
+      console.log('[Projects] loadPreviewWatermark: Watermark data loaded:', { width: wmWidth, height: wmHeight });
 
       // Parse watermark settings from creator profile
       let watermarkSettings: WatermarkSettings = {
@@ -2140,6 +2197,7 @@
       }
 
       previewWatermarkSettings.value = watermarkSettings;
+      console.log('[Projects] loadPreviewWatermark: Settings loaded:', watermarkSettings);
     } catch (error) {
       console.error('[Projects] Failed to load watermark for preview:', error);
       previewWatermarkData.value = null;
@@ -2448,33 +2506,62 @@
       }
       const videoPath = videos[0].file_path;
 
-      // Get or create segments from the clip
+      // IMPORTANT: Reload segments from database to get latest edits from timeline
+      // The clip object may have stale data if user edited segments on timeline
+      const { getClipSegmentsByVersionId } = await import('@/services/database/clip-segments');
       let segments: any[] = [];
-      if (
-        clip.current_version_segments &&
-        Array.isArray(clip.current_version_segments) &&
-        clip.current_version_segments.length > 0
-      ) {
-        segments = clip.current_version_segments.map((segment: any) => ({
-          id: segment.id,
-          start_time: segment.start_time,
-          end_time: segment.end_time,
-          duration: segment.duration || segment.end_time - segment.start_time,
-          transcript: segment.transcript || null,
-        }));
-      } else {
-        // Fallback: create single segment from clip timing
-        const startTime = clip.current_version?.start_time ?? clip.current_version_start_time ?? 0;
-        const endTime = clip.current_version?.end_time ?? clip.current_version_end_time ?? 0;
-        segments = [
-          {
-            id: `fallback-${clip.id}`,
-            start_time: startTime,
-            end_time: endTime,
-            duration: endTime - startTime,
-            transcript: null,
-          },
-        ];
+      
+      // Try to get fresh segments from database first
+      const versionId = clip.current_version_id || clip.current_version?.id;
+      if (versionId) {
+        try {
+          const dbSegments = await getClipSegmentsByVersionId(versionId);
+          if (dbSegments.length > 0) {
+            segments = dbSegments.map((segment: any) => ({
+              id: segment.id,
+              start_time: segment.start_time,
+              end_time: segment.end_time,
+              duration: segment.duration || segment.end_time - segment.start_time,
+              transcript: segment.transcript || null,
+            }));
+            console.log('[Projects] Loaded fresh segments from database:', segments.map(s => ({
+              start: s.start_time,
+              end: s.end_time
+            })));
+          }
+        } catch (err) {
+          console.warn('[Projects] Could not reload segments from database:', err);
+        }
+      }
+      
+      // Fall back to cached data if database fetch failed or returned empty
+      if (segments.length === 0) {
+        if (
+          clip.current_version_segments &&
+          Array.isArray(clip.current_version_segments) &&
+          clip.current_version_segments.length > 0
+        ) {
+          segments = clip.current_version_segments.map((segment: any) => ({
+            id: segment.id,
+            start_time: segment.start_time,
+            end_time: segment.end_time,
+            duration: segment.duration || segment.end_time - segment.start_time,
+            transcript: segment.transcript || null,
+          }));
+        } else {
+          // Fallback: create single segment from clip timing
+          const startTime = clip.current_version?.start_time ?? clip.current_version_start_time ?? 0;
+          const endTime = clip.current_version?.end_time ?? clip.current_version_end_time ?? 0;
+          segments = [
+            {
+              id: `fallback-${clip.id}`,
+              start_time: startTime,
+              end_time: endTime,
+              duration: endTime - startTime,
+              transcript: null,
+            },
+          ];
+        }
       }
 
       // Update database status to building

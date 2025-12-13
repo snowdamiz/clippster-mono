@@ -317,13 +317,13 @@
                   <span>{{ Math.round(clip.current_version_virality_score) }}% Viral</span>
                 </div>
 
-                <!-- Duration -->
+                <!-- Duration (calculated from segments to reflect timeline edits) -->
                 <div
                   class="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 bg-secondary/40 px-2 py-0.5 rounded-md"
                 >
                   <ClockIcon class="h-3 w-3 opacity-70" />
                   <span>
-                    {{ formatDuration((clip.current_version_end_time || 0) - (clip.current_version_start_time || 0)) }}
+                    {{ formatDuration(getClipTiming(clip).duration) }}
                   </span>
                 </div>
 
@@ -353,8 +353,8 @@
               >
                 <div class="flex items-center gap-2">
                   <span class="font-mono">
-                    {{ formatTime(clip.current_version_start_time || 0) }} -
-                    {{ formatTime(clip.current_version_end_time || 0) }}
+                    {{ formatTime(getClipTiming(clip).startTime) }} -
+                    {{ formatTime(getClipTiming(clip).endTime) }}
                   </span>
 
                   <!-- Build Status -->
@@ -1025,6 +1025,33 @@
     return 'text-muted-foreground';
   }
 
+  // Get actual clip timing from segments (respects timeline edits)
+  // Falls back to version times if no segments available
+  function getClipTiming(clip: ClipWithVersion): { startTime: number; endTime: number; duration: number } {
+    const segments = clip.current_version_segments;
+    
+    if (segments && segments.length > 0) {
+      // Sort segments by start time and get the range
+      const sorted = [...segments].sort((a, b) => a.start_time - b.start_time);
+      const startTime = sorted[0].start_time;
+      const endTime = sorted[sorted.length - 1].end_time;
+      return {
+        startTime,
+        endTime,
+        duration: endTime - startTime
+      };
+    }
+    
+    // Fallback to version times
+    const startTime = clip.current_version_start_time || 0;
+    const endTime = clip.current_version_end_time || 0;
+    return {
+      startTime,
+      endTime,
+      duration: endTime - startTime
+    };
+  }
+
   function getTimeEstimate(): string {
     switch (props.generationStage) {
       case 'starting':
@@ -1289,8 +1316,29 @@
 
       const projectVideo = rawVideos[0];
 
+      // IMPORTANT: Reload segments from database to get latest edits from timeline
+      // The clip object in props may have stale data if user edited segments on timeline
+      const { getClipSegmentsByVersionId } = await import('@/services/database/clip-segments');
+      let freshSegments = clip.current_version_segments || [];
+      
+      if (clip.current_version_id) {
+        try {
+          const dbSegments = await getClipSegmentsByVersionId(clip.current_version_id);
+          if (dbSegments.length > 0) {
+            freshSegments = dbSegments;
+            console.log('[ClipsTab] Loaded fresh segments from database:', freshSegments.map(s => ({
+              index: s.segment_index,
+              start: s.start_time,
+              end: s.end_time
+            })));
+          }
+        } catch (err) {
+          console.warn('[ClipsTab] Could not reload segments from database, using cached data:', err);
+        }
+      }
+
       // Prepare segments for the Rust backend
-      const segments = (clip.current_version_segments || []).map((segment) => ({
+      const segments = freshSegments.map((segment) => ({
         id: segment.id,
         start_time: segment.start_time,
         end_time: segment.end_time,

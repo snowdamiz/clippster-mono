@@ -132,8 +132,8 @@
                   {{ preset.description }}
                 </p>
                 <p class="text-[10px] text-muted-foreground/60 mt-1">
-                  Position: {{ preset.position_x }}%, {{ preset.position_y }}% • Opacity: {{ preset.opacity }}% • Size:
-                  {{ preset.scale }}%
+                  X: {{ Math.round((preset.position_x / 100) * 1920) }}px, Y: {{ Math.round((preset.position_y / 100) * 1080) }}px • 
+                  Opacity: {{ preset.opacity }}% • Width: {{ Math.round((preset.scale / 100) * 1920) }}px
                 </p>
               </div>
               <button
@@ -254,7 +254,10 @@
         <template v-if="selectedWatermark && localSettings.enabled">
           <!-- Position Controls -->
           <div class="space-y-3">
-            <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Position</h4>
+            <div class="flex items-center justify-between">
+              <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Position</h4>
+              <span class="text-[9px] text-muted-foreground/60 bg-muted/30 px-1.5 py-0.5 rounded">1920×1080 ref</span>
+            </div>
 
             <!-- Draggable Preview Area -->
             <div
@@ -315,61 +318,61 @@
               </div>
             </div>
 
-            <!-- Position Sliders -->
+            <!-- Position Sliders (pixel-based on 1920x1080 reference) -->
             <div class="grid grid-cols-2 gap-4">
-              <!-- Horizontal -->
+              <!-- Horizontal (X) -->
               <div class="space-y-1.5">
                 <div class="flex items-center justify-between">
-                  <label class="text-xs text-muted-foreground">Horizontal</label>
+                  <label class="text-xs text-muted-foreground">X Position</label>
                   <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-1.5 py-0.5 rounded">
-                    {{ localSettings.positionX }}%
+                    {{ positionXPixels }}px
                   </span>
                 </div>
                 <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
                   <div
                     class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                    :style="{ width: `${localSettings.positionX}%` }"
+                    :style="{ width: `${(positionXPixels / 1920) * 100}%` }"
                   ></div>
                   <input
                     type="range"
-                    v-model.number="localSettings.positionX"
+                    v-model.number="positionXPixels"
                     min="0"
-                    max="100"
-                    step="1"
+                    max="1920"
+                    step="10"
                     class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
                   />
                 </div>
                 <div class="flex justify-between text-[9px] text-muted-foreground/40">
-                  <span>Left</span>
-                  <span>Right</span>
+                  <span>0</span>
+                  <span>1920</span>
                 </div>
               </div>
 
-              <!-- Vertical -->
+              <!-- Vertical (Y) -->
               <div class="space-y-1.5">
                 <div class="flex items-center justify-between">
-                  <label class="text-xs text-muted-foreground">Vertical</label>
+                  <label class="text-xs text-muted-foreground">Y Position</label>
                   <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-1.5 py-0.5 rounded">
-                    {{ localSettings.positionY }}%
+                    {{ positionYPixels }}px
                   </span>
                 </div>
                 <div class="relative h-1.5 bg-muted-foreground/30 rounded-md">
                   <div
                     class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                    :style="{ width: `${localSettings.positionY}%` }"
+                    :style="{ width: `${(positionYPixels / 1080) * 100}%` }"
                   ></div>
                   <input
                     type="range"
-                    v-model.number="localSettings.positionY"
+                    v-model.number="positionYPixels"
                     min="0"
-                    max="100"
-                    step="1"
+                    max="1080"
+                    step="10"
                     class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
                   />
                 </div>
                 <div class="flex justify-between text-[9px] text-muted-foreground/40">
-                  <span>Top</span>
-                  <span>Bottom</span>
+                  <span>0</span>
+                  <span>1080</span>
                 </div>
               </div>
             </div>
@@ -420,31 +423,31 @@
             </div>
           </div>
 
-          <!-- Scale -->
+          <!-- Scale (width in pixels on 1920x1080 reference) -->
           <div class="space-y-2">
             <div class="flex items-center justify-between">
-              <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Size</h4>
+              <h4 class="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Width</h4>
               <span class="text-xs font-mono text-foreground/70 bg-muted/50 px-2 py-1 rounded">
-                {{ localSettings.scale }}%
+                {{ scalePixels }}px
               </span>
             </div>
             <div class="relative h-2 bg-muted-foreground/30 rounded-md">
               <div
                 class="absolute left-0 top-0 h-full bg-primary rounded-md transition-all duration-200"
-                :style="{ width: `${((localSettings.scale - 5) / (450 - 5)) * 100}%` }"
+                :style="{ width: `${((scalePixels - 96) / (864 - 96)) * 100}%` }"
               ></div>
               <input
                 type="range"
-                v-model.number="localSettings.scale"
-                min="5"
-                max="450"
-                step="1"
+                v-model.number="scalePixels"
+                min="96"
+                max="864"
+                step="10"
                 class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
               />
             </div>
             <div class="flex justify-between text-[9px] text-muted-foreground/40">
-              <span>Small</span>
-              <span>Large</span>
+              <span>96px</span>
+              <span>864px</span>
             </div>
           </div>
         </template>
@@ -566,8 +569,35 @@
     'settings-changed': [settings: WatermarkSettings];
   }>();
 
+  // Reference frame constants (all positioning is based on 1920x1080)
+  const REFERENCE_WIDTH = 1920;
+  const REFERENCE_HEIGHT = 1080;
+
   // Local settings state
   const localSettings = ref<WatermarkSettings>({ ...props.settings });
+
+  // Pixel-based position computed properties (convert to/from percentages)
+  const positionXPixels = computed({
+    get: () => Math.round((localSettings.value.positionX / 100) * REFERENCE_WIDTH),
+    set: (px: number) => {
+      localSettings.value.positionX = Math.round((px / REFERENCE_WIDTH) * 100);
+    },
+  });
+
+  const positionYPixels = computed({
+    get: () => Math.round((localSettings.value.positionY / 100) * REFERENCE_HEIGHT),
+    set: (px: number) => {
+      localSettings.value.positionY = Math.round((px / REFERENCE_HEIGHT) * 100);
+    },
+  });
+
+  // Scale in pixels (based on percentage of reference width)
+  const scalePixels = computed({
+    get: () => Math.round((localSettings.value.scale / 100) * REFERENCE_WIDTH),
+    set: (px: number) => {
+      localSettings.value.scale = Math.round((px / REFERENCE_WIDTH) * 100);
+    },
+  });
 
   // Watermark data
   const watermarks = ref<WatermarkImage[]>([]);
@@ -596,15 +626,16 @@
   const previewAreaRef = ref<HTMLElement | null>(null);
   const isDragging = ref(false);
 
-  // Position presets (using 12/88 for corners, 92 for bottom to match default watermark position)
+  // Position presets in pixels (based on 1920x1080 reference frame)
+  // These are common positions with safe margins from edges
   const positionPresets = [
-    { name: 'Top Left', x: 12, y: 8 },
-    { name: 'Top Center', x: 50, y: 8 },
-    { name: 'Top Right', x: 88, y: 8 },
-    { name: 'Center', x: 50, y: 50 },
-    { name: 'Bottom Left', x: 12, y: 92 },
-    { name: 'Bottom Center', x: 50, y: 92 },
-    { name: 'Bottom Right', x: 88, y: 92 },
+    { name: 'Top Left', x: 230, y: 86 },      // ~12%, 8% 
+    { name: 'Top Center', x: 960, y: 86 },    // 50%, 8%
+    { name: 'Top Right', x: 1690, y: 86 },    // ~88%, 8%
+    { name: 'Center', x: 960, y: 540 },        // 50%, 50%
+    { name: 'Bottom Left', x: 230, y: 994 },  // ~12%, 92%
+    { name: 'Bottom Center', x: 960, y: 994 }, // 50%, 92%
+    { name: 'Bottom Right', x: 1690, y: 994 }, // ~88%, 92%
   ];
 
   // Computed
@@ -698,15 +729,15 @@
     emitSettings();
   }
 
-  // Reset to defaults
+  // Reset to defaults (position 230x994 = ~12%, 92% - bottom left with margin)
   function resetToDefaults() {
     localSettings.value = {
       enabled: false,
       watermarkId: null,
-      positionX: 12,
-      positionY: 92,
+      positionX: 12,  // 230px on 1920
+      positionY: 92,  // 994px on 1080
       opacity: 80,
-      scale: 20,
+      scale: 20,      // 384px width on 1920
       perRatioSettings: localSettings.value.perRatioSettings, // Preserve creator profile settings
     };
     selectedWatermark.value = null;
@@ -791,16 +822,17 @@
     await loadWatermarkThumbnail(selectedWatermark.value);
   }
 
-  // Position preset handling
+  // Position preset handling (presets are in pixels, convert to percentages for storage)
   function applyPositionPreset(preset: { name: string; x: number; y: number }) {
-    localSettings.value.positionX = preset.x;
-    localSettings.value.positionY = preset.y;
+    positionXPixels.value = preset.x;
+    positionYPixels.value = preset.y;
     emitSettings();
   }
 
   function isPresetActive(preset: { name: string; x: number; y: number }): boolean {
+    // Compare in pixel space (allow ~50px tolerance)
     return (
-      Math.abs(localSettings.value.positionX - preset.x) < 3 && Math.abs(localSettings.value.positionY - preset.y) < 3
+      Math.abs(positionXPixels.value - preset.x) < 50 && Math.abs(positionYPixels.value - preset.y) < 50
     );
   }
 
