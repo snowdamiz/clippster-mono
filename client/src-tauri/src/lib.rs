@@ -348,6 +348,12 @@ pub fn run() {
                             sql: include_str!("../migrations/057_add_clip_watermarks.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 58,
+                            description: "add_video_editor_projects",
+                            sql: include_str!("../migrations/058_add_video_editor_projects.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

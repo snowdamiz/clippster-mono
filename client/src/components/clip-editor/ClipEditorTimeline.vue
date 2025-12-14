@@ -134,58 +134,165 @@
                 </div>
               </div>
             </div>
-            <div ref="videoTrackContentRef" class="flex-1 h-8 relative" @click="onTrackContentClick">
+            <div
+              ref="videoTrackContentRef"
+              class="flex-1 h-8 relative"
+              @click="onTrackContentClick"
+              @dragover.prevent="onTimelineDragOver"
+              @drop.prevent="onTimelineDrop"
+            >
               <!-- Background -->
               <div class="absolute inset-0 bg-[#0a0a0a]/50 rounded-md cursor-pointer"></div>
 
-              <!-- Render each segment with waveform -->
-              <template v-for="(segmentLayout, index) in segmentLayouts" :key="segmentLayout.segment.id">
-                <!-- Segment with waveform -->
+              <!-- Editor Mode: Video Sources -->
+              <template v-if="editorMode">
+                <!-- Empty state drop zone -->
                 <div
-                  :ref="(el) => setSegmentRef(el, 'trim', segmentLayout.segment.id)"
-                  class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group cursor-pointer"
-                  :class="getSegmentClasses('trim', segmentLayout.segment.id, segmentLayout.segment.isDeleted)"
-                  :style="getSegmentLayoutStyle(segmentLayout, 'violet', 'trim', segmentLayout.segment.id)"
-                  @mousedown="(e) => onSegmentMouseDown(e, 'trim', segmentLayout.segment.id, segmentLayout.segment)"
-                  @click.stop="(e) => onSegmentClick(e, segmentLayout.segment)"
+                  v-if="videoSources.length === 0"
+                  class="absolute inset-0 flex items-center justify-center border-2 border-dashed border-white/10 rounded-md"
+                  :class="{ 'border-violet-500/50 bg-violet-500/5': isDragOverTimeline }"
                 >
-                  <!-- Segment background gradient -->
+                  <span class="text-xs text-white/30">Drop sources here</span>
+                </div>
+
+                <!-- Video source segments -->
+                <div
+                  v-for="source in videoSources"
+                  :key="source.id"
+                  :ref="(el) => setSegmentRef(el, 'source', source.id)"
+                  class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group cursor-pointer"
+                  :class="getSegmentClasses('source', source.id)"
+                  :style="getVideoSourceStyle(source)"
+                  @mousedown="(e) => onSourceMouseDown(e, source)"
+                  @click.stop="(e) => onSourceClick(e, source)"
+                >
+                  <!-- Source background gradient -->
                   <div class="absolute inset-0 bg-gradient-to-r from-violet-900/30 to-indigo-900/20"></div>
 
-                  <!-- Waveform canvas for this segment -->
-                  <canvas
-                    :ref="(el) => setWaveformCanvasRef(el, segmentLayout.segment.id)"
-                    class="absolute inset-0 w-full h-full pointer-events-none"
-                    style="mix-blend-mode: normal; z-index: 5"
-                  ></canvas>
+                  <!-- Thumbnail preview - thumbnails would need to be pre-loaded as data URLs -->
+                  <!-- For now, showing gradient background only -->
 
-                  <!-- Segment label (shows effective timeline times) -->
+                  <!-- Source label -->
                   <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                    <span class="text-xs text-white font-medium drop-shadow-md bg-black/60 px-1.5 py-0.5 rounded">
-                      {{ formatTime(segmentLayout.effectiveStartTime) }} -
-                      {{ formatTime(segmentLayout.effectiveEndTime) }}
+                    <span
+                      class="text-xs text-white font-medium drop-shadow-md bg-black/60 px-1.5 py-0.5 rounded truncate max-w-full"
+                    >
+                      {{ source.source_name || 'Untitled' }}
                     </span>
                   </div>
 
                   <!-- Left resize handle -->
                   <div
                     class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
-                    @mousedown.stop="
-                      (e) => onResizeMouseDown(e, 'trim', segmentLayout.segment.id, 'left', segmentLayout.segment)
-                    "
+                    @mousedown.stop="(e) => onSourceResizeMouseDown(e, source, 'left')"
                   >
                     <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
                   </div>
                   <!-- Right resize handle -->
                   <div
                     class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
-                    @mousedown.stop="
-                      (e) => onResizeMouseDown(e, 'trim', segmentLayout.segment.id, 'right', segmentLayout.segment)
-                    "
+                    @mousedown.stop="(e) => onSourceResizeMouseDown(e, source, 'right')"
                   >
                     <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
                   </div>
+
+                  <!-- Delete button -->
+                  <button
+                    class="absolute top-0.5 right-0.5 p-0.5 bg-red-500/80 rounded opacity-0 group-hover:opacity-100 transition-opacity z-20 pointer-events-auto"
+                    @click.stop="emit('deleteSource', source.id)"
+                    title="Remove source"
+                  >
+                    <X :size="10" class="text-white" />
+                  </button>
                 </div>
+
+                <!-- Transition zones (crossfade overlays) -->
+                <div
+                  v-for="transition in sourceTransitions"
+                  :key="transition.id"
+                  class="transition-zone absolute top-1 bottom-1 pointer-events-none z-30"
+                  :style="getTransitionZoneStyle(transition)"
+                >
+                  <!-- Crossfade gradient background -->
+                  <div class="absolute inset-0 rounded-md overflow-hidden transition-zone-bg">
+                    <!-- Left fade (from source A) -->
+                    <div
+                      class="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-violet-500/60 to-transparent"
+                    ></div>
+                    <!-- Right fade (to source B) -->
+                    <div
+                      class="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-indigo-500/60 to-transparent"
+                    ></div>
+                    <!-- Center blend indicator -->
+                    <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+                    <!-- Diagonal stripes pattern for visual distinction -->
+                    <div class="absolute inset-0 transition-zone-stripes opacity-30"></div>
+                  </div>
+                  <!-- Crossfade icon and duration label -->
+                  <div class="absolute inset-0 flex items-center justify-center">
+                    <div
+                      class="flex items-center gap-1 bg-black/70 backdrop-blur-sm px-1.5 py-0.5 rounded-full border border-white/20"
+                    >
+                      <Blend :size="10" class="text-white/90" />
+                      <span class="text-[9px] text-white/90 font-medium">{{ transition.duration.toFixed(1) }}s</span>
+                    </div>
+                  </div>
+                  <!-- Edge indicators -->
+                  <div class="absolute left-0 top-0 bottom-0 w-0.5 bg-violet-400/80 rounded-l-full"></div>
+                  <div class="absolute right-0 top-0 bottom-0 w-0.5 bg-indigo-400/80 rounded-r-full"></div>
+                </div>
+              </template>
+
+              <!-- Clip Mode: Trim Segments -->
+              <template v-else>
+                <template v-for="(segmentLayout, index) in segmentLayouts" :key="segmentLayout.segment.id">
+                  <!-- Segment with waveform -->
+                  <div
+                    :ref="(el) => setSegmentRef(el, 'trim', segmentLayout.segment.id)"
+                    class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group cursor-pointer"
+                    :class="getSegmentClasses('trim', segmentLayout.segment.id, segmentLayout.segment.isDeleted)"
+                    :style="getSegmentLayoutStyle(segmentLayout, 'violet', 'trim', segmentLayout.segment.id)"
+                    @mousedown="(e) => onSegmentMouseDown(e, 'trim', segmentLayout.segment.id, segmentLayout.segment)"
+                    @click.stop="(e) => onSegmentClick(e, segmentLayout.segment)"
+                  >
+                    <!-- Segment background gradient -->
+                    <div class="absolute inset-0 bg-gradient-to-r from-violet-900/30 to-indigo-900/20"></div>
+
+                    <!-- Waveform canvas for this segment -->
+                    <canvas
+                      :ref="(el) => setWaveformCanvasRef(el, segmentLayout.segment.id)"
+                      class="absolute inset-0 w-full h-full pointer-events-none"
+                      style="mix-blend-mode: normal; z-index: 5"
+                    ></canvas>
+
+                    <!-- Segment label (shows effective timeline times) -->
+                    <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                      <span class="text-xs text-white font-medium drop-shadow-md bg-black/60 px-1.5 py-0.5 rounded">
+                        {{ formatTime(segmentLayout.effectiveStartTime) }} -
+                        {{ formatTime(segmentLayout.effectiveEndTime) }}
+                      </span>
+                    </div>
+
+                    <!-- Left resize handle -->
+                    <div
+                      class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                      @mousedown.stop="
+                        (e) => onResizeMouseDown(e, 'trim', segmentLayout.segment.id, 'left', segmentLayout.segment)
+                      "
+                    >
+                      <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                    </div>
+                    <!-- Right resize handle -->
+                    <div
+                      class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                      @mousedown.stop="
+                        (e) => onResizeMouseDown(e, 'trim', segmentLayout.segment.id, 'right', segmentLayout.segment)
+                      "
+                    >
+                      <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                    </div>
+                  </div>
+                </template>
               </template>
             </div>
           </div>
@@ -517,11 +624,23 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-  import { ZoomIn, Film, Music, Type, Smile, Sparkles, Palette, Droplet } from 'lucide-vue-next';
+  import { ZoomIn, Film, Music, Type, Smile, Sparkles, Palette, Droplet, X, Blend } from 'lucide-vue-next';
   import { useAudioWaveform } from '@/composables/useAudioWaveform';
-  import type { TrimSegment, AudioTrack, TextOverlay, Sticker, Effect, FilterSegment, ClipWatermark } from '@/types';
+  import type {
+    TrimSegment,
+    AudioTrack,
+    TextOverlay,
+    Sticker,
+    Effect,
+    FilterSegment,
+    ClipWatermark,
+    VideoEditorSource,
+    SourceItem,
+    VideoEditorTransition,
+  } from '@/types';
+  import { detectSourceTransitions } from '@/types';
 
-  type ItemType = 'trim' | 'audio' | 'text' | 'sticker' | 'watermark' | 'effect' | 'filter';
+  type ItemType = 'trim' | 'audio' | 'text' | 'sticker' | 'watermark' | 'effect' | 'filter' | 'source';
 
   interface DragInfo {
     type: ItemType;
@@ -579,6 +698,9 @@
       audioGainDb?: number; // dB gain (-20 to +20) to apply to main video waveform visualization
       trackDbValues?: Record<string, number>; // Per-track dB values for audio track waveforms
       isPlaying?: boolean; // Whether video is currently playing (for smooth playhead animation)
+      // Video editor mode props
+      editorMode?: boolean;
+      videoSources?: VideoEditorSource[];
     }>(),
     {
       audioGainDb: 0,
@@ -586,6 +708,8 @@
       filterSegments: () => [],
       watermarks: () => [],
       isPlaying: false,
+      editorMode: false,
+      videoSources: () => [],
     }
   );
 
@@ -598,7 +722,31 @@
     (e: 'updateWatermark', watermarkId: string, updates: Partial<ClipWatermark>): void;
     (e: 'updateEffect', effectId: string, updates: Partial<Effect>): void;
     (e: 'updateFilterSegment', segmentId: string, updates: Partial<FilterSegment>): void;
+    // Video editor mode events
+    (e: 'updateSource', sourceId: string, updates: Partial<VideoEditorSource>): void;
+    (e: 'deleteSource', sourceId: string): void;
+    (e: 'dropSource', data: { source: SourceItem; position: number }): void;
+    (e: 'transitionsDetected', transitions: VideoEditorTransition[]): void;
   }>();
+
+  // Computed: detect transitions between overlapping sources in editor mode
+  const sourceTransitions = computed<VideoEditorTransition[]>(() => {
+    if (!props.editorMode || props.videoSources.length < 2) {
+      return [];
+    }
+    return detectSourceTransitions(props.videoSources);
+  });
+
+  // Emit transitions whenever they change so parent can use for playback
+  watch(
+    sourceTransitions,
+    (transitions) => {
+      if (props.editorMode) {
+        emit('transitionsDetected', transitions);
+      }
+    },
+    { immediate: true, deep: true }
+  );
 
   // Refs
   const timelineScrollContainer = ref<HTMLElement | null>(null);
@@ -611,6 +759,24 @@
   const audioSegmentCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map()); // key: `${trackId}-${segmentIndex}`
   const audioWaveformData = ref<Map<string, { peaks: { min: number; max: number }[]; duration: number }>>(new Map());
   const zoomLevel = ref(1);
+
+  // Video editor mode state
+  const isDragOverTimeline = ref(false);
+  const isDraggingSource = ref(false);
+  const dragSourceInfo = ref<{
+    sourceId: string;
+    startX: number;
+    originalStartTime: number;
+    originalEndTime: number;
+  } | null>(null);
+  const isResizingSource = ref(false);
+  const resizeSourceInfo = ref<{
+    sourceId: string;
+    handle: 'left' | 'right';
+    startX: number;
+    originalStartTime: number;
+    originalEndTime: number;
+  } | null>(null);
 
   // Selection state
   const selectedItemKey = ref<string | null>(null);
@@ -900,6 +1066,14 @@
 
   // Convert current time to playhead position (0-1)
   const playheadPosition = computed(() => {
+    // Editor mode: simple linear mapping
+    if (props.editorMode) {
+      const duration = props.duration || 300;
+      if (duration <= 0) return 0;
+      return Math.min(1, Math.max(0, props.currentTime / duration));
+    }
+
+    // Clip mode: segment-based mapping
     if (totalDuration.value <= 0) return 0;
 
     // Find which segment the current time falls into
@@ -1267,6 +1441,13 @@
 
   // Convert click position to source time
   function clickPositionToTime(percent: number): number {
+    // Editor mode: simple linear mapping
+    if (props.editorMode) {
+      const duration = props.duration || 300;
+      return percent * duration;
+    }
+
+    // Clip mode: segment-based mapping
     const totalGapPercent = (sortedTrimSegments.value.length - 1) * GAP_PERCENT;
     const availablePercent = 100 - totalGapPercent;
 
@@ -1418,6 +1599,185 @@
     document.removeEventListener('mouseup', onPlayheadDragEnd);
   }
 
+  // Video source functions (editor mode)
+  function getVideoSourceStyle(source: VideoEditorSource): Record<string, string> {
+    const colors = colorMap.violet;
+    const isSelected = selectedItemKey.value === `source_${source.id}`;
+    const duration = props.duration || 600;
+
+    const left = (source.start_time / duration) * 100;
+    const width = ((source.end_time - source.start_time) / duration) * 100;
+
+    return {
+      left: `${left}%`,
+      width: `${Math.max(width, 1)}%`,
+      background: `linear-gradient(to right, ${colors.bg})`,
+      borderColor: isSelected ? '#3b82f6' : colors.border,
+      borderWidth: '1px',
+      borderStyle: 'solid',
+    };
+  }
+
+  // Get style for transition zone overlay (crossfade indicator)
+  function getTransitionZoneStyle(transition: VideoEditorTransition): Record<string, string> {
+    const duration = props.duration || 600;
+    const left = (transition.startTime / duration) * 100;
+    const width = ((transition.endTime - transition.startTime) / duration) * 100;
+
+    return {
+      left: `${left}%`,
+      width: `${Math.max(width, 0.5)}%`,
+    };
+  }
+
+  function onSourceClick(e: MouseEvent, source: VideoEditorSource) {
+    // Select the source
+    selectItem('source', source.id);
+
+    // Calculate the clicked position within the source and seek there
+    const sourceEl = e.currentTarget as HTMLElement;
+    const rect = sourceEl.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percentInSource = x / rect.width;
+
+    // Calculate time position: start_time + relative position within the source
+    const sourceDuration = source.end_time - source.start_time;
+    const time = source.start_time + percentInSource * sourceDuration;
+
+    emit('seek', Math.max(source.start_time, Math.min(source.end_time - 0.01, time)));
+  }
+
+  function onSourceMouseDown(e: MouseEvent, source: VideoEditorSource) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+
+    selectItem('source', source.id);
+
+    isDraggingSource.value = true;
+    dragSourceInfo.value = {
+      sourceId: source.id,
+      startX: e.clientX,
+      originalStartTime: source.start_time,
+      originalEndTime: source.end_time,
+    };
+
+    document.addEventListener('mousemove', onSourceDragMove);
+    document.addEventListener('mouseup', onSourceDragEnd);
+  }
+
+  function onSourceDragMove(e: MouseEvent) {
+    if (!isDraggingSource.value || !dragSourceInfo.value || !videoTrackContentRef.value) return;
+
+    const rect = videoTrackContentRef.value.getBoundingClientRect();
+    const deltaX = e.clientX - dragSourceInfo.value.startX;
+    const deltaTime = (deltaX / rect.width) * props.duration;
+
+    const duration = dragSourceInfo.value.originalEndTime - dragSourceInfo.value.originalStartTime;
+    let newStartTime = dragSourceInfo.value.originalStartTime + deltaTime;
+    let newEndTime = newStartTime + duration;
+
+    // Clamp to timeline bounds
+    if (newStartTime < 0) {
+      newStartTime = 0;
+      newEndTime = duration;
+    }
+    if (newEndTime > props.duration) {
+      newEndTime = props.duration;
+      newStartTime = props.duration - duration;
+    }
+
+    emit('updateSource', dragSourceInfo.value.sourceId, {
+      start_time: newStartTime,
+      end_time: newEndTime,
+    });
+  }
+
+  function onSourceDragEnd() {
+    isDraggingSource.value = false;
+    dragSourceInfo.value = null;
+    document.removeEventListener('mousemove', onSourceDragMove);
+    document.removeEventListener('mouseup', onSourceDragEnd);
+  }
+
+  function onSourceResizeMouseDown(e: MouseEvent, source: VideoEditorSource, handle: 'left' | 'right') {
+    if (e.button !== 0) return;
+    e.preventDefault();
+
+    isResizingSource.value = true;
+    resizeSourceInfo.value = {
+      sourceId: source.id,
+      handle,
+      startX: e.clientX,
+      originalStartTime: source.start_time,
+      originalEndTime: source.end_time,
+    };
+
+    document.addEventListener('mousemove', onSourceResizeDragMove);
+    document.addEventListener('mouseup', onSourceResizeDragEnd);
+  }
+
+  function onSourceResizeDragMove(e: MouseEvent) {
+    if (!isResizingSource.value || !resizeSourceInfo.value || !videoTrackContentRef.value) return;
+
+    const rect = videoTrackContentRef.value.getBoundingClientRect();
+    const deltaX = e.clientX - resizeSourceInfo.value.startX;
+    const deltaTime = (deltaX / rect.width) * props.duration;
+
+    let newStartTime = resizeSourceInfo.value.originalStartTime;
+    let newEndTime = resizeSourceInfo.value.originalEndTime;
+
+    if (resizeSourceInfo.value.handle === 'left') {
+      newStartTime = Math.max(0, resizeSourceInfo.value.originalStartTime + deltaTime);
+      if (newEndTime - newStartTime < 0.5) {
+        newStartTime = newEndTime - 0.5;
+      }
+    } else {
+      newEndTime = Math.min(props.duration, resizeSourceInfo.value.originalEndTime + deltaTime);
+      if (newEndTime - newStartTime < 0.5) {
+        newEndTime = newStartTime + 0.5;
+      }
+    }
+
+    emit('updateSource', resizeSourceInfo.value.sourceId, {
+      start_time: newStartTime,
+      end_time: newEndTime,
+    });
+  }
+
+  function onSourceResizeDragEnd() {
+    isResizingSource.value = false;
+    resizeSourceInfo.value = null;
+    document.removeEventListener('mousemove', onSourceResizeDragMove);
+    document.removeEventListener('mouseup', onSourceResizeDragEnd);
+  }
+
+  function onTimelineDragOver(_e: DragEvent) {
+    isDragOverTimeline.value = true;
+  }
+
+  function onTimelineDrop(e: DragEvent) {
+    isDragOverTimeline.value = false;
+
+    if (!e.dataTransfer) return;
+
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('application/json'));
+      if (data && data.source) {
+        // Calculate drop position
+        let position = 0;
+        if (videoTrackContentRef.value) {
+          const rect = videoTrackContentRef.value.getBoundingClientRect();
+          const percent = (e.clientX - rect.left) / rect.width;
+          position = percent * props.duration;
+        }
+
+        emit('dropSource', { source: data.source, position });
+      }
+    } catch (err) {
+      console.error('[ClipEditorTimeline] Failed to parse drop data:', err);
+    }
+  }
+
   function onTimelineMouseMove(_e: MouseEvent) {
     // Could be used for hover effects
   }
@@ -1466,9 +1826,9 @@
       const labelAreaWidth = 72;
 
       // Calculate playhead position in content
-      // From the style: left: calc(72px + (100% - 80px) * playheadPosition)
+      // From the style: left: calc(64px + (100% - 64px) * playheadPosition)
       // 100% = newContentWidth
-      const playheadInContent = 72 + (newContentWidth - 80) * playheadPosition.value;
+      const playheadInContent = 64 + (newContentWidth - 64) * playheadPosition.value;
 
       // Playhead position in viewport after the proposed scroll
       const playheadInViewport = playheadInContent - newScrollLeft;
@@ -2343,13 +2703,14 @@
       // Calculate time elapsed since last frame
       const deltaTime = currentTime - lastUpdateTime;
 
-      // Interpolate smoothly towards target position
-      // Use a smooth interpolation that accounts for variable frame rates
-      const interpolationSpeed = 0.15; // Lower = smoother but more lag
+      // Snap playhead to target position immediately
+      // This ensures playhead stays perfectly in sync with crossfade visual
+      // The Math.min(1, ...) ensures we never overshoot even with variable frame rates
+      const interpolationSpeed = 10.0; // High value = essentially instant (clamped to 1.0)
       const diff = targetPosition - smoothPlayheadPosition.value;
 
       if (Math.abs(diff) > 0.0001) {
-        // Smooth interpolation
+        // With high speed, this effectively snaps to position each frame
         smoothPlayheadPosition.value += diff * Math.min(1, (interpolationSpeed * deltaTime) / 16);
       } else {
         smoothPlayheadPosition.value = targetPosition;
@@ -2570,9 +2931,10 @@
   }
 
   /* Playhead positioning using CSS custom property */
+  /* Label width is w-16 = 64px, track content is the remaining width */
   .playhead-line {
     --playhead-position: 0;
-    left: calc(66px + (100% - 80px) * var(--playhead-position));
+    left: calc(64px + (100% - 64px) * var(--playhead-position));
     will-change: left;
     /* Smooth transition for seeks (when paused) */
     transition: left 100ms ease-out;
@@ -2586,5 +2948,42 @@
   /* Disable transition when dragging for immediate response */
   .playhead-line.playhead-dragging {
     transition: none !important;
+  }
+
+  /* Transition zone (crossfade) styling */
+  .transition-zone {
+    /* Pulsing animation to draw attention */
+    animation: transition-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes transition-pulse {
+    0%,
+    100% {
+      opacity: 0.9;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  .transition-zone-bg {
+    border: 1px dashed rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+  }
+
+  /* Diagonal stripes pattern for transition zone */
+  .transition-zone-stripes {
+    background: repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 3px,
+      rgba(255, 255, 255, 0.15) 3px,
+      rgba(255, 255, 255, 0.15) 6px
+    );
+  }
+
+  /* Hover effect for transition zones */
+  .transition-zone:hover .transition-zone-bg {
+    border-color: rgba(255, 255, 255, 0.5);
   }
 </style>

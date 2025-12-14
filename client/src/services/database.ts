@@ -359,3 +359,27 @@ export {
   type ClipEffectRecord,
   type FullClipEdit,
 } from './database/clip-edits';
+
+// Video Editor Projects
+export {
+  createVideoEditorProject,
+  getVideoEditorProject,
+  getAllVideoEditorProjects,
+  updateVideoEditorProject,
+  deleteVideoEditorProject,
+  createVideoEditorSource,
+  getVideoEditorSourcesByProjectId,
+  getVideoEditorSource,
+  updateVideoEditorSource,
+  deleteVideoEditorSource,
+  deleteAllVideoEditorSources,
+  reorderVideoEditorSources,
+  recalculateProjectDuration,
+  getVideoEditorProjectWithSources,
+  hasVideoEditorSources,
+  getVideoEditorSourceCount,
+  getNextSourceStartTime,
+  type VideoEditorProject,
+  type VideoEditorSource,
+  type VideoEditorProjectWithSources,
+} from './database/video-editor-projects';

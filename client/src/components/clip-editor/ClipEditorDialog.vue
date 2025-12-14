@@ -21,9 +21,13 @@
               <Film class="h-3 w-3 text-violet-400" />
             </div>
             <div class="flex gap-3">
-              <h2 class="text-sm font-semibold text-foreground tracking-tight">Edit Clip</h2>
+              <h2 class="text-sm font-semibold text-foreground tracking-tight">
+                {{ editorMode ? 'Video Editor' : 'Edit Clip' }}
+              </h2>
               <Separator class="h-4 w-px bg-foreground/10" orientation="vertical" />
-              <p class="text-xs text-foreground/50 truncate max-w-[300px] mt-0.5">{{ clipTitle }}</p>
+              <p class="text-xs text-foreground/50 truncate max-w-[300px] mt-0.5">
+                {{ editorMode ? editorProjectName : clipTitle }}
+              </p>
             </div>
           </div>
           <div class="flex items-center gap-2">
@@ -65,10 +69,11 @@
                 @toggle-ratio-selection="toggleAspectRatio"
               />
 
-              <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div class="flex-1 min-h-0 flex flex-col overflow-hidden relative">
                 <ClipEditorPreview
                   ref="previewRef"
-                  :video-src="videoSrc"
+                  :video-src="effectiveVideoSrc"
+                  :preload-video-src="preloadVideoSrc"
                   :current-time="previewTime"
                   :effective-time="effectivePreviewTime"
                   :is-playing="isPlaying"
@@ -85,9 +90,14 @@
                   :subtitle-settings="subtitleSettings"
                   :transcript-words="transcriptWords"
                   :transcript-segments="transcriptSegments"
+                  :editor-mode="editorMode"
+                  :editor-total-duration="editorContentDuration"
+                  :active-transition="activeTransition"
                   @time-update="onPreviewTimeUpdate"
                   @toggle-play="togglePlay"
                   @video-element-ready="onVideoElementReady"
+                  @video-swapped="onVideoSwapped"
+                  @crossfade-completed="onCrossfadeCompleted"
                   @update-overlay-position="onUpdateOverlayPosition"
                   @update-overlay-width="onUpdateOverlayWidth"
                   @update-sticker-scale="onUpdateStickerScale"
@@ -95,6 +105,16 @@
                   @update-watermark-scale="onUpdateWatermarkScale"
                   @update-subtitle-position="onUpdateSubtitlePosition"
                   @update-subtitle-max-width="onUpdateSubtitleMaxWidth"
+                  @video-ended="onVideoEnded"
+                />
+
+                <!-- Transition frame overlay - shows last frame during source switch to avoid black flash (fallback) -->
+                <canvas
+                  v-if="editorMode"
+                  ref="transitionCanvasRef"
+                  class="absolute inset-0 z-50 pointer-events-none transition-opacity duration-75"
+                  :class="showTransitionFrame ? 'opacity-100' : 'opacity-0'"
+                  :style="transitionCanvasStyle"
                 />
               </div>
             </div>
@@ -102,14 +122,25 @@
             <!-- Right: Controls Section -->
             <div class="w-2/5 min-w-0 flex flex-col flex-1 bg-gradient-to-b from-transparent to-black/10">
               <!-- Toolbar -->
-              <ClipEditorToolbar :active-tab="activeTab" @tab-change="setActiveTab" />
+              <ClipEditorToolbar
+                :active-tab="editorMode ? activeEditorTab : activeTab"
+                :editor-mode="editorMode"
+                @tab-change="editorMode ? setEditorTab : setActiveTab"
+              />
 
               <!-- Tab Content -->
               <div
                 class="flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent"
               >
+                <!-- Sources Tab (Editor Mode Only) -->
+                <SourcesTab
+                  v-if="editorMode && activeEditorTab === 'sources'"
+                  @add-source="onAddSource"
+                  @import-file="onImportFile"
+                />
+
                 <AudioMixerTab
-                  v-if="activeTab === 'audio'"
+                  v-if="editorMode ? activeEditorTab === 'audio' : activeTab === 'audio'"
                   :audio-tracks="audioTracks"
                   :original-db="originalDb"
                   :track-db-values="trackDbValues"
@@ -121,7 +152,7 @@
                 />
 
                 <FiltersTab
-                  v-if="activeTab === 'filters'"
+                  v-if="editorMode ? activeEditorTab === 'filters' : activeTab === 'filters'"
                   :filter-segments="filterSegments"
                   :current-time="effectivePreviewTime"
                   :duration="totalSegmentDuration"
@@ -131,7 +162,7 @@
                 />
 
                 <TextOverlayTab
-                  v-if="activeTab === 'text'"
+                  v-if="editorMode ? activeEditorTab === 'text' : activeTab === 'text'"
                   :text-overlays="textOverlays"
                   :current-time="effectivePreviewTime"
                   :duration="totalSegmentDuration"
@@ -145,7 +176,7 @@
                 />
 
                 <StickersTab
-                  v-if="activeTab === 'stickers'"
+                  v-if="editorMode ? activeEditorTab === 'stickers' : activeTab === 'stickers'"
                   :stickers="stickers"
                   :current-time="effectivePreviewTime"
                   :duration="totalSegmentDuration"
@@ -159,7 +190,7 @@
                 />
 
                 <WatermarkTab
-                  v-if="activeTab === 'watermark'"
+                  v-if="editorMode ? activeEditorTab === 'watermark' : activeTab === 'watermark'"
                   :watermarks="watermarks"
                   :current-time="effectivePreviewTime"
                   :duration="totalSegmentDuration"
@@ -224,8 +255,8 @@
 
           <!-- Bottom Row: Timeline -->
           <ClipEditorTimeline
-            :duration="clipDuration"
-            :current-time="relativePreviewTime"
+            :duration="editorMode ? editorDuration : clipDuration"
+            :current-time="editorMode ? previewTime : relativePreviewTime"
             :clip-start="clipStartTime"
             :clip-end="clipEndTime"
             :trim-segments="trimSegments"
@@ -239,6 +270,8 @@
             :audio-gain-db="effectiveAudioGainDb"
             :track-db-values="trackDbValues"
             :is-playing="isPlaying"
+            :editor-mode="editorMode"
+            :video-sources="videoSources"
             @seek="seekTo"
             @update-trim-segment="updateTrimSegment"
             @update-audio-track="updateAudioTrackLocal"
@@ -247,6 +280,10 @@
             @update-watermark="updateWatermarkLocal"
             @update-effect="updateEffectLocal"
             @update-filter-segment="updateFilterSegment"
+            @update-source="updateVideoSource"
+            @delete-source="deleteVideoSource"
+            @drop-source="onDropSource"
+            @transitions-detected="onTransitionsDetected"
           />
         </div>
       </div>
@@ -268,7 +305,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+  import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
   import { Film, X, Loader2, Check } from 'lucide-vue-next';
   import { Separator } from '@/components/ui/separator';
   import type {
@@ -309,7 +346,17 @@
     deleteWatermarkRecord,
     getRawVideosByProjectId,
     getClipWithBuildStatus,
+    // Video Editor imports
+    getVideoEditorProject,
+    getVideoEditorSourcesByProjectId,
+    createVideoEditorSource,
+    updateVideoEditorSource,
+    deleteVideoEditorSource,
+    getNextSourceStartTime,
+    recalculateProjectDuration,
   } from '@/services/database';
+  import type { VideoEditorSource, VideoEditorTab, SourceItem, VideoEditorTransition } from '@/types';
+  import { calculateCrossfadeOpacity } from '@/types';
 
   // Disable attribute inheritance since this component renders a Teleport root
   defineOptions({
@@ -328,26 +375,46 @@
   import AspectTab from './tabs/AspectTab.vue';
   import TranscriptTab from './tabs/TranscriptTab.vue';
   import ManualPOIEditor from '@/components/poi/ManualPOIEditor.vue';
+  import SourcesTab from '@/components/video-editor/SourcesTab.vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
+  import { invoke } from '@tauri-apps/api/core';
 
   interface ClipSegmentInput {
     start_time: number;
     end_time: number;
   }
 
-  const props = defineProps<{
-    modelValue: boolean;
-    clipId: string;
-    videoSrc: string | null;
-    clipStartTime: number;
-    clipEndTime: number;
-    clipTitle: string;
-    clipSegments?: ClipSegmentInput[];
-  }>();
+  const props = withDefaults(
+    defineProps<{
+      modelValue: boolean;
+      // Clip mode props (required when not in editor mode)
+      clipId?: string;
+      videoSrc?: string | null;
+      clipStartTime?: number;
+      clipEndTime?: number;
+      clipTitle?: string;
+      clipSegments?: ClipSegmentInput[];
+      // Editor mode props
+      editorMode?: boolean;
+      editorProjectId?: string | null;
+      editorProjectName?: string;
+    }>(),
+    {
+      clipId: '',
+      videoSrc: null,
+      clipStartTime: 0,
+      clipEndTime: 0,
+      clipTitle: '',
+      editorMode: false,
+      editorProjectId: null,
+      editorProjectName: 'Video Project',
+    }
+  );
 
   const emit = defineEmits<{
     (e: 'update:modelValue', value: boolean): void;
     (e: 'save', clipId: string): void;
+    (e: 'editorSave', projectId: string): void;
   }>();
 
   // Refs
@@ -364,8 +431,23 @@
 
   // Editor state
   const activeTab = ref<ClipEditorTab>('audio');
+  const activeEditorTab = ref<VideoEditorTab>('sources'); // For editor mode
   const isPlaying = ref(false);
   const previewTime = ref(0);
+
+  // Video editor mode state
+  const videoSources = ref<VideoEditorSource[]>([]);
+  const videoServerPort = ref<number | null>(null);
+  const isSeeking = ref(false); // Flag to prevent time update feedback loops
+  const pendingSeekTime = ref<number | null>(null); // Time to seek to after video source changes
+  const currentVideoSourceId = ref<string | null>(null); // Track which source is loaded
+  const transitionCanvasRef = ref<HTMLCanvasElement | null>(null); // Canvas for transition frame (fallback)
+  const showTransitionFrame = ref(false); // Whether to show the transition frame overlay (fallback)
+
+  // Crossfade transition state
+  const sourceTransitions = ref<VideoEditorTransition[]>([]); // All detected transitions
+  const crossfadeStarted = ref(false); // Whether we've started crossfade for current transition
+  const lastCrossfadeTransitionId = ref<string | null>(null); // Track which transition we've started
 
   // Edit data
   const trimSegments = ref<TrimSegment[]>([]);
@@ -460,6 +542,37 @@
   // Computed
   const clipDuration = computed(() => props.clipEndTime - props.clipStartTime);
 
+  // Editor mode: actual total content duration (sum of all sources)
+  const editorContentDuration = computed(() => {
+    if (videoSources.value.length === 0) {
+      return 0;
+    }
+
+    // Find the maximum end time of all sources (this is the total content duration)
+    let maxEndTime = 0;
+    for (const source of videoSources.value) {
+      if (source.end_time > maxEndTime) {
+        maxEndTime = source.end_time;
+      }
+    }
+
+    return maxEndTime;
+  });
+
+  // Editor mode: timeline duration - minimum 5 minutes, or longer than content + padding
+  const editorDuration = computed(() => {
+    const MIN_DURATION = 300; // 5 minutes minimum
+    const PADDING = 60; // 1 minute padding beyond content
+
+    if (videoSources.value.length === 0) {
+      return MIN_DURATION;
+    }
+
+    // Timeline should be at least MIN_DURATION or content + padding, whichever is greater
+    const requiredDuration = editorContentDuration.value + PADDING;
+    return Math.max(MIN_DURATION, requiredDuration);
+  });
+
   // Calculate total duration of all segments combined
   const totalSegmentDuration = computed(() => {
     const segments = trimSegments.value.filter((s) => !s.isDeleted);
@@ -520,6 +633,131 @@
     return activeSegment?.settings || null;
   });
 
+  // Editor mode: Find the active video source based on current playback time
+  const activeVideoSource = computed(() => {
+    if (!props.editorMode || videoSources.value.length === 0) {
+      return null;
+    }
+
+    // If we have a tracked source ID (e.g., during/after crossfade), use it
+    if (currentVideoSourceId.value) {
+      const trackedSource = videoSources.value.find((s) => s.id === currentVideoSourceId.value);
+      if (trackedSource) {
+        return trackedSource;
+      }
+    }
+
+    const time = previewTime.value;
+    // Sort sources by start_time to get consistent results during overlap
+    const sortedSources = [...videoSources.value].sort((a, b) => a.start_time - b.start_time);
+    // Find source that contains the current time (prefer earlier source during overlap)
+    return sortedSources.find((source) => time >= source.start_time && time < source.end_time) || null;
+  });
+
+  // Editor mode: Find the next video source (for preloading)
+  const nextVideoSource = computed(() => {
+    if (!props.editorMode || !activeVideoSource.value) {
+      return null;
+    }
+
+    const sortedSources = [...videoSources.value].sort((a, b) => a.order_index - b.order_index);
+    const currentIndex = sortedSources.findIndex((s) => s.id === activeVideoSource.value!.id);
+
+    if (currentIndex === -1 || currentIndex >= sortedSources.length - 1) {
+      return null;
+    }
+
+    return sortedSources[currentIndex + 1];
+  });
+
+  // Editor mode: Find the currently active crossfade transition (if any)
+  const activeTransition = computed<VideoEditorTransition | null>(() => {
+    if (!props.editorMode || sourceTransitions.value.length === 0) {
+      return null;
+    }
+
+    const time = previewTime.value;
+    // Find transition that contains the current time
+    return sourceTransitions.value.find((t) => time >= t.startTime && time <= t.endTime) || null;
+  });
+
+  // Get the "outgoing" source during a transition (the one fading out)
+  const transitionOutgoingSource = computed(() => {
+    if (!activeTransition.value) return null;
+    return videoSources.value.find((s) => s.id === activeTransition.value!.sourceAId) || null;
+  });
+
+  // Get the "incoming" source during a transition (the one fading in)
+  const transitionIncomingSource = computed(() => {
+    // First try to get from active transition
+    if (activeTransition.value) {
+      return videoSources.value.find((s) => s.id === activeTransition.value!.sourceBId) || null;
+    }
+    // Fallback: if we have a lastCrossfadeTransitionId, use it to find the incoming source
+    // This handles the case where we've just exited the transition zone but still need the source
+    if (lastCrossfadeTransitionId.value) {
+      const transition = sourceTransitions.value.find((t) => t.id === lastCrossfadeTransitionId.value);
+      if (transition) {
+        return videoSources.value.find((s) => s.id === transition.sourceBId) || null;
+      }
+    }
+    return null;
+  });
+
+  // Editor mode: Compute the video URL for the active source
+  const editorVideoSrc = computed(() => {
+    if (!props.editorMode || !activeVideoSource.value) {
+      return null;
+    }
+
+    const source = activeVideoSource.value;
+    const path = source.source_path;
+
+    // If path already looks like an HTTP URL (legacy data), use it directly
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+
+    // Otherwise, construct the HTTP URL from the file path
+    if (!videoServerPort.value) {
+      return null;
+    }
+
+    const encodedPath = btoa(unescape(encodeURIComponent(path)));
+    return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
+  });
+
+  // Editor mode: Compute the preload URL for the next source (for seamless transitions)
+  const preloadVideoSrc = computed(() => {
+    if (!props.editorMode || !nextVideoSource.value) {
+      return null;
+    }
+
+    const source = nextVideoSource.value;
+    const path = source.source_path;
+
+    // If path already looks like an HTTP URL, use it directly
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+
+    // Otherwise, construct the HTTP URL from the file path
+    if (!videoServerPort.value) {
+      return null;
+    }
+
+    const encodedPath = btoa(unescape(encodeURIComponent(path)));
+    return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
+  });
+
+  // The video source to use for the preview (either from props or computed for editor mode)
+  const effectiveVideoSrc = computed(() => {
+    if (props.editorMode) {
+      return editorVideoSrc.value;
+    }
+    return props.videoSrc || null;
+  });
+
   // Get segments in absolute time format for playback
   const playbackSegments = computed(() => {
     if (trimSegments.value.length === 0) {
@@ -540,6 +778,48 @@
   // Effective audio gain for waveform visualization (uses originalDb which can be initialized from project settings)
   const effectiveAudioGainDb = computed(() => originalDb.value);
 
+  // Transition canvas style - matches the video container
+  const transitionCanvasStyle = computed(() => ({
+    objectFit: 'contain',
+    width: '100%',
+    height: '100%',
+  }));
+
+  // Capture current video frame to the transition canvas
+  function captureTransitionFrame() {
+    if (!videoElement.value || !transitionCanvasRef.value) return;
+
+    const video = videoElement.value;
+    const canvas = transitionCanvasRef.value;
+
+    // Only capture if video has valid dimensions
+    if (!video.videoWidth || !video.videoHeight) return;
+
+    // Set canvas size to match video's natural dimensions
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    // Draw current frame
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    }
+
+    showTransitionFrame.value = true;
+
+    // Safety timeout - hide frame after 2 seconds max in case something goes wrong
+    setTimeout(() => {
+      if (showTransitionFrame.value) {
+        hideTransitionFrame();
+      }
+    }, 2000);
+  }
+
+  // Hide the transition frame overlay
+  function hideTransitionFrame() {
+    showTransitionFrame.value = false;
+  }
+
   // Methods
   function close() {
     // Stop all audio playback
@@ -552,26 +832,598 @@
     activeTab.value = tab;
   }
 
+  function setEditorTab(tab: VideoEditorTab) {
+    activeEditorTab.value = tab;
+  }
+
+  // Video source operations for editor mode
+  async function onAddSource(source: SourceItem) {
+    if (!props.editorProjectId) return;
+
+    try {
+      const startTime = await getNextSourceStartTime(props.editorProjectId);
+      const duration = source.duration || 30;
+
+      // Store the actual file path (not the HTTP URL) for the source
+      const newSource = await createVideoEditorSource(props.editorProjectId, {
+        sourceType: source.type,
+        sourceId: source.id,
+        sourcePath: source.path, // Store actual file path
+        sourceName: source.name,
+        sourceThumbnail: source.thumbnailPath,
+        sourceDuration: duration,
+        startTime: startTime,
+        endTime: startTime + duration,
+        trimStart: 0,
+        trimEnd: null,
+        orderIndex: videoSources.value.length,
+      });
+
+      videoSources.value.push(newSource);
+      await recalculateProjectDuration(props.editorProjectId);
+      triggerAutoSave();
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to add source:', error);
+    }
+  }
+
+  async function onImportFile(filePath: string, name: string, duration: number, thumbnailPath?: string) {
+    if (!props.editorProjectId) return;
+
+    try {
+      const startTime = await getNextSourceStartTime(props.editorProjectId);
+      const sourceDuration = duration || 30;
+
+      // Store the actual file path (not the HTTP URL)
+      const newSource = await createVideoEditorSource(props.editorProjectId, {
+        sourceType: 'imported',
+        sourceId: null,
+        sourcePath: filePath, // Store actual file path
+        sourceName: name,
+        sourceThumbnail: thumbnailPath || null,
+        sourceDuration: sourceDuration,
+        startTime: startTime,
+        endTime: startTime + sourceDuration,
+        trimStart: 0,
+        trimEnd: null,
+        orderIndex: videoSources.value.length,
+      });
+
+      videoSources.value.push(newSource);
+      await recalculateProjectDuration(props.editorProjectId);
+      triggerAutoSave();
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to import file:', error);
+    }
+  }
+
+  async function onDropSource(data: { source: SourceItem; position: number }) {
+    if (!props.editorProjectId) return;
+
+    const duration = data.source.duration || 30;
+
+    try {
+      // Store the actual file path (not the HTTP URL)
+      const newSource = await createVideoEditorSource(props.editorProjectId, {
+        sourceType: data.source.type,
+        sourceId: data.source.id,
+        sourcePath: data.source.path, // Store actual file path
+        sourceName: data.source.name,
+        sourceThumbnail: data.source.thumbnailPath,
+        sourceDuration: duration,
+        startTime: data.position,
+        endTime: data.position + duration,
+        trimStart: 0,
+        trimEnd: null,
+        orderIndex: videoSources.value.length,
+      });
+
+      videoSources.value.push(newSource);
+      await recalculateProjectDuration(props.editorProjectId);
+      triggerAutoSave();
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to drop source:', error);
+    }
+  }
+
+  async function updateVideoSource(sourceId: string, updates: Partial<VideoEditorSource>) {
+    const source = videoSources.value.find((s) => s.id === sourceId);
+    if (!source) return;
+
+    try {
+      await updateVideoEditorSource(sourceId, {
+        start_time: updates.start_time,
+        end_time: updates.end_time,
+        trim_start: updates.trim_start,
+        trim_end: updates.trim_end,
+        order_index: updates.order_index,
+      });
+
+      Object.assign(source, updates);
+
+      if (props.editorProjectId) {
+        await recalculateProjectDuration(props.editorProjectId);
+      }
+      triggerAutoSave();
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to update source:', error);
+    }
+  }
+
+  async function deleteVideoSource(sourceId: string) {
+    try {
+      await deleteVideoEditorSource(sourceId);
+      videoSources.value = videoSources.value.filter((s) => s.id !== sourceId);
+
+      if (props.editorProjectId) {
+        await recalculateProjectDuration(props.editorProjectId);
+      }
+      triggerAutoSave();
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to delete source:', error);
+    }
+  }
+
+  async function loadEditorProject() {
+    if (!props.editorProjectId) return;
+
+    try {
+      // Get video server port for constructing video URLs
+      videoServerPort.value = await invoke<number>('get_video_server_port');
+
+      const sources = await getVideoEditorSourcesByProjectId(props.editorProjectId);
+      videoSources.value = sources;
+
+      // Initialize current source tracking with the first source
+      if (sources.length > 0) {
+        // Find the source at time 0 (which we'll initialize previewTime to)
+        const initialSource = sources.find((s) => 0 >= s.start_time && 0 < s.end_time);
+        currentVideoSourceId.value = initialSource?.id || sources[0].id;
+      }
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to load editor project:', error);
+    }
+  }
+
   function onVideoElementReady(element: HTMLVideoElement) {
+    console.log(
+      '[onVideoElementReady] Called with element src:',
+      element?.src?.slice(-30),
+      'element.paused:',
+      element?.paused,
+      'previous videoElement src:',
+      videoElement.value?.src?.slice(-30)
+    );
     videoElement.value = element;
+
+    // In editor mode, track the current source
+    // But don't update during crossfade - the crossfade logic handles source tracking
+    if (props.editorMode && !crossfadeStarted.value && !activeTransition.value) {
+      if (activeVideoSource.value) {
+        currentVideoSourceId.value = activeVideoSource.value.id;
+      }
+    }
+  }
+
+  // Called when the preview component successfully swapped to the preloaded video
+  function onVideoSwapped() {
+    console.log(
+      '[onVideoSwapped] Called. crossfadeStarted:',
+      crossfadeStarted.value,
+      'lastCrossfadeTransitionId:',
+      lastCrossfadeTransitionId.value,
+      'currentVideoSourceId:',
+      currentVideoSourceId.value
+    );
+
+    // CRITICAL: Update videoElement to point to the now-active preload video
+    // This ensures play/pause controls work after crossfade
+    const preloadEl = previewRef.value?.getPreloadVideoElement?.();
+    if (preloadEl) {
+      videoElement.value = preloadEl;
+      console.log('[onVideoSwapped] Updated videoElement to preload video');
+    }
+
+    // The preload video is now the main video
+    // Reset the preview component's active video index for the next swap cycle
+    // This will happen when the user finishes with this source and moves to the next
+    hideTransitionFrame();
+
+    // Update source tracking to the incoming source (source B)
+    const incomingSource = transitionIncomingSource.value;
+    console.log('[onVideoSwapped] incomingSource:', incomingSource?.id);
+    if (incomingSource) {
+      currentVideoSourceId.value = incomingSource.id;
+      console.log('[onVideoSwapped] Updated currentVideoSourceId to:', incomingSource.id);
+    } else {
+      // Fallback: find next source by order
+      const sortedSources = [...videoSources.value].sort((a, b) => a.order_index - b.order_index);
+      const currentIdx = sortedSources.findIndex((s) => s.id === currentVideoSourceId.value);
+      if (currentIdx >= 0 && currentIdx < sortedSources.length - 1) {
+        currentVideoSourceId.value = sortedSources[currentIdx + 1].id;
+        console.log('[onVideoSwapped] Fallback: Updated currentVideoSourceId to:', sortedSources[currentIdx + 1].id);
+      }
+    }
+
+    // IMPORTANT: Keep crossfadeStarted and lastCrossfadeTransitionId set
+    // so manageCrossfade doesn't try to re-start the crossfade
+    // They will be reset when we exit the transition zone naturally
+    // crossfadeStarted.value = false;
+    // lastCrossfadeTransitionId.value = null;
+  }
+
+  // Called when crossfade completes early (e.g., main video media ended before transition zone end)
+  // This syncs the timeline playhead with the visual state
+  function onCrossfadeCompleted(transitionEndTime: number) {
+    console.log('[onCrossfadeCompleted] Crossfade completed early, jumping to:', transitionEndTime);
+
+    // CRITICAL: Update videoElement to point to the now-active preload video
+    // This ensures play/pause controls work after crossfade
+    const preloadEl = previewRef.value?.getPreloadVideoElement?.();
+    if (preloadEl) {
+      videoElement.value = preloadEl;
+      console.log('[onCrossfadeCompleted] Updated videoElement to preload video');
+    }
+
+    // Update preview time to the end of the transition
+    // This ensures the timeline playhead matches the visual state
+    previewTime.value = transitionEndTime;
+
+    // Clear crossfade state
+    crossfadeStarted.value = false;
+    // Don't clear lastCrossfadeTransitionId - keep it so we don't re-enter this transition
+  }
+
+  // Handle transitions detected from the timeline
+  function onTransitionsDetected(transitions: VideoEditorTransition[]) {
+    sourceTransitions.value = transitions;
+  }
+
+  // Manage crossfade audio (fade volumes during transition)
+  function updateCrossfadeAudio() {
+    if (!props.editorMode || !activeTransition.value || !videoElement.value) return;
+
+    const transition = activeTransition.value;
+    const { opacityA, opacityB } = calculateCrossfadeOpacity(previewTime.value, transition);
+
+    // Apply opacity as volume to outgoing source video (main video)
+    // Note: The main video is still the current activeVideoSource
+    videoElement.value.volume = opacityA;
+
+    // Apply opacity as volume to incoming source video (preload video)
+    const preloadEl = previewRef.value?.getPreloadVideoElement?.();
+    if (preloadEl) {
+      preloadEl.volume = opacityB;
+    }
+  }
+
+  // Start crossfade when entering a transition zone
+  function manageCrossfade() {
+    if (!props.editorMode || !previewRef.value || !isPlaying.value) return;
+
+    const transition = activeTransition.value;
+
+    if (transition) {
+      // We're in a transition zone
+      // Only start if crossfade is not already in progress AND we haven't already completed this transition
+      // Using AND (&&) instead of OR (||) prevents restarting after completion when time maps back into zone
+      if (!crossfadeStarted.value && lastCrossfadeTransitionId.value !== transition.id) {
+        // Start the crossfade - both videos need to play
+        const incomingSource = transitionIncomingSource.value;
+        console.log('[manageCrossfade] Starting crossfade:', {
+          incomingSourceId: incomingSource?.id,
+          transitionStartTime: transition.startTime,
+          transitionEndTime: transition.endTime,
+        });
+        if (incomingSource) {
+          // Calculate the seek time in the incoming source
+          const timeIntoTransition = previewTime.value - transition.startTime;
+          const seekTime = incomingSource.trim_start + timeIntoTransition;
+
+          console.log(
+            '[manageCrossfade] Calling startCrossfade with seekTime:',
+            seekTime,
+            'timeIntoTransition:',
+            timeIntoTransition
+          );
+
+          // Try to start crossfade (will work even if preload isn't fully ready)
+          if (previewRef.value.startCrossfade?.(seekTime)) {
+            crossfadeStarted.value = true;
+            lastCrossfadeTransitionId.value = transition.id;
+            console.log('[manageCrossfade] Crossfade started successfully');
+          } else {
+            console.log('[manageCrossfade] startCrossfade returned false');
+          }
+        }
+      } else if (crossfadeStarted.value) {
+        console.log('[manageCrossfade] Crossfade already in progress, updating audio');
+      } else {
+        // lastCrossfadeTransitionId matches - we've already completed this transition
+        // Don't restart, just skip
+        console.log('[manageCrossfade] Transition already completed, skipping');
+      }
+
+      // Update audio levels during crossfade
+      updateCrossfadeAudio();
+    } else if (crossfadeStarted.value) {
+      // We've exited the transition zone - complete the crossfade
+      console.log('[manageCrossfade] Exited transition zone, completing crossfade. previewTime:', previewTime.value);
+      if (previewRef.value.completeCrossfade) {
+        previewRef.value.completeCrossfade();
+      }
+
+      // Update state to reflect we're now on the incoming source
+      // Find the source that contains the current time (should be source B now)
+      const newActiveSource = videoSources.value.find(
+        (s) => previewTime.value >= s.start_time && previewTime.value < s.end_time
+      );
+      if (newActiveSource) {
+        console.log('[manageCrossfade] Updating currentVideoSourceId to:', newActiveSource.id);
+        currentVideoSourceId.value = newActiveSource.id;
+      }
+
+      // Update videoElement to point to the new active video (preload video)
+      const preloadEl = previewRef.value?.getPreloadVideoElement?.();
+      if (preloadEl) {
+        videoElement.value = preloadEl;
+      }
+
+      crossfadeStarted.value = false;
+      // IMPORTANT: Keep lastCrossfadeTransitionId set so we don't restart the same transition
+      // when preload video's time maps back into the transition zone
+      // It will be reset when user seeks or when a different transition starts
+      // lastCrossfadeTransitionId.value = null;
+
+      // Reset video volume to normal on the new active video
+      if (videoElement.value) {
+        videoElement.value.volume = 1;
+      }
+    }
   }
 
   function onPreviewTimeUpdate(time: number) {
-    previewTime.value = time;
+    // Ignore time updates while seeking to prevent feedback loops
+    if (isSeeking.value) {
+      console.log('[onPreviewTimeUpdate] Ignoring - isSeeking is true');
+      return;
+    }
+
+    if (props.editorMode) {
+      // In editor mode, time is the video element's currentTime (position within source file)
+      // We need to track which source this time belongs to
+
+      // Determine which source the time update is coming from
+      // During/after crossfade, videoElement might point to the preload video (source B)
+      // So we need to use currentVideoSourceId as the source of truth
+      let source = currentVideoSourceId.value
+        ? videoSources.value.find((s) => s.id === currentVideoSourceId.value)
+        : null;
+
+      const usedFallback = !source;
+
+      // If no tracked source or during transition, figure out the source from time
+      if (!source) {
+        const sortedSources = [...videoSources.value].sort((a, b) => a.start_time - b.start_time);
+        source = sortedSources.find((s) => time >= s.trim_start && (s.trim_end === null || time < s.trim_end)) || null;
+      }
+
+      if (source) {
+        // Map video time back to global timeline position
+        // The video position includes trim_start, so subtract it to get relative position
+        const relativeInSource = time - source.trim_start;
+        // Add the source's start time to get global timeline position
+        const newTime = source.start_time + relativeInSource;
+
+        // Update current source tracking - but NOT during active crossfade
+        // During crossfade, source tracking is managed by manageCrossfade and onVideoSwapped
+        if (currentVideoSourceId.value !== source.id && !crossfadeStarted.value && !activeTransition.value) {
+          currentVideoSourceId.value = source.id;
+        }
+
+        // Check if we've reached the trim_end of this source (if set)
+        // Only trigger end if we're NOT in an active crossfade transition
+        // trim_end is the position in the source video where we should stop
+        if (
+          source.trim_end !== null &&
+          time >= source.trim_end &&
+          isPlaying.value &&
+          !activeTransition.value &&
+          !crossfadeStarted.value
+        ) {
+          // We've reached the end of this source's trimmed region
+          // Trigger transition to next source
+          onVideoEnded();
+          return;
+        }
+
+        // Only update if the difference is significant (prevents tiny fluctuations)
+        if (Math.abs(newTime - previewTime.value) > 0.05) {
+          previewTime.value = newTime;
+        }
+
+        // Manage crossfade transitions during playback (only if still in crossfade mode)
+        if (crossfadeStarted.value || activeTransition.value) {
+          manageCrossfade();
+        }
+      } else {
+        console.log('[onPreviewTimeUpdate] No source found for time:', time);
+      }
+    } else {
+      previewTime.value = time;
+    }
     // Sync audio tracks with video
     if (isPlaying.value) {
       syncAudioWithVideo();
     }
   }
 
+  function onVideoEnded() {
+    console.log(
+      '[onVideoEnded] Called. crossfadeStarted:',
+      crossfadeStarted.value,
+      'activeTransition:',
+      !!activeTransition.value,
+      'currentVideoSourceId:',
+      currentVideoSourceId.value,
+      'previewTime:',
+      previewTime.value
+    );
+
+    if (!props.editorMode) return;
+
+    // If we're currently in a crossfade transition (or just started one), complete it
+    // The outgoing video has reached its end during the crossfade
+    // Check crossfadeStarted OR if we're in/near a transition zone
+    if (crossfadeStarted.value || activeTransition.value) {
+      console.log('[onVideoEnded] Handling crossfade completion');
+      // Complete the crossfade transition
+      if (previewRef.value?.completeCrossfade) {
+        previewRef.value.completeCrossfade();
+      }
+
+      // Update state to reflect we're now on the incoming source
+      // Find the incoming source - either from the transition or the next source by order
+      let incomingSource = transitionIncomingSource.value;
+      console.log('[onVideoEnded] incomingSource from transition:', incomingSource?.id);
+      if (!incomingSource) {
+        // Fallback: find the next source in order
+        const sortedSources = [...videoSources.value].sort((a, b) => a.order_index - b.order_index);
+        const currentIdx = sortedSources.findIndex((s) => s.id === currentVideoSourceId.value);
+        if (currentIdx >= 0 && currentIdx < sortedSources.length - 1) {
+          incomingSource = sortedSources[currentIdx + 1];
+          console.log('[onVideoEnded] Fallback incomingSource:', incomingSource?.id);
+        }
+      }
+
+      if (incomingSource) {
+        console.log('[onVideoEnded] Updating currentVideoSourceId to:', incomingSource.id);
+        currentVideoSourceId.value = incomingSource.id;
+        // Update videoElement to the new active element (preload video)
+        const preloadEl = previewRef.value?.getPreloadVideoElement?.();
+        if (preloadEl) {
+          videoElement.value = preloadEl;
+          console.log('[onVideoEnded] Updated videoElement to preload');
+          // Ensure the preload video is playing
+          if (preloadEl.paused && isPlaying.value) {
+            console.log('[onVideoEnded] Starting preload playback');
+            preloadEl.play().catch(() => {});
+          }
+        }
+      }
+
+      // IMPORTANT: Keep crossfadeStarted and lastCrossfadeTransitionId set
+      // so manageCrossfade doesn't try to re-start the crossfade
+      // They will be reset when we exit the transition zone naturally
+      // crossfadeStarted.value = false;
+      // lastCrossfadeTransitionId.value = null;
+
+      // Reset video volume to normal
+      if (videoElement.value) {
+        videoElement.value.volume = 1;
+      }
+      return;
+    }
+
+    // Find the current source and the next one
+    const currentSource = activeVideoSource.value;
+    if (!currentSource) {
+      isPlaying.value = false;
+      return;
+    }
+
+    // Sort sources by order_index to find the next source
+    const sortedSources = [...videoSources.value].sort((a, b) => a.order_index - b.order_index);
+    const currentIndex = sortedSources.findIndex((s) => s.id === currentSource.id);
+    const nextSource = sortedSources[currentIndex + 1];
+
+    if (nextSource) {
+      isSeeking.value = true;
+
+      // Try seamless swap using preloaded video
+      const swapSucceeded = previewRef.value?.swapToPreloadedVideo?.(nextSource.trim_start);
+
+      if (swapSucceeded) {
+        // Seamless swap succeeded - update our state to match
+        previewTime.value = nextSource.start_time;
+        currentVideoSourceId.value = nextSource.id;
+
+        // Clear seeking flag after a short delay
+        setTimeout(() => {
+          isSeeking.value = false;
+        }, 50);
+      } else {
+        // Fallback: capture frame and switch src the traditional way
+        captureTransitionFrame();
+
+        // Update timeline position to trigger the source switch
+        previewTime.value = nextSource.start_time;
+        currentVideoSourceId.value = nextSource.id;
+        pendingSeekTime.value = nextSource.trim_start;
+
+        // The video src will change via reactivity, and once loaded, it will seek and play
+        // The transition frame will be hidden in onVideoLoaded
+      }
+    } else {
+      // No more sources, stop playback and go back to beginning
+      isPlaying.value = false;
+      if (sortedSources.length > 0) {
+        // Reset to the beginning of the first source
+        previewTime.value = sortedSources[0].start_time;
+      }
+    }
+  }
+
   function togglePlay() {
-    if (videoElement.value) {
+    // Get the currently active video element - prefer preload if active after crossfade
+    const preloadEl = previewRef.value?.getPreloadVideoElement?.();
+    const activePreloadIndex = previewRef.value?.activeVideoIndex;
+
+    // Determine which video is actually active
+    let activeVideo = videoElement.value;
+    if (props.editorMode && activePreloadIndex === 1 && preloadEl) {
+      // Preload is the active video after crossfade
+      activeVideo = preloadEl;
+      // Also update videoElement if it's out of sync
+      if (videoElement.value !== preloadEl) {
+        console.log('[togglePlay] Updating videoElement to match active preload');
+        videoElement.value = preloadEl;
+      }
+    }
+
+    console.log(
+      '[togglePlay] Called.',
+      'activeVideo:',
+      !!activeVideo,
+      'isPlaying:',
+      isPlaying.value,
+      'activeVideo.paused:',
+      activeVideo?.paused,
+      'activeVideo.src:',
+      activeVideo?.src?.slice(-30),
+      'activePreloadIndex:',
+      activePreloadIndex
+    );
+
+    if (activeVideo) {
+      // Sync isPlaying state with actual video state first
+      // This handles cases where the video state got out of sync (e.g., after crossfade)
+      const actuallyPlaying = !activeVideo.paused;
+      if (isPlaying.value !== actuallyPlaying) {
+        console.log('[togglePlay] Syncing isPlaying state from', isPlaying.value, 'to', actuallyPlaying);
+        isPlaying.value = actuallyPlaying;
+      }
+
       if (isPlaying.value) {
-        videoElement.value.pause();
+        console.log('[togglePlay] Pausing video');
+        activeVideo.pause();
         // Pause all audio tracks
         audioElements.value.forEach((audio) => audio.pause());
       } else {
-        videoElement.value.play();
+        console.log('[togglePlay] Playing video');
+        activeVideo.play().catch((err) => {
+          console.error('[togglePlay] Play failed:', err);
+        });
         // Resume audio context if suspended
         if (audioContext.value?.state === 'suspended') {
           audioContext.value.resume();
@@ -580,15 +1432,65 @@
         syncAudioWithVideo();
       }
       isPlaying.value = !isPlaying.value;
+      console.log('[togglePlay] isPlaying is now:', isPlaying.value);
+    } else {
+      console.log('[togglePlay] No activeVideo!');
     }
   }
 
   function seekTo(time: number) {
-    // time is relative (0 to clipDuration), convert to absolute for video element
-    if (videoElement.value) {
-      const absoluteTime = props.clipStartTime + time;
-      videoElement.value.currentTime = absoluteTime;
-      previewTime.value = absoluteTime; // Store absolute time
+    if (props.editorMode) {
+      // Editor mode: time is already the global timeline position
+      isSeeking.value = true;
+      previewTime.value = time;
+
+      // Reset crossfade state when seeking
+      crossfadeStarted.value = false;
+      lastCrossfadeTransitionId.value = null;
+
+      // Find the source that contains this time
+      // Sort sources to handle overlaps consistently (prefer earlier source)
+      const sortedSources = [...videoSources.value].sort((a, b) => a.start_time - b.start_time);
+      const targetSource = sortedSources.find((s) => time >= s.start_time && time < s.end_time);
+
+      if (targetSource) {
+        // Calculate the position within the source video
+        // Account for trim_start: the offset into the source video
+        const timeInSource = time - targetSource.start_time + targetSource.trim_start;
+
+        // Check if we need to switch video sources
+        if (currentVideoSourceId.value !== targetSource.id) {
+          // Different source - update the source ID and reset video state
+          currentVideoSourceId.value = targetSource.id;
+          pendingSeekTime.value = timeInSource;
+
+          // Reset preview component to use main video (in case we were using preload after crossfade)
+          if (previewRef.value?.resetActiveVideo) {
+            previewRef.value.resetActiveVideo();
+          }
+
+          // The video src will change via reactivity (effectiveVideoSrc -> editorVideoSrc)
+          // Once loaded, the pending seek will be applied
+        } else if (videoElement.value) {
+          // Same source - seek directly
+          videoElement.value.currentTime = timeInSource;
+          setTimeout(() => {
+            isSeeking.value = false;
+          }, 50);
+        }
+      } else {
+        // No matching source, just update the time
+        setTimeout(() => {
+          isSeeking.value = false;
+        }, 50);
+      }
+    } else {
+      // Clip mode: time is relative (0 to clipDuration), convert to absolute for video element
+      if (videoElement.value) {
+        const absoluteTime = props.clipStartTime + time;
+        videoElement.value.currentTime = absoluteTime;
+        previewTime.value = absoluteTime; // Store absolute time
+      }
     }
   }
 
@@ -1565,6 +2467,106 @@
     }
   }
 
+  // Handle video element loaded - apply any pending seek
+  function onVideoLoaded() {
+    if (!props.editorMode || !videoElement.value) return;
+
+    const wasPlaying = isPlaying.value;
+    const source = activeVideoSource.value;
+
+    if (source) {
+      // Update current source ID tracking
+      currentVideoSourceId.value = source.id;
+
+      // Apply pending seek if there is one
+      if (pendingSeekTime.value !== null) {
+        videoElement.value.currentTime = pendingSeekTime.value;
+        pendingSeekTime.value = null;
+      }
+
+      // Continue playing if we were playing before the source change
+      if (wasPlaying) {
+        videoElement.value
+          .play()
+          .then(() => {
+            // Hide the transition frame once video starts playing
+            // Small delay to ensure first frame is rendered
+            requestAnimationFrame(() => {
+              hideTransitionFrame();
+            });
+          })
+          .catch((err) => {
+            console.warn('[ClipEditorDialog] Could not resume playback:', err);
+            hideTransitionFrame();
+          });
+      } else {
+        // If not playing, hide transition frame immediately
+        hideTransitionFrame();
+      }
+    }
+
+    // Clear seeking flag
+    setTimeout(() => {
+      isSeeking.value = false;
+    }, 50);
+  }
+
+  // Watch for video source changes in editor mode
+  watch(
+    () => editorVideoSrc.value,
+    async (newSrc, oldSrc) => {
+      console.log(
+        '[watch editorVideoSrc] Changed from',
+        oldSrc?.slice(-30),
+        'to',
+        newSrc?.slice(-30),
+        'crossfadeStarted:',
+        crossfadeStarted.value,
+        'activeTransition:',
+        !!activeTransition.value
+      );
+
+      if (props.editorMode && newSrc && newSrc !== oldSrc && videoElement.value) {
+        // Skip processing if the preload video is the active one
+        // This happens after crossfade completes - the main video's src changes
+        // but we're already playing the preload video, so no action needed
+        const preloadEl = previewRef.value?.getPreloadVideoElement?.();
+        if (preloadEl && videoElement.value === preloadEl) {
+          // We're using the preload video as active - don't reload/seek main video
+          console.log('[watch editorVideoSrc] Skipping - preload is active');
+          return;
+        }
+
+        console.log('[watch editorVideoSrc] Setting isSeeking=true');
+        isSeeking.value = true;
+
+        // If there's no pending seek, calculate the seek time for the new source
+        if (pendingSeekTime.value === null) {
+          const source = activeVideoSource.value;
+          if (source) {
+            pendingSeekTime.value = previewTime.value - source.start_time + source.trim_start;
+            console.log('[watch editorVideoSrc] Set pendingSeekTime:', pendingSeekTime.value);
+          }
+        }
+
+        // The actual seek will happen in onVideoLoaded when the video is ready
+        // But we need to add the loadeddata listener
+        const handleLoaded = () => {
+          onVideoLoaded();
+          videoElement.value?.removeEventListener('loadeddata', handleLoaded);
+        };
+
+        // Wait for next tick to ensure src has been applied to the element
+        await nextTick();
+
+        // Listen for the video to be ready
+        if (videoElement.value) {
+          videoElement.value.addEventListener('loadeddata', handleLoaded);
+        }
+      }
+    }
+  );
+
   // Auto-save watchers - trigger save when data changes
   watch(
     () => filterSegments.value,
@@ -1610,28 +2612,37 @@
   watch(
     () => props.modelValue,
     async (isOpen) => {
-      if (isOpen && props.clipId) {
+      if (isOpen) {
         isInitialLoad.value = true; // Prevent auto-save during load
-        await loadEditData();
-        await loadProjectId();
-        // Initialize to clip start time (absolute time)
-        previewTime.value = props.clipStartTime;
 
-        // Set up audio elements for existing tracks
-        audioTracks.value.forEach((track) => {
-          if (!audioElements.value.has(track.id)) {
-            setupAudioElement(track);
+        if (props.editorMode && props.editorProjectId) {
+          // Editor mode - load video sources
+          await loadEditorProject();
+          previewTime.value = 0;
+          activeEditorTab.value = 'sources';
+        } else if (props.clipId) {
+          // Clip mode - existing behavior
+          await loadEditData();
+          await loadProjectId();
+          // Initialize to clip start time (absolute time)
+          previewTime.value = props.clipStartTime;
+
+          // Set up audio elements for existing tracks
+          audioTracks.value.forEach((track) => {
+            if (!audioElements.value.has(track.id)) {
+              setupAudioElement(track);
+            }
+          });
+
+          // Apply initial volume to video (convert dB to linear gain)
+          if (videoElement.value) {
+            const linearGain = Math.pow(10, originalDb.value / 20);
+            videoElement.value.volume = Math.min(1, linearGain);
           }
-        });
 
-        // Apply initial volume to video (convert dB to linear gain)
-        if (videoElement.value) {
-          const linearGain = Math.pow(10, originalDb.value / 20);
-          videoElement.value.volume = Math.min(1, linearGain);
+          // Load video info for aspect tab
+          await loadVideoInfo();
         }
-
-        // Load video info for aspect tab
-        await loadVideoInfo();
 
         // Allow auto-save after initial load is complete
         setTimeout(() => {
@@ -1643,7 +2654,12 @@
           clearTimeout(saveTimeout);
           saveTimeout = null;
         }
-        await performSave();
+
+        if (props.editorMode && props.editorProjectId) {
+          emit('editorSave', props.editorProjectId);
+        } else {
+          await performSave();
+        }
 
         // Clean up when dialog closes
         cleanupAudioElements();
@@ -1657,6 +2673,8 @@
         isSaving.value = false;
         lastSaved.value = false;
         isInitialLoad.value = true;
+        // Reset editor mode state
+        videoSources.value = [];
       }
     }
   );

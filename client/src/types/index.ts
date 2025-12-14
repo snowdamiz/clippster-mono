@@ -984,3 +984,147 @@ export interface ClipSubtitleSettings {
   // Selected preset ID (for tracking which preset was applied)
   selectedPresetId?: string | null;
 }
+
+// ==========================================
+// Video Editor Types (Standalone Editor)
+// ==========================================
+
+// Video editor project metadata
+export interface VideoEditorProject {
+  id: string;
+  name: string;
+  description: string | null;
+  thumbnail_path: string | null;
+  total_duration: number;
+  created_at: number;
+  updated_at: number;
+}
+
+// Video source in the editor timeline
+export interface VideoEditorSource {
+  id: string;
+  project_id: string;
+  source_type: 'clip' | 'raw_video' | 'imported';
+  source_id: string | null; // Reference to clips/raw_videos table (null for imported)
+  source_path: string; // File path for preview/export
+  source_name: string | null;
+  source_thumbnail: string | null;
+  source_duration: number | null; // Original duration of source
+  start_time: number; // Position in timeline
+  end_time: number; // End position in timeline
+  trim_start: number; // Trim from source start
+  trim_end: number | null; // Trim from source end (null = use full duration)
+  order_index: number;
+  created_at: number;
+}
+
+// Project with all sources loaded
+export interface VideoEditorProjectWithSources extends VideoEditorProject {
+  sources: VideoEditorSource[];
+}
+
+// Editor tab types for standalone video editor (includes 'sources' tab)
+export type VideoEditorTab =
+  | 'sources'
+  | 'audio'
+  | 'filters'
+  | 'text'
+  | 'stickers'
+  | 'watermark'
+  | 'subtitles'
+  | 'aspect';
+
+// Source item displayed in the Sources tab (unified format for clips and raw videos)
+export interface SourceItem {
+  id: string;
+  type: 'clip' | 'raw_video';
+  name: string;
+  path: string;
+  thumbnailPath: string | null;
+  duration: number | null;
+  projectId: string | null;
+  projectName: string | null;
+}
+
+// Video Editor Dialog Props
+export interface VideoEditorDialogProps {
+  modelValue: boolean;
+  projectId: string | null;
+}
+
+// Video Editor Dialog Emits
+export interface VideoEditorDialogEmits {
+  (e: 'update:modelValue', value: boolean): void;
+  (e: 'save', projectId: string): void;
+  (e: 'delete', projectId: string): void;
+}
+
+// ==========================================
+// Video Editor Transition Types
+// ==========================================
+
+// Represents a crossfade transition between two overlapping video sources
+export interface VideoEditorTransition {
+  id: string;
+  sourceAId: string; // First source (ending)
+  sourceBId: string; // Second source (starting)
+  startTime: number; // When transition starts (sourceB.start_time)
+  endTime: number; // When transition ends (sourceA.end_time)
+  duration: number; // Length of the crossfade
+  type: 'crossfade'; // Future: could support 'wipe', 'dissolve', etc.
+}
+
+// Utility function to detect transitions between overlapping sources
+export function detectSourceTransitions(sources: VideoEditorSource[]): VideoEditorTransition[] {
+  const transitions: VideoEditorTransition[] = [];
+
+  // Sort sources by start time
+  const sortedSources = [...sources].sort((a, b) => a.start_time - b.start_time);
+
+  for (let i = 0; i < sortedSources.length - 1; i++) {
+    const sourceA = sortedSources[i];
+    const sourceB = sortedSources[i + 1];
+
+    // Check if sources overlap
+    if (sourceA.end_time > sourceB.start_time) {
+      const overlapStart = sourceB.start_time;
+      const overlapEnd = Math.min(sourceA.end_time, sourceB.end_time);
+      const duration = overlapEnd - overlapStart;
+
+      if (duration > 0) {
+        transitions.push({
+          id: `transition-${sourceA.id}-${sourceB.id}`,
+          sourceAId: sourceA.id,
+          sourceBId: sourceB.id,
+          startTime: overlapStart,
+          endTime: overlapEnd,
+          duration,
+          type: 'crossfade',
+        });
+      }
+    }
+  }
+
+  return transitions;
+}
+
+// Calculate crossfade opacity for preview playback
+// Returns { opacityA, opacityB } where values are 0-1
+export function calculateCrossfadeOpacity(
+  currentTime: number,
+  transition: VideoEditorTransition
+): { opacityA: number; opacityB: number } {
+  if (currentTime < transition.startTime) {
+    return { opacityA: 1, opacityB: 0 };
+  }
+  if (currentTime >= transition.endTime) {
+    return { opacityA: 0, opacityB: 1 };
+  }
+
+  // Linear crossfade
+  const progress = (currentTime - transition.startTime) / transition.duration;
+  return {
+    opacityA: 1 - progress,
+    opacityB: progress,
+  };
+}

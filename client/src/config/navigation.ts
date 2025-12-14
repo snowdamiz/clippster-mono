@@ -9,6 +9,7 @@ import {
   Folder,
   Radio,
   Users,
+  Clapperboard,
 } from 'lucide-vue-next';
 
 export interface NavigationItem {
@@ -38,6 +39,11 @@ export const navigationItems: NavigationItem[] = [
     name: 'My Clips',
     path: '/clips',
     icon: LayoutGrid,
+  },
+  {
+    name: 'Video Editor',
+    path: '/video-editor',
+    icon: Clapperboard,
   },
   {
     name: 'Clip Live',

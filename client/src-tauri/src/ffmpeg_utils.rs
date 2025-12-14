@@ -222,3 +222,198 @@ pub async fn detect_hardware_encoder(app: &tauri::AppHandle) -> Option<String> {
     println!("[Rust] No hardware encoder found, falling back to software (libx264)");
     None
 }
+
+// ============================================================================
+// CROSSFADE TRANSITION TYPES AND UTILITIES
+// For the video editor when sources overlap
+// ============================================================================
+
+/// Represents a crossfade transition between two video sources
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossfadeTransition {
+    /// Duration of the crossfade in seconds
+    pub duration: f64,
+    /// When the transition starts (global timeline position)
+    pub start_time: f64,
+    /// When the transition ends (global timeline position)
+    pub end_time: f64,
+    /// Index of the outgoing source (source A)
+    pub source_a_index: usize,
+    /// Index of the incoming source (source B)
+    pub source_b_index: usize,
+}
+
+/// Represents a video source segment for the editor export
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoSourceSegment {
+    /// Path to the video file
+    pub path: String,
+    /// Start position in the global timeline
+    pub timeline_start: f64,
+    /// End position in the global timeline
+    pub timeline_end: f64,
+    /// Trim start (offset into the source file)
+    pub trim_start: f64,
+    /// Trim end (how far into source file to use, None = full)
+    pub trim_end: Option<f64>,
+}
+
+/// Build FFmpeg filter complex string for crossfade transitions between sources
+/// 
+/// # Arguments
+/// * `sources` - Vector of source segments in timeline order
+/// * `transitions` - Vector of crossfade transitions between sources
+/// * `output_width` - Target output width
+/// * `output_height` - Target output height
+/// 
+/// # Returns
+/// Tuple of (filter_complex_string, output_stream_name)
+pub fn build_crossfade_filter_complex(
+    sources: &[VideoSourceSegment],
+    transitions: &[CrossfadeTransition],
+    output_width: u32,
+    output_height: u32,
+) -> (String, String) {
+    if sources.is_empty() {
+        return (String::new(), String::new());
+    }
+
+    if sources.len() == 1 || transitions.is_empty() {
+        // Single source or no transitions - just scale to output size
+        let filter = format!(
+            "[0:v]scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2[outv]",
+            output_width, output_height, output_width, output_height
+        );
+        return (filter, "[outv]".to_string());
+    }
+
+    let mut filter_parts: Vec<String> = Vec::new();
+    let mut current_output = String::new();
+
+    // First, scale all inputs to the same size
+    for i in 0..sources.len() {
+        filter_parts.push(format!(
+            "[{}:v]scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2[v{}]",
+            i, output_width, output_height, output_width, output_height, i
+        ));
+    }
+
+    // Apply crossfades sequentially
+    let mut last_stream = "[v0]".to_string();
+    
+    for (i, transition) in transitions.iter().enumerate() {
+        let next_stream = format!("[v{}]", transition.source_b_index);
+        let output_stream = if i == transitions.len() - 1 {
+            "[outv]".to_string()
+        } else {
+            format!("[xfade{}]", i)
+        };
+
+        // Calculate offset: when in the first stream to start the xfade
+        // The offset is relative to the first stream's duration
+        let source_a = &sources[transition.source_a_index];
+        let source_a_duration = source_a.timeline_end - source_a.timeline_start;
+        let offset = source_a_duration - transition.duration;
+
+        filter_parts.push(format!(
+            "{}{}xfade=transition=fade:duration={:.3}:offset={:.3}{}",
+            last_stream,
+            next_stream,
+            transition.duration,
+            offset.max(0.0),
+            output_stream
+        ));
+
+        last_stream = output_stream.clone();
+    }
+
+    current_output = last_stream;
+
+    (filter_parts.join(";"), current_output)
+}
+
+/// Build FFmpeg audio crossfade filter for smooth audio transitions
+/// 
+/// # Arguments
+/// * `sources_count` - Number of audio streams
+/// * `transitions` - Vector of crossfade transitions
+/// 
+/// # Returns
+/// Tuple of (audio_filter_string, output_stream_name)
+pub fn build_audio_crossfade_filter(
+    sources: &[VideoSourceSegment],
+    transitions: &[CrossfadeTransition],
+) -> (String, String) {
+    if sources.is_empty() {
+        return (String::new(), String::new());
+    }
+
+    if sources.len() == 1 || transitions.is_empty() {
+        // Single source - just pass through
+        return ("[0:a]anull[outa]".to_string(), "[outa]".to_string());
+    }
+
+    let mut filter_parts: Vec<String> = Vec::new();
+    let mut last_stream = "[0:a]".to_string();
+
+    for (i, transition) in transitions.iter().enumerate() {
+        let next_stream = format!("[{}:a]", transition.source_b_index);
+        let output_stream = if i == transitions.len() - 1 {
+            "[outa]".to_string()
+        } else {
+            format!("[axfade{}]", i)
+        };
+
+        // Calculate offset for audio crossfade
+        let source_a = &sources[transition.source_a_index];
+        let source_a_duration = source_a.timeline_end - source_a.timeline_start;
+        let offset = source_a_duration - transition.duration;
+
+        filter_parts.push(format!(
+            "{}{}acrossfade=d={:.3}:c1=tri:c2=tri{}",
+            last_stream,
+            next_stream,
+            transition.duration,
+            output_stream
+        ));
+
+        last_stream = output_stream.clone();
+    }
+
+    (filter_parts.join(";"), last_stream)
+}
+
+/// Detect transitions between overlapping source segments
+/// 
+/// # Arguments
+/// * `sources` - Vector of source segments, should be sorted by timeline_start
+/// 
+/// # Returns
+/// Vector of detected crossfade transitions
+pub fn detect_source_transitions(sources: &[VideoSourceSegment]) -> Vec<CrossfadeTransition> {
+    let mut transitions = Vec::new();
+
+    for i in 0..sources.len().saturating_sub(1) {
+        let source_a = &sources[i];
+        let source_b = &sources[i + 1];
+
+        // Check if sources overlap
+        if source_a.timeline_end > source_b.timeline_start {
+            let overlap_start = source_b.timeline_start;
+            let overlap_end = source_a.timeline_end.min(source_b.timeline_end);
+            let duration = overlap_end - overlap_start;
+
+            if duration > 0.0 {
+                transitions.push(CrossfadeTransition {
+                    duration,
+                    start_time: overlap_start,
+                    end_time: overlap_end,
+                    source_a_index: i,
+                    source_b_index: i + 1,
+                });
+            }
+        }
+    }
+
+    transitions
+}

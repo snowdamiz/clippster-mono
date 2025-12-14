@@ -37,6 +37,18 @@ const router = createRouter({
       ],
     },
     {
+      path: '/video-editor',
+      name: 'video-editor',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      children: [
+        {
+          path: '',
+          name: 'video-editor-home',
+          component: () => import('@/pages/VideoEditor.vue'),
+        },
+      ],
+    },
+    {
       path: '/live-clip',
       name: 'live-clip',
       component: () => import('@/layouts/DashboardLayout.vue'),

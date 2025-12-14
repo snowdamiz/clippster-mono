@@ -72,9 +72,27 @@
         ref="videoRef"
         :src="videoSrc || ''"
         class="max-w-full max-h-full object-contain cursor-pointer"
-        :style="getVideoFilterStyle()"
+        :style="editorMode ? getMainVideoStyle() : getVideoFilterStyle()"
         @loadedmetadata="onLoadedMetadata"
         @timeupdate="onTimeUpdate"
+        @ended="onEnded"
+        @play="onPlay"
+        @pause="onPause"
+        @click="onVideoClick"
+      />
+
+      <!-- Preload video for seamless transitions / crossfade (editor mode only) -->
+      <!-- Keep element alive if it's the active video OR if there's a preload source -->
+      <video
+        v-if="editorMode && (preloadVideoSrc || activeVideoIndex === 1)"
+        ref="preloadVideoRef"
+        :src="activePreloadSrc"
+        class="max-w-full max-h-full object-contain cursor-pointer absolute inset-0 m-auto"
+        :style="getPreloadVideoStyle()"
+        preload="auto"
+        @canplaythrough="onPreloadCanPlay"
+        @loadeddata="onPreloadLoadedData"
+        @timeupdate="onPreloadTimeUpdate"
         @ended="onEnded"
         @play="onPlay"
         @pause="onPause"
@@ -482,9 +500,9 @@
           <div
             class="text-white/80 text-xs font-mono bg-white/[0.04] px-3 py-2 rounded-lg ml-1 tabular-nums tracking-tight"
           >
-            <span class="text-white/90">{{ formatDuration(currentTime) }}</span>
+            <span class="text-white/90">{{ formatDuration(displayCurrentTime) }}</span>
             <span class="text-white/40 mx-1">/</span>
-            <span class="text-white/50">{{ formatDuration(duration) }}</span>
+            <span class="text-white/50">{{ formatDuration(displayDuration) }}</span>
           </div>
         </div>
         <!-- Right Controls -->
@@ -599,6 +617,7 @@
   const props = withDefaults(
     defineProps<{
       videoSrc: string | null;
+      preloadVideoSrc?: string | null; // Next video source for seamless transitions (editor mode)
       currentTime: number;
       effectiveTime: number; // Time position accounting for segment cuts
       isPlaying: boolean;
@@ -616,12 +635,22 @@
       subtitleSettings?: ClipSubtitleSettings | null;
       transcriptWords?: WordInfo[]; // Words from transcript for subtitle display
       transcriptSegments?: WhisperSegment[]; // Segments from transcript for word grouping
+      // Editor mode - when true, bypass segment-based time management
+      editorMode?: boolean;
+      // Total duration for editor mode (sum of all source durations)
+      editorTotalDuration?: number;
+      // Active crossfade transition (when sources overlap)
+      activeTransition?: { startTime: number; endTime: number; duration: number } | null;
     }>(),
     {
       watermarks: () => [],
+      preloadVideoSrc: null,
       subtitleSettings: null,
       transcriptWords: () => [],
       transcriptSegments: () => [],
+      editorMode: false,
+      editorTotalDuration: 0,
+      activeTransition: null,
     }
   );
 
@@ -629,6 +658,9 @@
     (e: 'timeUpdate', time: number): void;
     (e: 'togglePlay'): void;
     (e: 'videoElementReady', element: HTMLVideoElement): void;
+    (e: 'videoEnded'): void;
+    (e: 'videoSwapped'): void; // Emitted when video buffer swap completes
+    (e: 'crossfadeCompleted', endTime: number): void; // Emitted when crossfade completes early (video media ended)
     (
       e: 'updateOverlayPosition',
       type: 'text' | 'sticker' | 'watermark',
@@ -646,6 +678,7 @@
 
   // Refs
   const videoRef = ref<HTMLVideoElement | null>(null);
+  const preloadVideoRef = ref<HTMLVideoElement | null>(null); // Second video for seamless transitions
   const videoContainerRef = ref<HTMLElement | null>(null);
   const overlayContainerRef = ref<HTMLElement | null>(null);
   const regionVideoRefs = ref<(HTMLVideoElement | null)[]>([]);
@@ -654,6 +687,240 @@
   const isMuted = ref(false);
   const isDraggingProgress = ref(false);
   const containerSize = ref({ width: 0, height: 0 });
+
+  // Double-buffer state for seamless transitions (editor mode)
+  const activeVideoIndex = ref<0 | 1>(0); // 0 = main video, 1 = preload video
+  const preloadVideoReady = ref(false); // Whether preload video is ready to play
+  const lastPreloadSrc = ref<string | null>(null); // Track last loaded preload src to keep it alive
+
+  // Crossfade animation state - uses requestAnimationFrame for smooth 60fps opacity transitions
+  const crossfadeAnimationId = ref<number | null>(null);
+  const crossfadeActive = ref(false);
+
+  // Active preload src - keeps last src when preload is active video
+  const activePreloadSrc = computed(() => {
+    if (props.preloadVideoSrc) {
+      return props.preloadVideoSrc;
+    }
+    // If preload is the active video, keep using the last loaded source
+    if (activeVideoIndex.value === 1 && lastPreloadSrc.value) {
+      return lastPreloadSrc.value;
+    }
+    return '';
+  });
+
+  // Track the preload src when it changes (avoid side effects in computed)
+  watch(
+    () => props.preloadVideoSrc,
+    (newSrc) => {
+      if (newSrc) {
+        lastPreloadSrc.value = newSrc;
+      }
+    },
+    { immediate: true }
+  );
+
+  // Crossfade opacity state - for non-animated states (initial/final)
+  // During active crossfade, the animation loop handles opacity directly
+  const crossfadeState = computed(() => {
+    // If crossfade animation is running, return neutral values (animation loop handles it)
+    if (crossfadeActive.value) {
+      return {
+        mainOpacity: 1, // Will be overridden by animation loop
+        preloadOpacity: 1, // Will be overridden by animation loop
+        isInCrossfade: true,
+      };
+    }
+
+    // If no active transition, return full visibility for active video
+    if (!props.editorMode || !props.activeTransition) {
+      return {
+        mainOpacity: activeVideoIndex.value === 0 ? 1 : 0,
+        preloadOpacity: activeVideoIndex.value === 1 ? 1 : 0,
+        isInCrossfade: false,
+      };
+    }
+
+    // Transition exists but animation not started yet - calculate initial state
+    const { startTime, duration } = props.activeTransition;
+    const currentTime = props.currentTime;
+    const progress = duration > 0 ? Math.max(0, Math.min(1, (currentTime - startTime) / duration)) : 0;
+
+    return {
+      mainOpacity: Math.max(0, Math.min(1, 1 - progress)),
+      preloadOpacity: Math.max(0, Math.min(1, progress)),
+      isInCrossfade: progress > 0 && progress < 1,
+    };
+  });
+
+  // Crossfade animation state tracking
+  const crossfadeStartTime = ref<number>(0); // Wall-clock time when crossfade started
+  const crossfadeInitialProgress = ref<number>(0); // Progress into transition when crossfade started
+  const crossfadePausedAt = ref<number | null>(null); // Progress when animation was paused (for pause/resume)
+
+  // Smooth crossfade animation loop using requestAnimationFrame (60fps)
+  // This bypasses Vue's reactivity for smooth opacity interpolation
+  // Uses elapsed wall-clock time to ensure smooth 60fps animation regardless of video timeupdate frequency
+  function startCrossfadeAnimation() {
+    if (crossfadeAnimationId.value !== null || !props.activeTransition) {
+      return;
+    }
+
+    const transition = props.activeTransition;
+    const mainVideo = videoRef.value;
+    const preloadVideo = preloadVideoRef.value;
+
+    if (!mainVideo || !preloadVideo) {
+      console.warn('[startCrossfadeAnimation] Missing video refs');
+      return;
+    }
+
+    // Calculate current progress into transition (when crossfade starts)
+    const currentProgress =
+      transition.duration > 0
+        ? Math.max(0, Math.min(1, (props.currentTime - transition.startTime) / transition.duration))
+        : 0;
+
+    // Store the start state for time-based interpolation
+    crossfadeStartTime.value = performance.now();
+    crossfadeInitialProgress.value = currentProgress;
+    crossfadeActive.value = true;
+
+    // Calculate remaining duration in milliseconds
+    const remainingDuration = transition.duration * (1 - currentProgress) * 1000;
+
+    console.log(
+      '[startCrossfadeAnimation] Starting smooth crossfade animation',
+      'transition:',
+      transition.startTime.toFixed(3),
+      '-',
+      transition.endTime.toFixed(3),
+      'initialProgress:',
+      (currentProgress * 100).toFixed(1) + '%',
+      'remainingDuration:',
+      remainingDuration.toFixed(0) + 'ms'
+    );
+
+    function animate() {
+      // Check if we should continue animating
+      if (!crossfadeActive.value) {
+        return;
+      }
+
+      const mainVideo = videoRef.value;
+      const preloadVideo = preloadVideoRef.value;
+
+      if (!mainVideo || !preloadVideo || !props.activeTransition) {
+        stopCrossfadeAnimation(true); // Reset opacity on abort
+        return;
+      }
+
+      const transition = props.activeTransition;
+
+      // Handle pause/resume - if video is paused, save progress and wait
+      const isPaused = mainVideo.paused && preloadVideo.paused;
+      if (isPaused) {
+        // Calculate current progress before pausing
+        if (crossfadePausedAt.value === null) {
+          const elapsedMs = performance.now() - crossfadeStartTime.value;
+          const transitionDurationMs = transition.duration * 1000;
+          const progressSinceStart = transitionDurationMs > 0 ? elapsedMs / transitionDurationMs : 1;
+          crossfadePausedAt.value = Math.min(1, crossfadeInitialProgress.value + progressSinceStart);
+        }
+        // Continue the loop but don't advance progress while paused
+        crossfadeAnimationId.value = requestAnimationFrame(animate);
+        return;
+      } else if (crossfadePausedAt.value !== null) {
+        // Resuming from pause - reset timing based on saved progress
+        crossfadeInitialProgress.value = crossfadePausedAt.value;
+        crossfadeStartTime.value = performance.now();
+        crossfadePausedAt.value = null;
+      }
+
+      // Calculate progress using wall-clock time for smooth animation
+      // This ensures 60fps smooth animation regardless of video timeupdate frequency
+      const elapsedMs = performance.now() - crossfadeStartTime.value;
+      const transitionDurationMs = transition.duration * 1000;
+
+      // Calculate how much progress we've made since animation started (in progress units)
+      const progressSinceStart = transitionDurationMs > 0 ? elapsedMs / transitionDurationMs : 1;
+
+      // Total progress is initial progress + progress made during animation
+      const progress = Math.max(0, Math.min(1, crossfadeInitialProgress.value + progressSinceStart));
+
+      // Calculate opacities with smooth interpolation
+      const mainOpacity = Math.max(0, Math.min(1, 1 - progress));
+      const preloadOpacity = Math.max(0, Math.min(1, progress));
+
+      // Apply opacities directly to DOM elements for smooth animation (bypasses Vue reactivity)
+      mainVideo.style.opacity = String(mainOpacity);
+      preloadVideo.style.opacity = String(preloadOpacity);
+
+      // Apply volume crossfade for smooth audio transition
+      // Use the same opacity values for audio volume (linear fade matches visual)
+      mainVideo.volume = mainOpacity;
+      preloadVideo.volume = preloadOpacity;
+
+      // Check if crossfade is complete (progress >= 1)
+      if (progress >= 1) {
+        console.log(
+          '[crossfadeAnimation] Crossfade complete, progress:',
+          (progress * 100).toFixed(1) + '%',
+          'elapsed:',
+          elapsedMs.toFixed(0) + 'ms'
+        );
+        // Don't stop animation here - let the parent call completeCrossfade
+        // This ensures sync with parent's state management
+        return;
+      }
+
+      // Continue animation
+      crossfadeAnimationId.value = requestAnimationFrame(animate);
+    }
+
+    // Start the animation loop
+    crossfadeAnimationId.value = requestAnimationFrame(animate);
+  }
+
+  function stopCrossfadeAnimation(resetOpacity: boolean = false) {
+    if (crossfadeAnimationId.value !== null) {
+      cancelAnimationFrame(crossfadeAnimationId.value);
+      crossfadeAnimationId.value = null;
+    }
+    crossfadeActive.value = false;
+    crossfadePausedAt.value = null;
+
+    // Only reset opacity styles if requested (e.g., when animation is aborted, not completed)
+    if (resetOpacity) {
+      const mainVideo = videoRef.value;
+      const preloadVideo = preloadVideoRef.value;
+      if (mainVideo) {
+        mainVideo.style.opacity = '';
+      }
+      if (preloadVideo) {
+        preloadVideo.style.opacity = '';
+      }
+    }
+  }
+
+  // Computed display values for time indicator
+  const displayCurrentTime = computed(() => {
+    // In editor mode, currentTime prop is already the global timeline position
+    if (props.editorMode) {
+      return props.currentTime;
+    }
+    // In clip mode, show the current time from props
+    return props.currentTime;
+  });
+
+  const displayDuration = computed(() => {
+    // In editor mode, use the total duration from all sources
+    if (props.editorMode && props.editorTotalDuration > 0) {
+      return props.editorTotalDuration;
+    }
+    // In clip mode, use the video element's duration
+    return duration.value;
+  });
 
   // Track actual image dimensions for stickers (stickerId -> {width, height})
   const stickerImageDimensions = ref<Record<string, { width: number; height: number }>>({});
@@ -2039,6 +2306,30 @@
   function onTimeUpdate() {
     if (videoRef.value && !isDraggingProgress.value) {
       const currentVideoTime = videoRef.value.currentTime;
+
+      // In editor mode, simply emit the time without segment logic
+      // The parent component handles time mapping for multiple sources
+      if (props.editorMode) {
+        // Only emit time updates from main video when it's the active video (index 0)
+        // When activeVideoIndex === 1, the preload video is active and handles time updates
+        if (activeVideoIndex.value === 0) {
+          // Only log occasionally to avoid spam
+          if (Math.floor(currentVideoTime * 10) % 5 === 0) {
+            console.log(
+              '[ClipEditorPreview.onTimeUpdate] Main video time:',
+              currentVideoTime.toFixed(3),
+              'activeVideoIndex:',
+              activeVideoIndex.value,
+              'paused:',
+              videoRef.value.paused
+            );
+          }
+          emit('timeUpdate', currentVideoTime);
+        }
+        return;
+      }
+
+      // Clip mode: segment-based time management
       const segments = sortedSegments.value;
 
       let currentSegmentIndex = -1;
@@ -2093,13 +2384,303 @@
     }
   }
 
-  function onEnded() {
+  function onEnded(event: Event) {
+    const endedVideo = event.target as HTMLVideoElement;
+    const isMainVideo = endedVideo === videoRef.value;
+    const isPreloadVideo = endedVideo === preloadVideoRef.value;
+
+    console.log(
+      '[ClipEditorPreview.onEnded] Called.',
+      'isMainVideo:',
+      isMainVideo,
+      'isPreloadVideo:',
+      isPreloadVideo,
+      'activeVideoIndex:',
+      activeVideoIndex.value,
+      'hasActiveTransition:',
+      !!props.activeTransition,
+      'endedVideo.currentTime:',
+      endedVideo.currentTime.toFixed(3)
+    );
+
+    // In editor mode, handle video ended based on which video ended
+    if (props.editorMode) {
+      // If we're in a crossfade and the MAIN video ended, this is expected
+      // The preload video should continue playing - don't emit videoEnded yet
+      if (props.activeTransition && endedVideo === videoRef.value && preloadVideoRef.value) {
+        // Main video's media file ended during crossfade
+        // This happens when the source file is shorter than the timeline position
+        // We need to complete the crossfade immediately and sync the timeline
+        const transition = props.activeTransition;
+        console.log(
+          '[ClipEditorPreview.onEnded] Main video media ended during crossfade.',
+          'Transition zone:',
+          transition.startTime.toFixed(3),
+          '-',
+          transition.endTime.toFixed(3),
+          'preloadVideo.currentTime:',
+          preloadVideoRef.value.currentTime.toFixed(3)
+        );
+
+        // Make sure preload video is playing and has proper volume
+        preloadVideoRef.value.volume = 1;
+        if (preloadVideoRef.value.paused) {
+          preloadVideoRef.value.play().catch(() => {});
+        }
+
+        // Switch to preload as active since main video can no longer display
+        activeVideoIndex.value = 1;
+        preloadVideoReady.value = false;
+
+        // Emit that crossfade completed (video swap happened)
+        // Parent should update timeline to transition end position
+        emit('videoSwapped');
+        emit('videoElementReady', preloadVideoRef.value);
+
+        // Also emit a special event to tell parent to jump to end of transition
+        // This syncs the timeline with the visual state
+        emit('crossfadeCompleted', transition.endTime);
+        return;
+      }
+
+      // If preload video ended (or no crossfade), emit to parent
+      console.log('[ClipEditorPreview.onEnded] Emitting videoEnded to parent');
+      emit('videoEnded');
+      return;
+    }
+
     if (videoRef.value) {
       const firstSegment = sortedSegments.value[0];
       videoRef.value.currentTime = firstSegment?.start_time || props.clipStart;
     }
     // Sync after loop back
     syncAllPreviewVideos(true);
+  }
+
+  // Called when preload video is ready to play
+  function onPreloadCanPlay() {
+    if (!props.editorMode || !preloadVideoRef.value) return;
+    preloadVideoReady.value = true;
+  }
+
+  // Called when preload video metadata/data is loaded
+  function onPreloadLoadedData() {
+    if (!props.editorMode || !preloadVideoRef.value) return;
+
+    // If we're the active video after a crossfade, make sure we're playing
+    if (activeVideoIndex.value === 1 && !preloadVideoRef.value.paused) {
+      // Already playing, good
+    } else if (activeVideoIndex.value === 1 && props.isPlaying) {
+      // Should be playing but paused - resume
+      preloadVideoRef.value.play().catch(() => {});
+    }
+  }
+
+  // Time update handler for preload video (when it's the active video after crossfade)
+  function onPreloadTimeUpdate() {
+    if (!props.editorMode || !preloadVideoRef.value) return;
+
+    // Only emit time updates when preload is the active video (index 1)
+    // During crossfade, the main video drives time updates
+    // After crossfade completes (activeVideoIndex === 1), preload takes over
+    if (activeVideoIndex.value === 1) {
+      const currentVideoTime = preloadVideoRef.value.currentTime;
+      console.log(
+        '[ClipEditorPreview.onPreloadTimeUpdate] Emitting time:',
+        currentVideoTime.toFixed(3),
+        'activeVideoIndex:',
+        activeVideoIndex.value
+      );
+      emit('timeUpdate', currentVideoTime);
+    }
+  }
+
+  // Start crossfade playback (both videos play simultaneously during transition)
+  // Called when entering a transition zone
+  function startCrossfade(preloadSeekTime: number): boolean {
+    console.log(
+      '[ClipEditorPreview.startCrossfade] Called with seekTime:',
+      preloadSeekTime,
+      'activeVideoIndex:',
+      activeVideoIndex.value
+    );
+
+    if (!props.editorMode || !preloadVideoRef.value || !videoRef.value) {
+      console.log('[ClipEditorPreview.startCrossfade] Missing refs, returning false');
+      return false;
+    }
+
+    const preloadVideo = preloadVideoRef.value;
+    const mainVideo = videoRef.value;
+
+    console.log(
+      '[ClipEditorPreview.startCrossfade] Before seek:',
+      'mainVideo.currentTime:',
+      mainVideo.currentTime.toFixed(3),
+      'mainVideo.paused:',
+      mainVideo.paused,
+      'preloadVideo.currentTime:',
+      preloadVideo.currentTime.toFixed(3),
+      'preloadVideo.paused:',
+      preloadVideo.paused,
+      'preloadVideo.readyState:',
+      preloadVideo.readyState
+    );
+
+    // Seek preload video to the correct position
+    preloadVideo.currentTime = preloadSeekTime;
+
+    // Copy audio settings - during crossfade, we'll manage volume via the parent
+    preloadVideo.volume = mainVideo.volume;
+    preloadVideo.muted = mainVideo.muted;
+
+    // Set initial opacity values for crossfade (preload starts invisible, main visible)
+    mainVideo.style.opacity = '1';
+    preloadVideo.style.opacity = '0';
+
+    // Both videos should play during crossfade
+    // Use a more robust approach: wait for canplay if not ready
+    const startPreloadPlayback = () => {
+      console.log(
+        '[ClipEditorPreview.startCrossfade.startPreloadPlayback]',
+        'mainVideo.paused:',
+        mainVideo.paused,
+        'preloadVideo.paused:',
+        preloadVideo.paused
+      );
+      if (!mainVideo.paused && preloadVideo.paused) {
+        preloadVideo.play().catch((err) => {
+          console.warn('[ClipEditorPreview] Could not start preload video during crossfade:', err);
+        });
+      }
+
+      // Start the smooth animation loop once preload is playing
+      startCrossfadeAnimation();
+    };
+
+    // If preload video has data, start immediately
+    if (preloadVideo.readyState >= 3) {
+      // HAVE_FUTURE_DATA or HAVE_ENOUGH_DATA
+      console.log('[ClipEditorPreview.startCrossfade] Preload ready, starting immediately');
+      startPreloadPlayback();
+    } else {
+      console.log('[ClipEditorPreview.startCrossfade] Preload not ready, adding canplay listener');
+      // Wait for video to be ready
+      const handleCanPlay = () => {
+        console.log('[ClipEditorPreview.startCrossfade.handleCanPlay] Fired');
+        startPreloadPlayback();
+        preloadVideo.removeEventListener('canplay', handleCanPlay);
+      };
+      preloadVideo.addEventListener('canplay', handleCanPlay);
+
+      // Also try to start immediately - browser may buffer and play
+      startPreloadPlayback();
+    }
+
+    return true;
+  }
+
+  // Complete the crossfade (called when transition ends, to finalize the switch)
+  function completeCrossfade(): void {
+    console.log('[ClipEditorPreview.completeCrossfade] Called. activeVideoIndex:', activeVideoIndex.value);
+
+    // Stop the animation loop first (don't reset opacity - we'll set final state)
+    stopCrossfadeAnimation(false);
+
+    if (!props.editorMode || !preloadVideoRef.value || !videoRef.value) {
+      console.log('[ClipEditorPreview.completeCrossfade] Missing refs, returning');
+      return;
+    }
+
+    const preloadVideo = preloadVideoRef.value;
+    const mainVideo = videoRef.value;
+    const wasPlaying = !mainVideo.paused || !preloadVideo.paused; // Either video was playing
+
+    console.log(
+      '[ClipEditorPreview.completeCrossfade]',
+      'mainVideo.currentTime:',
+      mainVideo.currentTime.toFixed(3),
+      'mainVideo.paused:',
+      mainVideo.paused,
+      'preloadVideo.currentTime:',
+      preloadVideo.currentTime.toFixed(3),
+      'preloadVideo.paused:',
+      preloadVideo.paused,
+      'wasPlaying:',
+      wasPlaying
+    );
+
+    // Switch to preload as the active video
+    activeVideoIndex.value = 1;
+    console.log('[ClipEditorPreview.completeCrossfade] Set activeVideoIndex to 1');
+
+    // Set final opacity values (main hidden, preload visible)
+    // Clear inline styles so Vue's reactive styles can take over
+    mainVideo.style.opacity = '';
+    preloadVideo.style.opacity = '';
+
+    // Pause the main video (it's now fully faded out)
+    mainVideo.pause();
+
+    // Ensure preload video is playing if we were playing before
+    if (wasPlaying && preloadVideo.paused) {
+      console.log('[ClipEditorPreview.completeCrossfade] Starting preload playback');
+      preloadVideo.play().catch(() => {});
+    }
+
+    // Restore normal volume on preload video
+    preloadVideo.volume = 1;
+
+    // Emit the new video element so parent can track it
+    console.log('[ClipEditorPreview.completeCrossfade] Emitting videoElementReady and videoSwapped');
+    emit('videoElementReady', preloadVideo);
+    emit('videoSwapped');
+
+    preloadVideoReady.value = false;
+  }
+
+  // Seamlessly swap to the preloaded video (called by parent during source transition)
+  // For instant swap (non-crossfade) scenarios
+  function swapToPreloadedVideo(seekTime: number): boolean {
+    if (!props.editorMode || !preloadVideoReady.value || !preloadVideoRef.value || !videoRef.value) {
+      return false;
+    }
+
+    const preloadVideo = preloadVideoRef.value;
+    const mainVideo = videoRef.value;
+
+    // Seek preload video to the correct position
+    preloadVideo.currentTime = seekTime;
+
+    // Copy audio settings
+    preloadVideo.volume = mainVideo.volume;
+    preloadVideo.muted = mainVideo.muted;
+
+    // Swap active video
+    activeVideoIndex.value = 1;
+
+    // Start playing the preload video
+    preloadVideo.play().catch(() => {});
+
+    // Pause the main video
+    mainVideo.pause();
+
+    // Emit the new video element so parent can track it
+    emit('videoElementReady', preloadVideo);
+    emit('videoSwapped');
+
+    preloadVideoReady.value = false;
+    return true;
+  }
+
+  // Check if preload video is ready for seamless swap
+  function isPreloadReady(): boolean {
+    return preloadVideoReady.value && preloadVideoRef.value !== null;
+  }
+
+  // Get preload video element for external control (e.g., volume during crossfade)
+  function getPreloadVideoElement(): HTMLVideoElement | null {
+    return preloadVideoRef.value;
   }
 
   function onPlay() {
@@ -2550,6 +3131,48 @@
     };
   }
 
+  // Get style for main video including crossfade opacity
+  function getMainVideoStyle(): Record<string, string> {
+    const filterStyle = getVideoFilterStyle();
+
+    if (!props.editorMode) {
+      return filterStyle;
+    }
+
+    // During active crossfade animation, don't set opacity here
+    // The animation loop handles it directly via inline styles for smooth 60fps transitions
+    if (crossfadeActive.value) {
+      return filterStyle;
+    }
+
+    // When not in crossfade, use opacity 1 or 0 based on active video
+    return {
+      ...filterStyle,
+      opacity: activeVideoIndex.value === 0 ? '1' : '0',
+    };
+  }
+
+  // Get style for preload video including crossfade opacity
+  function getPreloadVideoStyle(): Record<string, string> {
+    const filterStyle = getVideoFilterStyle();
+
+    if (!props.editorMode) {
+      return filterStyle;
+    }
+
+    // During active crossfade animation, don't set opacity here
+    // The animation loop handles it directly via inline styles for smooth 60fps transitions
+    if (crossfadeActive.value) {
+      return filterStyle;
+    }
+
+    // When not in crossfade, use opacity 1 or 0 based on active video
+    return {
+      ...filterStyle,
+      opacity: activeVideoIndex.value === 1 ? '1' : '0',
+    };
+  }
+
   function getVignetteStyle(): Record<string, string> {
     const vignette = props.filterSettings?.vignette || 0;
     if (vignette === 0) {
@@ -2657,10 +3280,28 @@
     document.removeEventListener('mousemove', onSubtitleResizeMove);
     document.removeEventListener('mouseup', onSubtitleResizeEnd);
     stopSyncLoop();
+    stopCrossfadeAnimation(true); // Clean up crossfade animation and reset opacity
     if (resizeObserver) {
       resizeObserver.disconnect();
     }
   });
+
+  // Watch for main video src changes
+  // NOTE: We no longer reset activeVideoIndex here because:
+  // 1. After crossfade completes, the main video src changes to the new source
+  // 2. But the preload video (now active) is already playing that source
+  // 3. The main video's time updates are now ignored when activeVideoIndex === 1
+  // 4. activeVideoIndex will be reset when we actually need to switch back to main
+  watch(
+    () => props.videoSrc,
+    (newSrc, oldSrc) => {
+      if (props.editorMode && newSrc !== oldSrc) {
+        console.log('[ClipEditorPreview watch videoSrc] Src changed, activeVideoIndex:', activeVideoIndex.value);
+        // Don't reset activeVideoIndex - let the crossfade logic handle it
+        // The preload video will continue playing and its time updates will be used
+      }
+    }
+  );
 
   onMounted(() => {
     if (videoRef.value) {
@@ -2692,6 +3333,23 @@
   // Expose functions for parent component access
   defineExpose({
     getOverlayContainerHeight,
+    swapToPreloadedVideo,
+    startCrossfade,
+    completeCrossfade,
+    isPreloadReady,
+    getPreloadVideoElement,
+    // Expose activeVideoIndex so parent can check which video is active (0 = main, 1 = preload)
+    get activeVideoIndex() {
+      return activeVideoIndex.value;
+    },
+    resetActiveVideo: () => {
+      activeVideoIndex.value = 0;
+      preloadVideoReady.value = false;
+      // Emit main video element as active
+      if (videoRef.value) {
+        emit('videoElementReady', videoRef.value);
+      }
+    },
   });
 </script>
 
