@@ -238,6 +238,7 @@
             :video-src="videoSrc"
             :audio-gain-db="effectiveAudioGainDb"
             :track-db-values="trackDbValues"
+            :is-playing="isPlaying"
             @seek="seekTo"
             @update-trim-segment="updateTrimSegment"
             @update-audio-track="updateAudioTrackLocal"
@@ -269,6 +270,7 @@
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
   import { Film, X, Loader2, Check } from 'lucide-vue-next';
+  import { Separator } from '@/components/ui/separator';
   import type {
     ClipEditorTab,
     AudioTrack,

@@ -485,10 +485,14 @@
           <!-- Playhead Line (inside content wrapper so it scrolls with content) -->
           <div
             v-if="totalDuration > 0"
-            class="absolute top-0 bottom-0 z-[60] cursor-ew-resize group"
-            :class="{ 'cursor-grabbing': isDraggingPlayhead }"
+            class="absolute top-0 bottom-0 z-[60] cursor-ew-resize group playhead-line"
+            :class="{
+              'cursor-grabbing': isDraggingPlayhead,
+              'playhead-dragging': isDraggingPlayhead,
+              'playhead-playing': props.isPlaying && !isDraggingPlayhead,
+            }"
             :style="{
-              left: `calc(66px + (100% - 80px) * ${playheadPosition})`,
+              '--playhead-position': effectivePlayheadPosition,
               width: '12px',
               marginLeft: '-6px',
             }"
@@ -574,12 +578,14 @@
       videoSrc?: string;
       audioGainDb?: number; // dB gain (-20 to +20) to apply to main video waveform visualization
       trackDbValues?: Record<string, number>; // Per-track dB values for audio track waveforms
+      isPlaying?: boolean; // Whether video is currently playing (for smooth playhead animation)
     }>(),
     {
       audioGainDb: 0,
       trackDbValues: () => ({}),
       filterSegments: () => [],
       watermarks: () => [],
+      isPlaying: false,
     }
   );
 
@@ -622,6 +628,12 @@
 
   // Playhead drag state
   const isDraggingPlayhead = ref(false);
+
+  // Smooth playhead animation state
+  const smoothPlayheadPosition = ref(0);
+  let animationFrameId: number | null = null;
+  let lastUpdateTime = 0;
+  let targetPosition = 0;
 
   // Audio waveform
   const { waveformData, isLoaded: isWaveformLoaded, loadWaveformFromVideo } = useAudioWaveform();
@@ -700,6 +712,46 @@
     const totalGapPercent = (segments.length - 1) * GAP_PERCENT;
     const availablePercent = 100 - totalGapPercent;
 
+    // Determine optimal intervals based on TOTAL duration and zoom (consistent for all segments)
+    // This ensures the ruler has the same scale throughout
+    const effectiveDurationForZoom = totalSegmentDuration / zoomLevel.value;
+    let majorInterval: number;
+    let minorInterval: number;
+
+    if (effectiveDurationForZoom < 2) {
+      // Very short: major every 0.5s, minor every 0.1s
+      majorInterval = 0.5;
+      minorInterval = 0.1;
+    } else if (effectiveDurationForZoom < 5) {
+      // Short: major every 1s, minor every 0.25s
+      majorInterval = 1;
+      minorInterval = 0.25;
+    } else if (effectiveDurationForZoom < 10) {
+      // Medium-short: major every 1s, minor every 0.5s
+      majorInterval = 1;
+      minorInterval = 0.5;
+    } else if (effectiveDurationForZoom < 30) {
+      // Medium: major every 5s, minor every 1s
+      majorInterval = 5;
+      minorInterval = 1;
+    } else if (effectiveDurationForZoom < 60) {
+      // Medium-long: major every 10s, minor every 2s
+      majorInterval = 10;
+      minorInterval = 2;
+    } else if (effectiveDurationForZoom < 120) {
+      // Long: major every 15s, minor every 5s
+      majorInterval = 15;
+      minorInterval = 5;
+    } else if (effectiveDurationForZoom < 600) {
+      // Very long: major every 30s, minor every 10s
+      majorInterval = 30;
+      minorInterval = 10;
+    } else {
+      // Extra long: major every 60s, minor every 20s
+      majorInterval = 60;
+      minorInterval = 20;
+    }
+
     const layouts: SegmentLayout[] = [];
     let currentPercent = 0;
     let cumulativeTime = 0; // Track cumulative effective time
@@ -712,48 +764,8 @@
       const effectiveStartTime = cumulativeTime;
       const effectiveEndTime = cumulativeTime + segmentDuration;
 
-      // Generate ticks for this segment using effective times
+      // Generate ticks for this segment using the consistent intervals
       const ticks: SegmentTick[] = [];
-
-      // Determine optimal intervals based on segment duration and zoom
-      // More granular intervals for shorter durations
-      let majorInterval: number;
-      let minorInterval: number;
-      const effectiveDurationForZoom = segmentDuration / zoomLevel.value;
-
-      if (effectiveDurationForZoom < 2) {
-        // Very short: major every 0.5s, minor every 0.1s
-        majorInterval = 0.5;
-        minorInterval = 0.1;
-      } else if (effectiveDurationForZoom < 5) {
-        // Short: major every 1s, minor every 0.25s
-        majorInterval = 1;
-        minorInterval = 0.25;
-      } else if (effectiveDurationForZoom < 10) {
-        // Medium-short: major every 1s, minor every 0.5s
-        majorInterval = 1;
-        minorInterval = 0.5;
-      } else if (effectiveDurationForZoom < 30) {
-        // Medium: major every 5s, minor every 1s
-        majorInterval = 5;
-        minorInterval = 1;
-      } else if (effectiveDurationForZoom < 60) {
-        // Medium-long: major every 10s, minor every 2s
-        majorInterval = 10;
-        minorInterval = 2;
-      } else if (effectiveDurationForZoom < 120) {
-        // Long: major every 15s, minor every 5s
-        majorInterval = 15;
-        minorInterval = 5;
-      } else if (effectiveDurationForZoom < 600) {
-        // Very long: major every 30s, minor every 10s
-        majorInterval = 30;
-        minorInterval = 10;
-      } else {
-        // Extra long: major every 60s, minor every 20s
-        majorInterval = 60;
-        minorInterval = 20;
-      }
 
       // Generate intermediate ticks using effective times
       // Start from the first interval after effectiveStartTime
@@ -2314,6 +2326,86 @@
     { deep: true }
   );
 
+  // Smooth playhead animation functions
+  function startPlayheadAnimation() {
+    if (animationFrameId !== null) return;
+
+    lastUpdateTime = performance.now();
+    targetPosition = playheadPosition.value;
+    smoothPlayheadPosition.value = playheadPosition.value;
+
+    function animate(currentTime: number) {
+      if (!props.isPlaying || isDraggingPlayhead.value) {
+        animationFrameId = null;
+        return;
+      }
+
+      // Calculate time elapsed since last frame
+      const deltaTime = currentTime - lastUpdateTime;
+
+      // Interpolate smoothly towards target position
+      // Use a smooth interpolation that accounts for variable frame rates
+      const interpolationSpeed = 0.15; // Lower = smoother but more lag
+      const diff = targetPosition - smoothPlayheadPosition.value;
+
+      if (Math.abs(diff) > 0.0001) {
+        // Smooth interpolation
+        smoothPlayheadPosition.value += diff * Math.min(1, (interpolationSpeed * deltaTime) / 16);
+      } else {
+        smoothPlayheadPosition.value = targetPosition;
+      }
+
+      lastUpdateTime = currentTime;
+      animationFrameId = requestAnimationFrame(animate);
+    }
+
+    animationFrameId = requestAnimationFrame(animate);
+  }
+
+  function stopPlayheadAnimation() {
+    if (animationFrameId !== null) {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+    }
+    // Snap to exact position when stopping
+    smoothPlayheadPosition.value = playheadPosition.value;
+  }
+
+  // The effective playhead position used in the template
+  const effectivePlayheadPosition = computed(() => {
+    // During dragging, always use computed position directly (no animation)
+    if (isDraggingPlayhead.value) {
+      return playheadPosition.value;
+    }
+    // During playback, use smooth animated position
+    if (props.isPlaying) {
+      return smoothPlayheadPosition.value;
+    }
+    // When paused, use exact computed position
+    return playheadPosition.value;
+  });
+
+  // Watch for playback state changes
+  watch(
+    () => props.isPlaying,
+    (isPlaying) => {
+      if (isPlaying) {
+        startPlayheadAnimation();
+      } else {
+        stopPlayheadAnimation();
+      }
+    }
+  );
+
+  // Update target position when currentTime changes (during playback)
+  watch(playheadPosition, (newPosition) => {
+    targetPosition = newPosition;
+    // If not playing, sync immediately
+    if (!props.isPlaying) {
+      smoothPlayheadPosition.value = newPosition;
+    }
+  });
+
   // Lifecycle
   onMounted(() => {
     nextTick(async () => {
@@ -2328,6 +2420,7 @@
 
   onUnmounted(() => {
     cleanupResizeObserver();
+    stopPlayheadAnimation();
     document.removeEventListener('mousemove', onDragMove);
     document.removeEventListener('mouseup', onDragEnd);
     document.removeEventListener('mousemove', onResizeMove);
@@ -2474,5 +2567,24 @@
   .slider-zoom:hover::-moz-range-thumb {
     transform: scale(1.2);
     box-shadow: 0 2px 8px rgba(139, 92, 246, 0.4);
+  }
+
+  /* Playhead positioning using CSS custom property */
+  .playhead-line {
+    --playhead-position: 0;
+    left: calc(66px + (100% - 80px) * var(--playhead-position));
+    will-change: left;
+    /* Smooth transition for seeks (when paused) */
+    transition: left 100ms ease-out;
+  }
+
+  /* During playback, use requestAnimationFrame - disable CSS transition */
+  .playhead-line.playhead-playing {
+    transition: none;
+  }
+
+  /* Disable transition when dragging for immediate response */
+  .playhead-line.playhead-dragging {
+    transition: none !important;
   }
 </style>
