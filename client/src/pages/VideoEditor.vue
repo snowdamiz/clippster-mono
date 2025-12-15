@@ -96,79 +96,15 @@
 
               <!-- Project Card with Sources -->
               <template v-if="getSourceCount(project.id) > 0">
-                <!-- Dark background -->
-                <div class="absolute inset-0 z-0 bg-[#141414]"></div>
-
-                <!-- Stacked Source Thumbnails - Centered -->
-                <div class="absolute inset-0 z-10 flex items-center justify-center pb-16">
-                  <div class="relative w-44 h-28">
-                    <!-- Show up to 3 stacked thumbnails based on source count -->
-                    <template v-for="index in Math.min(getSourceCount(project.id), 3)" :key="index">
-                      <div
-                        class="absolute rounded-lg overflow-hidden border border-white/15 shadow-xl transition-transform group-hover:scale-[1.02]"
-                        :style="{
-                          width: index === 1 ? '100%' : index === 2 ? '88%' : '76%',
-                          height: index === 1 ? '100%' : index === 2 ? '88%' : '76%',
-                          left: index === 1 ? '0%' : index === 2 ? '12%' : '24%',
-                          top: index === 1 ? '0%' : index === 2 ? '10%' : '20%',
-                          zIndex: 4 - index,
-                          transform: `rotate(${index === 1 ? -3 : index === 2 ? 2 : -1}deg)`,
-                        }"
-                      >
-                        <!-- Show thumbnail if available, otherwise show placeholder -->
-                        <img
-                          v-if="getSourceThumbnails(project.id)[index - 1]"
-                          :src="getSourceThumbnails(project.id)[index - 1]"
-                          class="w-full h-full object-cover"
-                        />
-                        <div v-else class="w-full h-full bg-muted/80 flex items-center justify-center">
-                          <Film class="w-8 h-8 text-muted-foreground/40" />
-                        </div>
-                      </div>
-                    </template>
-                  </div>
-                </div>
-
-                <!-- Track Icons - Below thumbnails -->
-                <div
-                  v-if="hasAnyEdits(project.id)"
-                  class="absolute left-1/2 -translate-x-1/2 z-10 flex items-center"
-                  style="bottom: 72px"
-                >
-                  <div
-                    v-if="getProjectEditInfo(project.id).hasAudio"
-                    class="w-7 h-7 rounded-full bg-violet-500/30 border border-violet-400/50 flex items-center justify-center backdrop-blur-sm"
-                    title="Audio tracks"
-                  >
-                    <Music class="w-3.5 h-3.5 text-violet-300" />
-                  </div>
-                  <div
-                    v-if="getProjectEditInfo(project.id).hasText"
-                    class="w-7 h-7 rounded-full bg-blue-500/30 border border-blue-400/50 flex items-center justify-center -ml-1.5 backdrop-blur-sm"
-                    title="Text overlays"
-                  >
-                    <Type class="w-3.5 h-3.5 text-blue-300" />
-                  </div>
-                  <div
-                    v-if="getProjectEditInfo(project.id).hasStickers"
-                    class="w-7 h-7 rounded-full bg-amber-500/30 border border-amber-400/50 flex items-center justify-center -ml-1.5 backdrop-blur-sm"
-                    title="Stickers"
-                  >
-                    <Sticker class="w-3.5 h-3.5 text-amber-300" />
-                  </div>
-                  <div
-                    v-if="getProjectEditInfo(project.id).hasWatermarks"
-                    class="w-7 h-7 rounded-full bg-cyan-500/30 border border-cyan-400/50 flex items-center justify-center -ml-1.5 backdrop-blur-sm"
-                    title="Watermarks"
-                  >
-                    <Droplet class="w-3.5 h-3.5 text-cyan-300" />
-                  </div>
-                  <div
-                    v-if="getProjectEditInfo(project.id).hasEffects"
-                    class="w-7 h-7 rounded-full bg-pink-500/30 border border-pink-400/50 flex items-center justify-center -ml-1.5 backdrop-blur-sm"
-                    title="Effects"
-                  >
-                    <Sparkles class="w-3.5 h-3.5 text-pink-300" />
+                <!-- First source thumbnail as background -->
+                <div class="absolute inset-0 z-0">
+                  <img
+                    v-if="getSourceThumbnails(project.id)[0]"
+                    :src="getSourceThumbnails(project.id)[0]"
+                    class="w-full h-full object-cover"
+                  />
+                  <div v-else class="w-full h-full bg-muted flex items-center justify-center">
+                    <Film class="w-12 h-12 text-muted-foreground/40" />
                   </div>
                 </div>
 
@@ -336,22 +272,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, watch } from 'vue';
-  import {
-    Clapperboard,
-    Plus,
-    Trash2,
-    Search,
-    X,
-    Check,
-    Play,
-    Edit,
-    Film,
-    Type,
-    Sticker,
-    Droplet,
-    Music,
-    Sparkles,
-  } from 'lucide-vue-next';
+  import { Clapperboard, Plus, Trash2, Search, X, Check, Play, Edit, Film } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import PageLayout from '@/components/PageLayout.vue';

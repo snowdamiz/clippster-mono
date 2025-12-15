@@ -892,6 +892,7 @@ export interface ClipEditorDialogProps {
 
 // Editor tab types
 export type ClipEditorTab =
+  | 'sources'
   | 'audio'
   | 'filters'
   | 'text'
@@ -899,7 +900,8 @@ export type ClipEditorTab =
   | 'watermark'
   | 'subtitles'
   | 'aspect'
-  | 'transcript';
+  | 'transcript'
+  | 'export';
 
 // Timeline track types for clip editor
 export interface EditorTimelineTrack {
@@ -1033,7 +1035,8 @@ export type VideoEditorTab =
   | 'watermark'
   | 'subtitles'
   | 'aspect'
-  | 'transcript';
+  | 'transcript'
+  | 'export';
 
 // Source item displayed in the Sources tab (unified format for clips and raw videos)
 export interface SourceItem {

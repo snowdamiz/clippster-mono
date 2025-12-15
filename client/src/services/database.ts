@@ -158,6 +158,7 @@ export {
 // Re-export clip functions
 export {
   createClip,
+  getClip,
   getAllClips,
   getGeneratedClips,
   getDetectedClips,

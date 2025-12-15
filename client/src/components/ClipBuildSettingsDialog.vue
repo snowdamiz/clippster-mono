@@ -107,44 +107,36 @@
                     </div>
 
                     <div class="grid grid-cols-2 gap-2 sm:gap-3">
-                      <!-- 16:9 Landscape -->
-                      <button
-                        @click="toggleRatio('16:9')"
-                        :class="[
-                          'group relative overflow-hidden rounded-lg sm:rounded-xl border-2 transition-all',
-                          selectedRatios.includes('16:9')
-                            ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
-                            : 'border-border/50 bg-muted/20 hover:border-primary/30 hover:bg-muted/30',
-                        ]"
+                      <!-- 16:9 Landscape (Original - Always Selected) -->
+                      <div
+                        class="group relative overflow-hidden rounded-lg sm:rounded-xl border-2 transition-all border-emerald-500 bg-emerald-500/10 shadow-lg shadow-emerald-500/20"
                       >
                         <div class="p-3 sm:p-4 space-y-2 sm:space-y-3">
                           <div class="flex items-center justify-between">
-                            <span class="text-xs sm:text-sm font-bold text-foreground">16:9</span>
+                            <div class="flex items-center gap-1.5">
+                              <span class="text-xs sm:text-sm font-bold text-foreground">16:9</span>
+                              <span
+                                class="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full"
+                              >
+                                Original
+                              </span>
+                            </div>
                             <div
-                              :class="[
-                                'w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 flex items-center justify-center transition-all',
-                                selectedRatios.includes('16:9')
-                                  ? 'border-primary bg-primary scale-110'
-                                  : 'border-muted-foreground/30',
-                              ]"
+                              class="w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 flex items-center justify-center transition-all border-emerald-500 bg-emerald-500 scale-110"
                             >
-                              <CheckIcon
-                                v-if="selectedRatios.includes('16:9')"
-                                class="h-2.5 w-2.5 sm:h-3 sm:w-3 text-primary-foreground"
-                              />
+                              <CheckIcon class="h-2.5 w-2.5 sm:h-3 sm:w-3 text-white" />
                             </div>
                           </div>
                           <div class="flex items-center justify-center py-3 sm:py-4">
                             <div
-                              class="w-14 h-8 sm:w-20 sm:h-11 border-2 border-current rounded transition-all"
-                              :class="selectedRatios.includes('16:9') ? 'text-primary' : 'text-muted-foreground/40'"
+                              class="w-14 h-8 sm:w-20 sm:h-11 border-2 border-emerald-500 rounded transition-all"
                             ></div>
                           </div>
                           <div class="text-center">
                             <p class="text-[10px] sm:text-xs font-medium text-muted-foreground">YouTube • Twitch</p>
                           </div>
                         </div>
-                      </button>
+                      </div>
 
                       <!-- 9:16 Portrait -->
                       <button
@@ -1169,6 +1161,10 @@
         // Initialize from saved AspectTab settings if available, otherwise use defaults
         if (props.initialAspectRatios && props.initialAspectRatios.length > 0) {
           selectedRatios.value = [...props.initialAspectRatios];
+          // Ensure 16:9 (Original) is always included
+          if (!selectedRatios.value.includes('16:9')) {
+            selectedRatios.value.unshift('16:9');
+          }
           console.log('[ClipBuildSettingsDialog] Initialized aspect ratios from saved settings:', selectedRatios.value);
         } else {
           selectedRatios.value = ['16:9'];
@@ -1457,11 +1453,21 @@
 
   // Methods
   function toggleRatio(ratio: string) {
+    // 16:9 (Original) is always selected and cannot be removed
+    if (ratio === '16:9') return;
+
     const index = selectedRatios.value.indexOf(ratio);
     if (index > -1) {
       selectedRatios.value.splice(index, 1);
     } else {
       selectedRatios.value.push(ratio);
+    }
+  }
+
+  // Ensure 16:9 is always included in aspect ratios
+  function ensureOriginalRatio() {
+    if (!selectedRatios.value.includes('16:9')) {
+      selectedRatios.value.unshift('16:9');
     }
   }
 

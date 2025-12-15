@@ -1,18 +1,18 @@
 <template>
   <div class="flex items-center gap-2 px-4.5 mt-4 -mb-1.5 flex-shrink-0">
-    <!-- 16:9 Original (always available) -->
+    <!-- 16:9 Original (always selected) -->
     <button
       @click="selectRatio('16:9')"
       :class="[
         'flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-all border',
         previewAspectRatio === '16:9'
           ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-          : 'bg-white/5 text-white/60 border-white/10 hover:bg-white/10 hover:border-white/20',
+          : 'bg-emerald-500/10 text-emerald-300/80 border-emerald-500/30 hover:bg-emerald-500/20',
       ]"
     >
       <div class="w-3.5 h-2 border border-current rounded-[1px]"></div>
       <span>16:9</span>
-      <span v-if="previewAspectRatio === '16:9'" class="text-[9px] text-emerald-400/70">Original</span>
+      <span class="text-[9px] text-emerald-400/70">Original</span>
     </button>
 
     <!-- Other aspect ratios -->

@@ -166,12 +166,8 @@
                   <!-- Source background gradient -->
                   <div class="absolute inset-0 bg-gradient-to-r from-violet-900/30 to-indigo-900/20"></div>
 
-                  <!-- Waveform canvas for this source -->
-                  <canvas
-                    :ref="(el) => setSourceWaveformCanvasRef(el, source.id)"
-                    class="absolute inset-0 w-full h-full pointer-events-none"
-                    style="mix-blend-mode: normal; z-index: 5"
-                  ></canvas>
+                  <!-- Thumbnail preview - thumbnails would need to be pre-loaded as data URLs -->
+                  <!-- For now, showing gradient background only -->
 
                   <!-- Source label -->
                   <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
@@ -607,12 +603,13 @@
             }"
             :style="{
               '--playhead-position': effectivePlayheadPosition,
-              width: '12px',
+              width: '13px',
               marginLeft: '-6px',
             }"
             @mousedown="onPlayheadMouseDown"
           >
-            <div class="absolute inset-x-[5px] inset-y-0 bg-white/80 shadow-lg group-hover:bg-white transition-colors">
+            <!-- The actual 1px line - positioned at exact pixel boundary -->
+            <div class="absolute inset-y-0 bg-white/80 group-hover:bg-white transition-colors playhead-line-inner">
               <!-- Top circle -->
               <div
                 class="absolute top-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-white rounded-full shadow-md group-hover:scale-110 transition-transform"
@@ -775,7 +772,6 @@
   const videoTrackContentRef = ref<HTMLElement | null>(null);
   const segmentRefs = ref<Map<string, HTMLElement>>(new Map());
   const waveformCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map());
-  const sourceWaveformCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map()); // For editor mode video sources
   const audioWaveformCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map());
   const audioSegmentCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map()); // key: `${trackId}-${segmentIndex}`
   const audioWaveformData = ref<Map<string, { peaks: { min: number; max: number }[]; duration: number }>>(new Map());
@@ -853,6 +849,12 @@
 
   // Sorted trim segments by start time - creates a default segment if none exist
   const sortedTrimSegments = computed(() => {
+    // Editor mode: don't use trim segments, return empty array
+    // The timeline layout is handled differently in editor mode
+    if (props.editorMode) {
+      return [];
+    }
+
     const existingSegments = [...props.trimSegments]
       .filter((s) => !s.isDeleted)
       .sort((a, b) => a.startTime - b.startTime);
@@ -875,11 +877,21 @@
 
   // Calculate total duration of video segments only
   const videoSegmentDuration = computed(() => {
+    // Editor mode: use video sources duration, not trim segments
+    if (props.editorMode) {
+      if (props.videoSources.length === 0) return props.duration || 300;
+      return Math.max(...props.videoSources.map((s) => s.end_time));
+    }
     return sortedTrimSegments.value.reduce((sum, seg) => sum + (seg.endTime - seg.startTime), 0);
   });
 
   // Calculate total duration including audio tracks (use the longest)
   const totalDuration = computed(() => {
+    // Editor mode: use props.duration directly (it's the editorDuration from parent)
+    if (props.editorMode) {
+      return props.duration || 300;
+    }
+
     const segmentDuration = videoSegmentDuration.value;
 
     // Find the longest audio track
@@ -897,55 +909,106 @@
 
   // Calculate segment layouts (segments are butted up against each other)
   const segmentLayouts = computed((): SegmentLayout[] => {
+    const timelineDuration = totalDuration.value;
+    if (timelineDuration <= 0) return [];
+
+    // Determine optimal intervals based on visible duration (duration / zoom)
+    // More zoom = smaller visible duration = more granular ticks for precise editing
+    const visibleDuration = timelineDuration / zoomLevel.value;
+    let majorInterval: number;
+    let minorInterval: number;
+
+    // The thresholds are based on what's comfortable to read on screen
+    // More granular intervals when zoomed in for precise frame-level editing
+    if (visibleDuration < 0.5) {
+      // Extremely zoomed: major every 0.1s, minor every 0.02s (frame-level precision)
+      majorInterval = 0.1;
+      minorInterval = 0.02;
+    } else if (visibleDuration < 1) {
+      // Very zoomed: major every 0.25s, minor every 0.05s
+      majorInterval = 0.25;
+      minorInterval = 0.05;
+    } else if (visibleDuration < 2) {
+      // Highly zoomed: major every 0.5s, minor every 0.1s
+      majorInterval = 0.5;
+      minorInterval = 0.1;
+    } else if (visibleDuration < 5) {
+      // Zoomed: major every 1s, minor every 0.2s
+      majorInterval = 1;
+      minorInterval = 0.2;
+    } else if (visibleDuration < 10) {
+      // Moderately zoomed: major every 2s, minor every 0.5s
+      majorInterval = 2;
+      minorInterval = 0.5;
+    } else if (visibleDuration < 20) {
+      // Slightly zoomed: major every 5s, minor every 1s
+      majorInterval = 5;
+      minorInterval = 1;
+    } else if (visibleDuration < 45) {
+      // Normal view: major every 10s, minor every 2s
+      majorInterval = 10;
+      minorInterval = 2;
+    } else if (visibleDuration < 90) {
+      // Slightly zoomed out: major every 15s, minor every 5s
+      majorInterval = 15;
+      minorInterval = 5;
+    } else if (visibleDuration < 180) {
+      // Zoomed out: major every 30s, minor every 10s
+      majorInterval = 30;
+      minorInterval = 10;
+    } else if (visibleDuration < 600) {
+      // Very zoomed out: major every 60s (1 min), minor every 15s
+      majorInterval = 60;
+      minorInterval = 15;
+    } else if (visibleDuration < 1800) {
+      // Long timeline: major every 2 min, minor every 30s
+      majorInterval = 120;
+      minorInterval = 30;
+    } else {
+      // Very long timeline: major every 5 min, minor every 1 min
+      majorInterval = 300;
+      minorInterval = 60;
+    }
+
+    // Editor mode: create a single linear timeline layout (no segment gaps)
+    if (props.editorMode) {
+      const ticks: SegmentTick[] = [];
+      for (let t = minorInterval; t < timelineDuration; t += minorInterval) {
+        const posInSegment = (t / timelineDuration) * 100;
+        if (posInSegment > 0.5 && posInSegment < 99.5) {
+          const isMajor = Math.abs(t % majorInterval) < 0.001 || Math.abs((t % majorInterval) - majorInterval) < 0.001;
+          ticks.push({
+            time: t,
+            positionInSegment: posInSegment,
+            isMajor,
+          });
+        }
+      }
+
+      return [
+        {
+          segment: {
+            id: 'editor-timeline',
+            startTime: 0,
+            endTime: timelineDuration,
+            isDeleted: false,
+          },
+          startPercent: 0,
+          widthPercent: 100,
+          ticks,
+          effectiveStartTime: 0,
+          effectiveEndTime: timelineDuration,
+        },
+      ];
+    }
+
+    // Clip mode: segment-based layout with gaps
     const segments = sortedTrimSegments.value;
     if (segments.length === 0) return [];
-
-    const totalSegmentDuration = totalDuration.value;
-    if (totalSegmentDuration <= 0) return [];
 
     // Calculate total gap percentage
     const totalGapPercent = (segments.length - 1) * GAP_PERCENT;
     const availablePercent = 100 - totalGapPercent;
-
-    // Determine optimal intervals based on TOTAL duration and zoom (consistent for all segments)
-    // This ensures the ruler has the same scale throughout
-    const effectiveDurationForZoom = totalSegmentDuration / zoomLevel.value;
-    let majorInterval: number;
-    let minorInterval: number;
-
-    if (effectiveDurationForZoom < 2) {
-      // Very short: major every 0.5s, minor every 0.1s
-      majorInterval = 0.5;
-      minorInterval = 0.1;
-    } else if (effectiveDurationForZoom < 5) {
-      // Short: major every 1s, minor every 0.25s
-      majorInterval = 1;
-      minorInterval = 0.25;
-    } else if (effectiveDurationForZoom < 10) {
-      // Medium-short: major every 1s, minor every 0.5s
-      majorInterval = 1;
-      minorInterval = 0.5;
-    } else if (effectiveDurationForZoom < 30) {
-      // Medium: major every 5s, minor every 1s
-      majorInterval = 5;
-      minorInterval = 1;
-    } else if (effectiveDurationForZoom < 60) {
-      // Medium-long: major every 10s, minor every 2s
-      majorInterval = 10;
-      minorInterval = 2;
-    } else if (effectiveDurationForZoom < 120) {
-      // Long: major every 15s, minor every 5s
-      majorInterval = 15;
-      minorInterval = 5;
-    } else if (effectiveDurationForZoom < 600) {
-      // Very long: major every 30s, minor every 10s
-      majorInterval = 30;
-      minorInterval = 10;
-    } else {
-      // Extra long: major every 60s, minor every 20s
-      majorInterval = 60;
-      minorInterval = 20;
-    }
 
     const layouts: SegmentLayout[] = [];
     let currentPercent = 0;
@@ -953,7 +1016,7 @@
 
     segments.forEach((segment, index) => {
       const segmentDuration = segment.endTime - segment.startTime;
-      const widthPercent = (segmentDuration / totalSegmentDuration) * availablePercent;
+      const widthPercent = (segmentDuration / timelineDuration) * availablePercent;
 
       // Calculate effective times (cumulative from start of timeline)
       const effectiveStartTime = cumulativeTime;
@@ -1158,12 +1221,25 @@
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
 
-    // For short durations (< 60s total), show decimal precision if there's a fractional part
-    if (totalDuration.value < 60 && secs % 1 !== 0) {
-      // Show one decimal place
+    // Calculate visible duration to determine precision needed
+    const visibleDuration = totalDuration.value / zoomLevel.value;
+
+    // For very zoomed in states, show high precision (useful for precise editing)
+    if (visibleDuration < 2) {
+      // Show 2 decimal places for frame-level precision
+      if (mins === 0) {
+        return secs.toFixed(2) + 's';
+      }
+      return `${mins}:${secs.toFixed(2).padStart(5, '0')}`;
+    } else if (visibleDuration < 10) {
+      // Show 1 decimal place
+      if (mins === 0 && secs < 10) {
+        return secs.toFixed(1) + 's';
+      }
       return `${mins}:${secs.toFixed(1).padStart(4, '0')}`;
     }
 
+    // Standard format: M:SS
     return `${mins}:${Math.floor(secs).toString().padStart(2, '0')}`;
   }
 
@@ -1176,12 +1252,6 @@
   function setWaveformCanvasRef(el: any, segmentId: string) {
     if (el) {
       waveformCanvasRefs.value.set(segmentId, el as HTMLCanvasElement);
-    }
-  }
-
-  function setSourceWaveformCanvasRef(el: any, sourceId: string) {
-    if (el) {
-      sourceWaveformCanvasRefs.value.set(sourceId, el as HTMLCanvasElement);
     }
   }
 
@@ -1310,8 +1380,16 @@
     };
   }
 
-  // Convert effective time to visual percentage position (accounting for segment gaps)
+  // Convert effective time to visual percentage position (accounting for segment gaps in clip mode)
   function effectiveTimeToVisualPercent(effectiveTime: number): number {
+    // Editor mode: simple linear mapping (no segment gaps)
+    if (props.editorMode) {
+      const duration = props.duration || 300;
+      if (duration <= 0) return 0;
+      return (effectiveTime / duration) * 100;
+    }
+
+    // Clip mode: segment-based mapping with gaps
     const segments = sortedTrimSegments.value;
     if (segments.length === 0 || totalDuration.value <= 0) {
       return (effectiveTime / (totalDuration.value || 1)) * 100;
@@ -1349,6 +1427,13 @@
 
   // Convert visual percentage position to effective time (inverse of effectiveTimeToVisualPercent)
   function visualPercentToEffectiveTime(percent: number): number {
+    // Editor mode: simple linear mapping (no segment gaps)
+    if (props.editorMode) {
+      const duration = props.duration || 300;
+      return (percent / 100) * duration;
+    }
+
+    // Clip mode: segment-based mapping with gaps
     const segments = sortedTrimSegments.value;
     if (segments.length === 0 || totalDuration.value <= 0) {
       return (percent / 100) * (totalDuration.value || 1);
@@ -2353,89 +2438,9 @@
   function renderAllWaveforms() {
     if (!isWaveformLoaded.value || !waveformData.value) return;
 
-    // Render waveforms for clip mode (trim segments)
     sortedTrimSegments.value.forEach((segment) => {
       renderWaveformForSegment(segment.id, segment);
     });
-
-    // Render waveforms for editor mode (video sources)
-    if (props.editorMode && props.videoSources) {
-      props.videoSources.forEach((source) => {
-        renderWaveformForSource(source);
-      });
-    }
-  }
-
-  // Render waveform for a video source (editor mode)
-  function renderWaveformForSource(source: VideoEditorSource) {
-    const canvas = sourceWaveformCanvasRefs.value.get(source.id);
-    if (!canvas || !waveformData.value || !isWaveformLoaded.value) return;
-
-    try {
-      const rect = canvas.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return;
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      // Set up high-DPI canvas
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
-      ctx.scale(dpr, dpr);
-
-      // Source times: trim_start to trim_end in the original video
-      const sourceStart = source.trim_start;
-      const sourceEnd = source.trim_end ?? source.trim_start + (source.end_time - source.start_time);
-      const sourceDuration = sourceEnd - sourceStart;
-
-      // Get the highest resolution waveform data available
-      const { duration, resolutions } = waveformData.value;
-
-      // Try resolutions in order of detail (highest first)
-      const resolutionOrder = ['extreme', 'ultra', 'high', 'medium', 'low'];
-      let peaks: any[] = [];
-
-      for (const resolution of resolutionOrder) {
-        if (resolutions[resolution]?.peaks) {
-          peaks = resolutions[resolution].peaks;
-          break;
-        }
-      }
-
-      if (peaks.length === 0) return;
-
-      // Extract peaks for the source's time range
-      const startRatio = Math.max(0, sourceStart / duration);
-      const endRatio = Math.min(1, sourceEnd / duration);
-      const startPeak = Math.floor(startRatio * peaks.length);
-      const endPeak = Math.ceil(endRatio * peaks.length);
-      const segmentPeaks = peaks.slice(startPeak, endPeak);
-
-      if (segmentPeaks.length === 0) return;
-
-      // Apply audio gain
-      const gainMultiplier = dbToLinear(props.audioGainDb || 0);
-      const gainedPeaks = segmentPeaks.map((peak: any) => ({
-        min: Math.max(-1, peak.min * gainMultiplier),
-        max: Math.min(1, peak.max * gainMultiplier),
-      }));
-
-      renderSegmentWaveform(canvas, {
-        width: rect.width,
-        height: rect.height,
-        peaks: gainedPeaks,
-        segmentDuration: sourceDuration,
-        currentTime: props.currentTime,
-        segmentStartTime: source.start_time, // Position on editor timeline
-        segmentEndTime: source.end_time, // End position on editor timeline
-        barWidth: 2,
-        barSpacing: 1,
-        amplitude: 0.8,
-      });
-    } catch (error) {
-      console.error('[ClipEditorTimeline] Error rendering source waveform:', error);
-    }
   }
 
   // Audio track waveform functions
@@ -2754,7 +2759,7 @@
 
   // Watch for waveform and segment changes
   watch(
-    [waveformData, isWaveformLoaded, () => props.currentTime, zoomLevel, sortedTrimSegments, () => props.videoSources],
+    [waveformData, isWaveformLoaded, () => props.currentTime, zoomLevel, sortedTrimSegments],
     () => {
       if (isWaveformLoaded.value && waveformData.value) {
         nextTick(() => {
@@ -3102,6 +3107,12 @@
     will-change: left;
     /* Smooth transition for seeks (when paused) */
     transition: left 100ms ease-out;
+  }
+
+  /* Inner line - exactly 1px wide, positioned at pixel boundary */
+  .playhead-line-inner {
+    width: 1px;
+    left: 6px; /* Center of 13px container */
   }
 
   /* During playback, use requestAnimationFrame - disable CSS transition */

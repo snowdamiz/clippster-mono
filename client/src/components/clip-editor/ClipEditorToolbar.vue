@@ -20,7 +20,7 @@
 
 <script setup lang="ts">
   import { computed } from 'vue';
-  import { Music, Palette, Type, Sticker, Crop, FileText, Droplet, Captions, Library } from 'lucide-vue-next';
+  import { Music, Palette, Type, Sticker, Crop, FileText, Droplet, Captions, Library, Download } from 'lucide-vue-next';
   import type { ClipEditorTab, VideoEditorTab } from '@/types';
 
   const props = withDefaults(
@@ -37,8 +37,9 @@
     (e: 'tabChange', tab: ClipEditorTab | VideoEditorTab): void;
   }>();
 
-  // Tabs for clip editing mode
+  // Tabs for clip editing mode (includes Sources tab for promoting to video project)
   const clipTabs = [
+    { id: 'sources' as const, label: 'Sources', icon: Library },
     { id: 'audio' as const, label: 'Audio', icon: Music },
     { id: 'filters' as const, label: 'Filters', icon: Palette },
     { id: 'text' as const, label: 'Text', icon: Type },
@@ -47,6 +48,7 @@
     { id: 'subtitles' as const, label: 'Subtitles', icon: Captions },
     { id: 'aspect' as const, label: 'Aspect', icon: Crop },
     { id: 'transcript' as const, label: 'Transcript', icon: FileText },
+    { id: 'export' as const, label: 'Export', icon: Download },
   ];
 
   // Tabs for video editor mode (includes Sources, excludes clip-specific tabs)
@@ -60,6 +62,7 @@
     { id: 'subtitles' as const, label: 'Subtitles', icon: Captions },
     { id: 'aspect' as const, label: 'Aspect', icon: Crop },
     { id: 'transcript' as const, label: 'Transcript', icon: FileText },
+    { id: 'export' as const, label: 'Export', icon: Download },
   ];
 
   const activeTabs = computed(() => {

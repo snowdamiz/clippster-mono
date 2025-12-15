@@ -133,9 +133,9 @@
               <div
                 class="flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent"
               >
-                <!-- Sources Tab (Editor Mode Only) -->
+                <!-- Sources Tab (Available in both modes) -->
                 <SourcesTab
-                  v-if="editorMode && activeEditorTab === 'sources'"
+                  v-if="editorMode ? activeEditorTab === 'sources' : activeTab === 'sources'"
                   @add-source="onAddSource"
                   @import-file="onImportFile"
                 />
@@ -251,6 +251,31 @@
                   :source-time-ranges="editorMode ? sourceVideoTimeRanges : []"
                   @seek-video="seekToAbsoluteTime"
                 />
+
+                <ExportTab
+                  v-if="editorMode ? activeEditorTab === 'export' : activeTab === 'export'"
+                  :clip-id="props.clipId"
+                  :project-id="projectId"
+                  :selected-aspect-ratios="selectedAspectRatios"
+                  :subtitle-settings="subtitleSettings"
+                  :framing-mode="framingMode"
+                  :framing-configs="framingConfigs"
+                  :filter-segments="filterSegments"
+                  :text-overlays="textOverlays"
+                  :stickers="stickers"
+                  :watermarks="watermarks"
+                  :audio-tracks="audioTracks"
+                  :original-db="originalDb"
+                  :track-db-values="trackDbValues"
+                  :clip-start-time="props.clipStartTime"
+                  :clip-end-time="props.clipEndTime"
+                  :clip-name="props.clipTitle"
+                  :clip-segments="playbackSegments"
+                  @go-to-aspect-tab="editorMode ? setEditorTab('aspect') : setActiveTab('aspect')"
+                  @build-started="onBuildStarted"
+                  @build-completed="onBuildCompleted"
+                  @build-failed="onBuildFailed"
+                />
               </div>
             </div>
           </div>
@@ -268,7 +293,7 @@
             :watermarks="watermarks"
             :effects="effects"
             :filter-segments="filterSegments"
-            :video-src="effectiveVideoPath"
+            :video-src="videoSrc"
             :audio-gain-db="effectiveAudioGainDb"
             :track-db-values="trackDbValues"
             :is-playing="isPlaying"
@@ -301,6 +326,19 @@
         :clip-start-time="effectivePOIClipStartTime"
         :clip-end-time="effectivePOIClipEndTime"
         @confirm="onManualPOIConfigConfirm"
+      />
+
+      <!-- Promote to Video Project Confirmation Dialog -->
+      <ConfirmationModal
+        :show="showPromoteToProjectDialog"
+        title="Create Video Project"
+        message="Adding sources to a clip will convert it into a Video Project. This allows you to combine multiple clips, raw videos, and imports into a single video."
+        suffix="Your current clip will be the first source in the project."
+        confirm-text="Create Project"
+        close-text="Cancel"
+        :show-cannot-undone-text="false"
+        @confirm="onPromoteConfirm"
+        @close="onPromoteCancel"
       />
     </div>
   </Teleport>
@@ -349,9 +387,11 @@
     getRawVideosByProjectId,
     getRawVideo,
     getClipWithBuildStatus,
+    getClip,
     // Video Editor imports
     getVideoEditorProject,
     getVideoEditorSourcesByProjectId,
+    createVideoEditorProject,
     createVideoEditorSource,
     updateVideoEditorSource,
     deleteVideoEditorSource,
@@ -393,8 +433,10 @@
   import SubtitlesTab from './tabs/SubtitlesTab.vue';
   import AspectTab from './tabs/AspectTab.vue';
   import TranscriptTab from './tabs/TranscriptTab.vue';
+  import ExportTab from './tabs/ExportTab.vue';
   import ManualPOIEditor from '@/components/poi/ManualPOIEditor.vue';
   import SourcesTab from '@/components/video-editor/SourcesTab.vue';
+  import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
   import { invoke } from '@tauri-apps/api/core';
 
@@ -469,6 +511,23 @@
   const crossfadeStarted = ref(false); // Whether we've started crossfade for current transition
   const lastCrossfadeTransitionId = ref<string | null>(null); // Track which transition we've started
 
+  // Promotion to Video Project state (when adding sources in clip mode)
+  const isPromotedToEditorMode = ref(false); // Local override for editor mode
+  const promotedProjectId = ref<string | null>(null); // Local project ID when promoted
+  const promotedProjectName = ref<string>(''); // Local project name when promoted
+  const showPromoteToProjectDialog = ref(false); // Show confirmation dialog
+  const pendingSourceToAdd = ref<SourceItem | null>(null); // Source waiting to be added after promotion
+  const pendingImportToAdd = ref<{ filePath: string; name: string; duration: number; thumbnailPath?: string } | null>(
+    null
+  ); // Import file waiting to be added after promotion
+
+  // Computed: effective editor mode (prop or promoted)
+  const editorMode = computed(() => props.editorMode || isPromotedToEditorMode.value);
+
+  // Computed: effective editor project ID and name
+  const editorProjectId = computed(() => promotedProjectId.value || props.editorProjectId);
+  const editorProjectName = computed(() => promotedProjectName.value || props.editorProjectName);
+
   // Edit data
   const trimSegments = ref<TrimSegment[]>([]);
   const audioTracks = ref<AudioTrack[]>([]);
@@ -515,7 +574,7 @@
   const subtitleSettings = ref<ClipSubtitleSettings>(getDefaultSubtitleSettings());
 
   // Aspect ratio framing data
-  const selectedAspectRatios = ref<string[]>([]);
+  const selectedAspectRatios = ref<string[]>(['16:9']); // Always include 16:9 (Original) by default
   const previewAspectRatio = ref<string>('16:9'); // Currently previewed aspect ratio
   const framingMode = ref<'auto' | 'manual'>('auto');
   const framingConfigs = ref<ManualFramingConfigs>({});
@@ -535,7 +594,7 @@
 
   // Get the source video time ranges covered by all video sources (for editor mode)
   const sourceVideoTimeRanges = computed(() => {
-    if (!props.editorMode || videoSources.value.length === 0) {
+    if (!editorMode.value || videoSources.value.length === 0) {
       return [];
     }
     return videoSources.value.map((source) => ({
@@ -571,7 +630,7 @@
     if (!transcriptData.value?.words?.length) return [];
 
     // In editor mode, filter based on the source video time ranges being used
-    if (props.editorMode) {
+    if (editorMode.value) {
       if (sourceVideoTimeRanges.value.length === 0) return [];
       return transcriptData.value.words.filter((word: WordInfo) => {
         const wordStart = word.start ?? 0;
@@ -594,7 +653,7 @@
     if (!transcriptData.value?.whisperSegments?.length) return [];
 
     // In editor mode, filter based on the source video time ranges being used
-    if (props.editorMode) {
+    if (editorMode.value) {
       if (sourceVideoTimeRanges.value.length === 0) return [];
       return transcriptData.value.whisperSegments.filter((segment) => {
         // Include segments that overlap with any of the source video ranges
@@ -650,7 +709,7 @@
   // Calculate total duration of all segments combined
   const totalSegmentDuration = computed(() => {
     // Editor mode uses video sources instead of trim segments
-    if (props.editorMode) {
+    if (editorMode.value) {
       return editorContentDuration.value;
     }
     const segments = trimSegments.value.filter((s) => !s.isDeleted);
@@ -669,7 +728,7 @@
   // This is the time position in the "edited" timeline where cuts are removed
   const effectivePreviewTime = computed(() => {
     // Editor mode: previewTime is already the global timeline position
-    if (props.editorMode) {
+    if (editorMode.value) {
       return previewTime.value;
     }
 
@@ -718,7 +777,7 @@
 
   // Editor mode: Find the active video source based on current playback time
   const activeVideoSource = computed(() => {
-    if (!props.editorMode || videoSources.value.length === 0) {
+    if (!editorMode.value || videoSources.value.length === 0) {
       return null;
     }
 
@@ -740,7 +799,7 @@
   // Editor mode: Calculate the actual source video time for subtitle lookup
   // This maps the editor timeline position to the actual timestamp in the source video
   const subtitleSourceTime = computed(() => {
-    if (!props.editorMode) {
+    if (!editorMode.value) {
       // In clip mode, use the preview time directly (relative to clip start is handled elsewhere)
       return previewTime.value;
     }
@@ -760,7 +819,7 @@
 
   // Editor mode: Find the next video source (for preloading)
   const nextVideoSource = computed(() => {
-    if (!props.editorMode || !activeVideoSource.value) {
+    if (!editorMode.value || !activeVideoSource.value) {
       return null;
     }
 
@@ -776,7 +835,7 @@
 
   // Editor mode: Find the currently active crossfade transition (if any)
   const activeTransition = computed<VideoEditorTransition | null>(() => {
-    if (!props.editorMode || sourceTransitions.value.length === 0) {
+    if (!editorMode.value || sourceTransitions.value.length === 0) {
       return null;
     }
 
@@ -810,7 +869,7 @@
 
   // Editor mode: Compute the video URL for the active source
   const editorVideoSrc = computed(() => {
-    if (!props.editorMode || !activeVideoSource.value) {
+    if (!editorMode.value || !activeVideoSource.value) {
       return null;
     }
 
@@ -833,7 +892,7 @@
 
   // Editor mode: Compute the preload URL for the next source (for seamless transitions)
   const preloadVideoSrc = computed(() => {
-    if (!props.editorMode || !nextVideoSource.value) {
+    if (!editorMode.value || !nextVideoSource.value) {
       return null;
     }
 
@@ -856,7 +915,7 @@
 
   // The video source to use for the preview (either from props or computed for editor mode)
   const effectiveVideoSrc = computed(() => {
-    if (props.editorMode) {
+    if (editorMode.value) {
       return editorVideoSrc.value;
     }
     return props.videoSrc || null;
@@ -864,7 +923,7 @@
 
   // Effective video path for ManualPOIEditor - uses active source in editor mode
   const effectiveVideoPath = computed(() => {
-    if (props.editorMode) {
+    if (editorMode.value) {
       // In editor mode, use the first source or active source
       const source = videoSources.value.length > 0 ? videoSources.value[0] : null;
       return source?.source_path || null;
@@ -874,7 +933,7 @@
 
   // Effective clip start time for ManualPOIEditor - uses source trim times in editor mode
   const effectivePOIClipStartTime = computed(() => {
-    if (props.editorMode) {
+    if (editorMode.value) {
       const source = videoSources.value.length > 0 ? videoSources.value[0] : null;
       return source?.trim_start || 0;
     }
@@ -883,7 +942,7 @@
 
   // Effective clip end time for ManualPOIEditor - uses source trim times in editor mode
   const effectivePOIClipEndTime = computed(() => {
-    if (props.editorMode) {
+    if (editorMode.value) {
       const source = videoSources.value.length > 0 ? videoSources.value[0] : null;
       if (source) {
         // If trim_end is 0, use source duration (full video)
@@ -898,7 +957,7 @@
 
   // Effective thumbnail URL for ManualPOIEditor
   const effectiveThumbnailUrl = computed(() => {
-    if (props.editorMode) {
+    if (editorMode.value) {
       return editorThumbnailUrl.value || thumbnailUrl.value;
     }
     return thumbnailUrl.value;
@@ -984,10 +1043,25 @@
 
   // Video source operations for editor mode
   async function onAddSource(source: SourceItem) {
-    if (!props.editorProjectId) return;
+    // If not in editor mode (clip mode), show promotion dialog
+    if (!editorMode.value) {
+      pendingSourceToAdd.value = source;
+      pendingImportToAdd.value = null;
+      showPromoteToProjectDialog.value = true;
+      return;
+    }
+
+    // In editor mode, add source directly
+    await addSourceToProject(source);
+  }
+
+  // Internal function to add source to the current video project
+  async function addSourceToProject(source: SourceItem) {
+    const projectId = editorProjectId.value;
+    if (!projectId) return;
 
     try {
-      const startTime = await getNextSourceStartTime(props.editorProjectId);
+      const startTime = await getNextSourceStartTime(projectId);
 
       // For detected clips: use clip segment timing (trim from source video)
       // For raw videos/built clips: use full duration
@@ -1009,7 +1083,7 @@
       const trimEnd = isDetectedClip ? source.clipEndTime! : null;
 
       // Store the actual file path (not the HTTP URL) for the source
-      const newSource = await createVideoEditorSource(props.editorProjectId, {
+      const newSource = await createVideoEditorSource(projectId, {
         sourceType: source.type,
         sourceId: source.id,
         sourcePath: source.path, // Store actual file path (raw video path for detected clips)
@@ -1024,7 +1098,7 @@
       });
 
       videoSources.value.push(newSource);
-      await recalculateProjectDuration(props.editorProjectId);
+      await recalculateProjectDuration(projectId);
       triggerAutoSave();
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to add source:', error);
@@ -1032,14 +1106,29 @@
   }
 
   async function onImportFile(filePath: string, name: string, duration: number, thumbnailPath?: string) {
-    if (!props.editorProjectId) return;
+    // If not in editor mode (clip mode), show promotion dialog
+    if (!editorMode.value) {
+      pendingSourceToAdd.value = null;
+      pendingImportToAdd.value = { filePath, name, duration, thumbnailPath };
+      showPromoteToProjectDialog.value = true;
+      return;
+    }
+
+    // In editor mode, import file directly
+    await importFileToProject(filePath, name, duration, thumbnailPath);
+  }
+
+  // Internal function to import file to the current video project
+  async function importFileToProject(filePath: string, name: string, duration: number, thumbnailPath?: string) {
+    const projectId = editorProjectId.value;
+    if (!projectId) return;
 
     try {
-      const startTime = await getNextSourceStartTime(props.editorProjectId);
+      const startTime = await getNextSourceStartTime(projectId);
       const sourceDuration = duration || 30;
 
       // Store the actual file path (not the HTTP URL)
-      const newSource = await createVideoEditorSource(props.editorProjectId, {
+      const newSource = await createVideoEditorSource(projectId, {
         sourceType: 'imported',
         sourceId: null,
         sourcePath: filePath, // Store actual file path
@@ -1054,21 +1143,277 @@
       });
 
       videoSources.value.push(newSource);
-      await recalculateProjectDuration(props.editorProjectId);
+      await recalculateProjectDuration(projectId);
       triggerAutoSave();
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to import file:', error);
     }
   }
 
+  // Migrate existing clip edits to the video editor project
+  // This recreates text overlays, audio tracks, stickers, and watermarks in the video_editor_* tables
+  async function migrateClipEditsToVideoProject(newVideoEditorEditId: string) {
+    try {
+      // Migrate text overlays
+      const newTextOverlays: typeof textOverlays.value = [];
+      for (const overlay of textOverlays.value) {
+        const newOverlay = await createVideoEditorTextOverlay(newVideoEditorEditId, {
+          text: overlay.text,
+          start_time: overlay.startTime,
+          end_time: overlay.endTime,
+          style_data: JSON.stringify(overlay.style),
+          position_x: overlay.positionX,
+          position_y: overlay.positionY,
+          per_ratio_configs_data: overlay.perRatioConfigs ? JSON.stringify(overlay.perRatioConfigs) : undefined,
+        });
+        newTextOverlays.push({
+          id: newOverlay.id,
+          text: newOverlay.text,
+          startTime: newOverlay.start_time,
+          endTime: newOverlay.end_time,
+          style: JSON.parse(newOverlay.style_data || '{}'),
+          positionX: newOverlay.position_x,
+          positionY: newOverlay.position_y,
+          perRatioConfigs: newOverlay.per_ratio_configs_data
+            ? JSON.parse(newOverlay.per_ratio_configs_data)
+            : undefined,
+        });
+      }
+      textOverlays.value = newTextOverlays;
+
+      // Migrate audio tracks
+      const newAudioTracks: typeof audioTracks.value = [];
+      for (const track of audioTracks.value) {
+        const newTrack = await createVideoEditorAudioTrack(newVideoEditorEditId, {
+          file_path: track.filePath,
+          name: track.name,
+          start_time: track.startTime,
+          end_time: track.endTime,
+          volume: track.volume,
+          fade_in: track.fadeIn,
+          fade_out: track.fadeOut,
+          track_order: track.trackOrder,
+          is_muted: track.isMuted ? 1 : 0,
+          is_solo: track.isSolo ? 1 : 0,
+        });
+        newAudioTracks.push({
+          id: newTrack.id,
+          filePath: newTrack.file_path,
+          name: newTrack.name,
+          startTime: newTrack.start_time,
+          endTime: newTrack.end_time,
+          volume: newTrack.volume,
+          fadeIn: newTrack.fade_in,
+          fadeOut: newTrack.fade_out,
+          trackOrder: newTrack.track_order,
+          isMuted: !!newTrack.is_muted,
+          isSolo: !!newTrack.is_solo,
+        });
+      }
+      audioTracks.value = newAudioTracks;
+
+      // Migrate stickers
+      const newStickers: typeof stickers.value = [];
+      for (const sticker of stickers.value) {
+        const newSticker = await createVideoEditorSticker(newVideoEditorEditId, {
+          sticker_path: sticker.stickerPath,
+          sticker_type: sticker.stickerType,
+          start_time: sticker.startTime,
+          end_time: sticker.endTime,
+          position_x: sticker.positionX,
+          position_y: sticker.positionY,
+          scale: sticker.scale,
+          rotation: sticker.rotation,
+          per_ratio_configs_data: sticker.perRatioConfigs ? JSON.stringify(sticker.perRatioConfigs) : undefined,
+        });
+        newStickers.push({
+          id: newSticker.id,
+          stickerPath: newSticker.sticker_path,
+          stickerType: newSticker.sticker_type as 'emoji' | 'image' | 'gif',
+          startTime: newSticker.start_time,
+          endTime: newSticker.end_time,
+          positionX: newSticker.position_x,
+          positionY: newSticker.position_y,
+          scale: newSticker.scale,
+          rotation: newSticker.rotation,
+          perRatioConfigs: newSticker.per_ratio_configs_data
+            ? JSON.parse(newSticker.per_ratio_configs_data)
+            : undefined,
+        });
+      }
+      stickers.value = newStickers;
+
+      // Migrate watermarks
+      const newWatermarks: typeof watermarks.value = [];
+      for (const watermark of watermarks.value) {
+        const newWatermark = await createVideoEditorWatermark(newVideoEditorEditId, {
+          watermark_id: watermark.watermarkId,
+          watermark_path: watermark.filePath,
+          preview_url: watermark.previewUrl,
+          start_time: watermark.startTime,
+          end_time: watermark.endTime,
+          position_x: watermark.positionX,
+          position_y: watermark.positionY,
+          scale: watermark.scale,
+          opacity: watermark.opacity,
+          per_ratio_configs_data: watermark.perRatioConfigs ? JSON.stringify(watermark.perRatioConfigs) : undefined,
+        });
+        newWatermarks.push({
+          id: newWatermark.id,
+          watermarkId: newWatermark.watermark_id,
+          filePath: newWatermark.watermark_path,
+          previewUrl: newWatermark.preview_url || '',
+          startTime: newWatermark.start_time,
+          endTime: newWatermark.end_time,
+          positionX: newWatermark.position_x,
+          positionY: newWatermark.position_y,
+          scale: newWatermark.scale,
+          opacity: newWatermark.opacity,
+          perRatioConfigs: newWatermark.per_ratio_configs_data
+            ? JSON.parse(newWatermark.per_ratio_configs_data)
+            : undefined,
+        });
+      }
+      watermarks.value = newWatermarks;
+
+      console.log(
+        `[ClipEditorDialog] Migrated ${textOverlays.value.length} text overlays, ${audioTracks.value.length} audio tracks, ${stickers.value.length} stickers, ${watermarks.value.length} watermarks to video project`
+      );
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to migrate clip edits:', error);
+    }
+  }
+
+  // Promote current clip to a video project
+  async function promoteToVideoProject() {
+    try {
+      // Create a new video editor project with the clip's name
+      const projectName = `${props.clipTitle || 'Untitled'} - Video Project`;
+      const newProjectId = await createVideoEditorProject(projectName);
+
+      // Get video server port for constructing video URLs
+      videoServerPort.value = await invoke<number>('get_video_server_port');
+
+      // Add the current clip as the first source
+      // First, get the clip's raw video path
+      let clipVideoPath = '';
+      let clipDuration = props.clipEndTime - props.clipStartTime;
+
+      // Try to extract path from videoSrc URL
+      if (props.videoSrc) {
+        const match = props.videoSrc.match(/\/video\/([^?]+)/);
+        if (match) {
+          try {
+            clipVideoPath = atob(match[1]);
+          } catch {
+            console.warn('[ClipEditorDialog] Failed to decode video path');
+          }
+        }
+      }
+
+      // If we have a clip ID, get the clip's raw video info
+      if (props.clipId) {
+        try {
+          const clip = await getClip(props.clipId);
+          if (clip?.project_id) {
+            const rawVideos = await getRawVideosByProjectId(clip.project_id);
+            if (rawVideos.length > 0) {
+              clipVideoPath = rawVideos[0].file_path;
+            }
+          }
+        } catch (error) {
+          console.warn('[ClipEditorDialog] Failed to get clip raw video:', error);
+        }
+      }
+
+      // Create the first source from the current clip
+      if (clipVideoPath) {
+        const firstSource = await createVideoEditorSource(newProjectId, {
+          sourceType: 'clip',
+          sourceId: props.clipId || null,
+          sourcePath: clipVideoPath,
+          sourceName: props.clipTitle || 'Clip',
+          sourceThumbnail: null,
+          sourceDuration: clipDuration,
+          startTime: 0,
+          endTime: clipDuration,
+          trimStart: props.clipStartTime,
+          trimEnd: props.clipEndTime,
+          orderIndex: 0,
+        });
+
+        videoSources.value = [firstSource];
+      }
+
+      // Create/get an edit record for the video editor project
+      const editRecord = await getOrCreateVideoEditorEdit(newProjectId);
+      videoEditorEditId.value = editRecord.id;
+
+      // Migrate existing clip edits to the video editor project
+      // Text overlays, audio tracks, stickers, and watermarks need to be recreated in the video_editor_* tables
+      await migrateClipEditsToVideoProject(editRecord.id);
+
+      // Update local state to switch to editor mode
+      promotedProjectId.value = newProjectId;
+      promotedProjectName.value = projectName;
+      isPromotedToEditorMode.value = true;
+      activeEditorTab.value = 'sources';
+
+      // Recalculate project duration
+      await recalculateProjectDuration(newProjectId);
+
+      // Reset to start of timeline and seek video to correct position
+      // In editor mode, previewTime represents position on the timeline, not absolute video time
+      // Use nextTick to ensure the editorMode computed has updated
+      await nextTick();
+      seekTo(0);
+
+      // Reload transcript data now that we're in editor mode
+      // The projectId should already be set from clip mode, but trigger a refresh
+      if (projectId.value) {
+        await loadTranscriptData();
+      }
+
+      console.log(`[ClipEditorDialog] Promoted clip to video project: ${newProjectId}`);
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to promote to video project:', error);
+    }
+  }
+
+  // Handle promotion dialog confirmation
+  async function onPromoteConfirm() {
+    showPromoteToProjectDialog.value = false;
+
+    // First, promote to video project
+    await promoteToVideoProject();
+
+    // Then add the pending source or import
+    if (pendingSourceToAdd.value) {
+      await addSourceToProject(pendingSourceToAdd.value);
+      pendingSourceToAdd.value = null;
+    } else if (pendingImportToAdd.value) {
+      const { filePath, name, duration, thumbnailPath } = pendingImportToAdd.value;
+      await importFileToProject(filePath, name, duration, thumbnailPath);
+      pendingImportToAdd.value = null;
+    }
+  }
+
+  // Handle promotion dialog cancel
+  function onPromoteCancel() {
+    showPromoteToProjectDialog.value = false;
+    pendingSourceToAdd.value = null;
+    pendingImportToAdd.value = null;
+  }
+
   async function onDropSource(data: { source: SourceItem; position: number }) {
-    if (!props.editorProjectId) return;
+    const projectId = editorProjectId.value;
+    if (!projectId) return;
 
     const duration = data.source.duration || 30;
 
     try {
       // Store the actual file path (not the HTTP URL)
-      const newSource = await createVideoEditorSource(props.editorProjectId, {
+      const newSource = await createVideoEditorSource(projectId, {
         sourceType: data.source.type,
         sourceId: data.source.id,
         sourcePath: data.source.path, // Store actual file path
@@ -1083,7 +1428,7 @@
       });
 
       videoSources.value.push(newSource);
-      await recalculateProjectDuration(props.editorProjectId);
+      await recalculateProjectDuration(projectId);
       triggerAutoSave();
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to drop source:', error);
@@ -1105,8 +1450,8 @@
 
       Object.assign(source, updates);
 
-      if (props.editorProjectId) {
-        await recalculateProjectDuration(props.editorProjectId);
+      if (editorProjectId.value) {
+        await recalculateProjectDuration(editorProjectId.value);
       }
       triggerAutoSave();
     } catch (error) {
@@ -1119,8 +1464,8 @@
       await deleteVideoEditorSource(sourceId);
       videoSources.value = videoSources.value.filter((s) => s.id !== sourceId);
 
-      if (props.editorProjectId) {
-        await recalculateProjectDuration(props.editorProjectId);
+      if (editorProjectId.value) {
+        await recalculateProjectDuration(editorProjectId.value);
       }
       triggerAutoSave();
     } catch (error) {
@@ -1129,13 +1474,14 @@
   }
 
   async function loadEditorProject() {
-    if (!props.editorProjectId) return;
+    const projectId = editorProjectId.value;
+    if (!projectId) return;
 
     try {
       // Get video server port for constructing video URLs
       videoServerPort.value = await invoke<number>('get_video_server_port');
 
-      const sources = await getVideoEditorSourcesByProjectId(props.editorProjectId);
+      const sources = await getVideoEditorSourcesByProjectId(projectId);
       videoSources.value = sources;
 
       // Initialize current source tracking with the first source
@@ -1147,11 +1493,11 @@
 
       // Create/get an edit record for the video editor project
       // Uses the dedicated video_editor_edits table (not clip_edits)
-      const editRecord = await getOrCreateVideoEditorEdit(props.editorProjectId);
+      const editRecord = await getOrCreateVideoEditorEdit(projectId);
       videoEditorEditId.value = editRecord.id;
 
       // Load existing edit data for the video editor project
-      const fullEdit = await getFullVideoEditorEdit(props.editorProjectId);
+      const fullEdit = await getFullVideoEditorEdit(projectId);
       if (fullEdit) {
         const editData = JSON.parse(fullEdit.edit.edit_data);
 
@@ -1255,7 +1601,7 @@
             const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
               videoPath: firstSource.source_path,
               timestampSeconds: firstSource.trim_start + 1,
-              outputFilename: `editor_aspect_preview_${props.editorProjectId}`,
+              outputFilename: `editor_aspect_preview_${editorProjectId.value}`,
             });
 
             const dataUrl = await invoke<string>('read_file_as_data_url', {
@@ -1286,7 +1632,7 @@
 
     // In editor mode, track the current source
     // But don't update during crossfade - the crossfade logic handles source tracking
-    if (props.editorMode && !crossfadeStarted.value && !activeTransition.value) {
+    if (editorMode.value && !crossfadeStarted.value && !activeTransition.value) {
       if (activeVideoSource.value) {
         currentVideoSourceId.value = activeVideoSource.value.id;
       }
@@ -1369,7 +1715,7 @@
 
   // Manage crossfade audio (fade volumes during transition)
   function updateCrossfadeAudio() {
-    if (!props.editorMode || !activeTransition.value || !videoElement.value) return;
+    if (!editorMode.value || !activeTransition.value || !videoElement.value) return;
 
     const transition = activeTransition.value;
     const { opacityA, opacityB } = calculateCrossfadeOpacity(previewTime.value, transition);
@@ -1387,7 +1733,7 @@
 
   // Start crossfade when entering a transition zone
   function manageCrossfade() {
-    if (!props.editorMode || !previewRef.value || !isPlaying.value) return;
+    if (!editorMode.value || !previewRef.value || !isPlaying.value) return;
 
     const transition = activeTransition.value;
 
@@ -1477,7 +1823,7 @@
       return;
     }
 
-    if (props.editorMode) {
+    if (editorMode.value) {
       // In editor mode, time is the video element's currentTime (position within source file)
       // We need to track which source this time belongs to
 
@@ -1558,7 +1904,7 @@
       previewTime.value
     );
 
-    if (!props.editorMode) return;
+    if (!editorMode.value) return;
 
     // If we're currently in a crossfade transition (or just started one), complete it
     // The outgoing video has reached its end during the crossfade
@@ -1669,7 +2015,7 @@
 
     // Determine which video is actually active
     let activeVideo = videoElement.value;
-    if (props.editorMode && activePreloadIndex === 1 && preloadEl) {
+    if (editorMode.value && activePreloadIndex === 1 && preloadEl) {
       // Preload is the active video after crossfade
       activeVideo = preloadEl;
       // Also update videoElement if it's out of sync
@@ -1727,7 +2073,7 @@
   }
 
   function seekTo(time: number) {
-    if (props.editorMode) {
+    if (editorMode.value) {
       // Editor mode: time is already the global timeline position
       isSeeking.value = true;
       previewTime.value = time;
@@ -1787,7 +2133,7 @@
   function seekToAbsoluteTime(time: number) {
     if (!videoElement.value) return;
 
-    if (props.editorMode) {
+    if (editorMode.value) {
       // Find which source contains this time
       const source = videoSources.value.find((s) => {
         const sourceEnd = s.trim_end ?? s.trim_start + (s.end_time - s.start_time);
@@ -1825,7 +2171,7 @@
 
   // Audio operations
   async function addAudioTrack(filePath: string, name: string, duration: number) {
-    const editId = props.editorMode ? videoEditorEditId.value : clipEditId.value;
+    const editId = editorMode.value ? videoEditorEditId.value : clipEditId.value;
     if (!editId) return;
 
     // Use the actual audio file duration for the track end time
@@ -1843,7 +2189,7 @@
     };
 
     // Use appropriate database function based on mode
-    const track = props.editorMode
+    const track = editorMode.value
       ? await createVideoEditorAudioTrack(editId, trackData)
       : await createAudioTrack(editId, trackData);
 
@@ -2001,7 +2347,7 @@
     };
 
     // Use appropriate database function based on mode
-    if (props.editorMode) {
+    if (editorMode.value) {
       await updateVideoEditorAudioTrack(trackId, updateData);
     } else {
       await updateAudioTrack(trackId, updateData);
@@ -2020,7 +2366,7 @@
 
   async function deleteAudioTrackLocal(trackId: string) {
     // Use appropriate database function based on mode
-    if (props.editorMode) {
+    if (editorMode.value) {
       await deleteVideoEditorAudioTrack(trackId);
     } else {
       await deleteAudioTrack(trackId);
@@ -2085,7 +2431,12 @@
   }
 
   function updateSelectedAspectRatios(ratios: string[]) {
-    selectedAspectRatios.value = ratios;
+    // Ensure 16:9 (Original) is always included
+    const newRatios = [...ratios];
+    if (!newRatios.includes('16:9')) {
+      newRatios.unshift('16:9');
+    }
+    selectedAspectRatios.value = newRatios;
   }
 
   function updateFramingMode(mode: 'auto' | 'manual') {
@@ -2094,18 +2445,29 @@
 
   // Toggle aspect ratio selection (add/remove from selectedAspectRatios)
   function toggleAspectRatio(ratio: string) {
+    // 16:9 (Original) is always selected and cannot be removed
+    if (ratio === '16:9') {
+      // Just switch preview to 16:9
+      previewAspectRatio.value = '16:9';
+      return;
+    }
+
     const current = [...selectedAspectRatios.value];
     const index = current.indexOf(ratio);
     if (index > -1) {
       current.splice(index, 1);
-      // If removing the currently previewed ratio, switch to 16:9 or first remaining
+      // If removing the currently previewed ratio, switch to 16:9
       if (previewAspectRatio.value === ratio) {
-        previewAspectRatio.value = current.length > 0 ? current[0] : '16:9';
+        previewAspectRatio.value = '16:9';
       }
     } else {
       current.push(ratio);
       // Switch preview to the newly selected ratio
       previewAspectRatio.value = ratio;
+    }
+    // Ensure 16:9 is always included
+    if (!current.includes('16:9')) {
+      current.unshift('16:9');
     }
     selectedAspectRatios.value = current;
   }
@@ -2142,7 +2504,7 @@
 
   // Text overlay operations
   async function addTextOverlay(text: string, style: any) {
-    const editId = props.editorMode ? videoEditorEditId.value : clipEditId.value;
+    const editId = editorMode.value ? videoEditorEditId.value : clipEditId.value;
     if (!editId) return;
 
     // Use effective time (accounting for segment cuts) for the overlay timing
@@ -2164,7 +2526,7 @@
     };
 
     // Use appropriate database function based on mode
-    const overlay = props.editorMode
+    const overlay = editorMode.value
       ? await createVideoEditorTextOverlay(editId, overlayData)
       : await createTextOverlay(editId, overlayData);
 
@@ -2200,7 +2562,7 @@
     };
 
     // Use appropriate database function based on mode
-    if (props.editorMode) {
+    if (editorMode.value) {
       await updateVideoEditorTextOverlay(overlayId, updateData);
     } else {
       await updateTextOverlay(overlayId, updateData);
@@ -2217,7 +2579,7 @@
 
   async function deleteTextOverlayLocal(overlayId: string) {
     // Use appropriate database function based on mode
-    if (props.editorMode) {
+    if (editorMode.value) {
       await deleteVideoEditorTextOverlay(overlayId);
     } else {
       await deleteTextOverlay(overlayId);
@@ -2227,7 +2589,7 @@
 
   // Sticker operations
   async function addStickerLocal(stickerPath: string, type: 'emoji' | 'image' | 'gif') {
-    const editId = props.editorMode ? videoEditorEditId.value : clipEditId.value;
+    const editId = editorMode.value ? videoEditorEditId.value : clipEditId.value;
     if (!editId) return;
 
     // Use effective time (accounting for segment cuts) for sticker timing
@@ -2247,7 +2609,7 @@
     };
 
     // Use appropriate database function based on mode
-    const sticker = props.editorMode
+    const sticker = editorMode.value
       ? await createVideoEditorSticker(editId, stickerData)
       : await createSticker(editId, stickerData);
 
@@ -2279,7 +2641,7 @@
     };
 
     // Use appropriate database function based on mode
-    if (props.editorMode) {
+    if (editorMode.value) {
       await updateVideoEditorSticker(stickerId, updateData);
     } else {
       await updateSticker(stickerId, updateData);
@@ -2293,7 +2655,7 @@
 
   async function deleteStickerLocal(stickerId: string) {
     // Use appropriate database function based on mode
-    if (props.editorMode) {
+    if (editorMode.value) {
       await deleteVideoEditorSticker(stickerId);
     } else {
       await deleteSticker(stickerId);
@@ -2303,7 +2665,7 @@
 
   // Watermark operations
   async function addWatermarkLocal(watermarkId: string, filePath: string, previewUrl: string) {
-    const editId = props.editorMode ? videoEditorEditId.value : clipEditId.value;
+    const editId = editorMode.value ? videoEditorEditId.value : clipEditId.value;
     if (!editId) return;
 
     // By default, watermark spans the entire clip duration (100% of clip)
@@ -2323,7 +2685,7 @@
     };
 
     // Use appropriate database function based on mode
-    const watermark = props.editorMode
+    const watermark = editorMode.value
       ? await createVideoEditorWatermark(editId, watermarkData)
       : await createWatermark(editId, watermarkData);
 
@@ -2353,7 +2715,7 @@
     };
 
     // Use appropriate database function based on mode
-    if (props.editorMode) {
+    if (editorMode.value) {
       await updateVideoEditorWatermark(watermarkId, updateData);
     } else {
       await updateWatermarkRecord(watermarkId, updateData);
@@ -2367,7 +2729,7 @@
 
   async function deleteWatermarkLocal(watermarkId: string) {
     // Use appropriate database function based on mode
-    if (props.editorMode) {
+    if (editorMode.value) {
       await deleteVideoEditorWatermark(watermarkId);
     } else {
       await deleteWatermarkRecord(watermarkId);
@@ -2583,6 +2945,19 @@
     effects.value = effects.value.filter((e) => e.id !== effectId);
   }
 
+  // Export tab event handlers
+  function onBuildStarted() {
+    console.log('[ClipEditorDialog] Build started');
+  }
+
+  function onBuildCompleted(buildId: string) {
+    console.log('[ClipEditorDialog] Build completed:', buildId);
+  }
+
+  function onBuildFailed(error: string) {
+    console.error('[ClipEditorDialog] Build failed:', error);
+  }
+
   // Auto-save function (debounced)
   function triggerAutoSave() {
     // Don't save during initial load
@@ -2601,14 +2976,14 @@
 
   // Perform the actual save
   async function performSave() {
-    const editId = props.editorMode ? videoEditorEditId.value : clipEditId.value;
+    const editId = editorMode.value ? videoEditorEditId.value : clipEditId.value;
     if (!editId) return;
 
     isSaving.value = true;
     lastSaved.value = false;
 
     try {
-      if (props.editorMode) {
+      if (editorMode.value) {
         // Video editor mode - save to video_editor_edits table
         await updateVideoEditorEdit(editId, {
           filterSegments: filterSegments.value,
@@ -2664,7 +3039,7 @@
     // In editor mode, find the project ID from video sources
     // Note: editorProjectId is a video_editor_projects.id, not a projects.id
     // We need to look up the original project from the video sources to get transcripts
-    if (props.editorMode) {
+    if (editorMode.value) {
       // Try to find a source with a source_id (clip or raw_video reference)
       const sourceWithId = videoSources.value.find(
         (s) => s.source_id && (s.source_type === 'clip' || s.source_type === 'raw_video')
@@ -2704,6 +3079,52 @@
     }
   }
 
+  // Check if saved trim segments match the current clip segments
+  // Returns true if the segments are out of sync (e.g., clip was split after last edit)
+  function areSegmentsOutOfSync(
+    savedSegments: { id: string; startTime: number; endTime: number; isDeleted?: boolean }[],
+    currentClipSegments: ClipSegmentInput[]
+  ): boolean {
+    if (!currentClipSegments || currentClipSegments.length === 0) {
+      return false; // No current segments to compare
+    }
+
+    // Filter out deleted segments from saved segments
+    const activeSavedSegments = savedSegments.filter((s) => !s.isDeleted);
+
+    // If segment counts differ, they're out of sync
+    if (activeSavedSegments.length !== currentClipSegments.length) {
+      console.log(
+        `[ClipEditorDialog] Segments out of sync: saved count (${activeSavedSegments.length}) != current count (${currentClipSegments.length})`
+      );
+      return true;
+    }
+
+    // Compare each segment's timing (convert clip segments to relative times)
+    const timeTolerance = 0.1; // 100ms tolerance for floating point comparison
+    for (let i = 0; i < currentClipSegments.length; i++) {
+      const currentSeg = currentClipSegments[i];
+      const savedSeg = activeSavedSegments[i];
+
+      // Convert absolute source times to relative times
+      const currentRelativeStart = currentSeg.start_time - props.clipStartTime;
+      const currentRelativeEnd = currentSeg.end_time - props.clipStartTime;
+
+      // Check if start or end times differ significantly
+      if (
+        Math.abs(savedSeg.startTime - currentRelativeStart) > timeTolerance ||
+        Math.abs(savedSeg.endTime - currentRelativeEnd) > timeTolerance
+      ) {
+        console.log(
+          `[ClipEditorDialog] Segment ${i} timing mismatch: saved (${savedSeg.startTime.toFixed(2)}-${savedSeg.endTime.toFixed(2)}) vs current (${currentRelativeStart.toFixed(2)}-${currentRelativeEnd.toFixed(2)})`
+        );
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   // Load existing edit data
   async function loadEditData() {
     const editRecord = await getOrCreateClipEdit(props.clipId);
@@ -2713,8 +3134,27 @@
     if (fullEdit) {
       const editData = JSON.parse(fullEdit.edit.edit_data);
 
-      if (editData.trim?.segments && editData.trim.segments.length > 0) {
-        trimSegments.value = editData.trim.segments;
+      // Check if saved segments are out of sync with current clip segments
+      // This happens when the clip is modified (e.g., split, merged) outside the editor
+      const savedSegments = editData.trim?.segments || [];
+      const segmentsChanged =
+        savedSegments.length > 0 &&
+        props.clipSegments &&
+        props.clipSegments.length > 0 &&
+        areSegmentsOutOfSync(savedSegments, props.clipSegments);
+
+      if (segmentsChanged) {
+        // Clip segments have changed - re-initialize from current clip segments
+        console.log('[ClipEditorDialog] Clip segments changed, re-syncing from database');
+        trimSegments.value = props.clipSegments!.map((seg, index) => ({
+          id: `segment-${index}`,
+          startTime: seg.start_time - props.clipStartTime,
+          endTime: seg.end_time - props.clipStartTime,
+          isDeleted: false,
+        }));
+      } else if (savedSegments.length > 0) {
+        // Use saved segments (they match the current clip structure)
+        trimSegments.value = savedSegments;
       } else if (props.clipSegments && props.clipSegments.length > 0) {
         // Initialize from clip's segments if no edit data segments exist
         // Convert absolute source times to relative times (0 to clipDuration)
@@ -2749,7 +3189,12 @@
 
       // Load aspect framing data
       if (editData.aspectFraming) {
-        selectedAspectRatios.value = editData.aspectFraming.selectedRatios || [];
+        const savedRatios = editData.aspectFraming.selectedRatios || [];
+        // Ensure 16:9 (Original) is always included
+        if (!savedRatios.includes('16:9')) {
+          savedRatios.unshift('16:9');
+        }
+        selectedAspectRatios.value = savedRatios;
         framingMode.value = editData.aspectFraming.framingMode || 'auto';
         framingConfigs.value = editData.aspectFraming.configs || {};
       }
@@ -2915,7 +3360,7 @@
 
   // Handle video element loaded - apply any pending seek
   function onVideoLoaded() {
-    if (!props.editorMode || !videoElement.value) return;
+    if (!editorMode.value || !videoElement.value) return;
 
     const wasPlaying = isPlaying.value;
     const source = activeVideoSource.value;
@@ -2972,7 +3417,7 @@
         !!activeTransition.value
       );
 
-      if (props.editorMode && newSrc && newSrc !== oldSrc && videoElement.value) {
+      if (editorMode.value && newSrc && newSrc !== oldSrc && videoElement.value) {
         // Skip processing if the preload video is the active one
         // This happens after crossfade completes - the main video's src changes
         // but we're already playing the preload video, so no action needed
@@ -3061,7 +3506,7 @@
       if (isOpen) {
         isInitialLoad.value = true; // Prevent auto-save during load
 
-        if (props.editorMode && props.editorProjectId) {
+        if (editorMode.value && editorProjectId.value) {
           // Editor mode - load video sources
           await loadEditorProject();
           await loadProjectId(); // Load project ID for transcript/subtitles
@@ -3102,8 +3547,9 @@
           saveTimeout = null;
         }
 
-        if (props.editorMode && props.editorProjectId) {
-          emit('editorSave', props.editorProjectId);
+        // Use computed editorMode/editorProjectId to handle promoted state
+        if (editorMode.value && editorProjectId.value) {
+          emit('editorSave', editorProjectId.value);
         } else {
           await performSave();
         }
@@ -3124,6 +3570,10 @@
         // Reset editor mode state
         videoSources.value = [];
         videoEditorEditId.value = null;
+        // Reset promotion state
+        isPromotedToEditorMode.value = false;
+        promotedProjectId.value = null;
+        promotedProjectName.value = '';
       }
     }
   );
