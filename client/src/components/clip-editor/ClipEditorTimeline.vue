@@ -641,9 +641,9 @@
   import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
   import { ZoomIn, Film, Music, Type, Smile, Sparkles, Palette, Droplet, X, Blend } from 'lucide-vue-next';
   import { useAudioWaveform } from '@/composables/useAudioWaveform';
+  import TimelineHoverLine from '@/components/TimelineHoverLine.vue';
   import type {
     TrimSegment,
-  import TimelineHoverLine from '@/components/TimelineHoverLine.vue';
     AudioTrack,
     TextOverlay,
     Sticker,
@@ -1811,7 +1811,13 @@
 
   function onTimelineMouseMove(event: MouseEvent) {
     // Don't show hover line during drag/resize operations
-    if (isDragging.value || isResizing.value || isDraggingPlayhead.value || isDraggingSource.value || isResizingSource.value) {
+    if (
+      isDragging.value ||
+      isResizing.value ||
+      isDraggingPlayhead.value ||
+      isDraggingSource.value ||
+      isResizingSource.value
+    ) {
       showHoverLine.value = false;
       return;
     }
