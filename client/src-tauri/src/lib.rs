@@ -354,6 +354,12 @@ pub fn run() {
                             sql: include_str!("../migrations/058_add_video_editor_projects.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 59,
+                            description: "add_video_editor_edits",
+                            sql: include_str!("../migrations/059_add_video_editor_edits.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

@@ -58,9 +58,7 @@
             title="Scroll to zoom"
           >
             <!-- Track label spacer -->
-            <div
-              class="w-16 h-7 pr-2 mr-0.5 flex items-center justify-center flex-shrink-0 sticky left-0 z-[70] bg-[#0a0a0a]"
-            >
+            <div class="w-20 h-7 pl-2 flex items-center justify-start flex-shrink-0 sticky left-0 z-[70] bg-[#0a0a0a]">
               <span class="text-xs text-muted-foreground/50 font-medium">Time</span>
             </div>
             <!-- Segmented timestamp ruler -->
@@ -125,13 +123,12 @@
           <!-- Video Track -->
           <div class="flex items-center h-12 border-b border-border/20 relative">
             <div
-              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0"
+              class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
+              :class="{ 'track-label-active': isTrackActive('trim') || isTrackActive('source') }"
             >
-              <div>
-                <div class="font-medium flex items-center gap-1">
-                  <Film :size="12" />
-                  Video
-                </div>
+              <div class="font-medium flex items-center gap-1">
+                <Film :size="12" />
+                Video
               </div>
             </div>
             <div
@@ -301,14 +298,15 @@
           <div
             v-for="track in audioTracks"
             :key="track.id"
-            class="flex items-center h-12 px-2 border-b border-border/20 relative"
+            class="flex items-center h-12 border-b border-border/20 relative"
           >
             <div
-              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-2 z-[70] bg-[#101010] flex-shrink-0"
+              class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
+              :class="{ 'track-label-active': selectedItemKey === `audio_${track.id}` }"
             >
               <div class="font-medium flex items-center gap-1 truncate">
                 <Music :size="12" />
-                <span class="truncate max-w-[40px]">{{ track.name }}</span>
+                <span class="truncate max-w-[48px]">{{ track.name }}</span>
               </div>
             </div>
             <div
@@ -372,9 +370,10 @@
           </div>
 
           <!-- Text Overlays Track -->
-          <div v-if="textOverlays.length > 0" class="flex items-center h-12 px-2 border-b border-border/20 relative">
+          <div v-if="textOverlays.length > 0" class="flex items-center h-12 border-b border-border/20 relative">
             <div
-              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-2 z-[70] bg-[#101010] flex-shrink-0"
+              class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
+              :class="{ 'track-label-active': isTrackActive('text') }"
             >
               <div class="font-medium flex items-center gap-1">
                 <Type :size="12" />
@@ -415,9 +414,10 @@
           </div>
 
           <!-- Stickers Track -->
-          <div v-if="stickers.length > 0" class="flex items-center h-12 px-2 border-b border-border/20 relative">
+          <div v-if="stickers.length > 0" class="flex items-center h-12 border-b border-border/20 relative">
             <div
-              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-2 z-[70] bg-[#101010] flex-shrink-0"
+              class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
+              :class="{ 'track-label-active': isTrackActive('sticker') }"
             >
               <div class="font-medium flex items-center gap-1">
                 <Smile :size="12" />
@@ -461,9 +461,10 @@
           </div>
 
           <!-- Watermarks Track -->
-          <div v-if="watermarks.length > 0" class="flex items-center h-12 px-2 border-b border-border/20 relative">
+          <div v-if="watermarks.length > 0" class="flex items-center h-12 border-b border-border/20 relative">
             <div
-              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-2 z-[70] bg-[#101010] flex-shrink-0"
+              class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
+              :class="{ 'track-label-active': isTrackActive('watermark') }"
             >
               <div class="font-medium flex items-center gap-1">
                 <Droplet :size="12" />
@@ -504,9 +505,10 @@
           </div>
 
           <!-- Effects Track -->
-          <div v-if="effects.length > 0" class="flex items-center h-12 px-2 border-b border-border/20 relative">
+          <div v-if="effects.length > 0" class="flex items-center h-12 border-b border-border/20 relative">
             <div
-              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-2 z-[70] bg-[#101010] flex-shrink-0"
+              class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
+              :class="{ 'track-label-active': isTrackActive('effect') }"
             >
               <div class="font-medium flex items-center gap-1">
                 <Sparkles :size="12" />
@@ -547,9 +549,10 @@
           </div>
 
           <!-- Filters Track -->
-          <div v-if="filterSegments.length > 0" class="flex items-center h-12 px-2 border-b border-border/20 relative">
+          <div v-if="filterSegments.length > 0" class="flex items-center h-12 border-b border-border/20 relative">
             <div
-              class="w-16 h-8 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-2 z-[70] bg-[#101010] flex-shrink-0"
+              class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
+              :class="{ 'track-label-active': isTrackActive('filter') }"
             >
               <div class="font-medium flex items-center gap-1">
                 <Palette :size="12" />
@@ -1227,6 +1230,12 @@
     selectedItemKey.value = `${type}_${id}`;
   }
 
+  // Check if a track type has an active/selected item
+  function isTrackActive(type: ItemType): boolean {
+    if (!selectedItemKey.value) return false;
+    return selectedItemKey.value.startsWith(`${type}_`);
+  }
+
   function getSegmentClasses(type: ItemType, id: string, isDeleted?: boolean): string[] {
     const classes: string[] = [];
     const key = `${type}_${id}`;
@@ -1624,9 +1633,10 @@
     const left = (transition.startTime / duration) * 100;
     const width = ((transition.endTime - transition.startTime) / duration) * 100;
 
+    // Use exact percentage width for accuracy - CSS min-width ensures visibility for tiny crossfades
     return {
       left: `${left}%`,
-      width: `${Math.max(width, 0.5)}%`,
+      width: `${width}%`,
     };
   }
 
@@ -2930,11 +2940,21 @@
     box-shadow: 0 2px 8px rgba(139, 92, 246, 0.4);
   }
 
+  /* Track label active state styling */
+  .track-label-active {
+    color: rgba(139, 92, 246, 0.9) !important;
+    background: linear-gradient(to right, rgba(139, 92, 246, 0.15), #101010) !important;
+  }
+
+  .track-label-active svg {
+    color: rgba(139, 92, 246, 0.9);
+  }
+
   /* Playhead positioning using CSS custom property */
-  /* Label width is w-16 = 64px, track content is the remaining width */
+  /* Label width is w-20 = 80px, track content is the remaining width */
   .playhead-line {
     --playhead-position: 0;
-    left: calc(64px + (100% - 64px) * var(--playhead-position));
+    left: calc(80px + (100% - 80px) * var(--playhead-position));
     will-change: left;
     /* Smooth transition for seeks (when paused) */
     transition: left 100ms ease-out;
@@ -2952,6 +2972,8 @@
 
   /* Transition zone (crossfade) styling */
   .transition-zone {
+    /* Minimum width ensures visibility for very small crossfades while percentage width remains accurate */
+    min-width: 4px;
     /* Pulsing animation to draw attention */
     animation: transition-pulse 2s ease-in-out infinite;
   }

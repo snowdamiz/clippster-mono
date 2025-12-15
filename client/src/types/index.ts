@@ -1039,11 +1039,15 @@ export interface SourceItem {
   id: string;
   type: 'clip' | 'raw_video';
   name: string;
-  path: string;
+  path: string; // For clips: raw video path; For raw_video: file path
   thumbnailPath: string | null;
-  duration: number | null;
+  duration: number | null; // Duration of the playable segment
   projectId: string | null;
   projectName: string | null;
+  // Clip-specific: segment times within the source video
+  clipStartTime?: number | null; // Start time in source video (for detected clips)
+  clipEndTime?: number | null; // End time in source video (for detected clips)
+  sourceDuration?: number | null; // Full duration of the source video
 }
 
 // Video Editor Dialog Props

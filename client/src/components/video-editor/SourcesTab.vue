@@ -30,7 +30,7 @@
     </div>
 
     <!-- Tabs -->
-    <div class="flex items-center gap-1 p-1 bg-white/5 rounded-lg">
+    <div class="flex items-center gap-1 -mt-4 p-1 bg-white/5 rounded-lg">
       <button
         @click="activeSourceTab = 'clips'"
         :class="[
@@ -52,9 +52,7 @@
     </div>
 
     <!-- Content -->
-    <div
-      class="space-y-2 max-h-[400px] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent pr-1"
-    >
+    <div class="space-y-2 pr-1">
       <!-- Loading -->
       <div v-if="loading" class="flex items-center justify-center py-8">
         <Loader2 :size="24" class="animate-spin text-white/40" />
@@ -162,11 +160,6 @@
         </div>
       </template>
     </div>
-
-    <!-- Info text -->
-    <div class="pt-2 border-t border-white/10">
-      <p class="text-[10px] text-white/30 text-center">Click or drag items to add them to the timeline</p>
-    </div>
   </div>
 </template>
 
@@ -174,8 +167,8 @@
   import { ref, computed, onMounted } from 'vue';
   import { Search, Upload, Film, Video, Plus, Loader2 } from 'lucide-vue-next';
   import type { SourceItem } from '@/types';
-  import { getAllClipsWithBuilds } from '@/services/database/clip-build';
-  import { getAllRawVideos } from '@/services/database/raw-videos';
+  import { getAllClips } from '@/services/database/clips';
+  import { getAllRawVideos, getRawVideosByProjectId } from '@/services/database/raw-videos';
   import { getAllProjects } from '@/services/database/projects';
   import { open } from '@tauri-apps/plugin-dialog';
   import { invoke } from '@tauri-apps/api/core';
@@ -252,23 +245,48 @@
       const projects = await getAllProjects();
       projectNames.value = new Map(projects.map((p) => [p.id, p.name]));
 
-      // Load clips with builds (these have exported files)
-      const allClips = await getAllClipsWithBuilds();
-      clips.value = allClips
-        .filter((c) => c.builds && c.builds.length > 0)
-        .map((c) => {
-          const latestBuild = c.builds?.[0];
+      // Build a cache of project raw videos for efficient lookup
+      const projectRawVideosCache = new Map<string, { path: string; duration: number | null }>();
+      for (const project of projects) {
+        const rawVids = await getRawVideosByProjectId(project.id);
+        if (rawVids.length > 0) {
+          // Use the first raw video for the project (main source video)
+          projectRawVideosCache.set(project.id, {
+            path: rawVids[0].file_path,
+            duration: rawVids[0].duration ?? null,
+          });
+        }
+      }
+
+      // Load ALL detected clips (not just those with builds)
+      const allClips = await getAllClips();
+      clips.value = await Promise.all(
+        allClips.map(async (c) => {
+          // Get the raw video path from the project
+          const projectRawVideo = c.project_id ? projectRawVideosCache.get(c.project_id) : null;
+
+          // For detected clips: use the raw video as source with trim times
+          // For built clips: use the built file path
+          const hasBuiltFile = c.built_file_path && c.build_status === 'completed';
+          const clipDuration = c.start_time !== null && c.end_time !== null ? c.end_time - c.start_time : c.duration;
+
           return {
             id: c.id,
             type: 'clip' as const,
             name: c.name || 'Untitled Clip',
-            path: latestBuild?.file_path || c.file_path,
-            thumbnailPath: latestBuild?.thumbnail_path || c.built_thumbnail_path || null,
-            duration: latestBuild?.duration || c.duration || null,
+            // Use raw video path for detected clips, built file for exported clips
+            path: hasBuiltFile ? c.built_file_path! : projectRawVideo?.path || c.file_path,
+            thumbnailPath: c.built_thumbnail_path || null,
+            duration: clipDuration ?? null,
             projectId: c.project_id,
             projectName: c.project_id ? projectNames.value.get(c.project_id) || null : c.project_name,
+            // Clip segment timing (for detected clips that reference a raw video)
+            clipStartTime: !hasBuiltFile && projectRawVideo ? c.start_time : null,
+            clipEndTime: !hasBuiltFile && projectRawVideo ? c.end_time : null,
+            sourceDuration: !hasBuiltFile && projectRawVideo ? projectRawVideo.duration : null,
           };
-        });
+        })
+      );
 
       // Load raw videos
       const allRawVideos = await getAllRawVideos();

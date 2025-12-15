@@ -125,7 +125,7 @@
               <ClipEditorToolbar
                 :active-tab="editorMode ? activeEditorTab : activeTab"
                 :editor-mode="editorMode"
-                @tab-change="editorMode ? setEditorTab : setActiveTab"
+                @tab-change="(tab) => (editorMode ? setEditorTab(tab) : setActiveTab(tab))"
               />
 
               <!-- Tab Content -->
@@ -354,6 +354,22 @@
     deleteVideoEditorSource,
     getNextSourceStartTime,
     recalculateProjectDuration,
+    // Video Editor Edit imports (for editor mode overlays, audio, etc.)
+    getOrCreateVideoEditorEdit,
+    updateVideoEditorEdit,
+    getFullVideoEditorEdit,
+    createVideoEditorAudioTrack,
+    updateVideoEditorAudioTrack,
+    deleteVideoEditorAudioTrack,
+    createVideoEditorTextOverlay,
+    updateVideoEditorTextOverlay,
+    deleteVideoEditorTextOverlay,
+    createVideoEditorSticker,
+    updateVideoEditorSticker,
+    deleteVideoEditorSticker,
+    createVideoEditorWatermark,
+    updateVideoEditorWatermark,
+    deleteVideoEditorWatermark,
   } from '@/services/database';
   import type { VideoEditorSource, VideoEditorTab, SourceItem, VideoEditorTransition } from '@/types';
   import { calculateCrossfadeOpacity } from '@/types';
@@ -422,6 +438,7 @@
   const previewRef = ref<InstanceType<typeof ClipEditorPreview> | null>(null);
   const videoElement = ref<HTMLVideoElement | null>(null);
   const clipEditId = ref<string | null>(null);
+  const videoEditorEditId = ref<string | null>(null); // For video editor mode
 
   // Auto-save state
   const isSaving = ref(false);
@@ -575,6 +592,10 @@
 
   // Calculate total duration of all segments combined
   const totalSegmentDuration = computed(() => {
+    // Editor mode uses video sources instead of trim segments
+    if (props.editorMode) {
+      return editorContentDuration.value;
+    }
     const segments = trimSegments.value.filter((s) => !s.isDeleted);
     if (segments.length === 0) {
       return clipDuration.value;
@@ -590,6 +611,11 @@
   // Convert absolute video time to effective timeline time (accounting for segment cuts)
   // This is the time position in the "edited" timeline where cuts are removed
   const effectivePreviewTime = computed(() => {
+    // Editor mode: previewTime is already the global timeline position
+    if (props.editorMode) {
+      return previewTime.value;
+    }
+
     const absoluteTime = previewTime.value;
     const segments = trimSegments.value.filter((s) => !s.isDeleted);
 
@@ -842,20 +868,38 @@
 
     try {
       const startTime = await getNextSourceStartTime(props.editorProjectId);
-      const duration = source.duration || 30;
+
+      // For detected clips: use clip segment timing (trim from source video)
+      // For raw videos/built clips: use full duration
+      const isDetectedClip =
+        source.type === 'clip' &&
+        source.clipStartTime !== undefined &&
+        source.clipStartTime !== null &&
+        source.clipEndTime !== undefined &&
+        source.clipEndTime !== null;
+
+      // Calculate durations
+      const clipDuration = isDetectedClip ? source.clipEndTime! - source.clipStartTime! : source.duration || 30;
+
+      // Source duration is the full video length (for detected clips use sourceDuration)
+      const fullSourceDuration = isDetectedClip ? source.sourceDuration || clipDuration : source.duration || 30;
+
+      // Trim points in the source video
+      const trimStart = isDetectedClip ? source.clipStartTime! : 0;
+      const trimEnd = isDetectedClip ? source.clipEndTime! : null;
 
       // Store the actual file path (not the HTTP URL) for the source
       const newSource = await createVideoEditorSource(props.editorProjectId, {
         sourceType: source.type,
         sourceId: source.id,
-        sourcePath: source.path, // Store actual file path
+        sourcePath: source.path, // Store actual file path (raw video path for detected clips)
         sourceName: source.name,
         sourceThumbnail: source.thumbnailPath,
-        sourceDuration: duration,
+        sourceDuration: fullSourceDuration,
         startTime: startTime,
-        endTime: startTime + duration,
-        trimStart: 0,
-        trimEnd: null,
+        endTime: startTime + clipDuration, // Timeline duration is the clip segment duration
+        trimStart: trimStart,
+        trimEnd: trimEnd,
         orderIndex: videoSources.value.length,
       });
 
@@ -979,6 +1023,108 @@
         // Find the source at time 0 (which we'll initialize previewTime to)
         const initialSource = sources.find((s) => 0 >= s.start_time && 0 < s.end_time);
         currentVideoSourceId.value = initialSource?.id || sources[0].id;
+      }
+
+      // Create/get an edit record for the video editor project
+      // Uses the dedicated video_editor_edits table (not clip_edits)
+      const editRecord = await getOrCreateVideoEditorEdit(props.editorProjectId);
+      videoEditorEditId.value = editRecord.id;
+
+      // Load existing edit data for the video editor project
+      const fullEdit = await getFullVideoEditorEdit(props.editorProjectId);
+      if (fullEdit) {
+        const editData = JSON.parse(fullEdit.edit.edit_data);
+
+        // Load filter segments
+        if (editData.filterSegments && Array.isArray(editData.filterSegments)) {
+          filterSegments.value = editData.filterSegments;
+        }
+
+        // Load audio volume settings
+        if (editData.originalDb !== undefined) {
+          originalDb.value = editData.originalDb;
+        }
+        if (editData.trackDbValues) {
+          trackDbValues.value = editData.trackDbValues;
+        }
+
+        // Load audio tracks
+        audioTracks.value = fullEdit.audioTracks.map((t) => ({
+          id: t.id,
+          filePath: t.file_path,
+          name: t.name,
+          startTime: t.start_time,
+          endTime: t.end_time,
+          volume: t.volume,
+          fadeIn: t.fade_in,
+          fadeOut: t.fade_out,
+          trackOrder: t.track_order,
+          isMuted: !!t.is_muted,
+          isSolo: !!t.is_solo,
+        }));
+
+        // Load text overlays
+        textOverlays.value = fullEdit.textOverlays.map((o) => ({
+          id: o.id,
+          text: o.text,
+          startTime: o.start_time,
+          endTime: o.end_time,
+          position: { x: o.position_x, y: o.position_y },
+          style: JSON.parse(o.style_data || '{}'),
+          perRatioConfigs: o.per_ratio_configs_data ? JSON.parse(o.per_ratio_configs_data) : undefined,
+        }));
+
+        // Load stickers
+        stickers.value = fullEdit.stickers.map((s) => ({
+          id: s.id,
+          stickerPath: s.sticker_path,
+          stickerType: s.sticker_type,
+          startTime: s.start_time,
+          endTime: s.end_time,
+          position: { x: s.position_x, y: s.position_y },
+          scale: s.scale,
+          rotation: s.rotation,
+          perRatioConfigs: s.per_ratio_configs_data ? JSON.parse(s.per_ratio_configs_data) : undefined,
+        }));
+
+        // Load watermarks - convert file paths to data URLs for preview
+        watermarks.value = await Promise.all(
+          fullEdit.watermarks.map(async (w) => {
+            // Convert file path to data URL for preview display
+            let previewUrl = w.preview_url;
+            if (!previewUrl && w.watermark_path) {
+              try {
+                previewUrl = await invoke<string>('read_file_as_data_url', {
+                  filePath: w.watermark_path,
+                });
+              } catch (err) {
+                console.warn('[ClipEditorDialog] Failed to load watermark preview:', w.id, err);
+                // Use a fallback placeholder
+                previewUrl =
+                  'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiB2aWV3Qm94PSIwIDAgMjAwIDEyMCIgZmlsbD0ibm9uZSI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiBmaWxsPSIjNzg1MDAwIi8+CjxjaXJjbGUgY3g9IjEwMCIgY3k9IjUwIiByPSIyMCIgZmlsbD0iI0Y1OUUwQiIvPgo8dGV4dCB4PSIxMDAiIHk9Ijk1IiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiNGRkZGRkYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPldhdGVybWFyazwvdGV4dD4KPC9zdmc+';
+              }
+            }
+
+            return {
+              id: w.id,
+              watermarkId: w.watermark_id,
+              watermarkPath: previewUrl || w.watermark_path, // Use data URL for display
+              startTime: w.start_time,
+              endTime: w.end_time,
+              position: { x: w.position_x, y: w.position_y },
+              scale: w.scale,
+              opacity: w.opacity,
+              perRatioConfigs: w.per_ratio_configs_data ? JSON.parse(w.per_ratio_configs_data) : undefined,
+            };
+          })
+        );
+
+        // Set up audio elements for existing tracks
+        audioTracks.value.forEach((track) => {
+          if (!audioElements.value.has(track.id)) {
+            setupAudioElement(track);
+          }
+        });
       }
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to load editor project:', error);
@@ -1512,12 +1658,13 @@
 
   // Audio operations
   async function addAudioTrack(filePath: string, name: string, duration: number) {
-    if (!clipEditId.value) return;
+    const editId = props.editorMode ? videoEditorEditId.value : clipEditId.value;
+    if (!editId) return;
 
     // Use the actual audio file duration for the track end time
     const trackEndTime = duration;
 
-    const track = await createAudioTrack(clipEditId.value, {
+    const trackData = {
       file_path: filePath,
       name,
       start_time: 0,
@@ -1526,7 +1673,12 @@
       fade_in: 0,
       fade_out: 0,
       track_order: audioTracks.value.length,
-    });
+    };
+
+    // Use appropriate database function based on mode
+    const track = props.editorMode
+      ? await createVideoEditorAudioTrack(editId, trackData)
+      : await createAudioTrack(editId, trackData);
 
     const newTrack: AudioTrack = {
       id: track.id,
@@ -1669,7 +1821,7 @@
   }
 
   async function updateAudioTrackLocal(trackId: string, updates: Partial<AudioTrack>) {
-    await updateAudioTrack(trackId, {
+    const updateData = {
       name: updates.name,
       start_time: updates.startTime,
       end_time: updates.endTime,
@@ -1679,7 +1831,14 @@
       track_order: updates.trackOrder,
       is_muted: updates.isMuted ? 1 : 0,
       is_solo: updates.isSolo ? 1 : 0,
-    });
+    };
+
+    // Use appropriate database function based on mode
+    if (props.editorMode) {
+      await updateVideoEditorAudioTrack(trackId, updateData);
+    } else {
+      await updateAudioTrack(trackId, updateData);
+    }
 
     const track = audioTracks.value.find((t) => t.id === trackId);
     if (track) {
@@ -1693,7 +1852,12 @@
   }
 
   async function deleteAudioTrackLocal(trackId: string) {
-    await deleteAudioTrack(trackId);
+    // Use appropriate database function based on mode
+    if (props.editorMode) {
+      await deleteVideoEditorAudioTrack(trackId);
+    } else {
+      await deleteAudioTrack(trackId);
+    }
 
     // Clean up audio element
     const audio = audioElements.value.get(trackId);
@@ -1811,7 +1975,8 @@
 
   // Text overlay operations
   async function addTextOverlay(text: string, style: any) {
-    if (!clipEditId.value) return;
+    const editId = props.editorMode ? videoEditorEditId.value : clipEditId.value;
+    if (!editId) return;
 
     // Use effective time (accounting for segment cuts) for the overlay timing
     const effectiveStartTime = effectivePreviewTime.value;
@@ -1820,7 +1985,7 @@
     // Get the current preview container height for proper font scaling on export
     const currentPreviewHeight = previewRef.value?.getOverlayContainerHeight() ?? 400;
 
-    const overlay = await createTextOverlay(clipEditId.value, {
+    const overlayData = {
       text,
       start_time: effectiveStartTime,
       end_time: effectiveEndTime,
@@ -1829,7 +1994,12 @@
       style_data: JSON.stringify(style),
       animation: 'fade',
       preview_height: currentPreviewHeight,
-    });
+    };
+
+    // Use appropriate database function based on mode
+    const overlay = props.editorMode
+      ? await createVideoEditorTextOverlay(editId, overlayData)
+      : await createTextOverlay(editId, overlayData);
 
     textOverlays.value.push({
       id: overlay.id,
@@ -1850,7 +2020,7 @@
       currentPreviewHeight = previewRef.value?.getOverlayContainerHeight() ?? undefined;
     }
 
-    await updateTextOverlay(overlayId, {
+    const updateData = {
       text: updates.text,
       start_time: updates.startTime,
       end_time: updates.endTime,
@@ -1860,7 +2030,14 @@
       per_ratio_configs_data: updates.perRatioConfigs ? JSON.stringify(updates.perRatioConfigs) : undefined,
       preview_height: currentPreviewHeight,
       animation: updates.animation,
-    });
+    };
+
+    // Use appropriate database function based on mode
+    if (props.editorMode) {
+      await updateVideoEditorTextOverlay(overlayId, updateData);
+    } else {
+      await updateTextOverlay(overlayId, updateData);
+    }
 
     const overlay = textOverlays.value.find((o) => o.id === overlayId);
     if (overlay) {
@@ -1872,19 +2049,25 @@
   }
 
   async function deleteTextOverlayLocal(overlayId: string) {
-    await deleteTextOverlay(overlayId);
+    // Use appropriate database function based on mode
+    if (props.editorMode) {
+      await deleteVideoEditorTextOverlay(overlayId);
+    } else {
+      await deleteTextOverlay(overlayId);
+    }
     textOverlays.value = textOverlays.value.filter((o) => o.id !== overlayId);
   }
 
   // Sticker operations
   async function addStickerLocal(stickerPath: string, type: 'emoji' | 'image' | 'gif') {
-    if (!clipEditId.value) return;
+    const editId = props.editorMode ? videoEditorEditId.value : clipEditId.value;
+    if (!editId) return;
 
     // Use effective time (accounting for segment cuts) for sticker timing
     const effectiveStartTime = effectivePreviewTime.value;
     const effectiveEndTime = Math.min(effectiveStartTime + 3, totalSegmentDuration.value);
 
-    const sticker = await createSticker(clipEditId.value, {
+    const stickerData = {
       sticker_path: stickerPath,
       sticker_type: type,
       start_time: effectiveStartTime,
@@ -1894,7 +2077,12 @@
       scale: 1,
       rotation: 0,
       animation: 'none',
-    });
+    };
+
+    // Use appropriate database function based on mode
+    const sticker = props.editorMode
+      ? await createVideoEditorSticker(editId, stickerData)
+      : await createSticker(editId, stickerData);
 
     stickers.value.push({
       id: sticker.id,
@@ -1910,7 +2098,7 @@
   }
 
   async function updateStickerLocal(stickerId: string, updates: Partial<Sticker>) {
-    await updateSticker(stickerId, {
+    const updateData = {
       sticker_path: updates.stickerPath,
       sticker_type: updates.stickerType,
       start_time: updates.startTime,
@@ -1921,7 +2109,14 @@
       rotation: updates.rotation,
       animation: updates.animation,
       per_ratio_configs_data: updates.perRatioConfigs ? JSON.stringify(updates.perRatioConfigs) : undefined,
-    });
+    };
+
+    // Use appropriate database function based on mode
+    if (props.editorMode) {
+      await updateVideoEditorSticker(stickerId, updateData);
+    } else {
+      await updateSticker(stickerId, updateData);
+    }
 
     const sticker = stickers.value.find((s) => s.id === stickerId);
     if (sticker) {
@@ -1930,29 +2125,40 @@
   }
 
   async function deleteStickerLocal(stickerId: string) {
-    await deleteSticker(stickerId);
+    // Use appropriate database function based on mode
+    if (props.editorMode) {
+      await deleteVideoEditorSticker(stickerId);
+    } else {
+      await deleteSticker(stickerId);
+    }
     stickers.value = stickers.value.filter((s) => s.id !== stickerId);
   }
 
   // Watermark operations
   async function addWatermarkLocal(watermarkId: string, filePath: string, previewUrl: string) {
-    if (!clipEditId.value) return;
+    const editId = props.editorMode ? videoEditorEditId.value : clipEditId.value;
+    if (!editId) return;
 
     // By default, watermark spans the entire clip duration (100% of clip)
     const startTime = 0;
     const endTime = totalSegmentDuration.value;
 
-    // Store the actual file path for export, and previewUrl for display
-    const watermark = await createWatermark(clipEditId.value, {
+    const watermarkData = {
       watermark_id: watermarkId,
       watermark_path: filePath, // File path for FFmpeg export
+      preview_url: previewUrl, // Data URL for preview display
       start_time: startTime,
       end_time: endTime,
       position_x: 8,
       position_y: 92,
       scale: 15,
       opacity: 80,
-    });
+    };
+
+    // Use appropriate database function based on mode
+    const watermark = props.editorMode
+      ? await createVideoEditorWatermark(editId, watermarkData)
+      : await createWatermark(editId, watermarkData);
 
     watermarks.value.push({
       id: watermark.id,
@@ -1967,7 +2173,7 @@
   }
 
   async function updateWatermarkLocal(watermarkId: string, updates: Partial<ClipWatermark>) {
-    await updateWatermarkRecord(watermarkId, {
+    const updateData = {
       watermark_id: updates.watermarkId,
       watermark_path: updates.watermarkPath,
       start_time: updates.startTime,
@@ -1977,7 +2183,14 @@
       scale: updates.scale,
       opacity: updates.opacity,
       per_ratio_configs_data: updates.perRatioConfigs ? JSON.stringify(updates.perRatioConfigs) : undefined,
-    });
+    };
+
+    // Use appropriate database function based on mode
+    if (props.editorMode) {
+      await updateVideoEditorWatermark(watermarkId, updateData);
+    } else {
+      await updateWatermarkRecord(watermarkId, updateData);
+    }
 
     const watermark = watermarks.value.find((w) => w.id === watermarkId);
     if (watermark) {
@@ -1986,7 +2199,12 @@
   }
 
   async function deleteWatermarkLocal(watermarkId: string) {
-    await deleteWatermarkRecord(watermarkId);
+    // Use appropriate database function based on mode
+    if (props.editorMode) {
+      await deleteVideoEditorWatermark(watermarkId);
+    } else {
+      await deleteWatermarkRecord(watermarkId);
+    }
     watermarks.value = watermarks.value.filter((w) => w.id !== watermarkId);
   }
 
@@ -2216,30 +2434,41 @@
 
   // Perform the actual save
   async function performSave() {
-    if (!clipEditId.value) return;
+    const editId = props.editorMode ? videoEditorEditId.value : clipEditId.value;
+    if (!editId) return;
 
     isSaving.value = true;
     lastSaved.value = false;
 
     try {
-      await updateClipEdit(clipEditId.value, {
-        trim: {
-          startTime: props.clipStartTime,
-          endTime: props.clipEndTime,
-          segments: trimSegments.value,
-        },
-        filterSegments: filterSegments.value,
-        originalDb: originalDb.value,
-        trackDbValues: trackDbValues.value,
-        // Aspect ratio framing data
-        aspectFraming: {
-          selectedRatios: selectedAspectRatios.value,
-          framingMode: framingMode.value,
-          configs: framingConfigs.value,
-        },
-        // Subtitle settings
-        subtitleSettings: subtitleSettings.value,
-      });
+      if (props.editorMode) {
+        // Video editor mode - save to video_editor_edits table
+        await updateVideoEditorEdit(editId, {
+          filterSegments: filterSegments.value,
+          originalDb: originalDb.value,
+          trackDbValues: trackDbValues.value,
+        });
+      } else {
+        // Clip mode - save to clip_edits table
+        await updateClipEdit(editId, {
+          trim: {
+            startTime: props.clipStartTime,
+            endTime: props.clipEndTime,
+            segments: trimSegments.value,
+          },
+          filterSegments: filterSegments.value,
+          originalDb: originalDb.value,
+          trackDbValues: trackDbValues.value,
+          // Aspect ratio framing data
+          aspectFraming: {
+            selectedRatios: selectedAspectRatios.value,
+            framingMode: framingMode.value,
+            configs: framingConfigs.value,
+          },
+          // Subtitle settings
+          subtitleSettings: subtitleSettings.value,
+        });
+      }
 
       lastSaved.value = true;
 
@@ -2375,17 +2604,37 @@
         perRatioConfigs: s.per_ratio_configs_data ? JSON.parse(s.per_ratio_configs_data) : undefined,
       }));
 
-      watermarks.value = fullEdit.watermarks.map((w) => ({
-        id: w.id,
-        watermarkId: w.watermark_id,
-        watermarkPath: w.watermark_path,
-        startTime: w.start_time,
-        endTime: w.end_time,
-        position: { x: w.position_x, y: w.position_y },
-        scale: w.scale,
-        opacity: w.opacity,
-        perRatioConfigs: w.per_ratio_configs_data ? JSON.parse(w.per_ratio_configs_data) : undefined,
-      }));
+      // Load watermarks - convert file paths to data URLs for preview
+      watermarks.value = await Promise.all(
+        fullEdit.watermarks.map(async (w) => {
+          // Convert file path to data URL for preview display
+          let previewUrl = w.preview_url;
+          if (!previewUrl && w.watermark_path) {
+            try {
+              previewUrl = await invoke<string>('read_file_as_data_url', {
+                filePath: w.watermark_path,
+              });
+            } catch (err) {
+              console.warn('[ClipEditorDialog] Failed to load watermark preview:', w.id, err);
+              // Use a fallback placeholder
+              previewUrl =
+                'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiB2aWV3Qm94PSIwIDAgMjAwIDEyMCIgZmlsbD0ibm9uZSI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiBmaWxsPSIjNzg1MDAwIi8+CjxjaXJjbGUgY3g9IjEwMCIgY3k9IjUwIiByPSIyMCIgZmlsbD0iI0Y1OUUwQiIvPgo8dGV4dCB4PSIxMDAiIHk9Ijk1IiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiNGRkZGRkYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPldhdGVybWFyazwvdGV4dD4KPC9zdmc+';
+            }
+          }
+
+          return {
+            id: w.id,
+            watermarkId: w.watermark_id,
+            watermarkPath: previewUrl || w.watermark_path, // Use data URL for display
+            startTime: w.start_time,
+            endTime: w.end_time,
+            position: { x: w.position_x, y: w.position_y },
+            scale: w.scale,
+            opacity: w.opacity,
+            perRatioConfigs: w.per_ratio_configs_data ? JSON.parse(w.per_ratio_configs_data) : undefined,
+          };
+        })
+      );
 
       effects.value = fullEdit.effects.map((e) => ({
         id: e.id,
@@ -2675,6 +2924,7 @@
         isInitialLoad.value = true;
         // Reset editor mode state
         videoSources.value = [];
+        videoEditorEditId.value = null;
       }
     }
   );
