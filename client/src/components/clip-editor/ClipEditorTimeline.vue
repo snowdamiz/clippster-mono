@@ -623,6 +623,18 @@
       </div>
     </div>
   </div>
+
+  <!-- Timeline Hover Line -->
+  <TimelineHoverLine
+    :showLine="showHoverLine"
+    :position="hoverLinePosition"
+    :timelineBoundsTop="timelineBounds.top"
+    :timelineBoundsBottom="timelineBounds.bottom"
+    :timelineBoundsLeft="timelineBounds.left"
+    :isPanning="false"
+    :isDragging="isDragging || isResizing || isDraggingPlayhead"
+    :isCutToolActive="false"
+  />
 </template>
 
 <script setup lang="ts">
@@ -631,6 +643,7 @@
   import { useAudioWaveform } from '@/composables/useAudioWaveform';
   import type {
     TrimSegment,
+  import TimelineHoverLine from '@/components/TimelineHoverLine.vue';
     AudioTrack,
     TextOverlay,
     Sticker,
@@ -800,6 +813,14 @@
 
   // Smooth playhead animation state
   const smoothPlayheadPosition = ref(0);
+  // Hover line state
+  const showHoverLine = ref(false);
+  const hoverLinePosition = ref(0);
+  const timelineBounds = ref({ top: 0, bottom: 0, left: 0 });
+
+  // Track label width constant (matches the w-20 class = 80px)
+  const TRACK_LABEL_WIDTH = 80;
+
   let animationFrameId: number | null = null;
   let lastUpdateTime = 0;
   let targetPosition = 0;
@@ -1788,12 +1809,38 @@
     }
   }
 
-  function onTimelineMouseMove(_e: MouseEvent) {
-    // Could be used for hover effects
+  function onTimelineMouseMove(event: MouseEvent) {
+    // Don't show hover line during drag/resize operations
+    if (isDragging.value || isResizing.value || isDraggingPlayhead.value || isDraggingSource.value || isResizingSource.value) {
+      showHoverLine.value = false;
+      return;
+    }
+
+    const container = timelineScrollContainer.value;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const relativeX = event.clientX - rect.left;
+
+    // Update timeline bounds
+    timelineBounds.value = {
+      top: rect.top,
+      bottom: rect.bottom,
+      left: rect.left + TRACK_LABEL_WIDTH,
+    };
+
+    // Only show hover line if we're in the timeline content area (after track labels)
+    if (relativeX >= TRACK_LABEL_WIDTH) {
+      showHoverLine.value = true;
+      // Position the line exactly where the cursor is (absolute viewport position)
+      hoverLinePosition.value = event.clientX;
+    } else {
+      showHoverLine.value = false;
+    }
   }
 
   function onTimelineMouseLeave() {
-    // Could be used for hover effects
+    showHoverLine.value = false;
   }
 
   function onRulerWheel(event: WheelEvent) {
