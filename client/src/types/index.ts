@@ -1032,7 +1032,8 @@ export type VideoEditorTab =
   | 'stickers'
   | 'watermark'
   | 'subtitles'
-  | 'aspect';
+  | 'aspect'
+  | 'transcript';
 
 // Source item displayed in the Sources tab (unified format for clips and raw videos)
 export interface SourceItem {

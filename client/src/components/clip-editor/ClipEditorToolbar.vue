@@ -57,6 +57,9 @@
     { id: 'text' as const, label: 'Text', icon: Type },
     { id: 'stickers' as const, label: 'Stickers', icon: Sticker },
     { id: 'watermark' as const, label: 'Watermark', icon: Droplet },
+    { id: 'subtitles' as const, label: 'Subtitles', icon: Captions },
+    { id: 'aspect' as const, label: 'Aspect', icon: Crop },
+    { id: 'transcript' as const, label: 'Transcript', icon: FileText },
   ];
 
   const activeTabs = computed(() => {

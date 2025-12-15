@@ -97,12 +97,19 @@
   import { useTranscriptData } from '@/composables/useTranscriptData';
   import { Loader2, FileText, Search, Clock } from 'lucide-vue-next';
 
+  interface SourceTimeRange {
+    start: number;
+    end: number;
+  }
+
   interface Props {
     projectId?: string | null;
     currentTime?: number; // Effective time (accounting for segment cuts)
     clipStartTime?: number;
     clipEndTime?: number;
     duration?: number;
+    // Editor mode: specific time ranges from video sources for filtering
+    sourceTimeRanges?: SourceTimeRange[];
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -110,6 +117,7 @@
     clipStartTime: 0,
     clipEndTime: 0,
     duration: 0,
+    sourceTimeRanges: () => [],
   });
 
   const emit = defineEmits<{
@@ -137,6 +145,14 @@
   // Use transcript data composable
   const { transcriptData, loadTranscriptData } = useTranscriptData(computed(() => props.projectId || null));
 
+  // Check if a word overlaps with any of the source time ranges
+  function isWordInSourceRanges(wordStart: number, wordEnd: number): boolean {
+    if (!props.sourceTimeRanges || props.sourceTimeRanges.length === 0) {
+      return true; // No ranges specified, include all
+    }
+    return props.sourceTimeRanges.some((range) => wordEnd >= range.start && wordStart <= range.end);
+  }
+
   // Filter words to only show those within clip time range
   const clipWords = computed(() => {
     if (!transcriptData.value?.words?.length) return [];
@@ -144,7 +160,13 @@
     return transcriptData.value.words.filter((word: any) => {
       const wordStart = getWordStart(word);
       const wordEnd = getWordEnd(word);
-      // Include words that overlap with the clip range
+
+      // If we have source time ranges (editor mode), use those for filtering
+      if (props.sourceTimeRanges && props.sourceTimeRanges.length > 0) {
+        return isWordInSourceRanges(wordStart, wordEnd);
+      }
+
+      // Otherwise use the clip range (clip mode)
       return wordEnd >= props.clipStartTime && wordStart <= props.clipEndTime;
     });
   });
@@ -241,10 +263,14 @@
     return matchedPhraseIndices.value.includes(index);
   }
 
+  // Check if we're in editor mode (source ranges provided means editor mode)
+  const isEditorMode = computed(() => props.sourceTimeRanges && props.sourceTimeRanges.length > 0);
+
   // Get CSS classes for a word based on its state relative to currentTime
   function getWordClasses(word: any, index: number): string {
-    // Convert effective time back to absolute time for word comparison
-    const absoluteCurrentTime = props.clipStartTime + props.currentTime;
+    // In editor mode, currentTime is already the source video time
+    // In clip mode, convert effective time back to absolute time
+    const absoluteCurrentTime = isEditorMode.value ? props.currentTime : props.clipStartTime + props.currentTime;
 
     // Determine the basic state (current, spoken, future) first
     let stateClasses = '';
@@ -454,8 +480,9 @@
       return;
     }
 
-    // Convert effective time to absolute time
-    const absoluteCurrentTime = props.clipStartTime + props.currentTime;
+    // In editor mode, currentTime is already the source video time
+    // In clip mode, convert effective time to absolute time
+    const absoluteCurrentTime = isEditorMode.value ? props.currentTime : props.clipStartTime + props.currentTime;
 
     // Find the word that contains the current time
     let newIndex = -1;

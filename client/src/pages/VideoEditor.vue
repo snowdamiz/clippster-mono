@@ -94,68 +94,156 @@
                 </div>
               </div>
 
-              <!-- Thumbnail background with vignette -->
-              <div
-                v-if="getThumbnailUrl(project.id)"
-                class="absolute inset-0 z-0"
-                :style="{
-                  backgroundImage: `url(${getThumbnailUrl(project.id)})`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                  backgroundRepeat: 'no-repeat',
-                }"
-              >
-                <div class="absolute inset-0 bg-black/10"></div>
-              </div>
-              <!-- Fallback background for projects without thumbnails -->
-              <div v-else class="absolute inset-0 z-0 bg-muted">
-                <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/40 to-black/50"></div>
-                <div class="absolute inset-0 flex items-center justify-center opacity-20">
-                  <Clapperboard class="h-16 w-16 text-foreground" />
+              <!-- Project Card with Sources -->
+              <template v-if="getSourceCount(project.id) > 0">
+                <!-- Dark background -->
+                <div class="absolute inset-0 z-0 bg-[#141414]"></div>
+
+                <!-- Stacked Source Thumbnails - Centered -->
+                <div class="absolute inset-0 z-10 flex items-center justify-center pb-16">
+                  <div class="relative w-44 h-28">
+                    <!-- Show up to 3 stacked thumbnails based on source count -->
+                    <template v-for="index in Math.min(getSourceCount(project.id), 3)" :key="index">
+                      <div
+                        class="absolute rounded-lg overflow-hidden border border-white/15 shadow-xl transition-transform group-hover:scale-[1.02]"
+                        :style="{
+                          width: index === 1 ? '100%' : index === 2 ? '88%' : '76%',
+                          height: index === 1 ? '100%' : index === 2 ? '88%' : '76%',
+                          left: index === 1 ? '0%' : index === 2 ? '12%' : '24%',
+                          top: index === 1 ? '0%' : index === 2 ? '10%' : '20%',
+                          zIndex: 4 - index,
+                          transform: `rotate(${index === 1 ? -3 : index === 2 ? 2 : -1}deg)`,
+                        }"
+                      >
+                        <!-- Show thumbnail if available, otherwise show placeholder -->
+                        <img
+                          v-if="getSourceThumbnails(project.id)[index - 1]"
+                          :src="getSourceThumbnails(project.id)[index - 1]"
+                          class="w-full h-full object-cover"
+                        />
+                        <div v-else class="w-full h-full bg-muted/80 flex items-center justify-center">
+                          <Film class="w-8 h-8 text-muted-foreground/40" />
+                        </div>
+                      </div>
+                    </template>
+                  </div>
                 </div>
-              </div>
 
-              <!-- Source Count Badge -->
-              <div
-                v-if="getSourceCount(project.id) > 0"
-                class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-violet-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm"
-              >
-                <Film class="w-3 h-3" />
-                <span>
-                  {{ getSourceCount(project.id) }} {{ getSourceCount(project.id) === 1 ? 'source' : 'sources' }}
-                </span>
-              </div>
-
-              <!-- Bottom Overlay with Info -->
-              <div
-                class="absolute bottom-0 left-0 right-0 z-5 bg-gradient-to-t from-black via-black/80 to-transparent p-4 pt-28 flex flex-col gap-1.5"
-              >
-                <!-- Title -->
-                <h3
-                  class="text-base font-bold text-white leading-tight line-clamp-1 group-hover:text-white/90 transition-colors"
-                  :title="project.name"
+                <!-- Track Icons - Below thumbnails -->
+                <div
+                  v-if="hasAnyEdits(project.id)"
+                  class="absolute left-1/2 -translate-x-1/2 z-10 flex items-center"
+                  style="bottom: 72px"
                 >
-                  {{ project.name }}
-                </h3>
-
-                <!-- Metadata Row -->
-                <div class="flex items-center gap-2 text-xs text-white/70 font-medium">
-                  <!-- Duration -->
-                  <span v-if="project.total_duration > 0" class="truncate">
-                    {{ formatDuration(project.total_duration) }}
-                  </span>
-                  <span v-else class="truncate text-white/50">Empty project</span>
-
-                  <span class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
-
-                  <!-- Time -->
-                  <span class="truncate">{{ getRelativeTime(project.updated_at) }}</span>
+                  <div
+                    v-if="getProjectEditInfo(project.id).hasAudio"
+                    class="w-7 h-7 rounded-full bg-violet-500/30 border border-violet-400/50 flex items-center justify-center backdrop-blur-sm"
+                    title="Audio tracks"
+                  >
+                    <Music class="w-3.5 h-3.5 text-violet-300" />
+                  </div>
+                  <div
+                    v-if="getProjectEditInfo(project.id).hasText"
+                    class="w-7 h-7 rounded-full bg-blue-500/30 border border-blue-400/50 flex items-center justify-center -ml-1.5 backdrop-blur-sm"
+                    title="Text overlays"
+                  >
+                    <Type class="w-3.5 h-3.5 text-blue-300" />
+                  </div>
+                  <div
+                    v-if="getProjectEditInfo(project.id).hasStickers"
+                    class="w-7 h-7 rounded-full bg-amber-500/30 border border-amber-400/50 flex items-center justify-center -ml-1.5 backdrop-blur-sm"
+                    title="Stickers"
+                  >
+                    <Sticker class="w-3.5 h-3.5 text-amber-300" />
+                  </div>
+                  <div
+                    v-if="getProjectEditInfo(project.id).hasWatermarks"
+                    class="w-7 h-7 rounded-full bg-cyan-500/30 border border-cyan-400/50 flex items-center justify-center -ml-1.5 backdrop-blur-sm"
+                    title="Watermarks"
+                  >
+                    <Droplet class="w-3.5 h-3.5 text-cyan-300" />
+                  </div>
+                  <div
+                    v-if="getProjectEditInfo(project.id).hasEffects"
+                    class="w-7 h-7 rounded-full bg-pink-500/30 border border-pink-400/50 flex items-center justify-center -ml-1.5 backdrop-blur-sm"
+                    title="Effects"
+                  >
+                    <Sparkles class="w-3.5 h-3.5 text-pink-300" />
+                  </div>
                 </div>
-              </div>
+
+                <!-- Bottom Overlay with Info -->
+                <div
+                  class="absolute bottom-0 left-0 right-0 z-5 bg-gradient-to-t from-black via-black/80 to-transparent p-4 pt-28 flex flex-col gap-1.5"
+                >
+                  <!-- Title -->
+                  <h3
+                    class="text-base font-bold text-white leading-tight line-clamp-1 group-hover:text-white/90 transition-colors"
+                    :title="project.name"
+                  >
+                    {{ project.name }}
+                  </h3>
+
+                  <!-- Metadata Row -->
+                  <div class="flex items-center gap-2 text-xs text-white/70 font-medium">
+                    <!-- Source count badge -->
+                    <div
+                      class="flex items-center gap-1 bg-violet-500/30 text-violet-200 px-1.5 py-0.5 rounded font-medium"
+                    >
+                      <Film class="w-3 h-3" />
+                      <span>{{ getSourceCount(project.id) }}</span>
+                    </div>
+
+                    <!-- Duration -->
+                    <span v-if="project.total_duration > 0" class="truncate">
+                      {{ formatDuration(project.total_duration) }}
+                    </span>
+
+                    <span class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
+
+                    <!-- Time -->
+                    <span class="truncate">{{ getRelativeTime(project.updated_at) }}</span>
+                  </div>
+                </div>
+              </template>
+
+              <!-- Empty Project State (no sources) - Original styling -->
+              <template v-else>
+                <!-- Fallback background for projects without sources -->
+                <div class="absolute inset-0 z-0 bg-muted">
+                  <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/40 to-black/50"></div>
+                  <div class="absolute inset-0 flex items-center justify-center opacity-20">
+                    <Clapperboard class="h-16 w-16 text-foreground" />
+                  </div>
+                </div>
+
+                <!-- Bottom Overlay with Info -->
+                <div
+                  class="absolute bottom-0 left-0 right-0 z-5 bg-gradient-to-t from-black via-black/80 to-transparent p-4 pt-28 flex flex-col gap-1.5"
+                >
+                  <!-- Title -->
+                  <h3
+                    class="text-base font-bold text-white leading-tight line-clamp-1 group-hover:text-white/90 transition-colors"
+                    :title="project.name"
+                  >
+                    {{ project.name }}
+                  </h3>
+
+                  <!-- Metadata Row -->
+                  <div class="flex items-center gap-2 text-xs text-white/70 font-medium">
+                    <span class="truncate text-white/50">Empty project</span>
+
+                    <span class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
+
+                    <!-- Time -->
+                    <span class="truncate">{{ getRelativeTime(project.updated_at) }}</span>
+                  </div>
+                </div>
+              </template>
 
               <!-- Hover Overlay Buttons -->
               <div
-                class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-3"
+                class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20 flex items-center justify-center gap-3"
               >
                 <button
                   class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
@@ -248,7 +336,22 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, watch } from 'vue';
-  import { Clapperboard, Plus, Trash2, Search, X, Check, Play, Edit, Film } from 'lucide-vue-next';
+  import {
+    Clapperboard,
+    Plus,
+    Trash2,
+    Search,
+    X,
+    Check,
+    Play,
+    Edit,
+    Film,
+    Type,
+    Sticker,
+    Droplet,
+    Music,
+    Sparkles,
+  } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import PageLayout from '@/components/PageLayout.vue';
@@ -258,23 +361,39 @@
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import VideoEditorProjectDialog from '@/components/video-editor/VideoEditorProjectDialog.vue';
   import ClipEditorDialog from '@/components/clip-editor/ClipEditorDialog.vue';
-  import type { VideoEditorProject } from '@/types';
+  import type { VideoEditorProject, VideoEditorSource } from '@/types';
   import {
     getAllVideoEditorProjects,
     createVideoEditorProject,
     updateVideoEditorProject,
     deleteVideoEditorProject,
     getVideoEditorSourceCount,
+    getVideoEditorSourcesByProjectId,
   } from '@/services/database/video-editor-projects';
+  import { getFullVideoEditorEdit } from '@/services/database/video-editor-edits';
+  import { getRawVideo } from '@/services/database/raw-videos';
+  import { getClipWithBuildStatus } from '@/services/database/clip-build';
   import { useFormatters } from '@/composables/useFormatters';
   import { invoke } from '@tauri-apps/api/core';
 
   const { getRelativeTime: formatRelativeTime } = useFormatters();
 
+  // Types for project metadata
+  interface ProjectEditInfo {
+    hasAudio: boolean;
+    hasText: boolean;
+    hasStickers: boolean;
+    hasWatermarks: boolean;
+    hasEffects: boolean;
+  }
+
   // State
   const loading = ref(true);
   const projects = ref<VideoEditorProject[]>([]);
   const sourceCounts = ref<Map<string, number>>(new Map());
+  const projectSources = ref<Map<string, VideoEditorSource[]>>(new Map());
+  const sourceThumbnails = ref<Map<string, (string | null)[]>>(new Map()); // projectId -> array of thumbnail data URLs (null if not available)
+  const projectEdits = ref<Map<string, ProjectEditInfo>>(new Map());
   const thumbnailCache = ref<Map<string, string>>(new Map());
   const searchQuery = ref('');
   const sortBy = ref('updated');
@@ -374,13 +493,98 @@
     try {
       projects.value = await getAllVideoEditorProjects();
 
-      // Load source counts and thumbnails for each project
+      // Load source counts, sources, thumbnails, and edit info for each project
       const counts = new Map<string, number>();
-      for (const project of projects.value) {
-        const count = await getVideoEditorSourceCount(project.id);
-        counts.set(project.id, count);
+      const sources = new Map<string, VideoEditorSource[]>();
+      const thumbnails = new Map<string, (string | null)[]>();
+      const edits = new Map<string, ProjectEditInfo>();
 
-        // Load thumbnail if available
+      for (const project of projects.value) {
+        // Load sources for this project
+        const projectSourceList = await getVideoEditorSourcesByProjectId(project.id);
+        sources.set(project.id, projectSourceList);
+        counts.set(project.id, projectSourceList.length);
+
+        // Load source thumbnails (up to 3 for display) - look up from original source if needed
+        const thumbnailUrls: (string | null)[] = [];
+        const sourcesToLoad = projectSourceList.slice(0, 3);
+        for (const source of sourcesToLoad) {
+          let thumbnailPath = source.source_thumbnail;
+
+          // If no thumbnail stored, look it up from the original source
+          if (!thumbnailPath && source.source_id) {
+            try {
+              if (source.source_type === 'raw_video') {
+                const rawVideo = await getRawVideo(source.source_id);
+                thumbnailPath = rawVideo?.thumbnail_path || null;
+              } else if (source.source_type === 'clip') {
+                const clip = await getClipWithBuildStatus(source.source_id);
+                thumbnailPath = clip?.built_thumbnail_path || null;
+              }
+            } catch (err) {
+              console.warn('[VideoEditor] Failed to lookup source thumbnail:', source.id, err);
+            }
+          }
+
+          // If still no thumbnail, try to generate one from the video file
+          if (!thumbnailPath && source.source_path) {
+            try {
+              const videoExists = await invoke<boolean>('check_file_exists', { path: source.source_path });
+              if (videoExists) {
+                thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
+                  videoPath: source.source_path,
+                  timestampSeconds: source.trim_start || 1,
+                  outputFilename: `editor_thumb_${source.id}`,
+                });
+              }
+            } catch (err) {
+              console.warn('[VideoEditor] Failed to generate thumbnail:', source.id, err);
+            }
+          }
+
+          if (thumbnailPath) {
+            try {
+              const exists = await invoke<boolean>('check_file_exists', { path: thumbnailPath });
+              if (exists) {
+                const dataUrl = await invoke<string>('read_file_as_data_url', {
+                  filePath: thumbnailPath,
+                });
+                thumbnailUrls.push(dataUrl);
+              } else {
+                thumbnailUrls.push(null); // Preserve position
+              }
+            } catch (err) {
+              console.warn('[VideoEditor] Failed to load source thumbnail:', source.id, err);
+              thumbnailUrls.push(null); // Preserve position on error
+            }
+          } else {
+            thumbnailUrls.push(null); // No thumbnail path for this source
+          }
+        }
+        thumbnails.set(project.id, thumbnailUrls);
+
+        // Load edit info to determine what types of edits exist
+        try {
+          const fullEdit = await getFullVideoEditorEdit(project.id);
+          edits.set(project.id, {
+            hasAudio: fullEdit ? fullEdit.audioTracks.length > 0 : false,
+            hasText: fullEdit ? fullEdit.textOverlays.length > 0 : false,
+            hasStickers: fullEdit ? fullEdit.stickers.length > 0 : false,
+            hasWatermarks: fullEdit ? fullEdit.watermarks.length > 0 : false,
+            hasEffects: fullEdit ? fullEdit.effects.length > 0 : false,
+          });
+        } catch (err) {
+          console.warn('[VideoEditor] Failed to load edit info for project:', project.id, err);
+          edits.set(project.id, {
+            hasAudio: false,
+            hasText: false,
+            hasStickers: false,
+            hasWatermarks: false,
+            hasEffects: false,
+          });
+        }
+
+        // Load project thumbnail if available (fallback)
         if (project.thumbnail_path && !thumbnailCache.value.has(project.id)) {
           try {
             const exists = await invoke<boolean>('check_file_exists', { path: project.thumbnail_path });
@@ -393,7 +597,11 @@
           }
         }
       }
+
       sourceCounts.value = counts;
+      projectSources.value = sources;
+      sourceThumbnails.value = thumbnails;
+      projectEdits.value = edits;
     } catch (error) {
       console.error('[VideoEditor] Failed to load projects:', error);
     } finally {
@@ -407,6 +615,27 @@
 
   function getThumbnailUrl(projectId: string): string | null {
     return thumbnailCache.value.get(projectId) || null;
+  }
+
+  function getSourceThumbnails(projectId: string): (string | null)[] {
+    return sourceThumbnails.value.get(projectId) || [];
+  }
+
+  function getProjectEditInfo(projectId: string): ProjectEditInfo {
+    return (
+      projectEdits.value.get(projectId) || {
+        hasAudio: false,
+        hasText: false,
+        hasStickers: false,
+        hasWatermarks: false,
+        hasEffects: false,
+      }
+    );
+  }
+
+  function hasAnyEdits(projectId: string): boolean {
+    const info = getProjectEditInfo(projectId);
+    return info.hasAudio || info.hasText || info.hasStickers || info.hasWatermarks || info.hasEffects;
   }
 
   function formatDuration(seconds: number): string {

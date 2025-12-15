@@ -90,6 +90,7 @@
                   :subtitle-settings="subtitleSettings"
                   :transcript-words="transcriptWords"
                   :transcript-segments="transcriptSegments"
+                  :subtitle-source-time="subtitleSourceTime"
                   :editor-mode="editorMode"
                   :editor-total-duration="editorContentDuration"
                   :active-transition="activeTransition"
@@ -204,7 +205,7 @@
                 />
 
                 <SubtitlesTab
-                  v-if="activeTab === 'subtitles'"
+                  v-if="editorMode ? activeEditorTab === 'subtitles' : activeTab === 'subtitles'"
                   :settings="subtitleSettings"
                   :preview-aspect-ratio="previewAspectRatio"
                   :selected-aspect-ratios="selectedAspectRatios"
@@ -225,14 +226,14 @@
                 /> -->
 
                 <AspectTab
-                  v-if="activeTab === 'aspect'"
+                  v-if="editorMode ? activeEditorTab === 'aspect' : activeTab === 'aspect'"
                   :framing-configs="framingConfigs"
                   :selected-aspect-ratios="selectedAspectRatios"
                   :framing-mode-value="framingMode"
-                  :thumbnail-url="thumbnailUrl"
-                  :video-path="videoPath"
-                  :clip-start-time="props.clipStartTime"
-                  :clip-end-time="props.clipEndTime"
+                  :thumbnail-url="effectiveThumbnailUrl"
+                  :video-path="effectiveVideoPath"
+                  :clip-start-time="editorMode ? sourceVideoMinTime : props.clipStartTime"
+                  :clip-end-time="editorMode ? sourceVideoMaxTime : props.clipEndTime"
                   :preview-aspect-ratio="previewAspectRatio"
                   @update:framing-configs="updateFramingConfigs"
                   @update:selected-aspect-ratios="updateSelectedAspectRatios"
@@ -241,12 +242,13 @@
                 />
 
                 <TranscriptTab
-                  v-if="activeTab === 'transcript'"
+                  v-if="editorMode ? activeEditorTab === 'transcript' : activeTab === 'transcript'"
                   :project-id="projectId"
-                  :current-time="effectivePreviewTime"
-                  :clip-start-time="props.clipStartTime"
-                  :clip-end-time="props.clipEndTime"
+                  :current-time="editorMode ? subtitleSourceTime : effectivePreviewTime"
+                  :clip-start-time="editorMode ? sourceVideoMinTime : props.clipStartTime"
+                  :clip-end-time="editorMode ? sourceVideoMaxTime : props.clipEndTime"
                   :duration="totalSegmentDuration"
+                  :source-time-ranges="editorMode ? sourceVideoTimeRanges : []"
                   @seek-video="seekToAbsoluteTime"
                 />
               </div>
@@ -266,7 +268,7 @@
             :watermarks="watermarks"
             :effects="effects"
             :filter-segments="filterSegments"
-            :video-src="videoSrc"
+            :video-src="effectiveVideoPath"
             :audio-gain-db="effectiveAudioGainDb"
             :track-db-values="trackDbValues"
             :is-playing="isPlaying"
@@ -294,10 +296,10 @@
         :initial-config="getConfigForRatio(editingAspectRatio)"
         :target-aspect-ratio="editingAspectRatio"
         :source-aspect-ratio="'16:9'"
-        :thumbnail-url="thumbnailUrl"
-        :video-path="videoPath"
-        :clip-start-time="props.clipStartTime"
-        :clip-end-time="props.clipEndTime"
+        :thumbnail-url="effectiveThumbnailUrl"
+        :video-path="effectiveVideoPath"
+        :clip-start-time="effectivePOIClipStartTime"
+        :clip-end-time="effectivePOIClipEndTime"
         @confirm="onManualPOIConfigConfirm"
       />
     </div>
@@ -345,6 +347,7 @@
     updateWatermarkRecord,
     deleteWatermarkRecord,
     getRawVideosByProjectId,
+    getRawVideo,
     getClipWithBuildStatus,
     // Video Editor imports
     getVideoEditorProject,
@@ -518,6 +521,7 @@
   const framingConfigs = ref<ManualFramingConfigs>({});
   const videoPath = ref<string | null>(null);
   const thumbnailUrl = ref<string | null>(null);
+  const editorThumbnailUrl = ref<string | null>(null);
 
   // Manual POI editor state
   const showManualPOIEditor = ref(false);
@@ -529,9 +533,53 @@
   // Use transcript data composable for subtitle display
   const { transcriptData, loadTranscriptData } = useTranscriptData(computed(() => projectId.value));
 
+  // Get the source video time ranges covered by all video sources (for editor mode)
+  const sourceVideoTimeRanges = computed(() => {
+    if (!props.editorMode || videoSources.value.length === 0) {
+      return [];
+    }
+    return videoSources.value.map((source) => ({
+      start: source.trim_start,
+      end: source.trim_end ?? source.trim_start + (source.end_time - source.start_time),
+    }));
+  });
+
+  // Get the min start time across all source video ranges (for TranscriptTab in editor mode)
+  const sourceVideoMinTime = computed(() => {
+    if (sourceVideoTimeRanges.value.length === 0) return 0;
+    return Math.min(...sourceVideoTimeRanges.value.map((r) => r.start));
+  });
+
+  // Get the max end time across all source video ranges (for TranscriptTab in editor mode)
+  const sourceVideoMaxTime = computed(() => {
+    if (sourceVideoTimeRanges.value.length === 0) return 0;
+    return Math.max(...sourceVideoTimeRanges.value.map((r) => r.end));
+  });
+
+  // Check if a time falls within any of the source video ranges
+  function isTimeInSourceRanges(time: number): boolean {
+    for (const range of sourceVideoTimeRanges.value) {
+      if (time >= range.start && time <= range.end) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Get transcript words for subtitle display (filtered to clip range)
   const transcriptWords = computed<WordInfo[]>(() => {
     if (!transcriptData.value?.words?.length) return [];
+
+    // In editor mode, filter based on the source video time ranges being used
+    if (props.editorMode) {
+      if (sourceVideoTimeRanges.value.length === 0) return [];
+      return transcriptData.value.words.filter((word: WordInfo) => {
+        const wordStart = word.start ?? 0;
+        const wordEnd = word.end ?? wordStart;
+        // Include words that overlap with any of the source video ranges
+        return sourceVideoTimeRanges.value.some((range) => wordEnd >= range.start && wordStart <= range.end);
+      });
+    }
 
     return transcriptData.value.words.filter((word: WordInfo) => {
       const wordStart = word.start ?? 0;
@@ -544,6 +592,15 @@
   // Get transcript segments for subtitle display (filtered to clip range)
   const transcriptSegments = computed(() => {
     if (!transcriptData.value?.whisperSegments?.length) return [];
+
+    // In editor mode, filter based on the source video time ranges being used
+    if (props.editorMode) {
+      if (sourceVideoTimeRanges.value.length === 0) return [];
+      return transcriptData.value.whisperSegments.filter((segment) => {
+        // Include segments that overlap with any of the source video ranges
+        return sourceVideoTimeRanges.value.some((range) => segment.end >= range.start && segment.start <= range.end);
+      });
+    }
 
     return transcriptData.value.whisperSegments.filter((segment) => {
       // Include segments that overlap with the clip range
@@ -680,6 +737,27 @@
     return sortedSources.find((source) => time >= source.start_time && time < source.end_time) || null;
   });
 
+  // Editor mode: Calculate the actual source video time for subtitle lookup
+  // This maps the editor timeline position to the actual timestamp in the source video
+  const subtitleSourceTime = computed(() => {
+    if (!props.editorMode) {
+      // In clip mode, use the preview time directly (relative to clip start is handled elsewhere)
+      return previewTime.value;
+    }
+
+    const source = activeVideoSource.value;
+    if (!source) {
+      return previewTime.value;
+    }
+
+    // Calculate time in the source video:
+    // previewTime is the position on the editor timeline
+    // source.start_time is where this source starts on the editor timeline
+    // source.trim_start is where we start playing from in the source video
+    const timeInSource = previewTime.value - source.start_time + source.trim_start;
+    return timeInSource;
+  });
+
   // Editor mode: Find the next video source (for preloading)
   const nextVideoSource = computed(() => {
     if (!props.editorMode || !activeVideoSource.value) {
@@ -782,6 +860,48 @@
       return editorVideoSrc.value;
     }
     return props.videoSrc || null;
+  });
+
+  // Effective video path for ManualPOIEditor - uses active source in editor mode
+  const effectiveVideoPath = computed(() => {
+    if (props.editorMode) {
+      // In editor mode, use the first source or active source
+      const source = videoSources.value.length > 0 ? videoSources.value[0] : null;
+      return source?.source_path || null;
+    }
+    return videoPath.value;
+  });
+
+  // Effective clip start time for ManualPOIEditor - uses source trim times in editor mode
+  const effectivePOIClipStartTime = computed(() => {
+    if (props.editorMode) {
+      const source = videoSources.value.length > 0 ? videoSources.value[0] : null;
+      return source?.trim_start || 0;
+    }
+    return props.clipStartTime;
+  });
+
+  // Effective clip end time for ManualPOIEditor - uses source trim times in editor mode
+  const effectivePOIClipEndTime = computed(() => {
+    if (props.editorMode) {
+      const source = videoSources.value.length > 0 ? videoSources.value[0] : null;
+      if (source) {
+        // If trim_end is 0, use source duration (full video)
+        // Calculate the effective duration from end_time - start_time + trim_start
+        const sourceDuration = source.end_time - source.start_time;
+        return source.trim_end > 0 ? source.trim_end : source.trim_start + sourceDuration;
+      }
+      return 0;
+    }
+    return props.clipEndTime;
+  });
+
+  // Effective thumbnail URL for ManualPOIEditor
+  const effectiveThumbnailUrl = computed(() => {
+    if (props.editorMode) {
+      return editorThumbnailUrl.value || thumbnailUrl.value;
+    }
+    return thumbnailUrl.value;
   });
 
   // Get segments in absolute time format for playback
@@ -1125,6 +1245,28 @@
             setupAudioElement(track);
           }
         });
+      }
+
+      // Generate thumbnail for the first source (for ManualPOIEditor preview)
+      if (sources.length > 0) {
+        const firstSource = sources[0];
+        if (firstSource.source_path) {
+          try {
+            const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
+              videoPath: firstSource.source_path,
+              timestampSeconds: firstSource.trim_start + 1,
+              outputFilename: `editor_aspect_preview_${props.editorProjectId}`,
+            });
+
+            const dataUrl = await invoke<string>('read_file_as_data_url', {
+              filePath: thumbnailPath,
+            });
+
+            editorThumbnailUrl.value = dataUrl;
+          } catch (err) {
+            console.warn('[ClipEditorDialog] Failed to generate editor thumbnail:', err);
+          }
+        }
       }
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to load editor project:', error);
@@ -1641,8 +1783,33 @@
   }
 
   // Seek to absolute time (used by transcript tab)
+  // In editor mode, 'time' is the source video time and needs to be converted to editor timeline position
   function seekToAbsoluteTime(time: number) {
-    if (videoElement.value) {
+    if (!videoElement.value) return;
+
+    if (props.editorMode) {
+      // Find which source contains this time
+      const source = videoSources.value.find((s) => {
+        const sourceEnd = s.trim_end ?? s.trim_start + (s.end_time - s.start_time);
+        return time >= s.trim_start && time <= sourceEnd;
+      });
+
+      if (source) {
+        // Convert source video time to editor timeline position
+        // time is position in source video, we need position on editor timeline
+        const timeInSource = time - source.trim_start;
+        const editorTimelinePosition = source.start_time + timeInSource;
+
+        previewTime.value = editorTimelinePosition;
+        // The video element's currentTime should be the source video time
+        videoElement.value.currentTime = time;
+      } else {
+        // Fallback: just set the time directly
+        videoElement.value.currentTime = time;
+        previewTime.value = time;
+      }
+    } else {
+      // Non-editor mode: time is absolute video time
       videoElement.value.currentTime = time;
       previewTime.value = time;
     }
@@ -2494,6 +2661,36 @@
 
   // Load project ID from clip (needed for transcript)
   async function loadProjectId() {
+    // In editor mode, find the project ID from video sources
+    // Note: editorProjectId is a video_editor_projects.id, not a projects.id
+    // We need to look up the original project from the video sources to get transcripts
+    if (props.editorMode) {
+      // Try to find a source with a source_id (clip or raw_video reference)
+      const sourceWithId = videoSources.value.find(
+        (s) => s.source_id && (s.source_type === 'clip' || s.source_type === 'raw_video')
+      );
+
+      if (sourceWithId?.source_id) {
+        try {
+          if (sourceWithId.source_type === 'clip') {
+            // Look up the clip to get its project_id
+            const clip = await getClipWithBuildStatus(sourceWithId.source_id);
+            projectId.value = clip?.project_id || null;
+          } else if (sourceWithId.source_type === 'raw_video') {
+            // Look up the raw_video to get its project_id
+            const rawVideo = await getRawVideo(sourceWithId.source_id);
+            projectId.value = rawVideo?.project_id || null;
+          }
+        } catch (error) {
+          console.error('[ClipEditorDialog] Failed to load project ID from source:', error);
+          projectId.value = null;
+        }
+      } else {
+        projectId.value = null;
+      }
+      return;
+    }
+
     if (!props.clipId) {
       projectId.value = null;
       return;
@@ -2867,6 +3064,7 @@
         if (props.editorMode && props.editorProjectId) {
           // Editor mode - load video sources
           await loadEditorProject();
+          await loadProjectId(); // Load project ID for transcript/subtitles
           previewTime.value = 0;
           activeEditorTab.value = 'sources';
         } else if (props.clipId) {
@@ -2916,6 +3114,7 @@
         // Reset aspect tab state
         videoPath.value = null;
         thumbnailUrl.value = null;
+        editorThumbnailUrl.value = null;
         // Reset transcript state
         projectId.value = null;
         // Reset auto-save state

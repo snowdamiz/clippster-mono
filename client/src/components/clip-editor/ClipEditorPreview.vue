@@ -635,6 +635,8 @@
       subtitleSettings?: ClipSubtitleSettings | null;
       transcriptWords?: WordInfo[]; // Words from transcript for subtitle display
       transcriptSegments?: WhisperSegment[]; // Segments from transcript for word grouping
+      // Time in source video for subtitle lookup (accounts for trim_start in editor mode)
+      subtitleSourceTime?: number;
       // Editor mode - when true, bypass segment-based time management
       editorMode?: boolean;
       // Total duration for editor mode (sum of all source durations)
@@ -648,6 +650,7 @@
       subtitleSettings: null,
       transcriptWords: () => [],
       transcriptSegments: () => [],
+      subtitleSourceTime: 0,
       editorMode: false,
       editorTotalDuration: 0,
       activeTransition: null,
@@ -1149,13 +1152,23 @@
     }
   });
 
+  // Get the time to use for subtitle lookups (source video time in editor mode)
+  const subtitleLookupTime = computed(() => {
+    // In editor mode with subtitleSourceTime, use that (maps to actual source video time)
+    if (props.editorMode && props.subtitleSourceTime !== undefined) {
+      return props.subtitleSourceTime;
+    }
+    // Otherwise use currentTime
+    return props.currentTime || 0;
+  });
+
   // Find the current whisper segment (matches VideoPlayer)
   const currentSegment = computed((): WhisperSegment | null => {
     if (!props.subtitleSettings?.enabled || !props.transcriptSegments || props.transcriptSegments.length === 0) {
       return null;
     }
 
-    const time = props.currentTime || 0;
+    const time = subtitleLookupTime.value;
 
     // Find segment that contains the current time
     for (const segment of props.transcriptSegments) {
@@ -1197,7 +1210,7 @@
     if (allSegmentWords.length === 0) return [];
 
     const maxWords = maxWordsForAspectRatio.value;
-    const time = props.currentTime || 0;
+    const time = subtitleLookupTime.value;
 
     // If segment has fewer words than the limit, show all
     if (allSegmentWords.length <= maxWords) {
@@ -1239,7 +1252,7 @@
 
   // Check if a word is currently being spoken
   function isCurrentWord(word: { start: number; end: number }): boolean {
-    const time = props.currentTime || 0;
+    const time = subtitleLookupTime.value;
     return time >= word.start && time <= word.end;
   }
 
@@ -1264,7 +1277,7 @@
     const style = props.subtitleSettings?.animationStyle;
     if (style !== 'typewriter') return {};
 
-    const time = props.currentTime || 0;
+    const time = subtitleLookupTime.value;
     const isVisible = time >= word.start;
 
     return {
