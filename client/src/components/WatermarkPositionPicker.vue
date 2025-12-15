@@ -72,6 +72,121 @@
               </button>
             </div>
 
+            <!-- Watermark Selection for Current Ratio -->
+            <div v-if="enabledRatios[currentAspectRatio]" class="mb-4 p-3 bg-zinc-800/30 rounded-lg border border-zinc-700/50">
+              <div class="flex items-center justify-between mb-2">
+                <label class="text-xs font-medium text-zinc-400">Watermark for {{ currentAspectRatioLabel }}</label>
+                <span 
+                  v-if="currentAspectRatio !== '16:9' && !ratioWatermarkIds[currentAspectRatio]"
+                  class="text-[9px] px-1.5 py-0.5 bg-zinc-700 text-zinc-400 rounded"
+                >
+                  Using default
+                </span>
+              </div>
+              <div class="relative">
+                <button
+                  type="button"
+                  @click.stop="showWatermarkDropdown = !showWatermarkDropdown"
+                  class="w-full px-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-left flex items-center justify-between hover:border-zinc-600 hover:bg-zinc-700/80 transition-all text-sm text-white"
+                >
+                  <div class="flex items-center gap-3">
+                    <!-- Watermark thumbnail preview -->
+                    <div
+                      v-if="currentRatioWatermarkUrl"
+                      class="w-8 h-8 rounded bg-zinc-700 border border-zinc-600 flex items-center justify-center overflow-hidden"
+                    >
+                      <img
+                        :src="currentRatioWatermarkUrl"
+                        :alt="currentRatioWatermark?.name || 'Default'"
+                        class="max-w-full max-h-full object-contain"
+                      />
+                    </div>
+                    <div
+                      v-else
+                      class="w-8 h-8 rounded bg-zinc-700 border border-zinc-600 flex items-center justify-center"
+                    >
+                      <ImageIcon class="w-4 h-4 text-zinc-500" />
+                    </div>
+                    <span class="truncate">
+                      {{ currentRatioWatermark?.name || (ratioWatermarkIds[currentAspectRatio] ? 'Unknown' : 'Use default watermark') }}
+                    </span>
+                  </div>
+                  <ChevronDown
+                    class="h-4 w-4 text-zinc-400 transition-transform flex-shrink-0 ml-2"
+                    :class="{ 'rotate-180': showWatermarkDropdown }"
+                  />
+                </button>
+
+                <!-- Watermark Dropdown -->
+                <div
+                  v-if="showWatermarkDropdown"
+                  class="absolute top-full left-0 right-0 mt-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 overflow-y-auto max-h-48 custom-scrollbar"
+                  @click.stop
+                >
+                  <!-- Use default option -->
+                  <button
+                    @click="selectWatermarkForRatio(null)"
+                    class="w-full text-left px-3 py-2.5 hover:bg-zinc-700 transition-colors text-sm flex items-center gap-3 border-b border-zinc-700/50"
+                    :class="{ 'bg-amber-500/10 text-amber-400': !ratioWatermarkIds[currentAspectRatio] }"
+                  >
+                    <div class="w-8 h-8 rounded bg-zinc-700 border border-zinc-600 flex items-center justify-center">
+                      <ImageIcon class="w-4 h-4 text-zinc-500" />
+                    </div>
+                    <span>Use default watermark</span>
+                  </button>
+                  
+                  <!-- Watermark options -->
+                  <button
+                    v-for="wm in watermarks"
+                    :key="wm.id"
+                    @click="selectWatermarkForRatio(wm)"
+                    class="w-full text-left px-3 py-2.5 hover:bg-zinc-700 transition-colors text-sm flex items-center gap-3"
+                    :class="{ 'bg-amber-500/10 text-amber-400': ratioWatermarkIds[currentAspectRatio] === wm.id }"
+                  >
+                    <div class="w-8 h-8 rounded bg-zinc-700 border border-zinc-600 flex items-center justify-center overflow-hidden">
+                      <img
+                        v-if="watermarkThumbnailCache.get(wm.id)"
+                        :src="watermarkThumbnailCache.get(wm.id)"
+                        :alt="wm.name"
+                        class="max-w-full max-h-full object-contain"
+                      />
+                      <ImageIcon v-else class="w-4 h-4 text-zinc-500" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <span class="truncate block">{{ wm.name }}</span>
+                      <span v-if="wm.width && wm.height" class="text-[10px] text-zinc-500">
+                        {{ wm.width }}×{{ wm.height }}
+                      </span>
+                    </div>
+                  </button>
+                  
+                  <div v-if="loadingWatermarks" class="px-3 py-4 text-sm text-center text-zinc-500">
+                    Loading...
+                  </div>
+                  <div v-if="!loadingWatermarks && watermarks.length === 0" class="px-3 py-4 text-center">
+                    <p class="text-sm text-zinc-500">No watermarks available</p>
+                  </div>
+                  
+                  <!-- Upload new watermark button -->
+                  <button
+                    @click="uploadNewWatermark"
+                    :disabled="uploadingWatermark"
+                    class="w-full text-left px-3 py-2.5 hover:bg-zinc-700 transition-colors text-sm flex items-center gap-3 border-t border-zinc-700/50 text-amber-400 hover:text-amber-300"
+                  >
+                    <div class="w-8 h-8 rounded bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
+                      <Upload v-if="!uploadingWatermark" class="w-4 h-4 text-amber-400" />
+                      <Loader2 v-else class="w-4 h-4 text-amber-400 animate-spin" />
+                    </div>
+                    <span>{{ uploadingWatermark ? 'Uploading...' : 'Upload new watermark' }}</span>
+                  </button>
+                </div>
+              </div>
+              
+              <p v-if="currentAspectRatio !== '16:9'" class="text-[10px] text-zinc-500 mt-2">
+                💡 You can use a different watermark image for {{ currentAspectRatioLabel }} format
+              </p>
+            </div>
+
             <!-- Preview Area with dynamic aspect ratio -->
             <div class="flex justify-center">
               <div
@@ -303,7 +418,9 @@
 <script setup lang="ts">
 import { ref, computed, watch, reactive } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import { X, Move, Video, Monitor, Smartphone, Square, RectangleVertical } from 'lucide-vue-next';
+import { X, Move, Video, Monitor, Smartphone, Square, RectangleVertical, ChevronDown, Image as ImageIcon, Upload, Loader2 } from 'lucide-vue-next';
+import { getAllWatermarkImages, type WatermarkImage } from '@/services/database';
+import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
 
 // Types for watermark settings per aspect ratio
 export type AspectRatioId = '16:9' | '9:16' | '1:1' | '4:5';
@@ -315,17 +432,25 @@ export interface CreatorWatermarkPosition {
   scale: number;
 }
 
+// Per-aspect-ratio watermark configuration (includes watermark ID AND position)
+export interface CreatorWatermarkRatioConfig {
+  watermarkId: string | null;
+  position: CreatorWatermarkPosition | null;
+}
+
 // Settings can be null to indicate watermark is disabled for that ratio
+// Each ratio can have a completely different watermark image
 export interface CreatorWatermarkSettings {
-  '16:9': CreatorWatermarkPosition | null;
-  '9:16': CreatorWatermarkPosition | null;
-  '1:1': CreatorWatermarkPosition | null;
-  '4:5': CreatorWatermarkPosition | null;
+  '16:9': CreatorWatermarkRatioConfig | null;
+  '9:16': CreatorWatermarkRatioConfig | null;
+  '1:1': CreatorWatermarkRatioConfig | null;
+  '4:5': CreatorWatermarkRatioConfig | null;
 }
 
 interface Props {
   show: boolean;
-  watermarkFilePath?: string;
+  watermarkFilePath?: string; // Default watermark file path
+  watermarkId?: string | null; // Default watermark ID
   watermarkWidth?: number | null;
   watermarkHeight?: number | null;
   settings?: CreatorWatermarkSettings;
@@ -333,7 +458,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   settings: () => ({
-    '16:9': { x: 12, y: 92, opacity: 80, scale: 20 },
+    '16:9': { watermarkId: null, position: { x: 12, y: 92, opacity: 80, scale: 20 } },
     '9:16': null, // Disabled by default - only 16:9 is enabled
     '1:1': null,
     '4:5': null,
@@ -343,16 +468,25 @@ const props = withDefaults(defineProps<Props>(), {
 const defaultPosition: CreatorWatermarkPosition = { x: 12, y: 92, opacity: 80, scale: 20 };
 
 const defaultSettings: CreatorWatermarkSettings = {
-  '16:9': { ...defaultPosition },
-  '9:16': { ...defaultPosition },
-  '1:1': { ...defaultPosition },
-  '4:5': { ...defaultPosition },
+  '16:9': { watermarkId: null, position: { ...defaultPosition } },
+  '9:16': { watermarkId: null, position: { ...defaultPosition } },
+  '1:1': { watermarkId: null, position: { ...defaultPosition } },
+  '4:5': { watermarkId: null, position: { ...defaultPosition } },
 };
 
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'save', settings: CreatorWatermarkSettings): void;
 }>();
+
+// Watermark selection state
+const watermarks = ref<WatermarkImage[]>([]);
+const loadingWatermarks = ref(false);
+const watermarkThumbnailCache = ref<Map<string, string>>(new Map());
+const uploadingWatermark = ref(false);
+
+// Watermark upload operations
+const { uploadWatermark } = useWatermarkOperations();
 
 // Aspect ratio configurations
 const aspectRatios = [
@@ -383,6 +517,14 @@ const enabledRatios = reactive<Record<AspectRatioId, boolean>>({
   '4:5': false,
 });
 
+// Per-ratio watermark IDs (can be different watermarks for different ratios)
+const ratioWatermarkIds = reactive<Record<AspectRatioId, string | null>>({
+  '16:9': null,
+  '9:16': null,
+  '1:1': null,
+  '4:5': null,
+});
+
 // Local settings for all aspect ratios (stores position even when disabled, so user can toggle back)
 const localSettings = reactive<Record<AspectRatioId, CreatorWatermarkPosition>>({
   '16:9': { ...defaultPosition },
@@ -390,6 +532,9 @@ const localSettings = reactive<Record<AspectRatioId, CreatorWatermarkPosition>>(
   '1:1': { ...defaultPosition },
   '4:5': { ...defaultPosition },
 });
+
+// Watermark dropdown state
+const showWatermarkDropdown = ref(false);
 
 // Check if any ratio is enabled
 const anyRatioEnabled = computed(() => Object.values(enabledRatios).some(v => v));
@@ -451,7 +596,165 @@ const watermarkStyle = computed(() => {
   };
 });
 
-// Load watermark image
+// Load all available watermarks
+async function loadWatermarks() {
+  loadingWatermarks.value = true;
+  try {
+    watermarks.value = await getAllWatermarkImages();
+    // Load thumbnails for all watermarks
+    for (const wm of watermarks.value) {
+      await loadWatermarkThumbnail(wm);
+    }
+  } catch (error) {
+    console.error('[WatermarkPositionPicker] Failed to load watermarks:', error);
+  } finally {
+    loadingWatermarks.value = false;
+  }
+}
+
+// Load a single watermark thumbnail
+async function loadWatermarkThumbnail(wm: WatermarkImage): Promise<void> {
+  if (watermarkThumbnailCache.value.has(wm.id)) return;
+  
+  try {
+    const dataUrl = await invoke<string>('read_file_as_data_url', {
+      filePath: wm.file_path,
+    });
+    watermarkThumbnailCache.value.set(wm.id, dataUrl);
+  } catch (error) {
+    console.warn('[WatermarkPositionPicker] Failed to load watermark thumbnail:', wm.id, error);
+  }
+}
+
+// Get watermark URL by ID
+function getWatermarkUrlById(wmId: string | null): string | null {
+  if (!wmId) return watermarkDataUrl.value;
+  return watermarkThumbnailCache.value.get(wmId) || null;
+}
+
+// Get watermark by ID
+function getWatermarkById(wmId: string | null): WatermarkImage | null {
+  if (!wmId) return null;
+  return watermarks.value.find(w => w.id === wmId) || null;
+}
+
+// Get current ratio's selected watermark
+const currentRatioWatermark = computed(() => {
+  const wmId = ratioWatermarkIds[currentAspectRatio.value];
+  return getWatermarkById(wmId);
+});
+
+// Get current ratio's watermark URL for display
+const currentRatioWatermarkUrl = computed(() => {
+  const wmId = ratioWatermarkIds[currentAspectRatio.value];
+  return getWatermarkUrlById(wmId);
+});
+
+// Select watermark for current ratio
+function selectWatermarkForRatio(wm: WatermarkImage | null) {
+  ratioWatermarkIds[currentAspectRatio.value] = wm?.id || null;
+  showWatermarkDropdown.value = false;
+  
+  // If selecting a watermark, also enable the ratio if not already enabled
+  if (wm && !enabledRatios[currentAspectRatio.value]) {
+    enabledRatios[currentAspectRatio.value] = true;
+  }
+  
+  // Update the watermark preview
+  loadWatermarkImageForRatio();
+}
+
+// Upload a new watermark and select it for the current ratio
+async function uploadNewWatermark() {
+  if (uploadingWatermark.value) return;
+  
+  uploadingWatermark.value = true;
+  showWatermarkDropdown.value = false;
+  
+  try {
+    const result = await uploadWatermark();
+    
+    if (result.success && result.watermarkId) {
+      // Reload watermarks list
+      await loadWatermarks();
+      
+      // Find the newly uploaded watermark
+      const newWatermark = watermarks.value.find(w => w.id === result.watermarkId);
+      
+      if (newWatermark) {
+        // Select it for the current ratio
+        ratioWatermarkIds[currentAspectRatio.value] = newWatermark.id;
+        
+        // Enable the ratio if not already enabled
+        if (!enabledRatios[currentAspectRatio.value]) {
+          enabledRatios[currentAspectRatio.value] = true;
+        }
+        
+        // Update the preview
+        await loadWatermarkImageForRatio();
+      }
+    }
+  } catch (err) {
+    console.error('[WatermarkPositionPicker] Failed to upload watermark:', err);
+  } finally {
+    uploadingWatermark.value = false;
+  }
+}
+
+// Load watermark image for current ratio
+async function loadWatermarkImageForRatio() {
+  const wmId = ratioWatermarkIds[currentAspectRatio.value];
+  
+  // If no specific watermark for this ratio, use the default
+  if (!wmId) {
+    await loadWatermarkImage();
+    return;
+  }
+  
+  // Load the specific watermark for this ratio
+  const wm = getWatermarkById(wmId);
+  if (!wm) {
+    await loadWatermarkImage();
+    return;
+  }
+  
+  loadingWatermark.value = true;
+  try {
+    let dataUrl = watermarkThumbnailCache.value.get(wmId);
+    if (!dataUrl) {
+      dataUrl = await invoke<string>('read_file_as_data_url', {
+        filePath: wm.file_path,
+      });
+      watermarkThumbnailCache.value.set(wmId, dataUrl);
+    }
+    watermarkDataUrl.value = dataUrl;
+    
+    // Measure dimensions
+    measuredWidth.value = wm.width ?? null;
+    measuredHeight.value = wm.height ?? null;
+    
+    if (!measuredWidth.value || !measuredHeight.value) {
+      await new Promise<void>((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          measuredWidth.value = img.naturalWidth || null;
+          measuredHeight.value = img.naturalHeight || null;
+          resolve();
+        };
+        img.onerror = () => resolve();
+        img.src = dataUrl!;
+      });
+    }
+  } catch (err) {
+    console.error('[WatermarkPositionPicker] Failed to load ratio watermark:', err);
+    // Fall back to default
+    await loadWatermarkImage();
+  } finally {
+    loadingWatermark.value = false;
+  }
+}
+
+// Load watermark image (default)
 async function loadWatermarkImage() {
   if (!props.watermarkFilePath) {
     watermarkDataUrl.value = null;
@@ -493,30 +796,51 @@ watch(
   () => props.show,
   async (show) => {
     if (show) {
+      // Load available watermarks
+      await loadWatermarks();
+      
       // Initialize local settings and enabled state from props
       const incoming = props.settings;
       
       // For each ratio, check if settings exist (not null) to determine enabled state
       for (const ar of aspectRatios) {
         const id = ar.id;
-        const incomingSettings = incoming?.[id];
+        const incomingConfig = incoming?.[id];
         
-        if (incomingSettings !== null && incomingSettings !== undefined) {
+        if (incomingConfig !== null && incomingConfig !== undefined) {
           // Settings exist - ratio is enabled
           enabledRatios[id] = true;
-          localSettings[id] = { ...incomingSettings };
+          // Handle both old format (just position) and new format (watermarkId + position)
+          if ('position' in incomingConfig && incomingConfig.position) {
+            localSettings[id] = { ...incomingConfig.position };
+            ratioWatermarkIds[id] = incomingConfig.watermarkId || null;
+          } else if ('x' in incomingConfig && 'y' in incomingConfig && 'opacity' in incomingConfig && 'scale' in incomingConfig) {
+            // Old format - just position values (has x, y, opacity, scale properties directly)
+            const oldConfig = incomingConfig as { x: number; y: number; opacity: number; scale: number };
+            localSettings[id] = { x: oldConfig.x, y: oldConfig.y, opacity: oldConfig.opacity, scale: oldConfig.scale };
+            ratioWatermarkIds[id] = props.watermarkId || null;
+          } else {
+            localSettings[id] = { ...defaultPosition };
+            ratioWatermarkIds[id] = null;
+          }
         } else {
           // Settings are null - ratio is disabled, but use defaults for UI
           enabledRatios[id] = false;
           localSettings[id] = { ...defaultPosition };
+          ratioWatermarkIds[id] = null;
         }
+      }
+      
+      // If default watermark provided, use it for 16:9 if not already set
+      if (props.watermarkId && !ratioWatermarkIds['16:9']) {
+        ratioWatermarkIds['16:9'] = props.watermarkId;
       }
       
       // Start on the first enabled ratio, or default to 16:9
       const firstEnabled = aspectRatios.find(ar => enabledRatios[ar.id]);
       currentAspectRatio.value = firstEnabled?.id || '16:9';
       
-      await loadWatermarkImage();
+      await loadWatermarkImageForRatio();
     }
   }
 );
@@ -531,8 +855,10 @@ watch(
   }
 );
 
-function selectAspectRatio(id: AspectRatioId) {
+async function selectAspectRatio(id: AspectRatioId) {
   currentAspectRatio.value = id;
+  // Reload watermark for the new ratio (may have different watermark image)
+  await loadWatermarkImageForRatio();
 }
 
 function toggleCurrentRatio() {
@@ -611,11 +937,12 @@ function handleImageError(event: Event) {
 
 function savePosition() {
   // Only include settings for enabled ratios, null for disabled ones
+  // Include both watermarkId and position for each enabled ratio
   emit('save', {
-    '16:9': enabledRatios['16:9'] ? { ...localSettings['16:9'] } : null,
-    '9:16': enabledRatios['9:16'] ? { ...localSettings['9:16'] } : null,
-    '1:1': enabledRatios['1:1'] ? { ...localSettings['1:1'] } : null,
-    '4:5': enabledRatios['4:5'] ? { ...localSettings['4:5'] } : null,
+    '16:9': enabledRatios['16:9'] ? { watermarkId: ratioWatermarkIds['16:9'], position: { ...localSettings['16:9'] } } : null,
+    '9:16': enabledRatios['9:16'] ? { watermarkId: ratioWatermarkIds['9:16'], position: { ...localSettings['9:16'] } } : null,
+    '1:1': enabledRatios['1:1'] ? { watermarkId: ratioWatermarkIds['1:1'], position: { ...localSettings['1:1'] } } : null,
+    '4:5': enabledRatios['4:5'] ? { watermarkId: ratioWatermarkIds['4:5'], position: { ...localSettings['4:5'] } } : null,
   });
   emit('close');
 }

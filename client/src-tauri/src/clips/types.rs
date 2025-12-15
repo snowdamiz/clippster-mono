@@ -107,18 +107,31 @@ pub struct WatermarkPositionSettings {
     pub scale: u32,
 }
 
+// Per-aspect-ratio watermark configuration
+// Allows using different watermark images for different aspect ratios
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatermarkRatioConfig {
+    pub watermark_id: Option<String>,
+    pub file_path: Option<String>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub position: Option<WatermarkPositionSettings>,
+}
+
 // Per-aspect-ratio watermark settings from creator profile
 // Each ratio can be null/None to indicate watermark is disabled for that ratio
+// Each ratio can have a completely different watermark image
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerRatioWatermarkSettings {
     #[serde(rename = "16:9")]
-    pub ratio_16_9: Option<WatermarkPositionSettings>,
+    pub ratio_16_9: Option<WatermarkRatioConfig>,
     #[serde(rename = "9:16")]
-    pub ratio_9_16: Option<WatermarkPositionSettings>,
+    pub ratio_9_16: Option<WatermarkRatioConfig>,
     #[serde(rename = "1:1")]
-    pub ratio_1_1: Option<WatermarkPositionSettings>,
+    pub ratio_1_1: Option<WatermarkRatioConfig>,
     #[serde(rename = "4:5")]
-    pub ratio_4_5: Option<WatermarkPositionSettings>,
+    pub ratio_4_5: Option<WatermarkRatioConfig>,
 }
 
 // Watermark settings structure

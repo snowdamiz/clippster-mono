@@ -423,7 +423,7 @@
                       <Upload class="w-4 h-4" />
                     </Button>
                   </div>
-                  <!-- Position button (shown when watermark is selected) -->
+                  <!-- Per-ratio configuration button -->
                   <button
                     v-if="form.watermarkId"
                     type="button"
@@ -431,8 +431,11 @@
                     class="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-md transition-all"
                   >
                     <Move class="w-4 h-4" />
-                    Set Position for All Aspect Ratios
+                    Configure Per Aspect Ratio
                   </button>
+                  <p v-if="form.watermarkId" class="mt-1.5 text-[10px] text-muted-foreground">
+                    💡 Use different watermarks for 16:9, 9:16, etc. Click to configure.
+                  </p>
                 </div>
               </div>
             </div>
@@ -476,6 +479,7 @@
       <WatermarkPositionPicker
         :show="showWatermarkPositionPicker"
         :watermark-file-path="selectedWatermarkFilePath"
+        :watermark-id="form.watermarkId"
         :watermark-width="selectedWatermarkDimensions.width"
         :watermark-height="selectedWatermarkDimensions.height"
         :settings="form.watermarkSettings"
@@ -568,14 +572,21 @@
     { id: 'youtube' as PlatformId, name: 'YouTube', disabled: true },
   ];
 
+  // Per-ratio watermark config type (with watermarkId AND position)
+  interface WatermarkRatioConfig {
+    watermarkId: string | null;
+    position: { x: number; y: number; opacity: number; scale: number } | null;
+  }
+
   // Default watermark settings - only 16:9 enabled by default
   // null means watermark is disabled for that aspect ratio
+  // Each ratio can now have its own watermark image AND position
   // Default position is bottom-left (12% horizontal, 92% vertical, 20% size)
   const defaultWatermarkSettings = {
-    '16:9': { x: 12, y: 92, opacity: 80, scale: 20 },
-    '9:16': null as { x: number; y: number; opacity: number; scale: number } | null,
-    '1:1': null as { x: number; y: number; opacity: number; scale: number } | null,
-    '4:5': null as { x: number; y: number; opacity: number; scale: number } | null,
+    '16:9': { watermarkId: null, position: { x: 12, y: 92, opacity: 80, scale: 20 } } as WatermarkRatioConfig | null,
+    '9:16': null as WatermarkRatioConfig | null,
+    '1:1': null as WatermarkRatioConfig | null,
+    '4:5': null as WatermarkRatioConfig | null,
   };
 
   const form = ref({
@@ -612,16 +623,41 @@
   });
 
   // Parse watermark settings from JSON string
+  // Handles both old format (just position) and new format (watermarkId + position)
   function parseWatermarkSettings(settingsJson: string | null | undefined): typeof defaultWatermarkSettings {
     if (!settingsJson) return { ...defaultWatermarkSettings };
     try {
       const parsed = JSON.parse(settingsJson);
+      
+      // Helper to convert old format to new format
+      const convertRatioConfig = (config: any, defaultConfig: typeof defaultWatermarkSettings['16:9']): WatermarkRatioConfig | null => {
+        if (config === null || config === undefined) return null;
+        
+        // New format already has watermarkId and position
+        if ('watermarkId' in config || 'position' in config) {
+          return {
+            watermarkId: config.watermarkId || null,
+            position: config.position || null,
+          };
+        }
+        
+        // Old format - just position values (x, y, opacity, scale)
+        if ('x' in config && 'y' in config) {
+          return {
+            watermarkId: null,
+            position: { x: config.x, y: config.y, opacity: config.opacity, scale: config.scale },
+          };
+        }
+        
+        return defaultConfig;
+      };
+      
       // Preserve null values (disabled ratios) - only use defaults if key is missing entirely
       return {
-        '16:9': '16:9' in parsed ? parsed['16:9'] : defaultWatermarkSettings['16:9'],
-        '9:16': '9:16' in parsed ? parsed['9:16'] : defaultWatermarkSettings['9:16'],
-        '1:1': '1:1' in parsed ? parsed['1:1'] : defaultWatermarkSettings['1:1'],
-        '4:5': '4:5' in parsed ? parsed['4:5'] : defaultWatermarkSettings['4:5'],
+        '16:9': '16:9' in parsed ? convertRatioConfig(parsed['16:9'], defaultWatermarkSettings['16:9']) : defaultWatermarkSettings['16:9'],
+        '9:16': '9:16' in parsed ? convertRatioConfig(parsed['9:16'], defaultWatermarkSettings['9:16']) : defaultWatermarkSettings['9:16'],
+        '1:1': '1:1' in parsed ? convertRatioConfig(parsed['1:1'], defaultWatermarkSettings['1:1']) : defaultWatermarkSettings['1:1'],
+        '4:5': '4:5' in parsed ? convertRatioConfig(parsed['4:5'], defaultWatermarkSettings['4:5']) : defaultWatermarkSettings['4:5'],
       };
     } catch {
       return { ...defaultWatermarkSettings };

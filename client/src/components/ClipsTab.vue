@@ -1354,53 +1354,103 @@
       const transcriptSegments = props.transcriptData?.whisperSegments || [];
 
       // Prepare watermark settings if enabled
+      // Now supports per-aspect-ratio watermark files - each ratio can use a completely different watermark
       let watermarkSettings = null;
       if (settings.watermark && settings.watermark.enabled && settings.watermark.watermarkId) {
-        const watermarkImage = await getWatermarkImage(settings.watermark.watermarkId);
-        if (watermarkImage) {
-          // Use the manually adjusted position values for the build
-          // Override perRatioSettings for all selected aspect ratios with the manual values
-          // This allows one-off adjustments without changing creator profile defaults
-          const manualPosition = {
-            x: settings.watermark.positionX,
-            y: settings.watermark.positionY,
-            opacity: settings.watermark.opacity,
-            scale: settings.watermark.scale,
-          };
+        const defaultWatermarkImage = await getWatermarkImage(settings.watermark.watermarkId);
+        if (defaultWatermarkImage) {
+          // Build per-ratio settings with resolved file paths
+          // Each ratio can have its own watermark image AND position settings
+          const buildPerRatioSettings: Record<string, {
+            watermarkId: string | null;
+            filePath: string | null;
+            width: number | null;
+            height: number | null;
+            position: { x: number; y: number; opacity: number; scale: number } | null;
+          } | null> = {};
           
-          // Create perRatioSettings that uses manual values for all selected aspect ratios
-          const buildPerRatioSettings: Record<string, typeof manualPosition | null> = {};
-          for (const ratio of settings.aspectRatios) {
-            buildPerRatioSettings[ratio] = manualPosition;
-          }
-          // Also include any other ratios from original perRatioSettings (for completeness)
-          if (settings.watermark.perRatioSettings) {
-            for (const [ratio, ratioSettings] of Object.entries(settings.watermark.perRatioSettings)) {
-              if (!(ratio in buildPerRatioSettings)) {
-                buildPerRatioSettings[ratio] = ratioSettings;
+          // Process each aspect ratio that might be built
+          const allRatios = ['16:9', '9:16', '1:1', '4:5'];
+          for (const ratio of allRatios) {
+            const perRatioConfig = settings.watermark.perRatioSettings?.[ratio as keyof typeof settings.watermark.perRatioSettings];
+            
+            if (perRatioConfig === null) {
+              // Watermark explicitly disabled for this ratio
+              buildPerRatioSettings[ratio] = null;
+              console.log(`[ClipsTab] Watermark disabled for ${ratio}`);
+            } else if (perRatioConfig) {
+              // Ratio has specific settings
+              const ratioWatermarkId = perRatioConfig.watermarkId;
+              let ratioFilePath = defaultWatermarkImage.file_path;
+              let ratioWidth = defaultWatermarkImage.width ?? null;
+              let ratioHeight = defaultWatermarkImage.height ?? null;
+              
+              // If this ratio has a different watermark, fetch its file info
+              if (ratioWatermarkId && ratioWatermarkId !== settings.watermark.watermarkId) {
+                const ratioWatermarkImage = await getWatermarkImage(ratioWatermarkId);
+                if (ratioWatermarkImage) {
+                  ratioFilePath = ratioWatermarkImage.file_path;
+                  ratioWidth = ratioWatermarkImage.width ?? null;
+                  ratioHeight = ratioWatermarkImage.height ?? null;
+                  console.log(`[ClipsTab] Using different watermark for ${ratio}: ${ratioWatermarkImage.name}`);
+                }
               }
+              
+              // Use per-ratio position if available, otherwise fall back to default
+              const position = perRatioConfig.position || {
+                x: settings.watermark.positionX,
+                y: settings.watermark.positionY,
+                opacity: settings.watermark.opacity,
+                scale: settings.watermark.scale,
+              };
+              
+              buildPerRatioSettings[ratio] = {
+                watermarkId: ratioWatermarkId || settings.watermark.watermarkId,
+                filePath: ratioFilePath,
+                width: ratioWidth,
+                height: ratioHeight,
+                position,
+              };
+            } else {
+              // No per-ratio config, use default watermark with default position
+              buildPerRatioSettings[ratio] = {
+                watermarkId: settings.watermark.watermarkId,
+                filePath: defaultWatermarkImage.file_path,
+                width: defaultWatermarkImage.width ?? null,
+                height: defaultWatermarkImage.height ?? null,
+                position: {
+                  x: settings.watermark.positionX,
+                  y: settings.watermark.positionY,
+                  opacity: settings.watermark.opacity,
+                  scale: settings.watermark.scale,
+                },
+              };
             }
           }
 
           watermarkSettings = {
             enabled: true,
             watermarkId: settings.watermark.watermarkId,
-            filePath: watermarkImage.file_path,
-            width: watermarkImage.width ?? null,
-            height: watermarkImage.height ?? null,
+            filePath: defaultWatermarkImage.file_path,
+            width: defaultWatermarkImage.width ?? null,
+            height: defaultWatermarkImage.height ?? null,
             positionX: settings.watermark.positionX,
             positionY: settings.watermark.positionY,
             opacity: settings.watermark.opacity,
             scale: settings.watermark.scale,
-            // Use manual values for all selected aspect ratios
+            // Per-ratio settings with resolved file paths
             perRatioSettings: buildPerRatioSettings,
           };
+          const defaultWatermarkId = settings.watermark?.watermarkId;
           console.log('[ClipsTab] Watermark settings for build:', {
-            positionX: watermarkSettings.positionX,
-            positionY: watermarkSettings.positionY,
-            manualPosition,
+            defaultWatermark: defaultWatermarkImage.name,
             selectedRatios: settings.aspectRatios,
-            perRatioSettings: watermarkSettings.perRatioSettings,
+            perRatioSettings: Object.entries(buildPerRatioSettings).map(([ratio, config]) => ({
+              ratio,
+              enabled: config !== null,
+              watermarkId: config?.watermarkId,
+              hasCustomWatermark: config?.watermarkId !== defaultWatermarkId,
+            })),
           });
         }
       }

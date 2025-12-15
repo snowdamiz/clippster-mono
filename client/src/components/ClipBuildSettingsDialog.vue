@@ -882,6 +882,7 @@
       :video-path="videoPath"
       :clip-start-time="clipStartTime"
       :clip-end-time="clipEndTime"
+      :watermark-settings="watermarkSettings"
       @confirm="onManualConfigConfirm"
     />
 

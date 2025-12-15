@@ -237,13 +237,21 @@ export interface WatermarkPositionSettings {
   scale: number;
 }
 
+// Per-aspect-ratio watermark configuration
+// Allows using different watermark images for different aspect ratios
+export interface WatermarkRatioConfig {
+  watermarkId: string | null; // Different watermark image for this ratio
+  position: WatermarkPositionSettings | null; // Position settings for this ratio
+}
+
 // Per-aspect-ratio watermark settings from creator profile
 // Settings can be null to indicate watermark is disabled for that ratio
+// Each ratio can have a completely different watermark image
 export interface PerRatioWatermarkSettings {
-  '16:9': WatermarkPositionSettings | null;
-  '9:16': WatermarkPositionSettings | null;
-  '1:1': WatermarkPositionSettings | null;
-  '4:5': WatermarkPositionSettings | null;
+  '16:9': WatermarkRatioConfig | null;
+  '9:16': WatermarkRatioConfig | null;
+  '1:1': WatermarkRatioConfig | null;
+  '4:5': WatermarkRatioConfig | null;
 }
 
 // Watermark Types

@@ -391,7 +391,7 @@ export interface WatermarkImage {
 
 export interface WatermarkSettings {
   enabled: boolean;
-  watermarkId: string | null;
+  watermarkId: string | null; // Default watermark (for 16:9 or when no per-ratio set)
   positionX: number; // 0-100 (percentage from left)
   positionY: number; // 0-100 (percentage from top)
   opacity: number; // 0-100
@@ -399,6 +399,7 @@ export interface WatermarkSettings {
   width?: number | null; // original watermark width (px) if known
   height?: number | null; // original watermark height (px) if known
   // Optional per-aspect-ratio settings from creator profile
+  // Each ratio can have its own watermark image AND position settings
   perRatioSettings?: CreatorWatermarkSettings | null;
 }
 
@@ -414,12 +415,20 @@ export interface CreatorWatermarkPosition {
   scale: number;
 }
 
+// Per-aspect-ratio watermark configuration
+// Allows using different watermark images for different aspect ratios
+export interface CreatorWatermarkRatioConfig {
+  watermarkId: string | null; // Different watermark image for this ratio
+  position: CreatorWatermarkPosition | null; // Position settings for this ratio
+}
+
 // Settings can be null to indicate watermark is disabled for that ratio
+// Each ratio can have a completely different watermark image
 export interface CreatorWatermarkSettings {
-  '16:9': CreatorWatermarkPosition | null;
-  '9:16': CreatorWatermarkPosition | null;
-  '1:1': CreatorWatermarkPosition | null;
-  '4:5': CreatorWatermarkPosition | null;
+  '16:9': CreatorWatermarkRatioConfig | null;
+  '9:16': CreatorWatermarkRatioConfig | null;
+  '1:1': CreatorWatermarkRatioConfig | null;
+  '4:5': CreatorWatermarkRatioConfig | null;
 }
 
 export interface CreatorProfile {
