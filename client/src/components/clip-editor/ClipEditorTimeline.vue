@@ -172,8 +172,12 @@
                   <!-- Source background gradient -->
                   <div class="absolute inset-0 bg-gradient-to-r from-violet-900/30 to-indigo-900/20"></div>
 
-                  <!-- Thumbnail preview - thumbnails would need to be pre-loaded as data URLs -->
-                  <!-- For now, showing gradient background only -->
+                  <!-- Waveform canvas for this video source -->
+                  <canvas
+                    :ref="(el) => setSourceWaveformCanvasRef(el, source.id)"
+                    class="absolute inset-0 w-full h-full pointer-events-none"
+                    style="mix-blend-mode: normal; z-index: 5"
+                  ></canvas>
 
                   <!-- Source label -->
                   <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
@@ -645,7 +649,8 @@
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
   import { Minus, Plus, Film, Music, Type, Smile, Sparkles, Palette, Droplet, X, Blend } from 'lucide-vue-next';
-  import { useAudioWaveform } from '@/composables/useAudioWaveform';
+  import { useAudioWaveform, type WaveformData } from '@/composables/useAudioWaveform';
+  import { invoke } from '@tauri-apps/api/core';
   import TimelineHoverLine from '@/components/TimelineHoverLine.vue';
   import type {
     TrimSegment,
@@ -779,6 +784,10 @@
   const audioWaveformCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map());
   const audioSegmentCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map()); // key: `${trackId}-${segmentIndex}`
   const audioWaveformData = ref<Map<string, { peaks: { min: number; max: number }[]; duration: number }>>(new Map());
+  // Video source waveform data and canvas refs for editor mode
+  const sourceWaveformCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map());
+  const sourceWaveformData = ref<Map<string, WaveformData>>(new Map());
+  const sourceWaveformLoading = ref<Set<string>>(new Set());
   const zoomLevel = ref(1);
   const MIN_ZOOM = 1;
 
@@ -1317,9 +1326,15 @@
     const key = `${trackId}-${segmentIndex}`;
     if (el) {
       audioSegmentCanvasRefs.value.set(key, el as HTMLCanvasElement);
+    }
+  }
+
+  function setSourceWaveformCanvasRef(el: any, sourceId: string) {
+    if (el) {
+      sourceWaveformCanvasRefs.value.set(sourceId, el as HTMLCanvasElement);
     } else {
       // Clean up ref when element is unmounted
-      audioSegmentCanvasRefs.value.delete(key);
+      sourceWaveformCanvasRefs.value.delete(sourceId);
     }
   }
 
@@ -2501,6 +2516,287 @@
     });
   }
 
+  // Video source waveform functions (editor mode)
+
+  // Generate cache key from source path (same logic as useAudioWaveform)
+  function getSourceCacheKey(sourcePath: string): string {
+    let hash = 0;
+    for (let i = 0; i < sourcePath.length; i++) {
+      const char = sourcePath.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return Math.abs(hash).toString();
+  }
+
+  // Get cached waveform from database
+  async function getCachedSourceWaveform(cacheKey: string): Promise<WaveformData | null> {
+    try {
+      const { getDatabase } = await import('@/services/database');
+      const db = await getDatabase();
+
+      const result = await db.select<
+        {
+          sample_rate: number;
+          duration: number;
+          resolutions: string;
+        }[]
+      >(`SELECT sample_rate, duration, resolutions FROM waveform_data WHERE video_path_hash = ?1`, [cacheKey]);
+
+      if (result.length === 0) return null;
+
+      const cached = result[0];
+      const resolutions = JSON.parse(cached.resolutions);
+
+      return {
+        sampleRate: cached.sample_rate,
+        duration: cached.duration,
+        resolutions,
+      };
+    } catch (err) {
+      console.error('[ClipEditorTimeline] Error loading cached waveform:', err);
+      return null;
+    }
+  }
+
+  async function loadSourceWaveform(sourceId: string, sourcePath: string): Promise<void> {
+    // Skip if already loaded or currently loading
+    if (sourceWaveformData.value.has(sourceId) || sourceWaveformLoading.value.has(sourceId)) {
+      return;
+    }
+
+    sourceWaveformLoading.value.add(sourceId);
+
+    try {
+      const cacheKey = getSourceCacheKey(sourcePath);
+
+      // Check database cache first
+      const cachedData = await getCachedSourceWaveform(cacheKey);
+      if (cachedData) {
+        console.log('[ClipEditorTimeline] Using cached waveform for source:', sourceId);
+        sourceWaveformData.value.set(sourceId, cachedData);
+        nextTick(() => {
+          renderSourceWaveform(sourceId);
+        });
+        return;
+      }
+
+      console.log('[ClipEditorTimeline] No cached waveform, extracting for source:', sourceId);
+
+      // Call Rust function to extract real audio waveform from the source file
+      const rustWaveform = await invoke<any>('extract_audio_waveform', {
+        videoPath: sourcePath,
+        targetSamples: 2000, // Optimal for timeline visualization
+      });
+
+      // Convert Rust multi-resolution data structure to our TypeScript interface
+      const resolutions: Record<
+        string,
+        { peaks: { min: number; max: number }[]; peakCount: number; samplesPerPeak: number }
+      > = {};
+
+      if (rustWaveform.resolutions) {
+        for (const [level, rustResolution] of Object.entries(rustWaveform.resolutions)) {
+          resolutions[level] = {
+            peaks: (rustResolution as any).peaks.map((peak: any) => ({
+              min: peak.min,
+              max: peak.max,
+            })),
+            peakCount: (rustResolution as any).peak_count,
+            samplesPerPeak: (rustResolution as any).samples_per_peak,
+          };
+        }
+      }
+
+      const data: WaveformData = {
+        sampleRate: rustWaveform.sample_rate,
+        duration: rustWaveform.duration,
+        resolutions,
+      };
+
+      sourceWaveformData.value.set(sourceId, data);
+
+      // Render the waveform after loading
+      nextTick(() => {
+        renderSourceWaveform(sourceId);
+      });
+    } catch (err) {
+      console.error('[ClipEditorTimeline] Failed to load waveform for source:', sourceId, err);
+    } finally {
+      sourceWaveformLoading.value.delete(sourceId);
+    }
+  }
+
+  function renderSourceWaveform(sourceId: string): void {
+    const canvas = sourceWaveformCanvasRefs.value.get(sourceId);
+    const data = sourceWaveformData.value.get(sourceId);
+    const source = props.videoSources.find((s) => s.id === sourceId);
+
+    if (!canvas || !data || !source) return;
+
+    try {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+
+      // Get the trim range for this source (portion of the original video being shown)
+      // This is equivalent to absoluteStartTime/absoluteEndTime in clip mode
+      const trimStart = source.trim_start;
+      const trimEnd = source.trim_end ?? trimStart + (source.end_time - source.start_time);
+
+      // Get the highest resolution waveform data available for maximum detail
+      const { duration, resolutions } = data;
+
+      if (duration <= 0) return;
+
+      // Try resolutions in order of detail (highest first)
+      const resolutionOrder = ['godlike', 'insane', 'maximum', 'extreme', 'ultra', 'high', 'medium', 'low'];
+      let peaks: any[] = [];
+
+      for (const res of resolutionOrder) {
+        if (resolutions[res]?.peaks?.length > 0) {
+          peaks = resolutions[res].peaks;
+          break;
+        }
+      }
+
+      if (peaks.length === 0) return;
+
+      // Extract peaks for this segment's time range
+      const startRatio = trimStart / duration;
+      const endRatio = trimEnd / duration;
+      const startIndex = Math.floor(startRatio * peaks.length);
+      const endIndex = Math.ceil(endRatio * peaks.length);
+      const segmentPeaks = peaks.slice(startIndex, endIndex);
+
+      if (segmentPeaks.length === 0) return;
+
+      // Calculate how to best display the peaks across the canvas width
+      const canvasWidth = rect.width;
+      const numPeaks = segmentPeaks.length;
+
+      let displayPeaks = segmentPeaks;
+      let barWidth: number;
+      let barSpacing: number;
+
+      if (numPeaks > canvasWidth) {
+        // More peaks than pixels - downsample to 1 bar per pixel
+        const step = numPeaks / canvasWidth;
+        displayPeaks = [];
+        for (let i = 0; i < canvasWidth; i++) {
+          const idx = Math.floor(i * step);
+          if (idx < numPeaks) {
+            displayPeaks.push(segmentPeaks[idx]);
+          }
+        }
+        barWidth = 1;
+        barSpacing = 0;
+      } else {
+        // Fewer peaks than pixels - spread bars across canvas
+        barWidth = 2;
+        const totalBarSpace = numPeaks * barWidth;
+        const remainingSpace = canvasWidth - totalBarSpace;
+        barSpacing = numPeaks > 1 ? remainingSpace / (numPeaks - 1) : 0;
+
+        if (barSpacing > barWidth * 2) {
+          const totalWidth = canvasWidth / numPeaks;
+          barWidth = Math.floor(totalWidth * 0.7);
+          barSpacing = totalWidth - barWidth;
+        }
+      }
+
+      // Normalize peaks to use full available height (find max peak value)
+      let maxPeakValue = 0;
+      displayPeaks.forEach((peak: any) => {
+        const absMax = Math.abs(peak.max);
+        const absMin = Math.abs(peak.min);
+        if (absMax > maxPeakValue) maxPeakValue = absMax;
+        if (absMin > maxPeakValue) maxPeakValue = absMin;
+      });
+
+      // Normalize peaks if they're not already at full scale
+      const normalizer = maxPeakValue > 0 ? maxPeakValue : 1;
+      const normalizedPeaks = displayPeaks.map((peak: any) => ({
+        min: peak.min / normalizer,
+        max: peak.max / normalizer,
+      }));
+
+      // Apply audio gain to peaks
+      const gainMultiplier = dbToLinear(props.audioGainDb ?? 0);
+      const gainedPeaks = normalizedPeaks.map((peak: any) => ({
+        min: Math.max(-1, peak.min * gainMultiplier),
+        max: Math.min(1, peak.max * gainMultiplier),
+      }));
+
+      // Render directly (same as renderSegmentWaveform but without resetting canvas)
+      const width = rect.width;
+      const height = rect.height;
+      const amplitude = 0.8;
+      const totalBarWidth = barWidth + barSpacing;
+      const centerY = height / 2;
+      const maxBarHeight = height * amplitude;
+
+      // Calculate playhead position within segment
+      const segmentStartTime = source.start_time;
+      const segmentEndTime = source.end_time;
+      const isWithinSegment = props.currentTime >= segmentStartTime && props.currentTime <= segmentEndTime;
+      const playheadRatio = isWithinSegment
+        ? (props.currentTime - segmentStartTime) / (segmentEndTime - segmentStartTime)
+        : props.currentTime < segmentStartTime
+          ? 0
+          : 1;
+      const playheadPixel = playheadRatio * width;
+
+      // Set canvas size and clear
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      ctx.clearRect(0, 0, width, height);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1.0;
+
+      // Draw waveform bars
+      gainedPeaks.forEach((peak: any, index: number) => {
+        const x = index * totalBarWidth;
+        if (x >= width) return;
+
+        const barCenter = x + barWidth / 2;
+        const isBeforePlayhead = barCenter < playheadPixel;
+        const color = isBeforePlayhead ? '#e4e4e7' : '#a78bfa';
+
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 1.0;
+
+        const positiveHeight = Math.abs(peak.max) * maxBarHeight;
+        const negativeHeight = Math.abs(peak.min) * maxBarHeight;
+        const actualBarWidth = Math.min(barWidth, width - x);
+
+        if (positiveHeight > 0 && actualBarWidth > 0) {
+          ctx.fillRect(x, centerY - positiveHeight, actualBarWidth, positiveHeight);
+        }
+        if (negativeHeight > 0 && actualBarWidth > 0) {
+          ctx.fillRect(x, centerY, actualBarWidth, negativeHeight);
+        }
+      });
+
+      ctx.globalAlpha = 1.0;
+    } catch (err) {
+      console.error('[ClipEditorTimeline] Error rendering source waveform:', sourceId, err);
+    }
+  }
+
+  function renderAllSourceWaveforms(): void {
+    if (!props.editorMode) return;
+
+    props.videoSources.forEach((source) => {
+      if (sourceWaveformData.value.has(source.id)) {
+        renderSourceWaveform(source.id);
+      }
+    });
+  }
+
   // Audio track waveform functions
   async function loadAudioWaveform(trackId: string, audioSrc: string): Promise<void> {
     // Skip if already loaded
@@ -2777,11 +3073,21 @@
     }
   }
 
+  async function loadAllSourceWaveforms(): Promise<void> {
+    if (!props.editorMode) return;
+    for (const source of props.videoSources) {
+      if (source.source_path) {
+        await loadSourceWaveform(source.id, source.source_path);
+      }
+    }
+  }
+
   // Setup resize observer for waveform canvases
   function setupResizeObserver() {
     resizeObserver = new ResizeObserver(() => {
       renderAllWaveforms();
       renderAllAudioWaveforms();
+      renderAllSourceWaveforms();
     });
 
     waveformCanvasRefs.value.forEach((canvas) => {
@@ -2797,6 +3103,12 @@
     });
 
     audioSegmentCanvasRefs.value.forEach((canvas) => {
+      if (canvas && resizeObserver) {
+        resizeObserver.observe(canvas);
+      }
+    });
+
+    sourceWaveformCanvasRefs.value.forEach((canvas) => {
       if (canvas && resizeObserver) {
         resizeObserver.observe(canvas);
       }
@@ -2905,6 +3217,45 @@
     },
     { deep: true }
   );
+
+  // Watch for video source changes in editor mode (load waveforms for new sources)
+  watch(
+    () => props.videoSources,
+    async (newSources) => {
+      if (!props.editorMode) return;
+
+      // Load waveforms for new sources
+      for (const source of newSources) {
+        if (source.source_path && !sourceWaveformData.value.has(source.id)) {
+          await loadSourceWaveform(source.id, source.source_path);
+        }
+      }
+
+      // Clean up data for removed sources
+      const sourceIds = new Set(newSources.map((s) => s.id));
+      sourceWaveformData.value.forEach((_, id) => {
+        if (!sourceIds.has(id)) {
+          sourceWaveformData.value.delete(id);
+          sourceWaveformCanvasRefs.value.delete(id);
+        }
+      });
+
+      // Re-render all source waveforms after DOM updates
+      nextTick(() => {
+        renderAllSourceWaveforms();
+      });
+    },
+    { deep: true, immediate: true }
+  );
+
+  // Watch for current time and zoom changes to update source waveforms (for playhead position)
+  watch([() => props.currentTime, zoomLevel], () => {
+    if (props.editorMode) {
+      nextTick(() => {
+        renderAllSourceWaveforms();
+      });
+    }
+  });
 
   // Auto-scroll to keep playhead visible during playback (stepping approach)
   // Scrolls the timeline when playhead reaches the right edge of visible area
@@ -3105,6 +3456,8 @@
       }
       // Load audio waveforms for existing tracks
       await loadAllAudioWaveforms();
+      // Load source waveforms for editor mode
+      await loadAllSourceWaveforms();
     });
   });
 
