@@ -114,50 +114,56 @@
         <p class="text-[10px] text-white/30 mt-1">Upload a video above to get started</p>
       </div>
 
-      <!-- Intros Grid -->
-      <div v-else class="grid grid-cols-2 gap-2">
-        <button
+      <!-- Intros List -->
+      <div v-else class="space-y-2">
+        <div
           v-for="intro in intros"
           :key="intro.id"
-          @click="addIntro(intro)"
-          :disabled="currentIntro?.id === intro.id"
+          @click="currentIntro?.id !== intro.id && addIntro(intro)"
           :class="[
-            'group relative p-2 rounded-lg border transition-all text-left',
+            'group p-3 rounded-lg border transition-all',
             currentIntro?.id === intro.id
-              ? 'bg-emerald-500/20 border-emerald-500/40 cursor-not-allowed'
-              : 'bg-white/5 border-white/10 hover:border-emerald-500/40 hover:bg-emerald-500/10',
+              ? 'bg-emerald-500/20 border-emerald-500/40 cursor-default'
+              : 'bg-white/5 hover:bg-white/10 border-white/10 hover:border-emerald-500/30 cursor-pointer',
           ]"
         >
-          <!-- Thumbnail -->
-          <div class="w-full aspect-video rounded overflow-hidden bg-black/50 mb-2">
-            <img
-              v-if="introThumbnails.get(intro.id)"
-              :src="introThumbnails.get(intro.id)!"
-              class="w-full h-full object-cover"
-              @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
-            />
-            <div v-else class="w-full h-full flex items-center justify-center">
-              <Play :size="16" class="text-white/30" />
+          <div class="flex items-center gap-3">
+            <!-- Thumbnail -->
+            <div class="w-16 h-10 rounded overflow-hidden bg-black/50 flex-shrink-0">
+              <img
+                v-if="introThumbnails.get(intro.id)"
+                :src="introThumbnails.get(intro.id)!"
+                class="w-full h-full object-cover"
+                @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
+              />
+              <div v-else class="w-full h-full flex items-center justify-center">
+                <Play :size="14" class="text-white/30" />
+              </div>
             </div>
+
+            <!-- Info -->
+            <div class="flex-1 min-w-0">
+              <p class="text-sm text-white truncate">{{ intro.name }}</p>
+              <p class="text-xs text-white/40">{{ formatDuration(intro.duration || 0) }}</p>
+            </div>
+
+            <!-- Applied badge or Add button -->
+            <div
+              v-if="currentIntro?.id === intro.id"
+              class="px-2 py-1 bg-emerald-500/30 text-emerald-300 text-[10px] font-medium rounded"
+            >
+              Applied
+            </div>
+            <button
+              v-else
+              @click.stop="addIntro(intro)"
+              class="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Add to timeline"
+            >
+              <Plus :size="14" />
+            </button>
           </div>
-          <!-- Info -->
-          <div class="text-xs font-medium text-white truncate">{{ intro.name }}</div>
-          <div class="text-[10px] text-white/40">{{ formatDuration(intro.duration || 0) }}</div>
-          <!-- Applied badge -->
-          <div
-            v-if="currentIntro?.id === intro.id"
-            class="absolute top-1 right-1 px-1.5 py-0.5 bg-emerald-500/30 text-emerald-300 text-[9px] rounded"
-          >
-            Applied
-          </div>
-          <!-- Add overlay -->
-          <div
-            v-else
-            class="absolute inset-0 flex items-center justify-center bg-emerald-500/0 group-hover:bg-emerald-500/20 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-          >
-            <Plus :size="20" class="text-emerald-400" />
-          </div>
-        </button>
+        </div>
       </div>
     </div>
 
@@ -183,63 +189,55 @@
         <p class="text-[10px] text-white/30 mt-1">Upload a video above to get started</p>
       </div>
 
-      <!-- Outros Grid -->
-      <div v-else class="grid grid-cols-2 gap-2">
-        <button
+      <!-- Outros List -->
+      <div v-else class="space-y-2">
+        <div
           v-for="outro in outros"
           :key="outro.id"
-          @click="addOutro(outro)"
-          :disabled="currentOutro?.id === outro.id"
+          @click="currentOutro?.id !== outro.id && addOutro(outro)"
           :class="[
-            'group relative p-2 rounded-lg border transition-all text-left',
+            'group p-3 rounded-lg border transition-all',
             currentOutro?.id === outro.id
-              ? 'bg-violet-500/20 border-violet-500/40 cursor-not-allowed'
-              : 'bg-white/5 border-white/10 hover:border-violet-500/40 hover:bg-violet-500/10',
+              ? 'bg-violet-500/20 border-violet-500/40 cursor-default'
+              : 'bg-white/5 hover:bg-white/10 border-white/10 hover:border-violet-500/30 cursor-pointer',
           ]"
         >
-          <!-- Thumbnail -->
-          <div class="w-full aspect-video rounded overflow-hidden bg-black/50 mb-2">
-            <img
-              v-if="outroThumbnails.get(outro.id)"
-              :src="outroThumbnails.get(outro.id)!"
-              class="w-full h-full object-cover"
-              @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
-            />
-            <div v-else class="w-full h-full flex items-center justify-center">
-              <Play :size="16" class="text-white/30" />
+          <div class="flex items-center gap-3">
+            <!-- Thumbnail -->
+            <div class="w-16 h-10 rounded overflow-hidden bg-black/50 flex-shrink-0">
+              <img
+                v-if="outroThumbnails.get(outro.id)"
+                :src="outroThumbnails.get(outro.id)!"
+                class="w-full h-full object-cover"
+                @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
+              />
+              <div v-else class="w-full h-full flex items-center justify-center">
+                <Play :size="14" class="text-white/30" />
+              </div>
             </div>
-          </div>
-          <!-- Info -->
-          <div class="text-xs font-medium text-white truncate">{{ outro.name }}</div>
-          <div class="text-[10px] text-white/40">{{ formatDuration(outro.duration || 0) }}</div>
-          <!-- Applied badge -->
-          <div
-            v-if="currentOutro?.id === outro.id"
-            class="absolute top-1 right-1 px-1.5 py-0.5 bg-violet-500/30 text-violet-300 text-[9px] rounded"
-          >
-            Applied
-          </div>
-          <!-- Add overlay -->
-          <div
-            v-else
-            class="absolute inset-0 flex items-center justify-center bg-violet-500/0 group-hover:bg-violet-500/20 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-          >
-            <Plus :size="20" class="text-violet-400" />
-          </div>
-        </button>
-      </div>
-    </div>
 
-    <!-- Info Notice -->
-    <div class="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-      <div class="flex items-start gap-2">
-        <Info :size="14" class="text-blue-400 mt-0.5 flex-shrink-0" />
-        <div class="text-[11px] text-blue-300/80">
-          <p class="font-medium mb-1">How it works</p>
-          <p class="text-blue-300/60">
-            Adding an intro will insert it at the beginning of your timeline and shift all existing content forward.
-            Outros are added at the end of your timeline.
-          </p>
+            <!-- Info -->
+            <div class="flex-1 min-w-0">
+              <p class="text-sm text-white truncate">{{ outro.name }}</p>
+              <p class="text-xs text-white/40">{{ formatDuration(outro.duration || 0) }}</p>
+            </div>
+
+            <!-- Applied badge or Add button -->
+            <div
+              v-if="currentOutro?.id === outro.id"
+              class="px-2 py-1 bg-violet-500/30 text-violet-300 text-[10px] font-medium rounded"
+            >
+              Applied
+            </div>
+            <button
+              v-else
+              @click.stop="addOutro(outro)"
+              class="p-1.5 rounded-lg bg-violet-500/20 text-violet-400 opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Add to timeline"
+            >
+              <Plus :size="14" />
+            </button>
+          </div>
         </div>
       </div>
     </div>

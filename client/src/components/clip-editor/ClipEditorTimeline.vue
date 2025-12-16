@@ -20,6 +20,42 @@
             >
               <Scissors :size="12" />
             </button>
+            <!-- Separator -->
+            <div class="w-px h-4 bg-white/10 mx-0.5"></div>
+            <!-- Reverse Button -->
+            <button
+              @mousedown="startContinuousSeeking('reverse')"
+              @mouseup="stopContinuousSeeking"
+              @mouseleave="stopContinuousSeeking"
+              @touchstart="startContinuousSeeking('reverse')"
+              @touchend="stopContinuousSeeking"
+              :class="[
+                'p-1 rounded-md transition-colors duration-150',
+                isSeeking && seekDirection === 'reverse'
+                  ? 'text-amber-400 bg-amber-500/20'
+                  : 'text-white/50 hover:text-amber-400 hover:bg-amber-500/10',
+              ]"
+              :title="'Seek backward (← arrow key)'"
+            >
+              <Rewind :size="12" />
+            </button>
+            <!-- Fast Forward Button -->
+            <button
+              @mousedown="startContinuousSeeking('forward')"
+              @mouseup="stopContinuousSeeking"
+              @mouseleave="stopContinuousSeeking"
+              @touchstart="startContinuousSeeking('forward')"
+              @touchend="stopContinuousSeeking"
+              :class="[
+                'p-1 rounded-md transition-colors duration-150',
+                isSeeking && seekDirection === 'forward'
+                  ? 'text-amber-400 bg-amber-500/20'
+                  : 'text-white/50 hover:text-amber-400 hover:bg-amber-500/10',
+              ]"
+              :title="'Seek forward (→ arrow key)'"
+            >
+              <FastForward :size="12" />
+            </button>
           </div>
           <!-- Zoom Controls -->
           <div
@@ -772,6 +808,8 @@
     X,
     Blend,
     Scissors,
+    Rewind,
+    FastForward,
   } from 'lucide-vue-next';
   import { useAudioWaveform, type WaveformData } from '@/composables/useAudioWaveform';
   import { invoke } from '@tauri-apps/api/core';
@@ -789,6 +827,7 @@
     VideoEditorTransition,
   } from '@/types';
   import { detectSourceTransitions } from '@/types';
+  import { SEEK_CONFIG } from '@/constants/timelineConstants';
 
   type ItemType = 'trim' | 'audio' | 'text' | 'sticker' | 'watermark' | 'effect' | 'filter' | 'source';
 
@@ -946,6 +985,12 @@
     const step = getZoomStep();
     zoomLevel.value = Math.max(MIN_ZOOM, zoomLevel.value - step);
   }
+
+  // Continuous seeking state
+  const isSeeking = ref(false);
+  const seekDirection = ref<'forward' | 'reverse' | null>(null);
+  const seekInterval = ref<ReturnType<typeof setInterval> | null>(null);
+  const currentSeekTime = ref(0); // Track our current seek position for continuous seeking
 
   // Video editor mode state
   const isDragOverTimeline = ref(false);
@@ -4070,8 +4115,49 @@
     lastKnownPosition = newPosition;
   });
 
-  // Keyboard handler for cut tool
+  // Continuous seeking functions
+  function startContinuousSeeking(direction: 'forward' | 'reverse') {
+    const maxDuration = props.editorMode ? props.duration : totalDuration.value;
+    if (maxDuration <= 0) {
+      return;
+    }
+
+    isSeeking.value = true;
+    seekDirection.value = direction;
+
+    // Initialize our seek position from the current video time
+    currentSeekTime.value = props.currentTime;
+
+    // Start continuous seeking at high speed immediately (no initial jump)
+    seekInterval.value = setInterval(() => {
+      const seekAmount =
+        seekDirection.value === 'forward' ? SEEK_CONFIG.SECONDS_PER_INTERVAL : -SEEK_CONFIG.SECONDS_PER_INTERVAL;
+
+      // Update our tracked seek position
+      currentSeekTime.value += seekAmount;
+      currentSeekTime.value = Math.max(0, Math.min(maxDuration, currentSeekTime.value));
+
+      emit('seek', currentSeekTime.value);
+    }, SEEK_CONFIG.INTERVAL_MS);
+  }
+
+  function stopContinuousSeeking() {
+    if (seekInterval.value) {
+      clearInterval(seekInterval.value);
+      seekInterval.value = null;
+    }
+
+    isSeeking.value = false;
+    seekDirection.value = null;
+  }
+
+  // Keyboard handler for cut tool and seeking
   function handleKeyDown(event: KeyboardEvent) {
+    // Don't handle keyboard events if user is typing in input fields
+    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+      return;
+    }
+
     // Toggle cut tool with X key
     if (event.key === 'x' || event.key === 'X') {
       event.preventDefault();
@@ -4083,6 +4169,32 @@
       event.preventDefault();
       isCutToolActive.value = false;
       cutHoverInfo.value = null;
+    }
+
+    // Handle arrow keys for seeking
+    const maxDuration = props.editorMode ? props.duration : totalDuration.value;
+    if (!isCutToolActive.value && maxDuration > 0) {
+      if (event.key === 'ArrowLeft' && !isSeeking.value) {
+        event.preventDefault();
+        startContinuousSeeking('reverse');
+      } else if (event.key === 'ArrowRight' && !isSeeking.value) {
+        event.preventDefault();
+        startContinuousSeeking('forward');
+      }
+    }
+  }
+
+  // Handle keyboard key up events
+  function handleKeyUp(event: KeyboardEvent) {
+    // Don't handle keyboard events if user is typing in input fields
+    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+      return;
+    }
+
+    // Stop continuous seeking when arrow keys are released
+    if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && isSeeking.value) {
+      event.preventDefault();
+      stopContinuousSeeking();
     }
   }
 
@@ -4099,21 +4211,25 @@
       await loadAllSourceWaveforms();
     });
 
-    // Add keyboard listener for cut tool
+    // Add keyboard listeners for cut tool and seeking
     document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
   });
 
   onUnmounted(() => {
     cleanupResizeObserver();
     stopPlayheadAnimation();
+    // Clean up continuous seeking
+    stopContinuousSeeking();
     document.removeEventListener('mousemove', onDragMove);
     document.removeEventListener('mouseup', onDragEnd);
     document.removeEventListener('mousemove', onResizeMove);
     document.removeEventListener('mouseup', onResizeEnd);
     document.removeEventListener('mousemove', onPlayheadDragMove);
     document.removeEventListener('mouseup', onPlayheadDragEnd);
-    // Remove keyboard listener
+    // Remove keyboard listeners
     document.removeEventListener('keydown', handleKeyDown);
+    document.removeEventListener('keyup', handleKeyUp);
   });
 </script>
 
