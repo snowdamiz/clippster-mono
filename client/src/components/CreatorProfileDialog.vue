@@ -423,6 +423,19 @@
                       <Upload class="w-4 h-4" />
                     </Button>
                   </div>
+                  <!-- Per-ratio configuration button -->
+                  <button
+                    v-if="form.watermarkId"
+                    type="button"
+                    @click="showWatermarkPositionPicker = true"
+                    class="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-md transition-all"
+                  >
+                    <Move class="w-4 h-4" />
+                    Configure Per Aspect Ratio
+                  </button>
+                  <p v-if="form.watermarkId" class="mt-1.5 text-[10px] text-muted-foreground">
+                    💡 Use different watermarks for 16:9, 9:16, etc. Click to configure.
+                  </p>
                 </div>
               </div>
             </div>
@@ -461,6 +474,18 @@
           </div>
         </div>
       </Transition>
+
+      <!-- Watermark Position Picker -->
+      <WatermarkPositionPicker
+        :show="showWatermarkPositionPicker"
+        :watermark-file-path="selectedWatermarkFilePath"
+        :watermark-id="form.watermarkId"
+        :watermark-width="selectedWatermarkDimensions.width"
+        :watermark-height="selectedWatermarkDimensions.height"
+        :settings="form.watermarkSettings"
+        @close="showWatermarkPositionPicker = false"
+        @save="handleWatermarkPositionSave"
+      />
     </div>
   </Transition>
 </template>
@@ -498,7 +523,9 @@
     Play,
     SkipForward,
     Image as ImageIcon,
+    Move,
   } from 'lucide-vue-next';
+  import WatermarkPositionPicker from './WatermarkPositionPicker.vue';
 
   interface PlatformLinkForm {
     id?: string;
@@ -545,14 +572,34 @@
     { id: 'youtube' as PlatformId, name: 'YouTube', disabled: true },
   ];
 
+  // Per-ratio watermark config type (with watermarkId AND position)
+  interface WatermarkRatioConfig {
+    watermarkId: string | null;
+    position: { x: number; y: number; opacity: number; scale: number } | null;
+  }
+
+  // Default watermark settings - only 16:9 enabled by default
+  // null means watermark is disabled for that aspect ratio
+  // Each ratio can now have its own watermark image AND position
+  // Default position is bottom-left (12% horizontal, 92% vertical, 20% size)
+  const defaultWatermarkSettings = {
+    '16:9': { watermarkId: null, position: { x: 12, y: 92, opacity: 80, scale: 20 } } as WatermarkRatioConfig | null,
+    '9:16': null as WatermarkRatioConfig | null,
+    '1:1': null as WatermarkRatioConfig | null,
+    '4:5': null as WatermarkRatioConfig | null,
+  };
+
   const form = ref({
     name: '',
     description: '',
     introId: null as string | null,
     outroId: null as string | null,
     watermarkId: null as string | null,
+    watermarkSettings: { ...defaultWatermarkSettings } as typeof defaultWatermarkSettings,
     platformLinks: [] as PlatformLinkForm[],
   });
+
+  const showWatermarkPositionPicker = ref(false);
 
   const isEditing = computed(() => !!props.creator);
 
@@ -575,12 +622,55 @@
     return true;
   });
 
+  // Parse watermark settings from JSON string
+  // Handles both old format (just position) and new format (watermarkId + position)
+  function parseWatermarkSettings(settingsJson: string | null | undefined): typeof defaultWatermarkSettings {
+    if (!settingsJson) return { ...defaultWatermarkSettings };
+    try {
+      const parsed = JSON.parse(settingsJson);
+      
+      // Helper to convert old format to new format
+      const convertRatioConfig = (config: any, defaultConfig: typeof defaultWatermarkSettings['16:9']): WatermarkRatioConfig | null => {
+        if (config === null || config === undefined) return null;
+        
+        // New format already has watermarkId and position
+        if ('watermarkId' in config || 'position' in config) {
+          return {
+            watermarkId: config.watermarkId || null,
+            position: config.position || null,
+          };
+        }
+        
+        // Old format - just position values (x, y, opacity, scale)
+        if ('x' in config && 'y' in config) {
+          return {
+            watermarkId: null,
+            position: { x: config.x, y: config.y, opacity: config.opacity, scale: config.scale },
+          };
+        }
+        
+        return defaultConfig;
+      };
+      
+      // Preserve null values (disabled ratios) - only use defaults if key is missing entirely
+      return {
+        '16:9': '16:9' in parsed ? convertRatioConfig(parsed['16:9'], defaultWatermarkSettings['16:9']) : defaultWatermarkSettings['16:9'],
+        '9:16': '9:16' in parsed ? convertRatioConfig(parsed['9:16'], defaultWatermarkSettings['9:16']) : defaultWatermarkSettings['9:16'],
+        '1:1': '1:1' in parsed ? convertRatioConfig(parsed['1:1'], defaultWatermarkSettings['1:1']) : defaultWatermarkSettings['1:1'],
+        '4:5': '4:5' in parsed ? convertRatioConfig(parsed['4:5'], defaultWatermarkSettings['4:5']) : defaultWatermarkSettings['4:5'],
+      };
+    } catch {
+      return { ...defaultWatermarkSettings };
+    }
+  }
+
   // Watch for dialog open/close to reset form
   watch(
     () => props.show,
     async (show) => {
       if (show) {
         openPlatformDropdown.value = null;
+        showWatermarkPositionPicker.value = false;
         await loadAssets();
         if (props.creator) {
           // Populate form with existing data
@@ -590,6 +680,7 @@
             introId: props.creator.intro_id,
             outroId: props.creator.outro_id,
             watermarkId: props.creator.watermark_id,
+            watermarkSettings: parseWatermarkSettings(props.creator.watermark_settings),
             platformLinks: props.creator.platform_links.map((link) => ({
               id: link.id,
               platform: link.platform,
@@ -607,6 +698,7 @@
             introId: null,
             outroId: null,
             watermarkId: null,
+            watermarkSettings: { ...defaultWatermarkSettings },
             platformLinks: [],
           };
         }
@@ -721,9 +813,32 @@
   }
 
   function selectWatermark(id: string | null) {
+    const previousId = form.value.watermarkId;
     form.value.watermarkId = id;
     openAssetDropdown.value = null;
+    
+    // Open position picker if selecting a new watermark (not clearing)
+    if (id && id !== previousId) {
+      showWatermarkPositionPicker.value = true;
+    }
   }
+
+  function handleWatermarkPositionSave(settings: typeof defaultWatermarkSettings) {
+    form.value.watermarkSettings = settings;
+  }
+
+  // Get the selected watermark's file path for preview
+  const selectedWatermarkFilePath = computed(() => {
+    if (!form.value.watermarkId) return undefined;
+    const wm = watermarks.value.find((w) => w.id === form.value.watermarkId);
+    return wm?.file_path;
+  });
+
+  const selectedWatermarkDimensions = computed(() => {
+    if (!form.value.watermarkId) return { width: null, height: null };
+    const wm = watermarks.value.find((w) => w.id === form.value.watermarkId);
+    return { width: wm?.width ?? null, height: wm?.height ?? null };
+  });
 
   // Platform link management
   function addPlatformLink() {
@@ -909,6 +1024,7 @@
           intro_id: form.value.introId,
           outro_id: form.value.outroId,
           watermark_id: form.value.watermarkId,
+          watermark_settings: JSON.stringify(form.value.watermarkSettings),
         });
 
         // Handle platform links
@@ -945,7 +1061,8 @@
           null, // profile_image_path - could add upload later
           form.value.introId,
           form.value.outroId,
-          form.value.watermarkId
+          form.value.watermarkId,
+          JSON.stringify(form.value.watermarkSettings)
         );
 
         // Add platform links

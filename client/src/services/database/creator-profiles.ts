@@ -54,21 +54,33 @@ export async function getCreatorProfile(id: string): Promise<CreatorProfileWithL
   };
 }
 
+// Default watermark settings - only 16:9 enabled by default
+// null means watermark is disabled for that aspect ratio
+// Each ratio can now have its own watermarkId AND position settings
+// Default position is bottom-left (12% horizontal, 92% vertical, 20% size)
+const DEFAULT_WATERMARK_SETTINGS = JSON.stringify({
+  '16:9': { watermarkId: null, position: { x: 12, y: 92, opacity: 80, scale: 20 } },
+  '9:16': null,
+  '1:1': null,
+  '4:5': null,
+});
+
 export async function createCreatorProfile(
   name: string,
   description?: string | null,
   profileImagePath?: string | null,
   introId?: string | null,
   outroId?: string | null,
-  watermarkId?: string | null
+  watermarkId?: string | null,
+  watermarkSettings?: string | null
 ): Promise<string> {
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
 
   await db.execute(
-    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, created_at, updated_at) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, created_at, updated_at) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       name,
@@ -77,6 +89,7 @@ export async function createCreatorProfile(
       introId || null,
       outroId || null,
       watermarkId || null,
+      watermarkSettings || DEFAULT_WATERMARK_SETTINGS,
       now,
       now,
     ]
@@ -94,6 +107,7 @@ export async function updateCreatorProfile(
     intro_id: string | null;
     outro_id: string | null;
     watermark_id: string | null;
+    watermark_settings: string | null;
   }>
 ): Promise<void> {
   const db = await getDatabase();
@@ -128,6 +142,11 @@ export async function updateCreatorProfile(
   if (updates.watermark_id !== undefined) {
     fields.push('watermark_id = ?');
     values.push(updates.watermark_id);
+  }
+
+  if (updates.watermark_settings !== undefined) {
+    fields.push('watermark_settings = ?');
+    values.push(updates.watermark_settings);
   }
 
   if (fields.length === 0) {

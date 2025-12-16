@@ -98,6 +98,21 @@
           @drag-end="onDragEnd"
         />
 
+        <!-- Watermark preview overlay -->
+        <div
+          v-if="watermarkPreview"
+          class="absolute pointer-events-none z-10"
+          :style="watermarkPreviewStyle"
+        >
+          <!-- Watermark indicator (simple preview representation) -->
+          <div 
+            class="w-full h-full border-2 border-dashed border-amber-500/50 rounded bg-amber-500/10 flex items-center justify-center"
+            :style="{ opacity: watermarkPreview.opacity / 100 }"
+          >
+            <span class="text-[8px] text-amber-500/80 font-medium">WATERMARK</span>
+          </div>
+        </div>
+
         <!-- Empty state -->
         <div v-if="regions.length === 0" class="absolute inset-0 flex items-center justify-center">
           <div class="text-center">
@@ -121,6 +136,14 @@
   import POIRegion from './POIRegion.vue';
   import type { ManualRegion, ManualRegionRect } from '@/types';
 
+  interface WatermarkPreview {
+    filePath?: string;
+    x: number;
+    y: number;
+    scale: number;
+    opacity: number;
+  }
+
   interface Props {
     regions: ManualRegion[];
     selectedRegionId: string | null;
@@ -130,6 +153,8 @@
     videoUrl?: string | null;
     videoTime?: number;
     isPlaying?: boolean;
+    // Optional watermark preview overlay
+    watermarkPreview?: WatermarkPreview | null;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -137,6 +162,7 @@
     sourceAspectRatio: '16:9',
     videoTime: 0,
     isPlaying: false,
+    watermarkPreview: null,
   });
 
   const emit = defineEmits<{
@@ -208,6 +234,26 @@
     const [w, h] = ratio.split(':').map(Number);
     return { width: w || 16, height: h || 9 };
   }
+
+  // Calculate watermark preview style (positioned at percentage-based coordinates)
+  const watermarkPreviewStyle = computed(() => {
+    if (!props.watermarkPreview) return {};
+    
+    const { x, y, scale } = props.watermarkPreview;
+    
+    // Watermark size as percentage of container width
+    const sizePercent = scale;
+    
+    // Position is center-point based (like CSS transform: translate(-50%, -50%))
+    return {
+      width: `${sizePercent}%`,
+      height: 'auto',
+      aspectRatio: '3/1', // Approximate watermark aspect ratio for preview
+      left: `${x}%`,
+      top: `${y}%`,
+      transform: 'translate(-50%, -50%)',
+    };
+  });
 
   // Calculate container style to maintain target aspect ratio
   const containerStyle = computed(() => {

@@ -43,7 +43,9 @@
           >
             <!-- Video Player Section -->
             <div
+              ref="videoPlayerSectionRef"
               class="w-3/5 min-w-0 p-5 border-r border-border/40 flex flex-col bg-gradient-to-br from-black/20 to-transparent"
+              :class="{ 'fullscreen-player': isFullscreen }"
             >
               <!-- Video Player Container -->
               <VideoPlayer
@@ -74,10 +76,13 @@
                 :duration="duration"
                 :volume="volume"
                 :is-muted="isMuted"
+                :is-fullscreen="isFullscreen"
                 @togglePlayPause="togglePlayPause"
                 @toggleMute="toggleMute"
                 @updateVolume="updateVolume"
                 @goToBeginning="goToBeginning"
+                @toggleFullscreen="toggleFullscreen"
+                @seekTo="seekToTime"
               />
             </div>
             <!-- Right Side: Media Section -->
@@ -200,10 +205,31 @@
   .z-50 {
     z-index: 50;
   }
+
+  /* Fullscreen player styles */
+  .fullscreen-player {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    max-height: none !important;
+    z-index: 9999 !important;
+    background: #000 !important;
+    padding: 2rem !important;
+    border: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+  }
+
+  .fullscreen-player :deep(.video-crop-container) {
+    max-height: calc(100vh - 8rem) !important;
+  }
 </style>
 
 <script setup lang="ts">
-  import { ref, watch, computed, nextTick } from 'vue';
+  import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue';
   import {
     type Project,
     type ClipWithVersion,
@@ -214,6 +240,7 @@
     getWatermarkImage,
     getCreatorProfileByProjectId,
     getIntroOutroById,
+    getProject,
   } from '@/services/database';
   import { X, Film } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
@@ -294,6 +321,10 @@
   // Dialog element ref for height tracking
   const dialogElementRef = ref<HTMLElement | null>(null);
 
+  // Video player section ref for fullscreen
+  const videoPlayerSectionRef = ref<HTMLElement | null>(null);
+  const isFullscreen = ref(false);
+
   // Aspect ratio state
   const selectedAspectRatio = ref({ width: 16, height: 9 });
 
@@ -301,10 +332,10 @@
   const watermarkSettings = ref<WatermarkSettings>({
     enabled: false,
     watermarkId: null,
-    positionX: 8,
+    positionX: 12,
     positionY: 92,
     opacity: 80,
-    scale: 15,
+    scale: 20,
   });
 
   // Current watermark image data (for VideoPlayer)
@@ -410,6 +441,7 @@
     timelineHoverPosition,
     togglePlayPause,
     seekTimeline,
+    seekToTime,
     onTimelineTrackHover,
     onTimelineZoomChanged,
     updateVolume,
@@ -460,6 +492,43 @@
 
   function close() {
     emit('update:modelValue', false);
+  }
+
+  // Toggle fullscreen for video player section
+  async function toggleFullscreen() {
+    const element = videoPlayerSectionRef.value;
+    if (!element) return;
+
+    try {
+      if (!document.fullscreenElement) {
+        await element.requestFullscreen();
+        isFullscreen.value = true;
+      } else {
+        await document.exitFullscreen();
+        isFullscreen.value = false;
+      }
+    } catch (err) {
+      console.error('[ProjectWorkspaceDialog] Fullscreen error:', err);
+    }
+  }
+
+  // Handle fullscreen change events (e.g., user presses Escape)
+  function handleFullscreenChange() {
+    isFullscreen.value = !!document.fullscreenElement;
+  }
+
+  // Handle keyboard shortcuts for video player
+  function handleKeydown(event: KeyboardEvent) {
+    // Only handle if dialog is open and not typing in an input
+    if (!props.modelValue) return;
+    const target = event.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+
+    // F key for fullscreen
+    if (event.key === 'f' || event.key === 'F') {
+      event.preventDefault();
+      toggleFullscreen();
+    }
   }
 
   function closeProgress() {
@@ -1000,10 +1069,17 @@
           const dataUrl = await invoke<string>('read_file_as_data_url', {
             filePath: watermark.file_path,
           });
+
+          // If width/height missing in DB, measure from the actual file so full-frame detection works
+          const measured =
+            !watermark.width || !watermark.height
+              ? await measureWatermarkDimensions(watermark.file_path)
+              : { width: watermark.width, height: watermark.height };
+
           currentWatermarkData.value = {
             dataUrl,
-            width: watermark.width || undefined,
-            height: watermark.height || undefined,
+            width: measured.width || watermark.width || undefined,
+            height: measured.height || watermark.height || undefined,
           };
         }
       } catch (error) {
@@ -1018,7 +1094,7 @@
   // Load creator profile and apply their default settings
   async function loadCreatorProfileSettings(projectId: string) {
     try {
-      const profile = await getCreatorProfileByProjectId(projectId);
+      const profile = await findCreatorProfileUpTree(projectId);
       creatorProfile.value = profile;
 
       // Reset creator defaults
@@ -1031,11 +1107,37 @@
         // Apply watermark settings from creator profile
         if (profile.watermark_id) {
           console.log('[ProjectWorkspaceDialog] Applying creator watermark:', profile.watermark_id);
+
+          // Parse the creator's per-ratio watermark settings
+          let perRatioSettings = null;
+          let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+          if (profile.watermark_settings) {
+            try {
+              perRatioSettings = JSON.parse(profile.watermark_settings);
+              // Use 16:9 as the default display position
+              defaultPos = perRatioSettings['16:9'] || defaultPos;
+            } catch (e) {
+              console.warn('[ProjectWorkspaceDialog] Failed to parse creator watermark settings:', e);
+            }
+          }
+
           const newSettings = {
             ...watermarkSettings.value,
             enabled: true,
             watermarkId: profile.watermark_id,
+            positionX: defaultPos.x,
+            positionY: defaultPos.y,
+            opacity: defaultPos.opacity,
+            scale: defaultPos.scale,
+            perRatioSettings: perRatioSettings,
           };
+
+          console.log('[ProjectWorkspaceDialog] Applying creator watermark settings:', {
+            watermarkId: newSettings.watermarkId,
+            defaultPos,
+            hasPerRatioSettings: !!perRatioSettings,
+            perRatioSettings,
+          });
 
           // Wait for next tick to ensure MediaPanel ref is available
           await nextTick();
@@ -1043,10 +1145,10 @@
           // Update MediaPanel's internal state if ref is available
           if (mediaPanelRef.value) {
             mediaPanelRef.value.setWatermarkSettings(newSettings);
-          } else {
-            // Fallback: just update parent state directly
-            await onWatermarkSettingsChanged(newSettings);
           }
+
+          // Always ensure parent state gets updated so VideoPlayer receives the watermark immediately
+          await onWatermarkSettingsChanged(newSettings);
         }
 
         // Load creator's default intro (will be auto-applied when building clips)
@@ -1363,6 +1465,28 @@
     }
   );
 
+  // When switching projects while dialog is open, reload video, clips, and creator watermark defaults
+  watch(
+    () => props.project?.id,
+    async (newProjectId, oldProjectId) => {
+      if (!props.modelValue) return;
+      if (!newProjectId || newProjectId === oldProjectId) return;
+
+      // Reset local playback state
+      resetVideoState();
+      timelineClips.value = [];
+      hoveredClipId.value = null;
+      hoveredTimelineClipId.value = null;
+      currentlyPlayingClipId.value = null;
+
+      // Reload assets for the new project
+      await loadVideos();
+      await loadVideoForProject();
+      await loadTimelineClips(newProjectId);
+      await loadCreatorProfileSettings(newProjectId);
+    }
+  );
+
   // Watch for dialog close to disconnect socket
   watch(
     () => props.modelValue,
@@ -1454,7 +1578,27 @@
       if (!newValue) {
         currentlyPlayingClipId.value = null;
         stopSegmentedPlayback();
+        // Exit fullscreen if dialog closes while in fullscreen
+        if (isFullscreen.value && document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        }
+        isFullscreen.value = false;
       }
     }
   );
+
+  // Set up fullscreen change listener and keyboard shortcuts
+  onMounted(() => {
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('keydown', handleKeydown);
+  });
+
+  onUnmounted(() => {
+    document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    document.removeEventListener('keydown', handleKeydown);
+    // Ensure we exit fullscreen on unmount
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
+  });
 </script>

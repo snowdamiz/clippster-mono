@@ -77,6 +77,10 @@ pub async fn build_clip_from_segments(
     println!("[Rust]   intro_path: {:?}", intro_path);
     println!("[Rust]   outro_path: {:?}", outro_path);
     println!("[Rust]   watermark enabled: {}", watermark_settings.as_ref().map(|w| w.enabled).unwrap_or(false));
+    if let Some(ref wm) = watermark_settings {
+        println!("[Rust]   watermark file_path: {}", wm.file_path);
+        println!("[Rust]   watermark width: {:?}, height: {:?}", wm.width, wm.height);
+    }
     println!("[Rust]   audio settings: {:?}", audio_settings);
     println!("[Rust]   framing_strategy: {:?}", framing_strategy.as_ref().map(|s| &s.mode));
     println!("[Rust]   video_filter_segments count: {}", video_filter_segments.as_ref().map(|v| v.len()).unwrap_or(0));

@@ -143,10 +143,10 @@
   const getDefaultWatermarkSettings = (): WatermarkSettings => ({
     enabled: false,
     watermarkId: null,
-    positionX: 8,
+    positionX: 12,
     positionY: 92,
     opacity: 80,
-    scale: 15,
+    scale: 20,
   });
 
   const watermarkSettings = ref<WatermarkSettings>(getDefaultWatermarkSettings());
