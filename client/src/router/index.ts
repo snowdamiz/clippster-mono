@@ -6,7 +6,7 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: '/projects',
+      redirect: '/creators',
     },
     {
       path: '/dashboard',
@@ -33,6 +33,18 @@ const router = createRouter({
           path: '',
           name: 'clips-home',
           component: () => import('@/pages/Clips.vue'),
+        },
+      ],
+    },
+    {
+      path: '/video-editor',
+      name: 'video-editor',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      children: [
+        {
+          path: '',
+          name: 'video-editor-home',
+          component: () => import('@/pages/VideoEditor.vue'),
         },
       ],
     },

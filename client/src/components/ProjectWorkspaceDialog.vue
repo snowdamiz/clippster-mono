@@ -55,13 +55,8 @@
                 :is-playing="isPlaying"
                 :aspect-ratio="selectedAspectRatio"
                 :focal-point="currentFocalPoint"
-                :subtitle-settings="subtitleSettings"
-                :transcript-words="transcriptData?.words || []"
-                :transcript-segments="transcriptData?.whisperSegments || []"
-                :current-time="currentTime"
                 :watermark-settings="watermarkSettings"
                 :watermark-data="currentWatermarkData"
-                :audio-gain-db="audioGainDb"
                 @togglePlayPause="togglePlayPause"
                 @timeUpdate="onTimeUpdate"
                 @loadedMetadata="onLoadedMetadata"
@@ -95,8 +90,6 @@
               <!-- Media Section -->
               <MediaPanel
                 ref="mediaPanelRef"
-                :transcript-collapsed="transcriptCollapsed"
-                :clips-collapsed="clipsCollapsed"
                 :is-generating="clipGenerationInProgress"
                 :generation-progress="clipProgress"
                 :generation-stage="clipStage"
@@ -118,9 +111,8 @@
                 @deleteClip="onDeleteClip"
                 @playClip="onPlayClip"
                 @seekVideo="onSeekVideo"
-                @subtitleSettingsChanged="onSubtitleSettingsChanged"
                 @watermarkSettingsChanged="onWatermarkSettingsChanged"
-                @audioSettingsChanged="onAudioSettingsChanged"
+                @editClip="onEditClip"
               />
             </div>
           </div>
@@ -138,7 +130,6 @@
             :currently-playing-clip-id="currentlyPlayingClipId"
             :project-id="project?.id"
             :dialog-height="dialogHeight"
-            :audio-gain-db="audioGainDb"
             @seekTimeline="seekTimeline"
             @timelineTrackHover="onTimelineTrackHover"
             @timelineMouseLeave="onTimelineMouseLeave"
@@ -148,6 +139,8 @@
             @zoomChanged="handleTimelineZoomChanged"
             @segmentUpdated="onSegmentUpdated"
             @refreshClipsData="onRefreshClipsData"
+            @playFromTime="onPlayFromTime"
+            @editClip="onEditClip"
           />
         </div>
       </div>
@@ -181,6 +174,17 @@
     :is-transcribed="isTranscribed"
     @update:model-value="showDetectConfirmDialog = $event"
     @confirm="onDetectClipsConfirmed"
+  />
+  <!-- Clip Editor Dialog -->
+  <ClipEditorDialog
+    v-model="showClipEditorDialog"
+    :clip-id="clipEditorClipId"
+    :video-src="videoSrc"
+    :clip-start-time="clipEditorStartTime"
+    :clip-end-time="clipEditorEndTime"
+    :clip-title="clipEditorTitle"
+    :clip-segments="clipEditorSegments"
+    @save="onClipEditorSave"
   />
 </template>
 
@@ -240,7 +244,7 @@
   } from '@/services/database';
   import { X, Film } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
-  import type { SubtitleSettings, WatermarkSettings, AudioSettings } from '@/types';
+  import type { WatermarkSettings } from '@/types';
   import VideoPlayer from './VideoPlayer.vue';
   import VideoControls from './VideoControls.vue';
   import MediaPanel from './MediaPanel.vue';
@@ -248,6 +252,7 @@
   import ClipGenerationProgress from './ClipGenerationProgress.vue';
   import ConfirmationModal from './ConfirmationModal.vue';
   import ClipDetectionConfirmDialog from './ClipDetectionConfirmDialog.vue';
+  import ClipEditorDialog from './clip-editor/ClipEditorDialog.vue';
   import { useVideoPlayer } from '@/composables/useVideoPlayer';
   import { useProgressSocket } from '@/composables/useProgressSocket';
   import { useToast } from '@/composables/useToast';
@@ -291,12 +296,16 @@
   // Clip detection confirmation state
   const showDetectConfirmDialog = ref(false);
 
+  // Clip editor dialog state
+  const showClipEditorDialog = ref(false);
+  const clipEditorClipId = ref('');
+  const clipEditorStartTime = ref(0);
+  const clipEditorEndTime = ref(0);
+  const clipEditorTitle = ref('');
+  const clipEditorSegments = ref<{ start_time: number; end_time: number }[]>([]);
+
   // Segmented playback tracking
   const currentlyPlayingClipId = ref<string | null>(null);
-
-  // Panel collapse state
-  const transcriptCollapsed = ref(false);
-  const clipsCollapsed = ref(false);
 
   // Timeline clips state
   const timelineClips = ref<any[]>([]);
@@ -319,38 +328,6 @@
   // Aspect ratio state
   const selectedAspectRatio = ref({ width: 16, height: 9 });
 
-  // Subtitle settings state
-  const subtitleSettings = ref<SubtitleSettings>({
-    enabled: false,
-    fontFamily: 'Montserrat',
-    fontSize: 32,
-    fontWeight: 700,
-    textColor: '#FFFFFF',
-    backgroundColor: '#000000',
-    backgroundEnabled: false,
-    border1Width: 2,
-    border1Color: '#00FF00',
-    border2Width: 4,
-    border2Color: '#000000',
-    shadowOffsetX: 2,
-    shadowOffsetY: 2,
-    shadowBlur: 4,
-    shadowColor: '#000000',
-    position: 'bottom',
-    positionPercentage: 97,
-    maxWidth: 90,
-    animationStyle: 'none',
-    highlightColor: '#FFFF00',
-    lineHeight: 1.2,
-    letterSpacing: 0,
-    textAlign: 'center',
-    textOffsetX: 0,
-    textOffsetY: 0,
-    padding: 16,
-    borderRadius: 8,
-    wordSpacing: 0.35,
-  });
-
   // Watermark settings state
   const watermarkSettings = ref<WatermarkSettings>({
     enabled: false,
@@ -360,9 +337,6 @@
     opacity: 80,
     scale: 20,
   });
-
-  // Audio gain state (in dB, -20 to +20)
-  const audioGainDb = ref(0);
 
   // Current watermark image data (for VideoPlayer)
   const currentWatermarkData = ref<{ dataUrl: string; width?: number; height?: number } | null>(null);
@@ -880,8 +854,15 @@
     // Then set the new state
     hoveredClipId.value = clipId;
 
-    // Scroll to the clip
-    scrollToClipInTimeline(clipId);
+    // Reveal the clip in the timeline (makes it visible if hidden)
+    if (timelineRef.value) {
+      timelineRef.value.revealClip(clipId);
+    }
+
+    // Scroll to the clip after DOM updates (wait for clip to be rendered)
+    nextTick(() => {
+      scrollToClipInTimeline(clipId);
+    });
   }
 
   // Timeline clip hover/click event handler
@@ -1075,34 +1056,6 @@
     return currentlyPlayingClipId.value;
   }
 
-  // Handle subtitle settings change
-  function onSubtitleSettingsChanged(settings: SubtitleSettings) {
-    subtitleSettings.value = settings;
-  }
-
-  // Measure image dimensions if DB values are missing
-  async function measureWatermarkDimensions(filePath: string): Promise<{ width?: number; height?: number }> {
-    try {
-      const dataUrl = await invoke<string>('read_file_as_data_url', { filePath });
-      await new Promise<void>((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-          resolve();
-        };
-        img.onerror = () => resolve();
-        img.src = dataUrl;
-      });
-      const img = new Image();
-      img.src = dataUrl;
-      return {
-        width: img.naturalWidth || undefined,
-        height: img.naturalHeight || undefined,
-      };
-    } catch {
-      return {};
-    }
-  }
-
   // Handle watermark settings change
   async function onWatermarkSettingsChanged(settings: WatermarkSettings) {
     watermarkSettings.value = settings;
@@ -1138,35 +1091,6 @@
     }
   }
 
-  // Handle audio settings changed from MediaPanel
-  function onAudioSettingsChanged(settings: AudioSettings) {
-    audioGainDb.value = settings.volume;
-  }
-
-  async function findCreatorProfileUpTree(projectId: string | null | undefined) {
-    let currentId = projectId || null;
-    const visited = new Set<string>();
-    while (currentId) {
-      if (visited.has(currentId)) break;
-      visited.add(currentId);
-
-      const profile = await getCreatorProfileByProjectId(currentId);
-      if (profile) return profile;
-
-      try {
-        const project = await getProject(currentId);
-        if (project?.parent_id) {
-          currentId = project.parent_id;
-        } else {
-          break;
-        }
-      } catch {
-        break;
-      }
-    }
-    return null;
-  }
-
   // Load creator profile and apply their default settings
   async function loadCreatorProfileSettings(projectId: string) {
     try {
@@ -1183,7 +1107,7 @@
         // Apply watermark settings from creator profile
         if (profile.watermark_id) {
           console.log('[ProjectWorkspaceDialog] Applying creator watermark:', profile.watermark_id);
-          
+
           // Parse the creator's per-ratio watermark settings
           let perRatioSettings = null;
           let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
@@ -1196,7 +1120,7 @@
               console.warn('[ProjectWorkspaceDialog] Failed to parse creator watermark settings:', e);
             }
           }
-          
+
           const newSettings = {
             ...watermarkSettings.value,
             enabled: true,
@@ -1268,8 +1192,15 @@
     // Track the currently playing clip
     currentlyPlayingClipId.value = clip.id;
 
-    // Scroll timeline to the clip
-    scrollToClipInTimeline(clip.id);
+    // Reveal the clip in the timeline (makes it visible if hidden)
+    if (timelineRef.value) {
+      timelineRef.value.revealClip(clip.id);
+    }
+
+    // Scroll timeline to the clip (after revealing, wait for DOM to update)
+    nextTick(() => {
+      scrollToClipInTimeline(clip.id);
+    });
 
     // Get segments from the clip
     let segments: any[] = [];
@@ -1328,6 +1259,93 @@
     }
   }
 
+  // Function to seek to a time and start playback (used by timeline context menu)
+  function onPlayFromTime(time: number) {
+    if (videoElement.value) {
+      // Stop any existing segment playback
+      stopSegmentedPlayback();
+
+      // Clear currently playing clip
+      currentlyPlayingClipId.value = null;
+
+      // Seek to the specified time
+      videoElement.value.currentTime = time;
+
+      // Start playback and update state
+      videoElement.value
+        .play()
+        .then(() => {
+          isPlaying.value = true;
+        })
+        .catch((error) => {
+          console.error('[ProjectWorkspaceDialog] Error playing video:', error);
+        });
+    }
+  }
+
+  // Function to open the clip editor dialog
+  function onEditClip(clipId: string) {
+    // Find the clip in our local data
+    const clip = timelineClips.value.find((c: any) => c.id === clipId);
+    if (!clip) {
+      console.warn('[ProjectWorkspaceDialog] Clip not found for editing:', clipId);
+      return;
+    }
+
+    // Get the clip's start and end times from segments
+    let startTime = 0;
+    let endTime = duration.value;
+
+    if (clip.segments && clip.segments.length > 0) {
+      startTime = Math.min(...clip.segments.map((s: any) => s.start_time));
+      endTime = Math.max(...clip.segments.map((s: any) => s.end_time));
+    }
+
+    // Set the editor state
+    clipEditorClipId.value = clipId;
+    clipEditorStartTime.value = startTime;
+    clipEditorEndTime.value = endTime;
+    clipEditorTitle.value = clip.title || 'Untitled Clip';
+
+    // Pass the clip's segments if it has multiple segments
+    if (clip.segments && clip.segments.length > 0) {
+      clipEditorSegments.value = clip.segments.map((s: any) => ({
+        start_time: s.start_time,
+        end_time: s.end_time,
+      }));
+    } else {
+      // Single segment clip - create a segment from the clip's start/end times
+      clipEditorSegments.value = [
+        {
+          start_time: startTime,
+          end_time: endTime,
+        },
+      ];
+    }
+
+    // Open the dialog
+    showClipEditorDialog.value = true;
+
+    console.log(
+      `[ProjectWorkspaceDialog] Opening clip editor for "${clip.title}" with ${clipEditorSegments.value.length} segments`
+    );
+  }
+
+  // Function to handle clip editor save
+  async function onClipEditorSave(clipId: string) {
+    console.log(`[ProjectWorkspaceDialog] Clip editor saved for clip ${clipId}`);
+
+    // Refresh clips data
+    if (props.project) {
+      await loadTimelineClips(props.project.id);
+
+      // Refresh MediaPanel
+      if (mediaPanelRef.value) {
+        mediaPanelRef.value.refreshClips();
+      }
+    }
+  }
+
   // Function to scroll to and highlight a specific clip in both ClipsTab and Timeline
   async function scrollToAndSelectClip(clipId: string) {
     // Wait for DOM to update
@@ -1346,8 +1364,15 @@
           mediaPanelRef.value.scrollClipIntoView(clipId);
         }
 
-        // Scroll in Timeline
-        scrollToClipInTimeline(clipId);
+        // Reveal the clip in the timeline (makes it visible if hidden)
+        if (timelineRef.value) {
+          timelineRef.value.revealClip(clipId);
+        }
+
+        // Scroll in Timeline (after revealing, wait for DOM to update)
+        nextTick(() => {
+          scrollToClipInTimeline(clipId);
+        });
 
         // Set BOTH hover states to highlight the clip in both places
         // hoveredClipId highlights in ClipsTab, hoveredTimelineClipId highlights in Timeline

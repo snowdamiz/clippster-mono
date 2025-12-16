@@ -389,6 +389,30 @@ export interface WatermarkImage {
   updated_at: number;
 }
 
+export interface AudioAsset {
+  id: string;
+  name: string;
+  file_path: string;
+  duration: number | null;
+  file_size: number | null;
+  sample_rate: number | null;
+  channels: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ImageAsset {
+  id: string;
+  name: string;
+  file_path: string;
+  width: number | null;
+  height: number | null;
+  file_size: number | null;
+  mime_type: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface WatermarkSettings {
   enabled: boolean;
   watermarkId: string | null; // Default watermark (for 16:9 or when no per-ratio set)
@@ -404,8 +428,22 @@ export interface WatermarkSettings {
 }
 
 export interface AudioSettings {
-  volume: number; // dB gain (-20 to +20)
+  volume: number; // dB gain (-20 to +20) - project level
   normalize: boolean; // enable audio normalization (export only)
+  // Clip-level audio mixer settings (optional, from clip editor)
+  originalAudioDb?: number; // dB gain for original audio track (-20 to +20)
+  musicTracks?: MusicTrackSettings[]; // Music tracks to mix in
+}
+
+// Music track settings for export
+export interface MusicTrackSettings {
+  filePath: string; // Path to audio file
+  gainDb: number; // dB gain (-20 to +20)
+  fadeIn: number; // Fade in duration in seconds
+  fadeOut: number; // Fade out duration in seconds
+  startTime: number; // When audio starts in clip timeline
+  endTime: number; // When audio ends in clip timeline
+  isMuted: boolean; // Whether track is muted
 }
 
 export interface CreatorWatermarkPosition {

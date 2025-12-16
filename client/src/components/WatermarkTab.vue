@@ -1,52 +1,5 @@
 <template>
   <div class="flex-1 flex flex-col overflow-hidden">
-    <!-- Header -->
-    <div class="flex items-center justify-between py-3 px-1 border-b border-border/30">
-      <div class="flex items-center gap-3">
-        <div
-          :class="[
-            'w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-200 border',
-            'bg-gradient-to-br from-amber-500/20 to-orange-500/20 border-amber-500/30',
-          ]"
-        >
-          <ImageIcon :class="['h-4 w-4', localSettings.enabled ? 'text-amber-400' : 'text-amber-400/50']" />
-        </div>
-        <div>
-          <h3 class="text-sm font-semibold text-foreground">Watermark</h3>
-          <p class="text-[10px] text-muted-foreground">Image overlay & position</p>
-        </div>
-      </div>
-      <div class="flex items-center gap-3">
-        <div class="flex items-center gap-2">
-          <span class="text-xs font-medium text-muted-foreground">Enabled</span>
-          <button
-            @click="toggleWatermark"
-            type="button"
-            :class="[
-              'relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-all duration-200',
-              localSettings.enabled ? 'bg-primary' : 'bg-muted-foreground/30',
-            ]"
-            :title="localSettings.enabled ? 'Disable watermark' : 'Enable watermark'"
-          >
-            <span
-              :class="[
-                'inline-block h-4 w-4 transform rounded-full bg-white shadow-lg transition-all duration-200 ease-in-out',
-                localSettings.enabled ? 'translate-x-[18px]' : 'translate-x-0.5',
-              ]"
-            ></span>
-          </button>
-        </div>
-        <button
-          @click="resetToDefaults"
-          class="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground bg-muted/30 hover:bg-muted/50 rounded-md transition-all border border-border/40 hover:border-border/60"
-          title="Reset all settings to defaults"
-        >
-          <RotateCcw class="h-3 w-3" />
-          Reset
-        </button>
-      </div>
-    </div>
-
     <!-- Sub-tabs -->
     <div class="flex items-center gap-1 py-2 px-1">
       <button
@@ -132,8 +85,9 @@
                   {{ preset.description }}
                 </p>
                 <p class="text-[10px] text-muted-foreground/60 mt-1">
-                  X: {{ Math.round((preset.position_x / 100) * 1920) }}px, Y: {{ Math.round((preset.position_y / 100) * 1080) }}px • 
-                  Opacity: {{ preset.opacity }}% • Width: {{ Math.round((preset.scale / 100) * 1920) }}px
+                  X: {{ Math.round((preset.position_x / 100) * 1920) }}px, Y:
+                  {{ Math.round((preset.position_y / 100) * 1080) }}px • Opacity: {{ preset.opacity }}% • Width:
+                  {{ Math.round((preset.scale / 100) * 1920) }}px
                 </p>
               </div>
               <button
@@ -550,6 +504,7 @@
     projectId: string | null;
     settings: WatermarkSettings;
     aspectRatio: { width: number; height: number };
+    hideHeader?: boolean;
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -563,6 +518,7 @@
       scale: 20,
     }),
     aspectRatio: () => ({ width: 16, height: 9 }),
+    hideHeader: false,
   });
 
   const emit = defineEmits<{
@@ -629,11 +585,11 @@
   // Position presets in pixels (based on 1920x1080 reference frame)
   // These are common positions with safe margins from edges
   const positionPresets = [
-    { name: 'Top Left', x: 230, y: 86 },      // ~12%, 8% 
-    { name: 'Top Center', x: 960, y: 86 },    // 50%, 8%
-    { name: 'Top Right', x: 1690, y: 86 },    // ~88%, 8%
-    { name: 'Center', x: 960, y: 540 },        // 50%, 50%
-    { name: 'Bottom Left', x: 230, y: 994 },  // ~12%, 92%
+    { name: 'Top Left', x: 230, y: 86 }, // ~12%, 8%
+    { name: 'Top Center', x: 960, y: 86 }, // 50%, 8%
+    { name: 'Top Right', x: 1690, y: 86 }, // ~88%, 8%
+    { name: 'Center', x: 960, y: 540 }, // 50%, 50%
+    { name: 'Bottom Left', x: 230, y: 994 }, // ~12%, 92%
     { name: 'Bottom Center', x: 960, y: 994 }, // 50%, 92%
     { name: 'Bottom Right', x: 1690, y: 994 }, // ~88%, 92%
   ];
@@ -734,10 +690,10 @@
     localSettings.value = {
       enabled: false,
       watermarkId: null,
-      positionX: 12,  // 230px on 1920
-      positionY: 92,  // 994px on 1080
+      positionX: 12, // 230px on 1920
+      positionY: 92, // 994px on 1080
       opacity: 80,
-      scale: 20,      // 384px width on 1920
+      scale: 20, // 384px width on 1920
       perRatioSettings: localSettings.value.perRatioSettings, // Preserve creator profile settings
     };
     selectedWatermark.value = null;
@@ -831,9 +787,7 @@
 
   function isPresetActive(preset: { name: string; x: number; y: number }): boolean {
     // Compare in pixel space (allow ~50px tolerance)
-    return (
-      Math.abs(positionXPixels.value - preset.x) < 50 && Math.abs(positionYPixels.value - preset.y) < 50
-    );
+    return Math.abs(positionXPixels.value - preset.x) < 50 && Math.abs(positionYPixels.value - preset.y) < 50;
   }
 
   // Drag handling - use local refs to avoid triggering watchers during drag
@@ -1081,6 +1035,7 @@
   defineExpose({
     getSelectedWatermark: () => selectedWatermark.value,
     getSettings: () => localSettings.value,
+    resetToDefaults,
   });
 </script>
 

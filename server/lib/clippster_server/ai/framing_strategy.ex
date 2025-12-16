@@ -574,10 +574,11 @@ defmodule ClippsterServer.AI.FramingStrategy do
   end
 
   # Calculate optimal crop center based on speakers
-  defp calculate_optimal_crop_center(speakers, _video_dims) when length(speakers) == 0 do
+  # NOTE: Currently unused but may be needed for future framing improvements
+  defp _calculate_optimal_crop_center(speakers, _video_dims) when length(speakers) == 0 do
     %{x: 0.5, y: 0.5}  # Default to center
   end
-  defp calculate_optimal_crop_center(speakers, _video_dims) do
+  defp _calculate_optimal_crop_center(speakers, _video_dims) do
     # Weight by detection count
     total_weight = Enum.sum(Enum.map(speakers, & &1.detection_count))
     

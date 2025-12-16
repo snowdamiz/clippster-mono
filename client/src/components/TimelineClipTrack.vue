@@ -7,8 +7,10 @@
   >
     <!-- Track Label -->
     <div class="w-18 h-8 -ml-2 flex items-center justify-center sticky left-0 z-30 bg-[#101010] backdrop-blur-sm">
-      <div class="text-xs text-center">
-        <div class="font-medium text-foreground/80">Clip {{ index + 1 }}</div>
+      <div class="text-xs text-center px-1">
+        <div class="font-medium text-foreground/80 truncate max-w-16" :title="clip.title">
+          {{ getClipLabel(clip) }}
+        </div>
       </div>
     </div>
     <!-- Clip Track Content -->
@@ -16,6 +18,7 @@
       <div
         class="absolute inset-0 bg-[#1a1a1a]/30 rounded-md border border-border/20 cursor-pointer"
         @click="onClipTrackClick"
+        @contextmenu="onClipTrackContextMenu($event, clip)"
       ></div>
       <!-- Clip segments on timeline -->
       <div class="absolute inset-0 flex items-center pointer-events-none">
@@ -116,6 +119,7 @@
               ? onSegmentClickForCut($event, clip.id, segIndex, segment)
               : onSegmentMouseDown($event, clip.id, segIndex, segment))
           "
+          @contextmenu="onSegmentContextMenu($event, clip.id, segIndex, segment, clip.title)"
         >
           <span class="text-xs text-white/90 font-medium truncate px-1 drop-shadow-sm">{{ clip.title }}</span>
           <!-- Cut preview indicator -->
@@ -177,7 +181,7 @@
   import { ref } from 'vue';
   import { X } from 'lucide-vue-next';
   import { formatDuration, generateClipGradient, getSegmentDisplayTime } from '../utils/timelineUtils';
-  import type { TimelineClipTrackProps } from '../types';
+  import type { TimelineClipTrackProps, ClipSegment } from '../types';
 
   defineProps<TimelineClipTrackProps>();
 
@@ -187,9 +191,38 @@
     (e: 'clipTrackClick', event: MouseEvent): void;
     (e: 'deselectAllSegments'): void;
     (e: 'update:cutHoverInfo', value: null): void;
+    (
+      e: 'segmentContextMenu',
+      event: MouseEvent,
+      clipId: string,
+      segmentIndex: number,
+      segment: ClipSegment,
+      clipTitle: string
+    ): void;
+    (e: 'clipContextMenu', event: MouseEvent, clipId: string, clipTitle: string): void;
   }
 
   const emit = defineEmits<Emits>();
+
+  // Handle segment context menu (right-click)
+  function onSegmentContextMenu(
+    event: MouseEvent,
+    clipId: string,
+    segmentIndex: number,
+    segment: ClipSegment,
+    clipTitle: string
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    emit('segmentContextMenu', event, clipId, segmentIndex, segment, clipTitle);
+  }
+
+  // Handle clip track context menu (right-click on empty area)
+  function onClipTrackContextMenu(event: MouseEvent, clip: { id: string; title: string }) {
+    event.preventDefault();
+    event.stopPropagation();
+    emit('clipContextMenu', event, clip.id, clip.title);
+  }
 
   // Local state for hover tracking
   const hoveredSegmentKey = ref<string | null>(null);
@@ -206,6 +239,17 @@
 
   function onTimelineSegmentClick(clipId: string, segmentIndex: number, event?: MouseEvent) {
     emit('timelineSegmentClick', clipId, segmentIndex, event);
+  }
+
+  // Get a short label for the clip track
+  function getClipLabel(clip: Clip): string {
+    // Use clip title, truncated if too long
+    const title = clip.title || 'Clip';
+    // Return first 8 characters if longer
+    if (title.length > 8) {
+      return title.substring(0, 7) + '…';
+    }
+    return title;
   }
 </script>
 

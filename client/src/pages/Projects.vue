@@ -1,10 +1,5 @@
 <template>
-  <PageLayout
-    title="Projects"
-    description="Manage and organize your video projects"
-    :show-header="projects.length > 0"
-    :icon="Folder"
-  >
+  <PageLayout title="Projects" description="Manage and organize your video projects" :show-header="true" :icon="Folder">
     <template #actions>
       <Button @click="openCreateDialog" class="flex items-center gap-2">
         <Plus class="h-5 w-5" />
@@ -375,13 +370,17 @@
     </div>
 
     <!-- Empty State -->
-    <EmptyState
-      v-else
-      title="No projects found"
-      description="Create a new project to get started"
-      button-text="Create Project"
-      @action="openCreateDialog"
-    />
+    <EmptyState v-else title="No projects found" description="Create a new project to get started">
+      <template #icon>
+        <Folder class="h-16 w-16 text-muted-foreground" />
+      </template>
+      <template #default>
+        <Button @click="openCreateDialog" class="mt-6 flex items-center gap-2">
+          <Plus class="w-4 h-4" />
+          Create Project
+        </Button>
+      </template>
+    </EmptyState>
     <!-- Project Dialog -->
     <ProjectDialog v-model="showDialog" :project="selectedProject" @submit="handleProjectSubmit" />
     <!-- Project Workspace Dialog -->
@@ -1004,7 +1003,7 @@
                         class="absolute top-1/2 bg-violet-400 rounded-full shadow-md pointer-events-none"
                         :class="[
                           inlineSeekDragging ? 'w-4 h-4' : 'w-3 h-3',
-                          { 'transition-all duration-75': !inlineSeekDragging }
+                          { 'transition-all duration-75': !inlineSeekDragging },
                         ]"
                         :style="{ left: `${inlineVideoProgress}%`, transform: 'translate(-50%, -50%)' }"
                       ></div>
@@ -1012,9 +1011,16 @@
                       <div
                         v-if="inlineHoverTime !== null || inlineSeekDragging"
                         class="absolute -top-8 bg-black/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded font-medium whitespace-nowrap z-20 pointer-events-none"
-                        :style="{ left: `${inlineSeekDragging ? inlineVideoProgress : inlineHoverPosition}%`, transform: 'translateX(-50%)' }"
+                        :style="{
+                          left: `${inlineSeekDragging ? inlineVideoProgress : inlineHoverPosition}%`,
+                          transform: 'translateX(-50%)',
+                        }"
                       >
-                        {{ formatDuration(inlineSeekDragging ? (inlineVideoProgress / 100) * inlineVideoClipDuration : inlineHoverTime) }}
+                        {{
+                          formatDuration(
+                            inlineSeekDragging ? (inlineVideoProgress / 100) * inlineVideoClipDuration : inlineHoverTime
+                          )
+                        }}
                       </div>
                     </div>
 
@@ -1741,7 +1747,7 @@
     if (!previewWatermarkSettings.value) return {};
 
     const settings = previewWatermarkSettings.value;
-    
+
     // Check if this is a full-frame 1920x1080 watermark (16:9 overlay)
     const wmWidth = previewWatermarkData.value?.width ?? null;
     const wmHeight = previewWatermarkData.value?.height ?? null;
@@ -1925,33 +1931,38 @@
 
     const { clip_id, success: buildSuccess, output_path, all_output_paths, error: buildError } = payload;
 
+    // Only process clips that belong to the folder view
+    // This prevents duplicate processing when multiple components listen to the same event
+    const clip = folderClips.value.find((c) => c.id === clip_id);
+    if (!clip) {
+      console.log(`[Projects] Clip ${clip_id} not in folder view, skipping database update`);
+      return;
+    }
+
     console.log(`[Projects] Clip build complete: ${clip_id}`, { buildSuccess, output_path });
 
-    const clip = folderClips.value.find((c) => c.id === clip_id);
     const isCancelled = buildError && (buildError.includes('cancelled') || buildError.includes('Cancelled'));
 
     // Update local state immediately for instant UI feedback
-    if (clip) {
-      if (buildSuccess) {
-        clip.build_status = 'completed';
-        clip.build_progress = 100;
-        clip.built_file_path = output_path;
-        // Update the builds array locally so download dropdown works immediately
-        if (!clip.builds) clip.builds = [];
-        const existingBuildIdx = clip.builds.findIndex((b: any) => b.status === 'building');
-        if (existingBuildIdx >= 0) {
-          clip.builds[existingBuildIdx].status = 'completed';
-          clip.builds[existingBuildIdx].file_path = output_path;
-          clip.builds[existingBuildIdx].output_paths = JSON.stringify(all_output_paths || [output_path]);
-        }
-        console.log(`[Projects] Local state updated for completed clip: ${clip_id}`);
-      } else if (isCancelled) {
-        clip.build_status = 'pending';
-        clip.build_progress = 0;
-      } else {
-        clip.build_status = 'failed';
-        clip.build_error = buildError || 'Unknown build error';
+    if (buildSuccess) {
+      clip.build_status = 'completed';
+      clip.build_progress = 100;
+      clip.built_file_path = output_path;
+      // Update the builds array locally so download dropdown works immediately
+      if (!clip.builds) clip.builds = [];
+      const existingBuildIdx = clip.builds.findIndex((b: any) => b.status === 'building');
+      if (existingBuildIdx >= 0) {
+        clip.builds[existingBuildIdx].status = 'completed';
+        clip.builds[existingBuildIdx].file_path = output_path;
+        clip.builds[existingBuildIdx].output_paths = JSON.stringify(all_output_paths || [output_path]);
       }
+      console.log(`[Projects] Local state updated for completed clip: ${clip_id}`);
+    } else if (isCancelled) {
+      clip.build_status = 'pending';
+      clip.build_progress = 0;
+    } else {
+      clip.build_status = 'failed';
+      clip.build_error = buildError || 'Unknown build error';
     }
 
     // Update database in the background (non-blocking)
@@ -1959,9 +1970,7 @@
     (async () => {
       if (buildSuccess) {
         try {
-          const { updateClipBuildStatus, getClipBuilds, updateClipBuild, createClipBuild } = await import(
-            '@/services/database'
-          );
+          const { updateClipBuildStatus, getClipBuilds, updateClipBuild } = await import('@/services/database');
 
           await updateClipBuildStatus(clip_id, 'completed', {
             progress: 100,
@@ -1979,17 +1988,12 @@
               filePath: output_path,
               outputPaths: all_output_paths || (output_path ? [output_path] : []),
             });
+            console.log(`[Projects] Database updated for clip: ${clip_id}`);
           } else {
-            // Fallback: create a new build record
-            const buildId = await createClipBuild(clip_id, {});
-            await updateClipBuild(buildId, {
-              status: 'completed',
-              filePath: output_path,
-              outputPaths: all_output_paths || (output_path ? [output_path] : []),
-            });
+            // No 'building' record found - this can happen if another handler already updated it
+            // or if the build was started without creating a record (legacy). Just log a warning.
+            console.warn(`[Projects] No 'building' record found for clip ${clip_id}, skipping build record update`);
           }
-
-          console.log(`[Projects] Database updated for clip: ${clip_id}`);
         } catch (dbError) {
           console.error('[Projects] Failed to update clip build in database:', dbError);
         }
@@ -2108,17 +2112,22 @@
 
       // Get the creator profile for the segment (not the parent folder)
       let creatorProfile = await getCreatorProfileByProjectId(segmentProjectId);
-      console.log('[Projects] loadPreviewWatermark: Creator profile for segment', segmentProjectId, ':', creatorProfile);
-      
+      console.log(
+        '[Projects] loadPreviewWatermark: Creator profile for segment',
+        segmentProjectId,
+        ':',
+        creatorProfile
+      );
+
       // If no creator profile on segment, try the parent folder as fallback
       if (!creatorProfile) {
-        const project = projects.value.find(p => p.id === segmentProjectId);
+        const project = projects.value.find((p) => p.id === segmentProjectId);
         if (project?.parent_id) {
           creatorProfile = await getCreatorProfileByProjectId(project.parent_id);
           console.log('[Projects] loadPreviewWatermark: Fallback to parent', project.parent_id, ':', creatorProfile);
         }
       }
-      
+
       if (!creatorProfile || !creatorProfile.watermark_id) {
         console.log('[Projects] loadPreviewWatermark: No creator profile or watermark_id');
         return;
@@ -2136,7 +2145,7 @@
       // Get dimensions from database or measure the image
       let wmWidth = watermark.width || undefined;
       let wmHeight = watermark.height || undefined;
-      
+
       // If dimensions not in database, measure the image
       if (!wmWidth || !wmHeight) {
         try {
@@ -2175,10 +2184,11 @@
       // Try to parse stored watermark settings
       if (creatorProfile.watermark_settings) {
         try {
-          const parsed = typeof creatorProfile.watermark_settings === 'string'
-            ? JSON.parse(creatorProfile.watermark_settings)
-            : creatorProfile.watermark_settings;
-          
+          const parsed =
+            typeof creatorProfile.watermark_settings === 'string'
+              ? JSON.parse(creatorProfile.watermark_settings)
+              : creatorProfile.watermark_settings;
+
           // Get the 16:9 settings (default preview aspect ratio)
           const ratioSettings = parsed['16:9'];
           if (ratioSettings) {
@@ -2331,15 +2341,15 @@
   // Start drag seeking
   function startInlineSeekDrag(event: MouseEvent) {
     if (!inlineVideoRef.value || !clipToPreview.value) return;
-    
+
     inlineSeekDragging.value = true;
     const percent = getInlinePercentFromEvent(event);
     seekInlineVideoToPercent(percent);
-    
+
     // Add document-level listeners for drag
     document.addEventListener('mousemove', onInlineSeekDrag);
     document.addEventListener('mouseup', stopInlineSeekDrag);
-    
+
     event.preventDefault();
   }
 
@@ -2362,7 +2372,7 @@
   function onInlineTimelineHover(event: MouseEvent) {
     if (inlineSeekDragging.value) return;
     if (!inlineVideoClipDuration.value) return;
-    
+
     const percent = getInlinePercentFromEvent(event);
     inlineHoverTime.value = (percent / 100) * inlineVideoClipDuration.value;
     inlineHoverPosition.value = percent;
@@ -2510,7 +2520,7 @@
       // The clip object may have stale data if user edited segments on timeline
       const { getClipSegmentsByVersionId } = await import('@/services/database/clip-segments');
       let segments: any[] = [];
-      
+
       // Try to get fresh segments from database first
       const versionId = clip.current_version_id || clip.current_version?.id;
       if (versionId) {
@@ -2524,16 +2534,19 @@
               duration: segment.duration || segment.end_time - segment.start_time,
               transcript: segment.transcript || null,
             }));
-            console.log('[Projects] Loaded fresh segments from database:', segments.map(s => ({
-              start: s.start_time,
-              end: s.end_time
-            })));
+            console.log(
+              '[Projects] Loaded fresh segments from database:',
+              segments.map((s) => ({
+                start: s.start_time,
+                end: s.end_time,
+              }))
+            );
           }
         } catch (err) {
           console.warn('[Projects] Could not reload segments from database:', err);
         }
       }
-      
+
       // Fall back to cached data if database fetch failed or returned empty
       if (segments.length === 0) {
         if (
@@ -2636,6 +2649,10 @@
         watermarkSettings: watermarkSettings,
         audioSettings: null,
         framingStrategy: null,
+        videoFilterSegments: null, // No filter segments from folder view
+        textOverlays: null, // No text overlays from folder view
+        stickers: null, // No stickers from folder view
+        clipWatermarks: null, // No clip watermarks from folder view
       });
 
       success('Build started', 'Your clip is being built in the background.');

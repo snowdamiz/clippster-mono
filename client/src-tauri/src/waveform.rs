@@ -29,15 +29,21 @@ pub fn get_optimal_resolution(effective_width: f64, duration: f64) -> String {
 
     // Select resolution based on zoom level
     if samples_per_pixel > 5000.0 {
-        "low".to_string()      // 500 peaks - very zoomed out
+        "low".to_string()       // 500 peaks - very zoomed out
     } else if samples_per_pixel > 2000.0 {
-        "medium".to_string()   // 1000 peaks - zoomed out
+        "medium".to_string()    // 1000 peaks - zoomed out
     } else if samples_per_pixel > 800.0 {
-        "high".to_string()     // 2000 peaks - normal
+        "high".to_string()      // 2000 peaks - normal
     } else if samples_per_pixel > 300.0 {
-        "ultra".to_string()    // 4000 peaks - zoomed in
+        "ultra".to_string()     // 4000 peaks - zoomed in
+    } else if samples_per_pixel > 120.0 {
+        "extreme".to_string()   // 8000 peaks - very zoomed in
+    } else if samples_per_pixel > 50.0 {
+        "maximum".to_string()   // 16000 peaks - maximum zoom
+    } else if samples_per_pixel > 20.0 {
+        "insane".to_string()    // 32000 peaks - extreme detail
     } else {
-        "extreme".to_string()  // 8000 peaks - very zoomed in
+        "godlike".to_string()   // 64000 peaks - sample-level precision
     }
 }
 
@@ -238,11 +244,14 @@ pub async fn extract_audio_waveform(
 
     // Define multiple resolution levels for adaptive rendering
     let resolution_levels = vec![
-        ("low", 500),      // 500 peaks - very zoomed out
-        ("medium", 1000),  // 1000 peaks - zoomed out
-        ("high", 2000),    // 2000 peaks - normal view
-        ("ultra", 4000),   // 4000 peaks - zoomed in
-        ("extreme", 8000), // 8000 peaks - very zoomed in
+        ("low", 500),           // 500 peaks - very zoomed out
+        ("medium", 1000),       // 1000 peaks - zoomed out
+        ("high", 2000),         // 2000 peaks - normal view
+        ("ultra", 4000),        // 4000 peaks - zoomed in
+        ("extreme", 8000),      // 8000 peaks - very zoomed in
+        ("maximum", 16000),     // 16000 peaks - maximum zoom
+        ("insane", 32000),      // 32000 peaks - extreme detail
+        ("godlike", 64000),     // 64000 peaks - sample-level precision
     ];
 
     // Generate a hash for the video path for consistent lookup

@@ -89,24 +89,28 @@
           <FastForward :size="14" />
         </button>
       </div>
-      <!-- Zoom Slider -->
+      <!-- Zoom Controls -->
       <div
-        class="flex items-center gap-2 bg-black/40 backdrop-blur-sm rounded-lg px-2.5 py-2 border border-white/[0.04]"
+        class="flex items-center gap-1 bg-black/40 backdrop-blur-sm rounded-lg px-1.5 py-1 border border-white/[0.04]"
       >
-        <ZoomIn :size="18" class="text-white/40" />
-        <input
-          ref="zoomSlider"
-          type="range"
-          :min="minZoom"
-          :max="maxZoom"
-          :step="zoomStep"
-          v-model="localZoomLevel"
-          class="w-20 h-1 bg-white/10 rounded-full appearance-none cursor-pointer slider-zoom"
-          @input="handleZoomChange"
-        />
-        <span class="text-[12px] text-white/50 text-right font-mono tabular-nums">
-          {{ Math.round(zoomLevel * 100) }}%
+        <button
+          @click="zoomOut"
+          :disabled="localZoomLevel <= minZoom"
+          class="p-1.5 rounded-md transition-colors duration-150 text-white/50 hover:text-white hover:bg-white/10 disabled:text-white/20 disabled:cursor-not-allowed"
+          title="Zoom out"
+        >
+          <Minus :size="14" />
+        </button>
+        <span class="text-[11px] text-white/60 font-mono tabular-nums min-w-[42px] text-center select-none">
+          {{ Math.round(localZoomLevel * 100) }}%
         </span>
+        <button
+          @click="zoomIn"
+          class="p-1.5 rounded-md transition-colors duration-150 text-white/50 hover:text-white hover:bg-white/10"
+          title="Zoom in"
+        >
+          <Plus2 :size="14" />
+        </button>
       </div>
     </div>
 
@@ -120,7 +124,7 @@
 
 <script setup lang="ts">
   import { ref, watch } from 'vue';
-  import { Plus, Scissors, Merge, Rewind, FastForward, ZoomIn } from 'lucide-vue-next';
+  import { Plus, Scissors, Merge, Rewind, FastForward, Minus, Plus as Plus2 } from 'lucide-vue-next';
 
   interface Props {
     isCutToolActive: boolean;
@@ -147,7 +151,6 @@
     mergeSegments: [];
   }>();
 
-  const zoomSlider = ref<HTMLInputElement | null>(null);
   const localZoomLevel = ref(props.zoomLevel);
 
   // Keep local zoom level in sync with props
@@ -158,79 +161,27 @@
     }
   );
 
-  const handleZoomChange = () => {
+  // Calculate dynamic zoom step based on current zoom level
+  // Lower zoom = smaller steps, higher zoom = larger steps
+  function getZoomStep(): number {
+    if (localZoomLevel.value < 2) return 0.1;
+    if (localZoomLevel.value < 5) return 0.25;
+    if (localZoomLevel.value < 10) return 0.5;
+    if (localZoomLevel.value < 50) return 1;
+    if (localZoomLevel.value < 100) return 5;
+    return 10;
+  }
+
+  function zoomIn() {
+    const step = getZoomStep();
+    localZoomLevel.value = localZoomLevel.value + step;
     emit('zoomChanged', localZoomLevel.value);
-  };
+  }
 
-  defineExpose({
-    zoomSlider,
-  });
+  function zoomOut() {
+    const step = getZoomStep();
+    const newZoom = Math.max(props.minZoom, localZoomLevel.value - step);
+    localZoomLevel.value = newZoom;
+    emit('zoomChanged', localZoomLevel.value);
+  }
 </script>
-
-<style scoped>
-  /* Zoom slider styling */
-  .slider-zoom {
-    -webkit-appearance: none;
-    appearance: none;
-    outline: none;
-    transition: opacity 0.2s;
-  }
-
-  /* Base track styling */
-  .slider-zoom::-webkit-slider-track {
-    width: 100%;
-    height: 3px;
-    border-radius: 4px;
-    cursor: pointer;
-    background: rgba(255, 255, 255, 0.15);
-  }
-
-  .slider-zoom::-moz-range-track {
-    width: 100%;
-    height: 3px;
-    border-radius: 4px;
-    cursor: pointer;
-    background: rgba(255, 255, 255, 0.15);
-  }
-
-  .slider-zoom::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 10px;
-    height: 10px;
-    background: white;
-    border-radius: 50%;
-    cursor: pointer;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-    transition: all 0.15s ease;
-  }
-
-  .slider-zoom::-moz-range-thumb {
-    width: 10px;
-    height: 10px;
-    background: white;
-    border-radius: 50%;
-    cursor: pointer;
-    border: none;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-    transition: all 0.15s ease;
-  }
-
-  .slider-zoom:hover::-webkit-slider-thumb {
-    transform: scale(1.2);
-    box-shadow: 0 2px 8px rgba(139, 92, 246, 0.4);
-  }
-
-  .slider-zoom:hover::-moz-range-thumb {
-    transform: scale(1.2);
-    box-shadow: 0 2px 8px rgba(139, 92, 246, 0.4);
-  }
-
-  .slider-zoom:active::-webkit-slider-thumb {
-    transform: scale(1.1);
-  }
-
-  .slider-zoom:active::-moz-range-thumb {
-    transform: scale(1.1);
-  }
-</style>
