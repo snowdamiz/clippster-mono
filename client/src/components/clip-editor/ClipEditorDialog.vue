@@ -287,7 +287,7 @@
             :clip-start="clipStartTime"
             :clip-end="clipEndTime"
             :trim-segments="trimSegments"
-            :audio-tracks="audioTracks"
+            :audio-tracks="audioTracksWithStreamingUrls"
             :text-overlays="textOverlays"
             :stickers="stickers"
             :watermarks="watermarks"
@@ -538,6 +538,29 @@
   const filterSegments = ref<FilterSegment[]>([]);
   const originalDb = ref(0);
   const trackDbValues = ref<Record<string, number>>({});
+
+  // Computed: audio tracks with streaming URLs for timeline/waveform rendering
+  const audioTracksWithStreamingUrls = computed(() => {
+    return audioTracks.value.map((track) => {
+      // If file path is already an HTTP URL (legacy), use it directly
+      if (track.filePath.startsWith('http://') || track.filePath.startsWith('https://')) {
+        return track;
+      }
+
+      // Construct streaming URL from file path
+      if (!videoServerPort.value) {
+        return track; // Return unchanged if port not available yet
+      }
+
+      const encodedPath = btoa(unescape(encodeURIComponent(track.filePath)));
+      const streamingUrl = `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
+
+      return {
+        ...track,
+        filePath: streamingUrl,
+      };
+    });
+  });
 
   // Subtitle settings
   const getDefaultSubtitleSettings = (): ClipSubtitleSettings => ({
@@ -1586,11 +1609,11 @@
         );
 
         // Set up audio elements for existing tracks
-        audioTracks.value.forEach((track) => {
+        for (const track of audioTracks.value) {
           if (!audioElements.value.has(track.id)) {
-            setupAudioElement(track);
+            await setupAudioElement(track);
           }
-        });
+        }
       }
 
       // Generate thumbnail for the first source (for ManualPOIEditor preview)
@@ -2323,17 +2346,55 @@
     trackDbValues.value[track.id] = 0;
 
     // Set up audio element for playback
-    setupAudioElement(newTrack);
+    await setupAudioElement(newTrack);
+  }
+
+  // Helper to construct streaming URL from file path
+  function getAudioStreamingUrl(filePath: string): string | null {
+    // If path already looks like an HTTP URL (legacy data), use it directly
+    if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+      return filePath;
+    }
+
+    // Otherwise, construct the HTTP URL from the file path
+    if (!videoServerPort.value) {
+      console.warn('[ClipEditorDialog] Video server port not available for audio streaming');
+      return null;
+    }
+
+    const encodedPath = btoa(unescape(encodeURIComponent(filePath)));
+    return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
   }
 
   // Set up audio element for a track
-  function setupAudioElement(track: AudioTrack) {
+  async function setupAudioElement(track: AudioTrack) {
     // Initialize audio context if not already
     if (!audioContext.value) {
       audioContext.value = new AudioContext();
     }
 
-    const audio = new Audio(track.filePath);
+    // Ensure video server port is available
+    if (!videoServerPort.value) {
+      try {
+        videoServerPort.value = await invoke<number>('get_video_server_port');
+      } catch (err) {
+        console.error('[ClipEditorDialog] Failed to get video server port:', err);
+        return;
+      }
+    }
+
+    // Construct the streaming URL from the file path
+    const audioSrc = getAudioStreamingUrl(track.filePath);
+    if (!audioSrc) {
+      console.error('[ClipEditorDialog] Failed to get audio streaming URL for track:', track.id);
+      return;
+    }
+
+    // Create audio element with CORS enabled for Web Audio API support
+    // IMPORTANT: crossOrigin must be set BEFORE src to avoid CORS errors
+    const audio = new Audio();
+    audio.crossOrigin = 'anonymous';
+    audio.src = audioSrc;
     audio.loop = true; // Loop the audio track
     audio.preload = 'auto';
 
@@ -2368,8 +2429,16 @@
   function syncAudioWithVideo() {
     if (!videoElement.value) return;
 
-    const videoTime = videoElement.value.currentTime;
-    const relativeTime = videoTime - props.clipStartTime;
+    // Calculate the current time position for audio sync
+    // Editor mode: use previewTime directly (it's the timeline position, 0-based)
+    // Clip mode: use video time relative to clip start
+    let relativeTime: number;
+    if (editorMode.value) {
+      relativeTime = previewTime.value;
+    } else {
+      const videoTime = videoElement.value.currentTime;
+      relativeTime = videoTime - props.clipStartTime;
+    }
 
     audioTracks.value.forEach((track) => {
       const audio = audioElements.value.get(track.id);
@@ -3663,11 +3732,11 @@
           previewTime.value = props.clipStartTime;
 
           // Set up audio elements for existing tracks
-          audioTracks.value.forEach((track) => {
+          for (const track of audioTracks.value) {
             if (!audioElements.value.has(track.id)) {
-              setupAudioElement(track);
+              await setupAudioElement(track);
             }
-          });
+          }
 
           // Apply initial volume to video (convert dB to linear gain)
           if (videoElement.value) {

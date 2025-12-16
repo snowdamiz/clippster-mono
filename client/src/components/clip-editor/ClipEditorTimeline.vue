@@ -1,6 +1,6 @@
 <template>
   <div class="bg-gradient-to-t from-[#0a0a0a]/50 to-[#0a0a0a]/20 transition-all duration-300 ease-in-out">
-    <div class="pt-3 px-4 pb-3 flex flex-col">
+    <div class="pt-3 px-4 pb-3 flex flex-col max-h-[40vh]">
       <!-- Timeline Header -->
       <div class="flex items-center justify-between mb-2 pr-1 flex-shrink-0">
         <div class="flex items-center gap-2">
@@ -46,7 +46,7 @@
       <!-- Timeline Tracks Container -->
       <div
         ref="timelineScrollContainer"
-        class="pr-1 bg-[#101010] border border-white/[0.04] rounded-lg relative overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800 backdrop-blur-sm"
+        class="pr-1 bg-[#101010] border border-white/[0.04] rounded-lg relative overflow-x-auto overflow-y-auto flex-1 min-h-0 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800 backdrop-blur-sm"
         @mousemove="onTimelineMouseMove"
         @mouseleave="onTimelineMouseLeave"
       >
@@ -308,7 +308,6 @@
           >
             <div
               class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
-              :class="{ 'track-label-active': selectedItemKey === `audio_${track.id}` }"
             >
               <div class="font-medium flex items-center gap-1 truncate">
                 <Music :size="12" />
@@ -379,7 +378,6 @@
           <div v-if="textOverlays.length > 0" class="flex items-center h-12 border-b border-border/20 relative">
             <div
               class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
-              :class="{ 'track-label-active': isTrackActive('text') }"
             >
               <div class="font-medium flex items-center gap-1">
                 <Type :size="12" />
@@ -423,7 +421,6 @@
           <div v-if="stickers.length > 0" class="flex items-center h-12 border-b border-border/20 relative">
             <div
               class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
-              :class="{ 'track-label-active': isTrackActive('sticker') }"
             >
               <div class="font-medium flex items-center gap-1">
                 <Smile :size="12" />
@@ -470,7 +467,6 @@
           <div v-if="watermarks.length > 0" class="flex items-center h-12 border-b border-border/20 relative">
             <div
               class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
-              :class="{ 'track-label-active': isTrackActive('watermark') }"
             >
               <div class="font-medium flex items-center gap-1">
                 <Droplet :size="12" />
@@ -514,7 +510,6 @@
           <div v-if="effects.length > 0" class="flex items-center h-12 border-b border-border/20 relative">
             <div
               class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
-              :class="{ 'track-label-active': isTrackActive('effect') }"
             >
               <div class="font-medium flex items-center gap-1">
                 <Sparkles :size="12" />
@@ -558,7 +553,6 @@
           <div v-if="filterSegments.length > 0" class="flex items-center h-12 border-b border-border/20 relative">
             <div
               class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
-              :class="{ 'track-label-active': isTrackActive('filter') }"
             >
               <div class="font-medium flex items-center gap-1">
                 <Palette :size="12" />
@@ -601,7 +595,7 @@
           <!-- Playhead Line (inside content wrapper so it scrolls with content) -->
           <div
             v-if="totalDuration > 0"
-            class="absolute top-0 bottom-0 z-[60] cursor-ew-resize group playhead-line"
+            class="absolute top-0 bottom-0 z-[60] cursor-ew-resize group playhead-line flex flex-col"
             :class="{
               'cursor-grabbing': isDraggingPlayhead,
               'playhead-dragging': isDraggingPlayhead,
@@ -614,17 +608,21 @@
             }"
             @mousedown="onPlayheadMouseDown"
           >
-            <!-- The actual 1px line - positioned at exact pixel boundary -->
-            <div class="absolute inset-y-0 bg-white/80 group-hover:bg-white playhead-line-inner playhead-child">
-              <!-- Top circle -->
-              <div
-                class="absolute top-0 left-0 w-2 h-2 bg-white rounded-full shadow-md playhead-circle playhead-child"
-              ></div>
-              <!-- Bottom circle -->
-              <div
-                class="absolute bottom-0 left-0 w-2 h-2 bg-white/80 rounded-full shadow-md playhead-circle playhead-child"
-              ></div>
-            </div>
+            <!-- Top circle - sticky to top of scroll container -->
+            <div
+              class="sticky top-0 z-10 flex-shrink-0 w-2 h-2 bg-white rounded-full shadow-md playhead-circle playhead-child"
+              style="margin-left: 2.5px"
+            ></div>
+            <!-- The line - fills available space between sticky circles -->
+            <div
+              class="flex-1 bg-white/80 group-hover:bg-white playhead-line-inner playhead-child"
+              style="width: 1px; margin-left: 6px"
+            ></div>
+            <!-- Bottom circle - sticky to bottom of scroll container -->
+            <div
+              class="sticky bottom-0 z-10 flex-shrink-0 w-2 h-2 bg-white/80 rounded-full shadow-md playhead-circle playhead-child"
+              style="margin-left: 2.5px"
+            ></div>
           </div>
         </div>
       </div>
@@ -1117,9 +1115,6 @@
   }
 
   function getAudioVisualSegments(track: AudioTrack): AudioVisualSegment[] {
-    const segments = sortedTrimSegments.value;
-    if (segments.length === 0) return [];
-
     // Use preview position during drag/resize
     const preview = dragPreview.value;
     const usePreview = preview && preview.type === 'audio' && preview.id === track.id;
@@ -1130,13 +1125,35 @@
 
     if (audioDuration <= 0) return [];
 
+    // Editor mode: simple linear layout (no video segments to align with)
+    if (props.editorMode) {
+      const duration = props.duration || 300;
+      if (duration <= 0) return [];
+
+      const leftPercent = (audioStart / duration) * 100;
+      const widthPercent = (audioDuration / duration) * 100;
+
+      return [
+        {
+          videoSegmentIndex: 0,
+          audioStartTime: 0,
+          audioEndTime: audioDuration,
+          leftPercent,
+          widthPercent,
+          isFirst: true,
+          isLast: true,
+        },
+      ];
+    }
+
+    // Clip mode: align with video segments
+    const segments = sortedTrimSegments.value;
+    if (segments.length === 0) return [];
+
     const visualSegments: AudioVisualSegment[] = [];
 
     // Calculate cumulative video time to map to timeline position
     let cumulativeVideoTime = 0;
-    const totalGapPercent = (segments.length - 1) * GAP_PERCENT;
-    const availablePercent = 100 - totalGapPercent;
-    const totalVideoDuration = videoSegmentDuration.value;
 
     let audioTimeUsed = 0; // Track how much audio time has been "used" across segments
 
@@ -1706,8 +1723,8 @@
     const containerRect = scrollContainer.getBoundingClientRect();
     const trackRect = videoTrackContentRef.value.getBoundingClientRect();
 
-    // The label area width (sticky labels take up this space: w-16 = 64px + padding)
-    const labelAreaWidth = 72;
+    // The label area width (sticky labels take up this space: w-20 = 80px)
+    const labelAreaWidth = TRACK_LABEL_WIDTH;
 
     // Left edge of the visible track area (where content can appear, past the labels)
     const visibleTrackLeft = containerRect.left + labelAreaWidth;
@@ -1716,18 +1733,22 @@
     // Cursor position in viewport coords
     const cursorX = e.clientX;
 
-    // Auto-scroll when cursor is near/past edges
+    // Handle cursor in label area (left of track content)
     if (cursorX < visibleTrackLeft) {
-      // Cursor is in or past the label area - auto-scroll left
-      const distance = visibleTrackLeft - cursorX;
-      const speed = Math.min(30, Math.max(5, distance * 0.3));
-      scrollContainer.scrollLeft = Math.max(0, scrollContainer.scrollLeft - speed);
+      // Only auto-scroll if there's content to scroll to (we're zoomed and not at the start)
+      if (scrollContainer.scrollLeft > 0) {
+        const distance = visibleTrackLeft - cursorX;
+        const speed = Math.min(30, Math.max(5, distance * 0.3));
+        scrollContainer.scrollLeft = Math.max(0, scrollContainer.scrollLeft - speed);
 
-      // Set playhead to the time at the left edge of visible track
-      const leftEdgeX = visibleTrackLeft - trackRect.left;
-      const percent = Math.max(0, Math.min(1, leftEdgeX / trackRect.width));
-      const time = clickPositionToTime(percent);
-      emit('seek', Math.max(0, time));
+        // Set playhead to the time at the left edge of visible track
+        const leftEdgeX = visibleTrackLeft - trackRect.left;
+        const percent = Math.max(0, Math.min(1, leftEdgeX / trackRect.width));
+        const time = clickPositionToTime(percent);
+        emit('seek', Math.max(0, time));
+      }
+      // If at the start (scrollLeft = 0), don't seek - playhead stays where it is
+      // This prevents the playhead from appearing to be in the label area
       return;
     }
 
@@ -2688,14 +2709,20 @@
       let accumulatedAudioTime = 0;
       const currentVideoTime = props.currentTime;
 
-      for (const segment of sortedTrimSegments.value) {
-        if (currentVideoTime < segment.startTime) {
-          break;
-        } else if (currentVideoTime <= segment.endTime) {
-          accumulatedAudioTime += currentVideoTime - segment.startTime;
-          break;
-        } else {
-          accumulatedAudioTime += segment.endTime - segment.startTime;
+      if (props.editorMode) {
+        // Editor mode: currentTime is directly the timeline time
+        accumulatedAudioTime = currentVideoTime;
+      } else {
+        // Clip mode: calculate accumulated time based on video segments
+        for (const segment of sortedTrimSegments.value) {
+          if (currentVideoTime < segment.startTime) {
+            break;
+          } else if (currentVideoTime <= segment.endTime) {
+            accumulatedAudioTime += currentVideoTime - segment.startTime;
+            break;
+          } else {
+            accumulatedAudioTime += segment.endTime - segment.startTime;
+          }
         }
       }
 
@@ -2858,15 +2885,12 @@
     { deep: true, immediate: true }
   );
 
-  // Watch for current time changes to update audio waveforms
-  watch(
-    () => props.currentTime,
-    () => {
-      nextTick(() => {
-        renderAllAudioWaveforms();
-      });
-    }
-  );
+  // Watch for current time and zoom level changes to update audio waveforms
+  watch([() => props.currentTime, zoomLevel], () => {
+    nextTick(() => {
+      renderAllAudioWaveforms();
+    });
+  });
 
   // Watch for drag preview changes to re-render audio waveforms when segments split/merge
   watch(
@@ -3200,16 +3224,13 @@
     contain: layout style;
   }
 
-  /* Inner line - exactly 1px wide, positioned at pixel boundary */
+  /* Inner line - fills space between sticky circles */
   .playhead-line-inner {
-    width: 1px;
-    left: 6px; /* Center of 13px container */
     transition: background-color 0.15s ease;
   }
 
-  /* Circles - use margin instead of transform for positioning to stay in same layer */
+  /* Circles */
   .playhead-circle {
-    margin-left: -3px; /* Half of 6px (w-1.5) to center */
     transition: transform 0.15s ease;
   }
 

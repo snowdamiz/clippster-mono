@@ -283,7 +283,6 @@
   import type { AudioTrack } from '@/types';
   import { getAllAudioAssets, type AudioAsset } from '@/services/database';
   import { useAudioAssetOperations } from '@/composables/useAudioAssetOperations';
-  import { invoke } from '@tauri-apps/api/core';
 
   const props = defineProps<{
     audioTracks: AudioTrack[];
@@ -384,17 +383,10 @@
   }
 
   async function selectAsset(asset: AudioAsset) {
-    try {
-      // Get the streaming URL for the audio file
-      const port = await invoke<number>('get_video_server_port');
-      const encodedPath = btoa(unescape(encodeURIComponent(asset.file_path)));
-      const audioUrl = `http://localhost:${port}/video/${encodedPath}`;
-
-      emit('addTrack', audioUrl, asset.name, asset.duration || 0);
-      closeAudioPicker();
-    } catch (err) {
-      console.error('[AudioMixerTab] Failed to select asset:', err);
-    }
+    // Emit the actual file path - the parent component will construct the streaming URL
+    // This ensures URLs use the current port and don't break if the server port changes
+    emit('addTrack', asset.file_path, asset.name, asset.duration || 0);
+    closeAudioPicker();
   }
 
   function toggleOriginalMute() {
