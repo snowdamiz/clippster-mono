@@ -28,6 +28,8 @@ export type {
   WatermarkImage,
   WatermarkSettings,
   AudioSettings,
+  AudioAsset,
+  ImageAsset,
   CreatorProfile,
   CreatorPlatformLink,
   CreatorProfileWithLinks,
@@ -156,6 +158,7 @@ export {
 // Re-export clip functions
 export {
   createClip,
+  getClip,
   getAllClips,
   getGeneratedClips,
   getDetectedClips,
@@ -271,6 +274,24 @@ export {
   updateProjectAudioSettings,
 } from './database/audio-settings';
 
+// Audio assets exports
+export {
+  createAudioAsset,
+  getAllAudioAssets,
+  getAudioAsset,
+  updateAudioAsset,
+  deleteAudioAsset,
+} from './database/audio-assets';
+
+// Image assets exports
+export {
+  createImageAsset,
+  getAllImageAssets,
+  getImageAsset,
+  updateImageAsset,
+  deleteImageAsset,
+} from './database/image-assets';
+
 // Speaker detection exports
 export {
   saveSpeakerDetections,
@@ -303,3 +324,100 @@ export {
   updateCustomFontName,
   type CustomFont,
 } from './database/custom-fonts';
+
+// Clip editor exports
+export {
+  createClipEdit,
+  getClipEditByClipId,
+  updateClipEdit,
+  deleteClipEdit,
+  createAudioTrack,
+  getAudioTracksByEditId,
+  updateAudioTrack,
+  deleteAudioTrack,
+  createTextOverlay,
+  getTextOverlaysByEditId,
+  updateTextOverlay,
+  deleteTextOverlay,
+  createSticker,
+  getStickersByEditId,
+  updateSticker,
+  deleteSticker,
+  createEffect,
+  getEffectsByEditId,
+  updateEffect,
+  deleteEffect,
+  createWatermark,
+  getWatermarksByEditId,
+  updateWatermarkRecord,
+  deleteWatermarkRecord,
+  getFullClipEdit,
+  getOrCreateClipEdit,
+  type ClipEditRecord,
+  type ClipAudioTrackRecord,
+  type ClipTextOverlayRecord,
+  type ClipStickerRecord,
+  type ClipEffectRecord,
+  type FullClipEdit,
+} from './database/clip-edits';
+
+// Video Editor Projects
+export {
+  createVideoEditorProject,
+  getVideoEditorProject,
+  getAllVideoEditorProjects,
+  updateVideoEditorProject,
+  deleteVideoEditorProject,
+  createVideoEditorSource,
+  getVideoEditorSourcesByProjectId,
+  getVideoEditorSource,
+  updateVideoEditorSource,
+  deleteVideoEditorSource,
+  deleteAllVideoEditorSources,
+  reorderVideoEditorSources,
+  recalculateProjectDuration,
+  getVideoEditorProjectWithSources,
+  hasVideoEditorSources,
+  getVideoEditorSourceCount,
+  getNextSourceStartTime,
+  type VideoEditorProject,
+  type VideoEditorSource,
+  type VideoEditorProjectWithSources,
+} from './database/video-editor-projects';
+
+// Video Editor Edits (overlays, audio, effects for video editor projects)
+export {
+  createVideoEditorEdit,
+  getVideoEditorEditByProjectId,
+  updateVideoEditorEdit,
+  deleteVideoEditorEdit,
+  createVideoEditorAudioTrack,
+  getVideoEditorAudioTracksByEditId,
+  updateVideoEditorAudioTrack,
+  deleteVideoEditorAudioTrack,
+  createVideoEditorTextOverlay,
+  getVideoEditorTextOverlaysByEditId,
+  updateVideoEditorTextOverlay,
+  deleteVideoEditorTextOverlay,
+  createVideoEditorSticker,
+  getVideoEditorStickersByEditId,
+  updateVideoEditorSticker,
+  deleteVideoEditorSticker,
+  createVideoEditorWatermark,
+  getVideoEditorWatermarksByEditId,
+  updateVideoEditorWatermark,
+  deleteVideoEditorWatermark,
+  createVideoEditorEffect,
+  getVideoEditorEffectsByEditId,
+  updateVideoEditorEffect,
+  deleteVideoEditorEffect,
+  getFullVideoEditorEdit,
+  getOrCreateVideoEditorEdit,
+  type VideoEditorEditRecord,
+  type VideoEditorAudioTrackRecord,
+  type VideoEditorTextOverlayRecord,
+  type VideoEditorStickerRecord,
+  type VideoEditorWatermarkRecord,
+  type VideoEditorEffectRecord,
+  type FullVideoEditorEdit,
+} from './database/video-editor-edits';

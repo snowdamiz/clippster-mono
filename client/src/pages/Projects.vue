@@ -1,10 +1,5 @@
 <template>
-  <PageLayout
-    title="Projects"
-    description="Manage and organize your video projects"
-    :show-header="projects.length > 0"
-    :icon="Folder"
-  >
+  <PageLayout title="Projects" description="Manage and organize your video projects" :show-header="true" :icon="Folder">
     <template #actions>
       <Button @click="openCreateDialog" class="flex items-center gap-2">
         <Plus class="h-5 w-5" />
@@ -375,13 +370,17 @@
     </div>
 
     <!-- Empty State -->
-    <EmptyState
-      v-else
-      title="No projects found"
-      description="Create a new project to get started"
-      button-text="Create Project"
-      @action="openCreateDialog"
-    />
+    <EmptyState v-else title="No projects found" description="Create a new project to get started">
+      <template #icon>
+        <Folder class="h-16 w-16 text-muted-foreground" />
+      </template>
+      <template #default>
+        <Button @click="openCreateDialog" class="mt-6 flex items-center gap-2">
+          <Plus class="w-4 h-4" />
+          Create Project
+        </Button>
+      </template>
+    </EmptyState>
     <!-- Project Dialog -->
     <ProjectDialog v-model="showDialog" :project="selectedProject" @submit="handleProjectSubmit" />
     <!-- Project Workspace Dialog -->
@@ -1838,33 +1837,38 @@
 
     const { clip_id, success: buildSuccess, output_path, all_output_paths, error: buildError } = payload;
 
+    // Only process clips that belong to the folder view
+    // This prevents duplicate processing when multiple components listen to the same event
+    const clip = folderClips.value.find((c) => c.id === clip_id);
+    if (!clip) {
+      console.log(`[Projects] Clip ${clip_id} not in folder view, skipping database update`);
+      return;
+    }
+
     console.log(`[Projects] Clip build complete: ${clip_id}`, { buildSuccess, output_path });
 
-    const clip = folderClips.value.find((c) => c.id === clip_id);
     const isCancelled = buildError && (buildError.includes('cancelled') || buildError.includes('Cancelled'));
 
     // Update local state immediately for instant UI feedback
-    if (clip) {
-      if (buildSuccess) {
-        clip.build_status = 'completed';
-        clip.build_progress = 100;
-        clip.built_file_path = output_path;
-        // Update the builds array locally so download dropdown works immediately
-        if (!clip.builds) clip.builds = [];
-        const existingBuildIdx = clip.builds.findIndex((b: any) => b.status === 'building');
-        if (existingBuildIdx >= 0) {
-          clip.builds[existingBuildIdx].status = 'completed';
-          clip.builds[existingBuildIdx].file_path = output_path;
-          clip.builds[existingBuildIdx].output_paths = JSON.stringify(all_output_paths || [output_path]);
-        }
-        console.log(`[Projects] Local state updated for completed clip: ${clip_id}`);
-      } else if (isCancelled) {
-        clip.build_status = 'pending';
-        clip.build_progress = 0;
-      } else {
-        clip.build_status = 'failed';
-        clip.build_error = buildError || 'Unknown build error';
+    if (buildSuccess) {
+      clip.build_status = 'completed';
+      clip.build_progress = 100;
+      clip.built_file_path = output_path;
+      // Update the builds array locally so download dropdown works immediately
+      if (!clip.builds) clip.builds = [];
+      const existingBuildIdx = clip.builds.findIndex((b: any) => b.status === 'building');
+      if (existingBuildIdx >= 0) {
+        clip.builds[existingBuildIdx].status = 'completed';
+        clip.builds[existingBuildIdx].file_path = output_path;
+        clip.builds[existingBuildIdx].output_paths = JSON.stringify(all_output_paths || [output_path]);
       }
+      console.log(`[Projects] Local state updated for completed clip: ${clip_id}`);
+    } else if (isCancelled) {
+      clip.build_status = 'pending';
+      clip.build_progress = 0;
+    } else {
+      clip.build_status = 'failed';
+      clip.build_error = buildError || 'Unknown build error';
     }
 
     // Update database in the background (non-blocking)
@@ -1872,9 +1876,7 @@
     (async () => {
       if (buildSuccess) {
         try {
-          const { updateClipBuildStatus, getClipBuilds, updateClipBuild, createClipBuild } = await import(
-            '@/services/database'
-          );
+          const { updateClipBuildStatus, getClipBuilds, updateClipBuild } = await import('@/services/database');
 
           await updateClipBuildStatus(clip_id, 'completed', {
             progress: 100,
@@ -1892,17 +1894,12 @@
               filePath: output_path,
               outputPaths: all_output_paths || (output_path ? [output_path] : []),
             });
+            console.log(`[Projects] Database updated for clip: ${clip_id}`);
           } else {
-            // Fallback: create a new build record
-            const buildId = await createClipBuild(clip_id, {});
-            await updateClipBuild(buildId, {
-              status: 'completed',
-              filePath: output_path,
-              outputPaths: all_output_paths || (output_path ? [output_path] : []),
-            });
+            // No 'building' record found - this can happen if another handler already updated it
+            // or if the build was started without creating a record (legacy). Just log a warning.
+            console.warn(`[Projects] No 'building' record found for clip ${clip_id}, skipping build record update`);
           }
-
-          console.log(`[Projects] Database updated for clip: ${clip_id}`);
         } catch (dbError) {
           console.error('[Projects] Failed to update clip build in database:', dbError);
         }
@@ -2324,6 +2321,10 @@
         watermarkSettings: watermarkSettings,
         audioSettings: null,
         framingStrategy: null,
+        videoFilterSegments: null, // No filter segments from folder view
+        textOverlays: null, // No text overlays from folder view
+        stickers: null, // No stickers from folder view
+        clipWatermarks: null, // No clip watermarks from folder view
       });
 
       success('Build started', 'Your clip is being built in the background.');

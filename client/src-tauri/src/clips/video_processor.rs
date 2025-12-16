@@ -2,21 +2,118 @@ use tauri_plugin_shell::ShellExt;
 use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 
-use super::types::{AspectRatio, WatermarkSettings, AudioSettings};
+use super::types::{AspectRatio, WatermarkSettings, AudioSettings, MusicTrackSettings, VideoFilterSegment, build_time_based_filter_string, StickerSettings};
 use super::encoder::{detect_hardware_encoder, get_quality_settings};
-use super::video_info::{get_video_info, calculate_crop_params, calculate_crop_position, IntroOutroCache};
+use super::video_info::{get_video_info, calculate_crop_params, IntroOutroCache};
 use super::font_manager::get_fonts_dir;
+
+/// Build time-based FFmpeg filter string from filter segments
+/// This creates a filter string with enable expressions for each segment's time range
+fn build_video_filter_string(segments: Option<&Vec<VideoFilterSegment>>) -> Option<String> {
+    let segments = segments?;
+    build_time_based_filter_string(segments)
+}
+
+/// Build time-based filter string with adjusted time offsets
+/// Used when the output video starts at a different time than the source
+/// offset: the time offset to add to all filter start/end times
+fn build_video_filter_string_with_offset(segments: Option<&Vec<VideoFilterSegment>>, offset: f64) -> Option<String> {
+    let segments = segments?;
+    if segments.is_empty() {
+        return None;
+    }
+    
+    let mut all_filters = Vec::new();
+    
+    for segment in segments {
+        // Adjust the segment times by the offset
+        let adjusted_start = (segment.start_time - offset).max(0.0);
+        let adjusted_end = segment.end_time - offset;
+        
+        // Only include segments that are within the current video portion
+        if adjusted_end > 0.0 {
+            if let Some(filter_str) = segment.settings.to_ffmpeg_filter_with_enable(adjusted_start, adjusted_end) {
+                all_filters.push(filter_str);
+            }
+        }
+    }
+    
+    if all_filters.is_empty() {
+        None
+    } else {
+        Some(all_filters.join(","))
+    }
+}
+
+/// Get filter segments that overlap with a specific time range
+/// Returns segments with times adjusted relative to the segment's start
+fn get_overlapping_filter_segments(
+    segments: Option<&Vec<VideoFilterSegment>>, 
+    segment_start: f64, 
+    segment_end: f64
+) -> Option<Vec<VideoFilterSegment>> {
+    let filter_segments = segments?;
+    if filter_segments.is_empty() {
+        return None;
+    }
+    
+    let mut overlapping = Vec::new();
+    
+    for filter_seg in filter_segments {
+        // Check if this filter segment overlaps with the video segment
+        let overlap_start = filter_seg.start_time.max(segment_start);
+        let overlap_end = filter_seg.end_time.min(segment_end);
+        
+        if overlap_start < overlap_end {
+            // Adjust times to be relative to the output segment (starting at 0)
+            let adjusted_start = overlap_start - segment_start;
+            let adjusted_end = overlap_end - segment_start;
+            
+            overlapping.push(VideoFilterSegment {
+                id: filter_seg.id.clone(),
+                start_time: adjusted_start,
+                end_time: adjusted_end,
+                settings: filter_seg.settings.clone(),
+            });
+        }
+    }
+    
+    if overlapping.is_empty() {
+        None
+    } else {
+        Some(overlapping)
+    }
+}
+
+// Helper struct to hold audio processing configuration
+#[allow(dead_code)]
+pub struct AudioProcessingConfig {
+    // Simple audio filter for original audio (no music tracks)
+    pub simple_filter: Option<String>,
+    // Additional input files for music tracks
+    pub additional_inputs: Vec<String>,
+    // Complex filter graph for mixing audio (when music tracks present)
+    pub complex_filter: Option<String>,
+    // Whether we need to use filter_complex for audio
+    pub needs_complex_audio: bool,
+}
 
 // Helper function to build audio filter string for FFmpeg
 // Combines volume adjustment and normalization
+// This is the simple version for cases without music tracks
 fn build_audio_filter(audio_settings: Option<&AudioSettings>) -> Option<String> {
     let settings = audio_settings?;
     
     let mut filters = Vec::new();
     
+    // Combine clip-level originalAudioDb with project-level volume
+    // Both are in dB, so we add them together
+    let original_db = settings.original_audio_db.unwrap_or(0.0);
+    let total_db = original_db + settings.volume;
+    
     // Volume adjustment (in dB)
-    if settings.volume != 0.0 {
-        filters.push(format!("volume={}dB", settings.volume));
+    if total_db != 0.0 {
+        filters.push(format!("volume={}dB", total_db));
     }
     
     // Normalization (loudnorm filter - industry standard -16 LUFS)
@@ -28,6 +125,129 @@ fn build_audio_filter(audio_settings: Option<&AudioSettings>) -> Option<String> 
         None
     } else {
         Some(filters.join(","))
+    }
+}
+
+// Helper function to build complete audio processing config
+// Handles both simple (no music tracks) and complex (with music tracks) cases
+#[allow(dead_code)]
+fn build_audio_processing_config(audio_settings: Option<&AudioSettings>, _clip_duration: f64) -> AudioProcessingConfig {
+    let settings = match audio_settings {
+        Some(s) => s,
+        None => return AudioProcessingConfig {
+            simple_filter: None,
+            additional_inputs: Vec::new(),
+            complex_filter: None,
+            needs_complex_audio: false,
+        },
+    };
+
+    // Get non-muted music tracks
+    let music_tracks: Vec<&MusicTrackSettings> = settings.music_tracks
+        .as_ref()
+        .map(|tracks| tracks.iter().filter(|t| !t.is_muted).collect())
+        .unwrap_or_default();
+
+    // If no music tracks, use simple filter
+    if music_tracks.is_empty() {
+        return AudioProcessingConfig {
+            simple_filter: build_audio_filter(audio_settings),
+            additional_inputs: Vec::new(),
+            complex_filter: None,
+            needs_complex_audio: false,
+        };
+    }
+
+    // Build complex audio filter for mixing music tracks
+    let mut filter_parts = Vec::new();
+    let mut additional_inputs = Vec::new();
+    
+    // Calculate total gain for original audio
+    let original_db = settings.original_audio_db.unwrap_or(0.0);
+    let total_db = original_db + settings.volume;
+    
+    // Process original audio (input 0)
+    if total_db != 0.0 {
+        filter_parts.push(format!("[0:a]volume={}dB[orig]", total_db));
+    } else {
+        filter_parts.push("[0:a]acopy[orig]".to_string());
+    }
+    
+    // Process each music track
+    let mut mix_inputs = vec!["[orig]".to_string()];
+    for (i, track) in music_tracks.iter().enumerate() {
+        let input_idx = i + 1; // Input 0 is the video, music tracks start at 1
+        let track_label = format!("music{}", i);
+        
+        // Add input file
+        additional_inputs.push(track.file_path.clone());
+        
+        // Build filter chain for this track:
+        // 1. Apply gain (dB)
+        // 2. Apply fade in/out
+        // 3. Trim/pad to match timing
+        let mut track_filters = Vec::new();
+        
+        // Apply gain
+        if track.gain_db != 0.0 {
+            track_filters.push(format!("volume={}dB", track.gain_db));
+        }
+        
+        // Apply fade in (if > 0)
+        if track.fade_in > 0.0 {
+            track_filters.push(format!("afade=t=in:st=0:d={}", track.fade_in));
+        }
+        
+        // Calculate track duration for fade out
+        let track_duration = track.end_time - track.start_time;
+        if track_duration > 0.0 && track.fade_out > 0.0 {
+            let fade_out_start = (track_duration - track.fade_out).max(0.0);
+            track_filters.push(format!("afade=t=out:st={}:d={}", fade_out_start, track.fade_out));
+        }
+        
+        // Build the filter chain for this track
+        let filter_chain = if track_filters.is_empty() {
+            format!("[{}:a]acopy[{}]", input_idx, track_label)
+        } else {
+            format!("[{}:a]{}[{}]", input_idx, track_filters.join(","), track_label)
+        };
+        filter_parts.push(filter_chain);
+        
+        // Add delay to position the track at the correct time in the clip
+        // adelay uses milliseconds
+        if track.start_time > 0.0 {
+            let delay_ms = (track.start_time * 1000.0) as i64;
+            let delayed_label = format!("{}d", track_label);
+            filter_parts.push(format!("[{}]adelay={}:all=1[{}]", track_label, delay_ms, delayed_label));
+            mix_inputs.push(format!("[{}]", delayed_label));
+        } else {
+            mix_inputs.push(format!("[{}]", track_label));
+        }
+    }
+    
+    // Mix all audio tracks together
+    let mix_input_str = mix_inputs.join("");
+    let num_inputs = music_tracks.len() + 1; // Original + music tracks
+    filter_parts.push(format!(
+        "{}amix=inputs={}:duration=first:dropout_transition=0[mixed]",
+        mix_input_str, num_inputs
+    ));
+    
+    // Apply normalization if enabled (on the final mixed output)
+    if settings.normalize {
+        filter_parts.push("[mixed]loudnorm=I=-16:TP=-1.5:LRA=11[aout]".to_string());
+    } else {
+        filter_parts.push("[mixed]acopy[aout]".to_string());
+    }
+    
+    let complex_filter = filter_parts.join(";");
+    println!("[Rust] Built complex audio filter with {} music tracks: {}", music_tracks.len(), complex_filter);
+    
+    AudioProcessingConfig {
+        simple_filter: None, // Not used when we have complex audio
+        additional_inputs,
+        complex_filter: Some(complex_filter),
+        needs_complex_audio: true,
     }
 }
 
@@ -156,7 +376,8 @@ pub async fn build_single_segment_clip_with_settings(
     outro_path: Option<&str>,
     intro_outro_cache: Arc<Mutex<IntroOutroCache>>,
     watermark_settings: Option<&WatermarkSettings>,
-    audio_settings: Option<&AudioSettings>
+    audio_settings: Option<&AudioSettings>,
+    video_filter_segments: Option<&Vec<VideoFilterSegment>>
 ) -> Result<(), String> {
     let shell = app.shell();
     let start_time: f64 = segment["start_time"].as_f64().ok_or("Invalid start_time")?;
@@ -171,6 +392,10 @@ pub async fn build_single_segment_clip_with_settings(
     
     // Get quality settings (unused in this path, but kept for reference)
     let (_preset, _crf) = get_quality_settings(quality);
+    
+    // Build time-based video filter string
+    // Filter times are relative to the output (0 = clip start), so we use the segments directly
+    let video_filter_str = build_video_filter_string(video_filter_segments);
     
     // If intro or outro is present, we need to use the concat approach
     if intro_path.is_some() || outro_path.is_some() {
@@ -189,7 +414,14 @@ pub async fn build_single_segment_clip_with_settings(
 
         // Extract the main segment without subtitles (we'll add them later if needed)
         let segment_file = temp_dir.join("main_segment.mp4");
-        let crop_filter = format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y);
+        
+        // Build crop filter with optional time-based color grading
+        let crop_filter = if let Some(ref filter_str) = video_filter_str {
+            println!("[Rust] Applying time-based video color filters in intro/outro path: {}", filter_str);
+            format!("crop={}:{}:{}:{},{}", crop_w, crop_h, crop_x, crop_y, filter_str)
+        } else {
+            format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y)
+        };
 
         // Build encoder-specific args
         let mut args = vec![
@@ -432,11 +664,17 @@ pub async fn build_single_segment_clip_with_settings(
     // Get fonts directory for subtitle rendering
     let fonts_dir = get_fonts_dir(app).ok();
 
-    // Build video filter combining crop + subtitles in ONE PASS
+    // Build video filter combining crop + color grading + subtitles in ONE PASS
     // Only Force RGB24 if using subtitles for accurate color rendering
     let mut vf_parts = vec![
         format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y)
     ];
+    
+    // Apply time-based color grading filters (eq, hue, vignette, etc.) after crop
+    if let Some(ref filter_str) = video_filter_str {
+        println!("[Rust] Applying time-based video color filters: {}", filter_str);
+        vf_parts.push(filter_str.clone());
+    }
     
     if let Some(path) = subtitle_path {
         vf_parts.push("format=rgb24".to_string());
@@ -535,7 +773,8 @@ pub async fn build_multi_segment_clip_with_settings(
     outro_path: Option<&str>,
     intro_outro_cache: Arc<Mutex<IntroOutroCache>>,
     watermark_settings: Option<&WatermarkSettings>,
-    audio_settings: Option<&AudioSettings>
+    audio_settings: Option<&AudioSettings>,
+    video_filter_segments: Option<&Vec<VideoFilterSegment>>
 ) -> Result<(), String> {
     let shell = app.shell();
 
@@ -552,26 +791,65 @@ pub async fn build_multi_segment_clip_with_settings(
     // Get video info for cropping
     let video_info = get_video_info(app, video_path).await?;
     let (crop_w, crop_h, crop_x, crop_y) = calculate_crop_params(video_info.width, video_info.height, aspect_ratio);
-    let crop_filter = format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y);
-
+    
     // Get quality settings (unused in this path, but kept for reference)
     let (_preset, _crf) = get_quality_settings(quality);
     
     // Detect hardware encoder for better performance
     let encoder = detect_hardware_encoder(app, quality).await;
 
+    // Calculate output time offsets for each segment (used for time-based filters)
+    // Each segment's filters need to be adjusted relative to where it appears in the final output
+    let mut segment_output_offsets: Vec<f64> = Vec::new();
+    let mut cumulative_duration = 0.0;
+    for segment in segments {
+        segment_output_offsets.push(cumulative_duration);
+        let start_time: f64 = segment["start_time"].as_f64().unwrap_or(0.0);
+        let end_time: f64 = segment["end_time"].as_f64().unwrap_or(0.0);
+        cumulative_duration += end_time - start_time;
+    }
+
     // Extract segments with cropping IN PARALLEL for speed
-    println!("[Rust] Extracting {} segments in parallel...", segments.len());
+    // Each segment gets its own filter with time-adjusted enable expressions
+    println!("[Rust] Extracting {} segments in parallel with time-based filters...", segments.len());
     let segment_tasks: Vec<_> = segments.iter().enumerate().map(|(i, segment)| {
         let start_time: f64 = segment["start_time"].as_f64().unwrap_or(0.0);
         let end_time: f64 = segment["end_time"].as_f64().unwrap_or(0.0);
         let duration = end_time - start_time;
         let segment_file = temp_dir.join(format!("segment_{:03}.mp4", i));
-        let crop_filter = crop_filter.clone();
         let video_path = video_path.to_string();
         let app = app.clone();
         let encoder = encoder.clone();
         let frame_rate_str = frame_rate.to_string();
+        let output_offset = segment_output_offsets[i];
+        
+        // Get filters that overlap with this segment's output time range
+        // and adjust their times to be relative to this segment (starting at 0)
+        let segment_filter_str = if let Some(filter_segments) = video_filter_segments {
+            let overlapping = get_overlapping_filter_segments(
+                Some(filter_segments),
+                output_offset,
+                output_offset + duration
+            );
+            if let Some(ref segs) = overlapping {
+                build_time_based_filter_string(segs)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        
+        // Build crop filter with optional time-based color grading for this segment
+        let crop_filter = if let Some(ref filter_str) = segment_filter_str {
+            format!("crop={}:{}:{}:{},{}", crop_w, crop_h, crop_x, crop_y, filter_str)
+        } else {
+            format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y)
+        };
+        
+        if segment_filter_str.is_some() {
+            println!("[Rust] Segment {} has time-based filters applied", i);
+        }
 
         async move {
             let shell = app.shell();
@@ -967,7 +1245,10 @@ pub async fn build_split_screen_clip(
     quality: &str,
     frame_rate: u32,
     audio_settings: Option<&AudioSettings>,
+    video_filter_segments: Option<&Vec<VideoFilterSegment>>,
 ) -> Result<(), String> {
+    // Build time-based filter string for the full clip duration
+    let video_filter_str = build_video_filter_string(video_filter_segments);
     let shell = app.shell();
     let start_time: f64 = segment["start_time"].as_f64().ok_or("Invalid start_time")?;
     let end_time: f64 = segment["end_time"].as_f64().ok_or("Invalid end_time")?;
@@ -1101,14 +1382,32 @@ pub async fn build_split_screen_clip(
     // Build complex filter for split screen
     // Each crop maintains the correct aspect ratio for its output region
     // Use force_original_aspect_ratio=decrease to prevent stretching - crop to fit instead
-    let filter_complex = format!(
-        "[0:v]split=2[top_src][bottom_src];\
-        [top_src]crop={}:{}:{}:{},scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2:black[top];\
-        [bottom_src]crop={}:{}:{}:{},scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2:black[bottom];\
-        [top][bottom]vstack=inputs=2[outv]",
-        top_crop_w, top_crop_h, top_x, top_y, output_w, top_output_height, output_w, top_output_height,
-        bottom_crop_w, bottom_crop_h, bottom_x, bottom_y, output_w, bottom_output_height, output_w, bottom_output_height
-    );
+    
+    // Add time-based color grading filter if present (applied after vstack)
+    if video_filter_str.is_some() {
+        println!("[Rust] Applying time-based video color filters in split screen: {:?}", video_filter_str);
+    }
+    
+    let filter_complex = if let Some(ref color_filter) = video_filter_str {
+        format!(
+            "[0:v]split=2[top_src][bottom_src];\
+            [top_src]crop={}:{}:{}:{},scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2:black[top];\
+            [bottom_src]crop={}:{}:{}:{},scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2:black[bottom];\
+            [top][bottom]vstack=inputs=2,{}[outv]",
+            top_crop_w, top_crop_h, top_x, top_y, output_w, top_output_height, output_w, top_output_height,
+            bottom_crop_w, bottom_crop_h, bottom_x, bottom_y, output_w, bottom_output_height, output_w, bottom_output_height,
+            color_filter
+        )
+    } else {
+        format!(
+            "[0:v]split=2[top_src][bottom_src];\
+            [top_src]crop={}:{}:{}:{},scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2:black[top];\
+            [bottom_src]crop={}:{}:{}:{},scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2:black[bottom];\
+            [top][bottom]vstack=inputs=2[outv]",
+            top_crop_w, top_crop_h, top_x, top_y, output_w, top_output_height, output_w, top_output_height,
+            bottom_crop_w, bottom_crop_h, bottom_x, bottom_y, output_w, bottom_output_height, output_w, bottom_output_height
+        )
+    };
 
     // Detect hardware encoder
     let encoder = detect_hardware_encoder(app, quality).await;
@@ -1235,7 +1534,10 @@ pub async fn build_dynamic_pan_clip(
     quality: &str,
     frame_rate: u32,
     audio_settings: Option<&AudioSettings>,
+    video_filter_segments: Option<&Vec<VideoFilterSegment>>,
 ) -> Result<(), String> {
+    // Build time-based filter string
+    let video_filter_str = build_video_filter_string(video_filter_segments);
     let shell = app.shell();
     let start_time: f64 = segment["start_time"].as_f64().ok_or("Invalid start_time")?;
     let end_time: f64 = segment["end_time"].as_f64().ok_or("Invalid end_time")?;
@@ -1275,8 +1577,13 @@ pub async fn build_dynamic_pan_clip(
     // Build pan expression from keyframes
     let pan_expr = build_pan_expression(keyframes, source_w, crop_w, start_time, duration);
 
-    // Build video filter
-    let vf = format!("crop={}:{}:{}:0", crop_w, crop_h, pan_expr);
+    // Build video filter with optional time-based color grading
+    let vf = if let Some(ref filter_str) = video_filter_str {
+        println!("[Rust] Applying time-based video color filters in dynamic pan: {}", filter_str);
+        format!("crop={}:{}:{}:0,{}", crop_w, crop_h, pan_expr, filter_str)
+    } else {
+        format!("crop={}:{}:{}:0", crop_w, crop_h, pan_expr)
+    };
 
     // Detect hardware encoder
     let encoder = detect_hardware_encoder(app, quality).await;
@@ -1418,7 +1725,10 @@ pub async fn build_multi_region_clip(
     quality: &str,
     frame_rate: u32,
     audio_settings: Option<&AudioSettings>,
+    video_filter_segments: Option<&Vec<VideoFilterSegment>>,
 ) -> Result<(), String> {
+    // Build time-based filter string
+    let video_filter_str = build_video_filter_string(video_filter_segments);
     let shell = app.shell();
     let start_time: f64 = segment["start_time"].as_f64().ok_or("Invalid start_time")?;
     let end_time: f64 = segment["end_time"].as_f64().ok_or("Invalid end_time")?;
@@ -1508,7 +1818,21 @@ pub async fn build_multi_region_clip(
         current_label = next_label;
     }
 
+    // Add time-based color grading filter if present (applied after final composition)
+    if let Some(ref filter_str) = video_filter_str {
+        println!("[Rust] Applying time-based video color filters in multi-region: {}", filter_str);
+        // Apply filter to the final vout output
+        filter_parts.push(format!("[vout]{}[vout_graded]", filter_str));
+    }
+    
     let filter_complex = filter_parts.join(";");
+    
+    // Use graded output if color filter was applied
+    let map_label = if video_filter_str.is_some() {
+        "[vout_graded]"
+    } else {
+        "[vout]"
+    };
 
     // Detect hardware encoder
     let encoder = detect_hardware_encoder(app, quality).await;
@@ -1519,7 +1843,7 @@ pub async fn build_multi_region_clip(
         "-i".to_string(), video_path.to_string(),
         "-t".to_string(), format!("{:.3}", duration),
         "-filter_complex".to_string(), filter_complex,
-        "-map".to_string(), "[vout]".to_string(),
+        "-map".to_string(), map_label.to_string(),
         "-map".to_string(), "0:a?".to_string(), // Map audio if present
         "-c:v".to_string(), encoder.codec.clone(),
         "-r".to_string(), frame_rate.to_string(),
@@ -1593,6 +1917,7 @@ pub async fn build_clip_with_framing_strategy(
     intro_outro_cache: Arc<Mutex<IntroOutroCache>>,
     watermark_settings: Option<&WatermarkSettings>,
     audio_settings: Option<&AudioSettings>,
+    video_filter_segments: Option<&Vec<VideoFilterSegment>>,
 ) -> Result<(), String> {
     println!("[Rust] Building clip with framing strategy: {:?}, target: {}", strategy.mode, target_aspect_ratio);
 
@@ -1611,7 +1936,7 @@ pub async fn build_clip_with_framing_strategy(
             let build_path = temp_output.as_ref().unwrap_or(&output_path_buf);
             
             build_split_screen_clip(
-                app, video_path, build_path, segment, strategy, target_aspect_ratio, quality, frame_rate, audio_settings
+                app, video_path, build_path, segment, strategy, target_aspect_ratio, quality, frame_rate, audio_settings, video_filter_segments
             ).await?;
 
             // Add subtitles if needed
@@ -1633,7 +1958,7 @@ pub async fn build_clip_with_framing_strategy(
             let build_path = temp_output.as_ref().unwrap_or(&output_path_buf);
 
             build_dynamic_pan_clip(
-                app, video_path, build_path, segment, strategy, target_aspect_ratio, quality, frame_rate, audio_settings
+                app, video_path, build_path, segment, strategy, target_aspect_ratio, quality, frame_rate, audio_settings, video_filter_segments
             ).await?;
 
             // Add subtitles if needed
@@ -1664,6 +1989,7 @@ pub async fn build_clip_with_framing_strategy(
                 intro_outro_cache,
                 watermark_settings,
                 audio_settings,
+                video_filter_segments,
             ).await?;
         },
         FramingMode::MultiRegion => {
@@ -1683,7 +2009,7 @@ pub async fn build_clip_with_framing_strategy(
             let build_path = temp_output.as_ref().unwrap_or(&output_path_buf);
 
             build_multi_region_clip(
-                app, video_path, build_path, segment, multi_region_config, target_aspect_ratio, quality, frame_rate, audio_settings
+                app, video_path, build_path, segment, multi_region_config, target_aspect_ratio, quality, frame_rate, audio_settings, video_filter_segments
             ).await?;
 
             // Add subtitles if needed
@@ -1722,6 +2048,7 @@ pub async fn build_multi_segment_clip_with_framing_strategy(
     intro_outro_cache: Arc<Mutex<IntroOutroCache>>,
     watermark_settings: Option<&WatermarkSettings>,
     audio_settings: Option<&AudioSettings>,
+    video_filter_segments: Option<&Vec<VideoFilterSegment>>,
 ) -> Result<(), String> {
     use futures::future::join_all;
     
@@ -1746,6 +2073,7 @@ pub async fn build_multi_segment_clip_with_framing_strategy(
         let strategy = strategy.clone();
         let quality = quality.to_string();
         let audio_settings = audio_settings.cloned();
+        let video_filter_segments = video_filter_segments.cloned();
         let target_ar = target_aspect_ratio_owned.clone();
 
         async move {
@@ -1754,31 +2082,31 @@ pub async fn build_multi_segment_clip_with_framing_strategy(
             match strategy.mode {
                 FramingMode::SplitScreen => {
                     build_split_screen_clip(
-                        &app, &video_path, &temp_path, segment, &strategy, &target_ar, &quality, frame_rate, audio_settings.as_ref()
+                        &app, &video_path, &temp_path, segment, &strategy, &target_ar, &quality, frame_rate, audio_settings.as_ref(), video_filter_segments.as_ref()
                     ).await?;
                 },
                 FramingMode::DynamicPan => {
                     build_dynamic_pan_clip(
-                        &app, &video_path, &temp_path, segment, &strategy, &target_ar, &quality, frame_rate, audio_settings.as_ref()
+                        &app, &video_path, &temp_path, segment, &strategy, &target_ar, &quality, frame_rate, audio_settings.as_ref(), video_filter_segments.as_ref()
                     ).await?;
                 },
                 FramingMode::Static => {
                     // For static mode, use the target aspect ratio
                     let aspect_ratio = parse_aspect_ratio_string(&target_ar)
                         .unwrap_or(super::types::AspectRatio { width: 9.0, height: 16.0 });
-                    extract_segment_with_crop(&app, &video_path, &temp_path, segment, &aspect_ratio, &quality, frame_rate, audio_settings.as_ref()).await?;
+                    extract_segment_with_crop(&app, &video_path, &temp_path, segment, &aspect_ratio, &quality, frame_rate, audio_settings.as_ref(), video_filter_segments.as_ref()).await?;
                 },
                 FramingMode::MultiRegion => {
                     // For multi-region mode, use the manual config
                     if let Some(multi_region) = &strategy.multi_region {
                         build_multi_region_clip(
-                            &app, &video_path, &temp_path, segment, multi_region, &target_ar, &quality, frame_rate, audio_settings.as_ref()
+                            &app, &video_path, &temp_path, segment, multi_region, &target_ar, &quality, frame_rate, audio_settings.as_ref(), video_filter_segments.as_ref()
                         ).await?;
                     } else {
                         // Fallback to static if no multi-region config
                         let aspect_ratio = parse_aspect_ratio_string(&target_ar)
                             .unwrap_or(super::types::AspectRatio { width: 9.0, height: 16.0 });
-                        extract_segment_with_crop(&app, &video_path, &temp_path, segment, &aspect_ratio, &quality, frame_rate, audio_settings.as_ref()).await?;
+                        extract_segment_with_crop(&app, &video_path, &temp_path, segment, &aspect_ratio, &quality, frame_rate, audio_settings.as_ref(), video_filter_segments.as_ref()).await?;
                     }
                 },
             }
@@ -1905,7 +2233,10 @@ async fn extract_segment_with_crop(
     quality: &str,
     frame_rate: u32,
     audio_settings: Option<&AudioSettings>,
+    video_filter_segments: Option<&Vec<VideoFilterSegment>>,
 ) -> Result<(), String> {
+    // Build time-based filter string
+    let video_filter_str = build_video_filter_string(video_filter_segments);
     let shell = app.shell();
     let encoder = detect_hardware_encoder(app, quality).await;
     
@@ -1923,9 +2254,17 @@ async fn extract_segment_with_crop(
         video_info.width, video_info.height, aspect_ratio
     );
 
+    // Build crop filter with optional time-based color grading
     let crop_filter = format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y);
     let scale_filter = "scale=1080:1920:flags=lanczos";
-    let vf = format!("{},{}", crop_filter, scale_filter);
+    
+    // Add time-based color grading filters if present
+    let vf = if let Some(ref filter_str) = video_filter_str {
+        println!("[Rust] Applying time-based video color filters in extract_segment_with_crop: {}", filter_str);
+        format!("{},{},{}", crop_filter, filter_str, scale_filter)
+    } else {
+        format!("{},{}", crop_filter, scale_filter)
+    };
 
     let mut args = vec![
         "-ss".to_string(), start.to_string(),
@@ -2034,6 +2373,381 @@ async fn burn_subtitles_to_video(
         return Err(format!("FFmpeg subtitle burning failed: {}", stderr));
     }
 
+    Ok(())
+}
+
+/// Apply sticker overlays to a video file
+/// This handles emoji, image, and gif stickers with position, scale, rotation and timing
+pub async fn apply_stickers_to_video(
+    app: &tauri::AppHandle,
+    input_path: &std::path::Path,
+    stickers: &[StickerSettings],
+    aspect_ratio: &str,
+    quality: &str,
+) -> Result<(), String> {
+    if stickers.is_empty() {
+        return Ok(());
+    }
+
+    let shell = app.shell();
+    
+    // Get video info for calculating sticker positions
+    let video_info = get_video_info(app, input_path.to_str().ok_or("Invalid input path")?).await?;
+    let video_width = video_info.width as f64;
+    let video_height = video_info.height as f64;
+    
+    // Detect hardware encoder
+    let encoder = detect_hardware_encoder(app, quality).await;
+    
+    // Create temporary output path
+    let temp_output = input_path.with_extension("stickers.mp4");
+    
+    // Separate emoji and image stickers
+    let emoji_stickers: Vec<_> = stickers.iter()
+        .filter(|s| s.sticker_type == "emoji")
+        .collect();
+    let image_stickers: Vec<_> = stickers.iter()
+        .filter(|s| s.sticker_type == "image" || s.sticker_type == "gif")
+        .collect();
+    
+    // Build filter complex for stickers
+    let mut filter_parts: Vec<String> = Vec::new();
+    let mut input_count = 1; // Start from 1 (0 is the main video)
+    let mut overlay_inputs: Vec<String> = Vec::new();
+    
+    // Label the main video
+    filter_parts.push("[0:v]null[base]".to_string());
+    let mut current_label = "base".to_string();
+    
+    // Process emoji stickers using drawtext filter
+    for (idx, sticker) in emoji_stickers.iter().enumerate() {
+        // Get position for this aspect ratio (fallback to default)
+        let (pos_x_pct, pos_y_pct, scale, rotation) = if let Some(ref configs) = sticker.per_ratio_configs {
+            if let Some(config) = configs.get(aspect_ratio) {
+                (config.position.x, config.position.y, config.scale, config.rotation)
+            } else {
+                (sticker.position_x, sticker.position_y, sticker.scale, sticker.rotation)
+            }
+        } else {
+            (sticker.position_x, sticker.position_y, sticker.scale, sticker.rotation)
+        };
+        
+        // Calculate pixel position (center-anchored)
+        let pos_x = (pos_x_pct / 100.0 * video_width) as i32;
+        let pos_y = (pos_y_pct / 100.0 * video_height) as i32;
+        
+        // Base font size for emojis at 1080p (48px scaled)
+        let base_font_size = 48.0 * (video_height / 1080.0) * scale;
+        let font_size = base_font_size.round() as u32;
+        
+        // Escape the emoji text for FFmpeg
+        let emoji_escaped = sticker.sticker_path
+            .replace("'", "'\\''")
+            .replace(":", "\\:");
+        
+        let next_label = format!("e{}", idx);
+        
+        // Build drawtext filter with enable expression for timing
+        // Note: drawtext doesn't support rotation well, so we use it only for basic emoji display
+        let drawtext = format!(
+            "[{}]drawtext=text='{}':fontsize={}:x={}-(text_w/2):y={}-(text_h/2):enable='between(t,{:.3},{:.3})'[{}]",
+            current_label,
+            emoji_escaped,
+            font_size,
+            pos_x,
+            pos_y,
+            sticker.start_time,
+            sticker.end_time,
+            next_label
+        );
+        
+        filter_parts.push(drawtext);
+        current_label = next_label;
+    }
+    
+    // Process image stickers using overlay filter
+    for (idx, sticker) in image_stickers.iter().enumerate() {
+        // Get position for this aspect ratio (fallback to default)
+        let (pos_x_pct, pos_y_pct, scale, rotation) = if let Some(ref configs) = sticker.per_ratio_configs {
+            if let Some(config) = configs.get(aspect_ratio) {
+                (config.position.x, config.position.y, config.scale, config.rotation)
+            } else {
+                (sticker.position_x, sticker.position_y, sticker.scale, sticker.rotation)
+            }
+        } else {
+            (sticker.position_x, sticker.position_y, sticker.scale, sticker.rotation)
+        };
+        
+        // Calculate pixel position (center-anchored)
+        let pos_x = (pos_x_pct / 100.0 * video_width) as i32;
+        let pos_y = (pos_y_pct / 100.0 * video_height) as i32;
+        
+        // Calculate scaled size (base size is 10% of video height, then apply scale)
+        let base_size = (video_height * 0.1) as i32;
+        let scaled_size = (base_size as f64 * scale).round() as i32;
+        
+        let sticker_label = format!("st{}", idx);
+        let next_label = format!("o{}", idx);
+        
+        // Scale and rotate the sticker image
+        // Note: rotation in FFmpeg is in radians, frontend uses degrees
+        let rotation_rad = rotation * std::f64::consts::PI / 180.0;
+        
+        // Build sticker preprocessing filter
+        let sticker_filter = if rotation.abs() > 0.01 {
+            format!(
+                "[{}:v]scale={}:-1,rotate={}:c=none:ow=rotw({}):oh=roth({})[{}]",
+                input_count, scaled_size, rotation_rad, rotation_rad, rotation_rad, sticker_label
+            )
+        } else {
+            format!(
+                "[{}:v]scale={}:-1[{}]",
+                input_count, scaled_size, sticker_label
+            )
+        };
+        
+        filter_parts.push(sticker_filter);
+        
+        // Overlay with timing and center-anchor positioning
+        // x and y are adjusted to center the sticker on the position
+        let overlay = format!(
+            "[{}][{}]overlay=x={}-(overlay_w/2):y={}-(overlay_h/2):enable='between(t,{:.3},{:.3})'[{}]",
+            current_label,
+            sticker_label,
+            pos_x,
+            pos_y,
+            sticker.start_time,
+            sticker.end_time,
+            next_label
+        );
+        
+        filter_parts.push(overlay);
+        current_label = next_label;
+        
+        overlay_inputs.push(sticker.sticker_path.clone());
+        input_count += 1;
+    }
+    
+    // If we have no filters, return early
+    if filter_parts.len() <= 1 {
+        return Ok(());
+    }
+    
+    // Build FFmpeg args
+    let mut args = vec![
+        "-i".to_string(), input_path.to_string_lossy().to_string(),
+    ];
+    
+    // Add image sticker inputs
+    for sticker_path in &overlay_inputs {
+        args.push("-i".to_string());
+        args.push(sticker_path.clone());
+    }
+    
+    // Build filter complex string
+    let filter_complex = filter_parts.join(";");
+    
+    args.extend(vec![
+        "-filter_complex".to_string(), filter_complex,
+        "-map".to_string(), format!("[{}]", current_label),
+        "-map".to_string(), "0:a?".to_string(), // Map audio if present
+        "-c:v".to_string(), encoder.codec.clone(),
+    ]);
+    
+    // Add preset if applicable
+    if let Some(preset) = &encoder.preset {
+        args.push("-preset".to_string());
+        args.push(preset.clone());
+    }
+    
+    // Add quality parameter
+    args.push(encoder.quality_param.clone());
+    args.push(encoder.quality_value.clone());
+    
+    // Add audio settings
+    args.push("-c:a".to_string());
+    args.push("aac".to_string());
+    args.push("-y".to_string());
+    args.push(temp_output.to_string_lossy().to_string());
+    
+    println!("[Rust] Applying {} stickers to video", stickers.len());
+    
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to apply stickers: {}", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        println!("[Rust] FFmpeg sticker overlay stderr: {}", stderr);
+        return Err(format!("FFmpeg sticker overlay failed: {}", stderr));
+    }
+    
+    // Replace original with sticker-overlayed version
+    std::fs::remove_file(input_path)
+        .map_err(|e| format!("Failed to remove original file: {}", e))?;
+    std::fs::rename(&temp_output, input_path)
+        .map_err(|e| format!("Failed to rename sticker output: {}", e))?;
+    
+    println!("[Rust] Stickers applied successfully");
+    Ok(())
+}
+
+/// Apply clip watermark overlays to a video file
+/// This handles watermarks from the clip editor with position, scale, opacity and timing
+pub async fn apply_clip_watermarks_to_video(
+    app: &tauri::AppHandle,
+    input_path: &std::path::Path,
+    watermarks: &[super::types::ClipWatermarkSettings],
+    aspect_ratio: &str,
+    quality: &str,
+) -> Result<(), String> {
+    if watermarks.is_empty() {
+        return Ok(());
+    }
+
+    let shell = app.shell();
+    
+    // Get video info for calculating watermark positions
+    let video_info = get_video_info(app, input_path.to_str().ok_or("Invalid input path")?).await?;
+    let video_width = video_info.width as f64;
+    let video_height = video_info.height as f64;
+    
+    // Detect hardware encoder
+    let encoder = detect_hardware_encoder(app, quality).await;
+    
+    // Create temporary output path
+    let temp_output = input_path.with_extension("watermarks.mp4");
+    
+    // Build filter complex for watermarks
+    let mut filter_parts: Vec<String> = Vec::new();
+    let mut input_count = 1; // Start from 1 (0 is the main video)
+    let mut overlay_inputs: Vec<String> = Vec::new();
+    
+    // Label the main video
+    filter_parts.push("[0:v]null[base]".to_string());
+    let mut current_label = "base".to_string();
+    
+    // Process watermarks using overlay filter
+    for (idx, watermark) in watermarks.iter().enumerate() {
+        // Get position and settings for this aspect ratio (fallback to default)
+        let (pos_x_pct, pos_y_pct, scale, opacity) = if let Some(ref configs) = watermark.per_ratio_configs {
+            if let Some(config) = configs.get(aspect_ratio) {
+                (config.position.x, config.position.y, config.scale, config.opacity)
+            } else {
+                (watermark.position_x, watermark.position_y, watermark.scale, watermark.opacity)
+            }
+        } else {
+            (watermark.position_x, watermark.position_y, watermark.scale, watermark.opacity)
+        };
+        
+        // Calculate pixel position (center-anchored)
+        let pos_x = (pos_x_pct / 100.0 * video_width) as i32;
+        let pos_y = (pos_y_pct / 100.0 * video_height) as i32;
+        
+        // Calculate scaled width (scale is percentage of video width)
+        let scaled_width = (video_width * scale / 100.0).round() as i32;
+        
+        // Calculate alpha (opacity is 0-100)
+        let alpha = opacity / 100.0;
+        
+        let watermark_label = format!("wm{}", idx);
+        let next_label = format!("wo{}", idx);
+        
+        // Build watermark preprocessing filter with scale and alpha
+        // format=rgba ensures we have alpha channel, colorchannelmixer modifies the alpha
+        let watermark_filter = format!(
+            "[{}:v]scale={}:-1,format=rgba,colorchannelmixer=aa={}[{}]",
+            input_count, scaled_width, alpha, watermark_label
+        );
+        
+        filter_parts.push(watermark_filter);
+        
+        // Overlay with timing and center-anchor positioning
+        let overlay = format!(
+            "[{}][{}]overlay=x={}-(overlay_w/2):y={}-(overlay_h/2):enable='between(t,{:.3},{:.3})'[{}]",
+            current_label,
+            watermark_label,
+            pos_x,
+            pos_y,
+            watermark.start_time,
+            watermark.end_time,
+            next_label
+        );
+        
+        filter_parts.push(overlay);
+        current_label = next_label;
+        
+        overlay_inputs.push(watermark.watermark_path.clone());
+        input_count += 1;
+    }
+    
+    // If we have no filters, return early
+    if filter_parts.len() <= 1 {
+        return Ok(());
+    }
+    
+    // Build FFmpeg args
+    let mut args = vec![
+        "-i".to_string(), input_path.to_string_lossy().to_string(),
+    ];
+    
+    // Add watermark image inputs
+    for watermark_path in &overlay_inputs {
+        args.push("-i".to_string());
+        args.push(watermark_path.clone());
+    }
+    
+    // Build filter complex string
+    let filter_complex = filter_parts.join(";");
+    
+    args.extend(vec![
+        "-filter_complex".to_string(), filter_complex,
+        "-map".to_string(), format!("[{}]", current_label),
+        "-map".to_string(), "0:a?".to_string(), // Map audio if present
+        "-c:v".to_string(), encoder.codec.clone(),
+    ]);
+    
+    // Add preset if applicable
+    if let Some(preset) = &encoder.preset {
+        args.push("-preset".to_string());
+        args.push(preset.clone());
+    }
+    
+    // Add quality parameter
+    args.push(encoder.quality_param.clone());
+    args.push(encoder.quality_value.clone());
+    
+    // Add audio settings
+    args.push("-c:a".to_string());
+    args.push("aac".to_string());
+    args.push("-y".to_string());
+    args.push(temp_output.to_string_lossy().to_string());
+    
+    println!("[Rust] Applying {} clip watermarks to video", watermarks.len());
+    
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to apply clip watermarks: {}", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        println!("[Rust] FFmpeg clip watermark overlay stderr: {}", stderr);
+        return Err(format!("FFmpeg clip watermark overlay failed: {}", stderr));
+    }
+    
+    // Replace original with watermark-overlayed version
+    std::fs::remove_file(input_path)
+        .map_err(|e| format!("Failed to remove original file: {}", e))?;
+    std::fs::rename(&temp_output, input_path)
+        .map_err(|e| format!("Failed to rename watermark output: {}", e))?;
+    
+    println!("[Rust] Clip watermarks applied successfully");
     Ok(())
 }
 

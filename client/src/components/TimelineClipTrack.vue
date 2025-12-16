@@ -7,8 +7,10 @@
   >
     <!-- Track Label -->
     <div class="w-18 h-8 -ml-2 flex items-center justify-center sticky left-0 z-30 bg-[#101010] backdrop-blur-sm">
-      <div class="text-xs text-center">
-        <div class="font-medium text-foreground/80">Clip {{ index + 1 }}</div>
+      <div class="text-xs text-center px-1">
+        <div class="font-medium text-foreground/80 truncate max-w-16" :title="clip.title">
+          {{ getClipLabel(clip) }}
+        </div>
       </div>
     </div>
     <!-- Clip Track Content -->
@@ -237,6 +239,17 @@
 
   function onTimelineSegmentClick(clipId: string, segmentIndex: number, event?: MouseEvent) {
     emit('timelineSegmentClick', clipId, segmentIndex, event);
+  }
+
+  // Get a short label for the clip track
+  function getClipLabel(clip: Clip): string {
+    // Use clip title, truncated if too long
+    const title = clip.title || 'Clip';
+    // Return first 8 characters if longer
+    if (title.length > 8) {
+      return title.substring(0, 7) + '…';
+    }
+    return title;
   }
 </script>
 

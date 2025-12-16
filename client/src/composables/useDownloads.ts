@@ -200,6 +200,23 @@ export function useDownloads() {
                 }
               }
 
+              // Pre-generate waveform data before adding to database
+              // This ensures waveform is ready when opening projects
+              try {
+                console.log(
+                  '[Downloads] Pre-generating waveform data for:',
+                  event.payload.file_path
+                );
+                await invoke('extract_audio_waveform', {
+                  videoPath: event.payload.file_path,
+                  targetSamples: 2000,
+                });
+                console.log('[Downloads] Waveform pre-generation complete');
+              } catch (waveformError) {
+                // Non-blocking - waveform can be generated later if needed
+                console.warn('[Downloads] Failed to pre-generate waveform:', waveformError);
+              }
+
               // Video is valid, create database record
               const rawVideoId = await createRawVideo(event.payload.file_path, {
                 projectId: finalProjectId,

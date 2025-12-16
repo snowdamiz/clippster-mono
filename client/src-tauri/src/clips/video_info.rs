@@ -46,6 +46,7 @@ pub fn calculate_crop_params(source_width: u32, source_height: u32, target_aspec
 }
 
 // Helper function to calculate crop position (center crop)
+#[allow(dead_code)]
 pub fn calculate_crop_position(video_width: u32, video_height: u32, crop_w: u32, crop_h: u32) -> (u32, u32) {
     let crop_x = if video_width > crop_w {
         (video_width - crop_w) / 2

@@ -104,6 +104,7 @@ export interface TimelineEmits {
   ): void;
   (e: 'refreshClipsData'): void;
   (e: 'playFromTime', time: number): void;
+  (e: 'editClip', clipId: string): void;
 }
 
 export interface TimelineClipTrackProps {
@@ -241,8 +242,6 @@ export interface WatermarkSettings {
 }
 
 export interface MediaPanelProps {
-  transcriptCollapsed: boolean;
-  clipsCollapsed: boolean;
   isGenerating?: boolean;
   generationProgress?: number;
   generationStage?: string;
@@ -271,8 +270,22 @@ export interface IntroOutroRef {
 }
 
 export interface AudioSettings {
-  volume: number; // dB gain (-20 to +20)
+  volume: number; // dB gain (-20 to +20) - project level
   normalize: boolean; // enable audio normalization (export only)
+  // Clip-level audio mixer settings (optional, from clip editor)
+  originalAudioDb?: number; // dB gain for original audio track (-20 to +20)
+  musicTracks?: MusicTrackSettings[]; // Music tracks to mix in
+}
+
+// Music track settings for export
+export interface MusicTrackSettings {
+  filePath: string; // Path to audio file
+  gainDb: number; // dB gain (-20 to +20)
+  fadeIn: number; // Fade in duration in seconds
+  fadeOut: number; // Fade out duration in seconds
+  startTime: number; // When audio starts in clip timeline
+  endTime: number; // When audio ends in clip timeline
+  isMuted: boolean; // Whether track is muted
 }
 
 export interface MediaPanelEmits {
@@ -284,9 +297,8 @@ export interface MediaPanelEmits {
   (e: 'deleteClip', clipId: string): void;
   (e: 'playClip', clip: any): void; // Using any for ClipWithVersion for now
   (e: 'seekVideo', time: number): void;
-  (e: 'subtitleSettingsChanged', settings: SubtitleSettings): void;
   (e: 'watermarkSettingsChanged', settings: WatermarkSettings): void;
-  (e: 'audioSettingsChanged', settings: AudioSettings): void;
+  (e: 'editClip', clipId: string): void;
 }
 
 export interface TimelinePlayheadProps {
@@ -605,3 +617,526 @@ export const POI_REGION_COLORS = [
 ] as const;
 
 // Phoenix types are defined in phoenix.d.ts
+
+// ==========================================
+// Clip Editor Types
+// ==========================================
+
+// Main clip edit configuration
+export interface ClipEdit {
+  id: string;
+  clipId: string;
+  trim: TrimSettings;
+  audioTracks: AudioTrack[];
+  textOverlays: TextOverlay[];
+  stickers: Sticker[];
+  effects: Effect[];
+  filter: FilterSettings | null;
+  speed: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Trim/Cut settings
+export interface TrimSettings {
+  startTime: number;
+  endTime: number;
+  segments?: TrimSegment[]; // For multi-segment clips
+}
+
+export interface TrimSegment {
+  id: string;
+  startTime: number;
+  endTime: number;
+  isDeleted: boolean;
+}
+
+// Audio track for music overlay
+export interface AudioTrack {
+  id: string;
+  filePath: string;
+  name: string;
+  startTime: number; // When audio starts in clip timeline
+  endTime: number;
+  volume: number; // 0-1
+  fadeIn: number; // Duration in seconds
+  fadeOut: number; // Duration in seconds
+  trackOrder: number;
+  isMuted: boolean;
+  isSolo: boolean;
+}
+
+// Per-aspect-ratio configuration for text overlays
+export interface TextOverlayRatioConfig {
+  position: { x: number; y: number }; // 0-100 percentage
+  style: TextOverlayStyle;
+  // Future: could add scale, rotation, etc.
+}
+
+// Text overlay configuration
+export interface TextOverlay {
+  id: string;
+  text: string;
+  startTime: number;
+  endTime: number;
+  position: { x: number; y: number }; // 0-100 percentage - default/fallback position
+  style: TextOverlayStyle; // Default/fallback style
+  animation: TextAnimation;
+  // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
+  perRatioConfigs?: Record<string, TextOverlayRatioConfig>;
+  // Height of preview container when overlay was configured (for proper font scaling on export)
+  previewHeight?: number;
+}
+
+export interface TextOverlayStyle {
+  // Font settings
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: number;
+
+  // Colors
+  color: string; // Text color (kept for backward compatibility, same as textColor in subtitles)
+  backgroundColor: string | null;
+  backgroundEnabled: boolean;
+  highlightColor: string; // Used for animation effects like karaoke, box-highlight
+
+  // Dual border system (matches SubtitleSettings)
+  border1Width: number; // Inner border width
+  border1Color: string; // Inner border color
+  border2Width: number; // Outer border width
+  border2Color: string; // Outer border color
+
+  // Legacy stroke properties (for backward compatibility)
+  strokeEnabled: boolean;
+  strokeColor: string;
+  strokeWidth: number;
+
+  // Shadow
+  shadowEnabled: boolean;
+  shadowColor: string;
+  shadowBlur: number;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
+
+  // Layout & spacing
+  borderRadius: number;
+  padding: number;
+  letterSpacing: number;
+  lineHeight: number;
+  wordSpacing: number;
+  textAlign: 'left' | 'center' | 'right';
+  maxWidth: number; // Maximum width as percentage (0-100)
+  width?: number; // Explicit width as percentage (0-100), undefined means auto-size
+
+  // Position offsets (fine-tuning within the overlay)
+  textOffsetX: number;
+  textOffsetY: number;
+}
+
+export type TextAnimation =
+  | 'none'
+  | 'fade'
+  | 'slide-up'
+  | 'slide-down'
+  | 'slide-left'
+  | 'slide-right'
+  | 'typewriter'
+  | 'bounce'
+  | 'zoom'
+  | 'pop'
+  | 'karaoke'
+  | 'glow'
+  | 'box-highlight'
+  | 'wave';
+
+export type TextStylePreset = 'title' | 'lower-third' | 'caption' | 'quote' | 'custom';
+
+// Per-aspect-ratio configuration for stickers
+export interface StickerRatioConfig {
+  position: { x: number; y: number }; // 0-100 percentage
+  scale: number; // 0.1-3
+  rotation: number; // Degrees
+}
+
+// Sticker/emoji overlay
+export interface Sticker {
+  id: string;
+  stickerPath: string; // Path to sticker image or emoji code
+  stickerType: 'emoji' | 'image' | 'gif';
+  startTime: number;
+  endTime: number;
+  position: { x: number; y: number }; // 0-100 percentage - default/fallback position
+  scale: number; // 0.1-3 - default/fallback scale
+  rotation: number; // Degrees - default/fallback rotation
+  animation: StickerAnimation;
+  // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
+  perRatioConfigs?: Record<string, StickerRatioConfig>;
+}
+
+export type StickerAnimation = 'none' | 'bounce' | 'spin' | 'pulse' | 'shake' | 'float' | 'fade';
+
+// Per-aspect-ratio configuration for watermarks
+export interface WatermarkRatioConfig {
+  position: { x: number; y: number }; // 0-100 percentage
+  scale: number; // 0-100 (percentage of video width)
+  opacity: number; // 0-100
+}
+
+// Watermark overlay for clip editor (time-based)
+export interface ClipWatermark {
+  id: string;
+  watermarkId: string; // Reference to watermark image asset
+  filePath: string; // Actual file path for export (used by FFmpeg)
+  previewUrl: string; // Data URL or preview URL for UI display
+  startTime: number;
+  endTime: number;
+  position: { x: number; y: number }; // 0-100 percentage - default/fallback position
+  scale: number; // 0-100 (percentage of video width) - default/fallback scale
+  opacity: number; // 0-100 - default/fallback opacity
+  // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
+  perRatioConfigs?: Record<string, WatermarkRatioConfig>;
+}
+
+// Visual effects
+export interface Effect {
+  id: string;
+  type: EffectType;
+  startTime: number;
+  endTime: number;
+  settings: EffectSettings;
+}
+
+export type EffectType =
+  | 'filter'
+  | 'speed'
+  | 'zoom'
+  | 'pan'
+  | 'transition'
+  | 'blur'
+  | 'freeze'
+  | 'flash'
+  | 'shake';
+
+export interface EffectSettings {
+  // Filter settings
+  filterPreset?: string;
+
+  // Speed settings
+  speedMultiplier?: number;
+  isReverse?: boolean;
+
+  // Zoom/Pan settings (Ken Burns)
+  startZoom?: number;
+  endZoom?: number;
+  startPosition?: { x: number; y: number };
+  endPosition?: { x: number; y: number };
+
+  // Blur settings
+  blurAmount?: number;
+  blurType?: 'gaussian' | 'motion' | 'radial';
+
+  // Transition settings
+  transitionType?: 'fade' | 'dissolve' | 'slide' | 'wipe' | 'zoom';
+  transitionDuration?: number;
+
+  // Flash/Shake settings
+  intensity?: number;
+  frequency?: number;
+
+  // Generic settings for future effects
+  [key: string]: any;
+}
+
+// Filter presets
+export interface FilterSettings {
+  preset: FilterPreset | null;
+  brightness: number; // -100 to 100
+  contrast: number; // -100 to 100
+  saturation: number; // -100 to 100
+  hue: number; // -180 to 180
+  temperature: number; // -100 to 100 (warm/cool)
+  vignette: number; // 0 to 100
+  sharpen: number; // 0 to 100
+  fade: number; // 0 to 100
+}
+
+// Time-based filter segment for timeline
+export interface FilterSegment {
+  id: string;
+  startTime: number;
+  endTime: number;
+  settings: FilterSettings;
+}
+
+export type FilterPreset =
+  | 'none'
+  | 'warm'
+  | 'cool'
+  | 'vintage'
+  | 'bw'
+  | 'sepia'
+  | 'dramatic'
+  | 'vivid'
+  | 'muted'
+  | 'cinematic'
+  | 'retro'
+  | 'noir';
+
+// Clip Editor Dialog Props
+export interface ClipEditorDialogProps {
+  modelValue: boolean;
+  clipId: string;
+  videoSrc: string | null;
+  clipStartTime: number;
+  clipEndTime: number;
+  clipTitle: string;
+}
+
+// Editor tab types
+export type ClipEditorTab =
+  | 'sources'
+  | 'intro-outro'
+  | 'audio'
+  | 'filters'
+  | 'text'
+  | 'stickers'
+  | 'watermark'
+  | 'subtitles'
+  | 'aspect'
+  | 'transcript'
+  | 'export';
+
+// Timeline track types for clip editor
+export interface EditorTimelineTrack {
+  id: string;
+  type: 'video' | 'audio' | 'text' | 'sticker' | 'effect';
+  name: string;
+  items: EditorTimelineItem[];
+  isLocked: boolean;
+  isVisible: boolean;
+  isMuted?: boolean;
+}
+
+export interface EditorTimelineItem {
+  id: string;
+  trackId: string;
+  type: 'video-segment' | 'audio-clip' | 'text-overlay' | 'sticker' | 'effect';
+  startTime: number;
+  endTime: number;
+  data: AudioTrack | TextOverlay | Sticker | Effect | TrimSegment;
+}
+
+// Editor preview state
+export interface EditorPreviewState {
+  isPlaying: boolean;
+  currentTime: number;
+  duration: number;
+  activeOverlays: (TextOverlay | Sticker)[];
+  activeEffects: Effect[];
+}
+
+// ==========================================
+// Clip Subtitle Types (for Clip Editor)
+// ==========================================
+
+// Per-aspect-ratio configuration for subtitles (position, size, and width overrides)
+export interface ClipSubtitleRatioConfig {
+  position: { x: number; y: number }; // 0-100 percentage (center point)
+  fontSize: number; // Font size for this aspect ratio
+  maxWidth?: number; // Max width percentage for this aspect ratio (0-100)
+}
+
+// Clip-level subtitle settings stored in clip edit data
+export interface ClipSubtitleSettings {
+  enabled: boolean;
+  // Base style settings (applies to all aspect ratios unless overridden)
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: number;
+  textColor: string;
+  backgroundColor: string;
+  backgroundEnabled: boolean;
+  border1Width: number;
+  border1Color: string;
+  border2Width: number;
+  border2Color: string;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
+  shadowBlur: number;
+  shadowColor: string;
+  position: 'top' | 'middle' | 'bottom';
+  positionX: number; // 0-100 percentage (horizontal center point)
+  positionY: number; // 0-100 percentage (vertical center point)
+  maxWidth: number;
+  animationStyle:
+    | 'none'
+    | 'karaoke'
+    | 'zoom'
+    | 'pop'
+    | 'glow'
+    | 'box-highlight'
+    | 'typewriter'
+    | 'wave';
+  highlightColor: string;
+  lineHeight: number;
+  letterSpacing: number;
+  textAlign: 'left' | 'center' | 'right';
+  padding: number;
+  borderRadius: number;
+  wordSpacing: number;
+  // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
+  perRatioConfigs?: Record<string, ClipSubtitleRatioConfig>;
+  // Selected preset ID (for tracking which preset was applied)
+  selectedPresetId?: string | null;
+}
+
+// ==========================================
+// Video Editor Types (Standalone Editor)
+// ==========================================
+
+// Video editor project metadata
+export interface VideoEditorProject {
+  id: string;
+  name: string;
+  description: string | null;
+  thumbnail_path: string | null;
+  total_duration: number;
+  created_at: number;
+  updated_at: number;
+}
+
+// Video source in the editor timeline
+export interface VideoEditorSource {
+  id: string;
+  project_id: string;
+  source_type: 'clip' | 'raw_video' | 'imported';
+  source_id: string | null; // Reference to clips/raw_videos table (null for imported)
+  source_path: string; // File path for preview/export
+  source_name: string | null;
+  source_thumbnail: string | null;
+  source_duration: number | null; // Original duration of source
+  start_time: number; // Position in timeline
+  end_time: number; // End position in timeline
+  trim_start: number; // Trim from source start
+  trim_end: number | null; // Trim from source end (null = use full duration)
+  order_index: number;
+  created_at: number;
+}
+
+// Project with all sources loaded
+export interface VideoEditorProjectWithSources extends VideoEditorProject {
+  sources: VideoEditorSource[];
+}
+
+// Editor tab types for standalone video editor (includes 'sources' tab)
+export type VideoEditorTab =
+  | 'sources'
+  | 'intro-outro'
+  | 'audio'
+  | 'filters'
+  | 'text'
+  | 'stickers'
+  | 'watermark'
+  | 'subtitles'
+  | 'aspect'
+  | 'transcript'
+  | 'export';
+
+// Source item displayed in the Sources tab (unified format for clips and raw videos)
+export interface SourceItem {
+  id: string;
+  type: 'clip' | 'raw_video';
+  name: string;
+  path: string; // For clips: raw video path; For raw_video: file path
+  thumbnailPath: string | null;
+  duration: number | null; // Duration of the playable segment
+  projectId: string | null;
+  projectName: string | null;
+  // Clip-specific: segment times within the source video
+  clipStartTime?: number | null; // Start time in source video (for detected clips)
+  clipEndTime?: number | null; // End time in source video (for detected clips)
+  sourceDuration?: number | null; // Full duration of the source video
+}
+
+// Video Editor Dialog Props
+export interface VideoEditorDialogProps {
+  modelValue: boolean;
+  projectId: string | null;
+}
+
+// Video Editor Dialog Emits
+export interface VideoEditorDialogEmits {
+  (e: 'update:modelValue', value: boolean): void;
+  (e: 'save', projectId: string): void;
+  (e: 'delete', projectId: string): void;
+}
+
+// ==========================================
+// Video Editor Transition Types
+// ==========================================
+
+// Represents a crossfade transition between two overlapping video sources
+export interface VideoEditorTransition {
+  id: string;
+  sourceAId: string; // First source (ending)
+  sourceBId: string; // Second source (starting)
+  startTime: number; // When transition starts (sourceB.start_time)
+  endTime: number; // When transition ends (sourceA.end_time)
+  duration: number; // Length of the crossfade
+  type: 'crossfade'; // Future: could support 'wipe', 'dissolve', etc.
+}
+
+// Utility function to detect transitions between overlapping sources
+export function detectSourceTransitions(sources: VideoEditorSource[]): VideoEditorTransition[] {
+  const transitions: VideoEditorTransition[] = [];
+
+  // Sort sources by start time
+  const sortedSources = [...sources].sort((a, b) => a.start_time - b.start_time);
+
+  for (let i = 0; i < sortedSources.length - 1; i++) {
+    const sourceA = sortedSources[i];
+    const sourceB = sortedSources[i + 1];
+
+    // Check if sources overlap
+    if (sourceA.end_time > sourceB.start_time) {
+      const overlapStart = sourceB.start_time;
+      const overlapEnd = Math.min(sourceA.end_time, sourceB.end_time);
+      const duration = overlapEnd - overlapStart;
+
+      if (duration > 0) {
+        transitions.push({
+          id: `transition-${sourceA.id}-${sourceB.id}`,
+          sourceAId: sourceA.id,
+          sourceBId: sourceB.id,
+          startTime: overlapStart,
+          endTime: overlapEnd,
+          duration,
+          type: 'crossfade',
+        });
+      }
+    }
+  }
+
+  return transitions;
+}
+
+// Calculate crossfade opacity for preview playback
+// Returns { opacityA, opacityB } where values are 0-1
+export function calculateCrossfadeOpacity(
+  currentTime: number,
+  transition: VideoEditorTransition
+): { opacityA: number; opacityB: number } {
+  if (currentTime < transition.startTime) {
+    return { opacityA: 1, opacityB: 0 };
+  }
+  if (currentTime >= transition.endTime) {
+    return { opacityA: 0, opacityB: 1 };
+  }
+
+  // Linear crossfade
+  const progress = (currentTime - transition.startTime) / transition.duration;
+  return {
+    opacityA: 1 - progress,
+    opacityB: progress,
+  };
+}

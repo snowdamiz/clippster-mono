@@ -7,8 +7,8 @@ export const TIMELINE_HEIGHTS = {
   HEADER: 56, // Header section height (pt-3 + content + mb-3 + spacing)
   RULER: 32, // Timeline ruler height
   MAIN_TRACK: 86, // Main video track height
-  CLIP_TRACK: 48, // Height per clip track
-  BASE_BOTTOM_PADDING: 14, // Consistent bottom padding for all cases
+  CLIP_TRACK: 50, // Height per clip track
+  BASE_BOTTOM_PADDING: 16, // Consistent bottom padding for all cases
   MINIMUM_NO_CLIPS_HEIGHT: 200, // Minimum comfortable height when no clips
 } as const;
 

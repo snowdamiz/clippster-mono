@@ -1,26 +1,58 @@
 <template>
   <div class="px-4 flex flex-col flex-1 h-full" data-media-panel>
-    <!-- Tabs Header -->
-    <div
-      class="flex items-center border-b border-border/40 -mx-4 bg-gradient-to-r from-transparent via-white/[0.01] to-transparent"
-    >
-      <button
-        v-for="tab in tabs"
-        :key="tab.id"
-        @click="activeTab = tab.id"
-        :class="[
-          'relative px-4 py-3 text-xs font-medium transition-all duration-200 flex items-center gap-1.5 group',
-          activeTab === tab.id ? 'text-foreground' : 'text-muted-foreground hover:text-foreground/80',
-        ]"
-      >
-        {{ tab.label }}
-        <div v-if="activeTab === tab.id" class="absolute bottom-0 left-2 right-2 h-0.5 bg-white/70 rounded-full"></div>
-      </button>
+    <!-- Header -->
+    <div class="flex items-center justify-between gap-2 py-2.5 border-b border-white/10 -mx-4 px-4 bg-[#0d0d0d]">
+      <!-- Title -->
+      <div class="flex flex-col">
+        <h3 class="text-sm font-semibold text-foreground">Clips</h3>
+        <p class="text-[10px] text-muted-foreground">
+          {{ clips.length }} clip{{ clips.length !== 1 ? 's' : '' }} detected
+        </p>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex items-center gap-2">
+        <!-- Progress Bar (when detecting) -->
+        <div v-if="isGenerating && clips.length > 0" class="flex items-center gap-2 min-w-[140px]">
+          <div class="flex-1 space-y-0.5">
+            <div class="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+              <div
+                class="h-full bg-gradient-to-r from-violet-500 to-purple-500 transition-all duration-500 ease-out"
+                :class="{ 'animate-pulse': generationProgress === 0 }"
+                :style="{ width: `${Math.max(generationProgress, 5)}%` }"
+              ></div>
+            </div>
+            <div class="flex justify-between items-center text-[9px] text-muted-foreground/70">
+              <span class="flex items-center gap-1">
+                <LoaderIcon class="w-2 h-2 animate-spin text-violet-400" />
+                <span class="truncate max-w-[60px]">{{ generationStage || 'Processing' }}</span>
+              </span>
+              <span class="font-mono tabular-nums">{{ Math.round(generationProgress) }}%</span>
+            </div>
+          </div>
+          <button
+            @click="handleCancelDetection"
+            class="p-1 hover:bg-red-500/15 rounded transition-colors text-muted-foreground/60 hover:text-red-400"
+            title="Cancel detection"
+          >
+            <XIcon class="h-3 w-3" />
+          </button>
+        </div>
+        <!-- Detect Button (when not detecting and has clips) -->
+        <button
+          v-else-if="clips.length > 0"
+          @click="handleDetectClips"
+          class="group flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium text-muted-foreground/80 hover:text-foreground bg-white/[0.03] hover:bg-white/[0.06] rounded-md transition-all border border-white/[0.06] hover:border-white/[0.1]"
+          title="Run clip detection again"
+        >
+          <Sparkles class="h-3 w-3 group-hover:text-violet-400 transition-colors" />
+          Detect
+        </button>
+      </div>
     </div>
 
-    <!-- Clips Tab Content -->
+    <!-- Clips Content -->
     <ClipsTab
-      v-if="activeTab === 'clips'"
       ref="clipsTabRef"
       :project-id="projectId"
       :clips="clips"
@@ -35,11 +67,10 @@
       :video-duration="videoDuration || 0"
       :prompts="prompts"
       :transcript-data="transcriptData"
-      :subtitle-settings="subtitleSettings"
-      :max-words-for-aspect-ratio="maxWordsForAspectRatio"
       :watermark-settings="watermarkSettings"
       :creator-default-intro="creatorDefaultIntro"
       :creator-default-outro="creatorDefaultOutro"
+      :hide-header="true"
       @detect-clips="handleDetectClips"
       @cancel-detection="handleCancelDetection"
       @delete-clip="onDeleteClip"
@@ -48,74 +79,29 @@
       @seek-video="onSeekVideo"
       @scroll-to-timeline="onScrollToTimeline"
       @refresh-clips="refreshClips"
-    />
-
-    <!-- Audio Tab Content -->
-    <AudioTab v-if="activeTab === 'audio'" :project-id="projectId" @settings-changed="onAudioSettingsChanged" />
-
-    <!-- Transcript Tab Content - use v-show to keep mounted so it receives events -->
-    <TranscriptPanel
-      v-show="activeTab === 'transcript'"
-      ref="transcriptPanelRef"
-      :project-id="projectId"
-      :current-time="currentTime || undefined"
-      :duration="videoDuration || undefined"
-      @seekVideo="onSeekVideo"
-    />
-
-    <!-- Subtitles Tab Content -->
-    <SubtitlesTab
-      v-if="activeTab === 'subtitles'"
-      :project-id="projectId"
-      :settings="subtitleSettings"
-      :aspect-ratio="aspectRatio"
-      @settings-changed="onSubtitleSettingsChanged"
-    />
-
-    <!-- Watermark Tab Content -->
-    <WatermarkTab
-      v-if="activeTab === 'watermark'"
-      ref="watermarkTabRef"
-      :project-id="projectId"
-      :settings="watermarkSettings"
-      :aspect-ratio="aspectRatio"
-      @settings-changed="onWatermarkSettingsChanged"
+      @edit-clip="onEditClip"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, computed, watch, onUnmounted, markRaw } from 'vue';
+  import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import {
     getClipDetectionSessionsByProjectId,
     getAllPrompts,
     getClipsWithBuildStatus,
     updateClipBuildStatus,
-    createClipBuild,
     updateClipBuild,
     getClipBuilds,
     type ClipWithVersion,
     type ClipDetectionSession,
     type Prompt,
   } from '@/services/database';
-  import type { MediaPanelProps, MediaPanelEmits, SubtitleSettings, WatermarkSettings, AudioSettings } from '../types';
+  import type { MediaPanelProps, MediaPanelEmits, WatermarkSettings } from '../types';
   import ClipsTab from './ClipsTab.vue';
-  import AudioTab from './AudioTab.vue';
-  import TranscriptPanel from './TranscriptPanel.vue';
-  import SubtitlesTab from './SubtitlesTab.vue';
-  import WatermarkTab from './WatermarkTab.vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
-  import { Video, Volume2, FileText, Type, Image } from 'lucide-vue-next';
-
-  // Tab configuration
-  const tabs = [
-    { id: 'clips', label: 'Clips', icon: markRaw(Video) },
-    { id: 'audio', label: 'Audio', icon: markRaw(Volume2) },
-    { id: 'transcript', label: 'Transcript', icon: markRaw(FileText) },
-    { id: 'subtitles', label: 'Subtitles', icon: markRaw(Type) },
-    { id: 'watermark', label: 'Watermark', icon: markRaw(Image) },
-  ];
+  import { Sparkles, X as XIcon, Loader as LoaderIcon } from 'lucide-vue-next';
 
   const props = withDefaults(defineProps<MediaPanelProps>(), {
     isGenerating: false,
@@ -136,9 +122,6 @@
 
   const emit = defineEmits<MediaPanelEmits>();
 
-  // Tab state
-  const activeTab = ref('clips');
-
   // Prompts state for matching prompt names to session prompts
   const prompts = ref<Prompt[]>([]);
 
@@ -150,65 +133,11 @@
   // Ref for ClipsTab component
   const clipsTabRef = ref<InstanceType<typeof ClipsTab> | null>(null);
 
-  // Ref for TranscriptPanel component
-  const transcriptPanelRef = ref<InstanceType<typeof TranscriptPanel> | null>(null);
-
-  // Ref for WatermarkTab component
-  const watermarkTabRef = ref<InstanceType<typeof WatermarkTab> | null>(null);
-
   // Store unlisten functions for cleanup
   const unlistenFunctions = ref<UnlistenFn[]>([]);
 
   // Use transcript data composable
   const { transcriptData } = useTranscriptData(computed(() => props.projectId || null));
-
-  // Calculate max words based on aspect ratio (matches VideoPlayer.vue logic)
-  const maxWordsForAspectRatio = computed(() => {
-    const aspectRatioValue = props.aspectRatio.width / props.aspectRatio.height;
-
-    if (aspectRatioValue > 1.5) {
-      return 6; // wide formats (16:9, 21:9)
-    } else if (aspectRatioValue > 0.9) {
-      return 4; // squarish (1:1, 4:3)
-    } else {
-      return 3; // vertical (9:16, 4:5)
-    }
-  });
-
-  // Subtitle state
-  const getDefaultSubtitleSettings = (): SubtitleSettings => ({
-    enabled: false,
-    fontFamily: 'Montserrat',
-    fontSize: 32,
-    fontWeight: 700,
-    textColor: '#FFFFFF',
-    backgroundColor: '#000000',
-    backgroundEnabled: false,
-    border1Width: 2,
-    border1Color: '#00FF00',
-    border2Width: 4,
-    border2Color: '#000000',
-    shadowOffsetX: 2,
-    shadowOffsetY: 2,
-    shadowBlur: 4,
-    shadowColor: '#000000',
-    position: 'bottom',
-    positionPercentage: 97,
-    maxWidth: 90,
-    animationStyle: 'none',
-    highlightColor: '#FFFF00',
-    lineHeight: 1.2,
-    letterSpacing: 0,
-    textAlign: 'center',
-    textOffsetX: 0,
-    textOffsetY: 0,
-    padding: 16,
-    borderRadius: 8,
-    wordSpacing: 0.35,
-    selectedPresetId: null,
-  });
-
-  const subtitleSettings = ref<SubtitleSettings>(getDefaultSubtitleSettings());
 
   // Watermark state
   const getDefaultWatermarkSettings = (): WatermarkSettings => ({
@@ -225,27 +154,6 @@
   onMounted(async () => {
     // Load prompts for name matching
     await loadPrompts();
-
-    // Load subtitle settings from localStorage
-    try {
-      const saved = localStorage.getItem('subtitle-settings');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Restore all settings from localStorage but always default subtitles to off
-        // Preserve selectedPresetId if it exists in localStorage
-        const { selectedPresetId: savedPresetId } = parsed;
-        subtitleSettings.value = {
-          ...getDefaultSubtitleSettings(),
-          ...parsed,
-          enabled: false,
-          selectedPresetId: savedPresetId || null,
-        };
-        // Emit to sync with VideoPlayer
-        emit('subtitleSettingsChanged', subtitleSettings.value);
-      }
-    } catch (error) {
-      console.error('[MediaPanel] Failed to load subtitle settings:', error);
-    }
 
     // Load watermark settings from localStorage
     try {
@@ -321,19 +229,6 @@
     }
   });
 
-  // Watch for subtitle settings changes and save to localStorage
-  watch(
-    subtitleSettings,
-    (newSettings) => {
-      try {
-        localStorage.setItem('subtitle-settings', JSON.stringify(newSettings));
-      } catch (error) {
-        console.error('[MediaPanel] Failed to save subtitle settings:', error);
-      }
-    },
-    { deep: true }
-  );
-
   // Watch for watermark settings changes and save to localStorage
   watch(
     watermarkSettings,
@@ -408,18 +303,8 @@
     emit('scrollToTimeline');
   }
 
-  function onSubtitleSettingsChanged(settings: SubtitleSettings) {
-    subtitleSettings.value = settings;
-    emit('subtitleSettingsChanged', settings);
-  }
-
-  function onWatermarkSettingsChanged(settings: WatermarkSettings) {
-    watermarkSettings.value = settings;
-    emit('watermarkSettingsChanged', settings);
-  }
-
-  function onAudioSettingsChanged(settings: AudioSettings) {
-    emit('audioSettingsChanged', settings);
+  function onEditClip(clipId: string) {
+    emit('editClip', clipId);
   }
 
   // Event listener for fallback refresh mechanism
@@ -491,42 +376,45 @@
 
     const { clip_id, success, output_path, all_output_paths, thumbnail_path, duration, file_size, error } = payload;
 
+    // Only process clips that belong to this workspace
+    // This prevents duplicate processing when multiple components listen to the same event
+    const clip = clips.value.find((c) => c.id === clip_id);
+    if (!clip) {
+      console.log(`[MediaPanel] Clip ${clip_id} not in this workspace, skipping database update`);
+      return;
+    }
+
     console.log(`[MediaPanel] Received clip build complete event for: ${clip_id}`, {
       success,
       output_path,
       all_output_paths,
     });
 
-    // Immediately update local state for instant UI feedback
-    const clip = clips.value.find((c) => c.id === clip_id);
     const isCancelled = error && (error.includes('cancelled') || error.includes('Cancelled'));
 
-    if (clip) {
-      if (success) {
-        clip.build_status = 'completed';
-        clip.build_progress = 100;
-        clip.built_file_path = output_path;
-        // Don't overwrite thumbnail - it's set during detection
-        if (thumbnail_path) {
-          clip.built_thumbnail_path = thumbnail_path;
-        }
-        clip.built_duration = duration;
-        clip.built_file_size = file_size;
-        console.log(`[MediaPanel] Local state updated immediately for clip: ${clip_id}`);
-      } else if (isCancelled) {
-        // Reset to pending for cancelled builds
-        clip.build_status = 'pending';
-        clip.build_progress = 0;
-        clip.build_error = null;
-        clip.built_file_path = null;
-        clip.built_thumbnail_path = null;
-        console.log(`[MediaPanel] Local state reset for cancelled clip: ${clip_id}`);
-      } else {
-        clip.build_status = 'failed';
-        clip.build_error = error || 'Unknown build error';
+    // Update local state immediately for instant UI feedback
+    if (success) {
+      clip.build_status = 'completed';
+      clip.build_progress = 100;
+      clip.built_file_path = output_path;
+      // Don't overwrite thumbnail - it's set during detection
+      if (thumbnail_path) {
+        clip.built_thumbnail_path = thumbnail_path;
       }
+      clip.built_duration = duration;
+      clip.built_file_size = file_size;
+      console.log(`[MediaPanel] Local state updated immediately for clip: ${clip_id}`);
+    } else if (isCancelled) {
+      // Reset to pending for cancelled builds
+      clip.build_status = 'pending';
+      clip.build_progress = 0;
+      clip.build_error = null;
+      clip.built_file_path = null;
+      clip.built_thumbnail_path = null;
+      console.log(`[MediaPanel] Local state reset for cancelled clip: ${clip_id}`);
     } else {
-      console.warn(`[MediaPanel] Clip ${clip_id} not found in local state, will refresh from database`);
+      clip.build_status = 'failed';
+      clip.build_error = error || 'Unknown build error';
     }
 
     if (success) {
@@ -611,17 +499,9 @@
                 `[MediaPanel] Updated build record ${buildingRecord.id} for clip: ${clip_id} with ${all_output_paths?.length || 1} output paths, thumbnail: ${finalThumbnailPath ? 'yes' : 'no'}`
               );
             } else {
-              // Fallback: create a new build record if none found (for backwards compatibility)
-              const buildId = await createClipBuild(clip_id, {});
-              await updateClipBuild(buildId, {
-                status: 'completed',
-                filePath: output_path,
-                outputPaths: all_output_paths || (output_path ? [output_path] : []),
-                thumbnailPath: finalThumbnailPath,
-                fileSize: file_size,
-                duration: duration,
-              });
-              console.log(`[MediaPanel] Created fallback build record ${buildId} for clip: ${clip_id}`);
+              // No 'building' record found - this can happen if another handler already updated it
+              // or if the build was started without creating a record (legacy). Just log a warning.
+              console.warn(`[MediaPanel] No 'building' record found for clip ${clip_id}, skipping build record update`);
             }
           } catch (buildError) {
             // Don't fail the whole operation if build record update fails
@@ -637,8 +517,6 @@
         });
     } else {
       // Check if this was a cancellation vs a real failure
-      const isCancelled = error && (error.includes('cancelled') || error.includes('Cancelled'));
-
       if (isCancelled) {
         console.log(`[MediaPanel] Clip build CANCELLED: ${clip_id}`);
 
@@ -687,7 +565,6 @@
       watermarkSettings.value = settings;
       emit('watermarkSettingsChanged', settings);
     },
-    getWatermarkTabRef: () => watermarkTabRef.value,
   });
 </script>
 

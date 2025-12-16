@@ -61,11 +61,20 @@ pub async fn start_video_server_impl() {
 
             // Determine content type
             let content_type = match file_path.extension().and_then(|e| e.to_str()) {
+                // Video formats
                 Some("mp4") => "video/mp4",
                 Some("webm") => "video/webm",
                 Some("mov") => "video/quicktime",
                 Some("avi") => "video/x-msvideo",
                 Some("mkv") => "video/x-matroska",
+                // Audio formats
+                Some("mp3") => "audio/mpeg",
+                Some("wav") => "audio/wav",
+                Some("flac") => "audio/flac",
+                Some("aac") => "audio/aac",
+                Some("m4a") => "audio/mp4",
+                Some("ogg") => "audio/ogg",
+                Some("wma") => "audio/x-ms-wma",
                 _ => "application/octet-stream",
             };
 

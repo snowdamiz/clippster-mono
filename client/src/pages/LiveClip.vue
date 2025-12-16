@@ -240,18 +240,15 @@
           </div>
 
           <!-- Empty State -->
-          <div
+          <EmptyState
             v-if="streamers.length === 0"
-            class="-mt-4 flex flex-col items-center justify-center py-20 text-center border-2 border-dashed border-border/30 rounded-lg"
+            title="No active monitors"
+            description="Add a stream link above to start detecting clips in real-time."
           >
-            <div class="w-24 h-24 bg-muted/20 rounded-full flex items-center justify-center mb-6">
-              <Radio class="w-12 h-12 text-muted-foreground" />
-            </div>
-            <h3 class="text-xl font-medium">No active monitors</h3>
-            <p class="text-base text-muted-foreground max-w-sm mx-auto mt-2">
-              Add a stream link above to start detecting clips in real-time.
-            </p>
-          </div>
+            <template #icon>
+              <Radio class="h-16 w-16 text-muted-foreground" />
+            </template>
+          </EmptyState>
         </div>
 
         <!-- Activity Log Column -->
@@ -374,6 +371,7 @@
     Clock,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
+  import EmptyState from '@/components/EmptyState.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';

@@ -294,6 +294,72 @@ pub fn run() {
                             sql: include_str!("../migrations/048_add_segment_duration_to_monitored_streamers.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 49,
+                            description: "add_highlight_color_to_subtitle_presets",
+                            sql: include_str!("../migrations/049_add_highlight_color_to_subtitle_presets.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 50,
+                            description: "add_custom_fonts",
+                            sql: include_str!("../migrations/050_add_custom_fonts.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 51,
+                            description: "add_clip_edits",
+                            sql: include_str!("../migrations/051_add_clip_edits.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 52,
+                            description: "add_audio_assets",
+                            sql: include_str!("../migrations/052_add_audio_assets.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 53,
+                            description: "add_per_ratio_configs_to_text_overlays",
+                            sql: include_str!("../migrations/053_add_per_ratio_configs_to_text_overlays.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 54,
+                            description: "add_preview_height_to_text_overlays",
+                            sql: include_str!("../migrations/054_add_preview_height_to_text_overlays.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 55,
+                            description: "add_per_ratio_configs_to_stickers",
+                            sql: include_str!("../migrations/055_add_per_ratio_configs_to_stickers.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 56,
+                            description: "add_image_assets",
+                            sql: include_str!("../migrations/056_add_image_assets.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 57,
+                            description: "add_clip_watermarks",
+                            sql: include_str!("../migrations/057_add_clip_watermarks.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 58,
+                            description: "add_video_editor_projects",
+                            sql: include_str!("../migrations/058_add_video_editor_projects.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 59,
+                            description: "add_video_editor_edits",
+                            sql: include_str!("../migrations/059_add_video_editor_edits.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -424,6 +490,10 @@ pub fn run() {
             storage::merge_video_segments,
             storage::copy_font_to_storage,
             storage::delete_font_file,
+            storage::copy_audio_to_storage,
+            storage::delete_audio_file,
+            storage::copy_image_to_storage,
+            storage::delete_image_file,
 
             // Assets commands
             assets::upload_asset_async,

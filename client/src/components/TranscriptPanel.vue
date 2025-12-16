@@ -1,7 +1,7 @@
 <template>
   <div class="flex flex-col h-full overflow-hidden">
-    <!-- Header -->
-    <div class="flex items-center justify-between py-3 px-1 border-b border-border/30">
+    <!-- Header (can be hidden when integrated into parent tabs) -->
+    <div v-if="!hideHeader" class="flex items-center justify-between py-3 border-b border-border/30">
       <div class="flex items-center gap-3">
         <div
           class="w-8 h-8 bg-gradient-to-br from-green-500/15 to-emerald-500/15 rounded-lg flex items-center justify-center border border-green-500/20"
@@ -53,15 +53,15 @@
 
     <!-- Transcript with Toolbar -->
     <template v-else>
-      <!-- Search Bar -->
-      <div class="py-2 px-1">
+      <!-- Search Bar (only shown when header is visible) -->
+      <div v-if="!hideHeader" class="py-2">
         <div class="relative">
           <div class="absolute left-2.5 top-1/2 transform -translate-y-1/2 pointer-events-none">
             <Search class="h-3.5 w-3.5 text-muted-foreground/50" />
           </div>
           <input
             ref="searchInputRef"
-            v-model="searchQuery"
+            v-model="internalSearchQuery"
             type="text"
             placeholder="Search transcript..."
             class="w-full pl-8 pr-3 py-1.5 text-xs bg-muted/30 border border-border/40 rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all duration-200 placeholder:text-muted-foreground/50"
@@ -70,7 +70,7 @@
       </div>
 
       <!-- Transcript content -->
-      <div ref="transcriptContent" class="flex-1 overflow-y-auto px-1 custom-scrollbar relative">
+      <div ref="transcriptContent" class="flex-1 overflow-y-auto custom-scrollbar relative mt-3">
         <div class="text-sm text-foreground leading-relaxed break-words pb-4 min-h-full select-text transcript-content">
           <span
             v-for="(word, index) in transcriptData.words"
@@ -110,11 +110,15 @@
     projectId?: string | null;
     currentTime?: number;
     duration?: number;
+    hideHeader?: boolean;
+    searchQuery?: string;
   }
 
   const props = withDefaults(defineProps<Props>(), {
     currentTime: 0,
     duration: 0,
+    hideHeader: false,
+    searchQuery: '',
   });
 
   interface Emits {
@@ -134,11 +138,16 @@
   const editingWordIndex = ref(-1);
   const editingWordText = ref('');
 
-  // Search state
-  const searchQuery = ref('');
+  // Search state - internal query for when header is shown, prop for when hidden
+  const internalSearchQuery = ref('');
   const debouncedSearchQuery = ref('');
   const searchInputRef = ref<HTMLInputElement>();
   let searchDebounceTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  // Computed search query - uses prop when header is hidden, internal state otherwise
+  const effectiveSearchQuery = computed(() => {
+    return props.hideHeader ? props.searchQuery : internalSearchQuery.value;
+  });
 
   // Flag to prevent autoscroll when user manually clicks words
   const preventAutoscroll = ref(false);
@@ -146,8 +155,8 @@
   // Use transcript data composable
   const { transcriptData, loadTranscriptData } = useTranscriptData(computed(() => props.projectId || null));
 
-  // Watch searchQuery and debounce it
-  watch(searchQuery, (newValue) => {
+  // Watch effective search query and debounce it
+  watch(effectiveSearchQuery, (newValue) => {
     if (searchDebounceTimeout) {
       clearTimeout(searchDebounceTimeout);
     }

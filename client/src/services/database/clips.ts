@@ -40,6 +40,12 @@ export async function createClip(
   return id;
 }
 
+export async function getClip(id: string): Promise<Clip | null> {
+  const db = await getDatabase();
+  const result = await db.select<Clip[]>('SELECT * FROM clips WHERE id = ?', [id]);
+  return result[0] || null;
+}
+
 export async function getAllClips(): Promise<Clip[]> {
   const db = await getDatabase();
   return await db.select<Clip[]>('SELECT * FROM clips ORDER BY created_at DESC');

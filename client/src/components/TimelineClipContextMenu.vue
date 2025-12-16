@@ -22,6 +22,16 @@
             <Play :size="16" class="flex-shrink-0 opacity-70" />
             <span class="flex-1 text-left">Play Clip</span>
           </button>
+
+          <div class="h-px bg-white/5 mx-2 my-1"></div>
+
+          <button
+            class="context-menu-item w-full px-3 py-2 flex items-center gap-3 text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors duration-150"
+            @click="handleEditClip"
+          >
+            <Edit :size="16" class="flex-shrink-0 opacity-70" />
+            <span class="flex-1 text-left">Edit Clip</span>
+          </button>
         </div>
       </div>
     </Transition>
@@ -33,7 +43,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-  import { Play } from 'lucide-vue-next';
+  import { Play, Edit } from 'lucide-vue-next';
   import type { ClipContextMenuInfo } from '../types';
 
   const props = defineProps<{
@@ -44,6 +54,7 @@
   const emit = defineEmits<{
     (e: 'close'): void;
     (e: 'playClip', clipId: string): void;
+    (e: 'editClip', clipId: string): void;
   }>();
 
   const menuRef = ref<HTMLElement | null>(null);
@@ -84,6 +95,13 @@
   function handlePlayClip() {
     if (!props.info) return;
     emit('playClip', props.info.clipId);
+    emit('close');
+  }
+
+  // Handle edit clip action
+  function handleEditClip() {
+    if (!props.info) return;
+    emit('editClip', props.info.clipId);
     emit('close');
   }
 
