@@ -1,9 +1,14 @@
 <template>
-  <div class="flex-1 flex flex-col min-h-0 p-4">
+  <div
+    ref="fullscreenContainerRef"
+    class="flex-1 flex flex-col min-h-0 relative"
+    :class="isFullscreen ? 'p-0 bg-black' : 'p-4'"
+  >
     <!-- Video Container -->
     <div
       ref="videoContainerRef"
-      class="flex-1 flex items-center justify-center bg-black rounded-lg overflow-hidden relative"
+      class="flex-1 flex items-center justify-center bg-black overflow-hidden relative"
+      :class="isFullscreen ? 'rounded-none' : 'rounded-lg'"
     >
       <!-- Single region mode: Main video with CSS transforms applied directly (no extra decoding) -->
       <div
@@ -475,7 +480,10 @@
     </div>
 
     <!-- Controls Bar -->
-    <div class="mt-2 bg-black/40 backdrop-blur-sm rounded-lg border border-white/[0.04]">
+    <div
+      class="bg-black/40 backdrop-blur-sm rounded-lg border border-white/[0.04]"
+      :class="isFullscreen ? 'absolute bottom-4 left-4 right-4 mt-0 z-50' : 'mt-2'"
+    >
       <div class="flex items-center justify-between px-1.5 py-1.5">
         <!-- Left Controls -->
         <div class="flex items-center gap-1">
@@ -536,6 +544,15 @@
               />
             </div>
           </div>
+          <!-- Fullscreen Button -->
+          <button
+            @click="toggleFullscreen"
+            class="p-1.5 rounded-md hover:bg-white/[0.08] transition-all duration-200 group ml-1"
+            :title="isFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen (F)'"
+          >
+            <Minimize2 v-if="isFullscreen" class="h-4 w-4 text-white/60 group-hover:text-white/90 transition-colors" />
+            <Maximize2 v-else class="h-4 w-4 text-white/60 group-hover:text-white/90 transition-colors" />
+          </button>
         </div>
       </div>
     </div>
@@ -544,7 +561,7 @@
 
 <script setup lang="ts">
   import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
-  import { Play, Pause, Volume2, VolumeX, RotateCw, SkipBack } from 'lucide-vue-next';
+  import { Play, Pause, Volume2, VolumeX, RotateCw, SkipBack, Maximize2, Minimize2 } from 'lucide-vue-next';
   import type {
     TextOverlay,
     Sticker,
@@ -684,10 +701,12 @@
   const preloadVideoRef = ref<HTMLVideoElement | null>(null); // Second video for seamless transitions
   const videoContainerRef = ref<HTMLElement | null>(null);
   const overlayContainerRef = ref<HTMLElement | null>(null);
+  const fullscreenContainerRef = ref<HTMLElement | null>(null);
   const regionVideoRefs = ref<(HTMLVideoElement | null)[]>([]);
   const duration = ref(0);
   const volume = ref(1);
   const isMuted = ref(false);
+  const isFullscreen = ref(false);
   const isDraggingProgress = ref(false);
   const containerSize = ref({ width: 0, height: 0 });
 
@@ -2821,6 +2840,37 @@
     }
   }
 
+  // Fullscreen functionality
+  function toggleFullscreen() {
+    if (!fullscreenContainerRef.value) return;
+
+    if (!document.fullscreenElement) {
+      fullscreenContainerRef.value.requestFullscreen().catch((err) => {
+        console.warn('Could not enter fullscreen:', err);
+      });
+    } else {
+      document.exitFullscreen().catch((err) => {
+        console.warn('Could not exit fullscreen:', err);
+      });
+    }
+  }
+
+  function onFullscreenChange() {
+    isFullscreen.value = !!document.fullscreenElement;
+    // Update container size when fullscreen changes
+    updateContainerSize();
+  }
+
+  function onKeyDown(e: KeyboardEvent) {
+    // Only handle if not typing in an input
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+    if (e.key === 'f' || e.key === 'F') {
+      e.preventDefault();
+      toggleFullscreen();
+    }
+  }
+
   // Get the position and style for a text overlay, respecting per-ratio configs
   function getOverlayConfigForRatio(overlay: TextOverlay): {
     position: { x: number; y: number };
@@ -3372,6 +3422,8 @@
     document.removeEventListener('mouseup', onSubtitleDragEnd);
     document.removeEventListener('mousemove', onSubtitleResizeMove);
     document.removeEventListener('mouseup', onSubtitleResizeEnd);
+    document.removeEventListener('fullscreenchange', onFullscreenChange);
+    document.removeEventListener('keydown', onKeyDown);
     stopSyncLoop();
     stopCrossfadeAnimation(true); // Clean up crossfade animation and reset opacity
     if (resizeObserver) {
@@ -3414,6 +3466,10 @@
     if (showFramedPreview.value) {
       startSyncLoop();
     }
+
+    // Add fullscreen and keyboard event listeners
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('keydown', onKeyDown);
   });
 
   // Get the current overlay container height for font scaling calculations
