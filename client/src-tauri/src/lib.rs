@@ -360,6 +360,12 @@ pub fn run() {
                             sql: include_str!("../migrations/059_add_video_editor_edits.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 60,
+                            description: "add_creator_watermark_position",
+                            sql: include_str!("../migrations/060_add_creator_watermark_position.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

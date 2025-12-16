@@ -318,10 +318,15 @@
             :video-sources="videoSources"
             @seek="seekTo"
             @split-trim-segment="splitTrimSegment"
+            @delete-trim-segment="deleteTrimSegment"
             @update-audio-track="updateAudioTrackLocal"
+            @delete-audio-track="deleteAudioTrackLocal"
             @update-text-overlay="updateTextOverlayLocal"
+            @delete-text-overlay="deleteTextOverlayLocal"
             @update-sticker="updateStickerLocal"
+            @delete-sticker="deleteStickerLocal"
             @update-watermark="updateWatermarkLocal"
+            @delete-watermark="deleteWatermarkLocal"
             @update-effect="updateEffectLocal"
             @update-filter-segment="updateFilterSegment"
             @update-source="updateVideoSource"
@@ -407,6 +412,7 @@
     getClipWithBuildStatus,
     getClip,
     splitClipSegment,
+    deleteClipSegment,
     getClipSegmentsByClipId,
     // Video Editor imports
     getVideoEditorProject,
@@ -2939,6 +2945,56 @@
       console.log(
         `[ClipEditorDialog] Split segment at ${cutTime.toFixed(2)}s - created ${leftSegment.id} and ${rightSegment.id}`
       );
+    }
+  }
+
+  async function deleteTrimSegment(segmentId: string) {
+    // Find segment by ID (the ID is like "segment-0", "segment-1", etc.)
+    const segmentIndex = parseInt(segmentId.replace('segment-', ''));
+    
+    if (isNaN(segmentIndex) || segmentIndex < 0 || segmentIndex >= trimSegments.value.length) {
+      console.warn('[ClipEditorDialog] Invalid segment index for deletion');
+      return;
+    }
+
+    // Prevent deleting the last segment
+    if (trimSegments.value.length <= 1) {
+      console.warn('[ClipEditorDialog] Cannot delete the last remaining segment');
+      return;
+    }
+
+    // In clip mode, persist to database
+    if (!editorMode.value && props.clipId) {
+      try {
+        console.log(`[ClipEditorDialog] Deleting segment ${segmentIndex}`);
+
+        // Delete the segment from database
+        await deleteClipSegment(props.clipId, segmentIndex);
+
+        // Reload segments from the database to stay in sync
+        const dbSegments = await getClipSegmentsByClipId(props.clipId);
+        if (dbSegments && dbSegments.length > 0) {
+          // Convert absolute times back to relative times
+          trimSegments.value = dbSegments.map((seg, index) => ({
+            id: `segment-${index}`,
+            startTime: seg.start_time - props.clipStartTime,
+            endTime: seg.end_time - props.clipStartTime,
+            isDeleted: false,
+          }));
+        }
+
+        console.log(`[ClipEditorDialog] Delete complete, now have ${trimSegments.value.length} segments`);
+
+        // Emit save event to notify parent that clip was modified
+        emit('save', props.clipId);
+      } catch (error) {
+        console.error('[ClipEditorDialog] Failed to delete segment:', error);
+        alert(`Failed to delete segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    } else {
+      // Editor mode or no clip ID - just update local state
+      trimSegments.value.splice(segmentIndex, 1);
+      console.log(`[ClipEditorDialog] Deleted segment ${segmentIndex}`);
     }
   }
 

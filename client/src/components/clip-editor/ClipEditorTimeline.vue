@@ -9,14 +9,9 @@
           <div class="flex items-center gap-0.5 bg-black/40 backdrop-blur-sm rounded-lg p-1 border border-white/[0.04]">
             <!-- Cut Button -->
             <button
-              @click="toggleCutTool"
-              :class="[
-                'p-1 rounded-md transition-all duration-150',
-                isCutToolActive
-                  ? 'text-orange-400 bg-orange-500/20 shadow-sm shadow-orange-500/10'
-                  : 'text-white/50 hover:text-orange-400 hover:bg-orange-500/10',
-              ]"
-              :title="isCutToolActive ? 'Cut tool active (X to deactivate)' : 'Split segment (X key)'"
+              @click="performCutAtPlayhead"
+              class="p-1 rounded-md transition-all duration-150 text-white/50 hover:text-orange-400 hover:bg-orange-500/10"
+              title="Split at playhead (X key)"
             >
               <Scissors :size="12" />
             </button>
@@ -877,10 +872,15 @@
     (e: 'seek', time: number): void;
     (e: 'updateTrimSegment', segmentId: string, startTime: number, endTime: number): void;
     (e: 'splitTrimSegment', segmentId: string, cutTime: number): void;
+    (e: 'deleteTrimSegment', segmentId: string): void;
     (e: 'updateAudioTrack', trackId: string, updates: Partial<AudioTrack>): void;
+    (e: 'deleteAudioTrack', trackId: string): void;
     (e: 'updateTextOverlay', overlayId: string, updates: Partial<TextOverlay>): void;
+    (e: 'deleteTextOverlay', overlayId: string): void;
     (e: 'updateSticker', stickerId: string, updates: Partial<Sticker>): void;
+    (e: 'deleteSticker', stickerId: string): void;
     (e: 'updateWatermark', watermarkId: string, updates: Partial<ClipWatermark>): void;
+    (e: 'deleteWatermark', watermarkId: string): void;
     (e: 'updateEffect', effectId: string, updates: Partial<Effect>): void;
     (e: 'updateFilterSegment', segmentId: string, updates: Partial<FilterSegment>): void;
     // Video editor mode events
@@ -2016,20 +2016,73 @@
     emit('seek', Math.max(segment.startTime, Math.min(segment.endTime, time)));
   }
 
-  // Cut tool functions
-  function toggleCutTool() {
-    isCutToolActive.value = !isCutToolActive.value;
+  // Delete selected item
+  function deleteSelectedItem() {
+    if (!selectedItemKey.value) return;
 
-    // Reset cut hover state when deactivating
-    if (!isCutToolActive.value) {
-      cutHoverInfo.value = null;
+    const [type, id] = selectedItemKey.value.split('_');
+    
+    if (type === 'trim') {
+      // For trim segments, we need at least one segment remaining
+      if (sortedTrimSegments.value.length <= 1) {
+        console.warn('Cannot delete the last remaining segment');
+        return;
+      }
+      emit('deleteTrimSegment', id);
+    } else if (type === 'audio') {
+      emit('deleteAudioTrack', id);
+    } else if (type === 'text') {
+      emit('deleteTextOverlay', id);
+    } else if (type === 'sticker') {
+      emit('deleteSticker', id);
+    } else if (type === 'watermark') {
+      emit('deleteWatermark', id);
     }
 
-    // Clear selection and hover states when activating
-    if (isCutToolActive.value) {
-      selectedItemKey.value = null;
-      showHoverLine.value = false;
+    // Clear selection after deletion
+    selectedItemKey.value = null;
+  }
+
+  // Cut at playhead (CapCut style)
+  function performCutAtPlayhead() {
+    const currentTime = props.currentTime;
+
+    // In editor mode, find which source contains the current time
+    if (props.editorMode && props.videoSources) {
+      for (const source of props.videoSources) {
+        if (currentTime >= source.start_time && currentTime < source.end_time) {
+          // Found the source containing the playhead
+          const cutTime = currentTime - source.start_time;
+          emit('splitSource', source.id, currentTime, cutTime);
+          return;
+        }
+      }
+      console.warn('[Timeline] No source found at current playhead position');
+      return;
     }
+
+    // In clip mode, find which segment contains the current time
+    const segment = sortedTrimSegments.value.find(
+      (s) => currentTime >= s.startTime && currentTime < s.endTime
+    );
+
+    if (!segment) {
+      console.warn('[Timeline] No segment found at current playhead position');
+      return;
+    }
+
+    // Don't allow cutting too close to segment edges (minimum 0.1s from each edge)
+    const minDistanceFromEdge = 0.1;
+    if (
+      currentTime - segment.startTime < minDistanceFromEdge ||
+      segment.endTime - currentTime < minDistanceFromEdge
+    ) {
+      console.warn('[Timeline] Cut position too close to segment edge');
+      return;
+    }
+
+    // Perform the cut at the current time
+    emit('splitTrimSegment', segment.id, currentTime);
   }
 
   function onSegmentHoverForCut(event: MouseEvent, segment: TrimSegment) {
@@ -2079,8 +2132,8 @@
     // Emit the split event with the segment ID and cut time
     emit('splitTrimSegment', segment.id, cutHoverInfo.value.cutTime);
 
-    // Reset cut tool state
-    isCutToolActive.value = false;
+    // Keep cut tool active (like CapCut) - just clear hover info for next cut
+    // User can press X again to deactivate when done
     cutHoverInfo.value = null;
   }
 
@@ -2142,8 +2195,8 @@
     // Emit the split event with source ID, timeline position, and source time
     emit('splitSource', source.id, cutTimelinePosition, cutHoverInfo.value.cutTime);
 
-    // Reset cut tool state
-    isCutToolActive.value = false;
+    // Keep cut tool active (like CapCut) - just clear hover info for next cut
+    // User can press X again to deactivate when done
     cutHoverInfo.value = null;
   }
 
@@ -4021,10 +4074,17 @@
       return;
     }
 
-    // Toggle cut tool with X key
+    // Delete selected item with Delete or Backspace key
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault();
+      deleteSelectedItem();
+      return;
+    }
+
+    // Perform cut at playhead with X key
     if (event.key === 'x' || event.key === 'X') {
       event.preventDefault();
-      toggleCutTool();
+      performCutAtPlayhead();
     }
 
     // Deactivate cut tool with Escape key
