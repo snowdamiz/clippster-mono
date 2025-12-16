@@ -2095,6 +2095,15 @@
         // Check if we need to switch video sources
         if (currentVideoSourceId.value !== targetSource.id) {
           // Different source - update the source ID and reset video state
+          const oldSourceId = currentVideoSourceId.value;
+          const oldSource = oldSourceId ? videoSources.value.find((s) => s.id === oldSourceId) : null;
+          const wasPlaying = isPlaying.value;
+
+          // Pause playback while switching sources to prevent the old video from continuing
+          if (videoElement.value && !videoElement.value.paused) {
+            videoElement.value.pause();
+          }
+
           currentVideoSourceId.value = targetSource.id;
           pendingSeekTime.value = timeInSource;
 
@@ -2103,8 +2112,96 @@
             previewRef.value.resetActiveVideo();
           }
 
-          // The video src will change via reactivity (effectiveVideoSrc -> editorVideoSrc)
-          // Once loaded, the pending seek will be applied
+          // Check if both sources use the same video file
+          // If so, the editorVideoSrc won't change and the watch won't fire
+          const sameVideoFile = oldSource && oldSource.source_path === targetSource.source_path;
+
+          // Calculate the target video URL
+          const targetVideoUrl = (() => {
+            const path = targetSource.source_path;
+            if (path.startsWith('http://') || path.startsWith('https://')) return path;
+            if (!videoServerPort.value) return null;
+            const encodedPath = btoa(unescape(encodeURIComponent(path)));
+            return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
+          })();
+
+          // Check if the video element already has the correct src loaded
+          // After resetActiveVideo, videoElement.value points to main video
+          // which might have a stale src from before a crossfade
+          const videoHasCorrectSrc = videoElement.value && targetVideoUrl && videoElement.value.src === targetVideoUrl;
+
+          if (videoHasCorrectSrc) {
+            // Video already has the correct src - just seek directly
+            console.log('[seekTo] Video already has correct src, seeking directly to:', timeInSource);
+            videoElement.value.currentTime = timeInSource;
+            pendingSeekTime.value = null;
+
+            // Resume playback if it was playing before
+            if (wasPlaying) {
+              videoElement.value.play().catch(() => {});
+            }
+
+            setTimeout(() => {
+              isSeeking.value = false;
+            }, 50);
+          } else if (sameVideoFile && videoElement.value && targetVideoUrl) {
+            // Same video file but main video has wrong src (e.g., after crossfade from different source)
+            // Need to manually update the src since the watch won't fire (same URL computed)
+            console.log('[seekTo] Same video file but wrong src loaded, loading correct src');
+
+            const handleSameFileLoad = () => {
+              if (videoElement.value) {
+                videoElement.value.removeEventListener('loadeddata', handleSameFileLoad);
+                videoElement.value.removeEventListener('canplay', handleSameFileLoad);
+                videoElement.value.currentTime = timeInSource;
+                pendingSeekTime.value = null;
+
+                if (wasPlaying) {
+                  videoElement.value.play().catch(() => {});
+                }
+
+                setTimeout(() => {
+                  isSeeking.value = false;
+                }, 50);
+              }
+            };
+
+            videoElement.value.addEventListener('loadeddata', handleSameFileLoad);
+            videoElement.value.addEventListener('canplay', handleSameFileLoad);
+            videoElement.value.src = targetVideoUrl;
+            videoElement.value.load();
+
+            // Fallback timeout
+            setTimeout(() => {
+              if (isSeeking.value && videoElement.value) {
+                videoElement.value.removeEventListener('loadeddata', handleSameFileLoad);
+                videoElement.value.removeEventListener('canplay', handleSameFileLoad);
+                console.warn('[seekTo] Same file load timeout - applying seek directly');
+                videoElement.value.currentTime = timeInSource;
+                pendingSeekTime.value = null;
+                isSeeking.value = false;
+                if (wasPlaying) {
+                  videoElement.value.play().catch(() => {});
+                }
+              }
+            }, 2000);
+          } else {
+            // Different video file - the watch on editorVideoSrc will handle the source change
+            // Add a safety timeout in case the watch fails to complete
+            setTimeout(() => {
+              if (isSeeking.value && pendingSeekTime.value !== null && videoElement.value) {
+                console.warn('[seekTo] Safety timeout - applying pending seek directly');
+                videoElement.value.currentTime = pendingSeekTime.value;
+                pendingSeekTime.value = null;
+                isSeeking.value = false;
+
+                // Resume playback if it was playing
+                if (isPlaying.value) {
+                  videoElement.value.play().catch(() => {});
+                }
+              }
+            }, 3000);
+          }
         } else if (videoElement.value) {
           // Same source - seek directly
           videoElement.value.currentTime = timeInSource;
@@ -3440,11 +3537,20 @@
           }
         }
 
-        // The actual seek will happen in onVideoLoaded when the video is ready
-        // But we need to add the loadeddata listener
+        // Track if handleLoaded has been called to prevent double calls
+        let loadedHandled = false;
+        let fallbackTimeout: ReturnType<typeof setTimeout> | null = null;
+
         const handleLoaded = () => {
-          onVideoLoaded();
+          if (loadedHandled) return;
+          loadedHandled = true;
+          if (fallbackTimeout) {
+            clearTimeout(fallbackTimeout);
+            fallbackTimeout = null;
+          }
           videoElement.value?.removeEventListener('loadeddata', handleLoaded);
+          videoElement.value?.removeEventListener('canplay', handleLoaded);
+          onVideoLoaded();
         };
 
         // Wait for next tick to ensure src has been applied to the element
@@ -3452,7 +3558,31 @@
 
         // Listen for the video to be ready
         if (videoElement.value) {
+          // Listen for both loadeddata and canplay events for broader browser support
           videoElement.value.addEventListener('loadeddata', handleLoaded);
+          videoElement.value.addEventListener('canplay', handleLoaded);
+
+          // Force the video to start loading the new source
+          // This is necessary because changing src doesn't always trigger a load in all browsers
+          videoElement.value.load();
+
+          // Check if video is already loaded (e.g., from browser cache)
+          // readyState >= 2 (HAVE_CURRENT_DATA) means enough data is available
+          // We need to wait a microtask for the load() call to update readyState
+          await Promise.resolve();
+          if (videoElement.value && videoElement.value.readyState >= 2) {
+            console.log('[watch editorVideoSrc] Video already ready, calling handleLoaded directly');
+            handleLoaded();
+          } else {
+            // Fallback: if video doesn't load within 2 seconds, try to proceed anyway
+            // This handles edge cases where events might not fire
+            fallbackTimeout = setTimeout(() => {
+              if (!loadedHandled && videoElement.value) {
+                console.warn('[watch editorVideoSrc] Fallback timeout - proceeding with seek');
+                handleLoaded();
+              }
+            }, 2000);
+          }
         }
       }
     }

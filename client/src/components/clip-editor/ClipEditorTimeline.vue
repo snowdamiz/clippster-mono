@@ -609,14 +609,14 @@
             @mousedown="onPlayheadMouseDown"
           >
             <!-- The actual 1px line - positioned at exact pixel boundary -->
-            <div class="absolute inset-y-0 bg-white/80 group-hover:bg-white transition-colors playhead-line-inner">
+            <div class="absolute inset-y-0 bg-white/80 group-hover:bg-white playhead-line-inner playhead-child">
               <!-- Top circle -->
               <div
-                class="absolute top-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-white rounded-full shadow-md group-hover:scale-110 transition-transform"
+                class="absolute top-0 left-1/2 w-1.5 h-1.5 bg-white rounded-full shadow-md playhead-circle playhead-child"
               ></div>
               <!-- Bottom circle -->
               <div
-                class="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-white/80 rounded-full shadow-md group-hover:scale-110 transition-transform"
+                class="absolute bottom-0 left-1/2 w-1.5 h-1.5 bg-white/80 rounded-full shadow-md playhead-circle playhead-child"
               ></div>
             </div>
           </div>
@@ -822,9 +822,11 @@
   // Track label width constant (matches the w-20 class = 80px)
   const TRACK_LABEL_WIDTH = 80;
 
+  // Animation state for smooth playhead motion
   let animationFrameId: number | null = null;
-  let lastUpdateTime = 0;
-  let targetPosition = 0;
+  let lastSyncTime = 0; // performance.now() when we last synced with actual video time
+  let lastSyncPosition = 0; // playhead position (0-1) at sync time
+  let lastKnownPosition = 0; // For seek detection
 
   // Audio waveform
   const { waveformData, isLoaded: isWaveformLoaded, loadWaveformFromVideo } = useAudioWaveform();
@@ -2846,12 +2848,15 @@
   );
 
   // Smooth playhead animation functions
+  // Uses linear extrapolation based on real elapsed time for perfectly smooth motion
   function startPlayheadAnimation() {
     if (animationFrameId !== null) return;
 
-    lastUpdateTime = performance.now();
-    targetPosition = playheadPosition.value;
-    smoothPlayheadPosition.value = playheadPosition.value;
+    // Sync to current state
+    lastSyncTime = performance.now();
+    lastSyncPosition = playheadPosition.value;
+    lastKnownPosition = lastSyncPosition;
+    smoothPlayheadPosition.value = lastSyncPosition;
 
     function animate(currentTime: number) {
       if (!props.isPlaying || isDraggingPlayhead.value) {
@@ -2859,23 +2864,19 @@
         return;
       }
 
-      // Calculate time elapsed since last frame
-      const deltaTime = currentTime - lastUpdateTime;
+      // Calculate elapsed time since last sync (in seconds)
+      const elapsedSeconds = (currentTime - lastSyncTime) / 1000;
 
-      // Snap playhead to target position immediately
-      // This ensures playhead stays perfectly in sync with crossfade visual
-      // The Math.min(1, ...) ensures we never overshoot even with variable frame rates
-      const interpolationSpeed = 10.0; // High value = essentially instant (clamped to 1.0)
-      const diff = targetPosition - smoothPlayheadPosition.value;
-
-      if (Math.abs(diff) > 0.0001) {
-        // With high speed, this effectively snaps to position each frame
-        smoothPlayheadPosition.value += diff * Math.min(1, (interpolationSpeed * deltaTime) / 16);
-      } else {
-        smoothPlayheadPosition.value = targetPosition;
+      // Calculate expected position change using linear extrapolation
+      // Position is 0-1, moving 1 unit over totalDuration seconds
+      // This gives perfectly smooth motion regardless of zoom or duration
+      const duration = totalDuration.value;
+      if (duration > 0) {
+        const positionDelta = elapsedSeconds / duration;
+        const newPosition = lastSyncPosition + positionDelta;
+        smoothPlayheadPosition.value = Math.min(1, Math.max(0, newPosition));
       }
 
-      lastUpdateTime = currentTime;
       animationFrameId = requestAnimationFrame(animate);
     }
 
@@ -2889,6 +2890,8 @@
     }
     // Snap to exact position when stopping
     smoothPlayheadPosition.value = playheadPosition.value;
+    lastSyncPosition = playheadPosition.value;
+    lastSyncTime = performance.now();
   }
 
   // The effective playhead position used in the template
@@ -2917,13 +2920,39 @@
     }
   );
 
-  // Update target position when currentTime changes (during playback)
+  // Resync animation to actual video position when it updates
+  // Only resyncs on seeks or significant drift - lets extrapolation handle smooth motion otherwise
   watch(playheadPosition, (newPosition) => {
-    targetPosition = newPosition;
-    // If not playing, sync immediately
+    // Detect if this is a seek (large position change) vs normal playback update
+    const positionChange = Math.abs(newPosition - lastKnownPosition);
+    // Threshold: if position changed by more than 2% of timeline, consider it a seek
+    const isSeek = positionChange > 0.02;
+
     if (!props.isPlaying) {
+      // Not playing - always sync immediately
       smoothPlayheadPosition.value = newPosition;
+      lastSyncTime = performance.now();
+      lastSyncPosition = newPosition;
+    } else if (isSeek) {
+      // Seek during playback - snap and resync
+      smoothPlayheadPosition.value = newPosition;
+      lastSyncTime = performance.now();
+      lastSyncPosition = newPosition;
+    } else {
+      // Normal playback update - check for drift between extrapolated and actual position
+      const drift = Math.abs(newPosition - smoothPlayheadPosition.value);
+      // Only resync if drift exceeds 1% (handles buffering, stuttering, etc.)
+      // Otherwise, let the smooth extrapolation continue uninterrupted
+      if (drift > 0.01) {
+        // Resync to correct drift, but don't snap the visual position
+        // The animation will smoothly catch up from the new sync point
+        lastSyncTime = performance.now();
+        lastSyncPosition = newPosition;
+      }
+      // If drift is small, do nothing - extrapolation continues smoothly
     }
+
+    lastKnownPosition = newPosition;
   });
 
   // Lifecycle
@@ -3107,21 +3136,53 @@
     will-change: left;
     /* Smooth transition for seeks (when paused) */
     transition: left 100ms ease-out;
+    /* Force single compositing layer for all children */
+    contain: layout style;
   }
 
   /* Inner line - exactly 1px wide, positioned at pixel boundary */
   .playhead-line-inner {
     width: 1px;
     left: 6px; /* Center of 13px container */
+    transition: background-color 0.15s ease;
   }
 
-  /* During playback, use requestAnimationFrame - disable CSS transition */
+  /* Circles - use margin instead of transform for positioning to stay in same layer */
+  .playhead-circle {
+    margin-left: -3px; /* Half of 6px (w-1.5) to center */
+    transition: transform 0.15s ease;
+  }
+
+  .playhead-circle:hover {
+    transform: scale(1.1);
+  }
+
+  /* During playback, use requestAnimationFrame - disable ALL transitions and force single layer */
   .playhead-line.playhead-playing {
     transition: none;
+    /* Force GPU layer that includes all children */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+
+  /* Disable all child transitions during playback to prevent timing differences */
+  .playhead-line.playhead-playing .playhead-child {
+    transition: none !important;
+    /* Inherit the parent's compositing layer */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+
+  .playhead-line.playhead-playing .playhead-circle {
+    transform: translateZ(0) !important;
   }
 
   /* Disable transition when dragging for immediate response */
   .playhead-line.playhead-dragging {
+    transition: none !important;
+  }
+
+  .playhead-line.playhead-dragging .playhead-child {
     transition: none !important;
   }
 
