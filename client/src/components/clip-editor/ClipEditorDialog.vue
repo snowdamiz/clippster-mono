@@ -1839,7 +1839,11 @@
       // If no tracked source or during transition, figure out the source from time
       if (!source) {
         const sortedSources = [...videoSources.value].sort((a, b) => a.start_time - b.start_time);
-        source = sortedSources.find((s) => time >= s.trim_start && (s.trim_end === null || time < s.trim_end)) || null;
+        source =
+          sortedSources.find((s) => {
+            const effectiveEnd = s.trim_end ?? s.trim_start + (s.end_time - s.start_time);
+            return time >= s.trim_start && time < effectiveEnd;
+          }) || null;
       }
 
       if (source) {
@@ -1855,16 +1859,12 @@
           currentVideoSourceId.value = source.id;
         }
 
-        // Check if we've reached the trim_end of this source (if set)
+        // Check if we've reached the trim_end of this source
         // Only trigger end if we're NOT in an active crossfade transition
         // trim_end is the position in the source video where we should stop
-        if (
-          source.trim_end !== null &&
-          time >= source.trim_end &&
-          isPlaying.value &&
-          !activeTransition.value &&
-          !crossfadeStarted.value
-        ) {
+        // If trim_end is null, calculate effective end from timeline duration
+        const effectiveTrimEnd = source.trim_end ?? source.trim_start + (source.end_time - source.start_time);
+        if (time >= effectiveTrimEnd && isPlaying.value && !activeTransition.value && !crossfadeStarted.value) {
           // We've reached the end of this source's trimmed region
           // Trigger transition to next source
           onVideoEnded();
@@ -2001,6 +2001,19 @@
     } else {
       // No more sources, stop playback and go back to beginning
       isPlaying.value = false;
+
+      // Actually pause the video element to stop playback
+      if (videoElement.value) {
+        videoElement.value.pause();
+      }
+      // Also pause any preload video that might be active
+      const preloadEl = previewRef.value?.getPreloadVideoElement?.();
+      if (preloadEl) {
+        preloadEl.pause();
+      }
+      // Pause audio tracks
+      audioElements.value.forEach((audio) => audio.pause());
+
       if (sortedSources.length > 0) {
         // Reset to the beginning of the first source
         previewTime.value = sortedSources[0].start_time;

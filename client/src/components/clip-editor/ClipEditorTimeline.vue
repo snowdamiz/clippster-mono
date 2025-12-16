@@ -5,22 +5,28 @@
       <div class="flex items-center justify-between mb-3 pr-1 flex-shrink-0">
         <div class="flex items-center gap-2">
           <!-- Timeline Toolbar -->
-          <!-- Zoom Slider -->
+          <!-- Zoom Controls -->
           <div
-            class="flex items-center gap-2 bg-black/40 backdrop-blur-sm rounded-lg px-2.5 py-2 border border-white/[0.04]"
+            class="flex items-center gap-1 bg-black/40 backdrop-blur-sm rounded-lg px-1.5 py-1 border border-white/[0.04]"
           >
-            <ZoomIn :size="14" class="text-white/40" />
-            <input
-              type="range"
-              :min="1"
-              :max="5"
-              :step="0.1"
-              v-model.number="zoomLevel"
-              class="w-20 h-1 bg-white/10 rounded-full appearance-none cursor-pointer slider-zoom"
-            />
-            <span class="text-[10px] text-white/50 text-right font-mono tabular-nums w-8">
+            <button
+              @click="zoomOut"
+              :disabled="zoomLevel <= 1"
+              class="p-1 rounded-md transition-colors duration-150 text-white/50 hover:text-white hover:bg-white/10 disabled:text-white/20 disabled:cursor-not-allowed"
+              title="Zoom out"
+            >
+              <Minus :size="12" />
+            </button>
+            <span class="text-[10px] text-white/60 font-mono tabular-nums min-w-[38px] text-center select-none">
               {{ Math.round(zoomLevel * 100) }}%
             </span>
+            <button
+              @click="zoomIn"
+              class="p-1 rounded-md transition-colors duration-150 text-white/50 hover:text-white hover:bg-white/10"
+              title="Zoom in"
+            >
+              <Plus :size="12" />
+            </button>
           </div>
         </div>
         <div class="flex items-center gap-2">
@@ -640,7 +646,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-  import { ZoomIn, Film, Music, Type, Smile, Sparkles, Palette, Droplet, X, Blend } from 'lucide-vue-next';
+  import { Minus, Plus, Film, Music, Type, Smile, Sparkles, Palette, Droplet, X, Blend } from 'lucide-vue-next';
   import { useAudioWaveform } from '@/composables/useAudioWaveform';
   import TimelineHoverLine from '@/components/TimelineHoverLine.vue';
   import type {
@@ -776,6 +782,28 @@
   const audioSegmentCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map()); // key: `${trackId}-${segmentIndex}`
   const audioWaveformData = ref<Map<string, { peaks: { min: number; max: number }[]; duration: number }>>(new Map());
   const zoomLevel = ref(1);
+  const MIN_ZOOM = 1;
+
+  // Calculate dynamic zoom step based on current zoom level
+  // Lower zoom = smaller steps, higher zoom = larger steps
+  function getZoomStep(): number {
+    if (zoomLevel.value < 2) return 0.1;
+    if (zoomLevel.value < 5) return 0.25;
+    if (zoomLevel.value < 10) return 0.5;
+    if (zoomLevel.value < 50) return 1;
+    if (zoomLevel.value < 100) return 5;
+    return 10;
+  }
+
+  function zoomIn() {
+    const step = getZoomStep();
+    zoomLevel.value = zoomLevel.value + step;
+  }
+
+  function zoomOut() {
+    const step = getZoomStep();
+    zoomLevel.value = Math.max(MIN_ZOOM, zoomLevel.value - step);
+  }
 
   // Video editor mode state
   const isDragOverTimeline = ref(false);
@@ -821,6 +849,11 @@
 
   // Track label width constant (matches the w-20 class = 80px)
   const TRACK_LABEL_WIDTH = 80;
+
+  // Auto-scroll configuration for keeping playhead visible during playback
+  // Stepping approach: scroll when playhead reaches threshold, jump to target position
+  const AUTO_SCROLL_TRIGGER_PERCENT = 0.85; // Scroll when playhead reaches 85% of visible track area
+  const AUTO_SCROLL_TARGET_PERCENT = 0.15; // After scroll, put playhead at 15% from left of visible area
 
   // Animation state for smooth playhead motion
   let animationFrameId: number | null = null;
@@ -1968,10 +2001,11 @@
     // Calculate the "logical" position (0-1 range, independent of zoom)
     const logicalPosition = contentX / contentWidth;
 
-    // Apply zoom
+    // Apply zoom with dynamic step based on current zoom level
     const oldZoom = zoomLevel.value;
-    const delta = event.deltaY > 0 ? -0.1 : 0.1;
-    const newZoom = Math.max(1, Math.min(5, oldZoom + delta));
+    const step = getZoomStep();
+    const delta = event.deltaY > 0 ? -step : step;
+    const newZoom = Math.max(MIN_ZOOM, oldZoom + delta);
 
     if (newZoom === oldZoom) return;
 
@@ -2847,6 +2881,77 @@
     { deep: true }
   );
 
+  // Auto-scroll to keep playhead visible during playback (stepping approach)
+  // Scrolls the timeline when playhead reaches the right edge of visible area
+  function autoScrollToPlayhead(playheadRatio: number) {
+    const scrollContainer = timelineScrollContainer.value;
+    const contentWrapper = contentWrapperRef.value;
+    if (!scrollContainer || !contentWrapper) return;
+
+    // Don't auto-scroll if not zoomed in (content fits in view)
+    if (zoomLevel.value <= 1) return;
+
+    const containerWidth = scrollContainer.clientWidth;
+    const contentWidth = contentWrapper.offsetWidth;
+
+    // Calculate playhead pixel position within content
+    // This matches the CSS: left: calc(80px + (100% - 80px) * position)
+    const trackAreaWidth = contentWidth - TRACK_LABEL_WIDTH;
+    const playheadX = TRACK_LABEL_WIDTH + trackAreaWidth * playheadRatio;
+
+    // Current scroll and visible area
+    const scrollLeft = scrollContainer.scrollLeft;
+    const visibleTrackWidth = containerWidth - TRACK_LABEL_WIDTH;
+
+    // Calculate the threshold X position (when playhead reaches here, scroll)
+    const rightThresholdX = scrollLeft + TRACK_LABEL_WIDTH + visibleTrackWidth * AUTO_SCROLL_TRIGGER_PERCENT;
+
+    // Check if playhead has crossed the right threshold
+    if (playheadX > rightThresholdX) {
+      // Step scroll: jump so playhead is at TARGET_PERCENT from left of visible area
+      const targetPositionFromLeft = TRACK_LABEL_WIDTH + visibleTrackWidth * AUTO_SCROLL_TARGET_PERCENT;
+      const newScrollLeft = playheadX - targetPositionFromLeft;
+
+      // Clamp to valid scroll range
+      const maxScroll = contentWidth - containerWidth;
+      scrollContainer.scrollLeft = Math.max(0, Math.min(newScrollLeft, maxScroll));
+    }
+  }
+
+  // Ensure playhead is visible (used after seeks)
+  function ensurePlayheadVisible(playheadRatio: number) {
+    const scrollContainer = timelineScrollContainer.value;
+    const contentWrapper = contentWrapperRef.value;
+    if (!scrollContainer || !contentWrapper) return;
+
+    // Don't adjust scroll if not zoomed in
+    if (zoomLevel.value <= 1) return;
+
+    const containerWidth = scrollContainer.clientWidth;
+    const contentWidth = contentWrapper.offsetWidth;
+
+    // Calculate playhead pixel position
+    const trackAreaWidth = contentWidth - TRACK_LABEL_WIDTH;
+    const playheadX = TRACK_LABEL_WIDTH + trackAreaWidth * playheadRatio;
+
+    // Current visible boundaries
+    const scrollLeft = scrollContainer.scrollLeft;
+    const visibleLeft = scrollLeft + TRACK_LABEL_WIDTH;
+    const visibleRight = scrollLeft + containerWidth;
+    const visibleTrackWidth = containerWidth - TRACK_LABEL_WIDTH;
+
+    // Check if playhead is outside visible area
+    if (playheadX < visibleLeft || playheadX > visibleRight) {
+      // Center the playhead in the visible area
+      const targetPositionFromLeft = TRACK_LABEL_WIDTH + visibleTrackWidth * 0.5;
+      const newScrollLeft = playheadX - targetPositionFromLeft;
+
+      // Clamp to valid scroll range
+      const maxScroll = contentWidth - containerWidth;
+      scrollContainer.scrollLeft = Math.max(0, Math.min(newScrollLeft, maxScroll));
+    }
+  }
+
   // Smooth playhead animation functions
   // Uses linear extrapolation based on real elapsed time for perfectly smooth motion
   function startPlayheadAnimation() {
@@ -2875,6 +2980,9 @@
         const positionDelta = elapsedSeconds / duration;
         const newPosition = lastSyncPosition + positionDelta;
         smoothPlayheadPosition.value = Math.min(1, Math.max(0, newPosition));
+
+        // Auto-scroll to keep playhead visible during playback
+        autoScrollToPlayhead(smoothPlayheadPosition.value);
       }
 
       animationFrameId = requestAnimationFrame(animate);
@@ -2933,11 +3041,19 @@
       smoothPlayheadPosition.value = newPosition;
       lastSyncTime = performance.now();
       lastSyncPosition = newPosition;
+
+      // When seeking while paused, ensure playhead is visible
+      if (isSeek) {
+        nextTick(() => ensurePlayheadVisible(newPosition));
+      }
     } else if (isSeek) {
       // Seek during playback - snap and resync
       smoothPlayheadPosition.value = newPosition;
       lastSyncTime = performance.now();
       lastSyncPosition = newPosition;
+
+      // Ensure playhead is visible after seeking during playback
+      nextTick(() => ensurePlayheadVisible(newPosition));
     } else {
       // Normal playback update - check for drift between extrapolated and actual position
       const drift = Math.abs(newPosition - smoothPlayheadPosition.value);
@@ -3059,63 +3175,6 @@
   /* Timeline content wrapper */
   .timeline-content-wrapper.dragging {
     cursor: grabbing;
-  }
-
-  /* Zoom slider styling */
-  .slider-zoom {
-    -webkit-appearance: none;
-    appearance: none;
-    outline: none;
-    transition: opacity 0.2s;
-  }
-
-  .slider-zoom::-webkit-slider-track {
-    width: 100%;
-    height: 3px;
-    border-radius: 4px;
-    cursor: pointer;
-    background: rgba(255, 255, 255, 0.15);
-  }
-
-  .slider-zoom::-moz-range-track {
-    width: 100%;
-    height: 3px;
-    border-radius: 4px;
-    cursor: pointer;
-    background: rgba(255, 255, 255, 0.15);
-  }
-
-  .slider-zoom::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 10px;
-    height: 10px;
-    background: white;
-    border-radius: 50%;
-    cursor: pointer;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-    transition: all 0.15s ease;
-  }
-
-  .slider-zoom::-moz-range-thumb {
-    width: 10px;
-    height: 10px;
-    background: white;
-    border-radius: 50%;
-    cursor: pointer;
-    border: none;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-    transition: all 0.15s ease;
-  }
-
-  .slider-zoom:hover::-webkit-slider-thumb {
-    transform: scale(1.2);
-    box-shadow: 0 2px 8px rgba(139, 92, 246, 0.4);
-  }
-
-  .slider-zoom:hover::-moz-range-thumb {
-    transform: scale(1.2);
-    box-shadow: 0 2px 8px rgba(139, 92, 246, 0.4);
   }
 
   /* Track label active state styling */

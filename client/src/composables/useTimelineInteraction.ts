@@ -43,7 +43,7 @@ export function useTimelineInteraction(
 ) {
   const {
     minZoom = 1.0,
-    maxZoom = 10.0,
+    maxZoom = 1000.0, // Nearly unlimited zoom
     zoomStep = 0.1,
     onZoomChange,
     onDragSelection,
@@ -85,14 +85,27 @@ export function useTimelineInteraction(
     onZoomChange?.(clampedZoom);
   }
 
+  // Calculate dynamic zoom step based on current zoom level
+  // Lower zoom = smaller steps, higher zoom = larger steps
+  function getZoomStep(): number {
+    const currentZoom = zoomState.value.zoomLevel;
+    if (currentZoom < 2) return 0.1;
+    if (currentZoom < 5) return 0.25;
+    if (currentZoom < 10) return 0.5;
+    if (currentZoom < 50) return 1;
+    if (currentZoom < 100) return 5;
+    return 10;
+  }
+
   // Zoom handler for timeline ruler wheel
   function handleRulerWheel(event: WheelEvent) {
     event.preventDefault();
 
     if (!timelineContainer.value) return;
 
-    // Determine zoom direction
-    const delta = event.deltaY > 0 ? -zoomStep : zoomStep;
+    // Determine zoom direction with dynamic step
+    const step = getZoomStep();
+    const delta = event.deltaY > 0 ? -step : step;
     const newZoom = Math.max(minZoom, Math.min(maxZoom, zoomState.value.zoomLevel + delta));
 
     // Get current hover position as a percentage of the visible timeline
