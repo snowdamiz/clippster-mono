@@ -80,7 +80,9 @@
             title="Scroll to zoom"
           >
             <!-- Track label spacer -->
-            <div class="w-20 h-7 pl-2 flex items-center justify-start flex-shrink-0 sticky left-0 z-[70] bg-[#0a0a0a]">
+            <div
+              class="w-20 h-[31px] pl-2 flex items-center justify-start flex-shrink-0 sticky left-0 z-[70] bg-[#0a0a0a]"
+            >
               <span class="text-xs text-muted-foreground/50 font-medium">Time</span>
             </div>
             <!-- Segmented timestamp ruler -->
@@ -146,7 +148,6 @@
           <div class="flex items-center h-12 border-b border-border/20 relative">
             <div
               class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
-              :class="{ 'track-label-active': isTrackActive('trim') || isTrackActive('source') }"
             >
               <div class="font-medium flex items-center gap-1">
                 <Film :size="12" />
@@ -713,7 +714,7 @@
           >
             <!-- Top circle - sticky to top of scroll container -->
             <div
-              class="sticky top-0 z-10 flex-shrink-0 w-2 h-2 bg-white rounded-full shadow-md playhead-circle playhead-child"
+              class="sticky -mt-1 -top-[1px] z-10 flex-shrink-0 w-2 h-2 bg-white rounded-full shadow-md playhead-circle playhead-child"
               style="margin-left: 2.5px"
             ></div>
             <!-- The line - fills available space between sticky circles -->
@@ -723,9 +724,20 @@
             ></div>
             <!-- Bottom circle - sticky to bottom of scroll container -->
             <div
-              class="sticky bottom-0 z-10 flex-shrink-0 w-2 h-2 bg-white/80 rounded-full shadow-md playhead-circle playhead-child"
+              class="sticky bottom-[1px] z-10 flex-shrink-0 w-2 h-2 bg-white/80 rounded-full shadow-md playhead-circle playhead-child"
               style="margin-left: 2.5px"
             ></div>
+          </div>
+
+          <!-- Snap Indicator Line (shows when segment edge is snapping to another edge) -->
+          <div
+            v-if="snapIndicatorPosition !== null"
+            class="snap-indicator-line absolute top-0 bottom-0 z-[55] pointer-events-none"
+            :style="{
+              '--snap-position': snapIndicatorPosition,
+            }"
+          >
+            <div class="absolute inset-0 w-0.5 bg-blue-400 shadow-lg shadow-blue-400/50"></div>
           </div>
         </div>
       </div>
@@ -986,6 +998,13 @@
 
   // Track label width constant (matches the w-20 class = 80px)
   const TRACK_LABEL_WIDTH = 80;
+
+  // Snap configuration
+  const SNAP_THRESHOLD_PX = 8; // Pixels distance to trigger snapping
+  const SNAP_ENABLED = true;
+
+  // Snap state for visual indicator
+  const activeSnapTime = ref<number | null>(null); // Time position where snap is occurring
 
   // Auto-scroll configuration for keeping playhead visible during playback
   // Stepping approach: scroll when playhead reaches threshold, jump to target position
@@ -1770,6 +1789,152 @@
     return 500;
   }
 
+  // Snap-to-edge utility functions
+  interface SnapTarget {
+    time: number;
+    type: 'segment-start' | 'segment-end' | 'playhead';
+  }
+
+  interface SnapResult {
+    time: number;
+    didSnap: boolean;
+    snapTarget?: SnapTarget;
+  }
+
+  /**
+   * Get all snap targets (segment edges) excluding the segment being dragged/resized
+   */
+  function getSnapTargets(excludeId?: string): SnapTarget[] {
+    const targets: SnapTarget[] = [];
+
+    if (props.editorMode) {
+      // Editor mode: collect video source edges
+      for (const source of props.videoSources) {
+        if (source.id === excludeId) continue;
+
+        // Use preview position if this source is being dragged/resized
+        const preview = sourcePreview.value;
+        const startTime = preview && preview.sourceId === source.id ? preview.startTime : source.start_time;
+        const endTime = preview && preview.sourceId === source.id ? preview.endTime : source.end_time;
+
+        targets.push({ time: startTime, type: 'segment-start' });
+        targets.push({ time: endTime, type: 'segment-end' });
+      }
+    } else {
+      // Clip mode: collect trim segment edges
+      for (const segment of sortedTrimSegments.value) {
+        if (segment.id === excludeId) continue;
+
+        // Use preview position if this segment is being dragged/resized
+        const preview = dragPreview.value;
+        const startTime =
+          preview && preview.type === 'trim' && preview.id === segment.id ? preview.startTime : segment.startTime;
+        const endTime =
+          preview && preview.type === 'trim' && preview.id === segment.id ? preview.endTime : segment.endTime;
+
+        targets.push({ time: startTime, type: 'segment-start' });
+        targets.push({ time: endTime, type: 'segment-end' });
+      }
+    }
+
+    // Always add playhead as a snap target
+    targets.push({ time: props.currentTime, type: 'playhead' });
+
+    // Add timeline boundaries
+    targets.push({ time: 0, type: 'segment-start' });
+    const maxDuration = props.editorMode ? props.duration : totalDuration.value;
+    if (maxDuration > 0) {
+      targets.push({ time: maxDuration, type: 'segment-end' });
+    }
+
+    return targets;
+  }
+
+  /**
+   * Convert time to pixel position for snap distance calculation
+   */
+  function timeToPixelPosition(time: number): number {
+    const trackWidth = getTrackContentWidth();
+    const duration = props.editorMode ? props.duration : totalDuration.value;
+    if (duration <= 0) return 0;
+    return (time / duration) * trackWidth;
+  }
+
+  /**
+   * Check if a time should snap to any target and return the snapped time
+   */
+  function applySnapToTime(targetTime: number, excludeId?: string): SnapResult {
+    if (!SNAP_ENABLED) {
+      return { time: targetTime, didSnap: false };
+    }
+
+    const targets = getSnapTargets(excludeId);
+    const targetPixel = timeToPixelPosition(targetTime);
+
+    let closestTarget: SnapTarget | null = null;
+    let closestDistance = Infinity;
+
+    for (const target of targets) {
+      const targetTimePixel = timeToPixelPosition(target.time);
+      const distance = Math.abs(targetPixel - targetTimePixel);
+
+      if (distance <= SNAP_THRESHOLD_PX && distance < closestDistance) {
+        closestTarget = target;
+        closestDistance = distance;
+      }
+    }
+
+    if (closestTarget) {
+      return {
+        time: closestTarget.time,
+        didSnap: true,
+        snapTarget: closestTarget,
+      };
+    }
+
+    return { time: targetTime, didSnap: false };
+  }
+
+  /**
+   * Apply snapping to both edges of a segment during drag operations
+   * Returns snapped start/end times while preserving segment duration
+   */
+  function applySnapToSegment(
+    startTime: number,
+    endTime: number,
+    excludeId?: string
+  ): { startTime: number; endTime: number; didSnap: boolean; snapTime: number | null } {
+    if (!SNAP_ENABLED) {
+      return { startTime, endTime, didSnap: false, snapTime: null };
+    }
+
+    const duration = endTime - startTime;
+
+    // Check start edge for snapping
+    const startSnap = applySnapToTime(startTime, excludeId);
+    if (startSnap.didSnap) {
+      return {
+        startTime: startSnap.time,
+        endTime: startSnap.time + duration,
+        didSnap: true,
+        snapTime: startSnap.time,
+      };
+    }
+
+    // Check end edge for snapping
+    const endSnap = applySnapToTime(endTime, excludeId);
+    if (endSnap.didSnap) {
+      return {
+        startTime: endSnap.time - duration,
+        endTime: endSnap.time,
+        didSnap: true,
+        snapTime: endSnap.time,
+      };
+    }
+
+    return { startTime, endTime, didSnap: false, snapTime: null };
+  }
+
   // Convert click position to source time
   function clickPositionToTime(percent: number): number {
     // Editor mode: simple linear mapping
@@ -2158,6 +2323,25 @@
       newStartTime = props.duration - duration;
     }
 
+    // Apply snapping for video sources
+    const snapResult = applySnapToSegment(newStartTime, newEndTime, dragSourceInfo.value.sourceId);
+    if (snapResult.didSnap) {
+      // Re-apply bounds after snapping
+      if (snapResult.startTime < 0) {
+        newStartTime = 0;
+        newEndTime = duration;
+      } else if (snapResult.endTime > props.duration) {
+        newEndTime = props.duration;
+        newStartTime = props.duration - duration;
+      } else {
+        newStartTime = snapResult.startTime;
+        newEndTime = snapResult.endTime;
+      }
+      activeSnapTime.value = snapResult.snapTime;
+    } else {
+      activeSnapTime.value = null;
+    }
+
     // Update local preview state (no database call) for smooth dragging
     sourcePreview.value = {
       sourceId: dragSourceInfo.value.sourceId,
@@ -2178,6 +2362,7 @@
     isDraggingSource.value = false;
     dragSourceInfo.value = null;
     sourcePreview.value = null;
+    activeSnapTime.value = null;
     document.removeEventListener('mousemove', onSourceDragMove);
     document.removeEventListener('mouseup', onSourceDragEnd);
   }
@@ -2205,19 +2390,42 @@
     const rect = videoTrackContentRef.value.getBoundingClientRect();
     const deltaX = e.clientX - resizeSourceInfo.value.startX;
     const deltaTime = (deltaX / rect.width) * props.duration;
+    const minDuration = 0.5;
 
     let newStartTime = resizeSourceInfo.value.originalStartTime;
     let newEndTime = resizeSourceInfo.value.originalEndTime;
 
     if (resizeSourceInfo.value.handle === 'left') {
       newStartTime = Math.max(0, resizeSourceInfo.value.originalStartTime + deltaTime);
-      if (newEndTime - newStartTime < 0.5) {
-        newStartTime = newEndTime - 0.5;
+
+      // Apply snapping to the left edge
+      const snapResult = applySnapToTime(newStartTime, resizeSourceInfo.value.sourceId);
+      if (snapResult.didSnap && snapResult.time >= 0) {
+        newStartTime = snapResult.time;
+        activeSnapTime.value = snapResult.time;
+      } else {
+        activeSnapTime.value = null;
+      }
+
+      if (newEndTime - newStartTime < minDuration) {
+        newStartTime = newEndTime - minDuration;
+        activeSnapTime.value = null;
       }
     } else {
       newEndTime = Math.min(props.duration, resizeSourceInfo.value.originalEndTime + deltaTime);
-      if (newEndTime - newStartTime < 0.5) {
-        newEndTime = newStartTime + 0.5;
+
+      // Apply snapping to the right edge
+      const snapResult = applySnapToTime(newEndTime, resizeSourceInfo.value.sourceId);
+      if (snapResult.didSnap && snapResult.time <= props.duration) {
+        newEndTime = snapResult.time;
+        activeSnapTime.value = snapResult.time;
+      } else {
+        activeSnapTime.value = null;
+      }
+
+      if (newEndTime - newStartTime < minDuration) {
+        newEndTime = newStartTime + minDuration;
+        activeSnapTime.value = null;
       }
     }
 
@@ -2241,6 +2449,7 @@
     isResizingSource.value = false;
     resizeSourceInfo.value = null;
     sourcePreview.value = null;
+    activeSnapTime.value = null;
     document.removeEventListener('mousemove', onSourceResizeDragMove);
     document.removeEventListener('mouseup', onSourceResizeDragEnd);
   }
@@ -2317,10 +2526,25 @@
   function onRulerWheel(event: WheelEvent) {
     event.preventDefault();
 
-    if (!timelineScrollContainer.value) return;
+    if (!timelineScrollContainer.value || !rulerContentRef.value) return;
 
     const scrollContainer = timelineScrollContainer.value;
+    const rulerContent = rulerContentRef.value;
     const containerRect = scrollContainer.getBoundingClientRect();
+
+    // Get ruler content bounds to calculate hover position for seeking
+    const rulerRect = rulerContent.getBoundingClientRect();
+    const cursorXInRuler = event.clientX - rulerRect.left;
+
+    // Seek playhead to cursor position if cursor is over the ruler content area
+    // Offset slightly to the left so the playhead doesn't block further scroll events
+    const playheadOffset = 15; // pixels to the left of cursor
+    if (cursorXInRuler >= 0 && cursorXInRuler <= rulerRect.width) {
+      const offsetX = Math.max(0, cursorXInRuler - playheadOffset);
+      const percent = offsetX / rulerRect.width;
+      const time = clickPositionToTime(percent);
+      emit('seek', Math.max(0, time));
+    }
 
     // Cursor position relative to the scroll container's viewport
     const cursorXInContainer = event.clientX - containerRect.left;
@@ -2345,28 +2569,11 @@
 
     zoomLevel.value = newZoom;
 
-    // After zoom, adjust scroll to keep cursor position stable AND ensure playhead is visible
+    // After zoom, adjust scroll to keep cursor position stable (playhead is now at cursor)
     nextTick(() => {
       const newContentWidth = scrollContainer.scrollWidth;
       const newContentX = logicalPosition * newContentWidth;
-      let newScrollLeft = newContentX - cursorXInContainer;
-
-      // Label area width (sticky labels)
-      const labelAreaWidth = 72;
-
-      // Calculate playhead position in content
-      // From the style: left: calc(64px + (100% - 64px) * playheadPosition)
-      // 100% = newContentWidth
-      const playheadInContent = 64 + (newContentWidth - 64) * playheadPosition.value;
-
-      // Playhead position in viewport after the proposed scroll
-      const playheadInViewport = playheadInContent - newScrollLeft;
-
-      // If playhead would be in or behind the label area, scroll to bring it visible
-      if (playheadInViewport < labelAreaWidth) {
-        // Scroll so playhead is just past the label area
-        newScrollLeft = playheadInContent - labelAreaWidth - 5;
-      }
+      const newScrollLeft = newContentX - cursorXInContainer;
 
       scrollContainer.scrollLeft = Math.max(0, newScrollLeft);
     });
@@ -2419,6 +2626,25 @@
         newEndTime = props.duration;
         newStartTime = props.duration - itemDuration;
       }
+
+      // Apply snapping for trim segments
+      const snapResult = applySnapToSegment(newStartTime, newEndTime, dragInfo.value.id);
+      if (snapResult.didSnap) {
+        // Re-apply bounds after snapping
+        if (snapResult.startTime < 0) {
+          newStartTime = 0;
+          newEndTime = itemDuration;
+        } else if (snapResult.endTime > props.duration) {
+          newEndTime = props.duration;
+          newStartTime = props.duration - itemDuration;
+        } else {
+          newStartTime = snapResult.startTime;
+          newEndTime = snapResult.endTime;
+        }
+        activeSnapTime.value = snapResult.snapTime;
+      } else {
+        activeSnapTime.value = null;
+      }
     } else if (dragInfo.value.type === 'audio') {
       // Audio uses simple linear positioning
       const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * totalDuration.value;
@@ -2428,6 +2654,18 @@
       if (newStartTime < 0) {
         newStartTime = 0;
         newEndTime = itemDuration;
+      }
+
+      // Apply snapping for audio tracks
+      const snapResult = applySnapToSegment(newStartTime, newEndTime, dragInfo.value.id);
+      if (snapResult.didSnap) {
+        if (snapResult.startTime >= 0) {
+          newStartTime = snapResult.startTime;
+          newEndTime = snapResult.endTime;
+        }
+        activeSnapTime.value = snapResult.snapTime;
+      } else {
+        activeSnapTime.value = null;
       }
     } else {
       // For text, sticker, effect, filter - use gap-aware positioning
@@ -2447,6 +2685,18 @@
       if (newEndTime > totalDuration.value) {
         newEndTime = totalDuration.value;
         newStartTime = totalDuration.value - itemDuration;
+      }
+
+      // Apply snapping for overlay items
+      const snapResult = applySnapToSegment(newStartTime, newEndTime, dragInfo.value.id);
+      if (snapResult.didSnap) {
+        if (snapResult.startTime >= 0 && snapResult.endTime <= totalDuration.value) {
+          newStartTime = snapResult.startTime;
+          newEndTime = snapResult.endTime;
+        }
+        activeSnapTime.value = snapResult.snapTime;
+      } else {
+        activeSnapTime.value = null;
       }
     }
 
@@ -2468,6 +2718,7 @@
     isDragging.value = false;
     dragInfo.value = null;
     dragPreview.value = null;
+    activeSnapTime.value = null;
 
     document.removeEventListener('mousemove', onDragMove);
     document.removeEventListener('mouseup', onDragEnd);
@@ -2512,26 +2763,70 @@
       const deltaTime = (deltaX / resizeInfo.value.trackContentWidth) * props.duration;
       if (resizeInfo.value.handle === 'left') {
         newStartTime = Math.max(0, resizeInfo.value.originalStartTime + deltaTime);
+
+        // Apply snapping to the left edge
+        const snapResult = applySnapToTime(newStartTime, resizeInfo.value.id);
+        if (snapResult.didSnap && snapResult.time >= 0) {
+          newStartTime = snapResult.time;
+          activeSnapTime.value = snapResult.time;
+        } else {
+          activeSnapTime.value = null;
+        }
+
         if (newEndTime - newStartTime < minDuration) {
           newStartTime = newEndTime - minDuration;
+          activeSnapTime.value = null;
         }
       } else {
         newEndTime = Math.min(props.duration, resizeInfo.value.originalEndTime + deltaTime);
+
+        // Apply snapping to the right edge
+        const snapResult = applySnapToTime(newEndTime, resizeInfo.value.id);
+        if (snapResult.didSnap && snapResult.time <= props.duration) {
+          newEndTime = snapResult.time;
+          activeSnapTime.value = snapResult.time;
+        } else {
+          activeSnapTime.value = null;
+        }
+
         if (newEndTime - newStartTime < minDuration) {
           newEndTime = newStartTime + minDuration;
+          activeSnapTime.value = null;
         }
       }
     } else if (resizeInfo.value.type === 'audio') {
       const deltaTime = (deltaX / resizeInfo.value.trackContentWidth) * totalDuration.value;
       if (resizeInfo.value.handle === 'left') {
         newStartTime = Math.max(0, resizeInfo.value.originalStartTime + deltaTime);
+
+        // Apply snapping to the left edge
+        const snapResult = applySnapToTime(newStartTime, resizeInfo.value.id);
+        if (snapResult.didSnap && snapResult.time >= 0) {
+          newStartTime = snapResult.time;
+          activeSnapTime.value = snapResult.time;
+        } else {
+          activeSnapTime.value = null;
+        }
+
         if (newEndTime - newStartTime < minDuration) {
           newStartTime = newEndTime - minDuration;
+          activeSnapTime.value = null;
         }
       } else {
         newEndTime = resizeInfo.value.originalEndTime + deltaTime;
+
+        // Apply snapping to the right edge
+        const snapResult = applySnapToTime(newEndTime, resizeInfo.value.id);
+        if (snapResult.didSnap) {
+          newEndTime = snapResult.time;
+          activeSnapTime.value = snapResult.time;
+        } else {
+          activeSnapTime.value = null;
+        }
+
         if (newEndTime - newStartTime < minDuration) {
           newEndTime = newStartTime + minDuration;
+          activeSnapTime.value = null;
         }
       }
     } else {
@@ -2540,15 +2835,37 @@
         const originalStartPercent = effectiveTimeToVisualPercent(resizeInfo.value.originalStartTime);
         const newStartPercent = Math.max(0, originalStartPercent + deltaPercent);
         newStartTime = visualPercentToEffectiveTime(newStartPercent);
+
+        // Apply snapping to the left edge
+        const snapResult = applySnapToTime(newStartTime, resizeInfo.value.id);
+        if (snapResult.didSnap && snapResult.time >= 0) {
+          newStartTime = snapResult.time;
+          activeSnapTime.value = snapResult.time;
+        } else {
+          activeSnapTime.value = null;
+        }
+
         if (newEndTime - newStartTime < minDuration) {
           newStartTime = newEndTime - minDuration;
+          activeSnapTime.value = null;
         }
       } else {
         const originalEndPercent = effectiveTimeToVisualPercent(resizeInfo.value.originalEndTime);
         const newEndPercent = Math.min(100, originalEndPercent + deltaPercent);
         newEndTime = visualPercentToEffectiveTime(newEndPercent);
+
+        // Apply snapping to the right edge
+        const snapResult = applySnapToTime(newEndTime, resizeInfo.value.id);
+        if (snapResult.didSnap && snapResult.time <= totalDuration.value) {
+          newEndTime = snapResult.time;
+          activeSnapTime.value = snapResult.time;
+        } else {
+          activeSnapTime.value = null;
+        }
+
         if (newEndTime - newStartTime < minDuration) {
           newEndTime = newStartTime + minDuration;
+          activeSnapTime.value = null;
         }
         // Constrain to total duration
         if (newEndTime > totalDuration.value) {
@@ -2575,6 +2892,7 @@
     isResizing.value = false;
     resizeInfo.value = null;
     dragPreview.value = null;
+    activeSnapTime.value = null;
 
     document.removeEventListener('mousemove', onResizeMove);
     document.removeEventListener('mouseup', onResizeEnd);
@@ -3689,6 +4007,14 @@
     return playheadPosition.value;
   });
 
+  // Computed position for snap indicator line (0-1 range like playhead)
+  const snapIndicatorPosition = computed(() => {
+    if (activeSnapTime.value === null) return null;
+    const duration = props.editorMode ? props.duration : totalDuration.value;
+    if (duration <= 0) return null;
+    return activeSnapTime.value / duration;
+  });
+
   // Watch for playback state changes
   watch(
     () => props.isPlaying,
@@ -3998,5 +4324,23 @@
   .cut-indicator {
     transform: translateZ(0); /* Force hardware acceleration */
     backface-visibility: hidden;
+  }
+
+  /* Snap indicator line positioning - uses same calculation as playhead */
+  .snap-indicator-line {
+    --snap-position: 0;
+    left: calc(80px + (100% - 80px) * var(--snap-position));
+    will-change: left;
+    animation: snap-pulse 0.8s ease-in-out infinite;
+  }
+
+  @keyframes snap-pulse {
+    0%,
+    100% {
+      opacity: 0.7;
+    }
+    50% {
+      opacity: 1;
+    }
   }
 </style>
