@@ -1518,6 +1518,32 @@
   // Get the wrapper style for watermark positioning (no scale)
   function getWatermarkWrapperStyle(watermark: ClipWatermark): Record<string, string> {
     const config = getWatermarkConfigForRatio(watermark);
+    
+    // Check if this is a full-frame watermark (1920x1080 or HD+ 16:9)
+    const dims = watermarkImageDimensions.value[watermark.id];
+    if (dims) {
+      const ratio = dims.width / dims.height;
+      const is16x9 = Math.abs(ratio - 16 / 9) < 0.02;
+      const isFullFrame =
+        is16x9 &&
+        dims.width >= 1600 &&
+        dims.height >= 900 &&
+        props.previewAspectRatio === '16:9';
+      
+      // Full-frame watermarks fill the frame at 0,0 (baked positions preserved)
+      if (isFullFrame) {
+        return {
+          left: '0%',
+          top: '0%',
+          width: '100%',
+          height: '100%',
+          transform: 'none',
+          opacity: String(config.opacity / 100),
+        };
+      }
+    }
+    
+    // Regular watermark positioning
     return {
       left: `${config.position.x}%`,
       top: `${config.position.y}%`,
@@ -1528,6 +1554,26 @@
 
   // Get the content style for watermark scaling
   function getWatermarkContentStyle(watermark: ClipWatermark): Record<string, string> {
+    const dims = watermarkImageDimensions.value[watermark.id];
+    
+    if (dims) {
+      const ratio = dims.width / dims.height;
+      const is16x9 = Math.abs(ratio - 16 / 9) < 0.02;
+      const isFullFrame =
+        is16x9 &&
+        dims.width >= 1600 &&
+        dims.height >= 900 &&
+        props.previewAspectRatio === '16:9';
+      
+      // Full-frame: no scaling transform
+      if (isFullFrame) {
+        return {
+          transform: 'none',
+        };
+      }
+    }
+    
+    // Regular watermark: apply scale
     const config = getWatermarkConfigForRatio(watermark);
     // Use local value during drag for instant feedback
     const watermarkScale = localWatermarkScales.value[watermark.id] ?? config.scale / 15; // Convert from percentage to multiplier
@@ -1539,15 +1585,29 @@
 
   // Get the style for watermark image (scales width to base size, height auto)
   function getWatermarkImageStyle(watermark: ClipWatermark): Record<string, string> {
-    const containerScale = overlayScaleFactor.value;
-    // Base width at current container scale
-    const baseWidth = WATERMARK_BASE_WIDTH * containerScale;
-
-    // Get cached dimensions for this watermark
     const dims = watermarkImageDimensions.value[watermark.id];
-
+    
     if (dims) {
-      // Scale width to baseWidth, calculate height to maintain aspect ratio
+      // Check for full-frame watermark
+      const ratio = dims.width / dims.height;
+      const is16x9 = Math.abs(ratio - 16 / 9) < 0.02;
+      const isFullFrame =
+        is16x9 &&
+        dims.width >= 1600 &&
+        dims.height >= 900 &&
+        props.previewAspectRatio === '16:9';
+      
+      // Full-frame: render at 100% (wrapper handles it)
+      if (isFullFrame) {
+        return {
+          width: '100%',
+          height: '100%',
+        };
+      }
+      
+      // Regular watermark: scale based on base width
+      const containerScale = overlayScaleFactor.value;
+      const baseWidth = WATERMARK_BASE_WIDTH * containerScale;
       const aspectRatio = dims.width / dims.height;
       const width = baseWidth;
       const height = baseWidth / aspectRatio;
@@ -1559,6 +1619,8 @@
     }
 
     // Fallback before image loads
+    const containerScale = overlayScaleFactor.value;
+    const baseWidth = WATERMARK_BASE_WIDTH * containerScale;
     return {
       width: `${baseWidth}px`,
       height: 'auto',
