@@ -785,7 +785,8 @@ export interface WatermarkRatioConfig {
 export interface ClipWatermark {
   id: string;
   watermarkId: string; // Reference to watermark image asset
-  watermarkPath: string; // File path or URL for preview
+  filePath: string; // Actual file path for export (used by FFmpeg)
+  previewUrl: string; // Data URL or preview URL for UI display
   startTime: number;
   endTime: number;
   position: { x: number; y: number }; // 0-100 percentage - default/fallback position
@@ -893,6 +894,7 @@ export interface ClipEditorDialogProps {
 // Editor tab types
 export type ClipEditorTab =
   | 'sources'
+  | 'intro-outro'
   | 'audio'
   | 'filters'
   | 'text'
@@ -1028,6 +1030,7 @@ export interface VideoEditorProjectWithSources extends VideoEditorProject {
 // Editor tab types for standalone video editor (includes 'sources' tab)
 export type VideoEditorTab =
   | 'sources'
+  | 'intro-outro'
   | 'audio'
   | 'filters'
   | 'text'

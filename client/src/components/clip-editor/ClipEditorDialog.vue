@@ -140,6 +140,17 @@
                   @import-file="onImportFile"
                 />
 
+                <!-- Intro/Outro Tab (Available in both modes) -->
+                <IntroOutroTab
+                  v-if="editorMode ? activeEditorTab === 'intro-outro' : activeTab === 'intro-outro'"
+                  :current-intro="currentIntro"
+                  :current-outro="currentOutro"
+                  @add-intro="onAddIntro"
+                  @add-outro="onAddOutro"
+                  @remove-intro="onRemoveIntro"
+                  @remove-outro="onRemoveOutro"
+                />
+
                 <AudioMixerTab
                   v-if="editorMode ? activeEditorTab === 'audio' : activeTab === 'audio'"
                   :audio-tracks="audioTracks"
@@ -271,6 +282,12 @@
                   :clip-end-time="props.clipEndTime"
                   :clip-name="props.clipTitle"
                   :clip-segments="playbackSegments"
+                  :editor-mode="editorMode"
+                  :video-sources="videoSources"
+                  :editor-project-id="editorProjectId"
+                  :editor-project-name="editorProjectName"
+                  :current-intro="currentIntro"
+                  :current-outro="currentOutro"
                   @go-to-aspect-tab="editorMode ? setEditorTab('aspect') : setActiveTab('aspect')"
                   @build-started="onBuildStarted"
                   @build-completed="onBuildCompleted"
@@ -414,7 +431,7 @@
     updateVideoEditorWatermark,
     deleteVideoEditorWatermark,
   } from '@/services/database';
-  import type { VideoEditorSource, VideoEditorTab, SourceItem, VideoEditorTransition } from '@/types';
+  import type { VideoEditorSource, VideoEditorTab, SourceItem, VideoEditorTransition, IntroOutro } from '@/types';
   import { calculateCrossfadeOpacity } from '@/types';
 
   // Disable attribute inheritance since this component renders a Teleport root
@@ -434,6 +451,7 @@
   import AspectTab from './tabs/AspectTab.vue';
   import TranscriptTab from './tabs/TranscriptTab.vue';
   import ExportTab from './tabs/ExportTab.vue';
+  import IntroOutroTab from './tabs/IntroOutroTab.vue';
   import ManualPOIEditor from '@/components/poi/ManualPOIEditor.vue';
   import SourcesTab from '@/components/video-editor/SourcesTab.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
@@ -520,6 +538,18 @@
   const pendingImportToAdd = ref<{ filePath: string; name: string; duration: number; thumbnailPath?: string } | null>(
     null
   ); // Import file waiting to be added after promotion
+
+  // Intro/Outro state - track currently applied intro and outro
+  interface AppliedIntroOutro {
+    id: string;
+    sourceId: string; // The video source ID in the timeline
+    name: string;
+    duration: number | null;
+    filePath: string;
+    thumbnailUrl?: string;
+  }
+  const currentIntro = ref<AppliedIntroOutro | null>(null);
+  const currentOutro = ref<AppliedIntroOutro | null>(null);
 
   // Computed: effective editor mode (prop or promoted)
   const editorMode = computed(() => props.editorMode || isPromotedToEditorMode.value);
@@ -715,18 +745,17 @@
     return maxEndTime;
   });
 
-  // Editor mode: timeline duration - minimum 5 minutes, or longer than content + padding
+  // Editor mode: timeline duration - content duration + 2 minutes of empty space at the end
   const editorDuration = computed(() => {
-    const MIN_DURATION = 300; // 5 minutes minimum
-    const PADDING = 60; // 1 minute padding beyond content
+    const PADDING = 60; // 2 minutes padding beyond content
+    const DEFAULT_EMPTY_DURATION = 120; // 2 minutes default when no content
 
     if (videoSources.value.length === 0) {
-      return MIN_DURATION;
+      return DEFAULT_EMPTY_DURATION;
     }
 
-    // Timeline should be at least MIN_DURATION or content + padding, whichever is greater
-    const requiredDuration = editorContentDuration.value + PADDING;
-    return Math.max(MIN_DURATION, requiredDuration);
+    // Timeline shows all content + 2 minutes of empty space at the end
+    return editorContentDuration.value + PADDING;
   });
 
   // Calculate total duration of all segments combined
@@ -1275,8 +1304,8 @@
           preview_url: watermark.previewUrl,
           start_time: watermark.startTime,
           end_time: watermark.endTime,
-          position_x: watermark.positionX,
-          position_y: watermark.positionY,
+          position_x: watermark.position.x,
+          position_y: watermark.position.y,
           scale: watermark.scale,
           opacity: watermark.opacity,
           per_ratio_configs_data: watermark.perRatioConfigs ? JSON.stringify(watermark.perRatioConfigs) : undefined,
@@ -1288,8 +1317,7 @@
           previewUrl: newWatermark.preview_url || '',
           startTime: newWatermark.start_time,
           endTime: newWatermark.end_time,
-          positionX: newWatermark.position_x,
-          positionY: newWatermark.position_y,
+          position: { x: newWatermark.position_x, y: newWatermark.position_y },
           scale: newWatermark.scale,
           opacity: newWatermark.opacity,
           perRatioConfigs: newWatermark.per_ratio_configs_data
@@ -1496,6 +1524,298 @@
     }
   }
 
+  // Intro/Outro handlers
+  async function onAddIntro(intro: IntroOutro) {
+    // Ensure we're in editor mode - if not, promote first
+    if (!editorMode.value) {
+      // For clip mode, we need to promote to video project first
+      await promoteToVideoProject();
+    }
+
+    const projectId = editorProjectId.value;
+    if (!projectId) return;
+
+    try {
+      const introDuration = intro.duration || 5; // Default 5 seconds if duration unknown
+
+      // Remove existing intro if there is one
+      if (currentIntro.value) {
+        await removeIntroSource(currentIntro.value.sourceId);
+      }
+
+      // Shift all existing sources forward by the intro duration
+      for (const source of videoSources.value) {
+        const newStartTime = source.start_time + introDuration;
+        const newEndTime = source.end_time + introDuration;
+        await updateVideoEditorSource(source.id, {
+          start_time: newStartTime,
+          end_time: newEndTime,
+        });
+        source.start_time = newStartTime;
+        source.end_time = newEndTime;
+      }
+
+      // Also shift all audio tracks, text overlays, stickers, and watermarks
+      await shiftAllTracksBy(introDuration);
+
+      // Create the intro source at position 0
+      const newSource = await createVideoEditorSource(projectId, {
+        sourceType: 'imported',
+        sourceId: intro.id, // Reference to intro_outro table
+        sourcePath: intro.file_path,
+        sourceName: `[Intro] ${intro.name}`,
+        sourceThumbnail: intro.thumbnail_path,
+        sourceDuration: introDuration,
+        startTime: 0,
+        endTime: introDuration,
+        trimStart: 0,
+        trimEnd: null,
+        orderIndex: 0,
+      });
+
+      // Update order indices for existing sources
+      for (let i = 0; i < videoSources.value.length; i++) {
+        await updateVideoEditorSource(videoSources.value[i].id, {
+          order_index: i + 1,
+        });
+        videoSources.value[i].order_index = i + 1;
+      }
+
+      // Add the new source to the beginning of the array
+      videoSources.value.unshift(newSource);
+
+      // Load thumbnail for the intro
+      let thumbnailUrl: string | undefined;
+      if (intro.thumbnail_path) {
+        try {
+          const exists = await invoke<boolean>('check_file_exists', { path: intro.thumbnail_path });
+          if (exists) {
+            thumbnailUrl = await invoke<string>('read_file_as_data_url', { filePath: intro.thumbnail_path });
+          }
+        } catch (err) {
+          console.warn('[ClipEditorDialog] Failed to load intro thumbnail:', err);
+        }
+      }
+
+      // Track the current intro
+      currentIntro.value = {
+        id: intro.id,
+        sourceId: newSource.id,
+        name: intro.name,
+        duration: intro.duration,
+        filePath: intro.file_path,
+        thumbnailUrl,
+      };
+
+      await recalculateProjectDuration(projectId);
+      triggerAutoSave();
+
+      console.log('[ClipEditorDialog] Added intro:', intro.name);
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to add intro:', error);
+    }
+  }
+
+  async function onAddOutro(outro: IntroOutro) {
+    // Ensure we're in editor mode - if not, promote first
+    if (!editorMode.value) {
+      await promoteToVideoProject();
+    }
+
+    const projectId = editorProjectId.value;
+    if (!projectId) return;
+
+    try {
+      const outroDuration = outro.duration || 5; // Default 5 seconds if duration unknown
+
+      // Remove existing outro if there is one
+      if (currentOutro.value) {
+        await removeOutroSource(currentOutro.value.sourceId);
+      }
+
+      // Find the end of the timeline (max end_time of all sources, excluding the old outro)
+      const maxEndTime = videoSources.value.reduce((max, source) => {
+        return Math.max(max, source.end_time);
+      }, 0);
+
+      // Create the outro source at the end
+      const newSource = await createVideoEditorSource(projectId, {
+        sourceType: 'imported',
+        sourceId: outro.id, // Reference to intro_outro table
+        sourcePath: outro.file_path,
+        sourceName: `[Outro] ${outro.name}`,
+        sourceThumbnail: outro.thumbnail_path,
+        sourceDuration: outroDuration,
+        startTime: maxEndTime,
+        endTime: maxEndTime + outroDuration,
+        trimStart: 0,
+        trimEnd: null,
+        orderIndex: videoSources.value.length,
+      });
+
+      videoSources.value.push(newSource);
+
+      // Load thumbnail for the outro
+      let thumbnailUrl: string | undefined;
+      if (outro.thumbnail_path) {
+        try {
+          const exists = await invoke<boolean>('check_file_exists', { path: outro.thumbnail_path });
+          if (exists) {
+            thumbnailUrl = await invoke<string>('read_file_as_data_url', { filePath: outro.thumbnail_path });
+          }
+        } catch (err) {
+          console.warn('[ClipEditorDialog] Failed to load outro thumbnail:', err);
+        }
+      }
+
+      // Track the current outro
+      currentOutro.value = {
+        id: outro.id,
+        sourceId: newSource.id,
+        name: outro.name,
+        duration: outro.duration,
+        filePath: outro.file_path,
+        thumbnailUrl,
+      };
+
+      await recalculateProjectDuration(projectId);
+      triggerAutoSave();
+
+      console.log('[ClipEditorDialog] Added outro:', outro.name);
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to add outro:', error);
+    }
+  }
+
+  async function onRemoveIntro() {
+    if (!currentIntro.value) return;
+
+    try {
+      const introDuration = currentIntro.value.duration || 0;
+
+      // Remove the intro source
+      await removeIntroSource(currentIntro.value.sourceId);
+
+      // Shift all remaining sources back by the intro duration
+      for (const source of videoSources.value) {
+        const newStartTime = Math.max(0, source.start_time - introDuration);
+        const newEndTime = source.end_time - introDuration;
+        await updateVideoEditorSource(source.id, {
+          start_time: newStartTime,
+          end_time: newEndTime,
+        });
+        source.start_time = newStartTime;
+        source.end_time = newEndTime;
+      }
+
+      // Also shift all audio tracks, text overlays, stickers, and watermarks back
+      await shiftAllTracksBy(-introDuration);
+
+      // Update order indices
+      for (let i = 0; i < videoSources.value.length; i++) {
+        await updateVideoEditorSource(videoSources.value[i].id, {
+          order_index: i,
+        });
+        videoSources.value[i].order_index = i;
+      }
+
+      currentIntro.value = null;
+
+      if (editorProjectId.value) {
+        await recalculateProjectDuration(editorProjectId.value);
+      }
+      triggerAutoSave();
+
+      console.log('[ClipEditorDialog] Removed intro');
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to remove intro:', error);
+    }
+  }
+
+  async function onRemoveOutro() {
+    if (!currentOutro.value) return;
+
+    try {
+      // Remove the outro source
+      await removeOutroSource(currentOutro.value.sourceId);
+
+      currentOutro.value = null;
+
+      if (editorProjectId.value) {
+        await recalculateProjectDuration(editorProjectId.value);
+      }
+      triggerAutoSave();
+
+      console.log('[ClipEditorDialog] Removed outro');
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to remove outro:', error);
+    }
+  }
+
+  // Helper to remove intro source from timeline
+  async function removeIntroSource(sourceId: string) {
+    await deleteVideoEditorSource(sourceId);
+    videoSources.value = videoSources.value.filter((s) => s.id !== sourceId);
+  }
+
+  // Helper to remove outro source from timeline
+  async function removeOutroSource(sourceId: string) {
+    await deleteVideoEditorSource(sourceId);
+    videoSources.value = videoSources.value.filter((s) => s.id !== sourceId);
+  }
+
+  // Helper to shift all tracks (audio, text, stickers, watermarks) by a time offset
+  async function shiftAllTracksBy(offsetSeconds: number) {
+    const editId = editorMode.value ? videoEditorEditId.value : clipEditId.value;
+    if (!editId) return;
+
+    // Shift audio tracks
+    for (const track of audioTracks.value) {
+      const newStartTime = Math.max(0, track.startTime + offsetSeconds);
+      const newEndTime = track.endTime + offsetSeconds;
+      await updateAudioTrackLocal(track.id, {
+        startTime: newStartTime,
+        endTime: newEndTime,
+      });
+    }
+
+    // Shift text overlays
+    for (const overlay of textOverlays.value) {
+      const newStartTime = Math.max(0, overlay.startTime + offsetSeconds);
+      const newEndTime = overlay.endTime + offsetSeconds;
+      await updateTextOverlayLocal(overlay.id, {
+        startTime: newStartTime,
+        endTime: newEndTime,
+      });
+    }
+
+    // Shift stickers
+    for (const sticker of stickers.value) {
+      const newStartTime = Math.max(0, sticker.startTime + offsetSeconds);
+      const newEndTime = sticker.endTime + offsetSeconds;
+      await updateStickerLocal(sticker.id, {
+        startTime: newStartTime,
+        endTime: newEndTime,
+      });
+    }
+
+    // Shift watermarks
+    for (const watermark of watermarks.value) {
+      const newStartTime = Math.max(0, watermark.startTime + offsetSeconds);
+      const newEndTime = watermark.endTime + offsetSeconds;
+      await updateWatermarkLocal(watermark.id, {
+        startTime: newStartTime,
+        endTime: newEndTime,
+      });
+    }
+
+    // Shift filter segments
+    for (const segment of filterSegments.value) {
+      segment.startTime = Math.max(0, segment.startTime + offsetSeconds);
+      segment.endTime = segment.endTime + offsetSeconds;
+    }
+  }
+
   async function loadEditorProject() {
     const projectId = editorProjectId.value;
     if (!projectId) return;
@@ -1597,7 +1917,8 @@
             return {
               id: w.id,
               watermarkId: w.watermark_id,
-              watermarkPath: previewUrl || w.watermark_path, // Use data URL for display
+              filePath: w.watermark_path, // Actual file path for export
+              previewUrl: previewUrl || w.watermark_path, // Data URL for display
               startTime: w.start_time,
               endTime: w.end_time,
               position: { x: w.position_x, y: w.position_y },
@@ -2871,7 +3192,8 @@
     watermarks.value.push({
       id: watermark.id,
       watermarkId: watermark.watermark_id,
-      watermarkPath: previewUrl, // Data URL for preview display
+      filePath: filePath, // Actual file path for export
+      previewUrl: previewUrl, // Data URL for preview display
       startTime: watermark.start_time,
       endTime: watermark.end_time,
       position: { x: watermark.position_x, y: watermark.position_y },
@@ -2883,7 +3205,7 @@
   async function updateWatermarkLocal(watermarkId: string, updates: Partial<ClipWatermark>) {
     const updateData = {
       watermark_id: updates.watermarkId,
-      watermark_path: updates.watermarkPath,
+      watermark_path: updates.filePath,
       start_time: updates.startTime,
       end_time: updates.endTime,
       position_x: updates.position?.x,
@@ -3446,7 +3768,8 @@
           return {
             id: w.id,
             watermarkId: w.watermark_id,
-            watermarkPath: previewUrl || w.watermark_path, // Use data URL for display
+            filePath: w.watermark_path, // Actual file path for export
+            previewUrl: previewUrl || w.watermark_path, // Data URL for display
             startTime: w.start_time,
             endTime: w.end_time,
             position: { x: w.position_x, y: w.position_y },
@@ -3786,6 +4109,9 @@
         isPromotedToEditorMode.value = false;
         promotedProjectId.value = null;
         promotedProjectName.value = '';
+        // Reset intro/outro state
+        currentIntro.value = null;
+        currentOutro.value = null;
       }
     }
   );

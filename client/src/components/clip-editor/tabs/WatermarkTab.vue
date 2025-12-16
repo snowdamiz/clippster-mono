@@ -107,7 +107,7 @@
         <div class="flex items-start justify-between mb-3">
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 flex items-center justify-center bg-white/5 rounded overflow-hidden">
-              <img :src="watermark.watermarkPath" class="max-w-full max-h-full object-contain" alt="Watermark" />
+              <img :src="watermark.previewUrl" class="max-w-full max-h-full object-contain" alt="Watermark" />
             </div>
             <div class="text-sm text-white">Watermark</div>
           </div>

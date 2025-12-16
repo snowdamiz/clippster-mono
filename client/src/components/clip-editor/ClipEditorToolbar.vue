@@ -20,7 +20,19 @@
 
 <script setup lang="ts">
   import { computed } from 'vue';
-  import { Music, Palette, Type, Sticker, Crop, FileText, Droplet, Captions, Library, Download } from 'lucide-vue-next';
+  import {
+    Music,
+    Palette,
+    Type,
+    Sticker,
+    Crop,
+    FileText,
+    Droplet,
+    Captions,
+    Library,
+    Download,
+    Clapperboard,
+  } from 'lucide-vue-next';
   import type { ClipEditorTab, VideoEditorTab } from '@/types';
 
   const props = withDefaults(
@@ -40,6 +52,7 @@
   // Tabs for clip editing mode (includes Sources tab for promoting to video project)
   const clipTabs = [
     { id: 'sources' as const, label: 'Sources', icon: Library },
+    { id: 'intro-outro' as const, label: 'Intro/Outro', icon: Clapperboard },
     { id: 'audio' as const, label: 'Audio', icon: Music },
     { id: 'filters' as const, label: 'Filters', icon: Palette },
     { id: 'text' as const, label: 'Text', icon: Type },
@@ -54,6 +67,7 @@
   // Tabs for video editor mode (includes Sources, excludes clip-specific tabs)
   const editorTabs = [
     { id: 'sources' as const, label: 'Sources', icon: Library },
+    { id: 'intro-outro' as const, label: 'Intro/Outro', icon: Clapperboard },
     { id: 'audio' as const, label: 'Audio', icon: Music },
     { id: 'filters' as const, label: 'Filters', icon: Palette },
     { id: 'text' as const, label: 'Text', icon: Type },

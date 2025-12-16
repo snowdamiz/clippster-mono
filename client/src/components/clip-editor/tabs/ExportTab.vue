@@ -107,114 +107,6 @@
       </div>
     </div>
 
-    <!-- Divider -->
-    <div class="h-px bg-white/10" />
-
-    <!-- Intro/Outro Selectors -->
-    <div class="space-y-3">
-      <label class="text-xs font-medium text-white/70">Intro & Outro</label>
-
-      <!-- Intro Selector -->
-      <div class="space-y-1">
-        <span class="text-[10px] text-white/40">Intro</span>
-        <div class="relative">
-          <button
-            ref="introButtonRef"
-            @click="toggleIntroDropdown"
-            class="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-left flex items-center justify-between hover:border-white/20 transition-all text-xs"
-          >
-            <span :class="selectedIntro ? 'text-white' : 'text-white/40'">
-              {{ selectedIntro ? `${selectedIntro.name} (${formatDuration(selectedIntro.duration || 0)})` : 'None' }}
-            </span>
-            <ChevronDown
-              class="h-3.5 w-3.5 text-white/40 transition-transform"
-              :class="{ 'rotate-180': showIntroDropdown }"
-            />
-          </button>
-          <Teleport to="body">
-            <div
-              v-if="showIntroDropdown"
-              ref="introDropdownRef"
-              class="fixed bg-zinc-900 border border-white/10 rounded-lg shadow-xl z-[9999] overflow-y-auto max-h-48"
-              :style="introDropdownStyle"
-              @click.stop
-            >
-              <button
-                @click="selectIntro(null)"
-                class="block w-full text-left px-3 py-2 hover:bg-white/10 transition-colors text-xs"
-                :class="{ 'bg-violet-500/20 text-violet-300': !selectedIntro }"
-              >
-                None
-              </button>
-              <button
-                v-for="intro in intros"
-                :key="intro.id"
-                @click="selectIntro(intro)"
-                class="block w-full text-left px-3 py-2 hover:bg-white/10 transition-colors text-xs"
-                :class="{ 'bg-violet-500/20 text-violet-300': selectedIntro?.id === intro.id }"
-              >
-                <div class="flex items-center justify-between">
-                  <span class="truncate text-white">{{ intro.name }}</span>
-                  <span class="text-white/40 ml-2">{{ formatDuration(intro.duration || 0) }}</span>
-                </div>
-              </button>
-              <div v-if="loadingAssets" class="px-3 py-2 text-xs text-center text-white/40">Loading...</div>
-            </div>
-          </Teleport>
-        </div>
-      </div>
-
-      <!-- Outro Selector -->
-      <div class="space-y-1">
-        <span class="text-[10px] text-white/40">Outro</span>
-        <div class="relative">
-          <button
-            ref="outroButtonRef"
-            @click="toggleOutroDropdown"
-            class="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-left flex items-center justify-between hover:border-white/20 transition-all text-xs"
-          >
-            <span :class="selectedOutro ? 'text-white' : 'text-white/40'">
-              {{ selectedOutro ? `${selectedOutro.name} (${formatDuration(selectedOutro.duration || 0)})` : 'None' }}
-            </span>
-            <ChevronDown
-              class="h-3.5 w-3.5 text-white/40 transition-transform"
-              :class="{ 'rotate-180': showOutroDropdown }"
-            />
-          </button>
-          <Teleport to="body">
-            <div
-              v-if="showOutroDropdown"
-              ref="outroDropdownRef"
-              class="fixed bg-zinc-900 border border-white/10 rounded-lg shadow-xl z-[9999] overflow-y-auto max-h-48"
-              :style="outroDropdownStyle"
-              @click.stop
-            >
-              <button
-                @click="selectOutro(null)"
-                class="block w-full text-left px-3 py-2 hover:bg-white/10 transition-colors text-xs"
-                :class="{ 'bg-violet-500/20 text-violet-300': !selectedOutro }"
-              >
-                None
-              </button>
-              <button
-                v-for="outro in outros"
-                :key="outro.id"
-                @click="selectOutro(outro)"
-                class="block w-full text-left px-3 py-2 hover:bg-white/10 transition-colors text-xs"
-                :class="{ 'bg-violet-500/20 text-violet-300': selectedOutro?.id === outro.id }"
-              >
-                <div class="flex items-center justify-between">
-                  <span class="truncate text-white">{{ outro.name }}</span>
-                  <span class="text-white/40 ml-2">{{ formatDuration(outro.duration || 0) }}</span>
-                </div>
-              </button>
-              <div v-if="loadingAssets" class="px-3 py-2 text-xs text-center text-white/40">Loading...</div>
-            </div>
-          </Teleport>
-        </div>
-      </div>
-    </div>
-
     <!-- Export Button -->
     <button
       @click="handleExport"
@@ -346,16 +238,19 @@
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-  import { Download, ChevronDown, Loader2, RefreshCw, Package, Film, FolderOpen, Trash2 } from 'lucide-vue-next';
+  import { Download, Loader2, RefreshCw, Package, Film, FolderOpen, Trash2 } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-  import {
-    getAllIntroOutros,
-    getClipBuilds,
-    deleteClipBuild,
-    type IntroOutro,
-    type ClipBuild,
-  } from '@/services/database';
+  import { getClipBuilds, deleteClipBuild, type ClipBuild, type VideoEditorSource } from '@/services/database';
+
+  interface AppliedIntroOutro {
+    id: string;
+    sourceId: string;
+    name: string;
+    duration: number | null;
+    filePath: string;
+    thumbnailUrl?: string;
+  }
 
   const props = defineProps<{
     clipId: string;
@@ -375,6 +270,13 @@
     clipEndTime: number;
     clipName: string;
     clipSegments?: any[];
+    // Editor mode props
+    editorMode?: boolean;
+    videoSources?: VideoEditorSource[];
+    editorProjectId?: string | null;
+    editorProjectName?: string;
+    currentIntro?: AppliedIntroOutro | null;
+    currentOutro?: AppliedIntroOutro | null;
   }>();
 
   const emit = defineEmits<{
@@ -425,19 +327,6 @@
     return ratios;
   });
 
-  // Intro/Outro state
-  const intros = ref<IntroOutro[]>([]);
-  const outros = ref<IntroOutro[]>([]);
-  const selectedIntro = ref<IntroOutro | null>(null);
-  const selectedOutro = ref<IntroOutro | null>(null);
-  const loadingAssets = ref(false);
-  const showIntroDropdown = ref(false);
-  const showOutroDropdown = ref(false);
-  const introButtonRef = ref<HTMLElement | null>(null);
-  const outroButtonRef = ref<HTMLElement | null>(null);
-  const introDropdownRef = ref<HTMLElement | null>(null);
-  const outroDropdownRef = ref<HTMLElement | null>(null);
-
   // Builds state
   const builds = ref<ClipBuild[]>([]);
   const loadingBuilds = ref(false);
@@ -452,35 +341,7 @@
   let unlistenComplete: UnlistenFn | null = null;
   let unlistenError: UnlistenFn | null = null;
 
-  // Dropdown positioning
-  const introDropdownStyle = computed(() => {
-    if (!introButtonRef.value) return {};
-    const rect = introButtonRef.value.getBoundingClientRect();
-    return {
-      top: `${rect.bottom + 4}px`,
-      left: `${rect.left}px`,
-      width: `${rect.width}px`,
-    };
-  });
-
-  const outroDropdownStyle = computed(() => {
-    if (!outroButtonRef.value) return {};
-    const rect = outroButtonRef.value.getBoundingClientRect();
-    return {
-      top: `${rect.bottom + 4}px`,
-      left: `${rect.left}px`,
-      width: `${rect.width}px`,
-    };
-  });
-
   // Methods
-  function formatDuration(seconds: number): string {
-    if (!seconds) return '0:00';
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  }
-
   function formatDate(timestamp: number): string {
     const date = new Date(timestamp);
     return date.toLocaleDateString(undefined, {
@@ -497,39 +358,6 @@
       return JSON.parse(ratiosJson);
     } catch {
       return ['16:9'];
-    }
-  }
-
-  function toggleIntroDropdown() {
-    showIntroDropdown.value = !showIntroDropdown.value;
-    showOutroDropdown.value = false;
-  }
-
-  function toggleOutroDropdown() {
-    showOutroDropdown.value = !showOutroDropdown.value;
-    showIntroDropdown.value = false;
-  }
-
-  function selectIntro(intro: IntroOutro | null) {
-    selectedIntro.value = intro;
-    showIntroDropdown.value = false;
-  }
-
-  function selectOutro(outro: IntroOutro | null) {
-    selectedOutro.value = outro;
-    showOutroDropdown.value = false;
-  }
-
-  async function loadIntroOutros() {
-    loadingAssets.value = true;
-    try {
-      const allAssets = await getAllIntroOutros();
-      intros.value = allAssets.filter((a) => a.type === 'intro');
-      outros.value = allAssets.filter((a) => a.type === 'outro');
-    } catch (error) {
-      console.error('[ExportTab] Failed to load intros/outros:', error);
-    } finally {
-      loadingAssets.value = false;
     }
   }
 
@@ -563,22 +391,28 @@
   }
 
   async function handleExport() {
-    if (!props.clipId || !props.projectId || isBuilding.value) return;
+    // In editor mode, we need editorProjectId; in clip mode, we need clipId and projectId
+    if (props.editorMode) {
+      if (!props.editorProjectId || isBuilding.value) return;
+    } else {
+      if (!props.clipId || !props.projectId || isBuilding.value) return;
+    }
 
     try {
       isBuilding.value = true;
       buildProgress.value = 0;
       emit('buildStarted');
 
-      const { updateClipBuildStatus, getRawVideosByProjectId, createClipBuild, getFullClipEdit } = await import(
-        '@/services/database'
-      );
+      const { updateClipBuildStatus, getRawVideosByProjectId, createClipBuild } = await import('@/services/database');
 
-      // Update database status to building
-      await updateClipBuildStatus(props.clipId, 'building', { progress: 0 });
+      // For clip mode, update database status
+      if (!props.editorMode) {
+        await updateClipBuildStatus(props.clipId, 'building', { progress: 0 });
+      }
 
-      // Create build record
-      const buildId = await createClipBuild(props.clipId, {
+      // Create build record (use clipId for clip mode, editorProjectId for editor mode)
+      const buildRecordId = props.editorMode ? props.editorProjectId! : props.clipId;
+      const buildId = await createClipBuild(buildRecordId, {
         aspectRatios: effectiveAspectRatios.value,
         quality: quality.value,
         frameRate: frameRate.value,
@@ -586,34 +420,7 @@
         includeSubtitles: props.subtitleSettings?.enabled ?? false,
       });
 
-      // Get the project video file path
-      const rawVideos = await getRawVideosByProjectId(props.projectId);
-      if (rawVideos.length === 0) {
-        throw new Error('No project video found');
-      }
-
-      const projectVideo = rawVideos[0];
-
-      // Prepare segments
-      const segments = props.clipSegments?.length
-        ? props.clipSegments.map((seg) => ({
-            id: seg.id,
-            start_time: seg.start_time ?? seg.startTime,
-            end_time: seg.end_time ?? seg.endTime,
-            duration: (seg.end_time ?? seg.endTime) - (seg.start_time ?? seg.startTime),
-            transcript: seg.transcript || null,
-          }))
-        : [
-            {
-              id: `segment-${props.clipId}`,
-              start_time: props.clipStartTime,
-              end_time: props.clipEndTime,
-              duration: props.clipEndTime - props.clipStartTime,
-              transcript: null,
-            },
-          ];
-
-      // Prepare audio settings
+      // Prepare common export data
       const audioSettings = {
         volume: props.originalDb ?? 0,
         normalize: false,
@@ -672,15 +479,16 @@
         })) ?? null;
 
       // Prepare watermarks for export
+      // Map frontend 'filePath' to backend 'watermarkPath' (which becomes watermark_path in Rust)
       const clipWatermarksForExport =
         props.watermarks?.map((wm) => ({
           id: wm.id,
           watermarkId: wm.watermarkId,
-          filePath: wm.filePath ?? wm.watermarkPath,
+          watermarkPath: wm.filePath, // Backend expects 'watermarkPath', we store as 'filePath' in frontend
           startTime: wm.startTime,
           endTime: wm.endTime,
-          positionX: wm.position?.x ?? wm.positionX ?? 8,
-          positionY: wm.position?.y ?? wm.positionY ?? 92,
+          positionX: wm.position?.x ?? 8,
+          positionY: wm.position?.y ?? 92,
           scale: wm.scale ?? 15,
           opacity: wm.opacity ?? 80,
           perRatioConfigs: wm.perRatioConfigs ?? null,
@@ -692,12 +500,181 @@
           ? 'manual'
           : 'auto_poi';
 
-      // Build the clip
+      if (props.editorMode && props.videoSources && props.videoSources.length > 0) {
+        // Editor mode: build from video sources
+        await handleEditorModeExport(
+          buildId,
+          audioSettings,
+          videoFilterSegments,
+          textOverlaysForExport,
+          stickersForExport,
+          clipWatermarksForExport,
+          framingStrategy
+        );
+      } else {
+        // Clip mode: use the original segment-based approach
+        await handleClipModeExport(
+          buildId,
+          audioSettings,
+          videoFilterSegments,
+          textOverlaysForExport,
+          stickersForExport,
+          clipWatermarksForExport,
+          framingStrategy
+        );
+      }
+
+      console.log('[ExportTab] Build started successfully');
+    } catch (error) {
+      console.error('[ExportTab] Failed to start build:', error);
+      isBuilding.value = false;
+      emit('buildFailed', String(error));
+    }
+  }
+
+  // Handle clip mode export (single video source with segments)
+  async function handleClipModeExport(
+    buildId: string,
+    audioSettings: any,
+    videoFilterSegments: any,
+    textOverlaysForExport: any,
+    stickersForExport: any,
+    clipWatermarksForExport: any,
+    framingStrategy: string
+  ) {
+    const { getRawVideosByProjectId } = await import('@/services/database');
+
+    // Get the project video file path
+    const rawVideos = await getRawVideosByProjectId(props.projectId!);
+    if (rawVideos.length === 0) {
+      throw new Error('No project video found');
+    }
+
+    const projectVideo = rawVideos[0];
+
+    // Prepare segments
+    const segments = props.clipSegments?.length
+      ? props.clipSegments.map((seg) => ({
+          id: seg.id,
+          start_time: seg.start_time ?? seg.startTime,
+          end_time: seg.end_time ?? seg.endTime,
+          duration: (seg.end_time ?? seg.endTime) - (seg.start_time ?? seg.startTime),
+          transcript: seg.transcript || null,
+        }))
+      : [
+          {
+            id: `segment-${props.clipId}`,
+            start_time: props.clipStartTime,
+            end_time: props.clipEndTime,
+            duration: props.clipEndTime - props.clipStartTime,
+            transcript: null,
+          },
+        ];
+
+    // Get intro/outro paths from currentIntro/currentOutro (for clip mode with applied intro/outro)
+    const introPath = props.currentIntro?.filePath ?? null;
+    const introDuration = props.currentIntro?.duration ?? null;
+    const outroPath = props.currentOutro?.filePath ?? null;
+    const outroDuration = props.currentOutro?.duration ?? null;
+
+    // Build the clip
+    await invoke('build_clip_from_segments', {
+      projectId: props.projectId,
+      clipId: props.clipId,
+      clipName: props.clipName || 'Untitled',
+      videoPath: projectVideo.file_path,
+      segments: segments,
+      subtitleSettings: props.subtitleSettings,
+      subtitleOverrides: null,
+      transcriptWords: [],
+      transcriptSegments: [],
+      maxWords: 3,
+      aspectRatios: effectiveAspectRatios.value,
+      quality: quality.value,
+      frameRate: frameRate.value,
+      outputFormat: outputFormat.value,
+      runNumber: null,
+      buildNumber: builds.value.length + 1,
+      buildId: buildId,
+      introPath: introPath,
+      introDuration: introDuration,
+      outroPath: outroPath,
+      outroDuration: outroDuration,
+      watermarkSettings: null,
+      audioSettings: audioSettings,
+      framingStrategy: framingStrategy,
+      manualFramingConfigs: props.framingConfigs || null,
+      videoFilterSegments: videoFilterSegments,
+      textOverlays: textOverlaysForExport,
+      stickers: stickersForExport,
+      clipWatermarks: clipWatermarksForExport,
+    });
+  }
+
+  // Handle editor mode export (multiple video sources)
+  async function handleEditorModeExport(
+    buildId: string,
+    audioSettings: any,
+    videoFilterSegments: any,
+    textOverlaysForExport: any,
+    stickersForExport: any,
+    clipWatermarksForExport: any,
+    framingStrategy: string
+  ) {
+    // In editor mode, video sources may come from different files
+    // We need to:
+    // 1. Identify intro/outro sources (they have special source names starting with [Intro] or [Outro])
+    // 2. Group remaining sources and handle them
+
+    const sources = props.videoSources || [];
+
+    // Separate intro, outro, and main content sources
+    let introSource: VideoEditorSource | null = null;
+    let outroSource: VideoEditorSource | null = null;
+    const mainSources: VideoEditorSource[] = [];
+
+    for (const source of sources) {
+      if (source.source_name.startsWith('[Intro]')) {
+        introSource = source;
+      } else if (source.source_name.startsWith('[Outro]')) {
+        outroSource = source;
+      } else {
+        mainSources.push(source);
+      }
+    }
+
+    // Sort main sources by start_time
+    mainSources.sort((a, b) => a.start_time - b.start_time);
+
+    // Check if all main sources are from the same video file
+    const uniqueSourcePaths = [...new Set(mainSources.map((s) => s.source_path))];
+    const isSingleSource = uniqueSourcePaths.length === 1;
+
+    if (isSingleSource && mainSources.length > 0) {
+      // All main content is from the same video file - use segment-based approach
+      const videoPath = mainSources[0].source_path;
+
+      // Convert video sources to segments
+      const segments = mainSources.map((source, index) => ({
+        id: source.id,
+        start_time: source.trim_start,
+        end_time: source.trim_end ?? source.trim_start + (source.end_time - source.start_time),
+        duration: (source.trim_end ?? source.trim_start + (source.end_time - source.start_time)) - source.trim_start,
+        transcript: null,
+      }));
+
+      // Get intro/outro paths
+      const introPath = introSource?.source_path ?? null;
+      const introDuration = introSource ? introSource.end_time - introSource.start_time : null;
+      const outroPath = outroSource?.source_path ?? null;
+      const outroDuration = outroSource ? outroSource.end_time - outroSource.start_time : null;
+
+      // Build using the existing segment-based command
       await invoke('build_clip_from_segments', {
-        projectId: props.projectId,
-        clipId: props.clipId,
-        clipName: props.clipName || 'Untitled',
-        videoPath: projectVideo.file_path,
+        projectId: props.editorProjectId,
+        clipId: props.editorProjectId, // Use project ID as clip ID for editor mode builds
+        clipName: props.editorProjectName || 'Video Project',
+        videoPath: videoPath,
         segments: segments,
         subtitleSettings: props.subtitleSettings,
         subtitleOverrides: null,
@@ -711,10 +688,10 @@
         runNumber: null,
         buildNumber: builds.value.length + 1,
         buildId: buildId,
-        introPath: selectedIntro.value?.file_path || null,
-        introDuration: selectedIntro.value?.duration || null,
-        outroPath: selectedOutro.value?.file_path || null,
-        outroDuration: selectedOutro.value?.duration || null,
+        introPath: introPath,
+        introDuration: introDuration,
+        outroPath: outroPath,
+        outroDuration: outroDuration,
         watermarkSettings: null,
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,
@@ -724,12 +701,66 @@
         stickers: stickersForExport,
         clipWatermarks: clipWatermarksForExport,
       });
+    } else if (mainSources.length > 0) {
+      // Multiple source files - need to handle concatenation
+      // For now, we'll use a simplified approach: build from the first source
+      // TODO: Implement proper multi-source concatenation in the backend
+      console.warn('[ExportTab] Multiple source files detected - using first source only');
 
-      console.log('[ExportTab] Build started successfully');
-    } catch (error) {
-      console.error('[ExportTab] Failed to start build:', error);
-      isBuilding.value = false;
-      emit('buildFailed', String(error));
+      const primarySource = mainSources[0];
+      const videoPath = primarySource.source_path;
+
+      const segments = [
+        {
+          id: primarySource.id,
+          start_time: primarySource.trim_start,
+          end_time:
+            primarySource.trim_end ?? primarySource.trim_start + (primarySource.end_time - primarySource.start_time),
+          duration:
+            (primarySource.trim_end ?? primarySource.trim_start + (primarySource.end_time - primarySource.start_time)) -
+            primarySource.trim_start,
+          transcript: null,
+        },
+      ];
+
+      const introPath = introSource?.source_path ?? null;
+      const introDuration = introSource ? introSource.end_time - introSource.start_time : null;
+      const outroPath = outroSource?.source_path ?? null;
+      const outroDuration = outroSource ? outroSource.end_time - outroSource.start_time : null;
+
+      await invoke('build_clip_from_segments', {
+        projectId: props.editorProjectId,
+        clipId: props.editorProjectId,
+        clipName: props.editorProjectName || 'Video Project',
+        videoPath: videoPath,
+        segments: segments,
+        subtitleSettings: props.subtitleSettings,
+        subtitleOverrides: null,
+        transcriptWords: [],
+        transcriptSegments: [],
+        maxWords: 3,
+        aspectRatios: effectiveAspectRatios.value,
+        quality: quality.value,
+        frameRate: frameRate.value,
+        outputFormat: outputFormat.value,
+        runNumber: null,
+        buildNumber: builds.value.length + 1,
+        buildId: buildId,
+        introPath: introPath,
+        introDuration: introDuration,
+        outroPath: outroPath,
+        outroDuration: outroDuration,
+        watermarkSettings: null,
+        audioSettings: audioSettings,
+        framingStrategy: framingStrategy,
+        manualFramingConfigs: props.framingConfigs || null,
+        videoFilterSegments: videoFilterSegments,
+        textOverlays: textOverlaysForExport,
+        stickers: stickersForExport,
+        clipWatermarks: clipWatermarksForExport,
+      });
+    } else {
+      throw new Error('No video sources to export');
     }
   }
 
@@ -752,31 +783,6 @@
       buildThumbnails.value.delete(build.id);
     } catch (error) {
       console.error('[ExportTab] Failed to delete build:', error);
-    }
-  }
-
-  // Handle click outside to close dropdowns
-  function handleClickOutside(event: MouseEvent) {
-    const target = event.target as Node;
-
-    if (
-      showIntroDropdown.value &&
-      introButtonRef.value &&
-      !introButtonRef.value.contains(target) &&
-      introDropdownRef.value &&
-      !introDropdownRef.value.contains(target)
-    ) {
-      showIntroDropdown.value = false;
-    }
-
-    if (
-      showOutroDropdown.value &&
-      outroButtonRef.value &&
-      !outroButtonRef.value.contains(target) &&
-      outroDropdownRef.value &&
-      !outroDropdownRef.value.contains(target)
-    ) {
-      showOutroDropdown.value = false;
     }
   }
 
@@ -823,13 +829,10 @@
 
   // Lifecycle
   onMounted(async () => {
-    document.addEventListener('click', handleClickOutside);
-    await loadIntroOutros();
     await setupEventListeners();
   });
 
   onUnmounted(() => {
-    document.removeEventListener('click', handleClickOutside);
     unlistenProgress?.();
     unlistenComplete?.();
     unlistenError?.();

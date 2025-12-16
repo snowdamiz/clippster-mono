@@ -254,7 +254,7 @@
             @mousedown="(e) => startWatermarkDrag(e, watermark)"
           >
             <img
-              :src="watermark.watermarkPath"
+              :src="watermark.previewUrl"
               class="max-w-none pointer-events-none select-none"
               :style="getWatermarkImageStyle(watermark)"
               draggable="false"
