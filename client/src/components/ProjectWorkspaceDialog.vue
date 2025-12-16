@@ -107,6 +107,7 @@
                 @playClip="onPlayClip"
                 @seekVideo="onSeekVideo"
                 @watermarkSettingsChanged="onWatermarkSettingsChanged"
+                @editClip="onEditClip"
               />
             </div>
           </div>

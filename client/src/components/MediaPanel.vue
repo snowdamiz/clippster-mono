@@ -79,6 +79,7 @@
       @seek-video="onSeekVideo"
       @scroll-to-timeline="onScrollToTimeline"
       @refresh-clips="refreshClips"
+      @edit-clip="onEditClip"
     />
   </div>
 </template>
@@ -301,6 +302,10 @@
 
   function onScrollToTimeline() {
     emit('scrollToTimeline');
+  }
+
+  function onEditClip(clipId: string) {
+    emit('editClip', clipId);
   }
 
   // Event listener for fallback refresh mechanism

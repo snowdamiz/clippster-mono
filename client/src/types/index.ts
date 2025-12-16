@@ -298,6 +298,7 @@ export interface MediaPanelEmits {
   (e: 'playClip', clip: any): void; // Using any for ClipWithVersion for now
   (e: 'seekVideo', time: number): void;
   (e: 'watermarkSettingsChanged', settings: WatermarkSettings): void;
+  (e: 'editClip', clipId: string): void;
 }
 
 export interface TimelinePlayheadProps {
