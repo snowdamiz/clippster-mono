@@ -3,107 +3,122 @@
     <!-- Header -->
     <div>
       <h3 class="text-sm font-medium text-white mb-1">Export Video</h3>
-      <p class="text-xs text-white/50">Configure export settings and build your clip.</p>
+      <p class="text-xs text-white/50 mb-4">Configure export settings and build your clip.</p>
     </div>
 
-    <!-- Selected Aspect Ratios Summary -->
-    <div class="space-y-2">
-      <div class="flex items-center justify-between">
-        <label class="text-xs font-medium text-white/70">Export Formats</label>
-        <button @click="$emit('goToAspectTab')" class="text-xs text-violet-400 hover:text-violet-300 transition-colors">
-          Configure →
+    <!-- Export Formats Card -->
+    <div class="p-4 bg-white/5 rounded-lg border border-white/10">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <Layers :size="16" class="text-violet-400" />
+          <span class="text-sm font-medium text-white">Export Formats</span>
+        </div>
+        <button
+          @click="$emit('goToAspectTab')"
+          class="text-xs text-violet-400 hover:text-violet-300 transition-colors flex items-center gap-1"
+        >
+          Configure
+          <ChevronRight :size="12" />
         </button>
       </div>
       <div class="flex flex-wrap gap-2">
         <!-- 16:9 Original always shown -->
-        <span
-          class="px-2 py-1 bg-emerald-500/20 text-emerald-300 text-xs rounded-md border border-emerald-500/30 flex items-center gap-1"
+        <div
+          class="px-2.5 py-1.5 bg-emerald-500/10 text-emerald-400 text-xs rounded-md border border-emerald-500/20 flex items-center gap-2"
         >
-          <div class="w-3 h-2 border border-current rounded-[1px]"></div>
-          16:9
-          <span class="text-[9px] text-emerald-400/70">Original</span>
-        </span>
+          <div class="w-4 h-2.5 border border-current rounded-[2px]"></div>
+          <span class="font-medium">16:9</span>
+          <span class="text-[10px] text-emerald-400/60">Original</span>
+        </div>
         <!-- Other selected ratios -->
-        <span
+        <div
           v-for="ratio in otherSelectedRatios"
           :key="ratio"
-          class="px-2 py-1 bg-violet-500/20 text-violet-300 text-xs rounded-md border border-violet-500/30 flex items-center gap-1"
+          class="px-2.5 py-1.5 bg-violet-500/10 text-violet-400 text-xs rounded-md border border-violet-500/20 flex items-center gap-2"
         >
-          <div class="border border-current rounded-[1px]" :style="getRatioStyle(ratio)"></div>
-          {{ ratio }}
-        </span>
+          <div class="border border-current rounded-[2px]" :style="getRatioStyle(ratio)"></div>
+          <span class="font-medium">{{ ratio }}</span>
+        </div>
+        <div v-if="otherSelectedRatios.length === 0" class="text-[10px] text-white/40 flex items-center">
+          Only exporting original format
+        </div>
       </div>
     </div>
 
-    <!-- Divider -->
-    <div class="h-px bg-white/10" />
-
-    <!-- Quality Setting -->
-    <div class="space-y-2">
-      <label class="text-xs font-medium text-white/70">Quality</label>
-      <div class="flex gap-2">
-        <button
-          v-for="q in qualityOptions"
-          :key="q.value"
-          @click="quality = q.value"
-          :class="[
-            'flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all',
-            quality === q.value
-              ? 'bg-violet-500/20 text-violet-300 border border-violet-500/40'
-              : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70 border border-white/10',
-          ]"
-        >
-          {{ q.label }}
-        </button>
+    <!-- Export Settings Card -->
+    <div class="p-4 bg-white/5 rounded-lg border border-white/10 space-y-4">
+      <div class="flex items-center gap-2 mb-1">
+        <Settings :size="16" class="text-violet-400" />
+        <span class="text-sm font-medium text-white">Export Settings</span>
       </div>
-      <p class="text-[10px] text-white/40">
-        {{
-          quality === 'low'
-            ? 'Fast export, smaller file'
-            : quality === 'medium'
-              ? 'Balanced quality'
-              : 'Best quality, larger file'
-        }}
-      </p>
-    </div>
 
-    <!-- Frame Rate Setting -->
-    <div class="space-y-2">
-      <label class="text-xs font-medium text-white/70">Frame Rate</label>
-      <div class="flex gap-2">
-        <button
-          v-for="fr in frameRateOptions"
-          :key="fr"
-          @click="frameRate = fr"
-          :class="[
-            'flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all',
-            frameRate === fr
-              ? 'bg-violet-500/20 text-violet-300 border border-violet-500/40'
-              : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70 border border-white/10',
-          ]"
-        >
-          {{ fr }} FPS
-        </button>
+      <!-- Quality Setting -->
+      <div class="space-y-2">
+        <label class="text-xs text-white/50">Quality</label>
+        <div class="grid grid-cols-3 gap-2">
+          <button
+            v-for="q in qualityOptions"
+            :key="q.value"
+            @click="quality = q.value"
+            :class="[
+              'px-3 py-2 rounded-lg text-xs font-medium transition-all',
+              quality === q.value
+                ? 'bg-violet-500 text-white'
+                : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70 border border-white/10',
+            ]"
+          >
+            {{ q.label }}
+          </button>
+        </div>
+        <p class="text-[10px] text-white/30">
+          {{
+            quality === 'low'
+              ? 'Fast export, smaller file size'
+              : quality === 'medium'
+                ? 'Balanced quality and file size'
+                : 'Best quality, larger file size'
+          }}
+        </p>
       </div>
-    </div>
 
-    <!-- Output Format Setting -->
-    <div class="space-y-2">
-      <label class="text-xs font-medium text-white/70">Format</label>
-      <div class="flex gap-2">
-        <button
-          v-for="fmt in formatOptions"
-          :key="fmt"
-          @click="outputFormat = fmt"
-          :class="[
-            'flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all',
-            outputFormat === fmt
-              ? 'bg-violet-500/20 text-violet-300 border border-violet-500/40'
-              : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70 border border-white/10',
-          ]"
-        >
-          {{ fmt.toUpperCase() }}
-        </button>
+      <!-- Frame Rate Setting -->
+      <div class="space-y-2">
+        <label class="text-xs text-white/50">Frame Rate</label>
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            v-for="fr in frameRateOptions"
+            :key="fr"
+            @click="frameRate = fr"
+            :class="[
+              'px-3 py-2 rounded-lg text-xs font-medium transition-all',
+              frameRate === fr
+                ? 'bg-violet-500 text-white'
+                : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70 border border-white/10',
+            ]"
+          >
+            {{ fr }} FPS
+          </button>
+        </div>
+      </div>
+
+      <!-- Output Format Setting -->
+      <div class="space-y-2">
+        <label class="text-xs text-white/50">Format</label>
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            v-for="fmt in formatOptions"
+            :key="fmt"
+            @click="outputFormat = fmt"
+            :class="[
+              'px-3 py-2 rounded-lg text-xs font-medium transition-all',
+              outputFormat === fmt
+                ? 'bg-violet-500 text-white'
+                : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70 border border-white/10',
+            ]"
+          >
+            {{ fmt.toUpperCase() }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -111,35 +126,48 @@
     <button
       @click="handleExport"
       :disabled="isBuilding"
-      class="w-full py-3 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 disabled:from-zinc-700 disabled:to-zinc-700 text-white font-medium rounded-lg transition-all flex items-center justify-center gap-2 text-sm"
+      :class="[
+        'w-full py-3.5 rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm',
+        isBuilding
+          ? 'bg-white/5 text-white/40 border border-white/10 cursor-not-allowed'
+          : 'bg-violet-500 hover:bg-violet-600 text-white shadow-lg shadow-violet-500/20',
+      ]"
     >
       <Loader2 v-if="isBuilding" :size="16" class="animate-spin" />
       <Download v-else :size="16" />
       {{ isBuilding ? `Building... ${buildProgress}%` : 'Export Video' }}
     </button>
 
-    <!-- Divider -->
-    <div class="h-px bg-white/10" />
+    <!-- Progress Bar (shown during build) -->
+    <div v-if="isBuilding" class="space-y-1.5">
+      <div class="h-1.5 bg-white/10 rounded-full overflow-hidden">
+        <div
+          class="h-full bg-gradient-to-r from-violet-500 to-violet-400 transition-all duration-300 ease-out"
+          :style="{ width: `${buildProgress}%` }"
+        />
+      </div>
+      <p class="text-[10px] text-white/40 text-center">Processing video...</p>
+    </div>
 
     <!-- Previous Builds Section -->
     <div class="space-y-3">
       <div class="flex items-center justify-between">
-        <h4 class="text-xs font-medium text-white/70">Previous Builds</h4>
-        <button @click="loadBuilds" class="p-1 hover:bg-white/10 rounded transition-colors" title="Refresh">
-          <RefreshCw :size="12" class="text-white/40" :class="{ 'animate-spin': loadingBuilds }" />
+        <h4 class="text-sm font-medium text-white">Previous Builds</h4>
+        <button @click="loadBuilds" class="p-1.5 rounded hover:bg-white/10 transition-colors" title="Refresh">
+          <RefreshCw :size="14" class="text-white/40" :class="{ 'animate-spin': loadingBuilds }" />
         </button>
       </div>
 
       <!-- Loading State -->
-      <div v-if="loadingBuilds" class="flex items-center justify-center py-6">
+      <div v-if="loadingBuilds" class="flex items-center justify-center py-8">
         <Loader2 :size="20" class="animate-spin text-white/40" />
       </div>
 
       <!-- Empty State -->
-      <div v-else-if="builds.length === 0" class="py-6 text-center">
-        <Package :size="24" class="mx-auto text-white/20 mb-2" />
-        <p class="text-xs text-white/40">No builds yet</p>
-        <p class="text-[10px] text-white/30 mt-1">Export your clip to create a build</p>
+      <div v-else-if="builds.length === 0" class="py-8 text-center bg-white/5 rounded-lg border border-white/10">
+        <Package :size="28" class="mx-auto text-white/20 mb-2" />
+        <p class="text-sm text-white/40">No builds yet</p>
+        <p class="text-xs text-white/30 mt-1">Export your clip to create a build</p>
       </div>
 
       <!-- Builds List -->
@@ -147,11 +175,11 @@
         <div
           v-for="build in builds"
           :key="build.id"
-          class="group p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-all"
+          class="group p-3 bg-white/5 hover:bg-white/[0.08] border border-white/10 rounded-lg transition-all"
         >
           <div class="flex items-start gap-3">
             <!-- Thumbnail -->
-            <div class="w-14 h-10 rounded overflow-hidden bg-black/50 flex-shrink-0">
+            <div class="w-16 h-10 rounded-md overflow-hidden bg-black/40 flex-shrink-0">
               <img
                 v-if="build.thumbnail_path && buildThumbnails.get(build.id)"
                 :src="buildThumbnails.get(build.id)!"
@@ -159,22 +187,22 @@
                 @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
               />
               <div v-else class="w-full h-full flex items-center justify-center">
-                <Film :size="12" class="text-white/30" />
+                <Film :size="14" class="text-white/20" />
               </div>
             </div>
 
             <!-- Build Info -->
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
-                <span class="text-xs font-medium text-white">Build #{{ build.build_number }}</span>
+                <span class="text-sm font-medium text-white">Build #{{ build.build_number }}</span>
                 <span
                   :class="[
-                    'px-1.5 py-0.5 text-[9px] rounded-full',
+                    'px-1.5 py-0.5 text-[9px] font-medium rounded-full',
                     build.status === 'completed'
-                      ? 'bg-emerald-500/20 text-emerald-400'
+                      ? 'bg-emerald-500/15 text-emerald-400'
                       : build.status === 'building'
-                        ? 'bg-amber-500/20 text-amber-400'
-                        : 'bg-red-500/20 text-red-400',
+                        ? 'bg-amber-500/15 text-amber-400'
+                        : 'bg-red-500/15 text-red-400',
                   ]"
                 >
                   {{
@@ -188,44 +216,44 @@
               </div>
 
               <!-- Aspect Ratios -->
-              <div class="flex flex-wrap gap-1 mt-1">
+              <div class="flex flex-wrap gap-1 mt-1.5">
                 <span
                   v-for="ratio in parseAspectRatios(build.aspect_ratios)"
                   :key="ratio"
-                  class="px-1 py-0.5 bg-white/5 text-white/50 text-[9px] rounded"
+                  class="px-1.5 py-0.5 bg-white/5 text-white/40 text-[9px] rounded"
                 >
                   {{ ratio }}
                 </span>
               </div>
 
               <!-- Meta info -->
-              <p class="text-[10px] text-white/40 mt-1">
+              <p class="text-[10px] text-white/30 mt-1.5">
                 {{ build.quality || 'high' }} • {{ build.frame_rate || 30 }}fps • {{ formatDate(build.created_at) }}
               </p>
             </div>
 
             <!-- Actions -->
-            <div class="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
                 v-if="build.status === 'completed' && build.file_path"
                 @click="openBuildFolder(build)"
-                class="p-1.5 rounded bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+                class="p-1.5 rounded hover:bg-white/10 text-white/40 hover:text-white transition-colors"
                 title="Open folder"
               >
-                <FolderOpen :size="12" />
+                <FolderOpen :size="14" />
               </button>
               <button
                 @click="deleteBuild(build)"
-                class="p-1.5 rounded bg-white/5 hover:bg-red-500/20 text-white/60 hover:text-red-400 transition-colors"
+                class="p-1.5 rounded hover:bg-red-500/10 text-white/40 hover:text-red-400 transition-colors"
                 title="Delete build"
               >
-                <Trash2 :size="12" />
+                <Trash2 :size="14" />
               </button>
             </div>
           </div>
 
           <!-- Progress bar for building status -->
-          <div v-if="build.status === 'building'" class="mt-2">
+          <div v-if="build.status === 'building'" class="mt-3">
             <div class="h-1 bg-white/10 rounded-full overflow-hidden">
               <div class="h-full bg-amber-500 transition-all duration-300" :style="{ width: `${build.progress}%` }" />
             </div>
@@ -238,7 +266,18 @@
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-  import { Download, Loader2, RefreshCw, Package, Film, FolderOpen, Trash2 } from 'lucide-vue-next';
+  import {
+    Download,
+    Loader2,
+    RefreshCw,
+    Package,
+    Film,
+    FolderOpen,
+    Trash2,
+    Layers,
+    Settings,
+    ChevronRight,
+  } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { getClipBuilds, deleteClipBuild, type ClipBuild, type VideoEditorSource } from '@/services/database';
@@ -308,13 +347,13 @@
   function getRatioStyle(ratio: string): { width: string; height: string } {
     switch (ratio) {
       case '9:16':
-        return { width: '7px', height: '12px' };
+        return { width: '6px', height: '10px' };
       case '4:5':
-        return { width: '9px', height: '11px' };
+        return { width: '8px', height: '10px' };
       case '1:1':
-        return { width: '10px', height: '10px' };
+        return { width: '9px', height: '9px' };
       default:
-        return { width: '12px', height: '8px' };
+        return { width: '10px', height: '6px' };
     }
   }
 

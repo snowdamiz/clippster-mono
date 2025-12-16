@@ -92,7 +92,6 @@
     getAllPrompts,
     getClipsWithBuildStatus,
     updateClipBuildStatus,
-    createClipBuild,
     updateClipBuild,
     getClipBuilds,
     type ClipWithVersion,
@@ -377,42 +376,45 @@
 
     const { clip_id, success, output_path, all_output_paths, thumbnail_path, duration, file_size, error } = payload;
 
+    // Only process clips that belong to this workspace
+    // This prevents duplicate processing when multiple components listen to the same event
+    const clip = clips.value.find((c) => c.id === clip_id);
+    if (!clip) {
+      console.log(`[MediaPanel] Clip ${clip_id} not in this workspace, skipping database update`);
+      return;
+    }
+
     console.log(`[MediaPanel] Received clip build complete event for: ${clip_id}`, {
       success,
       output_path,
       all_output_paths,
     });
 
-    // Immediately update local state for instant UI feedback
-    const clip = clips.value.find((c) => c.id === clip_id);
     const isCancelled = error && (error.includes('cancelled') || error.includes('Cancelled'));
 
-    if (clip) {
-      if (success) {
-        clip.build_status = 'completed';
-        clip.build_progress = 100;
-        clip.built_file_path = output_path;
-        // Don't overwrite thumbnail - it's set during detection
-        if (thumbnail_path) {
-          clip.built_thumbnail_path = thumbnail_path;
-        }
-        clip.built_duration = duration;
-        clip.built_file_size = file_size;
-        console.log(`[MediaPanel] Local state updated immediately for clip: ${clip_id}`);
-      } else if (isCancelled) {
-        // Reset to pending for cancelled builds
-        clip.build_status = 'pending';
-        clip.build_progress = 0;
-        clip.build_error = null;
-        clip.built_file_path = null;
-        clip.built_thumbnail_path = null;
-        console.log(`[MediaPanel] Local state reset for cancelled clip: ${clip_id}`);
-      } else {
-        clip.build_status = 'failed';
-        clip.build_error = error || 'Unknown build error';
+    // Update local state immediately for instant UI feedback
+    if (success) {
+      clip.build_status = 'completed';
+      clip.build_progress = 100;
+      clip.built_file_path = output_path;
+      // Don't overwrite thumbnail - it's set during detection
+      if (thumbnail_path) {
+        clip.built_thumbnail_path = thumbnail_path;
       }
+      clip.built_duration = duration;
+      clip.built_file_size = file_size;
+      console.log(`[MediaPanel] Local state updated immediately for clip: ${clip_id}`);
+    } else if (isCancelled) {
+      // Reset to pending for cancelled builds
+      clip.build_status = 'pending';
+      clip.build_progress = 0;
+      clip.build_error = null;
+      clip.built_file_path = null;
+      clip.built_thumbnail_path = null;
+      console.log(`[MediaPanel] Local state reset for cancelled clip: ${clip_id}`);
     } else {
-      console.warn(`[MediaPanel] Clip ${clip_id} not found in local state, will refresh from database`);
+      clip.build_status = 'failed';
+      clip.build_error = error || 'Unknown build error';
     }
 
     if (success) {
@@ -497,17 +499,9 @@
                 `[MediaPanel] Updated build record ${buildingRecord.id} for clip: ${clip_id} with ${all_output_paths?.length || 1} output paths, thumbnail: ${finalThumbnailPath ? 'yes' : 'no'}`
               );
             } else {
-              // Fallback: create a new build record if none found (for backwards compatibility)
-              const buildId = await createClipBuild(clip_id, {});
-              await updateClipBuild(buildId, {
-                status: 'completed',
-                filePath: output_path,
-                outputPaths: all_output_paths || (output_path ? [output_path] : []),
-                thumbnailPath: finalThumbnailPath,
-                fileSize: file_size,
-                duration: duration,
-              });
-              console.log(`[MediaPanel] Created fallback build record ${buildId} for clip: ${clip_id}`);
+              // No 'building' record found - this can happen if another handler already updated it
+              // or if the build was started without creating a record (legacy). Just log a warning.
+              console.warn(`[MediaPanel] No 'building' record found for clip ${clip_id}, skipping build record update`);
             }
           } catch (buildError) {
             // Don't fail the whole operation if build record update fails
@@ -523,8 +517,6 @@
         });
     } else {
       // Check if this was a cancellation vs a real failure
-      const isCancelled = error && (error.includes('cancelled') || error.includes('Cancelled'));
-
       if (isCancelled) {
         console.log(`[MediaPanel] Clip build CANCELLED: ${clip_id}`);
 

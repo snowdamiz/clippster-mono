@@ -1837,33 +1837,38 @@
 
     const { clip_id, success: buildSuccess, output_path, all_output_paths, error: buildError } = payload;
 
+    // Only process clips that belong to the folder view
+    // This prevents duplicate processing when multiple components listen to the same event
+    const clip = folderClips.value.find((c) => c.id === clip_id);
+    if (!clip) {
+      console.log(`[Projects] Clip ${clip_id} not in folder view, skipping database update`);
+      return;
+    }
+
     console.log(`[Projects] Clip build complete: ${clip_id}`, { buildSuccess, output_path });
 
-    const clip = folderClips.value.find((c) => c.id === clip_id);
     const isCancelled = buildError && (buildError.includes('cancelled') || buildError.includes('Cancelled'));
 
     // Update local state immediately for instant UI feedback
-    if (clip) {
-      if (buildSuccess) {
-        clip.build_status = 'completed';
-        clip.build_progress = 100;
-        clip.built_file_path = output_path;
-        // Update the builds array locally so download dropdown works immediately
-        if (!clip.builds) clip.builds = [];
-        const existingBuildIdx = clip.builds.findIndex((b: any) => b.status === 'building');
-        if (existingBuildIdx >= 0) {
-          clip.builds[existingBuildIdx].status = 'completed';
-          clip.builds[existingBuildIdx].file_path = output_path;
-          clip.builds[existingBuildIdx].output_paths = JSON.stringify(all_output_paths || [output_path]);
-        }
-        console.log(`[Projects] Local state updated for completed clip: ${clip_id}`);
-      } else if (isCancelled) {
-        clip.build_status = 'pending';
-        clip.build_progress = 0;
-      } else {
-        clip.build_status = 'failed';
-        clip.build_error = buildError || 'Unknown build error';
+    if (buildSuccess) {
+      clip.build_status = 'completed';
+      clip.build_progress = 100;
+      clip.built_file_path = output_path;
+      // Update the builds array locally so download dropdown works immediately
+      if (!clip.builds) clip.builds = [];
+      const existingBuildIdx = clip.builds.findIndex((b: any) => b.status === 'building');
+      if (existingBuildIdx >= 0) {
+        clip.builds[existingBuildIdx].status = 'completed';
+        clip.builds[existingBuildIdx].file_path = output_path;
+        clip.builds[existingBuildIdx].output_paths = JSON.stringify(all_output_paths || [output_path]);
       }
+      console.log(`[Projects] Local state updated for completed clip: ${clip_id}`);
+    } else if (isCancelled) {
+      clip.build_status = 'pending';
+      clip.build_progress = 0;
+    } else {
+      clip.build_status = 'failed';
+      clip.build_error = buildError || 'Unknown build error';
     }
 
     // Update database in the background (non-blocking)
@@ -1871,9 +1876,7 @@
     (async () => {
       if (buildSuccess) {
         try {
-          const { updateClipBuildStatus, getClipBuilds, updateClipBuild, createClipBuild } = await import(
-            '@/services/database'
-          );
+          const { updateClipBuildStatus, getClipBuilds, updateClipBuild } = await import('@/services/database');
 
           await updateClipBuildStatus(clip_id, 'completed', {
             progress: 100,
@@ -1891,17 +1894,12 @@
               filePath: output_path,
               outputPaths: all_output_paths || (output_path ? [output_path] : []),
             });
+            console.log(`[Projects] Database updated for clip: ${clip_id}`);
           } else {
-            // Fallback: create a new build record
-            const buildId = await createClipBuild(clip_id, {});
-            await updateClipBuild(buildId, {
-              status: 'completed',
-              filePath: output_path,
-              outputPaths: all_output_paths || (output_path ? [output_path] : []),
-            });
+            // No 'building' record found - this can happen if another handler already updated it
+            // or if the build was started without creating a record (legacy). Just log a warning.
+            console.warn(`[Projects] No 'building' record found for clip ${clip_id}, skipping build record update`);
           }
-
-          console.log(`[Projects] Database updated for clip: ${clip_id}`);
         } catch (dbError) {
           console.error('[Projects] Failed to update clip build in database:', dbError);
         }
