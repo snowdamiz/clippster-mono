@@ -967,6 +967,9 @@
   // Preview state for optimistic updates (local-only during drag/resize)
   const dragPreview = ref<{ type: ItemType; id: string; startTime: number; endTime: number } | null>(null);
 
+  // Preview state for video source drag/resize (local-only during drag/resize)
+  const sourcePreview = ref<{ sourceId: string; startTime: number; endTime: number } | null>(null);
+
   // Playhead drag state
   const isDraggingPlayhead = ref(false);
 
@@ -1536,9 +1539,17 @@
     const classes: string[] = [];
     const key = `${type}_${id}`;
 
+    // Check if this is a video source being dragged or resized
+    const isSourceDragging = type === 'source' && isDraggingSource.value && dragSourceInfo.value?.sourceId === id;
+    const isSourceResizing = type === 'source' && isResizingSource.value && resizeSourceInfo.value?.sourceId === id;
+
     if (isDragging.value && dragInfo.value?.type === type && dragInfo.value?.id === id) {
       classes.push('cursor-grabbing', 'z-30', 'shadow-2xl', 'border-2', 'border-blue-400', 'dragging');
     } else if (isResizing.value && resizeInfo.value?.type === type && resizeInfo.value?.id === id) {
+      classes.push('cursor-ew-resize', 'z-30', 'shadow-2xl', 'border-2', 'border-green-400', 'resizing');
+    } else if (isSourceDragging) {
+      classes.push('cursor-grabbing', 'z-30', 'shadow-2xl', 'border-2', 'border-blue-400', 'dragging');
+    } else if (isSourceResizing) {
       classes.push('cursor-ew-resize', 'z-30', 'shadow-2xl', 'border-2', 'border-green-400', 'resizing');
     } else {
       classes.push('cursor-grab', 'hover:cursor-grab', 'transition-all', 'duration-200', 'ease-out');
@@ -2060,8 +2071,13 @@
     const isSelected = selectedItemKey.value === `source_${source.id}`;
     const duration = props.duration || 600;
 
-    const left = (source.start_time / duration) * 100;
-    const width = ((source.end_time - source.start_time) / duration) * 100;
+    // Use preview position during drag/resize for smooth updates
+    const preview = sourcePreview.value;
+    const startTime = preview && preview.sourceId === source.id ? preview.startTime : source.start_time;
+    const endTime = preview && preview.sourceId === source.id ? preview.endTime : source.end_time;
+
+    const left = (startTime / duration) * 100;
+    const width = ((endTime - startTime) / duration) * 100;
 
     return {
       left: `${left}%`,
@@ -2142,15 +2158,26 @@
       newStartTime = props.duration - duration;
     }
 
-    emit('updateSource', dragSourceInfo.value.sourceId, {
-      start_time: newStartTime,
-      end_time: newEndTime,
-    });
+    // Update local preview state (no database call) for smooth dragging
+    sourcePreview.value = {
+      sourceId: dragSourceInfo.value.sourceId,
+      startTime: newStartTime,
+      endTime: newEndTime,
+    };
   }
 
   function onSourceDragEnd() {
+    // Commit the final position to database only on drag end
+    if (sourcePreview.value && dragSourceInfo.value) {
+      emit('updateSource', dragSourceInfo.value.sourceId, {
+        start_time: sourcePreview.value.startTime,
+        end_time: sourcePreview.value.endTime,
+      });
+    }
+
     isDraggingSource.value = false;
     dragSourceInfo.value = null;
+    sourcePreview.value = null;
     document.removeEventListener('mousemove', onSourceDragMove);
     document.removeEventListener('mouseup', onSourceDragEnd);
   }
@@ -2194,15 +2221,26 @@
       }
     }
 
-    emit('updateSource', resizeSourceInfo.value.sourceId, {
-      start_time: newStartTime,
-      end_time: newEndTime,
-    });
+    // Update local preview state (no database call) for smooth resizing
+    sourcePreview.value = {
+      sourceId: resizeSourceInfo.value.sourceId,
+      startTime: newStartTime,
+      endTime: newEndTime,
+    };
   }
 
   function onSourceResizeDragEnd() {
+    // Commit the final position to database only on resize end
+    if (sourcePreview.value && resizeSourceInfo.value) {
+      emit('updateSource', resizeSourceInfo.value.sourceId, {
+        start_time: sourcePreview.value.startTime,
+        end_time: sourcePreview.value.endTime,
+      });
+    }
+
     isResizingSource.value = false;
     resizeSourceInfo.value = null;
+    sourcePreview.value = null;
     document.removeEventListener('mousemove', onSourceResizeDragMove);
     document.removeEventListener('mouseup', onSourceResizeDragEnd);
   }
