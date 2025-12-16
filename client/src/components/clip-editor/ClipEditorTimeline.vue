@@ -2,7 +2,7 @@
   <div class="bg-gradient-to-t from-[#0a0a0a]/50 to-[#0a0a0a]/20 transition-all duration-300 ease-in-out">
     <div class="pt-3 px-4 pb-3 flex flex-col">
       <!-- Timeline Header -->
-      <div class="flex items-center justify-between mb-3 pr-1 flex-shrink-0">
+      <div class="flex items-center justify-between mb-2 pr-1 flex-shrink-0">
         <div class="flex items-center gap-2">
           <!-- Timeline Toolbar -->
           <!-- Zoom Controls -->
@@ -618,11 +618,11 @@
             <div class="absolute inset-y-0 bg-white/80 group-hover:bg-white playhead-line-inner playhead-child">
               <!-- Top circle -->
               <div
-                class="absolute top-0 left-1/2 w-1.5 h-1.5 bg-white rounded-full shadow-md playhead-circle playhead-child"
+                class="absolute top-0 left-0 w-2 h-2 bg-white rounded-full shadow-md playhead-circle playhead-child"
               ></div>
               <!-- Bottom circle -->
               <div
-                class="absolute bottom-0 left-1/2 w-1.5 h-1.5 bg-white/80 rounded-full shadow-md playhead-circle playhead-child"
+                class="absolute bottom-0 left-0 w-2 h-2 bg-white/80 rounded-full shadow-md playhead-circle playhead-child"
               ></div>
             </div>
           </div>
@@ -1960,9 +1960,10 @@
     const relativeX = event.clientX - rect.left;
 
     // Update timeline bounds
+    // Use clientHeight to exclude horizontal scrollbar height from the bottom bound
     timelineBounds.value = {
       top: rect.top,
-      bottom: rect.bottom,
+      bottom: rect.top + container.clientHeight,
       left: rect.left + TRACK_LABEL_WIDTH,
     };
 
