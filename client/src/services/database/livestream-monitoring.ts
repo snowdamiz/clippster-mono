@@ -136,9 +136,11 @@ export async function createLivestreamSession(
   const now = timestamp();
   const startTime = streamStartTime ?? now;
 
-  // Try to find an existing parent project for this streamer from a recent session (within last 24 hours)
-  // This ensures segments from reconnects/multiple sessions are grouped together
-  const recentCutoff = now - 86400; // 24 hours ago
+  // Try to find an existing parent project for this streamer from today's sessions
+  // This ensures segments from reconnects/multiple sessions on the SAME DAY are grouped together
+  // but creates a new project each calendar day
+  const startOfToday = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000); // Midnight today (Unix timestamp)
+  const recentCutoff = startOfToday;
   const existingSession = await db.select<{ project_id: string }[]>(
     `SELECT project_id FROM livestream_sessions 
      WHERE monitored_streamer_id = ? AND project_id IS NOT NULL AND created_at > ?

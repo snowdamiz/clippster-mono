@@ -874,6 +874,7 @@
       :video-path="videoPath"
       :clip-start-time="clipStartTime"
       :clip-end-time="clipEndTime"
+      :watermark-settings="watermarkSettings"
       @confirm="onManualConfigConfirm"
     />
 
@@ -1482,8 +1483,15 @@
     emit('update:modelValue', false);
   }
 
+  // Guard to prevent double submissions (e.g., from double-clicks)
+  const isSubmitting = ref(false);
+
   function confirmBuild() {
+    // Prevent double submissions
+    if (isSubmitting.value) return;
     if (selectedRatios.value.length === 0) return;
+
+    isSubmitting.value = true;
 
     // Use watermark settings from props (configured in WatermarkTab)
     const watermarkSettings: WatermarkSettings | null = props.watermarkSettings?.enabled
@@ -1506,7 +1514,7 @@
       Object.keys(subtitleOverrides.value).length > 0 ? subtitleOverrides.value : undefined;
 
     const settings: BuildSettings = {
-      aspectRatios: selectedRatios.value,
+      aspectRatios: [...selectedRatios.value], // Create a copy to avoid mutation issues
       quality: quality.value,
       frameRate: frameRate.value,
       format: outputFormat.value,
@@ -1519,6 +1527,7 @@
       subtitleOverrides: finalSubtitleOverrides,
     };
 
+    console.log('[ClipBuildSettingsDialog] Emitting confirm with aspectRatios:', settings.aspectRatios);
     emit('confirm', settings);
     close();
   }

@@ -196,6 +196,28 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     currentTime.value = seekTime;
   }
 
+  // Direct seek to a specific time value
+  function seekToTime(time: number) {
+    if (!videoElement.value || !videoSrc.value) {
+      return;
+    }
+
+    // If we're playing segments, stop segmented playback when user seeks
+    if (isPlayingSegments.value) {
+      stopSegmentedPlayback();
+    }
+
+    const videoDuration = videoElement.value.duration || duration.value;
+    if (!videoDuration || isNaN(videoDuration)) {
+      return;
+    }
+
+    // Clamp to valid range
+    const clampedTime = Math.max(0, Math.min(time, videoDuration));
+    videoElement.value.currentTime = clampedTime;
+    currentTime.value = clampedTime;
+  }
+
   function onTimelineTrackHover(event: MouseEvent) {
     if (!videoElement.value || !videoSrc.value) return;
 
@@ -586,6 +608,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     togglePlayPause,
     togglePlayPauseWithSegments,
     seekTimeline,
+    seekToTime,
     onTimelineTrackHover,
     onTimelineZoomChanged,
     updateVolume,

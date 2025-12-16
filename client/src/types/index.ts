@@ -231,6 +231,31 @@ export interface SubtitleOverrides {
   '4:5'?: SubtitleOverride;
 }
 
+// Watermark position for a specific aspect ratio
+export interface WatermarkPositionSettings {
+  x: number;
+  y: number;
+  opacity: number;
+  scale: number;
+}
+
+// Per-aspect-ratio watermark configuration
+// Allows using different watermark images for different aspect ratios
+export interface WatermarkRatioConfig {
+  watermarkId: string | null; // Different watermark image for this ratio
+  position: WatermarkPositionSettings | null; // Position settings for this ratio
+}
+
+// Per-aspect-ratio watermark settings from creator profile
+// Settings can be null to indicate watermark is disabled for that ratio
+// Each ratio can have a completely different watermark image
+export interface PerRatioWatermarkSettings {
+  '16:9': WatermarkRatioConfig | null;
+  '9:16': WatermarkRatioConfig | null;
+  '1:1': WatermarkRatioConfig | null;
+  '4:5': WatermarkRatioConfig | null;
+}
+
 // Watermark Types
 export interface WatermarkSettings {
   enabled: boolean;
@@ -239,6 +264,10 @@ export interface WatermarkSettings {
   positionY: number; // 0-100 (percentage from top)
   opacity: number; // 0-100
   scale: number; // 0-100 (percentage of video width)
+  width?: number | null; // original watermark width (px) if known
+  height?: number | null; // original watermark height (px) if known
+  // Optional per-aspect-ratio settings from creator profile
+  perRatioSettings?: PerRatioWatermarkSettings | null;
 }
 
 export interface MediaPanelProps {

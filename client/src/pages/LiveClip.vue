@@ -76,164 +76,163 @@
           </div>
 
           <div class="relative">
-            <transition-group name="list" tag="div" class="space-y-4">
+            <transition-group name="list" tag="div" class="space-y-2">
               <div
-                v-for="streamer in streamers"
+                v-for="streamer in sortedStreamers"
                 :key="streamer.id"
-                class="group relative flex items-center justify-between p-3 bg-card border border-border/50 rounded-lg transition-all duration-200 hover:border-primary/30 hover:bg-accent/5 shadow-sm"
+                class="group bg-card border border-border/50 rounded-xl transition-all duration-200 hover:border-primary/30 hover:bg-accent/5 shadow-sm overflow-hidden"
                 :class="{
                   'border-green-500/30 bg-green-500/5': streamer.isDetecting,
                   'border-red-500/20 bg-red-500/5': !streamer.isDetecting && streamer.isLive,
                 }"
               >
-                <!-- Left: Identity -->
-                <div class="flex items-center gap-4 min-w-0">
-                  <!-- Icon -->
+                <!-- Row 1: Streamer Identity -->
+                <div class="flex items-center gap-3 px-4 py-3">
+                  <!-- Avatar -->
                   <div
-                    class="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 overflow-hidden relative bg-muted"
+                    class="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden relative bg-muted"
                   >
-                    <!-- Image Layer (Profile or Stream Thumbnail) -->
                     <img
                       v-if="streamer.profileImageUrl || streamer.streamThumbnailUrl"
                       :src="streamer.streamThumbnailUrl || streamer.profileImageUrl"
-                      class="w-full h-full object-cover absolute inset-0 z-20 rounded-2xl border border-border"
+                      class="w-full h-full object-cover absolute inset-0 z-20 rounded-xl border border-border"
                     />
-
-                    <!-- Solid Background Layer (Fallback) -->
                     <div v-else class="absolute inset-0" :class="getPlatformSolidBg(streamer.platform)"></div>
-
-                    <!-- Icon Layer (Fallback) -->
                     <img
                       v-if="!streamer.profileImageUrl && !streamer.streamThumbnailUrl"
                       :src="getPlatformIcon(streamer.platform)"
-                      class="w-7 h-7 relative z-10"
+                      class="w-6 h-6 relative z-10"
                       :class="getPlatformIconClasses(streamer.platform)"
                     />
                   </div>
 
-                  <!-- Text -->
-                  <div class="flex flex-col min-w-0">
-                    <h3 class="font-semibold text-lg truncate pr-4 text-foreground">
+                  <!-- Streamer Info -->
+                  <div class="flex-1 min-w-0">
+                    <h3 class="font-semibold text-base text-foreground truncate">
                       {{ streamer.displayName }}
                     </h3>
-                    <span class="text-sm text-muted-foreground flex items-center gap-1">
-                      {{ streamer.platform }}
-                      <!-- Live status when monitoring -->
-                      <span v-if="streamer.isDetecting" class="text-green-500 flex items-center gap-1 ml-2">
+                    <div class="flex items-center gap-2 mt-0.5">
+                      <span class="text-sm text-muted-foreground">{{ streamer.platform }}</span>
+                      <span class="text-muted-foreground/30">•</span>
+                      <!-- Status -->
+                      <span
+                        v-if="streamer.isDetecting"
+                        class="text-green-500 flex items-center gap-1.5 text-sm font-medium"
+                      >
                         <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
                         {{ getStatusLabel(streamer) }}
                       </span>
-                      <!-- Live status when NOT monitoring (checked on page load) -->
                       <template v-else>
-                        <span v-if="streamer.isCheckingLive" class="text-muted-foreground flex items-center gap-1 ml-2">
-                          <Loader2 class="w-3 h-3 animate-spin" />
+                        <span v-if="streamer.isCheckingLive" class="text-muted-foreground flex items-center gap-1.5">
+                          <Loader2 class="w-3.5 h-3.5 animate-spin" />
                         </span>
-                        <span v-else-if="streamer.isLive" class="text-red-500 flex items-center gap-1 ml-2">
+                        <span
+                          v-else-if="streamer.isLive"
+                          class="text-red-500 flex items-center gap-1.5 text-sm font-medium"
+                        >
                           <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
                           LIVE
-                          <span v-if="streamer.viewerCount" class="text-muted-foreground text-xs">
-                            · {{ formatViewerCount(streamer.viewerCount) }} viewers
+                          <span v-if="streamer.viewerCount" class="text-muted-foreground font-normal">
+                            ({{ formatViewerCount(streamer.viewerCount) }} viewers)
                           </span>
                         </span>
-                        <span v-else class="text-muted-foreground/60 flex items-center gap-1 ml-2">
+                        <span v-else class="text-muted-foreground/60 flex items-center gap-1.5 text-sm">
                           <span class="w-2 h-2 rounded-full bg-muted-foreground/40"></span>
                           Offline
                         </span>
                       </template>
-                    </span>
+                    </div>
                   </div>
-                </div>
 
-                <!-- Right: Actions -->
-                <div class="flex items-center gap-2">
-                  <!-- Controls when Idle -->
-                  <template v-if="!streamer.isDetecting">
-                    <div
-                      v-if="streamer.status === 'STOPPING'"
-                      class="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 text-amber-500 rounded-md border border-amber-500/20"
-                    >
-                      <Loader2 class="w-3.5 h-3.5 animate-spin" />
-                      <span class="text-xs font-medium">Stopping...</span>
-                    </div>
-                    <div v-else class="flex items-center gap-2">
-                      <!-- Segment Duration Selector -->
-                      <Select
-                        :model-value="String(streamer.segmentDurationMinutes)"
-                        @update:model-value="updateSegmentDuration(streamer, Number($event))"
-                      >
-                        <SelectTrigger
-                          class="h-8 w-[72px] bg-muted/30 border-border/50 text-xs"
-                          title="Segment duration for this streamer"
-                        >
-                          <Clock class="w-3 h-3 text-muted-foreground/60 mr-1" />
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="3">3 min</SelectItem>
-                          <SelectItem value="5">5 min</SelectItem>
-                          <SelectItem value="10">10 min</SelectItem>
-                          <SelectItem value="15">15 min</SelectItem>
-                          <SelectItem value="30">30 min</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <!-- Start Buttons -->
-                      <div class="flex items-center bg-muted/30 rounded-lg p-1 gap-1 border border-border/50">
-                        <button
-                          @click="startStreamer(streamer, false)"
-                          class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all hover:bg-background hover:shadow-sm text-muted-foreground hover:text-foreground"
-                          title="Start Recording Only"
-                        >
-                          <Video class="w-3.5 h-3.5" />
-                          Rec
-                        </button>
-                        <div class="w-px h-4 bg-border/50"></div>
-                        <button
-                          @click="startStreamer(streamer, true)"
-                          class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all hover:bg-background hover:shadow-sm text-purple-500 hover:text-purple-600"
-                          title="Start Auto-Detect"
-                        >
-                          <Sparkles class="w-3.5 h-3.5" />
-                          Auto Detect
-                        </button>
-                      </div>
-                    </div>
-                  </template>
-
-                  <!-- Controls when Active -->
-                  <template v-else>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      class="h-9 px-4 rounded-lg text-xs font-semibold shadow-sm opacity-90 hover:opacity-100 transition-all text-white"
-                      @click="stopStreamer(streamer)"
-                    >
-                      <Square class="w-3.5 h-3.5 mr-1.5 fill-current" />
-                      Stop
-                    </Button>
-                  </template>
-
-                  <!-- Refresh & Delete Buttons (Only show when idle) -->
-                  <div class="w-px h-8 bg-border/30 mx-1" v-if="!streamer.isDetecting"></div>
-
-                  <button
-                    v-if="!streamer.isDetecting"
-                    @click.stop="refreshLiveStatus(streamer)"
-                    class="p-2 rounded-lg text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors"
-                    :class="{ 'animate-spin': streamer.isCheckingLive }"
-                    :disabled="streamer.isCheckingLive"
-                    title="Refresh live status"
-                  >
-                    <RefreshCw class="w-4 h-4" />
-                  </button>
-
+                  <!-- Delete Button (top right) -->
                   <button
                     v-if="!streamer.isDetecting"
                     @click.stop="removeStreamer(streamer.id)"
-                    class="p-2 rounded-lg text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    class="p-2 rounded-lg text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 transition-colors"
                     title="Remove streamer"
                   >
                     <Trash2 class="w-4 h-4" />
                   </button>
+                </div>
+
+                <!-- Row 2: Actions -->
+                <div class="flex items-center justify-between gap-3 px-4 py-2.5 bg-muted/20 border-t border-border/30">
+                  <!-- Left: Segment Duration -->
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs text-muted-foreground">Segment:</span>
+                    <Select
+                      :model-value="String(streamer.segmentDurationMinutes)"
+                      @update:model-value="updateSegmentDuration(streamer, Number($event))"
+                      :disabled="streamer.isDetecting"
+                    >
+                      <SelectTrigger
+                        class="h-8 w-[90px] bg-background border-border/50 text-sm"
+                        :class="{ 'opacity-50': streamer.isDetecting }"
+                      >
+                        <SelectValue :placeholder="`${streamer.segmentDurationMinutes} min`" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="3">3 min</SelectItem>
+                        <SelectItem value="5">5 min</SelectItem>
+                        <SelectItem value="10">10 min</SelectItem>
+                        <SelectItem value="15">15 min</SelectItem>
+                        <SelectItem value="30">30 min</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <!-- Right: Action Buttons -->
+                  <div class="flex items-center gap-2">
+                    <template v-if="!streamer.isDetecting">
+                      <div
+                        v-if="streamer.status === 'STOPPING'"
+                        class="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 text-amber-500 rounded-lg border border-amber-500/20"
+                      >
+                        <Loader2 class="w-4 h-4 animate-spin" />
+                        <span class="text-sm font-medium">Stopping...</span>
+                      </div>
+                      <template v-else>
+                        <button
+                          @click.stop="refreshLiveStatus(streamer)"
+                          class="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                          :class="{ 'animate-spin': streamer.isCheckingLive }"
+                          :disabled="streamer.isCheckingLive"
+                          title="Refresh live status"
+                        >
+                          <RefreshCw class="w-4 h-4" />
+                        </button>
+                        <button
+                          @click="startStreamer(streamer, false)"
+                          class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all bg-muted/50 hover:bg-muted text-foreground border border-border/50"
+                          title="Start Recording Only"
+                        >
+                          <Video class="w-4 h-4" />
+                          Rec
+                        </button>
+                        <button
+                          @click="startStreamer(streamer, true)"
+                          class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30"
+                          title="Start Auto-Detect"
+                        >
+                          <Sparkles class="w-4 h-4" />
+                          Auto Detect
+                        </button>
+                      </template>
+                    </template>
+
+                    <!-- Stop Button when Active -->
+                    <template v-else>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        class="h-9 px-5 rounded-lg text-sm font-semibold shadow-sm"
+                        @click="stopStreamer(streamer)"
+                      >
+                        <Square class="w-4 h-4 mr-2 fill-current" />
+                        Stop
+                      </Button>
+                    </template>
+                  </div>
                 </div>
               </div>
             </transition-group>
@@ -431,6 +430,28 @@
   const { hoursRemaining, fetchBalance } = useCreditBalance();
 
   const isDetectingAny = computed(() => monitoredStreamers.value.size > 0 || activeSessions.value.size > 0);
+
+  // Sorted streamers: Detecting/Recording first, then Live, then Offline (each group alphabetically)
+  const sortedStreamers = computed(() => {
+    return [...streamers.value].sort((a, b) => {
+      // Priority: 1 = Detecting/Recording, 2 = Live (not detecting), 3 = Offline
+      const getPriority = (s: ExtendedStreamer) => {
+        if (s.isDetecting) return 1; // Actively recording or auto-detecting (highest priority)
+        if (s.isLive) return 2; // Live but not being monitored
+        return 3; // Offline
+      };
+
+      const aPriority = getPriority(a);
+      const bPriority = getPriority(b);
+
+      if (aPriority !== bPriority) return aPriority - bPriority;
+
+      // Then sort alphabetically by display name (case-insensitive)
+      const aName = (a.displayName || a.mintId).toLowerCase();
+      const bName = (b.displayName || b.mintId).toLowerCase();
+      return aName.localeCompare(bName);
+    });
+  });
 
   // Credit warning state
   const showCreditWarningDialog = ref(false);

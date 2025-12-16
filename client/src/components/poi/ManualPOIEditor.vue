@@ -79,6 +79,7 @@
                     :video-url="videoUrl"
                     :video-time="absoluteVideoTime"
                     :is-playing="isPlaying"
+                    :watermark-preview="resolvedWatermark"
                     @update-region="updateRegion"
                     @select-region="selectRegion"
                   />
@@ -206,8 +207,16 @@
   } from 'lucide-vue-next';
   import POISourcePanel from './POISourcePanel.vue';
   import POITargetPanel from './POITargetPanel.vue';
-  import type { ManualRegion, ManualFramingConfig } from '@/types';
+  import type { ManualRegion, ManualFramingConfig, WatermarkSettings } from '@/types';
   import { utf8ToBase64 } from '@/utils/encoding';
+
+  interface WatermarkPreview {
+    filePath: string;
+    x: number;
+    y: number;
+    scale: number;
+    opacity: number;
+  }
 
   interface Props {
     modelValue: boolean;
@@ -218,12 +227,15 @@
     videoPath?: string | null;
     clipStartTime?: number;
     clipEndTime?: number;
+    // Optional watermark preview for the target aspect ratio
+    watermarkSettings?: WatermarkSettings | null;
   }
 
   const props = withDefaults(defineProps<Props>(), {
     sourceAspectRatio: '16:9',
     clipStartTime: 0,
     clipEndTime: 0,
+    watermarkSettings: null,
   });
 
   const emit = defineEmits<{
@@ -302,6 +314,28 @@
   // Get absolute video time from clip-relative time
   const absoluteVideoTime = computed(() => {
     return props.clipStartTime + currentTime.value;
+  });
+
+  // Resolve watermark settings for the target aspect ratio
+  const resolvedWatermark = computed((): WatermarkPreview | null => {
+    if (!props.watermarkSettings?.enabled) return null;
+    
+    const ratioKey = props.targetAspectRatio as '16:9' | '9:16' | '1:1' | '4:5';
+    const perRatioConfig = props.watermarkSettings.perRatioSettings?.[ratioKey];
+    
+    // If config is explicitly null, watermark is disabled for this ratio
+    if (perRatioConfig === null) return null;
+    
+    // Use per-ratio position if available, otherwise default
+    const position = perRatioConfig?.position;
+    
+    return {
+      filePath: '', // Will be loaded by POITargetPanel
+      x: position?.x ?? props.watermarkSettings.positionX,
+      y: position?.y ?? props.watermarkSettings.positionY,
+      scale: position?.scale ?? props.watermarkSettings.scale,
+      opacity: position?.opacity ?? props.watermarkSettings.opacity,
+    };
   });
 
   // Handle seek bar click

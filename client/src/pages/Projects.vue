@@ -937,7 +937,11 @@
                 </div>
 
                 <!-- Video Container - Fixed 16:9 aspect ratio with custom controls -->
-                <div class="w-full aspect-video bg-black rounded-lg overflow-hidden relative group">
+                <div
+                  ref="inlineVideoContainerRef"
+                  class="w-full aspect-video bg-black rounded-lg overflow-hidden relative group"
+                  :class="{ 'inline-video-fullscreen': isInlineVideoFullscreen }"
+                >
                   <video
                     v-if="inlineVideoSrc"
                     ref="inlineVideoRef"
@@ -955,29 +959,73 @@
                     <p class="text-muted-foreground text-sm">No video source available</p>
                   </div>
 
+                  <!-- Watermark Overlay -->
+                  <div
+                    v-if="previewWatermarkData && previewWatermarkSettings && inlineVideoSrc"
+                    class="absolute pointer-events-none z-10 transition-opacity duration-300"
+                    :style="getPreviewWatermarkStyle"
+                  >
+                    <img
+                      :src="previewWatermarkData.dataUrl"
+                      alt="Watermark"
+                      class="max-w-full max-h-full object-contain"
+                      :style="{ opacity: (previewWatermarkSettings.opacity || 80) / 100 }"
+                    />
+                  </div>
+
                   <!-- Custom Video Controls -->
                   <div
                     v-if="inlineVideoSrc"
-                    class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-3 pt-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                    class="absolute bottom-0 left-0 right-0 bg-black/60 backdrop-blur-sm transition-opacity"
+                    :class="isInlineVideoFullscreen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
                   >
-                    <!-- Progress Bar -->
+                    <!-- Full-width Progress Bar -->
                     <div
-                      class="w-full h-1.5 bg-white/20 rounded-full cursor-pointer mb-3 group/progress"
-                      @click="seekInlineVideo"
+                      ref="inlineProgressBarRef"
+                      class="relative h-4 w-full cursor-pointer group/progress flex items-center"
                       @mousedown="startInlineSeekDrag"
+                      @mousemove="onInlineTimelineHover"
+                      @mouseleave="onInlineTimelineLeave"
                     >
-                      <div
-                        class="h-full bg-primary rounded-full relative"
-                        :style="{ width: `${inlineVideoProgress}%` }"
-                      >
+                      <!-- Visual track (centered in larger hit area) -->
+                      <div class="absolute inset-x-0 h-1 top-1/2 -translate-y-1/2">
+                        <!-- Background track -->
+                        <div class="absolute inset-0 bg-white/20"></div>
+                        <!-- Progress Bar -->
                         <div
-                          class="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover/progress:opacity-100 transition-opacity shadow-md"
+                          class="absolute h-full bg-violet-500"
+                          :class="{ 'transition-all duration-75': !inlineSeekDragging }"
+                          :style="{ width: `${inlineVideoProgress}%` }"
                         ></div>
+                      </div>
+                      <!-- Seek thumb - always visible, larger during drag -->
+                      <div
+                        class="absolute top-1/2 bg-violet-400 rounded-full shadow-md pointer-events-none"
+                        :class="[
+                          inlineSeekDragging ? 'w-4 h-4' : 'w-3 h-3',
+                          { 'transition-all duration-75': !inlineSeekDragging },
+                        ]"
+                        :style="{ left: `${inlineVideoProgress}%`, transform: 'translate(-50%, -50%)' }"
+                      ></div>
+                      <!-- Hover/drag time preview -->
+                      <div
+                        v-if="inlineHoverTime !== null || inlineSeekDragging"
+                        class="absolute -top-8 bg-black/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded font-medium whitespace-nowrap z-20 pointer-events-none"
+                        :style="{
+                          left: `${inlineSeekDragging ? inlineVideoProgress : inlineHoverPosition}%`,
+                          transform: 'translateX(-50%)',
+                        }"
+                      >
+                        {{
+                          formatDuration(
+                            inlineSeekDragging ? (inlineVideoProgress / 100) * inlineVideoClipDuration : inlineHoverTime
+                          )
+                        }}
                       </div>
                     </div>
 
                     <!-- Controls Row -->
-                    <div class="flex items-center justify-between">
+                    <div class="flex items-center justify-between px-3 py-2">
                       <div class="flex items-center gap-3">
                         <!-- Play/Pause -->
                         <button @click="toggleInlineVideoPlay" class="text-white hover:text-primary transition-colors">
@@ -1015,8 +1063,10 @@
                       <button
                         @click="toggleInlineVideoFullscreen"
                         class="text-white hover:text-primary transition-colors"
+                        :title="isInlineVideoFullscreen ? 'Exit Fullscreen' : 'Fullscreen'"
                       >
-                        <Maximize2 class="w-4 h-4" />
+                        <Minimize2 v-if="isInlineVideoFullscreen" class="w-4 h-4" />
+                        <Maximize2 v-else class="w-4 h-4" />
                       </button>
                     </div>
                   </div>
@@ -1152,8 +1202,9 @@
             </p>
           </div>
           <button
-            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
+            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             @click="deleteProjectConfirmed"
+            :disabled="deletingProject"
           >
             {{
               deleteSegmentsToo && hasChildren(projectToDelete?.id || '')
@@ -1191,8 +1242,9 @@
           </p>
 
           <button
-            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
+            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             @click="bulkDeleteConfirmed"
+            :disabled="bulkDeleting"
           >
             Delete {{ selectedProjects.size }} Projects
           </button>
@@ -1275,6 +1327,7 @@
     VolumeX,
     Volume2,
     Maximize2,
+    Minimize2,
   } from 'lucide-vue-next';
   import {
     getAllProjects,
@@ -1351,6 +1404,9 @@
   const viewMode = ref<'folders' | 'list'>('folders');
   const showFolderDialog = ref(false);
   const folderProject = ref<Project | null>(null);
+  // Delete state
+  const deletingProject = ref(false);
+  const bulkDeleting = ref(false);
 
   // Multi-select state
   const selectedProjects = ref<Set<string>>(new Set());
@@ -1686,6 +1742,44 @@
     return null;
   });
 
+  // Computed style for watermark position
+  const getPreviewWatermarkStyle = computed(() => {
+    if (!previewWatermarkSettings.value) return {};
+
+    const settings = previewWatermarkSettings.value;
+
+    // Check if this is a full-frame 1920x1080 watermark (16:9 overlay)
+    const wmWidth = previewWatermarkData.value?.width ?? null;
+    const wmHeight = previewWatermarkData.value?.height ?? null;
+    const ratio = wmWidth && wmHeight ? wmWidth / wmHeight : null;
+    const is16x9 = ratio ? Math.abs(ratio - 16 / 9) < 0.02 : false;
+    const isFullFrame = is16x9 && wmWidth !== null && wmHeight !== null && wmWidth >= 1600 && wmHeight >= 900;
+
+    // Full-frame watermarks fill the entire video and sit at 0,0
+    if (isFullFrame) {
+      return {
+        width: '100%',
+        height: '100%',
+        left: '0%',
+        top: '0%',
+        transform: 'none',
+      };
+    }
+
+    // Standard watermarks use percentage-based positioning
+    const positionX = settings.positionX ?? 12;
+    const positionY = settings.positionY ?? 92;
+    const scale = settings.scale ?? 20;
+
+    return {
+      left: `${positionX}%`,
+      top: `${positionY}%`,
+      transform: 'translate(-50%, -50%)',
+      width: `${scale}%`,
+      maxWidth: `${scale}%`,
+    };
+  });
+
   function getFolderChildren(projectId: string): Project[] {
     return childrenMap.value.get(projectId) || [];
   }
@@ -1950,6 +2044,8 @@
   // Preview clip in popup player
   // Inline video player state
   const inlineVideoRef = ref<HTMLVideoElement | null>(null);
+  const inlineVideoContainerRef = ref<HTMLElement | null>(null);
+  const isInlineVideoFullscreen = ref(false);
   const inlineVideoSrc = ref<string | null>(null);
   const inlineVideoLoading = ref(false);
   const inlineVideoPlaying = ref(false);
@@ -1959,6 +2055,13 @@
   const inlineVideoClipDuration = ref(0);
   const inlineVideoProgress = ref(0);
   const inlineSeekDragging = ref(false);
+  const inlineProgressBarRef = ref<HTMLElement | null>(null);
+  const inlineHoverTime = ref<number | null>(null);
+  const inlineHoverPosition = ref(0);
+
+  // Watermark state for clip preview
+  const previewWatermarkData = ref<{ dataUrl: string; width?: number; height?: number } | null>(null);
+  const previewWatermarkSettings = ref<WatermarkSettings | null>(null);
 
   // Prepare video source when clip changes
   async function prepareInlineVideo() {
@@ -1981,14 +2084,136 @@
     }
   }
 
-  // Watch for clip changes to prepare video
+  // Watch for clip changes to prepare video and load watermark
   watch(clipToPreview, async (newClip) => {
     if (newClip) {
       await prepareInlineVideo();
+      await loadPreviewWatermark(newClip);
     } else {
       inlineVideoSrc.value = null;
+      previewWatermarkData.value = null;
+      previewWatermarkSettings.value = null;
     }
   });
+
+  // Load watermark for the clip preview based on creator profile
+  async function loadPreviewWatermark(clip: ClipWithVersionAndSegment) {
+    previewWatermarkData.value = null;
+    previewWatermarkSettings.value = null;
+
+    try {
+      // Get the segment's project ID - this is where the creator profile is linked
+      const segmentProjectId = clip.segment_id;
+      if (!segmentProjectId) {
+        console.log('[Projects] loadPreviewWatermark: No segment_id found');
+        return;
+      }
+      console.log('[Projects] loadPreviewWatermark: Loading for segment:', segmentProjectId);
+
+      // Get the creator profile for the segment (not the parent folder)
+      let creatorProfile = await getCreatorProfileByProjectId(segmentProjectId);
+      console.log(
+        '[Projects] loadPreviewWatermark: Creator profile for segment',
+        segmentProjectId,
+        ':',
+        creatorProfile
+      );
+
+      // If no creator profile on segment, try the parent folder as fallback
+      if (!creatorProfile) {
+        const project = projects.value.find((p) => p.id === segmentProjectId);
+        if (project?.parent_id) {
+          creatorProfile = await getCreatorProfileByProjectId(project.parent_id);
+          console.log('[Projects] loadPreviewWatermark: Fallback to parent', project.parent_id, ':', creatorProfile);
+        }
+      }
+
+      if (!creatorProfile || !creatorProfile.watermark_id) {
+        console.log('[Projects] loadPreviewWatermark: No creator profile or watermark_id');
+        return;
+      }
+
+      // Load the watermark image
+      const watermark = await getWatermarkImage(creatorProfile.watermark_id);
+      if (!watermark) return;
+
+      // Load watermark data URL
+      const dataUrl = await invoke<string>('read_file_as_data_url', {
+        filePath: watermark.file_path,
+      });
+
+      // Get dimensions from database or measure the image
+      let wmWidth = watermark.width || undefined;
+      let wmHeight = watermark.height || undefined;
+
+      // If dimensions not in database, measure the image
+      if (!wmWidth || !wmHeight) {
+        try {
+          const measured = await new Promise<{ width: number; height: number } | null>((resolve) => {
+            const img = new Image();
+            img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+            img.onerror = () => resolve(null);
+            img.src = dataUrl;
+          });
+          if (measured) {
+            wmWidth = measured.width;
+            wmHeight = measured.height;
+          }
+        } catch {
+          // Ignore measurement errors
+        }
+      }
+
+      previewWatermarkData.value = {
+        dataUrl,
+        width: wmWidth,
+        height: wmHeight,
+      };
+      console.log('[Projects] loadPreviewWatermark: Watermark data loaded:', { width: wmWidth, height: wmHeight });
+
+      // Parse watermark settings from creator profile
+      let watermarkSettings: WatermarkSettings = {
+        enabled: true,
+        watermarkId: creatorProfile.watermark_id,
+        positionX: 12,
+        positionY: 92,
+        opacity: 80,
+        scale: 20,
+      };
+
+      // Try to parse stored watermark settings
+      if (creatorProfile.watermark_settings) {
+        try {
+          const parsed =
+            typeof creatorProfile.watermark_settings === 'string'
+              ? JSON.parse(creatorProfile.watermark_settings)
+              : creatorProfile.watermark_settings;
+
+          // Get the 16:9 settings (default preview aspect ratio)
+          const ratioSettings = parsed['16:9'];
+          if (ratioSettings) {
+            watermarkSettings = {
+              enabled: true,
+              watermarkId: creatorProfile.watermark_id,
+              positionX: ratioSettings.x ?? 12,
+              positionY: ratioSettings.y ?? 92,
+              opacity: ratioSettings.opacity ?? 80,
+              scale: ratioSettings.scale ?? 20,
+            };
+          }
+        } catch (e) {
+          // Use defaults if parsing fails
+        }
+      }
+
+      previewWatermarkSettings.value = watermarkSettings;
+      console.log('[Projects] loadPreviewWatermark: Settings loaded:', watermarkSettings);
+    } catch (error) {
+      console.error('[Projects] Failed to load watermark for preview:', error);
+      previewWatermarkData.value = null;
+      previewWatermarkSettings.value = null;
+    }
+  }
 
   function previewClip(clip: ClipWithVersionAndSegment) {
     clipToPreview.value = clip;
@@ -1996,6 +2221,11 @@
 
   // Close clip preview
   function closeClipPreview() {
+    // Exit fullscreen if in fullscreen mode
+    if (isInlineVideoFullscreen.value && document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+      isInlineVideoFullscreen.value = false;
+    }
     if (inlineVideoRef.value) {
       inlineVideoRef.value.pause();
     }
@@ -2090,51 +2320,90 @@
     }
   }
 
-  // Seek video based on click position
-  function seekInlineVideo(event: MouseEvent) {
+  // Calculate percent from mouse position on progress bar
+  function getInlinePercentFromEvent(event: MouseEvent): number {
+    if (!inlineProgressBarRef.value) return 0;
+    const rect = inlineProgressBarRef.value.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    return Math.max(0, Math.min(100, (x / rect.width) * 100));
+  }
+
+  // Seek video to a specific percent
+  function seekInlineVideoToPercent(percent: number) {
     if (!inlineVideoRef.value || !clipToPreview.value) return;
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const percent = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
     const startTime = getClipStartTime();
-    const newTime = startTime + percent * inlineVideoClipDuration.value;
+    const newTime = startTime + (percent / 100) * inlineVideoClipDuration.value;
     inlineVideoRef.value.currentTime = newTime;
-    inlineVideoCurrentTime.value = percent * inlineVideoClipDuration.value;
-    inlineVideoProgress.value = percent * 100;
+    inlineVideoCurrentTime.value = (percent / 100) * inlineVideoClipDuration.value;
+    inlineVideoProgress.value = percent;
   }
 
   // Start drag seeking
   function startInlineSeekDrag(event: MouseEvent) {
+    if (!inlineVideoRef.value || !clipToPreview.value) return;
+
     inlineSeekDragging.value = true;
+    const percent = getInlinePercentFromEvent(event);
+    seekInlineVideoToPercent(percent);
 
-    const onMouseMove = (e: MouseEvent) => {
-      if (!inlineVideoRef.value || !clipToPreview.value) return;
-      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-      const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      const startTime = getClipStartTime();
-      const newTime = startTime + percent * inlineVideoClipDuration.value;
-      inlineVideoRef.value.currentTime = newTime;
-      inlineVideoCurrentTime.value = percent * inlineVideoClipDuration.value;
-      inlineVideoProgress.value = percent * 100;
-    };
+    // Add document-level listeners for drag
+    document.addEventListener('mousemove', onInlineSeekDrag);
+    document.addEventListener('mouseup', stopInlineSeekDrag);
 
-    const onMouseUp = () => {
-      inlineSeekDragging.value = false;
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-    };
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
+    event.preventDefault();
   }
 
-  // Toggle fullscreen
-  function toggleInlineVideoFullscreen() {
-    if (!inlineVideoRef.value) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    } else {
-      inlineVideoRef.value.requestFullscreen();
+  // Handle drag movement (called from document listener)
+  function onInlineSeekDrag(event: MouseEvent) {
+    if (!inlineSeekDragging.value) return;
+    const percent = getInlinePercentFromEvent(event);
+    seekInlineVideoToPercent(percent);
+  }
+
+  // Stop drag seeking
+  function stopInlineSeekDrag() {
+    if (!inlineSeekDragging.value) return;
+    inlineSeekDragging.value = false;
+    document.removeEventListener('mousemove', onInlineSeekDrag);
+    document.removeEventListener('mouseup', stopInlineSeekDrag);
+  }
+
+  // Handle hover for time preview
+  function onInlineTimelineHover(event: MouseEvent) {
+    if (inlineSeekDragging.value) return;
+    if (!inlineVideoClipDuration.value) return;
+
+    const percent = getInlinePercentFromEvent(event);
+    inlineHoverTime.value = (percent / 100) * inlineVideoClipDuration.value;
+    inlineHoverPosition.value = percent;
+  }
+
+  // Clear hover state when leaving timeline
+  function onInlineTimelineLeave() {
+    if (!inlineSeekDragging.value) {
+      inlineHoverTime.value = null;
     }
+  }
+
+  // Toggle fullscreen - use container so custom controls are included
+  async function toggleInlineVideoFullscreen() {
+    if (!inlineVideoContainerRef.value) return;
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        isInlineVideoFullscreen.value = false;
+      } else {
+        await inlineVideoContainerRef.value.requestFullscreen();
+        isInlineVideoFullscreen.value = true;
+      }
+    } catch (err) {
+      console.error('[Projects] Fullscreen error:', err);
+    }
+  }
+
+  // Handle fullscreen change events (e.g., user presses Escape)
+  function handleInlineVideoFullscreenChange() {
+    isInlineVideoFullscreen.value = !!document.fullscreenElement;
   }
 
   // Delete clip from folder view
@@ -2189,15 +2458,28 @@
         if (profile.watermark_id) {
           const watermark = await getWatermarkImage(profile.watermark_id);
           if (watermark) {
+            // Parse the creator's watermark settings from JSON
+            let creatorSettings = { x: 12, y: 92, opacity: 80, scale: 20 };
+            if (profile.watermark_settings) {
+              try {
+                const parsed = JSON.parse(profile.watermark_settings);
+                // Default to 16:9 settings for now (the build system will use the right one based on aspect ratio)
+                creatorSettings = parsed['16:9'] || creatorSettings;
+              } catch (e) {
+                console.warn('[Projects] Failed to parse creator watermark settings:', e);
+              }
+            }
             folderCreatorWatermarkSettings.value = {
               enabled: true,
               watermarkId: profile.watermark_id,
-              positionX: 8,
-              positionY: 92,
-              opacity: 80,
-              scale: 15,
+              positionX: creatorSettings.x,
+              positionY: creatorSettings.y,
+              opacity: creatorSettings.opacity,
+              scale: creatorSettings.scale,
+              // Store the full per-ratio settings for the build system
+              perRatioSettings: profile.watermark_settings ? JSON.parse(profile.watermark_settings) : null,
             };
-            console.log('[Projects] Loaded creator default watermark');
+            console.log('[Projects] Loaded creator default watermark with custom position');
           }
         }
       }
@@ -2208,12 +2490,24 @@
     showFolderBuildDialog.value = true;
   }
 
+  // Track if we're currently processing a folder build to prevent duplicates
+  const isFolderBuildInProgress = ref(false);
+
   // Handle build confirmation
   async function onFolderBuildConfirm(settings: BuildSettings) {
     if (!folderClipToBuild.value) return;
+
+    // Prevent duplicate builds
+    if (isFolderBuildInProgress.value) {
+      console.warn('[Projects] Folder build already in progress, ignoring duplicate request');
+      return;
+    }
+    isFolderBuildInProgress.value = true;
+
     const clip = folderClipToBuild.value;
 
     try {
+      console.log('[Projects] Starting folder build with aspectRatios:', settings.aspectRatios);
       // Get the video file for this clip's segment
       const videos = projectVideos.value[clip.segment_id];
       if (!videos || videos.length === 0) {
@@ -2222,33 +2516,65 @@
       }
       const videoPath = videos[0].file_path;
 
-      // Get or create segments from the clip
+      // IMPORTANT: Reload segments from database to get latest edits from timeline
+      // The clip object may have stale data if user edited segments on timeline
+      const { getClipSegmentsByVersionId } = await import('@/services/database/clip-segments');
       let segments: any[] = [];
-      if (
-        clip.current_version_segments &&
-        Array.isArray(clip.current_version_segments) &&
-        clip.current_version_segments.length > 0
-      ) {
-        segments = clip.current_version_segments.map((segment: any) => ({
-          id: segment.id,
-          start_time: segment.start_time,
-          end_time: segment.end_time,
-          duration: segment.duration || segment.end_time - segment.start_time,
-          transcript: segment.transcript || null,
-        }));
-      } else {
-        // Fallback: create single segment from clip timing
-        const startTime = clip.current_version?.start_time ?? clip.current_version_start_time ?? 0;
-        const endTime = clip.current_version?.end_time ?? clip.current_version_end_time ?? 0;
-        segments = [
-          {
-            id: `fallback-${clip.id}`,
-            start_time: startTime,
-            end_time: endTime,
-            duration: endTime - startTime,
-            transcript: null,
-          },
-        ];
+
+      // Try to get fresh segments from database first
+      const versionId = clip.current_version_id || clip.current_version?.id;
+      if (versionId) {
+        try {
+          const dbSegments = await getClipSegmentsByVersionId(versionId);
+          if (dbSegments.length > 0) {
+            segments = dbSegments.map((segment: any) => ({
+              id: segment.id,
+              start_time: segment.start_time,
+              end_time: segment.end_time,
+              duration: segment.duration || segment.end_time - segment.start_time,
+              transcript: segment.transcript || null,
+            }));
+            console.log(
+              '[Projects] Loaded fresh segments from database:',
+              segments.map((s) => ({
+                start: s.start_time,
+                end: s.end_time,
+              }))
+            );
+          }
+        } catch (err) {
+          console.warn('[Projects] Could not reload segments from database:', err);
+        }
+      }
+
+      // Fall back to cached data if database fetch failed or returned empty
+      if (segments.length === 0) {
+        if (
+          clip.current_version_segments &&
+          Array.isArray(clip.current_version_segments) &&
+          clip.current_version_segments.length > 0
+        ) {
+          segments = clip.current_version_segments.map((segment: any) => ({
+            id: segment.id,
+            start_time: segment.start_time,
+            end_time: segment.end_time,
+            duration: segment.duration || segment.end_time - segment.start_time,
+            transcript: segment.transcript || null,
+          }));
+        } else {
+          // Fallback: create single segment from clip timing
+          const startTime = clip.current_version?.start_time ?? clip.current_version_start_time ?? 0;
+          const endTime = clip.current_version?.end_time ?? clip.current_version_end_time ?? 0;
+          segments = [
+            {
+              id: `fallback-${clip.id}`,
+              start_time: startTime,
+              end_time: endTime,
+              duration: endTime - startTime,
+              transcript: null,
+            },
+          ];
+        }
       }
 
       // Update database status to building
@@ -2288,6 +2614,8 @@
             enabled: true,
             watermarkId: settings.watermark.watermarkId,
             filePath: watermarkImage.file_path,
+            width: watermarkImage.width ?? null,
+            height: watermarkImage.height ?? null,
             positionX: settings.watermark.positionX,
             positionY: settings.watermark.positionY,
             opacity: settings.watermark.opacity,
@@ -2347,6 +2675,9 @@
         });
       } catch {}
       error('Build failed', e instanceof Error ? e.message : 'An error occurred while building the clip.');
+    } finally {
+      // Reset the build in progress flag
+      isFolderBuildInProgress.value = false;
     }
   }
 
@@ -2927,7 +3258,10 @@
   }
 
   async function deleteProjectConfirmed() {
-    if (!projectToDelete.value) return;
+    if (!projectToDelete.value || deletingProject.value) return;
+    deletingProject.value = true;
+    // Close the dialog immediately to avoid duplicate clicks while deletion runs
+    showDeleteDialog.value = false;
 
     const deletedProjectName = projectToDelete.value.name;
     const projectId = projectToDelete.value.id;
@@ -2963,7 +3297,7 @@
     } catch (err) {
       error('Failed to delete project', 'An error occurred while deleting the project. Please try again.');
     } finally {
-      showDeleteDialog.value = false;
+      deletingProject.value = false;
       projectHasVideos.value = false;
       projectHasClips.value = false;
       deleteSegmentsToo.value = false;
@@ -3005,6 +3339,8 @@
   }
 
   async function bulkDeleteConfirmed() {
+    if (bulkDeleting.value) return;
+    bulkDeleting.value = true;
     const projectIds = Array.from(selectedProjects.value);
     let deletedCount = 0;
 
@@ -3034,6 +3370,7 @@
       error('Failed to delete projects', 'An error occurred while deleting the projects.');
     } finally {
       showBulkDeleteDialog.value = false;
+      bulkDeleting.value = false;
     }
   }
 
@@ -3353,6 +3690,8 @@
     document.addEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener);
     // Add event listener for video added events
     window.addEventListener('video-added', handleVideoAdded as EventListener);
+    // Add fullscreen change listener for inline video player
+    document.addEventListener('fullscreenchange', handleInlineVideoFullscreenChange);
     // Add click outside handler for folder download dropdown
     document.addEventListener('click', handleFolderDropdownClickOutside);
 
@@ -3371,7 +3710,16 @@
     // Clean up event listeners
     document.removeEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener);
     window.removeEventListener('video-added', handleVideoAdded as EventListener);
+    document.removeEventListener('fullscreenchange', handleInlineVideoFullscreenChange);
     document.removeEventListener('click', handleFolderDropdownClickOutside);
+    // Cleanup drag listeners
+    document.removeEventListener('mousemove', onInlineSeekDrag);
+    document.removeEventListener('mouseup', stopInlineSeekDrag);
+
+    // Exit fullscreen if unmounting while in fullscreen
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
 
     // Clean up Tauri event listeners
     clipBuildUnlistenFunctions.value.forEach((unlisten) => {
@@ -3384,3 +3732,25 @@
     clipBuildUnlistenFunctions.value = [];
   });
 </script>
+
+<style scoped>
+  /* Fullscreen video player styles */
+  .inline-video-fullscreen {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    max-height: none !important;
+    aspect-ratio: auto !important;
+    z-index: 9999 !important;
+    border-radius: 0 !important;
+    background: black !important;
+  }
+
+  .inline-video-fullscreen video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+  }
+</style>

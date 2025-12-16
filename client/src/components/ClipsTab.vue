@@ -1149,6 +1149,33 @@
     return 'text-muted-foreground';
   }
 
+  // Get actual clip timing from segments (respects timeline edits)
+  // Falls back to version times if no segments available
+  function getClipTiming(clip: ClipWithVersion): { startTime: number; endTime: number; duration: number } {
+    const segments = clip.current_version_segments;
+
+    if (segments && segments.length > 0) {
+      // Sort segments by start time and get the range
+      const sorted = [...segments].sort((a, b) => a.start_time - b.start_time);
+      const startTime = sorted[0].start_time;
+      const endTime = sorted[sorted.length - 1].end_time;
+      return {
+        startTime,
+        endTime,
+        duration: endTime - startTime,
+      };
+    }
+
+    // Fallback to version times
+    const startTime = clip.current_version_start_time || 0;
+    const endTime = clip.current_version_end_time || 0;
+    return {
+      startTime,
+      endTime,
+      duration: endTime - startTime,
+    };
+  }
+
   function getTimeEstimate(): string {
     switch (props.generationStage) {
       case 'starting':
@@ -1445,6 +1472,9 @@
     showBuildSettingsDialog.value = true;
   }
 
+  // Track if we're currently processing a build to prevent duplicates
+  const isBuildInProgress = ref(false);
+
   async function onBuildConfirm(settings: BuildSettings) {
     const clip = clipToBuild.value;
     if (!clip || !props.projectId) {
@@ -1452,8 +1482,16 @@
       return;
     }
 
+    // Prevent duplicate builds
+    if (isBuildInProgress.value) {
+      console.warn('[ClipsTab] Build already in progress, ignoring duplicate request');
+      return;
+    }
+    isBuildInProgress.value = true;
+
     try {
       console.log('[ClipsTab] Starting clip build for:', clip.id, 'with settings:', settings);
+      console.log('[ClipsTab] Aspect ratios received:', settings.aspectRatios);
 
       const { updateClipBuildStatus, getRawVideosByProjectId, getWatermarkImage, createClipBuild, getClipBuilds } =
         await import('@/services/database');
@@ -1495,8 +1533,32 @@
 
       const projectVideo = rawVideos[0];
 
+      // IMPORTANT: Reload segments from database to get latest edits from timeline
+      // The clip object in props may have stale data if user edited segments on timeline
+      const { getClipSegmentsByVersionId } = await import('@/services/database/clip-segments');
+      let freshSegments = clip.current_version_segments || [];
+
+      if (clip.current_version_id) {
+        try {
+          const dbSegments = await getClipSegmentsByVersionId(clip.current_version_id);
+          if (dbSegments.length > 0) {
+            freshSegments = dbSegments;
+            console.log(
+              '[ClipsTab] Loaded fresh segments from database:',
+              freshSegments.map((s) => ({
+                index: s.segment_index,
+                start: s.start_time,
+                end: s.end_time,
+              }))
+            );
+          }
+        } catch (err) {
+          console.warn('[ClipsTab] Could not reload segments from database, using cached data:', err);
+        }
+      }
+
       // Prepare segments for the Rust backend
-      const segments = (clip.current_version_segments || []).map((segment) => ({
+      const segments = freshSegments.map((segment) => ({
         id: segment.id,
         start_time: segment.start_time,
         end_time: segment.end_time,
@@ -1512,19 +1574,108 @@
       const transcriptSegments = props.transcriptData?.whisperSegments || [];
 
       // Prepare watermark settings if enabled
+      // Now supports per-aspect-ratio watermark files - each ratio can use a completely different watermark
       let watermarkSettings = null;
       if (settings.watermark && settings.watermark.enabled && settings.watermark.watermarkId) {
-        const watermarkImage = await getWatermarkImage(settings.watermark.watermarkId);
-        if (watermarkImage) {
+        const defaultWatermarkImage = await getWatermarkImage(settings.watermark.watermarkId);
+        if (defaultWatermarkImage) {
+          // Build per-ratio settings with resolved file paths
+          // Each ratio can have its own watermark image AND position settings
+          const buildPerRatioSettings: Record<
+            string,
+            {
+              watermarkId: string | null;
+              filePath: string | null;
+              width: number | null;
+              height: number | null;
+              position: { x: number; y: number; opacity: number; scale: number } | null;
+            } | null
+          > = {};
+
+          // Process each aspect ratio that might be built
+          const allRatios = ['16:9', '9:16', '1:1', '4:5'];
+          for (const ratio of allRatios) {
+            const perRatioConfig =
+              settings.watermark.perRatioSettings?.[ratio as keyof typeof settings.watermark.perRatioSettings];
+
+            if (perRatioConfig === null) {
+              // Watermark explicitly disabled for this ratio
+              buildPerRatioSettings[ratio] = null;
+              console.log(`[ClipsTab] Watermark disabled for ${ratio}`);
+            } else if (perRatioConfig) {
+              // Ratio has specific settings
+              const ratioWatermarkId = perRatioConfig.watermarkId;
+              let ratioFilePath = defaultWatermarkImage.file_path;
+              let ratioWidth = defaultWatermarkImage.width ?? null;
+              let ratioHeight = defaultWatermarkImage.height ?? null;
+
+              // If this ratio has a different watermark, fetch its file info
+              if (ratioWatermarkId && ratioWatermarkId !== settings.watermark.watermarkId) {
+                const ratioWatermarkImage = await getWatermarkImage(ratioWatermarkId);
+                if (ratioWatermarkImage) {
+                  ratioFilePath = ratioWatermarkImage.file_path;
+                  ratioWidth = ratioWatermarkImage.width ?? null;
+                  ratioHeight = ratioWatermarkImage.height ?? null;
+                  console.log(`[ClipsTab] Using different watermark for ${ratio}: ${ratioWatermarkImage.name}`);
+                }
+              }
+
+              // Use per-ratio position if available, otherwise fall back to default
+              const position = perRatioConfig.position || {
+                x: settings.watermark.positionX,
+                y: settings.watermark.positionY,
+                opacity: settings.watermark.opacity,
+                scale: settings.watermark.scale,
+              };
+
+              buildPerRatioSettings[ratio] = {
+                watermarkId: ratioWatermarkId || settings.watermark.watermarkId,
+                filePath: ratioFilePath,
+                width: ratioWidth,
+                height: ratioHeight,
+                position,
+              };
+            } else {
+              // No per-ratio config, use default watermark with default position
+              buildPerRatioSettings[ratio] = {
+                watermarkId: settings.watermark.watermarkId,
+                filePath: defaultWatermarkImage.file_path,
+                width: defaultWatermarkImage.width ?? null,
+                height: defaultWatermarkImage.height ?? null,
+                position: {
+                  x: settings.watermark.positionX,
+                  y: settings.watermark.positionY,
+                  opacity: settings.watermark.opacity,
+                  scale: settings.watermark.scale,
+                },
+              };
+            }
+          }
+
           watermarkSettings = {
             enabled: true,
             watermarkId: settings.watermark.watermarkId,
-            filePath: watermarkImage.file_path,
+            filePath: defaultWatermarkImage.file_path,
+            width: defaultWatermarkImage.width ?? null,
+            height: defaultWatermarkImage.height ?? null,
             positionX: settings.watermark.positionX,
             positionY: settings.watermark.positionY,
             opacity: settings.watermark.opacity,
             scale: settings.watermark.scale,
+            // Per-ratio settings with resolved file paths
+            perRatioSettings: buildPerRatioSettings,
           };
+          const defaultWatermarkId = settings.watermark?.watermarkId;
+          console.log('[ClipsTab] Watermark settings for build:', {
+            defaultWatermark: defaultWatermarkImage.name,
+            selectedRatios: settings.aspectRatios,
+            perRatioSettings: Object.entries(buildPerRatioSettings).map(([ratio, config]) => ({
+              ratio,
+              enabled: config !== null,
+              watermarkId: config?.watermarkId,
+              hasCustomWatermark: config?.watermarkId !== defaultWatermarkId,
+            })),
+          });
         }
       }
 
@@ -1957,6 +2108,9 @@
 
       // Show error via event
       showError('Build Failed', `Failed to build clip: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      // Reset the build in progress flag
+      isBuildInProgress.value = false;
     }
   }
 

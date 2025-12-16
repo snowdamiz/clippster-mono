@@ -99,6 +99,43 @@ pub struct AspectRatio {
     pub height: f32,
 }
 
+// Watermark position for a specific aspect ratio
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatermarkPositionSettings {
+    pub x: u32,
+    pub y: u32,
+    pub opacity: u32,
+    pub scale: u32,
+}
+
+// Per-aspect-ratio watermark configuration
+// Allows using different watermark images for different aspect ratios
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatermarkRatioConfig {
+    pub watermark_id: Option<String>,
+    pub file_path: Option<String>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub position: Option<WatermarkPositionSettings>,
+}
+
+// Per-aspect-ratio watermark settings from creator profile
+// Each ratio can be null/None to indicate watermark is disabled for that ratio
+// Each ratio can have a completely different watermark image
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerRatioWatermarkSettings {
+    #[serde(rename = "16:9")]
+    pub ratio_16_9: Option<WatermarkRatioConfig>,
+    #[serde(rename = "9:16")]
+    pub ratio_9_16: Option<WatermarkRatioConfig>,
+    #[serde(rename = "1:1")]
+    pub ratio_1_1: Option<WatermarkRatioConfig>,
+    #[serde(rename = "4:5")]
+    pub ratio_4_5: Option<WatermarkRatioConfig>,
+}
+
 // Watermark settings structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -106,10 +143,17 @@ pub struct WatermarkSettings {
     pub enabled: bool,
     pub watermark_id: String,
     pub file_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
     pub position_x: u32, // 0-100 (percentage from left)
     pub position_y: u32, // 0-100 (percentage from top)
     pub opacity: u32, // 0-100
     pub scale: u32, // percentage of video width (5-50)
+    // Optional per-aspect-ratio settings from creator profile
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub per_ratio_settings: Option<PerRatioWatermarkSettings>,
 }
 
 // Music track settings for export (from clip editor)

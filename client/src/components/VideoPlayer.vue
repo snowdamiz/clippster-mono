@@ -216,7 +216,7 @@
 
       <!-- Watermark Overlay -->
       <div
-        v-if="watermarkSettings?.enabled && watermarkData && videoSrc && !videoLoading"
+        v-if="shouldShowWatermark && videoSrc && !videoLoading"
         class="absolute pointer-events-none z-15 transition-opacity duration-300"
         :style="getWatermarkOverlayStyle"
       >
@@ -224,7 +224,7 @@
           :src="getWatermarkSrc"
           alt="Watermark"
           class="max-w-full max-h-full object-contain watermark-image"
-          :style="{ opacity: (watermarkSettings?.opacity || 100) / 100 }"
+          :style="{ opacity: getWatermarkOpacity }"
         />
       </div>
 
@@ -369,10 +369,10 @@
     watermarkSettings: () => ({
       enabled: false,
       watermarkId: null,
-      positionX: 8,
+      positionX: 12,
       positionY: 92,
       opacity: 80,
-      scale: 15,
+      scale: 20,
     }),
     watermarkData: null,
     audioGainDb: 0,
@@ -769,19 +769,81 @@
     return props.watermarkData?.dataUrl || '';
   });
 
+  // Get the aspect ratio string for looking up per-ratio settings
+  const aspectRatioString = computed(() => {
+    const { width, height } = props.aspectRatio;
+    // Normalize common aspect ratios
+    const ratio = width / height;
+    if (Math.abs(ratio - 16/9) < 0.01) return '16:9';
+    if (Math.abs(ratio - 9/16) < 0.01) return '9:16';
+    if (Math.abs(ratio - 1) < 0.01) return '1:1';
+    if (Math.abs(ratio - 4/5) < 0.01) return '4:5';
+    return `${width}:${height}`;
+  });
+
+  // Check if watermark should be shown for current aspect ratio
+  const shouldShowWatermark = computed(() => {
+    if (!props.watermarkSettings?.enabled) return false;
+    if (!props.watermarkData) return false;
+    
+    const perRatio = props.watermarkSettings.perRatioSettings;
+    if (perRatio) {
+      const ratioKey = aspectRatioString.value as keyof typeof perRatio;
+      // If perRatioSettings exists and the specific ratio is null, watermark is disabled for this ratio
+      if (ratioKey in perRatio && perRatio[ratioKey] === null) {
+        return false;
+      }
+    }
+    return true;
+  });
+
   const getWatermarkOverlayStyle = computed(() => {
     if (!props.watermarkSettings) return {};
 
     const settings = props.watermarkSettings;
-    // Scale is percentage of video width
-    const sizePercent = settings.scale || 15;
+    const wmWidth = props.watermarkData?.width ?? null;
+    const wmHeight = props.watermarkData?.height ?? null;
+    const ratio = wmWidth && wmHeight ? wmWidth / wmHeight : null;
+    const is16x9 = ratio ? Math.abs(ratio - 16 / 9) < 0.02 : false;
+    // Treat HD+ 16:9 watermarks as full-frame so baked positions land correctly, even if not exactly 1920x1080.
+    const isFullFrame =
+      is16x9 &&
+      wmWidth !== null &&
+      wmHeight !== null &&
+      wmWidth >= 1600 &&
+      wmHeight >= 900 &&
+      props.aspectRatio.width === 16 &&
+      props.aspectRatio.height === 9;
+
+    // Full-frame 1920x1080 overlays fill the frame and sit at 0,0
+    if (isFullFrame) {
+      return {
+        width: '100%',
+        height: '100%',
+        left: '0%',
+        top: '0%',
+        transform: 'none',
+      };
+    }
+
+    // For preview, always use the manual position values (positionX/positionY)
+    // Use live-updated position/scale from props (reflects slider/drag changes)
+    const positionX = settings.positionX;
+    const positionY = settings.positionY;
+    const scale = settings.scale || 15;
 
     return {
-      width: `${sizePercent}%`,
-      left: `${settings.positionX}%`,
-      top: `${settings.positionY}%`,
+      width: `${scale}%`,
+      left: `${positionX}%`,
+      top: `${positionY}%`,
       transform: 'translate(-50%, -50%)',
     };
+  });
+
+  // Get watermark opacity - use manual value for preview
+  const getWatermarkOpacity = computed(() => {
+    if (!props.watermarkSettings) return 1;
+    return (props.watermarkSettings.opacity || 100) / 100;
   });
 
   // Expose the video element ref to parent

@@ -265,30 +265,304 @@ fn get_watermark_overlay_position(position_x: u32, position_y: u32) -> String {
     format!("x={}:y={}", x_expr, y_expr)
 }
 
-// Helper function to apply watermark to a video file
-async fn apply_watermark_to_video(
+// Helper function to probe image dimensions using FFmpeg
+// Used when watermark dimensions aren't stored in the database
+async fn probe_image_dimensions(app: &tauri::AppHandle, image_path: &str) -> (Option<u32>, Option<u32>) {
+    let shell = app.shell();
+    
+    // Use FFmpeg to get image info
+    let output = match shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))
+    {
+        Ok(cmd) => {
+            match cmd.args(["-i", image_path, "-f", "null", "-"]).output().await {
+                Ok(out) => out,
+                Err(e) => {
+                    println!("[Rust] Failed to probe image dimensions: {}", e);
+                    return (None, None);
+                }
+            }
+        }
+        Err(e) => {
+            println!("[Rust] Failed to get ffmpeg sidecar: {}", e);
+            return (None, None);
+        }
+    };
+    
+    // Parse dimensions from FFmpeg stderr
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    println!("[Rust] FFmpeg probe output for image:\n{}", stderr);
+    
+    // Try multiple parsing approaches
+    for line in stderr.lines() {
+        // Look for Video stream line
+        if line.contains("Video:") {
+            println!("[Rust] Found video line: {}", line);
+            
+            // Method 1: Look for WxH pattern with regex-like matching
+            // Patterns: "1920x1080", "1920x1080,", "1920x1080 [SAR"
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            for part in &parts {
+                // Skip parts that are clearly not dimensions
+                if part.contains("0x") || part.starts_with("(") {
+                    continue;
+                }
+                // Check for NxN pattern
+                if let Some(x_pos) = part.find('x') {
+                    let before = &part[..x_pos];
+                    let after = &part[x_pos+1..];
+                    // Extract just the numeric parts
+                    let w_str: String = before.chars().filter(|c| c.is_numeric()).collect();
+                    let h_str: String = after.chars().take_while(|c| c.is_numeric()).collect();
+                    
+                    if let (Ok(w), Ok(h)) = (w_str.parse::<u32>(), h_str.parse::<u32>()) {
+                        if w >= 100 && h >= 100 && w < 100000 && h < 100000 {
+                            println!("[Rust] Probed image dimensions: {}x{}", w, h);
+                            return (Some(w), Some(h));
+                        }
+                    }
+                }
+            }
+            
+            // Method 2: Look for comma-separated values containing dimensions
+            let comma_parts: Vec<&str> = line.split(',').collect();
+            for part in comma_parts {
+                let trimmed = part.trim();
+                if let Some(x_pos) = trimmed.find('x') {
+                    if x_pos > 0 && x_pos < trimmed.len() - 1 {
+                        let before = &trimmed[..x_pos];
+                        let after = &trimmed[x_pos+1..];
+                        let w_str: String = before.chars().rev().take_while(|c| c.is_numeric()).collect::<String>().chars().rev().collect();
+                        let h_str: String = after.chars().take_while(|c| c.is_numeric()).collect();
+                        
+                        if let (Ok(w), Ok(h)) = (w_str.parse::<u32>(), h_str.parse::<u32>()) {
+                            if w >= 100 && h >= 100 && w < 100000 && h < 100000 {
+                                println!("[Rust] Probed image dimensions (method 2): {}x{}", w, h);
+                                return (Some(w), Some(h));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    println!("[Rust] Could not parse image dimensions from FFmpeg output");
+    (None, None)
+}
+
+// Helper function to convert AspectRatio to string format (e.g., "16:9")
+fn aspect_ratio_to_string(aspect_ratio: &AspectRatio) -> String {
+    // Convert float ratio to common aspect ratio strings
+    let ratio = aspect_ratio.width / aspect_ratio.height;
+    
+    if (ratio - 16.0/9.0).abs() < 0.01 {
+        "16:9".to_string()
+    } else if (ratio - 9.0/16.0).abs() < 0.01 {
+        "9:16".to_string()
+    } else if (ratio - 1.0).abs() < 0.01 {
+        "1:1".to_string()
+    } else if (ratio - 4.0/5.0).abs() < 0.01 {
+        "4:5".to_string()
+    } else {
+        format!("{}:{}", aspect_ratio.width as u32, aspect_ratio.height as u32)
+    }
+}
+
+// Resolved watermark settings for a specific aspect ratio
+#[derive(Debug)]
+struct ResolvedWatermark {
+    file_path: String,
+    width: Option<u32>,
+    height: Option<u32>,
+    position_x: u32,
+    position_y: u32,
+    opacity: u32,
+    scale: u32,
+}
+
+// Helper function to get watermark settings for a specific aspect ratio
+// Returns None if watermark is disabled for this aspect ratio
+// Now supports per-ratio watermark images (different watermark files for different ratios)
+fn get_watermark_for_aspect_ratio(watermark: &WatermarkSettings, aspect_ratio: Option<&str>) -> Option<ResolvedWatermark> {
+    // Check if we have per-ratio settings
+    if let Some(per_ratio) = &watermark.per_ratio_settings {
+        if let Some(ratio) = aspect_ratio {
+            // Try to get the config for this specific aspect ratio
+            let ratio_config = match ratio {
+                "16:9" => per_ratio.ratio_16_9.as_ref(),
+                "9:16" => per_ratio.ratio_9_16.as_ref(),
+                "1:1" => per_ratio.ratio_1_1.as_ref(),
+                "4:5" => per_ratio.ratio_4_5.as_ref(),
+                _ => None,
+            };
+            
+            // Check if we found a config for this ratio
+            match ratio_config {
+                Some(config) => {
+                    // Per-ratio config exists - use it (may have custom watermark and/or position)
+                    // Use per-ratio watermark file if available, otherwise fall back to default
+                    let file_path = config.file_path.clone().unwrap_or_else(|| watermark.file_path.clone());
+                    let width = config.width.or(watermark.width);
+                    let height = config.height.or(watermark.height);
+                    
+                    // Use per-ratio position if available, otherwise fall back to default position
+                    let (position_x, position_y, opacity, scale) = if let Some(pos) = &config.position {
+                        (pos.x, pos.y, pos.opacity, pos.scale)
+                    } else {
+                        // No custom position for this ratio - use default position
+                        (watermark.position_x, watermark.position_y, watermark.opacity, watermark.scale)
+                    };
+                    
+                    let has_custom_watermark = config.file_path.is_some() && config.file_path.as_ref() != Some(&watermark.file_path);
+                    let has_custom_position = config.position.is_some();
+                    
+                    println!("[Rust] Using per-ratio watermark for {}: file={}, custom_wm={}, custom_pos={}, x={}%, y={}%, opacity={}%, scale={}%", 
+                             ratio, file_path, has_custom_watermark, has_custom_position, position_x, position_y, opacity, scale);
+                    
+                    return Some(ResolvedWatermark {
+                        file_path,
+                        width,
+                        height,
+                        position_x,
+                        position_y,
+                        opacity,
+                        scale,
+                    });
+                }
+                None => {
+                    // Config is explicitly None/null for this ratio - watermark disabled
+                    println!("[Rust] Watermark disabled for aspect ratio {} (config is null)", ratio);
+                    return None;
+                }
+            }
+        }
+    }
+    
+    // Fall back to default watermark settings (no per-ratio settings provided)
+    println!("[Rust] Using default watermark settings (no per-ratio config)");
+    Some(ResolvedWatermark {
+        file_path: watermark.file_path.clone(),
+        width: watermark.width,
+        height: watermark.height,
+        position_x: watermark.position_x,
+        position_y: watermark.position_y,
+        opacity: watermark.opacity,
+        scale: watermark.scale,
+    })
+}
+
+// Helper function to apply watermark to a video file with aspect ratio awareness
+async fn apply_watermark_to_video_with_ratio(
     app: &tauri::AppHandle,
     input_path: &std::path::Path,
     watermark: &WatermarkSettings,
     quality: &str,
+    aspect_ratio: Option<&str>,
 ) -> Result<(), String> {
     if !watermark.enabled {
         return Ok(());
     }
 
+    // Get the appropriate watermark settings for this aspect ratio
+    // Returns None if watermark is disabled for this ratio
+    // Now supports per-ratio watermark images
+    let Some(resolved) = get_watermark_for_aspect_ratio(watermark, aspect_ratio) else {
+        // Watermark is disabled for this aspect ratio
+        return Ok(());
+    };
+
+    let pos_x = resolved.position_x;
+    let pos_y = resolved.position_y;
+    let opacity_pct = resolved.opacity;
+    let scale_pct = resolved.scale;
+    let watermark_file_path = &resolved.file_path;
+
     let shell = app.shell();
     
     // Get video info for calculating watermark size
     let video_info = get_video_info(app, input_path.to_str().ok_or("Invalid input path")?).await?;
+    let video_width = video_info.width;
+    let video_height = video_info.height;
     
-    // Calculate watermark width based on scale percentage of video width
-    let wm_width = (video_info.width as f32 * (watermark.scale as f32 / 100.0)) as u32;
+    // Get watermark dimensions - use resolved values if available, otherwise probe the image file
+    println!("[Rust] Watermark settings received - width: {:?}, height: {:?}, file_path: {}", 
+             resolved.width, resolved.height, watermark_file_path);
+    let (wm_actual_width, wm_actual_height) = match (resolved.width, resolved.height) {
+        (Some(w), Some(h)) if w > 0 && h > 0 => {
+            println!("[Rust] Using watermark dimensions from database: {}x{}", w, h);
+            (Some(w), Some(h))
+        }
+        _ => {
+            // Database doesn't have dimensions - probe the watermark image file
+            println!("[Rust] Watermark dimensions not in database or zero, probing image file: {}", watermark_file_path);
+            let probed = probe_image_dimensions(app, watermark_file_path).await;
+            println!("[Rust] Probed dimensions result: {:?}", probed);
+            probed
+        }
+    };
+    println!("[Rust] Final watermark dimensions: width={:?}, height={:?}", wm_actual_width, wm_actual_height);
     
-    // Build the position string using X/Y percentages
-    let position = get_watermark_overlay_position(watermark.position_x, watermark.position_y);
+    // Detect if this watermark is effectively a full-frame 16:9 canvas.
+    // Accept common HD+ sizes to avoid strict 1920x1080 requirement (e.g., 2560x1440 will still scale down).
+    let is_full_frame_watermark = match (wm_actual_width, wm_actual_height) {
+        (Some(w), Some(h)) => {
+            let ratio = (w as f32) / (h as f32);
+            let ratio_diff = (ratio - (16.0 / 9.0)).abs();
+            println!("[Rust] Checking full-frame: dimensions {}x{}, ratio={:.4}, diff from 16:9={:.4}, w>={}, h>={}",
+                     w, h, ratio, ratio_diff, w >= 1600, h >= 900);
+            let is_full = ratio_diff < 0.02 && w >= 1600 && h >= 900;
+            if is_full {
+                println!("[Rust] ✓ Detected full-frame 16:9 watermark: {}x{}", w, h);
+            } else {
+                println!("[Rust] ✗ NOT a full-frame watermark (ratio_diff={:.4} < 0.02? {}, w>=1600? {}, h>=900? {})", 
+                         ratio_diff, ratio_diff < 0.02, w >= 1600, h >= 900);
+            }
+            is_full
+        }
+        _ => {
+            println!("[Rust] Could not determine watermark dimensions, using standard placement");
+            false
+        }
+    };
+    println!("[Rust] is_full_frame_watermark = {}", is_full_frame_watermark);
     
     // Calculate opacity (FFmpeg uses 0-1 range)
-    let opacity = watermark.opacity as f32 / 100.0;
+    let opacity = opacity_pct as f32 / 100.0;
+    
+    // Build the filter_complex for watermark overlay
+    // Full-frame 1920x1080 watermarks are scaled to the output frame and pinned to 0,0.
+    // Standard PNGs keep the existing percentage-based position/scale behavior.
+    println!("[Rust] Building filter_complex for watermark (is_full_frame={})", is_full_frame_watermark);
+    let filter_complex = if is_full_frame_watermark {
+        let wm_width = video_width;
+        let wm_height = video_height;
+        let filter = format!(
+            "[1:v]scale={}:{},format=rgba,colorchannelmixer=aa={}[wm];[0:v][wm]overlay=0:0",
+            wm_width, wm_height, opacity
+        );
+        println!(
+            "[Rust] FULL-FRAME watermark filter: scaling to {}x{}, opacity={}, filter={}",
+            wm_width, wm_height, opacity, filter
+        );
+        filter
+    } else {
+        // Calculate watermark width based on scale percentage of video width
+        let wm_width = (video_width as f32 * (scale_pct as f32 / 100.0)) as u32;
+        
+        // Build the position string using X/Y percentages
+        let position = get_watermark_overlay_position(pos_x, pos_y);
+        
+        let filter = format!(
+            "[1:v]scale={}:-1,format=rgba,colorchannelmixer=aa={}[wm];[0:v][wm]overlay={}",
+            wm_width, opacity, position
+        );
+        println!(
+            "[Rust] STANDARD watermark filter: width={} ({}% of {}), pos=({}, {}), opacity={}, filter={}",
+            wm_width, scale_pct, video_width, pos_x, pos_y, opacity_pct, filter
+        );
+        filter
+    };
     
     // Create temporary output path
     let temp_output = input_path.with_extension("watermarked.mp4");
@@ -296,22 +570,12 @@ async fn apply_watermark_to_video(
     // Detect hardware encoder
     let encoder = detect_hardware_encoder(app, quality).await;
     
-    // Build the filter_complex for watermark overlay
-    // [1:v] is the watermark input
-    // scale: resize watermark to percentage of video width
-    // colorchannelmixer: apply opacity
-    // overlay: position the watermark
-    let filter_complex = format!(
-        "[1:v]scale={}:-1,format=rgba,colorchannelmixer=aa={}[wm];[0:v][wm]overlay={}",
-        wm_width, opacity, position
-    );
-    
-    println!("[Rust] Watermark position: x={}%, y={}%", watermark.position_x, watermark.position_y);
+    println!("[Rust] Watermark position: x={}%, y={}%", pos_x, pos_y);
     
     // Build encoder-specific args
     let mut args = vec![
         "-i".to_string(), input_path.to_string_lossy().to_string(),
-        "-i".to_string(), watermark.file_path.clone(),
+        "-i".to_string(), watermark_file_path.clone(),
         "-filter_complex".to_string(), filter_complex,
         "-c:v".to_string(), encoder.codec.clone(),
     ];
@@ -463,6 +727,16 @@ pub async fn build_single_segment_clip_with_settings(
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(format!("Failed to extract segment: {}", stderr));
+        }
+
+        // Apply watermark to the main segment BEFORE concatenation with intro/outro
+        // This ensures the watermark only appears on the main content, not on intro/outro
+        if let Some(wm) = watermark_settings {
+            if wm.enabled {
+                println!("[Rust] Applying watermark to main segment (before concat with intro/outro)");
+                let ar_str = aspect_ratio_to_string(aspect_ratio);
+                apply_watermark_to_video_with_ratio(app, &segment_file, wm, quality, Some(&ar_str)).await?;
+            }
         }
 
         // Process intro and outro if provided
@@ -647,12 +921,8 @@ pub async fn build_single_segment_clip_with_settings(
         // Clean up temporary files
         let _ = std::fs::remove_dir_all(&temp_dir);
 
-        // Apply watermark if enabled (after all other processing)
-        if let Some(wm) = watermark_settings {
-            if wm.enabled {
-                apply_watermark_to_video(app, output_path, wm, quality).await?;
-            }
-        }
+        // Note: Watermark was already applied to main segment before concat
+        // (so it doesn't appear on intro/outro)
 
         return Ok(());
     }
@@ -750,7 +1020,8 @@ pub async fn build_single_segment_clip_with_settings(
     // Apply watermark if enabled (after all other processing)
     if let Some(wm) = watermark_settings {
         if wm.enabled {
-            apply_watermark_to_video(app, output_path, wm, quality).await?;
+            let ar_str = aspect_ratio_to_string(aspect_ratio);
+            apply_watermark_to_video_with_ratio(app, output_path, wm, quality, Some(&ar_str)).await?;
         }
     }
 
@@ -913,6 +1184,18 @@ pub async fn build_multi_segment_clip_with_settings(
     }
     
     println!("[Rust] All {} segments extracted successfully", segment_files.len());
+
+    // Apply watermark to each segment BEFORE concatenation with intro/outro
+    // This ensures the watermark only appears on the main content, not on intro/outro
+    if let Some(wm) = watermark_settings {
+        if wm.enabled {
+            println!("[Rust] Applying watermark to {} segments (before concat with intro/outro)", segment_files.len());
+            let ar_str = aspect_ratio_to_string(aspect_ratio);
+            for segment_file in &segment_files {
+                apply_watermark_to_video_with_ratio(app, segment_file, wm, quality, Some(&ar_str)).await?;
+            }
+        }
+    }
 
     // Process intro and outro if provided
     let mut intro_file: Option<std::path::PathBuf> = None;
@@ -1099,12 +1382,8 @@ pub async fn build_multi_segment_clip_with_settings(
     let _ = std::fs::remove_dir_all(&temp_dir);
     println!("[Rust] Multi-segment build successful, cleaned up temp files");
 
-    // Apply watermark if enabled (after all other processing)
-    if let Some(wm) = watermark_settings {
-        if wm.enabled {
-            apply_watermark_to_video(app, output_path, wm, quality).await?;
-        }
-    }
+    // Note: Watermark was already applied to segments before concat
+    // (so it doesn't appear on intro/outro)
 
     Ok(())
 }
@@ -2023,7 +2302,7 @@ pub async fn build_clip_with_framing_strategy(
     // Apply watermark if enabled (after all other processing)
     if let Some(wm) = watermark_settings {
         if wm.enabled {
-            apply_watermark_to_video(app, output_path, wm, quality).await?;
+            apply_watermark_to_video_with_ratio(app, output_path, wm, quality, Some(target_aspect_ratio)).await?;
         }
     }
 
@@ -2215,7 +2494,7 @@ pub async fn build_multi_segment_clip_with_framing_strategy(
     // Apply watermark if enabled
     if let Some(wm) = watermark_settings {
         if wm.enabled {
-            apply_watermark_to_video(app, output_path, wm, quality).await?;
+            apply_watermark_to_video_with_ratio(app, output_path, wm, quality, Some(target_aspect_ratio)).await?;
         }
     }
 
