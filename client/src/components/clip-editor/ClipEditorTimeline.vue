@@ -278,23 +278,6 @@
                     </div>
                   </div>
 
-                  <!-- Left resize handle -->
-                  <div
-                    v-if="!isCutToolActive"
-                    class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
-                    @mousedown.stop="(e) => onSourceResizeMouseDown(e, source, 'left')"
-                  >
-                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                  </div>
-                  <!-- Right resize handle -->
-                  <div
-                    v-if="!isCutToolActive"
-                    class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
-                    @mousedown.stop="(e) => onSourceResizeMouseDown(e, source, 'right')"
-                  >
-                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                  </div>
-
                   <!-- Delete button -->
                   <button
                     v-if="!isCutToolActive"
@@ -413,27 +396,6 @@
                         <X :size="6" class="text-white" stroke-width="3" />
                       </div>
                     </div>
-
-                    <!-- Left resize handle -->
-                    <div
-                      v-if="!isCutToolActive"
-                      class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
-                      @mousedown.stop="
-                        (e) => onResizeMouseDown(e, 'trim', segmentLayout.segment.id, 'left', segmentLayout.segment)
-                      "
-                    >
-                      <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                    </div>
-                    <!-- Right resize handle -->
-                    <div
-                      v-if="!isCutToolActive"
-                      class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
-                      @mousedown.stop="
-                        (e) => onResizeMouseDown(e, 'trim', segmentLayout.segment.id, 'right', segmentLayout.segment)
-                      "
-                    >
-                      <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                    </div>
                   </div>
                 </template>
               </template>
@@ -493,17 +455,17 @@
                     </span>
                   </div>
 
-                  <!-- Left resize handle (only on first segment) -->
+                  <!-- Left resize handle (only on first segment, disabled in editor mode) -->
                   <div
-                    v-if="visualSeg.isFirst"
+                    v-if="visualSeg.isFirst && !editorMode"
                     class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
                     @mousedown.stop="(e) => onResizeMouseDown(e, 'audio', track.id, 'left', track)"
                   >
                     <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
                   </div>
-                  <!-- Right resize handle (only on last segment) -->
+                  <!-- Right resize handle (only on last segment, disabled in editor mode) -->
                   <div
-                    v-if="visualSeg.isLast"
+                    v-if="visualSeg.isLast && !editorMode"
                     class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
                     @mousedown.stop="(e) => onResizeMouseDown(e, 'audio', track.id, 'right', track)"
                   >
@@ -997,14 +959,6 @@
   const isDraggingSource = ref(false);
   const dragSourceInfo = ref<{
     sourceId: string;
-    startX: number;
-    originalStartTime: number;
-    originalEndTime: number;
-  } | null>(null);
-  const isResizingSource = ref(false);
-  const resizeSourceInfo = ref<{
-    sourceId: string;
-    handle: 'left' | 'right';
     startX: number;
     originalStartTime: number;
     originalEndTime: number;
@@ -1603,9 +1557,8 @@
     const classes: string[] = [];
     const key = `${type}_${id}`;
 
-    // Check if this is a video source being dragged or resized
+    // Check if this is a video source being dragged
     const isSourceDragging = type === 'source' && isDraggingSource.value && dragSourceInfo.value?.sourceId === id;
-    const isSourceResizing = type === 'source' && isResizingSource.value && resizeSourceInfo.value?.sourceId === id;
 
     if (isDragging.value && dragInfo.value?.type === type && dragInfo.value?.id === id) {
       classes.push('cursor-grabbing', 'z-30', 'shadow-2xl', 'border-2', 'border-blue-400', 'dragging');
@@ -1613,8 +1566,6 @@
       classes.push('cursor-ew-resize', 'z-30', 'shadow-2xl', 'border-2', 'border-green-400', 'resizing');
     } else if (isSourceDragging) {
       classes.push('cursor-grabbing', 'z-30', 'shadow-2xl', 'border-2', 'border-blue-400', 'dragging');
-    } else if (isSourceResizing) {
-      classes.push('cursor-ew-resize', 'z-30', 'shadow-2xl', 'border-2', 'border-green-400', 'resizing');
     } else {
       classes.push('cursor-grab', 'hover:cursor-grab', 'transition-all', 'duration-200', 'ease-out');
     }
@@ -2412,93 +2363,6 @@
     document.removeEventListener('mouseup', onSourceDragEnd);
   }
 
-  function onSourceResizeMouseDown(e: MouseEvent, source: VideoEditorSource, handle: 'left' | 'right') {
-    if (e.button !== 0) return;
-    e.preventDefault();
-
-    isResizingSource.value = true;
-    resizeSourceInfo.value = {
-      sourceId: source.id,
-      handle,
-      startX: e.clientX,
-      originalStartTime: source.start_time,
-      originalEndTime: source.end_time,
-    };
-
-    document.addEventListener('mousemove', onSourceResizeDragMove);
-    document.addEventListener('mouseup', onSourceResizeDragEnd);
-  }
-
-  function onSourceResizeDragMove(e: MouseEvent) {
-    if (!isResizingSource.value || !resizeSourceInfo.value || !videoTrackContentRef.value) return;
-
-    const rect = videoTrackContentRef.value.getBoundingClientRect();
-    const deltaX = e.clientX - resizeSourceInfo.value.startX;
-    const deltaTime = (deltaX / rect.width) * props.duration;
-    const minDuration = 0.5;
-
-    let newStartTime = resizeSourceInfo.value.originalStartTime;
-    let newEndTime = resizeSourceInfo.value.originalEndTime;
-
-    if (resizeSourceInfo.value.handle === 'left') {
-      newStartTime = Math.max(0, resizeSourceInfo.value.originalStartTime + deltaTime);
-
-      // Apply snapping to the left edge
-      const snapResult = applySnapToTime(newStartTime, resizeSourceInfo.value.sourceId);
-      if (snapResult.didSnap && snapResult.time >= 0) {
-        newStartTime = snapResult.time;
-        activeSnapTime.value = snapResult.time;
-      } else {
-        activeSnapTime.value = null;
-      }
-
-      if (newEndTime - newStartTime < minDuration) {
-        newStartTime = newEndTime - minDuration;
-        activeSnapTime.value = null;
-      }
-    } else {
-      newEndTime = Math.min(props.duration, resizeSourceInfo.value.originalEndTime + deltaTime);
-
-      // Apply snapping to the right edge
-      const snapResult = applySnapToTime(newEndTime, resizeSourceInfo.value.sourceId);
-      if (snapResult.didSnap && snapResult.time <= props.duration) {
-        newEndTime = snapResult.time;
-        activeSnapTime.value = snapResult.time;
-      } else {
-        activeSnapTime.value = null;
-      }
-
-      if (newEndTime - newStartTime < minDuration) {
-        newEndTime = newStartTime + minDuration;
-        activeSnapTime.value = null;
-      }
-    }
-
-    // Update local preview state (no database call) for smooth resizing
-    sourcePreview.value = {
-      sourceId: resizeSourceInfo.value.sourceId,
-      startTime: newStartTime,
-      endTime: newEndTime,
-    };
-  }
-
-  function onSourceResizeDragEnd() {
-    // Commit the final position to database only on resize end
-    if (sourcePreview.value && resizeSourceInfo.value) {
-      emit('updateSource', resizeSourceInfo.value.sourceId, {
-        start_time: sourcePreview.value.startTime,
-        end_time: sourcePreview.value.endTime,
-      });
-    }
-
-    isResizingSource.value = false;
-    resizeSourceInfo.value = null;
-    sourcePreview.value = null;
-    activeSnapTime.value = null;
-    document.removeEventListener('mousemove', onSourceResizeDragMove);
-    document.removeEventListener('mouseup', onSourceResizeDragEnd);
-  }
-
   function onTimelineDragOver(_e: DragEvent) {
     isDragOverTimeline.value = true;
   }
@@ -2533,7 +2397,6 @@
       isResizing.value ||
       isDraggingPlayhead.value ||
       isDraggingSource.value ||
-      isResizingSource.value ||
       isCutToolActive.value
     ) {
       showHoverLine.value = false;

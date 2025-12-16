@@ -317,7 +317,6 @@
             :editor-mode="editorMode"
             :video-sources="videoSources"
             @seek="seekTo"
-            @update-trim-segment="updateTrimSegment"
             @split-trim-segment="splitTrimSegment"
             @update-audio-track="updateAudioTrackLocal"
             @update-text-overlay="updateTextOverlayLocal"
@@ -407,6 +406,8 @@
     getRawVideo,
     getClipWithBuildStatus,
     getClip,
+    splitClipSegment,
+    getClipSegmentsByClipId,
     // Video Editor imports
     getVideoEditorProject,
     getVideoEditorSourcesByProjectId,
@@ -2870,15 +2871,7 @@
     }
   }
 
-  function updateTrimSegment(segmentId: string, startTime: number, endTime: number) {
-    const segment = trimSegments.value.find((s) => s.id === segmentId);
-    if (segment) {
-      segment.startTime = startTime;
-      segment.endTime = endTime;
-    }
-  }
-
-  function splitTrimSegment(segmentId: string, cutTime: number) {
+  async function splitTrimSegment(segmentId: string, cutTime: number) {
     const segmentIndex = trimSegments.value.findIndex((s) => s.id === segmentId);
     if (segmentIndex === -1) return;
 
@@ -2890,27 +2883,63 @@
       return;
     }
 
-    // Create two new segments from the original
-    const leftSegment: TrimSegment = {
-      id: `segment-${Date.now()}-left`,
-      startTime: segment.startTime,
-      endTime: cutTime,
-      isDeleted: false,
-    };
+    // In clip mode, persist the split to the database (like Timeline.vue does)
+    if (!editorMode.value && props.clipId) {
+      try {
+        // Convert relative cut time to absolute source video time
+        const absoluteCutTime = props.clipStartTime + cutTime;
 
-    const rightSegment: TrimSegment = {
-      id: `segment-${Date.now()}-right`,
-      startTime: cutTime,
-      endTime: segment.endTime,
-      isDeleted: false,
-    };
+        console.log(
+          `[ClipEditorDialog] Splitting segment ${segmentIndex} at absolute time ${absoluteCutTime.toFixed(2)}s`
+        );
 
-    // Replace the original segment with the two new segments
-    trimSegments.value.splice(segmentIndex, 1, leftSegment, rightSegment);
+        // Call the database function to split the segment
+        await splitClipSegment(props.clipId, segmentIndex, absoluteCutTime);
 
-    console.log(
-      `[ClipEditorDialog] Split segment at ${cutTime.toFixed(2)}s - created ${leftSegment.id} and ${rightSegment.id}`
-    );
+        // Reload segments from the database to stay in sync
+        const dbSegments = await getClipSegmentsByClipId(props.clipId);
+        if (dbSegments && dbSegments.length > 0) {
+          // Convert absolute times back to relative times
+          trimSegments.value = dbSegments.map((seg, index) => ({
+            id: `segment-${index}`,
+            startTime: seg.start_time - props.clipStartTime,
+            endTime: seg.end_time - props.clipStartTime,
+            isDeleted: false,
+          }));
+        }
+
+        console.log(`[ClipEditorDialog] Split complete, now have ${trimSegments.value.length} segments`);
+
+        // Emit save event to notify parent that clip was modified
+        emit('save', props.clipId);
+      } catch (error) {
+        console.error('[ClipEditorDialog] Failed to split segment:', error);
+        // Show error to user
+        alert(`Failed to split segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    } else {
+      // Editor mode or no clip ID - just update local state (for video editor projects)
+      const leftSegment: TrimSegment = {
+        id: `segment-${Date.now()}-left`,
+        startTime: segment.startTime,
+        endTime: cutTime,
+        isDeleted: false,
+      };
+
+      const rightSegment: TrimSegment = {
+        id: `segment-${Date.now()}-right`,
+        startTime: cutTime,
+        endTime: segment.endTime,
+        isDeleted: false,
+      };
+
+      // Replace the original segment with the two new segments
+      trimSegments.value.splice(segmentIndex, 1, leftSegment, rightSegment);
+
+      console.log(
+        `[ClipEditorDialog] Split segment at ${cutTime.toFixed(2)}s - created ${leftSegment.id} and ${rightSegment.id}`
+      );
+    }
   }
 
   // Audio operations
