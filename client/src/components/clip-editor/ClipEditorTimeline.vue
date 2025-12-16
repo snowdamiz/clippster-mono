@@ -5,6 +5,22 @@
       <div class="flex items-center justify-between mb-2 pr-1 flex-shrink-0">
         <div class="flex items-center gap-2">
           <!-- Timeline Toolbar -->
+          <!-- Cut/Split Tool -->
+          <div class="flex items-center gap-0.5 bg-black/40 backdrop-blur-sm rounded-lg p-1 border border-white/[0.04]">
+            <!-- Cut Button -->
+            <button
+              @click="toggleCutTool"
+              :class="[
+                'p-1 rounded-md transition-all duration-150',
+                isCutToolActive
+                  ? 'text-orange-400 bg-orange-500/20 shadow-sm shadow-orange-500/10'
+                  : 'text-white/50 hover:text-orange-400 hover:bg-orange-500/10',
+              ]"
+              :title="isCutToolActive ? 'Cut tool active (X to deactivate)' : 'Split segment (X key)'"
+            >
+              <Scissors :size="12" />
+            </button>
+          </div>
           <!-- Zoom Controls -->
           <div
             class="flex items-center gap-1 bg-black/40 backdrop-blur-sm rounded-lg px-1.5 py-1 border border-white/[0.04]"
@@ -163,11 +179,21 @@
                   v-for="source in videoSources"
                   :key="source.id"
                   :ref="(el) => setSegmentRef(el, 'source', source.id)"
-                  class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group cursor-pointer"
-                  :class="getSegmentClasses('source', source.id)"
+                  class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group"
+                  :class="[
+                    getSegmentClasses('source', source.id),
+                    isCutToolActive && cutHoverInfo?.segmentId === source.id
+                      ? 'cursor-crosshair z-65 shadow-xl border-2 border-orange-400 ring-2 ring-orange-400/50 ring-offset-1 ring-offset-transparent'
+                      : isCutToolActive
+                        ? 'cursor-crosshair z-62'
+                        : 'cursor-pointer',
+                  ]"
                   :style="getVideoSourceStyle(source)"
-                  @mousedown="(e) => onSourceMouseDown(e, source)"
-                  @click.stop="(e) => onSourceClick(e, source)"
+                  @mouseenter="isCutToolActive && onSourceHoverForCut($event, source)"
+                  @mousemove="isCutToolActive && onSourceHoverForCut($event, source)"
+                  @mouseleave="isCutToolActive && (cutHoverInfo = null)"
+                  @mousedown="isCutToolActive ? onSourceClickForCut($event, source) : onSourceMouseDown($event, source)"
+                  @click.stop="!isCutToolActive && onSourceClick($event, source)"
                 >
                   <!-- Source background gradient -->
                   <div class="absolute inset-0 bg-gradient-to-r from-violet-900/30 to-indigo-900/20"></div>
@@ -188,8 +214,36 @@
                     </span>
                   </div>
 
+                  <!-- Cut preview indicator -->
+                  <div
+                    v-if="isCutToolActive && cutHoverInfo?.segmentId === source.id"
+                    class="absolute top-0 bottom-0 pointer-events-none z-40"
+                    :style="{
+                      left: `${cutHoverInfo.cutPosition}%`,
+                      transform: 'translateX(-50%)',
+                    }"
+                  >
+                    <!-- Vertical cut line -->
+                    <div
+                      class="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-0.5 bg-orange-400 shadow-lg shadow-orange-400/50 cut-line"
+                    ></div>
+                    <!-- Top cut indicator -->
+                    <div
+                      class="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-orange-400 rounded-full shadow-md shadow-orange-400/50 border border-white/80 cut-indicator flex items-center justify-center"
+                    >
+                      <X :size="6" class="text-white" stroke-width="3" />
+                    </div>
+                    <!-- Bottom cut indicator -->
+                    <div
+                      class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-2 h-2 bg-orange-400 rounded-full shadow-md shadow-orange-400/50 border border-white/80 cut-indicator flex items-center justify-center"
+                    >
+                      <X :size="6" class="text-white" stroke-width="3" />
+                    </div>
+                  </div>
+
                   <!-- Left resize handle -->
                   <div
+                    v-if="!isCutToolActive"
                     class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
                     @mousedown.stop="(e) => onSourceResizeMouseDown(e, source, 'left')"
                   >
@@ -197,6 +251,7 @@
                   </div>
                   <!-- Right resize handle -->
                   <div
+                    v-if="!isCutToolActive"
                     class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
                     @mousedown.stop="(e) => onSourceResizeMouseDown(e, source, 'right')"
                   >
@@ -205,6 +260,7 @@
 
                   <!-- Delete button -->
                   <button
+                    v-if="!isCutToolActive"
                     class="absolute top-0.5 right-0.5 p-0.5 bg-red-500/80 rounded opacity-0 group-hover:opacity-100 transition-opacity z-20 pointer-events-auto"
                     @click.stop="emit('deleteSource', source.id)"
                     title="Remove source"
@@ -256,11 +312,25 @@
                   <!-- Segment with waveform -->
                   <div
                     :ref="(el) => setSegmentRef(el, 'trim', segmentLayout.segment.id)"
-                    class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group cursor-pointer"
-                    :class="getSegmentClasses('trim', segmentLayout.segment.id, segmentLayout.segment.isDeleted)"
+                    class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group"
+                    :class="[
+                      getSegmentClasses('trim', segmentLayout.segment.id, segmentLayout.segment.isDeleted),
+                      isCutToolActive && cutHoverInfo?.segmentId === segmentLayout.segment.id
+                        ? 'cursor-crosshair z-65 shadow-xl border-2 border-orange-400 ring-2 ring-orange-400/50 ring-offset-1 ring-offset-transparent'
+                        : isCutToolActive
+                          ? 'cursor-crosshair z-62'
+                          : 'cursor-pointer',
+                    ]"
                     :style="getSegmentLayoutStyle(segmentLayout, 'violet', 'trim', segmentLayout.segment.id)"
-                    @mousedown="(e) => onSegmentMouseDown(e, 'trim', segmentLayout.segment.id, segmentLayout.segment)"
-                    @click.stop="(e) => onSegmentClick(e, segmentLayout.segment)"
+                    @mouseenter="isCutToolActive && onSegmentHoverForCut($event, segmentLayout.segment)"
+                    @mousemove="isCutToolActive && onSegmentHoverForCut($event, segmentLayout.segment)"
+                    @mouseleave="isCutToolActive && (cutHoverInfo = null)"
+                    @mousedown="
+                      isCutToolActive
+                        ? onSegmentClickForCut($event, segmentLayout.segment)
+                        : onSegmentMouseDown($event, 'trim', segmentLayout.segment.id, segmentLayout.segment)
+                    "
+                    @click.stop="!isCutToolActive && onSegmentClick($event, segmentLayout.segment)"
                   >
                     <!-- Segment background gradient -->
                     <div class="absolute inset-0 bg-gradient-to-r from-violet-900/30 to-indigo-900/20"></div>
@@ -280,8 +350,36 @@
                       </span>
                     </div>
 
+                    <!-- Cut preview indicator -->
+                    <div
+                      v-if="isCutToolActive && cutHoverInfo?.segmentId === segmentLayout.segment.id"
+                      class="absolute top-0 bottom-0 pointer-events-none z-40"
+                      :style="{
+                        left: `${cutHoverInfo.cutPosition}%`,
+                        transform: 'translateX(-50%)',
+                      }"
+                    >
+                      <!-- Vertical cut line -->
+                      <div
+                        class="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-0.5 bg-orange-400 shadow-lg shadow-orange-400/50 cut-line"
+                      ></div>
+                      <!-- Top cut indicator -->
+                      <div
+                        class="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-orange-400 rounded-full shadow-md shadow-orange-400/50 border border-white/80 cut-indicator flex items-center justify-center"
+                      >
+                        <X :size="6" class="text-white" stroke-width="3" />
+                      </div>
+                      <!-- Bottom cut indicator -->
+                      <div
+                        class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-2 h-2 bg-orange-400 rounded-full shadow-md shadow-orange-400/50 border border-white/80 cut-indicator flex items-center justify-center"
+                      >
+                        <X :size="6" class="text-white" stroke-width="3" />
+                      </div>
+                    </div>
+
                     <!-- Left resize handle -->
                     <div
+                      v-if="!isCutToolActive"
                       class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
                       @mousedown.stop="
                         (e) => onResizeMouseDown(e, 'trim', segmentLayout.segment.id, 'left', segmentLayout.segment)
@@ -291,6 +389,7 @@
                     </div>
                     <!-- Right resize handle -->
                     <div
+                      v-if="!isCutToolActive"
                       class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
                       @mousedown.stop="
                         (e) => onResizeMouseDown(e, 'trim', segmentLayout.segment.id, 'right', segmentLayout.segment)
@@ -642,13 +741,26 @@
     :timelineBoundsLeft="timelineBounds.left"
     :isPanning="false"
     :isDragging="isDragging || isResizing || isDraggingPlayhead"
-    :isCutToolActive="false"
+    :isCutToolActive="isCutToolActive"
   />
 </template>
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-  import { Minus, Plus, Film, Music, Type, Smile, Sparkles, Palette, Droplet, X, Blend } from 'lucide-vue-next';
+  import {
+    Minus,
+    Plus,
+    Film,
+    Music,
+    Type,
+    Smile,
+    Sparkles,
+    Palette,
+    Droplet,
+    X,
+    Blend,
+    Scissors,
+  } from 'lucide-vue-next';
   import { useAudioWaveform, type WaveformData } from '@/composables/useAudioWaveform';
   import { invoke } from '@tauri-apps/api/core';
   import TimelineHoverLine from '@/components/TimelineHoverLine.vue';
@@ -688,6 +800,15 @@
     originalEndTime: number;
     trackContentWidth: number;
   }
+
+  interface CutHoverInfo {
+    segmentId: string;
+    cutTime: number; // Relative time within the segment where the cut will happen
+    cutPosition: number; // Percentage position within the segment (0-100)
+  }
+
+  // Minimum segment duration after a split (in seconds)
+  const MIN_SEGMENT_DURATION = 0.1;
 
   interface SegmentTick {
     time: number;
@@ -742,6 +863,7 @@
   const emit = defineEmits<{
     (e: 'seek', time: number): void;
     (e: 'updateTrimSegment', segmentId: string, startTime: number, endTime: number): void;
+    (e: 'splitTrimSegment', segmentId: string, cutTime: number): void;
     (e: 'updateAudioTrack', trackId: string, updates: Partial<AudioTrack>): void;
     (e: 'updateTextOverlay', overlayId: string, updates: Partial<TextOverlay>): void;
     (e: 'updateSticker', stickerId: string, updates: Partial<Sticker>): void;
@@ -753,6 +875,7 @@
     (e: 'deleteSource', sourceId: string): void;
     (e: 'dropSource', data: { source: SourceItem; position: number }): void;
     (e: 'transitionsDetected', transitions: VideoEditorTransition[]): void;
+    (e: 'splitSource', sourceId: string, cutTimelinePosition: number, cutSourceTime: number): void;
   }>();
 
   // Computed: detect transitions between overlapping sources in editor mode
@@ -846,6 +969,10 @@
 
   // Playhead drag state
   const isDraggingPlayhead = ref(false);
+
+  // Cut tool state
+  const isCutToolActive = ref(false);
+  const cutHoverInfo = ref<CutHoverInfo | null>(null);
 
   // Smooth playhead animation state
   const smoothPlayheadPosition = ref(0);
@@ -1717,6 +1844,137 @@
     emit('seek', Math.max(segment.startTime, Math.min(segment.endTime, time)));
   }
 
+  // Cut tool functions
+  function toggleCutTool() {
+    isCutToolActive.value = !isCutToolActive.value;
+
+    // Reset cut hover state when deactivating
+    if (!isCutToolActive.value) {
+      cutHoverInfo.value = null;
+    }
+
+    // Clear selection and hover states when activating
+    if (isCutToolActive.value) {
+      selectedItemKey.value = null;
+      showHoverLine.value = false;
+    }
+  }
+
+  function onSegmentHoverForCut(event: MouseEvent, segment: TrimSegment) {
+    if (!isCutToolActive.value) return;
+
+    // Find the segment element
+    let segmentElement = event.target as HTMLElement;
+    while (segmentElement && !segmentElement.classList.contains('clip-segment')) {
+      segmentElement = segmentElement.parentElement as HTMLElement;
+    }
+
+    if (!segmentElement) return;
+
+    const rect = segmentElement.getBoundingClientRect();
+    const relativeX = event.clientX - rect.left;
+    const segmentWidth = rect.width;
+
+    // Calculate the cut position as a percentage within the segment
+    const cutPositionPercent = (relativeX / segmentWidth) * 100;
+
+    // Calculate the actual cut time within the segment
+    const segmentDuration = segment.endTime - segment.startTime;
+    const cutTime = segment.startTime + (segmentDuration * cutPositionPercent) / 100;
+
+    // Validate minimum segment durations after potential cut
+    const leftDuration = cutTime - segment.startTime;
+    const rightDuration = segment.endTime - cutTime;
+
+    if (leftDuration >= MIN_SEGMENT_DURATION && rightDuration >= MIN_SEGMENT_DURATION) {
+      cutHoverInfo.value = {
+        segmentId: segment.id,
+        cutTime,
+        cutPosition: cutPositionPercent,
+      };
+    } else {
+      // Not enough space for a valid cut
+      cutHoverInfo.value = null;
+    }
+  }
+
+  function onSegmentClickForCut(event: MouseEvent, segment: TrimSegment) {
+    if (!isCutToolActive.value || !cutHoverInfo.value) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    // Emit the split event with the segment ID and cut time
+    emit('splitTrimSegment', segment.id, cutHoverInfo.value.cutTime);
+
+    // Reset cut tool state
+    isCutToolActive.value = false;
+    cutHoverInfo.value = null;
+  }
+
+  // Video source cut functions (editor mode)
+  function onSourceHoverForCut(event: MouseEvent, source: VideoEditorSource) {
+    if (!isCutToolActive.value) return;
+
+    // Find the source element
+    let sourceElement = event.target as HTMLElement;
+    while (sourceElement && !sourceElement.classList.contains('clip-segment')) {
+      sourceElement = sourceElement.parentElement as HTMLElement;
+    }
+
+    if (!sourceElement) return;
+
+    const rect = sourceElement.getBoundingClientRect();
+    const relativeX = event.clientX - rect.left;
+    const sourceWidth = rect.width;
+
+    // Calculate the cut position as a percentage within the source
+    const cutPositionPercent = (relativeX / sourceWidth) * 100;
+
+    // Calculate the actual cut time (both timeline position and source time)
+    const sourceDuration = source.end_time - source.start_time;
+    const cutTimelinePosition = source.start_time + (sourceDuration * cutPositionPercent) / 100;
+
+    // Calculate the cut time in the source video
+    const trimStart = source.trim_start;
+    const trimEnd = source.trim_end ?? trimStart + sourceDuration;
+    const sourceMediaDuration = trimEnd - trimStart;
+    const cutSourceTime = trimStart + (sourceMediaDuration * cutPositionPercent) / 100;
+
+    // Validate minimum segment durations after potential cut
+    const leftDuration = cutTimelinePosition - source.start_time;
+    const rightDuration = source.end_time - cutTimelinePosition;
+
+    if (leftDuration >= MIN_SEGMENT_DURATION && rightDuration >= MIN_SEGMENT_DURATION) {
+      cutHoverInfo.value = {
+        segmentId: source.id,
+        cutTime: cutSourceTime, // Store source time for the split operation
+        cutPosition: cutPositionPercent,
+      };
+    } else {
+      // Not enough space for a valid cut
+      cutHoverInfo.value = null;
+    }
+  }
+
+  function onSourceClickForCut(event: MouseEvent, source: VideoEditorSource) {
+    if (!isCutToolActive.value || !cutHoverInfo.value) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    // Calculate the timeline cut position
+    const sourceDuration = source.end_time - source.start_time;
+    const cutTimelinePosition = source.start_time + (sourceDuration * cutHoverInfo.value.cutPosition) / 100;
+
+    // Emit the split event with source ID, timeline position, and source time
+    emit('splitSource', source.id, cutTimelinePosition, cutHoverInfo.value.cutTime);
+
+    // Reset cut tool state
+    isCutToolActive.value = false;
+    cutHoverInfo.value = null;
+  }
+
   // Playhead dragging
   function onPlayheadMouseDown(e: MouseEvent) {
     if (e.button !== 0) return;
@@ -1977,13 +2235,14 @@
   }
 
   function onTimelineMouseMove(event: MouseEvent) {
-    // Don't show hover line during drag/resize operations
+    // Don't show hover line during drag/resize operations or when cut tool is active
     if (
       isDragging.value ||
       isResizing.value ||
       isDraggingPlayhead.value ||
       isDraggingSource.value ||
-      isResizingSource.value
+      isResizingSource.value ||
+      isCutToolActive.value
     ) {
       showHoverLine.value = false;
       return;
@@ -3447,6 +3706,22 @@
     lastKnownPosition = newPosition;
   });
 
+  // Keyboard handler for cut tool
+  function handleKeyDown(event: KeyboardEvent) {
+    // Toggle cut tool with X key
+    if (event.key === 'x' || event.key === 'X') {
+      event.preventDefault();
+      toggleCutTool();
+    }
+
+    // Deactivate cut tool with Escape key
+    if (event.key === 'Escape' && isCutToolActive.value) {
+      event.preventDefault();
+      isCutToolActive.value = false;
+      cutHoverInfo.value = null;
+    }
+  }
+
   // Lifecycle
   onMounted(() => {
     nextTick(async () => {
@@ -3459,6 +3734,9 @@
       // Load source waveforms for editor mode
       await loadAllSourceWaveforms();
     });
+
+    // Add keyboard listener for cut tool
+    document.addEventListener('keydown', handleKeyDown);
   });
 
   onUnmounted(() => {
@@ -3470,6 +3748,8 @@
     document.removeEventListener('mouseup', onResizeEnd);
     document.removeEventListener('mousemove', onPlayheadDragMove);
     document.removeEventListener('mouseup', onPlayheadDragEnd);
+    // Remove keyboard listener
+    document.removeEventListener('keydown', handleKeyDown);
   });
 </script>
 
@@ -3657,5 +3937,28 @@
   /* Hover effect for transition zones */
   .transition-zone:hover .transition-zone-bg {
     border-color: rgba(255, 255, 255, 0.5);
+  }
+
+  /* Cut line animations */
+  @keyframes cut-line-pulse {
+    0%,
+    100% {
+      opacity: 0.9;
+      box-shadow: 0 0 10px rgba(251, 146, 60, 0.8);
+    }
+    50% {
+      opacity: 1;
+      box-shadow: 0 0 20px rgba(251, 146, 60, 1);
+    }
+  }
+
+  .cut-line {
+    animation: cut-line-pulse 1.5s ease-in-out infinite;
+  }
+
+  /* Cut indicator styling */
+  .cut-indicator {
+    transform: translateZ(0); /* Force hardware acceleration */
+    backface-visibility: hidden;
   }
 </style>

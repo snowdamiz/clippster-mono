@@ -702,22 +702,39 @@
 
   // Active preload src - keeps last src when preload is active video
   const activePreloadSrc = computed(() => {
-    if (props.preloadVideoSrc) {
-      return props.preloadVideoSrc;
-    }
-    // If preload is the active video, keep using the last loaded source
+    // CRITICAL: If the preload video is currently the ACTIVE video (after a swap),
+    // do NOT change its src to the next preload source - that would interrupt playback!
+    // Keep using the current source that's playing.
     if (activeVideoIndex.value === 1 && lastPreloadSrc.value) {
       return lastPreloadSrc.value;
+    }
+    // Only use the new preload source when main video is active
+    if (props.preloadVideoSrc) {
+      return props.preloadVideoSrc;
     }
     return '';
   });
 
   // Track the preload src when it changes (avoid side effects in computed)
+  // IMPORTANT: Also reset preloadVideoReady when src changes, so we don't swap to stale content
   watch(
     () => props.preloadVideoSrc,
-    (newSrc) => {
+    (newSrc, oldSrc) => {
       if (newSrc) {
-        lastPreloadSrc.value = newSrc;
+        // CRITICAL: Only update lastPreloadSrc when preload is NOT the active video
+        // If preload IS active (after a swap), we must keep lastPreloadSrc unchanged
+        // so the currently playing video doesn't get interrupted
+        if (activeVideoIndex.value !== 1) {
+          lastPreloadSrc.value = newSrc;
+
+          // Only reset ready state when we're actually updating the preload src
+          if (oldSrc && newSrc !== oldSrc) {
+            console.log('[ClipEditorPreview] Preload src changed from', oldSrc?.slice(-30), 'to', newSrc?.slice(-30));
+            preloadVideoReady.value = false;
+          }
+        } else {
+          console.log('[ClipEditorPreview] Ignoring preload src change - preload is active video');
+        }
       }
     },
     { immediate: true }
@@ -2473,6 +2490,7 @@
   // Called when preload video is ready to play
   function onPreloadCanPlay() {
     if (!props.editorMode || !preloadVideoRef.value) return;
+    console.log('[onPreloadCanPlay] Preload is ready. src:', preloadVideoRef.value.src?.slice(-40));
     preloadVideoReady.value = true;
   }
 
@@ -2655,7 +2673,17 @@
   // Seamlessly swap to the preloaded video (called by parent during source transition)
   // For instant swap (non-crossfade) scenarios
   function swapToPreloadedVideo(seekTime: number): boolean {
+    console.log(
+      '[swapToPreloadedVideo] Called with seekTime:',
+      seekTime,
+      'preloadVideoReady:',
+      preloadVideoReady.value,
+      'activeVideoIndex:',
+      activeVideoIndex.value
+    );
+
     if (!props.editorMode || !preloadVideoReady.value || !preloadVideoRef.value || !videoRef.value) {
+      console.log('[swapToPreloadedVideo] Swap failed - not ready. preloadVideoReady:', preloadVideoReady.value);
       return false;
     }
 
@@ -2689,6 +2717,58 @@
   // Check if preload video is ready for seamless swap
   function isPreloadReady(): boolean {
     return preloadVideoReady.value && preloadVideoRef.value !== null;
+  }
+
+  // Check if main video is currently active (for determining swap direction)
+  function isMainVideoActive(): boolean {
+    return activeVideoIndex.value === 0;
+  }
+
+  // Swap back to main video (reverse of swapToPreloadedVideo)
+  // Used when preload was active and we need to switch to a new source loaded in main
+  function swapToMainVideo(seekTime: number): boolean {
+    if (!props.editorMode || !videoRef.value || activeVideoIndex.value !== 1) {
+      return false;
+    }
+
+    const mainVideo = videoRef.value;
+    const preloadVideo = preloadVideoRef.value;
+
+    // Check if main video is ready (has enough data to play)
+    if (mainVideo.readyState < 3) {
+      console.log('[ClipEditorPreview.swapToMainVideo] Main video not ready, readyState:', mainVideo.readyState);
+      return false;
+    }
+
+    // Seek main video to the correct position
+    mainVideo.currentTime = seekTime;
+
+    // Copy audio settings from preload
+    if (preloadVideo) {
+      mainVideo.volume = preloadVideo.volume;
+      mainVideo.muted = preloadVideo.muted;
+    }
+
+    // Swap active video back to main
+    activeVideoIndex.value = 0;
+
+    // Start playing the main video
+    mainVideo.play().catch(() => {});
+
+    // Pause the preload video
+    if (preloadVideo) {
+      preloadVideo.pause();
+    }
+
+    // Clear the last preload src so it can be updated with the next source
+    lastPreloadSrc.value = null;
+
+    // Emit the new video element so parent can track it
+    emit('videoElementReady', mainVideo);
+    emit('videoSwapped');
+
+    console.log('[ClipEditorPreview.swapToMainVideo] Swapped back to main video');
+    return true;
   }
 
   // Get preload video element for external control (e.g., volume during crossfade)
@@ -3347,6 +3427,8 @@
   defineExpose({
     getOverlayContainerHeight,
     swapToPreloadedVideo,
+    swapToMainVideo,
+    isMainVideoActive,
     startCrossfade,
     completeCrossfade,
     isPreloadReady,
@@ -3358,6 +3440,7 @@
     resetActiveVideo: () => {
       activeVideoIndex.value = 0;
       preloadVideoReady.value = false;
+      lastPreloadSrc.value = null;
       // Emit main video element as active
       if (videoRef.value) {
         emit('videoElementReady', videoRef.value);

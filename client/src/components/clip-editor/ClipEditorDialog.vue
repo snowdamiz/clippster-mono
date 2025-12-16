@@ -318,6 +318,7 @@
             :video-sources="videoSources"
             @seek="seekTo"
             @update-trim-segment="updateTrimSegment"
+            @split-trim-segment="splitTrimSegment"
             @update-audio-track="updateAudioTrackLocal"
             @update-text-overlay="updateTextOverlayLocal"
             @update-sticker="updateStickerLocal"
@@ -328,6 +329,7 @@
             @delete-source="deleteVideoSource"
             @drop-source="onDropSource"
             @transitions-detected="onTransitionsDetected"
+            @split-source="splitVideoSource"
           />
         </div>
       </div>
@@ -1515,12 +1517,188 @@
       await deleteVideoEditorSource(sourceId);
       videoSources.value = videoSources.value.filter((s) => s.id !== sourceId);
 
+      // Repair order_index after deletion
+      await repairSourceOrderIndex();
+
       if (editorProjectId.value) {
         await recalculateProjectDuration(editorProjectId.value);
       }
       triggerAutoSave();
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to delete source:', error);
+    }
+  }
+
+  // Helper function to repair order_index values based on start_time
+  // This ensures sources are always in the correct order for playback
+  async function repairSourceOrderIndex() {
+    if (videoSources.value.length === 0) return;
+
+    console.log(
+      '[repairSourceOrderIndex] Starting repair. Sources before:',
+      videoSources.value.map((s) => ({
+        id: s.id,
+        name: s.source_name,
+        order_index: s.order_index,
+        start_time: s.start_time,
+      }))
+    );
+
+    // Sort by start_time to get the correct playback order
+    const sortedSources = [...videoSources.value].sort((a, b) => a.start_time - b.start_time);
+
+    let repairCount = 0;
+    for (let i = 0; i < sortedSources.length; i++) {
+      if (sortedSources[i].order_index !== i) {
+        console.log(
+          `[repairSourceOrderIndex] Fixing ${sortedSources[i].source_name}: order_index ${sortedSources[i].order_index} → ${i}`
+        );
+        await updateVideoEditorSource(sortedSources[i].id, { order_index: i });
+        sortedSources[i].order_index = i;
+        repairCount++;
+      }
+    }
+
+    // Always update the reactive array with the correctly ordered sources
+    videoSources.value = sortedSources;
+
+    console.log(
+      '[repairSourceOrderIndex] Repair complete. Fixed:',
+      repairCount,
+      'Sources after:',
+      videoSources.value.map((s) => ({
+        id: s.id,
+        name: s.source_name,
+        order_index: s.order_index,
+        start_time: s.start_time,
+      }))
+    );
+  }
+
+  async function splitVideoSource(sourceId: string, cutTimelinePosition: number, cutSourceTime: number) {
+    const source = videoSources.value.find((s) => s.id === sourceId);
+    if (!source || !editorProjectId.value) return;
+
+    // Validate cut is within source bounds
+    if (cutTimelinePosition <= source.start_time || cutTimelinePosition >= source.end_time) {
+      console.warn('[ClipEditorDialog] Cut position is outside source bounds');
+      return;
+    }
+
+    console.log('[splitVideoSource] Starting split:', {
+      sourceId,
+      cutTimelinePosition,
+      cutSourceTime,
+      originalSource: {
+        start_time: source.start_time,
+        end_time: source.end_time,
+        trim_start: source.trim_start,
+        trim_end: source.trim_end,
+        order_index: source.order_index,
+      },
+    });
+
+    try {
+      // Store original values before modifying
+      const originalEndTime = source.end_time;
+      const originalOrderIndex = source.order_index;
+      const originalTrimEnd = source.trim_end;
+
+      // Calculate the effective trim_end that was being used
+      // If trim_end is null, it means "play to end of source", but we need to know
+      // what the actual end point was based on the timeline duration
+      const originalTimelineDuration = source.end_time - source.start_time;
+      const effectiveTrimEnd = originalTrimEnd ?? source.trim_start + originalTimelineDuration;
+
+      console.log('[splitVideoSource] Calculated values:', {
+        originalEndTime,
+        originalOrderIndex,
+        originalTrimEnd,
+        effectiveTrimEnd,
+      });
+
+      // First, increment order_index for all sources that come after the split source
+      // This makes room for the new right portion
+      const sourcesAfter = videoSources.value.filter((s) => s.order_index > originalOrderIndex);
+      console.log(
+        '[splitVideoSource] Sources to shift:',
+        sourcesAfter.map((s) => ({ id: s.id, order_index: s.order_index }))
+      );
+
+      for (const s of sourcesAfter) {
+        await updateVideoEditorSource(s.id, {
+          order_index: s.order_index + 1,
+        });
+      }
+
+      // Update the original source to end at the cut point (left portion)
+      await updateVideoEditorSource(sourceId, {
+        end_time: cutTimelinePosition,
+        trim_end: cutSourceTime,
+      });
+
+      console.log('[splitVideoSource] Updated left portion:', {
+        id: sourceId,
+        end_time: cutTimelinePosition,
+        trim_end: cutSourceTime,
+      });
+
+      // Create a new source for the right portion
+      // Use the effective trim_end (not the original null) to ensure correct duration
+      const newSource = await createVideoEditorSource(editorProjectId.value, {
+        sourceType: source.source_type,
+        sourceId: source.source_id,
+        sourcePath: source.source_path,
+        sourceName: source.source_name ? `${source.source_name} (split)` : null,
+        sourceThumbnail: source.source_thumbnail,
+        sourceDuration: source.source_duration,
+        startTime: cutTimelinePosition,
+        endTime: originalEndTime,
+        trimStart: cutSourceTime,
+        trimEnd: effectiveTrimEnd,
+        orderIndex: originalOrderIndex + 1,
+      });
+
+      console.log('[splitVideoSource] Created right portion:', {
+        id: newSource.id,
+        start_time: newSource.start_time,
+        end_time: newSource.end_time,
+        trim_start: newSource.trim_start,
+        trim_end: newSource.trim_end,
+        order_index: newSource.order_index,
+      });
+
+      // Reload sources to get the correct state
+      const updatedSources = await getVideoEditorSourcesByProjectId(editorProjectId.value);
+      videoSources.value = updatedSources;
+
+      // Repair order_index to ensure correct playback order
+      await repairSourceOrderIndex();
+
+      // Log the final state of all sources
+      console.log(
+        '[splitVideoSource] Final sources after reload:',
+        videoSources.value.map((s) => ({
+          id: s.id,
+          name: s.source_name,
+          start_time: s.start_time,
+          end_time: s.end_time,
+          trim_start: s.trim_start,
+          trim_end: s.trim_end,
+          order_index: s.order_index,
+        }))
+      );
+
+      if (editorProjectId.value) {
+        await recalculateProjectDuration(editorProjectId.value);
+      }
+      triggerAutoSave();
+
+      console.log(
+        `[ClipEditorDialog] Split complete: ${sourceId} at timeline ${cutTimelinePosition.toFixed(2)}s, source time ${cutSourceTime.toFixed(2)}s`
+      );
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to split source:', error);
     }
   }
 
@@ -1573,16 +1751,11 @@
         orderIndex: 0,
       });
 
-      // Update order indices for existing sources
-      for (let i = 0; i < videoSources.value.length; i++) {
-        await updateVideoEditorSource(videoSources.value[i].id, {
-          order_index: i + 1,
-        });
-        videoSources.value[i].order_index = i + 1;
-      }
-
       // Add the new source to the beginning of the array
       videoSources.value.unshift(newSource);
+
+      // Repair order_index to ensure correct playback order
+      await repairSourceOrderIndex();
 
       // Load thumbnail for the intro
       let thumbnailUrl: string | undefined;
@@ -1655,6 +1828,9 @@
 
       videoSources.value.push(newSource);
 
+      // Repair order_index to ensure correct playback order
+      await repairSourceOrderIndex();
+
       // Load thumbnail for the outro
       let thumbnailUrl: string | undefined;
       if (outro.thumbnail_path) {
@@ -1711,13 +1887,8 @@
       // Also shift all audio tracks, text overlays, stickers, and watermarks back
       await shiftAllTracksBy(-introDuration);
 
-      // Update order indices
-      for (let i = 0; i < videoSources.value.length; i++) {
-        await updateVideoEditorSource(videoSources.value[i].id, {
-          order_index: i,
-        });
-        videoSources.value[i].order_index = i;
-      }
+      // Repair order_index to ensure correct playback order
+      await repairSourceOrderIndex();
 
       currentIntro.value = null;
 
@@ -1738,6 +1909,9 @@
     try {
       // Remove the outro source
       await removeOutroSource(currentOutro.value.sourceId);
+
+      // Repair order_index to ensure correct playback order
+      await repairSourceOrderIndex();
 
       currentOutro.value = null;
 
@@ -1827,11 +2001,14 @@
       const sources = await getVideoEditorSourcesByProjectId(projectId);
       videoSources.value = sources;
 
+      // Repair order_index if there are collisions (from previous buggy splits)
+      await repairSourceOrderIndex();
+
       // Initialize current source tracking with the first source
-      if (sources.length > 0) {
+      if (videoSources.value.length > 0) {
         // Find the source at time 0 (which we'll initialize previewTime to)
-        const initialSource = sources.find((s) => 0 >= s.start_time && 0 < s.end_time);
-        currentVideoSourceId.value = initialSource?.id || sources[0].id;
+        const initialSource = videoSources.value.find((s) => 0 >= s.start_time && 0 < s.end_time);
+        currentVideoSourceId.value = initialSource?.id || videoSources.value[0].id;
       }
 
       // Create/get an edit record for the video editor project
@@ -2017,9 +2194,36 @@
       // Fallback: find next source by order
       const sortedSources = [...videoSources.value].sort((a, b) => a.order_index - b.order_index);
       const currentIdx = sortedSources.findIndex((s) => s.id === currentVideoSourceId.value);
+
+      // Debug: log all sources and their order
+      console.log(
+        '[onVideoSwapped] Fallback - All sources:',
+        sortedSources.map((s) => ({
+          id: s.id,
+          name: s.source_name,
+          order_index: s.order_index,
+          start_time: s.start_time,
+          end_time: s.end_time,
+        }))
+      );
+      console.log(
+        '[onVideoSwapped] Fallback - currentIdx:',
+        currentIdx,
+        'currentVideoSourceId:',
+        currentVideoSourceId.value
+      );
+
       if (currentIdx >= 0 && currentIdx < sortedSources.length - 1) {
-        currentVideoSourceId.value = sortedSources[currentIdx + 1].id;
-        console.log('[onVideoSwapped] Fallback: Updated currentVideoSourceId to:', sortedSources[currentIdx + 1].id);
+        const nextSource = sortedSources[currentIdx + 1];
+        console.log(
+          '[onVideoSwapped] Fallback - Next source:',
+          nextSource.id,
+          nextSource.source_name,
+          'order_index:',
+          nextSource.order_index
+        );
+        currentVideoSourceId.value = nextSource.id;
+        console.log('[onVideoSwapped] Fallback: Updated currentVideoSourceId to:', nextSource.id);
       }
     }
 
@@ -2208,9 +2412,28 @@
         // trim_end is the position in the source video where we should stop
         // If trim_end is null, calculate effective end from timeline duration
         const effectiveTrimEnd = source.trim_end ?? source.trim_start + (source.end_time - source.start_time);
+
+        // Log occasionally to debug trim_end issues (every ~2 seconds)
+        if (Math.floor(time * 10) % 20 === 0) {
+          console.log('[onPreviewTimeUpdate] Trim check:', {
+            videoTime: time.toFixed(2),
+            sourceId: source.id,
+            trim_start: source.trim_start,
+            trim_end: source.trim_end,
+            effectiveTrimEnd: effectiveTrimEnd.toFixed(2),
+            wouldTriggerEnd: time >= effectiveTrimEnd,
+          });
+        }
+
         if (time >= effectiveTrimEnd && isPlaying.value && !activeTransition.value && !crossfadeStarted.value) {
           // We've reached the end of this source's trimmed region
           // Trigger transition to next source
+          console.log(
+            '[onPreviewTimeUpdate] Triggering onVideoEnded at time:',
+            time.toFixed(2),
+            'effectiveTrimEnd:',
+            effectiveTrimEnd.toFixed(2)
+          );
           onVideoEnded();
           return;
         }
@@ -2318,29 +2541,55 @@
     if (nextSource) {
       isSeeking.value = true;
 
-      // Try seamless swap using preloaded video
-      const swapSucceeded = previewRef.value?.swapToPreloadedVideo?.(nextSource.trim_start);
+      // Check which video is currently active (main or preload)
+      const isMainActive = previewRef.value?.isMainVideoActive?.() ?? true;
 
-      if (swapSucceeded) {
-        // Seamless swap succeeded - update our state to match
-        previewTime.value = nextSource.start_time;
-        currentVideoSourceId.value = nextSource.id;
+      if (isMainActive) {
+        // Main video is active, try to swap to preloaded video (normal case)
+        const swapSucceeded = previewRef.value?.swapToPreloadedVideo?.(nextSource.trim_start);
 
-        // Clear seeking flag after a short delay
-        setTimeout(() => {
-          isSeeking.value = false;
-        }, 50);
+        if (swapSucceeded) {
+          // Seamless swap succeeded - update our state to match
+          previewTime.value = nextSource.start_time;
+          currentVideoSourceId.value = nextSource.id;
+
+          // Clear seeking flag after a short delay
+          setTimeout(() => {
+            isSeeking.value = false;
+          }, 50);
+        } else {
+          // Fallback: capture frame and switch src the traditional way
+          captureTransitionFrame();
+
+          // Update timeline position to trigger the source switch
+          previewTime.value = nextSource.start_time;
+          currentVideoSourceId.value = nextSource.id;
+          pendingSeekTime.value = nextSource.trim_start;
+
+          // The video src will change via reactivity, and once loaded, it will seek and play
+          // The transition frame will be hidden in onVideoLoaded
+        }
       } else {
-        // Fallback: capture frame and switch src the traditional way
-        captureTransitionFrame();
+        // Preload video is active (after a previous swap), need to swap back to main
+        console.log('[onVideoEnded] Preload is active, swapping back to main for source:', nextSource.id);
 
-        // Update timeline position to trigger the source switch
+        // IMPORTANT: Reset activeVideoIndex FIRST before changing currentVideoSourceId
+        // This ensures the editorVideoSrc watch doesn't skip loading the new source
+        previewRef.value?.resetActiveVideo?.();
+
+        // Now update state - this will trigger editorVideoSrc to change and load the new source
         previewTime.value = nextSource.start_time;
         currentVideoSourceId.value = nextSource.id;
         pendingSeekTime.value = nextSource.trim_start;
 
-        // The video src will change via reactivity, and once loaded, it will seek and play
-        // The transition frame will be hidden in onVideoLoaded
+        // The main video will load the new source via reactivity
+        // onVideoLoaded will seek to pendingSeekTime and start playback
+        console.log(
+          '[onVideoEnded] Set pendingSeekTime to:',
+          nextSource.trim_start,
+          'for source:',
+          nextSource.source_name
+        );
       }
     } else {
       // No more sources, stop playback and go back to beginning
@@ -2358,9 +2607,15 @@
       // Pause audio tracks
       audioElements.value.forEach((audio) => audio.pause());
 
+      // Reset to main video if preload was active
+      if (!previewRef.value?.isMainVideoActive?.()) {
+        previewRef.value?.resetActiveVideo?.();
+      }
+
       if (sortedSources.length > 0) {
         // Reset to the beginning of the first source
         previewTime.value = sortedSources[0].start_time;
+        currentVideoSourceId.value = sortedSources[0].id;
       }
     }
   }
@@ -2621,6 +2876,41 @@
       segment.startTime = startTime;
       segment.endTime = endTime;
     }
+  }
+
+  function splitTrimSegment(segmentId: string, cutTime: number) {
+    const segmentIndex = trimSegments.value.findIndex((s) => s.id === segmentId);
+    if (segmentIndex === -1) return;
+
+    const segment = trimSegments.value[segmentIndex];
+
+    // Validate cut time is within segment bounds
+    if (cutTime <= segment.startTime || cutTime >= segment.endTime) {
+      console.warn('[ClipEditorDialog] Cut time is outside segment bounds');
+      return;
+    }
+
+    // Create two new segments from the original
+    const leftSegment: TrimSegment = {
+      id: `segment-${Date.now()}-left`,
+      startTime: segment.startTime,
+      endTime: cutTime,
+      isDeleted: false,
+    };
+
+    const rightSegment: TrimSegment = {
+      id: `segment-${Date.now()}-right`,
+      startTime: cutTime,
+      endTime: segment.endTime,
+      isDeleted: false,
+    };
+
+    // Replace the original segment with the two new segments
+    trimSegments.value.splice(segmentIndex, 1, leftSegment, rightSegment);
+
+    console.log(
+      `[ClipEditorDialog] Split segment at ${cutTime.toFixed(2)}s - created ${leftSegment.id} and ${rightSegment.id}`
+    );
   }
 
   // Audio operations
