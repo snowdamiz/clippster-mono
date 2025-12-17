@@ -154,6 +154,11 @@ export const useAuthStore = defineStore('auth', {
         this.authProvider = 'wallet';
         this.isAuthenticated = true;
 
+        console.log('[Auth] Wallet login successful, user data:', {
+          account_type: data.user.account_type,
+          owned_organization_id: data.user.owned_organization_id,
+        });
+
         // Store in localStorage for persistence
         localStorage.setItem('auth_token', data.token);
         localStorage.setItem('wallet_address', data.wallet_address);
@@ -162,6 +167,9 @@ export const useAuthStore = defineStore('auth', {
 
         // Set user context for database queries and storage paths
         await setUserContext(data.user.id);
+
+        // Refresh user data from server to ensure we have the latest
+        await this.refreshUserData();
 
         // Emit event to trigger data refresh across the app
         emitAuthStateChanged(data.user.id);
@@ -234,6 +242,11 @@ export const useAuthStore = defineStore('auth', {
         this.authProvider = 'google';
         this.isAuthenticated = true;
 
+        console.log('[Auth] Google login successful, user data:', {
+          account_type: result.user.account_type,
+          owned_organization_id: result.user.owned_organization_id,
+        });
+
         // Store in localStorage for persistence
         localStorage.setItem('auth_token', result.token);
         localStorage.setItem('email', result.user.email || '');
@@ -242,6 +255,9 @@ export const useAuthStore = defineStore('auth', {
 
         // Set user context for database queries and storage paths
         await setUserContext(result.user.id);
+
+        // Refresh user data from server to ensure we have the latest
+        await this.refreshUserData();
 
         // Emit event to trigger data refresh across the app
         emitAuthStateChanged(result.user.id);
@@ -325,6 +341,11 @@ export const useAuthStore = defineStore('auth', {
         this.pendingVerificationEmail = null;
         this.verificationSentAt = null;
 
+        console.log('[Auth] OTP verification successful, user data:', {
+          account_type: data.user.account_type,
+          owned_organization_id: data.user.owned_organization_id,
+        });
+
         // Store in localStorage for persistence
         localStorage.setItem('auth_token', data.token);
         localStorage.setItem('email', data.user.email || '');
@@ -333,6 +354,9 @@ export const useAuthStore = defineStore('auth', {
 
         // Set user context for database queries and storage paths
         await setUserContext(data.user.id);
+
+        // Refresh user data from server to ensure we have the latest
+        await this.refreshUserData();
 
         // Emit event to trigger data refresh across the app
         emitAuthStateChanged(data.user.id);
@@ -378,6 +402,11 @@ export const useAuthStore = defineStore('auth', {
         this.authProvider = 'email';
         this.isAuthenticated = true;
 
+        console.log('[Auth] Login successful, user data:', {
+          account_type: data.user.account_type,
+          owned_organization_id: data.user.owned_organization_id,
+        });
+
         // Store in localStorage for persistence
         localStorage.setItem('auth_token', data.token);
         localStorage.setItem('email', data.user.email || '');
@@ -386,6 +415,9 @@ export const useAuthStore = defineStore('auth', {
 
         // Set user context for database queries and storage paths
         await setUserContext(data.user.id);
+
+        // Refresh user data from server to ensure we have the latest
+        await this.refreshUserData();
 
         // Emit event to trigger data refresh across the app
         emitAuthStateChanged(data.user.id);
@@ -511,6 +543,11 @@ export const useAuthStore = defineStore('auth', {
             this.pendingVerificationEmail = null;
             this.verificationSentAt = null;
 
+            console.log('[Auth] Magic link verification successful, user data:', {
+              account_type: result.user.account_type,
+              owned_organization_id: result.user.owned_organization_id,
+            });
+
             // Store in localStorage for persistence
             localStorage.setItem('auth_token', result.token);
             localStorage.setItem('email', result.user.email || '');
@@ -519,6 +556,9 @@ export const useAuthStore = defineStore('auth', {
 
             // Set user context for database queries and storage paths
             await setUserContext(result.user.id);
+
+            // Refresh user data from server to ensure we have the latest
+            await this.refreshUserData();
 
             // Emit event to trigger data refresh across the app
             emitAuthStateChanged(result.user.id);
@@ -620,6 +660,9 @@ export const useAuthStore = defineStore('auth', {
             await setUserContext(this.user.id);
           }
 
+          // Refresh user data from server to get latest account_type and other fields
+          await this.refreshUserData();
+
           return true;
         } catch (error) {
           console.error('Failed to parse user data:', error);
@@ -627,6 +670,36 @@ export const useAuthStore = defineStore('auth', {
         }
       }
       return false;
+    },
+
+    /**
+     * Refresh user data from the server.
+     * This ensures account_type and other fields are always up-to-date.
+     */
+    async refreshUserData() {
+      if (!this.token) return;
+
+      try {
+        const response = await fetch(`${API_BASE}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${this.token}` },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.user) {
+            // Update user data with fresh data from server
+            this.user = { ...this.user, ...data.user };
+            localStorage.setItem('user', JSON.stringify(this.user));
+          }
+        } else if (response.status === 401) {
+          // Token is invalid/expired, logout
+          console.warn('[Auth] Token invalid, logging out');
+          await this.logout();
+        }
+      } catch (error) {
+        console.error('[Auth] Failed to refresh user data:', error);
+        // Don't logout on network errors - use cached data
+      }
     },
 
     // ============================================

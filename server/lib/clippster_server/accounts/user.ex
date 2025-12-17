@@ -154,6 +154,15 @@ defmodule ClippsterServer.Accounts.User do
     |> validate_inclusion(:account_type, ["personal", "organization"])
   end
 
+  @doc """
+  Changeset for admin operations (promoting to admin, etc.).
+  Does not require wallet_address, works for all user types.
+  """
+  def admin_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:is_admin])
+  end
+
   defp put_wallet_provider(changeset) do
     case get_change(changeset, :wallet_address) do
       nil -> changeset

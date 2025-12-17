@@ -87,6 +87,9 @@ defmodule ClippsterServerWeb.Router do
   scope "/api", ClippsterServerWeb do
     pipe_through :api_auth
 
+    # Get current user info (refreshes user data from server)
+    get "/auth/me", AuthController, :me
+
     post "/clips/detect", ClipsController, :detect
     post "/clips/detect-chunked", ClipsController, :detect_chunked
     post "/clips/transcribe", ClipsController, :transcribe
@@ -132,6 +135,13 @@ defmodule ClippsterServerWeb.Router do
     # Organization credits
     get "/organizations/:organization_id/credits", OrganizationController, :get_credits
     post "/organizations/:organization_id/credits/allocate", OrganizationController, :allocate_credits
+
+    # Organization payments (Stripe)
+    post "/organizations/:organization_id/payments/stripe/create-session", StripeController, :create_org_checkout_session
+
+    # Organization payments (Crypto/SOL)
+    post "/organizations/:organization_id/payments/quote", PaymentController, :get_org_quote
+    post "/organizations/:organization_id/payments/confirm", PaymentController, :confirm_org_payment
   end
 
   # Admin-only routes
@@ -142,6 +152,12 @@ defmodule ClippsterServerWeb.Router do
     get "/admin/ai-usage", AdminController, :get_ai_usage_stats
     post "/admin/users/:user_id/promote", AdminController, :promote_user
     put "/admin/users/:user_id/credits", AdminController, :update_user_credits
+
+    # Admin organization management
+    get "/admin/organizations", AdminController, :list_organizations
+    get "/admin/organizations/:organization_id/credits", AdminController, :get_org_credits
+    post "/admin/organizations/:organization_id/credits/add", AdminController, :add_org_credits
+    put "/admin/organizations/:organization_id/credits", AdminController, :set_org_credits
 
     # Admin bug report management
     get "/admin/bug-reports", BugReportsController, :index

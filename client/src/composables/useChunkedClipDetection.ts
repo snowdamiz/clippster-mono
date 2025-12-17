@@ -18,6 +18,7 @@ export interface ChunkedDetectionOptions {
   chunkDurationMinutes?: number;
   overlapSeconds?: number;
   forceReprocess?: boolean;
+  organizationId?: number | null; // For org credit deduction
 }
 
 export interface DetectionProgress {
@@ -55,6 +56,9 @@ export function useChunkedClipDetection() {
 
   // Track the current project ID for server-side cancellation
   let currentProjectId: string | null = null;
+
+  // Track organization ID for credit deduction
+  let currentOrganizationId: number | null = null;
 
   // Cancel the current detection process and request server-side refund
   async function cancelDetection() {
@@ -131,6 +135,9 @@ export function useChunkedClipDetection() {
 
       // Store project ID for server-side cancellation
       currentProjectId = projectId;
+
+      // Store organization ID for credit deduction
+      currentOrganizationId = options.organizationId ?? null;
 
       isProcessing.value = true;
       progress.value = {
@@ -328,6 +335,9 @@ export function useChunkedClipDetection() {
         formData.append('project_id', projectId);
         formData.append('audio', audioFile); // This uses the File object which includes filename
         formData.append('duration', chunk.duration.toString());
+        if (currentOrganizationId) {
+          formData.append('organization_id', currentOrganizationId.toString());
+        }
 
         // Send to transcribe endpoint with abort signal and retry logic
         const maxRetries = 3;
@@ -436,6 +446,9 @@ export function useChunkedClipDetection() {
       formData.append('project_id', projectId.toString());
       formData.append('prompt', prompt);
       formData.append('using_cached_transcript', 'true');
+      if (currentOrganizationId) {
+        formData.append('organization_id', currentOrganizationId.toString());
+      }
 
       // Send chunk metadata instead of full transcript
       formData.append('chunks', JSON.stringify(cachedMetadata.chunks));
@@ -614,6 +627,9 @@ export function useChunkedClipDetection() {
       formData.append('project_id', projectId.toString());
       formData.append('prompt', prompt);
       formData.append('using_cached_transcript', 'true');
+      if (currentOrganizationId) {
+        formData.append('organization_id', currentOrganizationId.toString());
+      }
 
       // Send cached transcript
       formData.append(
@@ -734,6 +750,9 @@ export function useChunkedClipDetection() {
       if (projectVideo.duration) {
         formData.append('duration', projectVideo.duration.toString());
       }
+      if (currentOrganizationId) {
+        formData.append('organization_id', currentOrganizationId.toString());
+      }
 
       const response = await api.post('/clips/detect', formData, {
         headers: {
@@ -821,6 +840,9 @@ export function useChunkedClipDetection() {
       if (projectVideo.duration) {
         formData.append('duration', projectVideo.duration.toString());
       }
+      if (currentOrganizationId) {
+        formData.append('organization_id', currentOrganizationId.toString());
+      }
 
       progress.value = {
         stage: 'detecting_clips',
@@ -880,6 +902,7 @@ export function useChunkedClipDetection() {
     isCancelled.value = false;
     abortController = null;
     currentProjectId = null;
+    currentOrganizationId = null;
     progress.value = { stage: 'initializing', progress: 0, message: '' };
   }
 

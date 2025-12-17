@@ -180,8 +180,13 @@ defmodule ClippsterServer.Accounts do
   """
   def promote_user_to_admin(user_id) do
     case get_user(user_id) do
-      nil -> {:error, :not_found}
-      user -> update_user(user, %{is_admin: true})
+      nil ->
+        {:error, :not_found}
+
+      user ->
+        user
+        |> User.admin_changeset(%{is_admin: true})
+        |> Repo.update()
     end
   end
 
@@ -383,7 +388,7 @@ defmodule ClippsterServer.Accounts do
     cond do
       is_nil(user) ->
         # Prevent timing attacks
-        Bcrypt.no_user_verify()
+        Pbkdf2.no_user_verify()
         {:error, :invalid_credentials}
 
       user.provider != "email" ->

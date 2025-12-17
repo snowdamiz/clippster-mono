@@ -80,6 +80,9 @@ pub static EMAIL_VERIFICATION_SERVER_PORT: u16 = 54322;
 
 #[tauri::command]
 pub async fn open_wallet_auth_window(app: tauri::AppHandle) -> Result<(), String> {
+    // Clear any previous auth result to prevent stale data from being picked up
+    *AUTH_RESULT.lock().unwrap() = None;
+
     // Start local callback server if not already running
     start_auth_callback_server(app.clone());
 
@@ -153,6 +156,9 @@ pub async fn poll_payment_result() -> Result<Option<PaymentResult>, String> {
 
 #[tauri::command]
 pub async fn open_google_auth_window(app: tauri::AppHandle, api_base: String) -> Result<(), String> {
+    // Clear any previous auth result to prevent stale data from being picked up
+    *GOOGLE_AUTH_RESULT.lock().unwrap() = None;
+
     // Start local callback server if not already running
     start_google_callback_server(app.clone());
 

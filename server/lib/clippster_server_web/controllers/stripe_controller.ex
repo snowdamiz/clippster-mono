@@ -2,6 +2,7 @@ defmodule ClippsterServerWeb.StripeController do
   use ClippsterServerWeb, :controller
   alias ClippsterServer.Credits
   alias ClippsterServer.Accounts
+  alias ClippsterServer.Organizations
 
   @doc """
   Creates a Stripe Checkout session for purchasing a credit pack.
@@ -82,6 +83,97 @@ defmodule ClippsterServerWeb.StripeController do
   end
 
   @doc """
+  Creates a Stripe Checkout session for purchasing credits for an organization.
+  Only organization admins can purchase credits for the org pool.
+  """
+  def create_org_checkout_session(conn, %{"organization_id" => org_id, "pack_type" => pack_type}) do
+    with {:ok, user_id} <- get_user_id_from_token(conn),
+         {:ok, user} <- get_user(user_id),
+         {:ok, _org} <- get_organization(org_id),
+         true <- Organizations.is_admin?(org_id, user_id),
+         {:ok, pack_info} <- validate_pack_type(pack_type) do
+      
+      # Get Stripe configuration
+      stripe_config = Application.get_env(:clippster_server, :stripe)
+      success_url = stripe_config[:success_url] || "http://localhost:48276/stripe-success"
+      cancel_url = stripe_config[:cancel_url] || "http://localhost:48276/stripe-cancel"
+
+      # Create Stripe Checkout session with organization context
+      session_params = %{
+        mode: "payment",
+        payment_method_types: ["card"],
+        line_items: [
+          %{
+            price_data: %{
+              currency: "usd",
+              product_data: %{
+                name: "#{String.capitalize(pack_type)} Credit Pack (Organization)",
+                description: "#{pack_info.hours} hours of video processing credits for your organization"
+              },
+              unit_amount: trunc(pack_info.usd * 100)  # Stripe expects cents
+            },
+            quantity: 1
+          }
+        ],
+        metadata: %{
+          user_id: to_string(user_id),
+          organization_id: to_string(org_id),  # Key addition for org purchases
+          pack_type: pack_type,
+          hours: to_string(pack_info.hours),
+          amount_usd: to_string(pack_info.usd)
+        },
+        customer_email: user.email,
+        success_url: "#{success_url}?session_id={CHECKOUT_SESSION_ID}&org=#{org_id}",
+        cancel_url: "#{cancel_url}?org=#{org_id}"
+      }
+
+      case Stripe.Checkout.Session.create(session_params) do
+        {:ok, session} ->
+          json(conn, %{
+            success: true,
+            session_id: session.id,
+            url: session.url
+          })
+
+        {:error, %Stripe.Error{message: message}} ->
+          conn
+          |> put_status(500)
+          |> json(%{success: false, error: "Failed to create checkout session: #{message}"})
+
+        {:error, _} ->
+          conn
+          |> put_status(500)
+          |> json(%{success: false, error: "Failed to create checkout session"})
+      end
+    else
+      {:error, :unauthorized} ->
+        conn
+        |> put_status(401)
+        |> json(%{success: false, error: "Unauthorized"})
+
+      {:error, :user_not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "User not found"})
+
+      {:error, :organization_not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Organization not found"})
+
+      false ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Only organization admins can purchase credits"})
+
+      {:error, :invalid_pack} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invalid pack type"})
+    end
+  end
+
+  @doc """
   Handles Stripe webhook events.
   Verifies the webhook signature and processes checkout.session.completed events.
   """
@@ -136,6 +228,7 @@ defmodule ClippsterServerWeb.StripeController do
     
     metadata = session["metadata"] || session.metadata || %{}
     user_id = get_metadata_value(metadata, "user_id")
+    organization_id = get_metadata_value(metadata, "organization_id")
     pack_type = get_metadata_value(metadata, "pack_type")
     hours = get_metadata_value(metadata, "hours")
     amount_usd = get_metadata_value(metadata, "amount_usd")
@@ -144,36 +237,63 @@ defmodule ClippsterServerWeb.StripeController do
     payment_intent = session["payment_intent"] || Map.get(session, :payment_intent)
     amount_total = session["amount_total"] || Map.get(session, :amount_total)
 
-    IO.puts("[Stripe Webhook] User ID: #{user_id}, Pack: #{pack_type}, Hours: #{hours}")
+    IO.puts("[Stripe Webhook] User ID: #{user_id}, Org ID: #{organization_id}, Pack: #{pack_type}, Hours: #{hours}")
 
     if user_id && pack_type && hours do
-      # Create and confirm the transaction
-      attrs = %{
-        user_id: String.to_integer(user_id),
-        pack_type: pack_type,
-        hours_purchased: String.to_integer(hours),
-        amount_usd: parse_decimal(amount_usd) || Decimal.div(Decimal.new(amount_total || 0), 100),
-        amount_sol: Decimal.new("0"),  # No SOL for Stripe payments
-        sol_usd_rate: Decimal.new("0"),  # N/A for Stripe
-        tx_signature: "stripe_#{session_id}",  # Use session ID as unique identifier
-        payment_method: "stripe",
-        stripe_session_id: session_id,
-        stripe_payment_intent_id: payment_intent,
-        status: "confirmed"  # Stripe webhook means payment is already confirmed
-      }
-
-      case Credits.create_stripe_transaction(attrs) do
-        {:ok, _transaction} ->
-          IO.puts("[Stripe Webhook] Transaction created and credits added for user #{user_id}")
-
-        {:error, :already_processed} ->
-          IO.puts("[Stripe Webhook] Transaction already processed for session #{session_id}")
-
-        {:error, reason} ->
-          IO.puts("[Stripe Webhook] Failed to create transaction: #{inspect(reason)}")
+      # Check if this is an organization purchase
+      if organization_id do
+        # Add credits to organization pool
+        handle_org_stripe_payment(organization_id, hours, session_id)
+      else
+        # Add credits to personal user balance (original flow)
+        handle_personal_stripe_payment(user_id, pack_type, hours, amount_usd, amount_total, session_id, payment_intent)
       end
     else
       IO.puts("[Stripe Webhook] Missing required metadata: user_id=#{user_id}, pack_type=#{pack_type}, hours=#{hours}")
+    end
+  end
+
+  defp handle_personal_stripe_payment(user_id, pack_type, hours, amount_usd, amount_total, session_id, payment_intent) do
+    # Create and confirm the transaction for personal credits
+    attrs = %{
+      user_id: String.to_integer(user_id),
+      pack_type: pack_type,
+      hours_purchased: String.to_integer(hours),
+      amount_usd: parse_decimal(amount_usd) || Decimal.div(Decimal.new(amount_total || 0), 100),
+      amount_sol: Decimal.new("0"),  # No SOL for Stripe payments
+      sol_usd_rate: Decimal.new("0"),  # N/A for Stripe
+      tx_signature: "stripe_#{session_id}",  # Use session ID as unique identifier
+      payment_method: "stripe",
+      stripe_session_id: session_id,
+      stripe_payment_intent_id: payment_intent,
+      status: "confirmed"  # Stripe webhook means payment is already confirmed
+    }
+
+    case Credits.create_stripe_transaction(attrs) do
+      {:ok, _transaction} ->
+        IO.puts("[Stripe Webhook] Transaction created and credits added for user #{user_id}")
+
+      {:error, :already_processed} ->
+        IO.puts("[Stripe Webhook] Transaction already processed for session #{session_id}")
+
+      {:error, reason} ->
+        IO.puts("[Stripe Webhook] Failed to create transaction: #{inspect(reason)}")
+    end
+  end
+
+  defp handle_org_stripe_payment(organization_id, hours, session_id) do
+    # Add credits to organization pool
+    org_id = if is_binary(organization_id), do: String.to_integer(organization_id), else: organization_id
+    hours_int = if is_binary(hours), do: String.to_integer(hours), else: hours
+
+    IO.puts("[Stripe Webhook] Adding #{hours_int} hours to organization #{org_id} pool")
+
+    case Organizations.add_organization_credits(org_id, hours_int) do
+      {:ok, _org_credit} ->
+        IO.puts("[Stripe Webhook] Successfully added #{hours_int} hours to organization #{org_id}")
+
+      {:error, reason} ->
+        IO.puts("[Stripe Webhook] Failed to add org credits: #{inspect(reason)}")
     end
   end
 
@@ -239,6 +359,14 @@ defmodule ClippsterServerWeb.StripeController do
     case Accounts.get_user(user_id) do
       nil -> {:error, :user_not_found}
       user -> {:ok, user}
+    end
+  end
+
+  defp get_organization(org_id) do
+    org_id = if is_binary(org_id), do: String.to_integer(org_id), else: org_id
+    case Organizations.get_organization(org_id) do
+      nil -> {:error, :organization_not_found}
+      org -> {:ok, org}
     end
   end
 

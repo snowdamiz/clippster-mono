@@ -33,11 +33,23 @@
 
   // Check if user needs to select account type
   const needsAccountTypeSelection = computed(() => {
-    return (
-      authStore.isAuthenticated &&
-      authStore.user &&
-      (authStore.user.account_type === null || authStore.user.account_type === undefined)
-    );
+    // Not authenticated - no need to show
+    if (!authStore.isAuthenticated || !authStore.user) {
+      return false;
+    }
+
+    // Already has account_type set - no need to show
+    if (authStore.user.account_type) {
+      return false;
+    }
+
+    // Already owns an organization - definitely an org account, no need to show
+    if (authStore.user.owned_organization_id) {
+      return false;
+    }
+
+    // User is authenticated but has no account_type and doesn't own an org
+    return true;
   });
 
   // Show dialog when user is authenticated but hasn't selected account type

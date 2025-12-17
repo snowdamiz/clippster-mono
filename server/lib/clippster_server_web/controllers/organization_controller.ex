@@ -153,9 +153,15 @@ defmodule ClippsterServerWeb.OrganizationController do
     if Organizations.is_member?(org_id, user.id) do
       members = Organizations.list_members(org_id)
 
+      # Include allocation info for each member
+      members_with_allocations = Enum.map(members, fn member ->
+        allocation = Organizations.get_member_allocation(org_id, member.user_id)
+        serialize_member_with_allocation(member, allocation)
+      end)
+
       json(conn, %{
         success: true,
-        members: Enum.map(members, &serialize_member/1)
+        members: members_with_allocations
       })
     else
       conn
@@ -506,6 +512,11 @@ defmodule ClippsterServerWeb.OrganizationController do
         |> put_status(400)
         |> json(%{success: false, error: "Organization does not have enough credits"})
 
+      {:error, :org_credits_not_found} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Organization has no credits. Purchase credits first."})
+
       {:error, _} ->
         conn
         |> put_status(400)
@@ -556,6 +567,27 @@ defmodule ClippsterServerWeb.OrganizationController do
         nil
       end
     }
+  end
+
+  defp serialize_member_with_allocation(member, allocation) do
+    base = serialize_member(member)
+
+    allocation_data = if allocation do
+      remaining = Organizations.MemberCreditAllocation.remaining_hours(allocation)
+      %{
+        hours_allocated: Decimal.to_string(allocation.hours_allocated),
+        hours_used: Decimal.to_string(allocation.hours_used),
+        hours_remaining: Decimal.to_string(remaining)
+      }
+    else
+      %{
+        hours_allocated: "0",
+        hours_used: "0",
+        hours_remaining: "0"
+      }
+    end
+
+    Map.put(base, :allocation, allocation_data)
   end
 
   defp serialize_invitation(invitation) do

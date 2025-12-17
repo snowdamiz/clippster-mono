@@ -3531,7 +3531,11 @@
     showProjectDetectDialog.value = true;
   }
 
-  async function onProjectDetectClipsConfirmed(_promptId: string, promptContent: string) {
+  async function onProjectDetectClipsConfirmed(
+    _promptId: string,
+    promptContent: string,
+    organizationId: number | null = null
+  ) {
     if (!projectToDetect.value || segmentsToDetect.value.length === 0) {
       return;
     }
@@ -3577,6 +3581,7 @@
               chunkDurationMinutes: 15,
               overlapSeconds: 30,
               forceReprocess: false,
+              organizationId: organizationId,
             });
 
             if (result.success) {

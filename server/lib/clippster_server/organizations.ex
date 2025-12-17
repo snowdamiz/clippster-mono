@@ -582,20 +582,91 @@ defmodule ClippsterServer.Organizations do
         changeset |> Repo.update()
 
       {:error, :insufficient_allocation} when allow_pool_fallback ->
-        # Try to deduct from org pool directly
+        # Try to deduct from org pool directly but still track user usage
         case Repo.get(OrganizationCredit, organization_id) do
           nil ->
             {:error, :insufficient_credits}
 
           org_credit ->
-            org_credit
-            |> OrganizationCredit.deduct_hours_changeset(hours)
-            |> Repo.update()
+            hours_decimal = Decimal.new(to_string(hours))
+            # Check org pool has enough
+            if Decimal.compare(org_credit.hours_remaining, hours_decimal) == :lt do
+              {:error, :insufficient_credits}
+            else
+              # Deduct from org pool AND track the usage for this user
+              Repo.transaction(fn ->
+                {:ok, _updated_credit} = org_credit
+                  |> OrganizationCredit.deduct_hours_changeset(hours)
+                  |> Repo.update()
+
+                # Get or create allocation for tracking usage (even if no hours allocated)
+                member_allocation = get_or_create_member_allocation(organization_id, user_id)
+
+                # Track the usage (this may result in negative remaining, but that's ok for tracking)
+                new_used = Decimal.add(member_allocation.hours_used, hours_decimal)
+                {:ok, updated_allocation} = member_allocation
+                  |> Ecto.Changeset.change(hours_used: new_used)
+                  |> Repo.update()
+
+                updated_allocation
+              end)
+            end
         end
 
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  @doc """
+  Sets an organization's credit balance to specific amounts.
+  Admin-only operation.
+  """
+  def set_organization_credits(organization_id, hours_remaining, hours_used \\ nil) do
+    case Repo.get(OrganizationCredit, organization_id) do
+      nil ->
+        # Create if doesn't exist
+        %OrganizationCredit{}
+        |> OrganizationCredit.changeset(%{
+          organization_id: organization_id,
+          hours_remaining: Decimal.new(to_string(hours_remaining)),
+          hours_used: Decimal.new(to_string(hours_used || 0))
+        })
+        |> Repo.insert()
+
+      org_credit ->
+        changes = %{
+          hours_remaining: Decimal.new(to_string(hours_remaining))
+        }
+        changes = if hours_used do
+          Map.put(changes, :hours_used, Decimal.new(to_string(hours_used)))
+        else
+          changes
+        end
+
+        org_credit
+        |> Ecto.Changeset.change(changes)
+        |> Repo.update()
+    end
+  end
+
+  @doc """
+  Lists all organizations in the system.
+  Admin-only operation.
+  """
+  def list_all_organizations do
+    Organization
+    |> order_by([o], desc: o.inserted_at)
+    |> Repo.all()
+  end
+
+  @doc """
+  Counts the number of members in an organization.
+  """
+  def count_members(organization_id) do
+    OrganizationMember
+    |> where([m], m.organization_id == ^organization_id)
+    |> Repo.aggregate(:count)
   end
 end
 

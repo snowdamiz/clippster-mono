@@ -586,7 +586,11 @@
     showSuccessToast('Detection Cancelled', 'Clip detection was cancelled. Any charged credits have been refunded.');
   }
 
-  async function onDetectClipsConfirmed(_promptId: string, promptContent: string) {
+  async function onDetectClipsConfirmed(
+    _promptId: string,
+    promptContent: string,
+    organizationId: number | null = null
+  ) {
     if (!props.project) {
       console.error('[ProjectWorkspaceDialog] No project available');
       return;
@@ -663,6 +667,7 @@
           chunkDurationMinutes: 15,
           overlapSeconds: 30,
           forceReprocess: false,
+          organizationId: organizationId,
         });
 
         if (result.success) {

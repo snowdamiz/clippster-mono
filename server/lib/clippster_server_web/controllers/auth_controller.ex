@@ -72,7 +72,9 @@ defmodule ClippsterServerWeb.AuthController do
             user: %{
               id: user.id,
               wallet_address: user.wallet_address,
-              is_admin: user.is_admin
+              is_admin: user.is_admin,
+              account_type: user.account_type,
+              owned_organization_id: user.owned_organization_id
             }
           })
 
@@ -663,6 +665,28 @@ defmodule ClippsterServerWeb.AuthController do
         |> put_status(401)
         |> json(%{success: false, error: "Invalid Google access token"})
     end
+  end
+
+  @doc """
+  Get current user info (requires auth via AuthPlug).
+  Returns fresh user data from the database.
+  """
+  def me(conn, _params) do
+    user = conn.assigns.current_user
+
+    json(conn, %{
+      success: true,
+      user: %{
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        avatar_url: user.avatar_url,
+        wallet_address: user.wallet_address,
+        is_admin: user.is_admin,
+        account_type: user.account_type,
+        owned_organization_id: user.owned_organization_id
+      }
+    })
   end
 
   defp verify_google_access_token(access_token) do
