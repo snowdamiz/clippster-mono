@@ -43,6 +43,21 @@ config :clippster_server, :stripe,
   success_url: System.get_env("STRIPE_SUCCESS_URL") || "http://localhost:48276/stripe-success",
   cancel_url: System.get_env("STRIPE_CANCEL_URL") || "http://localhost:48276/stripe-cancel"
 
+# Resend email configuration (all environments)
+resend_api_key = System.get_env("RESEND_API_KEY")
+
+if resend_api_key do
+  config :clippster_server, ClippsterServer.Mailer,
+    adapter: Swoosh.Adapters.Resend,
+    api_key: resend_api_key
+end
+
+# Email auth configuration
+config :clippster_server, :email_auth,
+  from_email: System.get_env("EMAIL_FROM") || "noreply@clippster.app",
+  app_name: "Clippster",
+  verification_url_base: System.get_env("APP_URL") || "http://localhost:4000"
+
 # ## Using releases
 #
 # If you use `mix release`, you need to explicitly enable the server

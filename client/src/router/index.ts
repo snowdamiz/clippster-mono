@@ -166,6 +166,17 @@ const router = createRouter({
         },
       ],
     },
+    // Authentication routes
+    {
+      path: '/login',
+      name: 'login',
+      component: () => import('@/components/Auth.vue'),
+    },
+    {
+      path: '/reset-password/:token',
+      name: 'reset-password',
+      component: () => import('@/pages/ResetPassword.vue'),
+    },
   ],
 });
 

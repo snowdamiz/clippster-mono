@@ -460,6 +460,8 @@ pub fn run() {
             auth::poll_google_auth_result,
             auth::open_stripe_payment_window,
             auth::poll_stripe_payment_result,
+            auth::start_email_verification_listener,
+            auth::poll_email_verification_result,
 
             // PumpFun commands
             pumpfun::get_pumpfun_clips,

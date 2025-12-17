@@ -56,7 +56,10 @@ export const useAuthStore = defineStore('auth', {
     user: null,
     loading: false,
     error: null,
-    authProvider: null, // 'wallet', 'google', or null
+    authProvider: null, // 'wallet', 'google', 'email', or null
+    // Email verification state
+    pendingVerificationEmail: null,
+    verificationSentAt: null,
   }),
 
   actions: {
@@ -252,6 +255,319 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
+    // ============================================
+    // Email Authentication Methods
+    // ============================================
+
+    /**
+     * Register a new user with email and password.
+     * Sends verification email with OTP code.
+     */
+    async registerWithEmail(email, password) {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const response = await fetch(`${API_BASE}/api/auth/email/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Registration failed');
+        }
+
+        // Store pending verification email
+        this.pendingVerificationEmail = email;
+        this.verificationSentAt = Date.now();
+
+        // Start listening for magic link verification (in background)
+        this.startEmailVerificationListener();
+
+        return { success: true, message: data.message };
+      } catch (error) {
+        this.error = error.message;
+        return { success: false, error: error.message };
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    /**
+     * Verify email using 6-digit OTP code.
+     */
+    async verifyEmailOtp(email, otp) {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const response = await fetch(`${API_BASE}/api/auth/email/verify-otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, otp }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Verification failed');
+        }
+
+        // Store auth data
+        this.token = data.token;
+        this.email = data.user.email;
+        this.user = data.user;
+        this.authProvider = 'email';
+        this.isAuthenticated = true;
+        this.pendingVerificationEmail = null;
+        this.verificationSentAt = null;
+
+        // Store in localStorage for persistence
+        localStorage.setItem('auth_token', data.token);
+        localStorage.setItem('email', data.user.email || '');
+        localStorage.setItem('user', JSON.stringify(data.user));
+        localStorage.setItem('auth_provider', 'email');
+
+        // Set user context for database queries and storage paths
+        await setUserContext(data.user.id);
+
+        // Emit event to trigger data refresh across the app
+        emitAuthStateChanged(data.user.id);
+
+        return { success: true };
+      } catch (error) {
+        this.error = error.message;
+        return { success: false, error: error.message };
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    /**
+     * Login with email and password.
+     */
+    async loginWithEmail(email, password) {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const response = await fetch(`${API_BASE}/api/auth/email/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          // Check if email not verified
+          if (data.code === 'EMAIL_NOT_VERIFIED') {
+            this.pendingVerificationEmail = email;
+            return { success: false, error: data.error, needsVerification: true };
+          }
+          throw new Error(data.error || 'Login failed');
+        }
+
+        // Store auth data
+        this.token = data.token;
+        this.email = data.user.email;
+        this.user = data.user;
+        this.authProvider = 'email';
+        this.isAuthenticated = true;
+
+        // Store in localStorage for persistence
+        localStorage.setItem('auth_token', data.token);
+        localStorage.setItem('email', data.user.email || '');
+        localStorage.setItem('user', JSON.stringify(data.user));
+        localStorage.setItem('auth_provider', 'email');
+
+        // Set user context for database queries and storage paths
+        await setUserContext(data.user.id);
+
+        // Emit event to trigger data refresh across the app
+        emitAuthStateChanged(data.user.id);
+
+        return { success: true };
+      } catch (error) {
+        this.error = error.message;
+        return { success: false, error: error.message };
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    /**
+     * Resend verification email.
+     */
+    async resendVerificationEmail(email) {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const response = await fetch(`${API_BASE}/api/auth/email/resend-verification`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Failed to resend verification email');
+        }
+
+        this.verificationSentAt = Date.now();
+
+        return { success: true, message: data.message };
+      } catch (error) {
+        this.error = error.message;
+        return { success: false, error: error.message };
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    /**
+     * Request password reset email.
+     */
+    async forgotPassword(email) {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const response = await fetch(`${API_BASE}/api/auth/email/forgot-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Failed to send reset email');
+        }
+
+        return { success: true, message: data.message };
+      } catch (error) {
+        this.error = error.message;
+        return { success: false, error: error.message };
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    /**
+     * Reset password with token.
+     */
+    async resetPassword(token, newPassword) {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const response = await fetch(`${API_BASE}/api/auth/email/reset-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, password: newPassword }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Password reset failed');
+        }
+
+        return { success: true, message: data.message };
+      } catch (error) {
+        this.error = error.message;
+        return { success: false, error: error.message };
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    /**
+     * Start listening for magic link email verification.
+     * This runs in background while user might also use OTP.
+     */
+    async startEmailVerificationListener() {
+      try {
+        // Start the Tauri callback server
+        await invoke('start_email_verification_listener');
+
+        // Listen for verification result via Tauri event
+        const unlisten = await listen('email-verification-complete', async (event) => {
+          const result = event.payload;
+
+          if (result.success && result.token && result.user) {
+            // Store auth data from magic link verification
+            this.token = result.token;
+            this.email = result.user.email;
+            this.user = result.user;
+            this.authProvider = 'email';
+            this.isAuthenticated = true;
+            this.pendingVerificationEmail = null;
+            this.verificationSentAt = null;
+
+            // Store in localStorage for persistence
+            localStorage.setItem('auth_token', result.token);
+            localStorage.setItem('email', result.user.email || '');
+            localStorage.setItem('user', JSON.stringify(result.user));
+            localStorage.setItem('auth_provider', 'email');
+
+            // Set user context for database queries and storage paths
+            await setUserContext(result.user.id);
+
+            // Emit event to trigger data refresh across the app
+            emitAuthStateChanged(result.user.id);
+
+            // Emit custom event for UI to react
+            window.dispatchEvent(new CustomEvent('email-verified', { detail: result }));
+          }
+
+          unlisten();
+        });
+
+        // Also poll for result (fallback)
+        const pollInterval = setInterval(async () => {
+          if (!this.pendingVerificationEmail) {
+            clearInterval(pollInterval);
+            return;
+          }
+
+          try {
+            const result = await invoke('poll_email_verification_result');
+            if (result && result.success) {
+              clearInterval(pollInterval);
+              // The event listener above will handle the auth
+            }
+          } catch (error) {
+            console.error('[Auth] Poll email verification error:', error);
+          }
+        }, 2000);
+
+        // Stop polling after 30 minutes
+        setTimeout(
+          () => {
+            clearInterval(pollInterval);
+          },
+          30 * 60 * 1000
+        );
+      } catch (error) {
+        console.error('[Auth] Failed to start email verification listener:', error);
+      }
+    },
+
+    /**
+     * Clear pending verification state
+     */
+    clearPendingVerification() {
+      this.pendingVerificationEmail = null;
+      this.verificationSentAt = null;
+    },
+
     async getClientId() {
       let clientId = localStorage.getItem('client_id');
       if (!clientId) {
@@ -268,6 +584,8 @@ export const useAuthStore = defineStore('auth', {
       this.token = null;
       this.user = null;
       this.authProvider = null;
+      this.pendingVerificationEmail = null;
+      this.verificationSentAt = null;
       localStorage.removeItem('auth_token');
       localStorage.removeItem('wallet_address');
       localStorage.removeItem('email');

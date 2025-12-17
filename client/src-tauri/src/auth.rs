@@ -46,14 +46,37 @@ pub struct StripePaymentResult {
     pub pack_hours: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailAuthUser {
+    pub id: i64,
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub is_admin: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailVerificationResult {
+    pub success: bool,
+    #[serde(default)]
+    pub token: Option<String>,
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub user: Option<EmailAuthUser>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
 pub static AUTH_RESULT: Lazy<Arc<Mutex<Option<AuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static PAYMENT_RESULT: Lazy<Arc<Mutex<Option<PaymentResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static GOOGLE_AUTH_RESULT: Lazy<Arc<Mutex<Option<GoogleAuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static STRIPE_PAYMENT_RESULT: Lazy<Arc<Mutex<Option<StripePaymentResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+pub static EMAIL_VERIFICATION_RESULT: Lazy<Arc<Mutex<Option<EmailVerificationResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static AUTH_SERVER_PORT: u16 = 48274;
 pub static PAYMENT_SERVER_PORT: u16 = 48275;
 pub static GOOGLE_AUTH_SERVER_PORT: u16 = 54321;
 pub static STRIPE_SERVER_PORT: u16 = 48276;
+pub static EMAIL_VERIFICATION_SERVER_PORT: u16 = 54322;
 
 #[tauri::command]
 pub async fn open_wallet_auth_window(app: tauri::AppHandle) -> Result<(), String> {
@@ -369,5 +392,63 @@ pub fn start_stripe_callback_server(app: tauri::AppHandle, pack_key: String, pac
 
         println!("Starting Stripe callback server on port {}", STRIPE_SERVER_PORT);
         warp::serve(routes).run(([127, 0, 0, 1], STRIPE_SERVER_PORT)).await;
+    });
+}
+
+#[tauri::command]
+pub async fn poll_email_verification_result() -> Result<Option<EmailVerificationResult>, String> {
+    let result = EMAIL_VERIFICATION_RESULT.lock().unwrap().clone();
+    if result.is_some() {
+        // Clear after retrieval
+        *EMAIL_VERIFICATION_RESULT.lock().unwrap() = None;
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn start_email_verification_listener(app: tauri::AppHandle) -> Result<(), String> {
+    start_email_verification_callback_server(app);
+    Ok(())
+}
+
+pub fn start_email_verification_callback_server(app: tauri::AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
+
+    if SERVER_STARTED.swap(true, Ordering::SeqCst) {
+        return; // Server already running
+    }
+
+    tokio::spawn(async move {
+        let email_verification_result = EMAIL_VERIFICATION_RESULT.clone();
+        let app_handle = app.clone();
+
+        // Callback endpoint for email verification result (from magic link)
+        let email_verification_callback = warp::path("email-verification-callback")
+            .and(warp::post())
+            .and(warp::body::json())
+            .map(move |result: EmailVerificationResult| {
+                // Store the result
+                *email_verification_result.lock().unwrap() = Some(result.clone());
+
+                // Emit event to frontend
+                let _ = app_handle.emit("email-verification-complete", result);
+
+                warp::reply::json(&serde_json::json!({
+                    "success": true,
+                    "message": "Email verification received. You can close this tab."
+                }))
+            });
+
+        // CORS configuration
+        let cors = warp::cors()
+            .allow_any_origin()
+            .allow_methods(vec!["GET", "POST", "OPTIONS"])
+            .allow_headers(vec!["Content-Type"]);
+
+        let routes = email_verification_callback.with(cors);
+
+        println!("Starting email verification callback server on port {}", EMAIL_VERIFICATION_SERVER_PORT);
+        warp::serve(routes).run(([127, 0, 0, 1], EMAIL_VERIFICATION_SERVER_PORT)).await;
     });
 }

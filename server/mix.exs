@@ -67,7 +67,9 @@ defmodule ClippsterServer.MixProject do
       {:ueberauth, "~> 0.10"},
       {:ueberauth_google, "~> 0.10"},
       # Stripe payments
-      {:stripity_stripe, "~> 3.2"}
+      {:stripity_stripe, "~> 3.2"},
+      # Password hashing for email auth (pure Elixir, no native deps needed)
+      {:pbkdf2_elixir, "~> 2.0"}
     ]
   end
 

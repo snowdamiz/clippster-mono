@@ -55,6 +55,15 @@ defmodule ClippsterServerWeb.Router do
     get "/auth/google", AuthController, :google_request
     get "/auth/google/callback", AuthController, :google_callback
 
+    # Email authentication routes
+    post "/auth/email/register", EmailAuthController, :register
+    post "/auth/email/verify-otp", EmailAuthController, :verify_otp
+    get "/auth/email/verify/:token", EmailAuthController, :verify_token
+    post "/auth/email/login", EmailAuthController, :login
+    post "/auth/email/resend-verification", EmailAuthController, :resend_verification
+    post "/auth/email/forgot-password", EmailAuthController, :forgot_password
+    post "/auth/email/reset-password", EmailAuthController, :reset_password
+
     # Payment and credit routes
     get "/pricing", PaymentController, :get_pricing
     get "/credits/balance", PaymentController, :get_balance
