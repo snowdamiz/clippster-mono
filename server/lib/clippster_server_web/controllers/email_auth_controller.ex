@@ -62,7 +62,9 @@ defmodule ClippsterServerWeb.EmailAuthController do
                 id: user.id,
                 email: user.email,
                 name: user.name,
-                is_admin: user.is_admin
+                is_admin: user.is_admin,
+                account_type: user.account_type,
+                owned_organization_id: user.owned_organization_id
               }
             })
 
@@ -169,7 +171,9 @@ defmodule ClippsterServerWeb.EmailAuthController do
                 id: user.id,
                 email: user.email,
                 name: user.name,
-                is_admin: user.is_admin
+                is_admin: user.is_admin,
+                account_type: user.account_type,
+                owned_organization_id: user.owned_organization_id
               }
             })
 
@@ -420,7 +424,9 @@ defmodule ClippsterServerWeb.EmailAuthController do
             id: #{user.id},
             email: "#{escaped_email}",
             name: "#{escaped_name}",
-            is_admin: #{user.is_admin}
+            is_admin: #{user.is_admin},
+            account_type: #{if user.account_type, do: "\"#{user.account_type}\"", else: "null"},
+            owned_organization_id: #{user.owned_organization_id || "null"}
           }
         };
 

@@ -234,11 +234,66 @@ defmodule ClippsterServer.Credits do
   end
 
   @doc """
-  Checks if user has enough credits for a given duration
+  Checks if user has enough credits for a given duration.
+  Also checks organization credits if user is a member.
   """
   def has_enough_credits?(user_id, hours_needed) do
     {:ok, %{hours_remaining: remaining}} = get_user_balance(user_id)
-    Decimal.compare(remaining, Decimal.new(to_string(hours_needed))) != :lt
+    
+    if Decimal.compare(remaining, Decimal.new(to_string(hours_needed))) != :lt do
+      true
+    else
+      # Check organization allocations
+      check_organization_credits(user_id, hours_needed)
+    end
+  end
+
+  @doc """
+  Checks if user has credits in any organization they belong to.
+  """
+  def check_organization_credits(user_id, hours_needed) do
+    alias ClippsterServer.Organizations
+    
+    hours_decimal = Decimal.new(to_string(hours_needed))
+    
+    # Get all organizations the user is a member of
+    organizations = Organizations.list_user_organizations(user_id)
+    
+    Enum.any?(organizations, fn %{organization: org} ->
+      case Organizations.get_member_allocation(org.id, user_id) do
+        nil -> false
+        allocation ->
+          remaining = ClippsterServer.Organizations.MemberCreditAllocation.remaining_hours(allocation)
+          Decimal.compare(remaining, hours_decimal) != :lt
+      end
+    end)
+  end
+
+  @doc """
+  Gets the total available credits for a user including personal and org allocations.
+  """
+  def get_total_available_credits(user_id) do
+    alias ClippsterServer.Organizations
+    
+    {:ok, %{hours_remaining: personal_remaining}} = get_user_balance(user_id)
+    
+    # Sum up all organization allocations
+    organizations = Organizations.list_user_organizations(user_id)
+    
+    org_remaining = Enum.reduce(organizations, Decimal.new("0"), fn %{organization: org}, acc ->
+      case Organizations.get_member_allocation(org.id, user_id) do
+        nil -> acc
+        allocation ->
+          remaining = ClippsterServer.Organizations.MemberCreditAllocation.remaining_hours(allocation)
+          Decimal.add(acc, remaining)
+      end
+    end)
+    
+    {:ok, %{
+      personal: personal_remaining,
+      organization: org_remaining,
+      total: Decimal.add(personal_remaining, org_remaining)
+    }}
   end
 
   # ============================================================================

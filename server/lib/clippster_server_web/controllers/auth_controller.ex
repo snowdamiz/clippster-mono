@@ -539,7 +539,9 @@ defmodule ClippsterServerWeb.AuthController do
             email: "#{escaped_email}",
             name: "#{escaped_name}",
             avatar_url: "#{escaped_avatar}",
-            is_admin: #{user.is_admin}
+            is_admin: #{user.is_admin},
+            account_type: #{if user.account_type, do: "\"#{user.account_type}\"", else: "null"},
+            owned_organization_id: #{user.owned_organization_id || "null"}
           }
         };
         

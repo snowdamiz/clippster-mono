@@ -177,18 +177,71 @@ const router = createRouter({
       name: 'reset-password',
       component: () => import('@/pages/ResetPassword.vue'),
     },
+    // Organization routes
+    {
+      path: '/organization/setup',
+      name: 'organization-setup',
+      component: () => import('@/components/OrganizationSetupWizard.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/organizations',
+      name: 'organizations',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'organizations-home',
+          component: () => import('@/pages/Organizations.vue'),
+        },
+      ],
+    },
+    {
+      path: '/organization',
+      name: 'organization',
+      redirect: '/organizations', // Redirect to list if no ID specified
+    },
+    {
+      path: '/organization/:id',
+      name: 'organization-detail',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'organization-detail-home',
+          component: () => import('@/components/OrganizationDashboard.vue'),
+        },
+      ],
+    },
+    // Invitation acceptance
+    {
+      path: '/invite/:token',
+      name: 'accept-invitation',
+      component: () => import('@/pages/AcceptInvitation.vue'),
+    },
   ],
 });
 
-// Navigation guard to check admin access only
+// Navigation guard for authentication and admin access
 router.beforeEach((to, _from, next) => {
   const authStore = useAuthStore();
 
-  if (to.meta.requiresAdmin && (!authStore.isAuthenticated || !authStore.user?.is_admin)) {
-    next('/projects'); // Redirect to projects if not authenticated or not admin
-  } else {
-    next();
+  // Check if route requires authentication
+  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+    // Save intended destination and redirect to login
+    next({ path: '/login', query: { redirect: to.fullPath } });
+    return;
   }
+
+  // Check if route requires admin
+  if (to.meta.requiresAdmin && (!authStore.isAuthenticated || !authStore.user?.is_admin)) {
+    next('/projects');
+    return;
+  }
+
+  next();
 });
 
 export default router;

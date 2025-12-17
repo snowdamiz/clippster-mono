@@ -216,6 +216,128 @@ defmodule ClippsterServer.Emails do
     If you didn't request a password reset, you can safely ignore this email.
     """
   end
+
+  @doc """
+  Creates an organization invitation email.
+  """
+  def organization_invitation_email(email, org_name, inviter_name, invite_token) do
+    config = Application.get_env(:clippster_server, :email_auth, [])
+    from_email = Keyword.get(config, :from_email, "noreply@clippster.app")
+    app_name = Keyword.get(config, :app_name, "Clippster")
+    base_url = Keyword.get(config, :verification_url_base, "http://localhost:4000")
+    
+    invite_url = "#{base_url}/invite/#{invite_token}"
+
+    new()
+    |> to(email)
+    |> from({app_name, from_email})
+    |> subject("You've been invited to join #{org_name} on #{app_name}")
+    |> html_body(organization_invitation_html(org_name, inviter_name, invite_url, app_name))
+    |> text_body(organization_invitation_text(org_name, inviter_name, invite_url, app_name))
+  end
+
+  defp organization_invitation_html(org_name, inviter_name, invite_url, app_name) do
+    """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Organization Invitation</title>
+    </head>
+    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #0a0a0a;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="min-height: 100vh;">
+        <tr>
+          <td align="center" style="padding: 40px 20px;">
+            <table role="presentation" width="100%" style="max-width: 480px;">
+              <!-- Logo/Header -->
+              <tr>
+                <td align="center" style="padding-bottom: 32px;">
+                  <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #ffffff;">#{app_name}</h1>
+                </td>
+              </tr>
+              
+              <!-- Main Card -->
+              <tr>
+                <td style="background: linear-gradient(180deg, #18181b 0%, #09090b 100%); border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1); padding: 40px;">
+                  <!-- Icon -->
+                  <div style="text-align: center; margin-bottom: 24px;">
+                    <div style="display: inline-block; background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 16px;">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                      </svg>
+                    </div>
+                  </div>
+
+                  <!-- Title -->
+                  <h2 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #ffffff; text-align: center;">
+                    You're invited!
+                  </h2>
+                  <p style="margin: 0 0 24px 0; font-size: 14px; color: #a1a1aa; text-align: center;">
+                    #{inviter_name} has invited you to join
+                  </p>
+                  
+                  <!-- Organization Name Box -->
+                  <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 24px;">
+                    <p style="margin: 0; font-size: 20px; font-weight: 600; color: #ffffff;">
+                      #{org_name}
+                    </p>
+                  </div>
+                  
+                  <p style="margin: 0 0 24px 0; font-size: 13px; color: #71717a; text-align: center;">
+                    Click the button below to accept this invitation and join the team.
+                  </p>
+                  
+                  <!-- Accept Button -->
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                    <tr>
+                      <td align="center">
+                        <a href="#{invite_url}" style="display: inline-block; background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%); color: #ffffff; font-size: 14px; font-weight: 600; text-decoration: none; padding: 14px 32px; border-radius: 8px;">
+                          Accept Invitation
+                        </a>
+                      </td>
+                    </tr>
+                  </table>
+                  
+                  <p style="margin: 24px 0 0 0; font-size: 12px; color: #52525b; text-align: center;">
+                    This invitation expires in 7 days.
+                  </p>
+                </td>
+              </tr>
+              
+              <!-- Footer -->
+              <tr>
+                <td style="padding-top: 32px; text-align: center;">
+                  <p style="margin: 0; font-size: 12px; color: #52525b;">
+                    If you don't recognize this organization, you can safely ignore this email.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+    """
+  end
+
+  defp organization_invitation_text(org_name, inviter_name, invite_url, app_name) do
+    """
+    #{app_name} - Organization Invitation
+
+    #{inviter_name} has invited you to join #{org_name}!
+
+    Click this link to accept the invitation: #{invite_url}
+
+    This invitation expires in 7 days.
+
+    If you don't recognize this organization, you can safely ignore this email.
+    """
+  end
 end
 
 

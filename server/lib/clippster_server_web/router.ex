@@ -78,6 +78,9 @@ defmodule ClippsterServerWeb.Router do
 
     # Kick routes
     get "/kick/channels/:channel_slug/videos", KickController, :get_clips
+
+    # Organization invitation (public - for viewing invitation details)
+    get "/invitations/:token", OrganizationController, :get_invitation
   end
 
   # Protected routes (require authentication)
@@ -105,6 +108,30 @@ defmodule ClippsterServerWeb.Router do
 
     # OAuth account linking routes
     post "/auth/link/google", AuthController, :link_google_account
+
+    # Account type selection (for new users)
+    post "/account/type", OrganizationController, :set_account_type
+
+    # Organization management
+    resources "/organizations", OrganizationController, only: [:index, :create, :show, :update, :delete]
+
+    # Organization members
+    get "/organizations/:organization_id/members", OrganizationController, :list_members
+    put "/organizations/:organization_id/members/:user_id", OrganizationController, :update_member
+    delete "/organizations/:organization_id/members/:user_id", OrganizationController, :remove_member
+
+    # Organization invitations
+    get "/organizations/:organization_id/invitations", OrganizationController, :list_invitations
+    post "/organizations/:organization_id/invitations", OrganizationController, :create_invitation
+    delete "/organizations/:organization_id/invitations/:id", OrganizationController, :cancel_invitation
+    post "/invitations/:token/accept", OrganizationController, :accept_invitation
+
+    # Create member account directly (admin creates account for user)
+    post "/organizations/:organization_id/create-member", OrganizationController, :create_member_account
+
+    # Organization credits
+    get "/organizations/:organization_id/credits", OrganizationController, :get_credits
+    post "/organizations/:organization_id/credits/allocate", OrganizationController, :allocate_credits
   end
 
   # Admin-only routes

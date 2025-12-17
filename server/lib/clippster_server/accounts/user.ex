@@ -22,6 +22,10 @@ defmodule ClippsterServer.Accounts.User do
     field :password_reset_token, :string
     field :password_reset_sent_at, :utc_datetime
 
+    # Organization fields
+    field :account_type, :string  # "personal" | "organization" | nil (pending)
+    field :owned_organization_id, :integer
+
     timestamps(type: :utc_datetime)
   end
 
@@ -139,6 +143,15 @@ defmodule ClippsterServer.Accounts.User do
     |> hash_password()
     |> put_change(:password_reset_token, nil)
     |> put_change(:password_reset_sent_at, nil)
+  end
+
+  @doc """
+  Changeset for setting account type (personal/organization).
+  """
+  def account_type_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:account_type, :owned_organization_id])
+    |> validate_inclusion(:account_type, ["personal", "organization"])
   end
 
   defp put_wallet_provider(changeset) do

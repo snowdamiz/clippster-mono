@@ -144,7 +144,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted, onUnmounted } from 'vue';
+  import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
   import { useRoute, useRouter } from 'vue-router';
   import { useAuthStore } from '@/stores/auth';
   import { useWallet } from '@/composables/useWallet';
@@ -169,26 +169,58 @@
   // Timer reference for cleanup
   let balanceRefreshInterval: ReturnType<typeof setInterval> | null = null;
 
-  // Filter navigation items based on admin status
-  const visibleNavigationItems = computed(() => {
-    console.log('🔍 DashboardSidebar - Computing visible navigation items');
-    console.log('🔍 authStore.user:', authStore.user);
-    console.log('🔍 authStore.user?.is_admin:', authStore.user?.is_admin);
-    console.log('🔍 All navigation items:', navigationItems);
+  // Track user's organizations
+  const userOrganizations = ref<any[]>([]);
 
+  // Load user's organizations
+  async function loadUserOrganizations() {
+    if (!authStore.isAuthenticated) {
+      userOrganizations.value = [];
+      return;
+    }
+    try {
+      const result = await authStore.getOrganizations();
+      if (result.success) {
+        userOrganizations.value = result.organizations || [];
+      }
+    } catch (error) {
+      console.error('Failed to load organizations:', error);
+    }
+  }
+
+  // Filter navigation items based on admin/org status
+  const visibleNavigationItems = computed(() => {
     const filtered = navigationItems.filter((item) => {
-      console.log(`🔍 Checking item: ${item.name}, adminOnly: ${item.adminOnly}`);
+      // Check admin-only items
       if (item.adminOnly) {
-        const isAdmin = authStore.user?.is_admin === true;
-        console.log(`🔍 ${item.name} - Admin check: ${isAdmin}`);
-        return isAdmin;
+        return authStore.user?.is_admin === true;
+      }
+      // Check organization owner-only items
+      if (item.orgOnly) {
+        return authStore.user?.account_type === 'organization' && authStore.user?.owned_organization_id;
+      }
+      // Check organization member items (show if user is member of any org)
+      if (item.orgMember) {
+        return userOrganizations.value.length > 0;
       }
       return true;
     });
 
-    console.log('🔍 Filtered navigation items:', filtered);
     return filtered;
   });
+
+  // Watch for auth changes and load organizations
+  watch(
+    () => authStore.isAuthenticated,
+    (isAuth) => {
+      if (isAuth) {
+        loadUserOrganizations();
+      } else {
+        userOrganizations.value = [];
+      }
+    },
+    { immediate: true }
+  );
 
   const isActive = (path: string) => {
     return route.path.startsWith(path);

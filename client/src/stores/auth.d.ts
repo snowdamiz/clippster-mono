@@ -5,7 +5,10 @@ export interface AuthUser {
   wallet_address?: string
   email?: string
   name?: string
+  avatar_url?: string
   is_admin: boolean
+  account_type?: 'personal' | 'organization'
+  owned_organization_id?: string | null
 }
 
 export interface AuthState {
@@ -28,6 +31,18 @@ export interface AuthResult {
   needsVerification?: boolean
 }
 
+export interface OrganizationResult {
+  success: boolean
+  error?: string
+  organization?: any
+  organizations?: any[]
+  role?: string
+  members?: any[]
+  invitations?: any[]
+  org_credits?: any
+  my_allocation?: any
+}
+
 export interface AuthActions {
   // Existing methods
   requestChallenge(): Promise<any>
@@ -46,6 +61,21 @@ export interface AuthActions {
   resetPassword(token: string, newPassword: string): Promise<AuthResult>
   startEmailVerificationListener(): Promise<void>
   clearPendingVerification(): void
+
+  // Organization methods
+  createOrganization(name: string, description?: string): Promise<OrganizationResult>
+  getOrganizations(): Promise<OrganizationResult>
+  getOrganization(id: string): Promise<OrganizationResult>
+  updateOrganization(id: string, data: { name?: string; description?: string }): Promise<OrganizationResult>
+  deleteOrganization(id: string): Promise<OrganizationResult>
+  getOrganizationMembers(id: string): Promise<OrganizationResult>
+  getOrganizationInvitations(id: string): Promise<OrganizationResult>
+  inviteToOrganization(id: string, email: string, role: string): Promise<OrganizationResult>
+  cancelOrganizationInvitation(orgId: string, invitationId: number): Promise<OrganizationResult>
+  removeOrganizationMember(orgId: string, userId: number): Promise<OrganizationResult>
+  updateOrganizationMemberRole(orgId: string, userId: number, role: string): Promise<OrganizationResult>
+  getOrganizationCredits(id: string): Promise<OrganizationResult>
+  allocateOrganizationCredits(orgId: string, userId: number, hours: number): Promise<OrganizationResult>
 }
 
 export const useAuthStore: () => Store<'auth', AuthState, {}, AuthActions>

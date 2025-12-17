@@ -628,5 +628,346 @@ export const useAuthStore = defineStore('auth', {
       }
       return false;
     },
+
+    // ============================================
+    // Organization Methods
+    // ============================================
+
+    /**
+     * Set account type (personal or organization)
+     */
+    async setAccountType(accountType) {
+      try {
+        const response = await fetch(`${API_BASE}/api/account/type`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.token}`,
+          },
+          body: JSON.stringify({ account_type: accountType }),
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          if (this.user) {
+            this.user.account_type = data.account_type;
+            localStorage.setItem('user', JSON.stringify(this.user));
+          }
+          return { success: true, needsOrgSetup: data.needs_org_setup };
+        }
+
+        return { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
+     * Create a new organization
+     */
+    async createOrganization(orgData) {
+      try {
+        const response = await fetch(`${API_BASE}/api/organizations`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.token}`,
+          },
+          body: JSON.stringify(orgData),
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          if (this.user) {
+            this.user.account_type = 'organization';
+            this.user.owned_organization_id = data.organization.id;
+            localStorage.setItem('user', JSON.stringify(this.user));
+          }
+          return { success: true, organization: data.organization };
+        }
+
+        return { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
+     * Get organization details
+     */
+    async getOrganization(orgId) {
+      try {
+        const response = await fetch(`${API_BASE}/api/organizations/${orgId}`, {
+          headers: { Authorization: `Bearer ${this.token}` },
+        });
+
+        const data = await response.json();
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
+     * Get user's organizations
+     */
+    async getOrganizations() {
+      try {
+        const response = await fetch(`${API_BASE}/api/organizations`, {
+          headers: { Authorization: `Bearer ${this.token}` },
+        });
+
+        const data = await response.json();
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
+     * Update organization
+     */
+    async updateOrganization(orgId, updates) {
+      try {
+        const response = await fetch(`${API_BASE}/api/organizations/${orgId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.token}`,
+          },
+          body: JSON.stringify(updates),
+        });
+
+        const data = await response.json();
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
+     * Delete organization
+     */
+    async deleteOrganization(orgId) {
+      try {
+        const response = await fetch(`${API_BASE}/api/organizations/${orgId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${this.token}` },
+        });
+
+        const data = await response.json();
+
+        if (data.success && this.user) {
+          this.user.account_type = 'personal';
+          this.user.owned_organization_id = null;
+          localStorage.setItem('user', JSON.stringify(this.user));
+        }
+
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
+     * Get organization members
+     */
+    async getOrganizationMembers(orgId) {
+      try {
+        const response = await fetch(`${API_BASE}/api/organizations/${orgId}/members`, {
+          headers: { Authorization: `Bearer ${this.token}` },
+        });
+
+        const data = await response.json();
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
+     * Update member role
+     */
+    async updateOrganizationMemberRole(orgId, userId, role) {
+      try {
+        const response = await fetch(`${API_BASE}/api/organizations/${orgId}/members/${userId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.token}`,
+          },
+          body: JSON.stringify({ role }),
+        });
+
+        const data = await response.json();
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
+     * Remove organization member
+     */
+    async removeOrganizationMember(orgId, userId) {
+      try {
+        const response = await fetch(`${API_BASE}/api/organizations/${orgId}/members/${userId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${this.token}` },
+        });
+
+        const data = await response.json();
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
+     * Get pending invitations
+     */
+    async getOrganizationInvitations(orgId) {
+      try {
+        const response = await fetch(`${API_BASE}/api/organizations/${orgId}/invitations`, {
+          headers: { Authorization: `Bearer ${this.token}` },
+        });
+
+        const data = await response.json();
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
+     * Invite a member to organization
+     */
+    async inviteOrganizationMember(orgId, email, role = 'member') {
+      try {
+        const response = await fetch(`${API_BASE}/api/organizations/${orgId}/invitations`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.token}`,
+          },
+          body: JSON.stringify({ email, role }),
+        });
+
+        const data = await response.json();
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
+     * Cancel an invitation
+     */
+    async cancelOrganizationInvitation(orgId, invitationId) {
+      try {
+        const response = await fetch(
+          `${API_BASE}/api/organizations/${orgId}/invitations/${invitationId}`,
+          {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${this.token}` },
+          }
+        );
+
+        const data = await response.json();
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
+     * Create a member account directly
+     */
+    async createOrganizationMember(orgId, email, password, role = 'member') {
+      try {
+        const response = await fetch(`${API_BASE}/api/organizations/${orgId}/create-member`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.token}`,
+          },
+          body: JSON.stringify({ email, password, role }),
+        });
+
+        const data = await response.json();
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
+     * Get invitation details (public)
+     */
+    async getInvitationDetails(token) {
+      try {
+        const response = await fetch(`${API_BASE}/api/invitations/${token}`);
+        const data = await response.json();
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
+     * Accept an invitation
+     */
+    async acceptInvitation(inviteToken) {
+      try {
+        const response = await fetch(`${API_BASE}/api/invitations/${inviteToken}/accept`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${this.token}` },
+        });
+
+        const data = await response.json();
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
+     * Get organization credits
+     */
+    async getOrganizationCredits(orgId) {
+      try {
+        const response = await fetch(`${API_BASE}/api/organizations/${orgId}/credits`, {
+          headers: { Authorization: `Bearer ${this.token}` },
+        });
+
+        const data = await response.json();
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
+     * Allocate credits to a member
+     */
+    async allocateOrganizationCredits(orgId, userId, hours) {
+      try {
+        const response = await fetch(`${API_BASE}/api/organizations/${orgId}/credits/allocate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.token}`,
+          },
+          body: JSON.stringify({ user_id: userId, hours }),
+        });
+
+        const data = await response.json();
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
   },
 });
