@@ -204,15 +204,15 @@
   const formattedAddress = computed(() => {
     if (!authStore.isAuthenticated) return '';
 
-    // For Google auth, show email; for wallet auth, show formatted address
-    if (authStore.authProvider === 'google' && authStore.email) {
+    // For email-based auth (Google or email/password), show email; for wallet auth, show formatted address
+    if (['google', 'email'].includes(authStore.authProvider) && authStore.email) {
       return authStore.email;
     }
     return formatAddress(authStore.walletAddress);
   });
 
   const disconnectButtonText = computed(() => {
-    return authStore.authProvider === 'google' ? 'Sign Out' : 'Disconnect';
+    return ['google', 'email'].includes(authStore.authProvider) ? 'Sign Out' : 'Disconnect';
   });
 
   const handleDisconnect = () => {
