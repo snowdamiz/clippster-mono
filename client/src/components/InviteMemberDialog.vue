@@ -108,6 +108,17 @@
                 </p>
 
                 <div>
+                  <label for="create-name" class="block text-sm font-medium text-zinc-300 mb-1.5">Full Name</label>
+                  <input
+                    id="create-name"
+                    v-model="createData.name"
+                    type="text"
+                    placeholder="John Doe"
+                    class="w-full px-3 py-2.5 rounded-lg border border-zinc-700 bg-zinc-800 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 text-sm"
+                  />
+                </div>
+
+                <div>
                   <label for="create-email" class="block text-sm font-medium text-zinc-300 mb-1.5">Email Address</label>
                   <input
                     id="create-email"
@@ -156,15 +167,6 @@
                     <option value="member">Member</option>
                     <option value="admin">Admin</option>
                   </select>
-                </div>
-
-                <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
-                  <div class="flex items-start gap-2">
-                    <AlertTriangle class="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                    <p class="text-xs text-amber-200">
-                      The member should change their password after first login. Share credentials securely.
-                    </p>
-                  </div>
                 </div>
               </div>
 
@@ -241,6 +243,7 @@
   });
 
   const createData = ref({
+    name: '',
     email: '',
     password: '',
     role: 'member',
@@ -272,7 +275,7 @@
         setTimeout(() => {
           mode.value = 'invite';
           inviteData.value = { email: '', role: 'member' };
-          createData.value = { email: '', password: '', role: 'member' };
+          createData.value = { name: '', email: '', password: '', role: 'member' };
           error.value = '';
           success.value = '';
         }, 300);
@@ -317,6 +320,7 @@
       }
     } else {
       // Create account mode: close dialog immediately and process in background
+      const name = createData.value.name;
       const email = createData.value.email;
       const password = createData.value.password;
       const role = createData.value.role;
@@ -326,7 +330,7 @@
 
       // Process in background
       authStore
-        .createOrganizationMember(props.organizationId, email, password, role)
+        .createOrganizationMember(props.organizationId, email, password, role, name)
         .then((result) => {
           if (result.success) {
             showSuccess('Account created', `Account created for ${email}`);

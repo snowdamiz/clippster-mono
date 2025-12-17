@@ -402,13 +402,13 @@ defmodule ClippsterServer.Organizations do
   Creates a new account for a member directly (no invitation required).
   Organization admin creates the account with email/password.
   """
-  def create_member_account(organization_id, email, password, role, %User{} = creator) do
+  def create_member_account(organization_id, email, password, role, name, %User{} = creator) do
     with {:ok, _} <- verify_admin(organization_id, creator.id),
          nil <- Accounts.get_user_by_email(email) do
       
       Repo.transaction(fn ->
         # Create the user account (already verified since admin is creating it)
-        case create_verified_user(email, password, organization_id) do
+        case create_verified_user(email, password, organization_id, name) do
           {:ok, user} ->
             # Add as member
             {:ok, _member} = add_member(organization_id, user.id, role)
@@ -433,7 +433,7 @@ defmodule ClippsterServer.Organizations do
     end
   end
 
-  defp create_verified_user(email, password, created_by_organization_id) do
+  defp create_verified_user(email, password, created_by_organization_id, name \\ nil) do
     # Create user with email provider, already verified
     # Mark account as created by the organization
     user_attrs = %{
@@ -450,12 +450,20 @@ defmodule ClippsterServer.Organizations do
       created_by_organization_id
     end
 
-    %User{}
+    changeset = %User{}
     |> User.email_registration_changeset(user_attrs)
     |> Ecto.Changeset.put_change(:email_verified, true)
     |> Ecto.Changeset.put_change(:account_type, "personal")  # Auto-set to personal (they're a member, not an org owner)
     |> Ecto.Changeset.put_change(:created_by_organization_id, org_id_int)
-    |> Repo.insert()
+
+    # Add name if provided
+    changeset = if name && name != "" do
+      Ecto.Changeset.put_change(changeset, :name, name)
+    else
+      changeset
+    end
+
+    Repo.insert(changeset)
   end
 
   # ============================================================================

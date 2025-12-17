@@ -382,14 +382,16 @@ defmodule ClippsterServerWeb.OrganizationController do
   def create_member_account(conn, %{"organization_id" => org_id, "email" => email, "password" => password} = params) do
     user = conn.assigns.current_user
     role = Map.get(params, "role", "member")
+    name = Map.get(params, "name")
 
-    case Organizations.create_member_account(org_id, email, password, role, user) do
+    case Organizations.create_member_account(org_id, email, password, role, name, user) do
       {:ok, new_user} ->
         json(conn, %{
           success: true,
           user: %{
             id: new_user.id,
-            email: new_user.email
+            email: new_user.email,
+            name: new_user.name
           },
           message: "Account created for #{email}"
         })

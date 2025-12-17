@@ -943,7 +943,7 @@ export const useAuthStore = defineStore('auth', {
     /**
      * Create a member account directly
      */
-    async createOrganizationMember(orgId, email, password, role = 'member') {
+    async createOrganizationMember(orgId, email, password, role = 'member', name = '') {
       try {
         const response = await fetch(`${API_BASE}/api/organizations/${orgId}/create-member`, {
           method: 'POST',
@@ -951,7 +951,7 @@ export const useAuthStore = defineStore('auth', {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${this.token}`,
           },
-          body: JSON.stringify({ email, password, role }),
+          body: JSON.stringify({ email, password, role, name: name || undefined }),
         });
 
         const data = await response.json();
