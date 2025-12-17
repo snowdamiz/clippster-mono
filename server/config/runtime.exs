@@ -48,7 +48,7 @@ resend_api_key = System.get_env("RESEND_API_KEY")
 
 if resend_api_key do
   config :clippster_server, ClippsterServer.Mailer,
-    adapter: Swoosh.Adapters.Resend,
+    adapter: Resend.Swoosh.Adapter,
     api_key: resend_api_key
 end
 

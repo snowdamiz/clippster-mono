@@ -81,8 +81,8 @@ config :phoenix, :stacktrace_depth, 20
 # Initialize plugs at runtime for faster development compilation
 config :phoenix, :plug_init_mode, :runtime
 
-# Disable swoosh api client as it is only required for production adapters.
-config :swoosh, :api_client, false
+# Configure swoosh api client - use Req when RESEND_API_KEY is set, otherwise disable for local adapter
+config :swoosh, :api_client, Swoosh.ApiClient.Req
 
 # Wallet authentication configuration
 config :clippster_server,
