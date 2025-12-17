@@ -169,7 +169,7 @@
                     :file-path="item.filePath"
                     :display-aspect-ratio="item.aspectRatio ?? undefined"
                     :show-build-number="item.hasMultipleBuilds"
-                    @play="(build, filePath) => playBuild(build, filePath || item.filePath, item.clipName)"
+                    @play="(build, filePath) => playBuild(build, filePath || item.filePath, item.clipName, item.projectId)"
                     @save="(build, filePath) => saveBuild(build, filePath || item.filePath)"
                     @delete="confirmDeleteBuild"
                     @openProject="(build) => openProjectForClip(build, item.clip)"
@@ -452,7 +452,7 @@
                   :file-path="item.filePath"
                   :display-aspect-ratio="item.aspectRatio ?? undefined"
                   :show-build-number="item.hasMultipleBuilds"
-                  @play="(build, filePath) => playBuild(build, filePath || item.filePath, item.clipName)"
+                  @play="(build, filePath) => playBuild(build, filePath || item.filePath, item.clipName, item.projectId)"
                   @save="(build, filePath) => saveBuild(build, filePath || item.filePath)"
                   @delete="confirmDeleteBuild"
                   @openProject="(build) => openProjectForClip(build, item.clip)"
@@ -479,7 +479,12 @@
     </div>
 
     <!-- Video Player Dialog -->
-    <VideoPlayerDialog :video="clipToPlay" :show-video-player="showVideoPlayer" @close="showVideoPlayer = false" />
+    <VideoPlayerDialog
+      :video="clipToPlay"
+      :show-video-player="showVideoPlayer"
+      :watermark-settings="playerWatermarkSettings"
+      @close="showVideoPlayer = false"
+    />
 
     <!-- Project Workspace Dialog -->
     <ProjectWorkspaceDialog
@@ -604,11 +609,13 @@
     getThumbnailByClipId,
     getProject,
     getRawVideosByProjectId,
+    getCreatorProfileByProjectId,
     type Clip,
     type ClipBuild,
     type Project,
     type RawVideo,
   } from '@/services/database';
+  import type { WatermarkSettings } from '@/types';
   import { useToast } from '@/composables/useToast';
   import { getStoragePath } from '@/services/storage';
   import { useFormatters } from '@/composables/useFormatters';
@@ -676,6 +683,7 @@
   const loading = ref(true);
   const showVideoPlayer = ref(false);
   const clipToPlay = ref<RawVideo | null>(null);
+  const playerWatermarkSettings = ref<WatermarkSettings | null>(null);
   const thumbnailCache = ref<Map<string, string>>(new Map());
   const buildThumbnailCache = ref<Map<string, string>>(new Map());
   const rawVideoCache = ref<Map<string, (RawVideo & { thumbnail_path: string | null })[]>>(new Map());
@@ -1637,7 +1645,7 @@
     }
   }
 
-  async function playBuild(build: ClipBuild, filePath?: string, clipName?: string) {
+  async function playBuild(build: ClipBuild, filePath?: string, clipName?: string, projectId?: string | null) {
     try {
       const videoPath = filePath || build.file_path;
       if (!videoPath) {
@@ -1676,6 +1684,47 @@
         segment_end_time: null,
       };
       clipToPlay.value = buildAsVideo;
+
+      // Load creator profile watermark if project ID is available
+      playerWatermarkSettings.value = null;
+      if (projectId) {
+        try {
+          const profile = await getCreatorProfileByProjectId(projectId);
+          if (profile && profile.watermark_id) {
+            // Parse the creator's per-ratio watermark settings
+            let perRatioSettings = null;
+            let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+            if (profile.watermark_settings) {
+              try {
+                perRatioSettings = JSON.parse(profile.watermark_settings);
+                // Use 16:9 as the default display position
+                // Check for nested position object (standard structure)
+                if (perRatioSettings['16:9']?.position) {
+                  defaultPos = perRatioSettings['16:9'].position;
+                } else if (perRatioSettings['16:9']) {
+                  // Fallback for flat structure
+                  defaultPos = perRatioSettings['16:9'];
+                }
+              } catch (e) {
+                console.warn('Failed to parse creator watermark settings:', e);
+              }
+            }
+
+            playerWatermarkSettings.value = {
+              enabled: true,
+              watermarkId: profile.watermark_id,
+              positionX: defaultPos.x,
+              positionY: defaultPos.y,
+              opacity: defaultPos.opacity,
+              scale: defaultPos.scale,
+              perRatioSettings: perRatioSettings,
+            };
+          }
+        } catch (error) {
+          console.error('Failed to load creator profile for watermark:', error);
+        }
+      }
+
       showVideoPlayer.value = true;
     } catch (err) {
       console.error('Failed to prepare build:', err);

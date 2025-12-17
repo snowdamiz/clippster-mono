@@ -54,6 +54,21 @@
                 @loadedmetadata="onLoadedMetadata"
                 @ended="onVideoEnded"
               />
+              
+              <!-- Watermark Overlay -->
+              <div
+                v-if="shouldShowWatermark"
+                class="absolute pointer-events-none z-10 transition-opacity duration-300"
+                :style="getWatermarkOverlayStyle"
+              >
+                <img
+                  :src="watermarkDataUrl"
+                  alt="Watermark"
+                  class="max-w-full max-h-full object-contain"
+                  :style="{ opacity: getWatermarkOpacity }"
+                  @load="onWatermarkLoad"
+                />
+              </div>
               <!-- Loading Indicator -->
               <div v-if="isVideoLoading" class="absolute inset-0 flex items-center justify-center bg-black/60">
                 <div class="flex flex-col items-center gap-3 sm:gap-4">
@@ -237,6 +252,8 @@
     clipSegmentName?: string | null;
     /** Optional: Higher z-index for nested dialogs */
     zIndex?: number;
+    /** Optional: Watermark settings for preview */
+    watermarkSettings?: any | null;
   }
 
   interface Emits {
@@ -250,6 +267,7 @@
     clipName: null,
     clipSegmentName: null,
     zIndex: 50,
+    watermarkSettings: null,
   });
   const emit = defineEmits<Emits>();
 
@@ -321,6 +339,177 @@
   const videoWidth = ref(16);
   const videoHeight = ref(9);
   const showReplayButton = ref(false);
+
+  // Watermark state
+  const watermarkDataUrl = ref<string | null>(null);
+  const watermarkDimensions = ref<{ width: number; height: number } | null>(null);
+  const localWatermarkDimensions = ref<{ width: number; height: number } | null>(null);
+
+  function onWatermarkLoad(event: Event) {
+    const img = event.target as HTMLImageElement;
+    if (img.naturalWidth && img.naturalHeight) {
+      localWatermarkDimensions.value = {
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+      };
+    }
+  }
+
+  // Normalize aspect ratio for settings lookup
+  const normalizedAspectRatio = computed(() => {
+    const w = videoWidth.value;
+    const h = videoHeight.value;
+    if (!w || !h) return '16:9';
+    
+    const ratio = w / h;
+    if (Math.abs(ratio - 16/9) < 0.01) return '16:9';
+    if (Math.abs(ratio - 9/16) < 0.01) return '9:16';
+    if (Math.abs(ratio - 1) < 0.01) return '1:1';
+    if (Math.abs(ratio - 4/5) < 0.01) return '4:5';
+    
+    return `${w}:${h}`;
+  });
+
+  // Load watermark when settings or aspect ratio change
+  watch(
+    [() => props.watermarkSettings, normalizedAspectRatio],
+    async ([settings, aspectRatio]) => {
+      if (!settings || !settings.enabled) {
+        watermarkDataUrl.value = null;
+        watermarkDimensions.value = null;
+        localWatermarkDimensions.value = null;
+        return;
+      }
+
+      // Determine correct watermark ID based on aspect ratio
+      let targetWatermarkId = settings.watermarkId;
+      const perRatio = settings.perRatioSettings;
+      
+      if (perRatio && aspectRatio && perRatio[aspectRatio]) {
+        const ratioConfig = perRatio[aspectRatio];
+        if (ratioConfig && ratioConfig.watermarkId) {
+          targetWatermarkId = ratioConfig.watermarkId;
+        }
+      }
+
+      if (!targetWatermarkId) {
+        watermarkDataUrl.value = null;
+        watermarkDimensions.value = null;
+        localWatermarkDimensions.value = null;
+        return;
+      }
+
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const { getWatermarkImage } = await import('@/services/database');
+        
+        const watermark = await getWatermarkImage(targetWatermarkId);
+        if (watermark) {
+          const dataUrl = await invoke<string>('read_file_as_data_url', {
+            filePath: watermark.file_path,
+          });
+          watermarkDataUrl.value = dataUrl;
+          watermarkDimensions.value = {
+            width: watermark.width || 0,
+            height: watermark.height || 0,
+          };
+          // Reset local dimensions, will be set on load
+          localWatermarkDimensions.value = null;
+        }
+      } catch (error) {
+        console.error('[VideoPlayerDialog] Failed to load watermark:', error);
+        watermarkDataUrl.value = null;
+        watermarkDimensions.value = null;
+        localWatermarkDimensions.value = null;
+      }
+    },
+    { immediate: true }
+  );
+
+  // Determine if watermark should show
+  const shouldShowWatermark = computed(() => {
+    if (!props.watermarkSettings?.enabled) return false;
+    if (!watermarkDataUrl.value) return false;
+    
+    // Check if this aspect ratio has watermark disabled in per-ratio settings
+    const aspectRatioStr = normalizedAspectRatio.value;
+    const perRatio = props.watermarkSettings.perRatioSettings;
+    if (perRatio) {
+      if (aspectRatioStr in perRatio && perRatio[aspectRatioStr] === null) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  // Get watermark opacity (using per-ratio settings if available)
+  const getWatermarkOpacity = computed(() => {
+    if (!props.watermarkSettings) return 0.8;
+    
+    const aspectRatioStr = normalizedAspectRatio.value;
+    const perRatio = props.watermarkSettings.perRatioSettings;
+    if (perRatio && perRatio[aspectRatioStr]) {
+      const config = perRatio[aspectRatioStr];
+      return (config.position?.opacity ?? props.watermarkSettings.opacity ?? 80) / 100;
+    }
+    
+    return (props.watermarkSettings.opacity ?? 80) / 100;
+  });
+
+  // Get watermark overlay style (position and size)
+  const getWatermarkOverlayStyle = computed(() => {
+    if (!props.watermarkSettings) return {};
+    
+    const settings = props.watermarkSettings;
+    const wmWidth = localWatermarkDimensions.value?.width ?? watermarkDimensions.value?.width ?? null;
+    const wmHeight = localWatermarkDimensions.value?.height ?? watermarkDimensions.value?.height ?? null;
+    const ratio = wmWidth && wmHeight ? wmWidth / wmHeight : null;
+    const is16x9 = ratio ? Math.abs(ratio - 16 / 9) < 0.02 : false;
+    
+    // Check if this is a full-frame watermark
+    // We check against both native 16:9 resolution and normalized aspect ratio
+    const isFullFrame =
+      is16x9 &&
+      wmWidth !== null &&
+      wmHeight !== null &&
+      wmWidth >= 1600 &&
+      wmHeight >= 900 &&
+      normalizedAspectRatio.value === '16:9';
+
+    // Full-frame watermarks fill the frame
+    if (isFullFrame) {
+      return {
+        width: '100%',
+        height: '100%',
+        left: '0%',
+        top: '0%',
+        transform: 'none',
+      };
+    }
+
+    // Get position from per-ratio settings or fall back to default
+    let positionX = settings.positionX ?? 12;
+    let positionY = settings.positionY ?? 92;
+    let scale = settings.scale ?? 20;
+    
+    const aspectRatioStr = normalizedAspectRatio.value;
+    const perRatio = settings.perRatioSettings;
+    if (perRatio && perRatio[aspectRatioStr]) {
+      const config = perRatio[aspectRatioStr];
+      if (config.position) {
+        positionX = config.position.x ?? positionX;
+        positionY = config.position.y ?? positionY;
+        scale = config.position.scale ?? scale;
+      }
+    }
+
+    return {
+      left: `${positionX}%`,
+      top: `${positionY}%`,
+      transform: 'translate(-50%, -50%)',
+      width: `${scale}%`,
+    };
+  });
 
   // Compute dialog style based on video aspect ratio
   const dialogStyle = computed(() => {

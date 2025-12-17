@@ -244,6 +244,21 @@
           />
         </div>
 
+        <!-- Creator Profile Watermark (Background watermark - not draggable) -->
+        <div
+          v-if="shouldShowCreatorWatermark"
+          class="absolute pointer-events-none z-10 transition-opacity duration-300"
+          :style="getCreatorWatermarkOverlayStyle"
+        >
+          <img
+            :src="creatorWatermarkDataUrl"
+            alt="Creator Watermark"
+            class="max-w-full max-h-full object-contain"
+            :style="{ opacity: getCreatorWatermarkOpacity }"
+            @load="onCreatorWatermarkLoad"
+          />
+        </div>
+
         <!-- Watermarks (Draggable with Resize Handles - like stickers) -->
         <div
           v-for="watermark in visibleWatermarks"
@@ -643,6 +658,7 @@
       textOverlays: TextOverlay[];
       stickers: Sticker[];
       watermarks?: ClipWatermark[];
+      creatorProfileWatermarkSettings?: any | null; // Creator profile watermark (background watermark for all exports)
       filterSettings: FilterSettings | null;
       segments?: SegmentInput[];
       previewAspectRatio: string; // Currently previewed aspect ratio (e.g., "16:9")
@@ -663,6 +679,7 @@
     }>(),
     {
       watermarks: () => [],
+      creatorProfileWatermarkSettings: null,
       preloadVideoSrc: null,
       subtitleSettings: null,
       transcriptWords: () => [],
@@ -1171,6 +1188,159 @@
     // Use effective time (accounts for segment cuts) for visibility
     const effectiveTime = props.effectiveTime;
     return (props.watermarks || []).filter((w) => effectiveTime >= w.startTime && effectiveTime <= w.endTime);
+  });
+
+  // Creator profile watermark support
+  const creatorWatermarkDataUrl = ref<string | null>(null);
+  const creatorWatermarkDimensions = ref<{ width: number; height: number } | null>(null);
+
+  function onCreatorWatermarkLoad(event: Event) {
+    const img = event.target as HTMLImageElement;
+    if (img.naturalWidth && img.naturalHeight) {
+      creatorWatermarkDimensions.value = {
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+      };
+    }
+  }
+
+  // Load creator profile watermark when settings or aspect ratio change
+  watch(
+    [() => props.creatorProfileWatermarkSettings, () => props.previewAspectRatio],
+    async ([settings, aspectRatio]) => {
+      if (!settings || !settings.enabled) {
+        creatorWatermarkDataUrl.value = null;
+        creatorWatermarkDimensions.value = null;
+        return;
+      }
+
+      // Determine correct watermark ID based on aspect ratio
+      let targetWatermarkId = settings.watermarkId;
+      
+      const perRatio = settings.perRatioSettings;
+      if (perRatio && aspectRatio && perRatio[aspectRatio]) {
+        const ratioConfig = perRatio[aspectRatio];
+        if (ratioConfig && ratioConfig.watermarkId) {
+          targetWatermarkId = ratioConfig.watermarkId;
+        }
+      }
+
+      if (!targetWatermarkId) {
+        creatorWatermarkDataUrl.value = null;
+        creatorWatermarkDimensions.value = null;
+        return;
+      }
+
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const { getWatermarkImage } = await import('@/services/database');
+        
+        const watermark = await getWatermarkImage(targetWatermarkId);
+        if (watermark) {
+          const dataUrl = await invoke<string>('read_file_as_data_url', {
+            filePath: watermark.file_path,
+          });
+          creatorWatermarkDataUrl.value = dataUrl;
+          // Set dimensions from DB if available, but onCreatorWatermarkLoad will refine it
+          creatorWatermarkDimensions.value = {
+            width: watermark.width || 0,
+            height: watermark.height || 0,
+          };
+        }
+      } catch (error) {
+        console.error('[ClipEditorPreview] Failed to load creator watermark:', error);
+        creatorWatermarkDataUrl.value = null;
+        creatorWatermarkDimensions.value = null;
+      }
+    },
+    { immediate: true }
+  );
+
+  // Determine if creator watermark should show
+  const shouldShowCreatorWatermark = computed(() => {
+    if (!props.creatorProfileWatermarkSettings?.enabled) return false;
+    if (!creatorWatermarkDataUrl.value) return false;
+    
+    // Check if this aspect ratio has watermark disabled in per-ratio settings
+    const perRatio = props.creatorProfileWatermarkSettings.perRatioSettings;
+    if (perRatio) {
+      const ratioKey = props.previewAspectRatio;
+      if (ratioKey in perRatio && perRatio[ratioKey] === null) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  // Get watermark opacity (using per-ratio settings if available)
+  const getCreatorWatermarkOpacity = computed(() => {
+    if (!props.creatorProfileWatermarkSettings) return 0.8;
+    
+    const perRatio = props.creatorProfileWatermarkSettings.perRatioSettings;
+    if (perRatio && perRatio[props.previewAspectRatio]) {
+      const config = perRatio[props.previewAspectRatio];
+      const opacity = config.position?.opacity ?? props.creatorProfileWatermarkSettings.opacity ?? 80;
+      return opacity / 100;
+    }
+    
+    return (props.creatorProfileWatermarkSettings.opacity ?? 80) / 100;
+  });
+
+  // Get creator watermark overlay style (position and size)
+  const getCreatorWatermarkOverlayStyle = computed(() => {
+    if (!props.creatorProfileWatermarkSettings) return {};
+    
+    const settings = props.creatorProfileWatermarkSettings;
+    const wmWidth = creatorWatermarkDimensions.value?.width ?? null;
+    const wmHeight = creatorWatermarkDimensions.value?.height ?? null;
+    const ratio = wmWidth && wmHeight ? wmWidth / wmHeight : null;
+    const is16x9 = ratio ? Math.abs(ratio - 16 / 9) < 0.02 : false;
+    
+    // Parse aspect ratio to check if we're in 16:9
+    const parts = props.previewAspectRatio.split(':').map(Number);
+    const isPreview16x9 = parts.length === 2 && parts[0] === 16 && parts[1] === 9;
+    
+    // Check if this is a full-frame watermark
+    const isFullFrame =
+      is16x9 &&
+      wmWidth !== null &&
+      wmHeight !== null &&
+      wmWidth >= 1600 &&
+      wmHeight >= 900 &&
+      isPreview16x9;
+
+    // Full-frame watermarks fill the frame
+    if (isFullFrame) {
+      return {
+        width: '100%',
+        height: '100%',
+        left: '0%',
+        top: '0%',
+        transform: 'none',
+      };
+    }
+
+    // Get position from per-ratio settings or fall back to default
+    let positionX = settings.positionX ?? 12;
+    let positionY = settings.positionY ?? 92;
+    let scale = settings.scale ?? 20;
+    
+    const perRatio = settings.perRatioSettings;
+    if (perRatio && perRatio[props.previewAspectRatio]) {
+      const config = perRatio[props.previewAspectRatio];
+      if (config.position) {
+        positionX = config.position.x ?? positionX;
+        positionY = config.position.y ?? positionY;
+        scale = config.position.scale ?? scale;
+      }
+    }
+
+    return {
+      left: `${positionX}%`,
+      top: `${positionY}%`,
+      transform: 'translate(-50%, -50%)',
+      width: `${scale}%`,
+    };
   });
 
   // Calculate max words based on aspect ratio (matches VideoPlayer)

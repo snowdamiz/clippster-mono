@@ -325,6 +325,8 @@
     editorProjectName?: string;
     currentIntro?: AppliedIntroOutro | null;
     currentOutro?: AppliedIntroOutro | null;
+    // Creator profile watermark settings
+    creatorProfileWatermarkSettings?: any | null;
   }>();
 
   const emit = defineEmits<{
@@ -662,7 +664,7 @@
       introDuration: introDuration,
       outroPath: outroPath,
       outroDuration: outroDuration,
-      watermarkSettings: null,
+      watermarkSettings: props.creatorProfileWatermarkSettings || null,
       audioSettings: audioSettings,
       framingStrategy: framingStrategy,
       manualFramingConfigs: props.framingConfigs || null,
@@ -769,7 +771,7 @@
         introDuration: introDuration,
         outroPath: outroPath,
         outroDuration: outroDuration,
-        watermarkSettings: null,
+        watermarkSettings: props.creatorProfileWatermarkSettings || null,
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,
         manualFramingConfigs: props.framingConfigs || null,
@@ -842,7 +844,7 @@
         introDuration: introDuration,
         outroPath: outroPath,
         outroDuration: outroDuration,
-        watermarkSettings: null,
+        watermarkSettings: props.creatorProfileWatermarkSettings || null,
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,
         manualFramingConfigs: props.framingConfigs || null,

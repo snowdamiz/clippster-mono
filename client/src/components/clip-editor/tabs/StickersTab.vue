@@ -198,10 +198,16 @@
     previewAspectRatio: string; // Currently previewed aspect ratio
     selectedAspectRatios: string[]; // All selected aspect ratios
     framingConfigs: ManualFramingConfigs; // Framing configurations per aspect ratio
+    videoDimensions?: { width: number; height: number };
   }>();
 
   const emit = defineEmits<{
-    (e: 'addSticker', stickerPath: string, type: 'emoji' | 'image' | 'gif'): void;
+    (
+      e: 'addSticker',
+      stickerPath: string,
+      type: 'emoji' | 'image' | 'gif',
+      options?: { scale?: number; position?: { x: number; y: number } }
+    ): void;
     (e: 'updateSticker', stickerId: string, updates: Partial<Sticker>): void;
     (e: 'deleteSticker', stickerId: string): void;
     (e: 'update:previewAspectRatio', ratio: string): void;
@@ -345,7 +351,68 @@
       const isGif = asset.file_path.toLowerCase().endsWith('.gif') || asset.mime_type?.includes('gif');
       const type = isGif ? 'gif' : 'image';
 
-      emit('addSticker', imageUrl, type);
+      let options: { scale?: number; position?: { x: number; y: number } } | undefined;
+
+      let assetWidth = asset.width;
+      let assetHeight = asset.height;
+
+      // If dimensions are missing from DB, try to load them from the image
+      if (!assetWidth || !assetHeight) {
+        console.log('[StickersTab] Asset dimensions missing in DB, loading image to get dimensions...');
+        try {
+          const img = new Image();
+          img.src = imageUrl;
+          await new Promise((resolve, reject) => {
+            img.onload = () => {
+              assetWidth = img.naturalWidth;
+              assetHeight = img.naturalHeight;
+              console.log('[StickersTab] Loaded dimensions from image:', assetWidth, 'x', assetHeight);
+              resolve(null);
+            };
+            img.onerror = reject;
+          });
+        } catch (e) {
+          console.warn('[StickersTab] Failed to load image for dimensions:', e);
+        }
+      }
+
+      console.log('[StickersTab] Checking match:', {
+        asset: { width: assetWidth, height: assetHeight },
+        video: props.videoDimensions,
+        videoDimensionsProp: props.videoDimensions
+      });
+
+      // Check for full-frame match
+      if (assetWidth && assetHeight && props.videoDimensions?.width && props.videoDimensions?.height) {
+        // Allow some tolerance (e.g. 1%)
+        const widthMatch = Math.abs(assetWidth - props.videoDimensions.width) < props.videoDimensions.width * 0.01;
+        const heightMatch = Math.abs(assetHeight - props.videoDimensions.height) < props.videoDimensions.height * 0.01;
+
+        console.log('[StickersTab] Match check:', { widthMatch, heightMatch, assetWidth, assetHeight, videoWidth: props.videoDimensions.width, videoHeight: props.videoDimensions.height });
+
+        if (widthMatch && heightMatch) {
+          // Calculate scale to fill frame
+          // Rust backend uses base_size = video_height * 0.1
+          // Scale = desired_width / base_size
+          // base_size width equivalent: (video_height * 0.1)
+
+          // scale = video.width / (video.height * 0.1)
+          const scale = props.videoDimensions.width / (props.videoDimensions.height * 0.1);
+
+          options = {
+            scale: scale,
+            position: { x: 50, y: 50 },
+          };
+
+          console.log('[StickersTab] Detected full-frame sticker match, applying auto-scale:', scale);
+        } else {
+          console.log('[StickersTab] Dimensions do not match video resolution.');
+        }
+      } else {
+        console.log('[StickersTab] Missing dimensions for match check. Video dimensions:', props.videoDimensions);
+      }
+
+      emit('addSticker', imageUrl, type, options);
       closeImagePicker();
     } catch (err) {
       console.error('[StickersTab] Failed to select asset:', err);

@@ -81,6 +81,7 @@
                   :text-overlays="textOverlays"
                   :stickers="stickers"
                   :watermarks="watermarks"
+                  :creator-profile-watermark-settings="props.creatorProfileWatermarkSettings"
                   :filter-settings="activeFilterSettings"
                   :segments="playbackSegments"
                   :preview-aspect-ratio="previewAspectRatio"
@@ -194,6 +195,7 @@
                   :preview-aspect-ratio="previewAspectRatio"
                   :selected-aspect-ratios="selectedAspectRatios"
                   :framing-configs="framingConfigs"
+                  :video-dimensions="videoDimensions"
                   @add-sticker="addStickerLocal"
                   @update-sticker="updateStickerLocal"
                   @delete-sticker="deleteStickerLocal"
@@ -287,6 +289,7 @@
                   :editor-project-name="editorProjectName"
                   :current-intro="currentIntro"
                   :current-outro="currentOutro"
+                  :creator-profile-watermark-settings="props.creatorProfileWatermarkSettings"
                   @go-to-aspect-tab="editorMode ? setEditorTab('aspect') : setActiveTab('aspect')"
                   @build-started="onBuildStarted"
                   @build-completed="onBuildCompleted"
@@ -492,6 +495,8 @@
       clipEndTime?: number;
       clipTitle?: string;
       clipSegments?: ClipSegmentInput[];
+      // Creator profile watermark settings (for preview display)
+      creatorProfileWatermarkSettings?: any | null;
       // Editor mode props
       editorMode?: boolean;
       editorProjectId?: string | null;
@@ -503,6 +508,7 @@
       clipStartTime: 0,
       clipEndTime: 0,
       clipTitle: '',
+      creatorProfileWatermarkSettings: null,
       editorMode: false,
       editorProjectId: null,
       editorProjectName: 'Video Project',
@@ -549,6 +555,7 @@
   const dialogRef = ref<HTMLElement | null>(null);
   const previewRef = ref<InstanceType<typeof ClipEditorPreview> | null>(null);
   const videoElement = ref<HTMLVideoElement | null>(null);
+  const videoDimensions = ref({ width: 0, height: 0 });
   const clipEditId = ref<string | null>(null);
   const videoEditorEditId = ref<string | null>(null); // For video editor mode
 
@@ -617,6 +624,16 @@
   const filterSegments = ref<FilterSegment[]>([]);
   const originalDb = ref(0);
   const trackDbValues = ref<Record<string, number>>({});
+
+  // Debug watcher for stickers
+  watch(stickers, (newStickers) => {
+    console.log('[ClipEditorDialog] Stickers updated:', newStickers.map(s => ({ 
+      id: s.id, 
+      scale: s.scale,
+      path: s.stickerPath.slice(-20),
+      configs: s.perRatioConfigs 
+    })));
+  }, { deep: true });
 
   // Computed: audio tracks with streaming URLs for timeline/waveform rendering
   const audioTracksWithStreamingUrls = computed(() => {
@@ -2153,6 +2170,85 @@
           })
         );
 
+        // Load creator profile watermark if one exists for this project
+        // Note: projectId here is editorProjectId (video_editor_projects.id), not projects.id
+        // We need to find the actual project ID from a video source
+        console.log('[ClipEditorDialog] Checking for creator profile watermark (editor mode)');
+        try {
+          // Find a source with a source_id (clip or raw_video reference)
+          const sourceWithId = videoSources.value.find(
+            (s) => s.source_id && (s.source_type === 'clip' || s.source_type === 'raw_video')
+          );
+          
+          let actualProjectId: string | null = null;
+          if (sourceWithId?.source_id) {
+            try {
+              if (sourceWithId.source_type === 'clip') {
+                const clip = await getClipWithBuildStatus(sourceWithId.source_id);
+                actualProjectId = clip?.project_id || null;
+              } else if (sourceWithId.source_type === 'raw_video') {
+                const rawVideo = await getRawVideo(sourceWithId.source_id);
+                actualProjectId = rawVideo?.project_id || null;
+              }
+            } catch (err) {
+              console.warn('[ClipEditorDialog] Failed to get project ID from source:', err);
+            }
+          }
+          
+          console.log('[ClipEditorDialog] Actual project ID (editor mode):', actualProjectId);
+          
+          if (actualProjectId) {
+            const { getCreatorProfileByProjectId } = await import('@/services/database');
+            const creatorProfile = await getCreatorProfileByProjectId(actualProjectId);
+            console.log('[ClipEditorDialog] Creator profile found (editor mode):', creatorProfile ? 'YES' : 'NO');
+            
+            if (creatorProfile && creatorProfile.watermark_settings) {
+              console.log('[ClipEditorDialog] Watermark settings (editor mode):', creatorProfile.watermark_settings);
+              const watermarkSettings = JSON.parse(creatorProfile.watermark_settings);
+              
+              // Check if this creator watermark is already in the list
+              const hasCreatorWatermark = watermarks.value.some(
+                w => w.watermarkId === creatorProfile.watermark_id
+              );
+              
+              if (!hasCreatorWatermark && watermarkSettings.watermarkPath) {
+                console.log('[ClipEditorDialog] Adding creator profile watermark (editor mode)');
+                console.log('[ClipEditorDialog] Watermark path (editor mode):', watermarkSettings.watermarkPath);
+                console.log('[ClipEditorDialog] Current watermarks count (editor mode):', watermarks.value.length);
+                
+                // Load watermark preview
+                let previewUrl = watermarkSettings.watermarkPath;
+                try {
+                  previewUrl = await invoke<string>('read_file_as_data_url', {
+                    filePath: watermarkSettings.watermarkPath,
+                  });
+                } catch (err) {
+                  console.warn('[ClipEditorDialog] Failed to load creator watermark preview:', err);
+                }
+                
+                // Add creator watermark to the list
+                watermarks.value.push({
+                  id: `creator-watermark-${creatorProfile.id}`,
+                  watermarkId: creatorProfile.watermark_id || undefined,
+                  filePath: watermarkSettings.watermarkPath,
+                  previewUrl: previewUrl,
+                  startTime: 0,
+                  endTime: 999999, // Show throughout entire video
+                  position: { 
+                    x: watermarkSettings.position?.x ?? 0.9, 
+                    y: watermarkSettings.position?.y ?? 0.9 
+                  },
+                  scale: watermarkSettings.scale ?? 0.15,
+                  opacity: watermarkSettings.opacity ?? 1.0,
+                  perRatioConfigs: watermarkSettings.perRatioConfigs,
+                });
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('[ClipEditorDialog] Failed to load creator profile watermark:', error);
+        }
+
         // Set up audio elements for existing tracks
         for (const track of audioTracks.value) {
           if (!audioElements.value.has(track.id)) {
@@ -2197,6 +2293,20 @@
       videoElement.value?.src?.slice(-30)
     );
     videoElement.value = element;
+    
+    const updateDimensions = () => {
+      if (element.videoWidth && element.videoHeight) {
+        videoDimensions.value = { width: element.videoWidth, height: element.videoHeight };
+        console.log('[onVideoElementReady] Updated videoDimensions:', videoDimensions.value);
+      }
+    };
+
+    if (element.videoWidth && element.videoHeight) {
+      updateDimensions();
+    } else {
+      console.log('[onVideoElementReady] Video dimensions not ready, waiting for loadedmetadata');
+      element.addEventListener('loadedmetadata', updateDimensions, { once: true });
+    }
 
     // In editor mode, track the current source
     // But don't update during crossfade - the crossfade logic handles source tracking
@@ -3525,7 +3635,11 @@
   }
 
   // Sticker operations
-  async function addStickerLocal(stickerPath: string, type: 'emoji' | 'image' | 'gif') {
+  async function addStickerLocal(
+    stickerPath: string,
+    type: 'emoji' | 'image' | 'gif',
+    options?: { scale?: number; position?: { x: number; y: number } }
+  ) {
     const editId = editorMode.value ? videoEditorEditId.value : clipEditId.value;
     if (!editId) return;
 
@@ -3538,9 +3652,9 @@
       sticker_type: type,
       start_time: effectiveStartTime,
       end_time: effectiveEndTime,
-      position_x: 50,
-      position_y: 50,
-      scale: 1,
+      position_x: options?.position?.x ?? 50,
+      position_y: options?.position?.y ?? 50,
+      scale: options?.scale ?? 1,
       rotation: 0,
       animation: 'none',
     };
@@ -4216,6 +4330,68 @@
           };
         })
       );
+
+      // Load creator profile watermark if one exists for this clip's project
+      console.log('[ClipEditorDialog] Checking for creator profile watermark (clip mode), clipId:', props.clipId);
+      try {
+        if (props.clipId) {
+          // Get the clip to find its project_id
+          const clip = await getClipWithBuildStatus(props.clipId);
+          const clipProjectId = clip?.project_id;
+          console.log('[ClipEditorDialog] Clip project ID:', clipProjectId);
+          
+          if (clipProjectId) {
+            const { getCreatorProfileByProjectId } = await import('@/services/database');
+            const creatorProfile = await getCreatorProfileByProjectId(clipProjectId);
+            console.log('[ClipEditorDialog] Creator profile found (clip mode):', creatorProfile ? 'YES' : 'NO');
+            
+            if (creatorProfile && creatorProfile.watermark_settings) {
+              console.log('[ClipEditorDialog] Watermark settings (clip mode):', creatorProfile.watermark_settings);
+              const watermarkSettings = JSON.parse(creatorProfile.watermark_settings);
+              
+              // Check if this creator watermark is already in the list
+              const hasCreatorWatermark = watermarks.value.some(
+                w => w.watermarkId === creatorProfile.watermark_id
+              );
+              
+              if (!hasCreatorWatermark && watermarkSettings.watermarkPath) {
+                console.log('[ClipEditorDialog] Adding creator profile watermark for clip mode');
+                console.log('[ClipEditorDialog] Watermark path (clip mode):', watermarkSettings.watermarkPath);
+                console.log('[ClipEditorDialog] Current watermarks count (clip mode):', watermarks.value.length);
+                
+                // Load watermark preview
+                let previewUrl = watermarkSettings.watermarkPath;
+                try {
+                  previewUrl = await invoke<string>('read_file_as_data_url', {
+                    filePath: watermarkSettings.watermarkPath,
+                  });
+                } catch (err) {
+                  console.warn('[ClipEditorDialog] Failed to load creator watermark preview:', err);
+                }
+                
+                // Add creator watermark to the list
+                watermarks.value.push({
+                  id: `creator-watermark-${creatorProfile.id}`,
+                  watermarkId: creatorProfile.watermark_id || undefined,
+                  filePath: watermarkSettings.watermarkPath,
+                  previewUrl: previewUrl,
+                  startTime: 0,
+                  endTime: 999999, // Show throughout entire clip
+                  position: { 
+                    x: watermarkSettings.position?.x ?? 0.9, 
+                    y: watermarkSettings.position?.y ?? 0.9 
+                  },
+                  scale: watermarkSettings.scale ?? 0.15,
+                  opacity: watermarkSettings.opacity ?? 1.0,
+                  perRatioConfigs: watermarkSettings.perRatioConfigs,
+                });
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('[ClipEditorDialog] Failed to load creator profile watermark:', error);
+      }
 
       effects.value = fullEdit.effects.map((e) => ({
         id: e.id,
