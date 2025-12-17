@@ -360,6 +360,12 @@ pub fn run() {
                             sql: include_str!("../migrations/059_add_video_editor_edits.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 60,
+                            description: "add_user_id_to_tables",
+                            sql: include_str!("../migrations/060_add_user_id_to_tables.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -496,6 +502,9 @@ pub fn run() {
             storage::delete_audio_file,
             storage::copy_image_to_storage,
             storage::delete_image_file,
+            // User context for per-user storage
+            storage::set_current_user_id,
+            storage::clear_current_user_id,
 
             // Assets commands
             assets::upload_asset_async,

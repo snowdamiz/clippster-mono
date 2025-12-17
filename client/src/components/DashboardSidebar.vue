@@ -144,7 +144,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted } from 'vue';
+  import { ref, computed, onMounted, onUnmounted } from 'vue';
   import { useRoute, useRouter } from 'vue-router';
   import { useAuthStore } from '@/stores/auth';
   import { useWallet } from '@/composables/useWallet';
@@ -165,6 +165,9 @@
   const hoursRemaining = ref<number | 'unlimited'>(0);
   const loadingBalance = ref(false);
   const isNativeEnvironment = ref(false);
+
+  // Timer reference for cleanup
+  let balanceRefreshInterval: ReturnType<typeof setInterval> | null = null;
 
   // Filter navigation items based on admin status
   const visibleNavigationItems = computed(() => {
@@ -262,13 +265,42 @@
     }
   }
 
+  // Handle auth state changes (login/logout)
+  function handleAuthStateChanged(event: CustomEvent) {
+    console.log('[DashboardSidebar] Auth state changed, refetching balance. User ID:', event.detail?.userId);
+
+    if (event.detail?.userId === null) {
+      // User logged out - clear balance immediately
+      hoursRemaining.value = 0;
+    } else {
+      // User logged in - fetch new balance
+      fetchBalance();
+    }
+  }
+
   onMounted(() => {
     // Check if running in native Tauri environment
     isNativeEnvironment.value = typeof window !== 'undefined' && '__TAURI__' in window;
 
+    // Initial fetch
     fetchBalance();
+
     // Refresh balance every 30 seconds
-    setInterval(fetchBalance, 30000);
+    balanceRefreshInterval = setInterval(fetchBalance, 30000);
+
+    // Listen for auth state changes
+    window.addEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
+  });
+
+  onUnmounted(() => {
+    // Clear the interval to prevent memory leaks
+    if (balanceRefreshInterval) {
+      clearInterval(balanceRefreshInterval);
+      balanceRefreshInterval = null;
+    }
+
+    // Remove auth state change listener
+    window.removeEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
   });
 </script>
 

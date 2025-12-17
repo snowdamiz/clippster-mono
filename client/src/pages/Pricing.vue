@@ -503,6 +503,7 @@
             body: JSON.stringify({
               tx_signature: paymentResult.signature,
               pack_type: paymentResult.pack_key,
+              from_address: paymentResult.from_address, // Include wallet address for verification
             }),
           });
 

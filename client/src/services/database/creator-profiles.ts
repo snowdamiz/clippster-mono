@@ -1,19 +1,37 @@
-import { getDatabase, timestamp, generateId } from './core';
+import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { CreatorProfile, CreatorPlatformLink, CreatorProfileWithLinks } from './types';
 
 // ==================== Creator Profiles ====================
 
 export async function getAllCreatorProfiles(): Promise<CreatorProfileWithLinks[]> {
   const db = await getDatabase();
+  const userId = getCurrentUserId();
 
-  // Get all profiles
-  const profiles = await db.select<CreatorProfile[]>(
-    'SELECT * FROM creator_profiles ORDER BY created_at DESC'
-  );
+  // Get all profiles for current user
+  let profiles: CreatorProfile[];
+  if (userId === null) {
+    profiles = await db.select<CreatorProfile[]>(
+      'SELECT * FROM creator_profiles WHERE user_id IS NULL ORDER BY created_at DESC'
+    );
+  } else {
+    profiles = await db.select<CreatorProfile[]>(
+      'SELECT * FROM creator_profiles WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC',
+      [userId]
+    );
+  }
 
-  // Get all platform links
+  // Get profile IDs for filtering links
+  const profileIds = profiles.map((p) => p.id);
+
+  if (profileIds.length === 0) {
+    return [];
+  }
+
+  // Get all platform links for these profiles
+  const placeholders = profileIds.map(() => '?').join(',');
   const links = await db.select<CreatorPlatformLink[]>(
-    'SELECT * FROM creator_platform_links ORDER BY is_primary DESC, created_at ASC'
+    `SELECT * FROM creator_platform_links WHERE creator_profile_id IN (${placeholders}) ORDER BY is_primary DESC, created_at ASC`,
+    profileIds
   );
 
   // Group links by profile
@@ -77,10 +95,11 @@ export async function createCreatorProfile(
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
+  const userId = getCurrentUserId();
 
   await db.execute(
-    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, created_at, updated_at) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, user_id, created_at, updated_at) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       name,
@@ -90,6 +109,7 @@ export async function createCreatorProfile(
       outroId || null,
       watermarkId || null,
       watermarkSettings || DEFAULT_WATERMARK_SETTINGS,
+      userId,
       now,
       now,
     ]

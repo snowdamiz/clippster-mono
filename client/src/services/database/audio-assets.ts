@@ -1,4 +1,4 @@
-import { getDatabase, timestamp, generateId } from './core';
+import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { AudioAsset } from './types';
 
 export async function createAudioAsset(
@@ -12,9 +12,10 @@ export async function createAudioAsset(
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
+  const userId = getCurrentUserId();
 
   await db.execute(
-    'INSERT INTO audio_assets (id, name, file_path, duration, file_size, sample_rate, channels, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO audio_assets (id, name, file_path, duration, file_size, sample_rate, channels, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       id,
       name,
@@ -23,6 +24,7 @@ export async function createAudioAsset(
       fileSize || null,
       sampleRate || null,
       channels || null,
+      userId,
       now,
       now,
     ]
@@ -33,7 +35,18 @@ export async function createAudioAsset(
 
 export async function getAllAudioAssets(): Promise<AudioAsset[]> {
   const db = await getDatabase();
-  return await db.select<AudioAsset[]>('SELECT * FROM audio_assets ORDER BY created_at DESC');
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    return await db.select<AudioAsset[]>(
+      'SELECT * FROM audio_assets WHERE user_id IS NULL ORDER BY created_at DESC'
+    );
+  }
+
+  return await db.select<AudioAsset[]>(
+    'SELECT * FROM audio_assets WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC',
+    [userId]
+  );
 }
 
 export async function getAudioAsset(id: string): Promise<AudioAsset | null> {

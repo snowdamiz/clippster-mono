@@ -1,5 +1,17 @@
 // Re-export core functionality
-export { initDatabase, getDatabase, timestamp, generateId } from './database/core';
+export {
+  initDatabase,
+  getDatabase,
+  timestamp,
+  generateId,
+  // User context management
+  setCurrentUserId,
+  getCurrentUserId,
+  clearCurrentUserId,
+  requireCurrentUserId,
+  getUserIdCondition,
+  getUserIdParams,
+} from './database/core';
 
 // Re-export types
 export type {

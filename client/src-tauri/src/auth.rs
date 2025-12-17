@@ -17,6 +17,8 @@ pub struct PaymentResult {
     pub signature: String,
     pub pack_key: String,
     pub auth_token: String,
+    pub from_address: String,
+    pub pack_hours: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

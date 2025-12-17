@@ -1,4 +1,4 @@
-import { getDatabase, timestamp, generateId } from './core';
+import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { Project } from './types';
 
 // Project queries
@@ -11,10 +11,11 @@ export async function createProject(
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
+  const userId = getCurrentUserId();
 
   await db.execute(
-    'INSERT INTO projects (id, name, description, thumbnail_path, parent_id, platform, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, name, description || null, null, parentId || null, platform || null, now, now]
+    'INSERT INTO projects (id, name, description, thumbnail_path, parent_id, platform, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, name, description || null, null, parentId || null, platform || null, userId, now, now]
   );
 
   return id;
@@ -28,7 +29,20 @@ export async function getProject(id: string): Promise<Project | null> {
 
 export async function getAllProjects(): Promise<Project[]> {
   const db = await getDatabase();
-  return await db.select<Project[]>('SELECT * FROM projects ORDER BY updated_at DESC');
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    // No user logged in - only return unowned records
+    return await db.select<Project[]>(
+      'SELECT * FROM projects WHERE user_id IS NULL ORDER BY updated_at DESC'
+    );
+  }
+
+  // Return current user's records + unowned records (for backwards compatibility)
+  return await db.select<Project[]>(
+    'SELECT * FROM projects WHERE user_id = ? OR user_id IS NULL ORDER BY updated_at DESC',
+    [userId]
+  );
 }
 
 export async function updateProject(

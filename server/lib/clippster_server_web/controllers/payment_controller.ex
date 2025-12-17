@@ -135,21 +135,26 @@ defmodule ClippsterServerWeb.PaymentController do
   @doc """
   Confirm payment - verifies on-chain transaction and credits user
   SERVER validates all pricing - frontend values are ignored
+  
+  Note: from_address is provided by the client (the wallet that signed the transaction).
+  This allows users who signed up with email to still make payments with any Phantom wallet.
   """
   def confirm_payment(conn, %{
         "tx_signature" => tx_signature,
-        "pack_type" => pack_type
+        "pack_type" => pack_type,
+        "from_address" => from_address
       }) do
     with {:ok, user_id} <- get_user_id_from_token(conn),
-         {:ok, user} <- get_user(user_id),
+         {:ok, _user} <- get_user(user_id),
          {:ok, pack_info} <- validate_pack_type(pack_type),
          {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
       
       # SERVER calculates expected SOL amount - cannot be manipulated by frontend
       expected_sol_amount = pack_info.usd / sol_usd_rate
       
-      # Verify the on-chain transaction with server-calculated amount
-      case verify_transaction(tx_signature, user.wallet_address, expected_sol_amount) do
+      # Verify the on-chain transaction using the wallet address provided by the client
+      # This is the wallet that actually signed and sent the transaction via Phantom
+      case verify_transaction(tx_signature, from_address, expected_sol_amount) do
         {:ok, :verified} ->
           process_confirmed_payment(conn, tx_signature, pack_type, pack_info, expected_sol_amount, sol_usd_rate, user_id)
         
@@ -179,6 +184,13 @@ defmodule ClippsterServerWeb.PaymentController do
         |> put_status(503)
         |> json(%{success: false, error: "Price service unavailable"})
     end
+  end
+  
+  # Fallback for requests without from_address (backward compatibility)
+  def confirm_payment(conn, %{"tx_signature" => _tx_signature, "pack_type" => _pack_type} = params) do
+    conn
+    |> put_status(400)
+    |> json(%{success: false, error: "Missing required field: from_address. Please update your client."})
   end
 
   defp process_confirmed_payment(conn, tx_signature, pack_type, pack_info, sol_amount, sol_usd_rate, user_id) do

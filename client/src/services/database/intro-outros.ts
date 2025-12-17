@@ -1,4 +1,4 @@
-import { getDatabase, timestamp, generateId } from './core';
+import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { IntroOutro } from './types';
 
 export async function createIntroOutro(
@@ -12,9 +12,10 @@ export async function createIntroOutro(
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
+  const userId = getCurrentUserId();
 
   await db.execute(
-    'INSERT INTO intro_outros (id, type, name, file_path, duration, thumbnail_path, thumbnail_generation_status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO intro_outros (id, type, name, file_path, duration, thumbnail_path, thumbnail_generation_status, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       id,
       type,
@@ -23,6 +24,7 @@ export async function createIntroOutro(
       duration || null,
       thumbnailPath || null,
       thumbnailGenerationStatus || 'pending',
+      userId,
       now,
       now,
     ]
@@ -33,15 +35,30 @@ export async function createIntroOutro(
 
 export async function getAllIntroOutros(type?: 'intro' | 'outro'): Promise<IntroOutro[]> {
   const db = await getDatabase();
+  const userId = getCurrentUserId();
 
   if (type) {
+    if (userId === null) {
+      return await db.select<IntroOutro[]>(
+        'SELECT * FROM intro_outros WHERE type = ? AND user_id IS NULL ORDER BY name',
+        [type]
+      );
+    }
     return await db.select<IntroOutro[]>(
-      'SELECT * FROM intro_outros WHERE type = ? ORDER BY name',
-      [type]
+      'SELECT * FROM intro_outros WHERE type = ? AND (user_id = ? OR user_id IS NULL) ORDER BY name',
+      [type, userId]
     );
   }
 
-  return await db.select<IntroOutro[]>('SELECT * FROM intro_outros ORDER BY type, name');
+  if (userId === null) {
+    return await db.select<IntroOutro[]>(
+      'SELECT * FROM intro_outros WHERE user_id IS NULL ORDER BY type, name'
+    );
+  }
+  return await db.select<IntroOutro[]>(
+    'SELECT * FROM intro_outros WHERE user_id = ? OR user_id IS NULL ORDER BY type, name',
+    [userId]
+  );
 }
 
 export async function updateIntroOutroCompletion(
@@ -89,10 +106,7 @@ export async function updateIntroOutroThumbnailStatus(
 
 export async function getIntroOutroById(id: string): Promise<IntroOutro | null> {
   const db = await getDatabase();
-  const results = await db.select<IntroOutro[]>(
-    'SELECT * FROM intro_outros WHERE id = ?',
-    [id]
-  );
+  const results = await db.select<IntroOutro[]>('SELECT * FROM intro_outros WHERE id = ?', [id]);
   return results[0] || null;
 }
 

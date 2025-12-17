@@ -1,4 +1,4 @@
-import { getDatabase, timestamp, generateId } from './core';
+import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import { createProject } from './projects';
 import type {
   LivestreamSegmentRecord,
@@ -15,8 +15,17 @@ function toSqlBool(value: number | boolean): number {
 
 export async function getAllMonitoredStreamers(): Promise<MonitoredStreamerRecord[]> {
   const db = await getDatabase();
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    return await db.select<MonitoredStreamerRecord[]>(
+      'SELECT * FROM monitored_streamers WHERE user_id IS NULL ORDER BY created_at DESC'
+    );
+  }
+
   return await db.select<MonitoredStreamerRecord[]>(
-    'SELECT * FROM monitored_streamers ORDER BY created_at DESC'
+    'SELECT * FROM monitored_streamers WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC',
+    [userId]
   );
 }
 
@@ -49,10 +58,11 @@ export async function createMonitoredStreamer(
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
+  const userId = getCurrentUserId();
 
   await db.execute(
-    'INSERT INTO monitored_streamers (id, mint_id, display_name, last_check_timestamp, is_currently_live, current_session_id, profile_image_url, stream_thumbnail_url, segment_duration_minutes, created_at, updated_at) VALUES (?, ?, ?, NULL, 0, NULL, ?, NULL, ?, ?, ?)',
-    [id, mintId, displayName, profileImageUrl || null, segmentDurationMinutes, now, now]
+    'INSERT INTO monitored_streamers (id, mint_id, display_name, last_check_timestamp, is_currently_live, current_session_id, profile_image_url, stream_thumbnail_url, segment_duration_minutes, user_id, created_at, updated_at) VALUES (?, ?, ?, NULL, 0, NULL, ?, NULL, ?, ?, ?, ?)',
+    [id, mintId, displayName, profileImageUrl || null, segmentDurationMinutes, userId, now, now]
   );
 
   return id;

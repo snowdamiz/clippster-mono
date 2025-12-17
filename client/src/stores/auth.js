@@ -1,8 +1,51 @@
 import { defineStore } from 'pinia';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { setCurrentUserId, clearCurrentUserId } from '../services/database/core';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
+/**
+ * Set user context in both TypeScript (database) and Rust (storage) layers
+ */
+async function setUserContext(userId) {
+  // Set user ID in TypeScript database layer
+  setCurrentUserId(userId);
+
+  // Set user ID in Rust storage layer for per-user file paths
+  try {
+    await invoke('set_current_user_id', { userId });
+  } catch (error) {
+    console.error('[Auth] Failed to set Rust user context:', error);
+  }
+}
+
+/**
+ * Clear user context from both TypeScript and Rust layers
+ */
+async function clearUserContext() {
+  // Clear user ID in TypeScript database layer
+  clearCurrentUserId();
+
+  // Clear user ID in Rust storage layer
+  try {
+    await invoke('clear_current_user_id');
+  } catch (error) {
+    console.error('[Auth] Failed to clear Rust user context:', error);
+  }
+}
+
+/**
+ * Emit auth state changed event to trigger data refresh across the app
+ */
+function emitAuthStateChanged(userId) {
+  console.log('[Auth] Emitting auth-state-changed event, userId:', userId);
+  window.dispatchEvent(
+    new CustomEvent('auth-state-changed', {
+      detail: { userId, timestamp: Date.now() },
+    })
+  );
+}
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -114,6 +157,12 @@ export const useAuthStore = defineStore('auth', {
         localStorage.setItem('user', JSON.stringify(data.user));
         localStorage.setItem('auth_provider', 'wallet');
 
+        // Set user context for database queries and storage paths
+        await setUserContext(data.user.id);
+
+        // Emit event to trigger data refresh across the app
+        emitAuthStateChanged(data.user.id);
+
         return { success: true };
       } catch (error) {
         this.error = error.message;
@@ -188,6 +237,12 @@ export const useAuthStore = defineStore('auth', {
         localStorage.setItem('user', JSON.stringify(result.user));
         localStorage.setItem('auth_provider', 'google');
 
+        // Set user context for database queries and storage paths
+        await setUserContext(result.user.id);
+
+        // Emit event to trigger data refresh across the app
+        emitAuthStateChanged(result.user.id);
+
         return { success: true };
       } catch (error) {
         this.error = error.message;
@@ -206,7 +261,7 @@ export const useAuthStore = defineStore('auth', {
       return clientId;
     },
 
-    logout() {
+    async logout() {
       this.isAuthenticated = false;
       this.walletAddress = null;
       this.email = null;
@@ -218,6 +273,12 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('email');
       localStorage.removeItem('user');
       localStorage.removeItem('auth_provider');
+
+      // Clear user context from database and storage layers
+      await clearUserContext();
+
+      // Emit event to trigger data refresh across the app
+      emitAuthStateChanged(null);
     },
 
     async checkAuth() {
@@ -235,10 +296,16 @@ export const useAuthStore = defineStore('auth', {
           this.user = JSON.parse(userJson);
           this.authProvider = authProvider;
           this.isAuthenticated = true;
+
+          // Set user context for database queries and storage paths
+          if (this.user && this.user.id) {
+            await setUserContext(this.user.id);
+          }
+
           return true;
         } catch (error) {
           console.error('Failed to parse user data:', error);
-          this.logout();
+          await this.logout();
         }
       }
       return false;

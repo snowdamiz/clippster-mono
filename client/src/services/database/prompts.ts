@@ -1,4 +1,4 @@
-import { getDatabase, timestamp, generateId } from './core';
+import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { Prompt } from './types';
 
 // Prompt queries
@@ -6,10 +6,11 @@ export async function createPrompt(name: string, content: string): Promise<strin
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
+  const userId = getCurrentUserId();
 
   await db.execute(
-    'INSERT INTO prompts (id, name, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-    [id, name, content, now, now]
+    'INSERT INTO prompts (id, name, content, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+    [id, name, content, userId, now, now]
   );
 
   return id;
@@ -23,7 +24,16 @@ export async function getPrompt(id: string): Promise<Prompt | null> {
 
 export async function getAllPrompts(): Promise<Prompt[]> {
   const db = await getDatabase();
-  return await db.select<Prompt[]>('SELECT * FROM prompts ORDER BY name');
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    return await db.select<Prompt[]>('SELECT * FROM prompts WHERE user_id IS NULL ORDER BY name');
+  }
+
+  return await db.select<Prompt[]>(
+    'SELECT * FROM prompts WHERE user_id = ? OR user_id IS NULL ORDER BY name',
+    [userId]
+  );
 }
 
 export async function updatePrompt(id: string, name?: string, content?: string): Promise<void> {

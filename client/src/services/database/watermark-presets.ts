@@ -1,4 +1,4 @@
-import { getDatabase, timestamp, generateId } from './core';
+import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { WatermarkSettings } from './types';
 
 /**
@@ -28,13 +28,14 @@ export async function createWatermarkPreset(
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
+  const userId = getCurrentUserId();
 
   await db.execute(
     `INSERT INTO watermark_presets (
       id, name, description, watermark_id,
       position_x, position_y, opacity, scale,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      user_id, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       name,
@@ -44,6 +45,7 @@ export async function createWatermarkPreset(
       settings.positionY,
       settings.opacity,
       settings.scale,
+      userId,
       now,
       now,
     ]
@@ -70,8 +72,17 @@ export async function getWatermarkPreset(id: string): Promise<WatermarkPreset | 
  */
 export async function getAllWatermarkPresets(): Promise<WatermarkPreset[]> {
   const db = await getDatabase();
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    return await db.select<WatermarkPreset[]>(
+      'SELECT * FROM watermark_presets WHERE user_id IS NULL ORDER BY created_at DESC'
+    );
+  }
+
   return await db.select<WatermarkPreset[]>(
-    'SELECT * FROM watermark_presets ORDER BY created_at DESC'
+    'SELECT * FROM watermark_presets WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC',
+    [userId]
   );
 }
 

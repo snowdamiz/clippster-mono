@@ -1,4 +1,4 @@
-import { getDatabase, timestamp, generateId } from './core';
+import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { CustomSubtitlePreset, SubtitleSettings } from './types';
 
 /**
@@ -12,6 +12,7 @@ export async function createCustomSubtitlePreset(
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
+  const userId = getCurrentUserId();
 
   await db.execute(
     `INSERT INTO custom_subtitle_presets (
@@ -24,8 +25,8 @@ export async function createCustomSubtitlePreset(
       animation_style, highlight_color,
       line_height, letter_spacing, text_align,
       text_offset_x, text_offset_y, padding, border_radius, word_spacing,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      user_id, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       name,
@@ -57,6 +58,7 @@ export async function createCustomSubtitlePreset(
       settings.padding,
       settings.borderRadius,
       settings.wordSpacing,
+      userId,
       now,
       now,
     ]
@@ -89,9 +91,19 @@ export async function getCustomSubtitlePreset(id: string): Promise<CustomSubtitl
  */
 export async function getAllCustomSubtitlePresets(): Promise<CustomSubtitlePreset[]> {
   const db = await getDatabase();
-  const presets = await db.select<CustomSubtitlePreset[]>(
-    'SELECT * FROM custom_subtitle_presets ORDER BY created_at DESC'
-  );
+  const userId = getCurrentUserId();
+
+  let presets: CustomSubtitlePreset[];
+  if (userId === null) {
+    presets = await db.select<CustomSubtitlePreset[]>(
+      'SELECT * FROM custom_subtitle_presets WHERE user_id IS NULL ORDER BY created_at DESC'
+    );
+  } else {
+    presets = await db.select<CustomSubtitlePreset[]>(
+      'SELECT * FROM custom_subtitle_presets WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC',
+      [userId]
+    );
+  }
 
   // Convert SQLite booleans to JavaScript booleans
   return presets.map((preset) => ({
@@ -224,7 +236,16 @@ export function customPresetToSettings(preset: CustomSubtitlePreset): SubtitleSe
     position: preset.position as 'top' | 'middle' | 'bottom',
     positionPercentage: preset.position_percentage,
     maxWidth: preset.max_width,
-    animationStyle: (preset.animation_style as 'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave') || 'none',
+    animationStyle:
+      (preset.animation_style as
+        | 'none'
+        | 'karaoke'
+        | 'zoom'
+        | 'pop'
+        | 'glow'
+        | 'box-highlight'
+        | 'typewriter'
+        | 'wave') || 'none',
     highlightColor: preset.highlight_color || '#FFFF00',
     lineHeight: preset.line_height,
     letterSpacing: preset.letter_spacing,

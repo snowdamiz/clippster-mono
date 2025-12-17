@@ -1,4 +1,4 @@
-import { getDatabase, timestamp, generateId } from './core';
+import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { ImageAsset } from './types';
 
 export async function createImageAsset(
@@ -12,9 +12,10 @@ export async function createImageAsset(
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
+  const userId = getCurrentUserId();
 
   await db.execute(
-    'INSERT INTO image_assets (id, name, file_path, width, height, file_size, mime_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO image_assets (id, name, file_path, width, height, file_size, mime_type, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       id,
       name,
@@ -23,6 +24,7 @@ export async function createImageAsset(
       height || null,
       fileSize || null,
       mimeType || null,
+      userId,
       now,
       now,
     ]
@@ -33,7 +35,18 @@ export async function createImageAsset(
 
 export async function getAllImageAssets(): Promise<ImageAsset[]> {
   const db = await getDatabase();
-  return await db.select<ImageAsset[]>('SELECT * FROM image_assets ORDER BY created_at DESC');
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    return await db.select<ImageAsset[]>(
+      'SELECT * FROM image_assets WHERE user_id IS NULL ORDER BY created_at DESC'
+    );
+  }
+
+  return await db.select<ImageAsset[]>(
+    'SELECT * FROM image_assets WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC',
+    [userId]
+  );
 }
 
 export async function getImageAsset(id: string): Promise<ImageAsset | null> {
