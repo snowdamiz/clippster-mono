@@ -19,10 +19,29 @@ pub struct PaymentResult {
     pub auth_token: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoogleAuthUser {
+    pub id: i64,
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub is_admin: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoogleAuthResult {
+    pub success: bool,
+    pub token: String,
+    pub provider: String,
+    pub user: GoogleAuthUser,
+}
+
 pub static AUTH_RESULT: Lazy<Arc<Mutex<Option<AuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static PAYMENT_RESULT: Lazy<Arc<Mutex<Option<PaymentResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+pub static GOOGLE_AUTH_RESULT: Lazy<Arc<Mutex<Option<GoogleAuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static AUTH_SERVER_PORT: u16 = 48274;
 pub static PAYMENT_SERVER_PORT: u16 = 48275;
+pub static GOOGLE_AUTH_SERVER_PORT: u16 = 54321;
 
 #[tauri::command]
 pub async fn open_wallet_auth_window(app: tauri::AppHandle) -> Result<(), String> {
@@ -93,6 +112,31 @@ pub async fn poll_payment_result() -> Result<Option<PaymentResult>, String> {
     if result.is_some() {
         // Clear after retrieval
         *PAYMENT_RESULT.lock().unwrap() = None;
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn open_google_auth_window(app: tauri::AppHandle, api_base: String) -> Result<(), String> {
+    // Start local callback server if not already running
+    start_google_callback_server(app.clone());
+
+    // Open the Google OAuth page in the user's default browser
+    // The API server will redirect to Google and then to our callback
+    let auth_url = format!("{}/api/auth/google", api_base);
+
+    tauri_plugin_opener::open_url(auth_url, None::<&str>)
+        .map_err(|e| format!("Failed to open browser: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn poll_google_auth_result() -> Result<Option<GoogleAuthResult>, String> {
+    let result = GOOGLE_AUTH_RESULT.lock().unwrap().clone();
+    if result.is_some() {
+        // Clear after retrieval
+        *GOOGLE_AUTH_RESULT.lock().unwrap() = None;
     }
     Ok(result)
 }
@@ -186,5 +230,47 @@ pub fn start_payment_callback_server(app: tauri::AppHandle) {
 
         println!("Starting local payment server on port {}", PAYMENT_SERVER_PORT);
         warp::serve(routes).run(([127, 0, 0, 1], PAYMENT_SERVER_PORT)).await;
+    });
+}
+
+pub fn start_google_callback_server(app: tauri::AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
+
+    if SERVER_STARTED.swap(true, Ordering::SeqCst) {
+        return; // Server already running
+    }
+
+    tokio::spawn(async move {
+        let google_auth_result = GOOGLE_AUTH_RESULT.clone();
+        let app_handle = app.clone();
+
+        // Callback endpoint for Google OAuth result
+        let google_callback = warp::path("google-callback")
+            .and(warp::post())
+            .and(warp::body::json())
+            .map(move |result: GoogleAuthResult| {
+                // Store the result
+                *google_auth_result.lock().unwrap() = Some(result.clone());
+
+                // Emit event to frontend
+                let _ = app_handle.emit("google-auth-complete", result);
+
+                warp::reply::json(&serde_json::json!({
+                    "success": true,
+                    "message": "Google authentication received. You can close this tab."
+                }))
+            });
+
+        // CORS configuration
+        let cors = warp::cors()
+            .allow_any_origin()
+            .allow_methods(vec!["GET", "POST", "OPTIONS"])
+            .allow_headers(vec!["Content-Type"]);
+
+        let routes = google_callback.with(cors);
+
+        println!("Starting Google auth callback server on port {}", GOOGLE_AUTH_SERVER_PORT);
+        warp::serve(routes).run(([127, 0, 0, 1], GOOGLE_AUTH_SERVER_PORT)).await;
     });
 }

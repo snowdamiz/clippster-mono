@@ -7,6 +7,27 @@ import Config
 # any compile-time configuration in here, as it won't be applied.
 # The block below contains prod specific runtime configuration.
 
+# Load .env file if it exists (for local development)
+env_file = Path.join(File.cwd!(), ".env")
+if File.exists?(env_file) do
+  try do
+    env_vars = Dotenvy.source!(env_file)
+    Enum.each(env_vars, fn {key, value} -> System.put_env(key, value) end)
+  rescue
+    _ -> :ok
+  end
+end
+
+# Google OAuth configuration (all environments)
+google_client_id = System.get_env("GOOGLE_CLIENT_ID")
+google_client_secret = System.get_env("GOOGLE_CLIENT_SECRET")
+
+if google_client_id && google_client_secret do
+  config :ueberauth, Ueberauth.Strategy.Google.OAuth,
+    client_id: google_client_id,
+    client_secret: google_client_secret
+end
+
 # ## Using releases
 #
 # If you use `mix release`, you need to explicitly enable the server

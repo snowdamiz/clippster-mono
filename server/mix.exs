@@ -62,7 +62,10 @@ defmodule ClippsterServer.MixProject do
       {:httpoison, "~> 2.2"},
       {:finch, "~> 0.19"},
       # Environment variable loading
-      {:dotenvy, "~> 0.8.0"}
+      {:dotenvy, "~> 0.8.0"},
+      # OAuth authentication
+      {:ueberauth, "~> 0.10"},
+      {:ueberauth_google, "~> 0.10"}
     ]
   end
 

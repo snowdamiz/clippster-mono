@@ -51,6 +51,10 @@ defmodule ClippsterServerWeb.Router do
     post "/auth/challenge", AuthController, :request_challenge
     post "/auth/verify", AuthController, :verify_signature
 
+    # Google OAuth routes
+    get "/auth/google", AuthController, :google_request
+    get "/auth/google/callback", AuthController, :google_callback
+
     # Payment and credit routes
     get "/pricing", PaymentController, :get_pricing
     get "/credits/balance", PaymentController, :get_balance
@@ -83,6 +87,9 @@ defmodule ClippsterServerWeb.Router do
 
     # Bug report creation (requires authentication)
     post "/bug-reports", BugReportsController, :create
+
+    # OAuth account linking routes
+    post "/auth/link/google", AuthController, :link_google_account
   end
 
   # Admin-only routes

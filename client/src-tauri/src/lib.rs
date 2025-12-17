@@ -450,6 +450,8 @@ pub fn run() {
             auth::close_auth_window,
             auth::poll_auth_result,
             auth::poll_payment_result,
+            auth::open_google_auth_window,
+            auth::poll_google_auth_result,
 
             // PumpFun commands
             pumpfun::get_pumpfun_clips,

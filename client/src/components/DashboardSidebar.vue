@@ -127,11 +127,13 @@
           </div>
         </button>
       </div>
-      <!-- Wallet info -->
+      <!-- User info -->
       <div :class="authStore.isAuthenticated ? 'px-4 pb-4 pt-4' : 'px-2 pb-2 pt-2'" class="border-t border-border">
-        <div v-if="authStore.isAuthenticated" class="flex items-center justify-between">
-          <span class="font-mono text-xs text-primary">{{ formattedAddress }}</span>
-          <button @click="handleDisconnect" class="disconnect-btn">Disconnect</button>
+        <div v-if="authStore.isAuthenticated" class="flex items-center justify-between gap-2 min-w-0">
+          <span class="font-mono text-xs text-primary truncate min-w-0" :title="formattedAddress">
+            {{ formattedAddress }}
+          </span>
+          <button @click="handleDisconnect" class="disconnect-btn flex-shrink-0">{{ disconnectButtonText }}</button>
         </div>
         <div v-else class="flex items-center justify-center">
           <button @click="showAuthModal" class="sign-in-btn">Sign In</button>
@@ -197,7 +199,17 @@
   };
 
   const formattedAddress = computed(() => {
-    return authStore.isAuthenticated ? formatAddress(authStore.walletAddress) : '';
+    if (!authStore.isAuthenticated) return '';
+
+    // For Google auth, show email; for wallet auth, show formatted address
+    if (authStore.authProvider === 'google' && authStore.email) {
+      return authStore.email;
+    }
+    return formatAddress(authStore.walletAddress);
+  });
+
+  const disconnectButtonText = computed(() => {
+    return authStore.authProvider === 'google' ? 'Sign Out' : 'Disconnect';
   });
 
   const handleDisconnect = () => {
