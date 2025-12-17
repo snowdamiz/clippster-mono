@@ -66,24 +66,21 @@
 
     <!-- Tabs - Always Visible -->
     <template v-else>
-      <div class="flex gap-1 mb-6 bg-muted/50 p-1 rounded-lg w-fit border border-border/50">
+      <div class="flex border-b border-border mb-6 overflow-x-auto scrollbar-hide">
         <button
           v-for="tab in tabs"
           :key="tab.id"
           @click="activeTab = tab.id"
           :disabled="loading"
+          class="px-4 py-3 text-sm font-medium border-b-2 transition-all flex items-center whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-primary/20 rounded-t-sm"
           :class="[
-            'px-4 py-2 rounded-md text-sm font-medium transition-all',
             activeTab === tab.id
-              ? 'bg-background text-foreground shadow-sm border border-border/50'
-              : 'text-muted-foreground hover:text-foreground',
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border/50',
             loading ? 'opacity-70 cursor-not-allowed' : '',
           ]"
         >
-          <span class="flex items-center gap-2">
-            <component :is="tab.icon" class="h-4 w-4" />
-            {{ tab.label }}
-          </span>
+          {{ tab.label }}
         </button>
       </div>
 
@@ -674,10 +671,10 @@
   });
 
   const tabs = [
-    { id: 'members', label: 'Members', icon: Users },
-    { id: 'invitations', label: 'Invitations', icon: Mail },
-    { id: 'credits', label: 'Credits', icon: CreditCard },
-    { id: 'settings', label: 'Settings', icon: Settings },
+    { id: 'members', label: 'Members' },
+    { id: 'invitations', label: 'Invitations' },
+    { id: 'credits', label: 'Credits' },
+    { id: 'settings', label: 'Settings' },
   ];
 
   const isAdmin = computed(() => role.value === 'owner' || role.value === 'admin');
