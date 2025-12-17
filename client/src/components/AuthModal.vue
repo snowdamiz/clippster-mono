@@ -196,50 +196,6 @@
                       </div>
                     </div>
                   </Transition>
-
-                  <!-- Divider -->
-                  <div class="relative">
-                    <div class="absolute inset-0 flex items-center">
-                      <div class="w-full border-t border-zinc-800"></div>
-                    </div>
-                    <div class="relative flex justify-center text-[10px] sm:text-xs uppercase">
-                      <span class="bg-zinc-950 px-2 sm:px-3 text-zinc-500">New to Phantom?</span>
-                    </div>
-                  </div>
-
-                  <!-- Download Phantom -->
-                  <a
-                    href="https://phantom.app/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="block text-center px-4 py-2.5 sm:py-3.5 rounded-lg sm:rounded-xl border border-zinc-800 hover:bg-zinc-800/50 hover:border-zinc-700 transition-colors group"
-                  >
-                    <div class="flex items-center justify-center gap-2">
-                      <span class="text-xs sm:text-sm font-medium text-zinc-300">Download Phantom</span>
-                      <ExternalLink
-                        class="h-3.5 w-3.5 sm:h-4 sm:w-4 text-zinc-500 group-hover:text-zinc-300 transition-all group-hover:translate-x-0.5"
-                      />
-                    </div>
-                  </a>
-
-                  <!-- Pricing Hint -->
-                  <div class="pt-3 sm:pt-4 border-t border-zinc-800">
-                    <div
-                      class="flex items-start gap-2 sm:gap-3 p-3 sm:p-4 rounded-lg sm:rounded-xl bg-violet-500/10 border border-violet-500/30"
-                    >
-                      <div
-                        class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-violet-500/20 flex items-center justify-center flex-shrink-0"
-                      >
-                        <Info class="h-3.5 w-3.5 sm:h-4 sm:w-4 text-violet-400" />
-                      </div>
-                      <div>
-                        <p class="text-[10px] sm:text-xs font-medium text-violet-300">Get started with free credits</p>
-                        <p class="text-[10px] sm:text-xs text-violet-400/70 mt-0.5">
-                          New users receive credits to try all features
-                        </p>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
