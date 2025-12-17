@@ -83,7 +83,6 @@
       <div
         v-if="showAudioPicker"
         class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60]"
-        @click.self="closeAudioPicker"
       >
         <div class="bg-zinc-900 rounded-xl border border-white/10 w-full max-w-md mx-4 overflow-hidden">
           <!-- Header -->

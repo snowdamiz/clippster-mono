@@ -74,6 +74,7 @@ export {
   getClipSegmentsByVersionId,
   updateClipSegment,
   splitClipSegment,
+  insertClipSegment,
   deleteClipSegment,
   realignClipSegment,
 } from './database/clip-segments';

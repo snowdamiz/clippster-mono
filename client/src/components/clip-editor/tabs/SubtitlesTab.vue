@@ -623,7 +623,6 @@
       <div
         v-if="showSavePresetDialog"
         class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70]"
-        @click.self="closeSaveDialog"
       >
         <div class="bg-zinc-900 rounded-xl border border-white/10 w-full max-w-sm mx-4 overflow-hidden">
           <div class="flex items-center justify-between px-4 py-3 border-b border-white/10">
@@ -683,7 +682,6 @@
       <div
         v-if="presetToDelete"
         class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70]"
-        @click.self="presetToDelete = null"
       >
         <div class="bg-zinc-900 rounded-xl border border-white/10 w-full max-w-sm mx-4 overflow-hidden">
           <div class="p-4 space-y-4">

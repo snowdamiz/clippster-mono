@@ -4,7 +4,6 @@
       <div
         v-if="modelValue"
         class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-[9999]"
-        @click.self="close"
         @keydown.esc="close"
         tabindex="-1"
       >

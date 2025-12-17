@@ -3,7 +3,6 @@
     <div
       v-if="modelValue"
       class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
-      @click.self="close"
     >
       <div
         ref="dialogRef"
@@ -316,7 +315,11 @@
             :is-playing="isPlaying"
             :editor-mode="editorMode"
             :video-sources="videoSources"
+            :can-undo="canUndo"
+            :can-redo="canRedo"
             @seek="seekTo"
+            @undo="performUndo"
+            @redo="performRedo"
             @split-trim-segment="splitTrimSegment"
             @delete-trim-segment="deleteTrimSegment"
             @update-audio-track="updateAudioTrackLocal"
@@ -371,6 +374,8 @@
   import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
   import { Film, X, Loader2, Check } from 'lucide-vue-next';
   import { Separator } from '@/components/ui/separator';
+  import { CommandHistory, SplitCommand, DeleteCommand, PasteCommand } from '@/services/commands';
+  import type { ClipSegment } from '@/services/database';
   import type {
     ClipEditorTab,
     AudioTrack,
@@ -504,6 +509,23 @@
     (e: 'save', clipId: string): void;
     (e: 'editorSave', projectId: string): void;
   }>();
+
+  // Command history for undo/redo
+  const commandHistory = new CommandHistory();
+
+  // Clipboard for copy/paste
+  const copiedSegment = ref<ClipSegment | null>(null);
+
+  // Reactive undo/redo availability (updates after each operation)
+  const undoRedoTrigger = ref(0); // Increment this to force reactivity
+  const canUndo = computed(() => {
+    undoRedoTrigger.value; // Access to make it reactive
+    return commandHistory.canUndo();
+  });
+  const canRedo = computed(() => {
+    undoRedoTrigger.value; // Access to make it reactive
+    return commandHistory.canRedo();
+  });
 
   // Refs
   const dialogRef = ref<HTMLElement | null>(null);
@@ -2889,42 +2911,56 @@
       return;
     }
 
-    // In clip mode, persist the split to the database (like Timeline.vue does)
+    // In clip mode, use command pattern for undo/redo support
     if (!editorMode.value && props.clipId) {
       try {
-        // Convert relative cut time to absolute source video time
-        const absoluteCutTime = props.clipStartTime + cutTime;
+        // Create reload callback
+        const reloadCallback = async () => {
+          console.log('[splitTrimSegment] Reloading segments from database...');
+          const dbSegments = await getClipSegmentsByClipId(props.clipId!);
+          console.log('[splitTrimSegment] Loaded segments from DB:', dbSegments.map(s => ({
+            start: s.start_time,
+            end: s.end_time,
+            duration: s.duration
+          })));
+          if (dbSegments && dbSegments.length > 0) {
+            // Convert absolute times back to relative times
+            trimSegments.value = dbSegments.map((seg, index) => ({
+              id: `segment-${index}`,
+              startTime: seg.start_time - props.clipStartTime,
+              endTime: seg.end_time - props.clipStartTime,
+              isDeleted: false,
+            }));
+            console.log('[splitTrimSegment] Converted to relative times:', trimSegments.value.map(s => ({
+              id: s.id,
+              start: s.startTime,
+              end: s.endTime
+            })));
+          }
+          // Emit save event to notify parent that clip was modified
+          emit('save', props.clipId!);
+        };
 
-        console.log(
-          `[ClipEditorDialog] Splitting segment ${segmentIndex} at absolute time ${absoluteCutTime.toFixed(2)}s`
-        );
+        // Create and execute split command
+        const splitCommand = new SplitCommand(false, {
+          clipId: props.clipId,
+          segmentIndex,
+          clipStartTime: props.clipStartTime,
+          cutTime,
+          onReload: reloadCallback,
+        });
 
-        // Call the database function to split the segment
-        await splitClipSegment(props.clipId, segmentIndex, absoluteCutTime);
-
-        // Reload segments from the database to stay in sync
-        const dbSegments = await getClipSegmentsByClipId(props.clipId);
-        if (dbSegments && dbSegments.length > 0) {
-          // Convert absolute times back to relative times
-          trimSegments.value = dbSegments.map((seg, index) => ({
-            id: `segment-${index}`,
-            startTime: seg.start_time - props.clipStartTime,
-            endTime: seg.end_time - props.clipStartTime,
-            isDeleted: false,
-          }));
-        }
-
-        console.log(`[ClipEditorDialog] Split complete, now have ${trimSegments.value.length} segments`);
-
-        // Emit save event to notify parent that clip was modified
-        emit('save', props.clipId);
+        await commandHistory.executeCommand(splitCommand);
+        undoRedoTrigger.value++; // Trigger reactivity update
+        
+        console.log(`[ClipEditorDialog] Split complete (with undo support), now have ${trimSegments.value.length} segments`);
       } catch (error) {
         console.error('[ClipEditorDialog] Failed to split segment:', error);
-        // Show error to user
         alert(`Failed to split segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } else {
       // Editor mode or no clip ID - just update local state (for video editor projects)
+      // TODO: Convert to command pattern when we implement editor mode split command
       const leftSegment: TrimSegment = {
         id: `segment-${Date.now()}-left`,
         startTime: segment.startTime,
@@ -2943,7 +2979,7 @@
       trimSegments.value.splice(segmentIndex, 1, leftSegment, rightSegment);
 
       console.log(
-        `[ClipEditorDialog] Split segment at ${cutTime.toFixed(2)}s - created ${leftSegment.id} and ${rightSegment.id}`
+        `[ClipEditorDialog] Split segment at ${cutTime.toFixed(2)}s - created ${leftSegment.id} and ${rightSegment.id} (no undo support yet in editor mode)`
       );
     }
   }
@@ -2959,42 +2995,50 @@
 
     // Prevent deleting the last segment
     if (trimSegments.value.length <= 1) {
-      console.warn('[ClipEditorDialog] Cannot delete the last remaining segment');
+      alert('Cannot delete the last remaining segment.');
       return;
     }
 
-    // In clip mode, persist to database
+    // In clip mode, use command pattern for undo/redo support
     if (!editorMode.value && props.clipId) {
       try {
-        console.log(`[ClipEditorDialog] Deleting segment ${segmentIndex}`);
+        // Create reload callback
+        const reloadCallback = async () => {
+          const dbSegments = await getClipSegmentsByClipId(props.clipId!);
+          if (dbSegments && dbSegments.length > 0) {
+            // Convert absolute times back to relative times
+            trimSegments.value = dbSegments.map((seg, index) => ({
+              id: `segment-${index}`,
+              startTime: seg.start_time - props.clipStartTime,
+              endTime: seg.end_time - props.clipStartTime,
+              isDeleted: false,
+            }));
+          }
+          // Emit save event to notify parent that clip was modified
+          emit('save', props.clipId!);
+        };
 
-        // Delete the segment from database
-        await deleteClipSegment(props.clipId, segmentIndex);
+        // Create and execute delete command
+        const deleteCommand = new DeleteCommand(false, {
+          clipId: props.clipId,
+          segmentId,
+          clipStartTime: props.clipStartTime,
+          onReload: reloadCallback,
+        });
 
-        // Reload segments from the database to stay in sync
-        const dbSegments = await getClipSegmentsByClipId(props.clipId);
-        if (dbSegments && dbSegments.length > 0) {
-          // Convert absolute times back to relative times
-          trimSegments.value = dbSegments.map((seg, index) => ({
-            id: `segment-${index}`,
-            startTime: seg.start_time - props.clipStartTime,
-            endTime: seg.end_time - props.clipStartTime,
-            isDeleted: false,
-          }));
-        }
-
-        console.log(`[ClipEditorDialog] Delete complete, now have ${trimSegments.value.length} segments`);
-
-        // Emit save event to notify parent that clip was modified
-        emit('save', props.clipId);
+        await commandHistory.executeCommand(deleteCommand);
+        undoRedoTrigger.value++; // Trigger reactivity update
+        
+        console.log(`[ClipEditorDialog] Delete complete (with undo support), now have ${trimSegments.value.length} segments`);
       } catch (error) {
         console.error('[ClipEditorDialog] Failed to delete segment:', error);
         alert(`Failed to delete segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } else {
       // Editor mode or no clip ID - just update local state
+      // TODO: Convert to command pattern when we implement editor mode delete command
       trimSegments.value.splice(segmentIndex, 1);
-      console.log(`[ClipEditorDialog] Deleted segment ${segmentIndex}`);
+      console.log(`[ClipEditorDialog] Deleted segment ${segmentIndex} (no undo support yet in editor mode)`);
     }
   }
 
@@ -4224,14 +4268,152 @@
   function handleKeyDown(e: KeyboardEvent) {
     if (!props.modelValue) return;
 
+    // Don't handle shortcuts if user is typing in input fields
+    const isTyping = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+
+    // Debug log for redo keys
+    if (e.key === 'z' || e.key === 'y') {
+      console.log('[handleKeyDown] Key pressed:', e.key, {
+        ctrl: e.ctrlKey,
+        meta: e.metaKey,
+        shift: e.shiftKey,
+        isTyping,
+      });
+    }
+
     if (e.key === 'Escape') {
       close();
-    } else if (e.key === ' ' && !e.target?.toString().includes('Input')) {
+    } else if (e.key === ' ' && !isTyping) {
       e.preventDefault();
       togglePlay();
     } else if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       saveNow(); // Save immediately on Ctrl+S
+    } else if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !isTyping) {
+      console.log('[handleKeyDown] Undo triggered');
+      e.preventDefault();
+      performUndo();
+    } else if (((e.key === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey) || (e.key === 'y' && (e.ctrlKey || e.metaKey))) && !isTyping) {
+      console.log('[handleKeyDown] Redo triggered!');
+      e.preventDefault();
+      performRedo();
+    } else if (e.key === 'c' && (e.ctrlKey || e.metaKey) && !isTyping) {
+      e.preventDefault();
+      performCopy();
+    } else if (e.key === 'v' && (e.ctrlKey || e.metaKey) && !isTyping) {
+      e.preventDefault();
+      performPaste();
+    }
+  }
+
+  // Undo/Redo operations
+  async function performUndo() {
+    try {
+      await commandHistory.undo();
+      undoRedoTrigger.value++; // Trigger reactivity update for button states
+      console.log('[ClipEditorDialog] ✅ Undo successful');
+    } catch (error) {
+      console.error('[ClipEditorDialog] Undo failed:', error);
+      alert('Could not undo the last operation');
+    }
+  }
+
+  async function performRedo() {
+    try {
+      console.log('[ClipEditorDialog] Attempting redo...');
+      console.log('[ClipEditorDialog] Can redo?', commandHistory.canRedo());
+      console.log('[ClipEditorDialog] Redo stack size:', commandHistory.getRedoStackSize());
+      await commandHistory.redo();
+      undoRedoTrigger.value++; // Trigger reactivity update for button states
+      console.log('[ClipEditorDialog] ✅ Redo successful');
+    } catch (error) {
+      console.error('[ClipEditorDialog] Redo failed:', error);
+      alert('Could not redo the operation');
+    }
+  }
+
+  // Copy/Paste operations
+  async function performCopy() {
+    // Get the currently selected segment
+    // For now, we'll copy the segment at the current playhead position
+    if (!editorMode.value && props.clipId) {
+      try {
+        const segments = await getClipSegmentsByClipId(props.clipId);
+        const currentRelativeTime = previewTime.value - props.clipStartTime;
+        
+        // Find the segment that contains the current playhead position
+        const segmentToCopy = segments.find(
+          seg => currentRelativeTime >= (seg.start_time - props.clipStartTime) && 
+                 currentRelativeTime < (seg.end_time - props.clipStartTime)
+        );
+        
+        if (segmentToCopy) {
+          copiedSegment.value = segmentToCopy;
+          console.log('[ClipEditorDialog] ✅ Copied segment:', {
+            start: segmentToCopy.start_time,
+            end: segmentToCopy.end_time,
+            duration: segmentToCopy.duration
+          });
+          console.log('[ClipEditorDialog] Segment copied to clipboard. Press Ctrl+V to paste.');
+        } else {
+          console.warn('[ClipEditorDialog] No segment at playhead to copy');
+          alert('No segment at current position');
+        }
+      } catch (error) {
+        console.error('[ClipEditorDialog] Copy failed:', error);
+        alert('Could not copy segment');
+      }
+    } else {
+      // TODO: Implement for editor mode
+      console.log('[ClipEditorDialog] Copy not yet implemented for editor mode');
+    }
+  }
+
+  async function performPaste() {
+    if (!copiedSegment.value) {
+      console.warn('[ClipEditorDialog] No segment in clipboard to paste');
+      alert('No segment copied. Press Ctrl+C to copy a segment first.');
+      return;
+    }
+
+    if (!editorMode.value && props.clipId) {
+      try {
+        const currentRelativeTime = previewTime.value - props.clipStartTime;
+        
+        // Create reload callback
+        const reloadCallback = async () => {
+          const dbSegments = await getClipSegmentsByClipId(props.clipId!);
+          if (dbSegments && dbSegments.length > 0) {
+            trimSegments.value = dbSegments.map((seg, index) => ({
+              id: `segment-${index}`,
+              startTime: seg.start_time - props.clipStartTime,
+              endTime: seg.end_time - props.clipStartTime,
+              isDeleted: false,
+            }));
+          }
+          emit('save', props.clipId!);
+        };
+
+        // Create and execute paste command
+        const pasteCommand = new PasteCommand(false, {
+          clipId: props.clipId,
+          clipStartTime: props.clipStartTime,
+          pasteAtTime: currentRelativeTime,
+          copiedSegment: copiedSegment.value,
+          onReload: reloadCallback,
+        });
+
+        await commandHistory.executeCommand(pasteCommand);
+        undoRedoTrigger.value++; // Trigger reactivity update for button states
+        
+        console.log('[ClipEditorDialog] ✅ Paste successful - segment added at playhead position');
+      } catch (error) {
+        console.error('[ClipEditorDialog] Paste failed:', error);
+        alert(`Could not paste segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    } else {
+      // TODO: Implement for editor mode
+      console.log('[ClipEditorDialog] Paste not yet implemented for editor mode');
     }
   }
 
@@ -4409,12 +4591,39 @@
     { deep: true }
   );
 
+  // Watch for clip ID changes - clear command history when switching clips
+  watch(
+    () => props.clipId,
+    (newClipId, oldClipId) => {
+      if (newClipId && oldClipId && newClipId !== oldClipId) {
+        commandHistory.clear();
+        console.log('[ClipEditorDialog] Clip changed, command history cleared:', { oldClipId, newClipId });
+      }
+    }
+  );
+
+  // Watch for editor project ID changes - clear command history when switching projects
+  watch(
+    () => props.editorProjectId,
+    (newProjectId, oldProjectId) => {
+      if (newProjectId && oldProjectId && newProjectId !== oldProjectId) {
+        commandHistory.clear();
+        console.log('[ClipEditorDialog] Editor project changed, command history cleared:', { oldProjectId, newProjectId });
+      }
+    }
+  );
+
   // Lifecycle
   watch(
     () => props.modelValue,
     async (isOpen) => {
       if (isOpen) {
         isInitialLoad.value = true; // Prevent auto-save during load
+        
+        // Clear command history when opening a clip/project
+        // This ensures each clip/project starts with a fresh undo/redo stack
+        commandHistory.clear();
+        console.log('[ClipEditorDialog] Command history cleared for new clip/project');
 
         if (editorMode.value && editorProjectId.value) {
           // Editor mode - load video sources
@@ -4467,6 +4676,9 @@
         // Clean up when dialog closes
         cleanupAudioElements();
         isPlaying.value = false;
+        // Clear command history when closing
+        commandHistory.clear();
+        console.log('[ClipEditorDialog] Command history cleared on close');
         // Reset aspect tab state
         videoPath.value = null;
         thumbnailUrl.value = null;
@@ -4502,6 +4714,8 @@
     if (saveTimeout) {
       clearTimeout(saveTimeout);
     }
+    // Clear command history when closing editor
+    commandHistory.clear();
   });
 </script>
 

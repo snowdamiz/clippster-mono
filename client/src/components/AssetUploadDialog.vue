@@ -3,7 +3,6 @@
     <div
       v-if="show"
       class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
-      @click.self="$emit('close')"
     >
       <Transition name="dialog" appear>
         <div

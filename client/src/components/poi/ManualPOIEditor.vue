@@ -4,7 +4,6 @@
       <div
         v-if="modelValue"
         class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[70]"
-        @click.self="close"
       >
         <Transition name="dialog" appear>
           <div

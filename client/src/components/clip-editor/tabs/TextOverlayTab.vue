@@ -390,7 +390,6 @@
       <div
         v-if="showAddTextDialog"
         class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60]"
-        @click.self="showAddTextDialog = false"
       >
         <div class="bg-zinc-900 rounded-xl border border-white/10 w-full max-w-sm mx-4 overflow-hidden">
           <div class="flex items-center justify-between px-4 py-3 border-b border-white/10">
@@ -432,7 +431,6 @@
       <div
         v-if="showSavePresetDialog"
         class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60]"
-        @click.self="showSavePresetDialog = false"
       >
         <div class="bg-zinc-900 rounded-xl border border-white/10 w-full max-w-sm mx-4 overflow-hidden">
           <div class="flex items-center justify-between px-4 py-3 border-b border-white/10">

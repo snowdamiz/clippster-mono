@@ -267,9 +267,24 @@ export async function splitClipSegment(
       rightSegmentIndex: segmentIndex + 1,
     };
   } catch (error) {
-    throw new Error(
-      `Failed to split segment: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+    // Log the raw error to see what we're actually getting
+    console.error('[splitClipSegment] Raw error caught:', error);
+    console.error('[splitClipSegment] Error type:', typeof error);
+    console.error('[splitClipSegment] Error stringified:', JSON.stringify(error, null, 2));
+    
+    // Extract error message
+    let errorMessage = 'Unknown error';
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    } else if (typeof error === 'string') {
+      errorMessage = error;
+    } else if (error && typeof error === 'object') {
+      // Try to extract message from various error formats
+      const err = error as any;
+      errorMessage = err.message || err.error || err.toString() || 'Unknown error';
+    }
+    
+    throw new Error(`Failed to split segment: ${errorMessage}`);
   }
 }
 
@@ -318,6 +333,67 @@ export async function deleteClipSegment(clipId: string, segmentIndex: number): P
   } catch (error) {
     throw new Error(
       `Failed to delete segment: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+// Insert a clip segment at a specific index
+export async function insertClipSegment(
+  clipId: string,
+  segmentIndex: number,
+  startTime: number,
+  endTime: number,
+  transcript: string | null = null
+): Promise<ClipSegment> {
+  const db = await getDatabase();
+
+  try {
+    // Get the current clip version
+    const clip = await db.select<{ current_version_id: string }[]>(
+      'SELECT current_version_id FROM clips WHERE id = ?',
+      [clipId]
+    );
+
+    if (clip.length === 0) {
+      throw new Error('Clip not found');
+    }
+
+    const versionId = clip[0].current_version_id;
+
+    // Shift all segments at and after the insertion point up by 1
+    await db.execute(
+      'UPDATE clip_segments SET segment_index = segment_index + 1 WHERE clip_version_id = ? AND segment_index >= ?',
+      [versionId, segmentIndex]
+    );
+
+    // Insert the new segment
+    const segmentId = generateId();
+    const duration = endTime - startTime;
+    const now = timestamp();
+
+    await db.execute(
+      `INSERT INTO clip_segments (
+        id, clip_version_id, segment_index, start_time, end_time, duration, transcript, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [segmentId, versionId, segmentIndex, startTime, endTime, duration, transcript, now]
+    );
+
+    // Return the newly created segment
+    const newSegment: ClipSegment = {
+      id: segmentId,
+      clip_version_id: versionId,
+      segment_index: segmentIndex,
+      start_time: startTime,
+      end_time: endTime,
+      duration,
+      transcript,
+      created_at: now,
+    };
+
+    return newSegment;
+  } catch (error) {
+    throw new Error(
+      `Failed to insert segment: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
   }
 }

@@ -144,7 +144,6 @@
     <div
       v-if="showDeleteDialog"
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-      @click.self="showDeleteDialog = false"
     >
       <div
         class="bg-card rounded-xl p-6 max-w-md w-full mx-4 border border-border shadow-xl shadow-black/10 animate-in fade-in zoom-in duration-200"
