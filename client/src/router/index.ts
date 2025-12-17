@@ -6,7 +6,13 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: '/creators',
+      redirect: () => {
+        // Dynamic redirect based on user type
+        const authStore = useAuthStore();
+        const isOrgOwner =
+          authStore.user?.account_type === 'organization' && authStore.user?.owned_organization_id;
+        return isOrgOwner ? '/organizations' : '/creators';
+      },
     },
     {
       path: '/dashboard',
@@ -223,6 +229,21 @@ const router = createRouter({
     },
   ],
 });
+
+// Helper to check if a user is an organization account owner
+export function isOrgAccountOwner(
+  user?: { account_type?: string; owned_organization_id?: string | null } | null
+): boolean {
+  const userData = user ?? useAuthStore().user;
+  return userData?.account_type === 'organization' && !!userData?.owned_organization_id;
+}
+
+// Helper to get the default landing route for a user
+export function getDefaultRoute(
+  user?: { account_type?: string; owned_organization_id?: string | null } | null
+): string {
+  return isOrgAccountOwner(user) ? '/organizations' : '/creators';
+}
 
 // Navigation guard for authentication and admin access
 router.beforeEach((to, _from, next) => {

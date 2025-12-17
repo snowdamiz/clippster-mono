@@ -442,6 +442,7 @@
 
 <script setup lang="ts">
   import { onMounted, onUnmounted, watch, ref } from 'vue';
+  import { useRouter } from 'vue-router';
   import {
     X,
     Zap,
@@ -457,6 +458,7 @@
     Send,
   } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
+  import { getDefaultRoute } from '@/router';
 
   const props = defineProps<{
     modelValue: boolean;
@@ -467,6 +469,7 @@
   }>();
 
   const authStore = useAuthStore();
+  const router = useRouter();
   const authMethod = ref<'wallet' | 'google' | 'email' | null>(null);
   const currentView = ref<'signin' | 'signup' | 'verify-otp' | 'forgot-password' | 'reset-sent'>('signin');
   const email = ref('');
@@ -479,12 +482,19 @@
 
   let cooldownInterval: ReturnType<typeof setInterval> | null = null;
 
+  // Redirect to appropriate page after successful login
+  const redirectAfterLogin = (user: any) => {
+    const targetRoute = getDefaultRoute(user);
+    router.push(targetRoute);
+  };
+
   const connectWallet = async () => {
     authMethod.value = 'wallet';
     successMessage.value = '';
     const result = await authStore.authenticateWithWallet();
     if (result.success) {
       close();
+      redirectAfterLogin(result.user);
     }
   };
 
@@ -494,6 +504,7 @@
     const result = await authStore.authenticateWithGoogle();
     if (result.success) {
       close();
+      redirectAfterLogin(result.user);
     }
   };
 
@@ -504,6 +515,7 @@
 
     if (result.success) {
       close();
+      redirectAfterLogin(result.user);
     } else if ((result as any).needsVerification) {
       currentView.value = 'verify-otp';
       startResendCooldown();
@@ -530,6 +542,7 @@
 
     if (result.success) {
       close();
+      redirectAfterLogin(result.user);
     }
   };
 
@@ -616,6 +629,8 @@
   // Listen for magic link verification
   const handleEmailVerified = () => {
     close();
+    // After magic link verification, redirect to appropriate page
+    redirectAfterLogin(authStore.user);
   };
 
   // Add/remove event listener

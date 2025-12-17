@@ -360,6 +360,7 @@
   import { useAuthStore } from '../stores/auth';
   import { onMounted, onUnmounted, ref, watch } from 'vue';
   import { useRouter } from 'vue-router';
+  import { getDefaultRoute } from '@/router';
   import { Wallet, Loader2, AlertTriangle, Mail, UserPlus, CheckCircle, Send } from 'lucide-vue-next';
 
   const authStore = useAuthStore();
@@ -382,7 +383,8 @@
     successMessage.value = '';
     const result = await authStore.authenticateWithWallet();
     if (result.success) {
-      router.push('/projects');
+      // Use result.user which has the refreshed data including account_type
+      router.push(getDefaultRoute(result.user));
     }
   };
 
@@ -391,7 +393,8 @@
     successMessage.value = '';
     const result = await authStore.authenticateWithGoogle();
     if (result.success) {
-      router.push('/projects');
+      // Use result.user which has the refreshed data including account_type
+      router.push(getDefaultRoute(result.user));
     }
   };
 
@@ -401,7 +404,8 @@
     const result = await authStore.loginWithEmail(email.value, password.value);
 
     if (result.success) {
-      router.push('/projects');
+      // Use result.user which has the refreshed data including account_type
+      router.push(getDefaultRoute(result.user));
     } else if (result.needsVerification) {
       // User needs to verify email first
       currentView.value = 'verify-otp';
@@ -428,7 +432,8 @@
     const result = await authStore.verifyEmailOtp(authStore.pendingVerificationEmail, otpCode.value);
 
     if (result.success) {
-      router.push('/projects');
+      // Use result.user which has the refreshed data including account_type
+      router.push(getDefaultRoute(result.user));
     }
   };
 
@@ -492,14 +497,14 @@
 
   // Listen for magic link verification
   const handleEmailVerified = () => {
-    router.push('/projects');
+    router.push(getDefaultRoute(authStore.user));
   };
 
   onMounted(() => {
     // Check if already authenticated and redirect if so
     authStore.checkAuth();
     if (authStore.isAuthenticated) {
-      router.push('/projects');
+      router.push(getDefaultRoute(authStore.user));
     }
 
     // Check if there's a pending verification

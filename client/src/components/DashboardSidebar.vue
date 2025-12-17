@@ -188,6 +188,11 @@
     }
   }
 
+  // Check if user is an organization account owner
+  const isOrgAccountOwner = computed(() => {
+    return authStore.user?.account_type === 'organization' && authStore.user?.owned_organization_id;
+  });
+
   // Filter navigation items based on admin/org status
   const visibleNavigationItems = computed(() => {
     const filtered = navigationItems.filter((item) => {
@@ -197,14 +202,25 @@
       }
       // Check organization owner-only items
       if (item.orgOnly) {
-        return authStore.user?.account_type === 'organization' && authStore.user?.owned_organization_id;
+        return isOrgAccountOwner.value;
       }
       // Check organization member items (show if user is member of any org)
       if (item.orgMember) {
+        // For org account owners, always show Organizations
+        if (isOrgAccountOwner.value) return true;
         return userOrganizations.value.length > 0;
       }
       return true;
     });
+
+    // For organization account owners, move Organizations to the top
+    if (isOrgAccountOwner.value) {
+      const orgIndex = filtered.findIndex((item) => item.path === '/organizations');
+      if (orgIndex > 0) {
+        const [orgItem] = filtered.splice(orgIndex, 1);
+        filtered.unshift(orgItem);
+      }
+    }
 
     return filtered;
   });
@@ -223,6 +239,10 @@
   );
 
   const isActive = (path: string) => {
+    // Special case: /organizations should also match /organization/:id routes
+    if (path === '/organizations') {
+      return route.path.startsWith('/organizations') || route.path.startsWith('/organization/');
+    }
     return route.path.startsWith(path);
   };
 
@@ -249,6 +269,7 @@
 
   const handleDisconnect = () => {
     authStore.logout();
+    router.push('/');
   };
 
   const showAuthModal = () => {

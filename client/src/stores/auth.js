@@ -168,13 +168,10 @@ export const useAuthStore = defineStore('auth', {
         // Set user context for database queries and storage paths
         await setUserContext(data.user.id);
 
-        // Refresh user data from server to ensure we have the latest
-        await this.refreshUserData();
-
         // Emit event to trigger data refresh across the app
         emitAuthStateChanged(data.user.id);
 
-        return { success: true };
+        return { success: true, user: data.user };
       } catch (error) {
         this.error = error.message;
         return { success: false, error: error.message };
@@ -256,13 +253,10 @@ export const useAuthStore = defineStore('auth', {
         // Set user context for database queries and storage paths
         await setUserContext(result.user.id);
 
-        // Refresh user data from server to ensure we have the latest
-        await this.refreshUserData();
-
         // Emit event to trigger data refresh across the app
         emitAuthStateChanged(result.user.id);
 
-        return { success: true };
+        return { success: true, user: result.user };
       } catch (error) {
         this.error = error.message;
         return { success: false, error: error.message };
@@ -355,13 +349,10 @@ export const useAuthStore = defineStore('auth', {
         // Set user context for database queries and storage paths
         await setUserContext(data.user.id);
 
-        // Refresh user data from server to ensure we have the latest
-        await this.refreshUserData();
-
         // Emit event to trigger data refresh across the app
         emitAuthStateChanged(data.user.id);
 
-        return { success: true };
+        return { success: true, user: data.user };
       } catch (error) {
         this.error = error.message;
         return { success: false, error: error.message };
@@ -416,13 +407,10 @@ export const useAuthStore = defineStore('auth', {
         // Set user context for database queries and storage paths
         await setUserContext(data.user.id);
 
-        // Refresh user data from server to ensure we have the latest
-        await this.refreshUserData();
-
         // Emit event to trigger data refresh across the app
         emitAuthStateChanged(data.user.id);
 
-        return { success: true };
+        return { success: true, user: data.user };
       } catch (error) {
         this.error = error.message;
         return { success: false, error: error.message };
@@ -556,9 +544,6 @@ export const useAuthStore = defineStore('auth', {
 
             // Set user context for database queries and storage paths
             await setUserContext(result.user.id);
-
-            // Refresh user data from server to ensure we have the latest
-            await this.refreshUserData();
 
             // Emit event to trigger data refresh across the app
             emitAuthStateChanged(result.user.id);

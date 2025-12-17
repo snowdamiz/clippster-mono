@@ -440,9 +440,7 @@ defmodule ClippsterServer.Organizations do
       email: email,
       password: password,
       provider: "email",
-      provider_id: email,
-      email_verified: true,
-      account_type: "personal"  # They're a member, not an org owner
+      provider_id: email
     }
 
     # Ensure organization_id is an integer (route params come as strings)
@@ -455,6 +453,7 @@ defmodule ClippsterServer.Organizations do
     %User{}
     |> User.email_registration_changeset(user_attrs)
     |> Ecto.Changeset.put_change(:email_verified, true)
+    |> Ecto.Changeset.put_change(:account_type, "personal")  # Auto-set to personal (they're a member, not an org owner)
     |> Ecto.Changeset.put_change(:created_by_organization_id, org_id_int)
     |> Repo.insert()
   end

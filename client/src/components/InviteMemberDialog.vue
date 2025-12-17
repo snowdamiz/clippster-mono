@@ -214,6 +214,7 @@
   import { ref, computed, watch } from 'vue';
   import { X, Mail, UserPlus, Info, Eye, EyeOff, AlertTriangle, Check, Loader2 } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
+  import { useToast } from '@/composables/useToast';
 
   const props = defineProps<{
     modelValue: boolean;
@@ -226,6 +227,7 @@
   }>();
 
   const authStore = useAuthStore();
+  const { success: showSuccess, error: showError } = useToast();
 
   const mode = ref<'invite' | 'create'>('invite');
   const loading = ref(false);
@@ -289,12 +291,12 @@
   }
 
   async function submit() {
-    loading.value = true;
     error.value = '';
     success.value = '';
 
-    try {
-      if (mode.value === 'invite') {
+    if (mode.value === 'invite') {
+      loading.value = true;
+      try {
         const result = await authStore.inviteOrganizationMember(
           props.organizationId,
           inviteData.value.email,
@@ -308,26 +310,34 @@
         } else {
           error.value = result.error || 'Failed to send invitation';
         }
-      } else {
-        const result = await authStore.createOrganizationMember(
-          props.organizationId,
-          createData.value.email,
-          createData.value.password,
-          createData.value.role
-        );
-
-        if (result.success) {
-          success.value = `Account created for ${createData.value.email}`;
-          emit('memberAdded');
-          setTimeout(() => close(), 2000);
-        } else {
-          error.value = result.error || 'Failed to create account';
-        }
+      } catch (err: any) {
+        error.value = err.message || 'An error occurred';
+      } finally {
+        loading.value = false;
       }
-    } catch (err: any) {
-      error.value = err.message || 'An error occurred';
-    } finally {
-      loading.value = false;
+    } else {
+      // Create account mode: close dialog immediately and process in background
+      const email = createData.value.email;
+      const password = createData.value.password;
+      const role = createData.value.role;
+
+      // Close dialog immediately
+      emit('update:modelValue', false);
+
+      // Process in background
+      authStore
+        .createOrganizationMember(props.organizationId, email, password, role)
+        .then((result) => {
+          if (result.success) {
+            showSuccess('Account created', `Account created for ${email}`);
+            emit('memberAdded');
+          } else {
+            showError('Failed to create account', result.error || 'An error occurred');
+          }
+        })
+        .catch((err: any) => {
+          showError('Failed to create account', err.message || 'An error occurred');
+        });
     }
   }
 

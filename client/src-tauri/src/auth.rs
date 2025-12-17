@@ -28,6 +28,9 @@ pub struct GoogleAuthUser {
     pub name: Option<String>,
     pub avatar_url: Option<String>,
     pub is_admin: bool,
+    pub account_type: Option<String>,
+    pub owned_organization_id: Option<i64>,
+    pub created_by_organization_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +55,9 @@ pub struct EmailAuthUser {
     pub email: Option<String>,
     pub name: Option<String>,
     pub is_admin: bool,
+    pub account_type: Option<String>,
+    pub owned_organization_id: Option<i64>,
+    pub created_by_organization_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
