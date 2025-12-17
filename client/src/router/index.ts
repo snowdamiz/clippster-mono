@@ -241,6 +241,12 @@ router.beforeEach((to, _from, next) => {
     return;
   }
 
+  // Prevent org-created accounts from accessing organization setup
+  if (to.name === 'organization-setup' && authStore.user?.created_by_organization_id) {
+    next('/projects');
+    return;
+  }
+
   next();
 });
 

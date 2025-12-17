@@ -148,8 +148,10 @@
   const orgCredits = ref<Record<string, { hours_remaining: string; hours_used: string }>>({});
 
   const canCreateOrg = computed(() => {
-    // User can create org if they don't already own one
-    return !authStore.user?.owned_organization_id;
+    // User can create org if:
+    // 1. They don't already own one
+    // 2. Their account wasn't created by an organization (org-created accounts cannot create their own orgs)
+    return !authStore.user?.owned_organization_id && !authStore.user?.created_by_organization_id;
   });
 
   onMounted(async () => {

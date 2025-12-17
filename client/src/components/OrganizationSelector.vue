@@ -76,9 +76,8 @@
         <div v-else class="px-3 py-4 text-center text-sm text-zinc-500">You're not a member of any organizations</div>
 
         <!-- Footer Actions -->
-        <div class="border-t border-zinc-700 p-2">
+        <div v-if="canCreateOrg" class="border-t border-zinc-700 p-2">
           <router-link
-            v-if="canCreateOrg"
             to="/organization/setup"
             @click="isOpen = false"
             class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
@@ -86,7 +85,6 @@
             <Plus class="h-4 w-4" />
             Create Organization
           </router-link>
-          <div v-else class="px-3 py-2 text-xs text-zinc-500">You already own an organization</div>
         </div>
       </div>
     </Transition>
@@ -131,7 +129,12 @@
   });
 
   const canCreateOrg = computed(() => {
-    return authStore.user?.account_type !== 'organization' || !authStore.user?.owned_organization_id;
+    // User can create org if:
+    // 1. They don't already own an organization (account_type === 'organization' with owned_organization_id)
+    // 2. Their account wasn't created by an organization (org-created accounts cannot create their own orgs)
+    const alreadyOwnsOrg = authStore.user?.account_type === 'organization' && authStore.user?.owned_organization_id;
+    const isOrgCreatedAccount = !!authStore.user?.created_by_organization_id;
+    return !alreadyOwnsOrg && !isOrgCreatedAccount;
   });
 
   function toggleDropdown() {

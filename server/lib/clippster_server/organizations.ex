@@ -408,7 +408,7 @@ defmodule ClippsterServer.Organizations do
       
       Repo.transaction(fn ->
         # Create the user account (already verified since admin is creating it)
-        case create_verified_user(email, password) do
+        case create_verified_user(email, password, organization_id) do
           {:ok, user} ->
             # Add as member
             {:ok, _member} = add_member(organization_id, user.id, role)
@@ -433,8 +433,9 @@ defmodule ClippsterServer.Organizations do
     end
   end
 
-  defp create_verified_user(email, password) do
+  defp create_verified_user(email, password, created_by_organization_id) do
     # Create user with email provider, already verified
+    # Mark account as created by the organization
     user_attrs = %{
       email: email,
       password: password,
@@ -444,9 +445,17 @@ defmodule ClippsterServer.Organizations do
       account_type: "personal"  # They're a member, not an org owner
     }
 
+    # Ensure organization_id is an integer (route params come as strings)
+    org_id_int = if is_binary(created_by_organization_id) do
+      String.to_integer(created_by_organization_id)
+    else
+      created_by_organization_id
+    end
+
     %User{}
     |> User.email_registration_changeset(user_attrs)
     |> Ecto.Changeset.put_change(:email_verified, true)
+    |> Ecto.Changeset.put_change(:created_by_organization_id, org_id_int)
     |> Repo.insert()
   end
 

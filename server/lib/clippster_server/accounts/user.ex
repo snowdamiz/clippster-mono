@@ -25,6 +25,7 @@ defmodule ClippsterServer.Accounts.User do
     # Organization fields
     field :account_type, :string  # "personal" | "organization" | nil (pending)
     field :owned_organization_id, :integer
+    field :created_by_organization_id, :integer  # Set when account is created by an org admin
 
     timestamps(type: :utc_datetime)
   end

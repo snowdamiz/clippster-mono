@@ -9,6 +9,7 @@ export interface AuthUser {
   is_admin: boolean
   account_type?: 'personal' | 'organization'
   owned_organization_id?: string | null
+  created_by_organization_id?: number | null
 }
 
 export interface AuthState {
