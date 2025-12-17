@@ -61,6 +61,9 @@ defmodule ClippsterServerWeb.Router do
     post "/payments/quote", PaymentController, :get_quote
     post "/payments/confirm", PaymentController, :confirm_payment
 
+    # Stripe payment routes (webhook is public, no auth needed)
+    post "/stripe/webhook", StripeController, :webhook
+
     # Metadata routes
     get "/metadata/:mint_id", MetadataController, :fetch
 
@@ -84,6 +87,9 @@ defmodule ClippsterServerWeb.Router do
     get "/jobs/:job_id", ProcessingJobController, :show
     post "/jobs/:job_id/cancel", ProcessingJobController, :cancel
     post "/jobs/cancel-by-project", ProcessingJobController, :cancel_by_project
+
+    # Stripe checkout session creation (requires auth)
+    post "/payments/stripe/create-session", StripeController, :create_checkout_session
 
     # Bug report creation (requires authentication)
     post "/bug-reports", BugReportsController, :create

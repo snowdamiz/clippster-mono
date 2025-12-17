@@ -82,6 +82,42 @@ defmodule ClippsterServer.Credits do
   end
 
   @doc """
+  Creates and confirms a Stripe transaction.
+  Called from the Stripe webhook when payment is confirmed.
+  """
+  def create_stripe_transaction(attrs) do
+    # Check if transaction already exists (idempotency)
+    stripe_session_id = attrs[:stripe_session_id] || attrs["stripe_session_id"]
+    
+    case get_transaction_by_stripe_session(stripe_session_id) do
+      nil ->
+        Repo.transaction(fn ->
+          # Create the transaction
+          case CreditTransaction.stripe_changeset(attrs) |> Repo.insert() do
+            {:ok, transaction} ->
+              # Add credits to user balance
+              {:ok, _user_credit} = add_credits(transaction.user_id, Decimal.to_float(transaction.hours_purchased))
+              transaction
+
+            {:error, changeset} ->
+              Repo.rollback(changeset)
+          end
+        end)
+
+      _existing ->
+        {:error, :already_processed}
+    end
+  end
+
+  @doc """
+  Gets a transaction by Stripe session ID
+  """
+  def get_transaction_by_stripe_session(session_id) when is_binary(session_id) do
+    Repo.get_by(CreditTransaction, stripe_session_id: session_id)
+  end
+  def get_transaction_by_stripe_session(_), do: nil
+
+  @doc """
   Confirms a transaction and adds credits to user balance
   """
   def confirm_transaction(tx_signature) do

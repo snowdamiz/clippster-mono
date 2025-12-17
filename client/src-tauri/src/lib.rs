@@ -458,6 +458,8 @@ pub fn run() {
             auth::poll_payment_result,
             auth::open_google_auth_window,
             auth::poll_google_auth_result,
+            auth::open_stripe_payment_window,
+            auth::poll_stripe_payment_result,
 
             // PumpFun commands
             pumpfun::get_pumpfun_clips,

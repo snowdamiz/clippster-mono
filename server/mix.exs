@@ -65,7 +65,9 @@ defmodule ClippsterServer.MixProject do
       {:dotenvy, "~> 0.8.0"},
       # OAuth authentication
       {:ueberauth, "~> 0.10"},
-      {:ueberauth_google, "~> 0.10"}
+      {:ueberauth_google, "~> 0.10"},
+      # Stripe payments
+      {:stripity_stripe, "~> 3.2"}
     ]
   end
 

@@ -253,109 +253,175 @@
       </div>
     </div>
     <!-- Payment Modal -->
-    <div
-      v-if="showPaymentModal"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-      @click.self="closePaymentModal"
-    >
-      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
-        <h2 class="text-2xl font-bold mb-4">Complete Payment</h2>
-
-        <div v-if="paymentStep === 'confirm'" class="space-y-4">
-          <div class="p-4 bg-muted rounded-md">
-            <div class="flex justify-between mb-2">
-              <span class="text-muted-foreground">Pack:</span>
-              <span class="font-semibold capitalize">{{ selectedPack?.key }}</span>
-            </div>
-
-            <div class="flex justify-between mb-2">
-              <span class="text-muted-foreground">Credit Hours:</span>
-              <span class="font-semibold">{{ selectedPack?.hours }}</span>
-            </div>
-
-            <div class="flex justify-between mb-2">
-              <span class="text-muted-foreground">Price:</span>
-              <span class="font-semibold">${{ Math.round(selectedPack?.usd) }}</span>
-            </div>
-
-            <div class="flex justify-between">
-              <span class="text-muted-foreground">SOL Amount:</span>
-              <span class="font-semibold">{{ selectedPack?.solAmount.toFixed(4) }} SOL</span>
-            </div>
-          </div>
-          <!-- Payment Buttons Row -->
-          <div class="grid grid-cols-2 gap-3 mt-7">
-            <!-- Crypto Payment Button -->
-            <button
-              class="py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-md font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all"
-              @click="initiatePayment"
-              :disabled="processing"
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showPaymentModal"
+          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+          @click.self="closePaymentModal"
+        >
+          <Transition name="dialog" appear>
+            <div
+              class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-sm sm:max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden"
             >
-              <span v-if="!processing">Pay with Phantom</span>
-              <span v-else>Processing...</span>
-            </button>
-            <!-- Stripe Payment Button (Coming Soon) -->
-            <div class="relative">
-              <div
-                class="absolute -top-3 -right-3 bg-purple-700 text-white text-[11px] font-bold px-2 py-0.5 rounded-full z-5 whitespace-nowrap"
-              >
-                Coming Soon
-              </div>
-              <button
-                class="w-full py-3 bg-gradient-to-r from-[#635bff] to-[#4e44cb] text-white rounded-md font-semibold opacity-60 cursor-not-allowed transition-all"
-                disabled
-                title="Stripe payments coming soon"
-              >
-                <div class="flex items-center justify-center gap-2">
-                  <CreditCard class="w-5 h-5" />
-                  Pay with Card
+              <!-- Decorative top accent -->
+              <div class="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-500" />
+
+              <div class="p-5 sm:p-6 lg:p-8">
+                <!-- Confirm Step -->
+                <div v-if="paymentStep === 'confirm'">
+                  <!-- Header -->
+                  <div class="mb-4 sm:mb-6 text-center">
+                    <div
+                      class="inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl lg:rounded-2xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 mb-3 sm:mb-4"
+                    >
+                      <Wallet class="h-5 w-5 sm:h-6 sm:w-6 lg:h-7 lg:w-7 text-violet-400" />
+                    </div>
+                    <h2 class="text-lg sm:text-xl lg:text-2xl font-bold text-white tracking-tight">Complete Payment</h2>
+                    <p class="text-zinc-400 text-xs sm:text-sm mt-1">Choose your preferred payment method</p>
+                  </div>
+
+                  <!-- Order Summary -->
+                  <div
+                    class="mb-4 sm:mb-5 p-3 sm:p-4 bg-zinc-900/80 rounded-lg sm:rounded-xl border border-zinc-800 space-y-2"
+                  >
+                    <div class="flex items-center justify-between text-xs sm:text-sm">
+                      <span class="text-zinc-400">Pack:</span>
+                      <span class="font-medium text-white capitalize">{{ selectedPack?.key }}</span>
+                    </div>
+                    <div class="flex items-center justify-between text-xs sm:text-sm">
+                      <span class="text-zinc-400">Credit Hours:</span>
+                      <span class="font-medium text-white">{{ selectedPack?.hours }} hours</span>
+                    </div>
+                    <div class="flex items-center justify-between text-xs sm:text-sm">
+                      <span class="text-zinc-400">Price:</span>
+                      <span class="font-semibold text-violet-400">${{ Math.round(selectedPack?.usd) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between text-xs sm:text-sm pt-2 border-t border-zinc-800">
+                      <span class="text-zinc-400">SOL Equivalent:</span>
+                      <span class="font-medium text-zinc-300">≈{{ selectedPack?.solAmount.toFixed(4) }} SOL</span>
+                    </div>
+                  </div>
+
+                  <!-- Payment Buttons -->
+                  <div class="space-y-2 sm:space-y-3">
+                    <div class="grid grid-cols-2 gap-2 sm:gap-3">
+                      <!-- Crypto Payment Button -->
+                      <button
+                        class="px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-lg sm:rounded-xl font-semibold transition-all duration-200 relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm"
+                        @click="initiatePayment"
+                        :disabled="processing"
+                      >
+                        <div
+                          class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
+                        />
+                        <span class="relative flex items-center justify-center gap-1.5">
+                          <Loader2 v-if="processing" class="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
+                          <svg v-else class="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 128 128" fill="currentColor">
+                            <path
+                              d="M64 0C28.7 0 0 28.7 0 64s28.7 64 64 64 64-28.7 64-64S99.3 0 64 0zm0 116c-28.7 0-52-23.3-52-52S35.3 12 64 12s52 23.3 52 52-23.3 52-52 52z"
+                            />
+                            <path
+                              d="M86.5 49.2L64 71.7 41.5 49.2c-2.3-2.3-6.1-2.3-8.5 0s-2.3 6.1 0 8.5l26.7 26.7c1.2 1.2 2.7 1.8 4.2 1.8s3.1-.6 4.2-1.8l26.7-26.7c2.3-2.3 2.3-6.1 0-8.5s-6-2.3-8.3 0z"
+                            />
+                          </svg>
+                          <span>{{ processing ? 'Processing...' : 'Phantom' }}</span>
+                        </span>
+                      </button>
+                      <!-- Stripe Payment Button -->
+                      <button
+                        class="px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-r from-[#635bff] to-[#4e44cb] text-white rounded-lg sm:rounded-xl font-semibold transition-all duration-200 relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm hover:from-[#7a73ff] hover:to-[#6359e8]"
+                        @click="initiateStripePayment"
+                        :disabled="processing"
+                      >
+                        <div
+                          class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
+                        />
+                        <span class="relative flex items-center justify-center gap-1.5">
+                          <Loader2 v-if="processing" class="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
+                          <CreditCard v-else class="h-4 w-4 sm:h-5 sm:w-5" />
+                          <span>{{ processing ? 'Processing...' : 'Card' }}</span>
+                        </span>
+                      </button>
+                    </div>
+                    <!-- Cancel Button -->
+                    <button
+                      class="w-full px-4 sm:px-5 py-2.5 sm:py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg sm:rounded-xl transition-all duration-200 font-medium border border-zinc-700 hover:border-zinc-600 disabled:opacity-50 text-sm"
+                      @click="closePaymentModal"
+                      :disabled="processing"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
-              </button>
+
+                <!-- Processing Step -->
+                <div v-else-if="paymentStep === 'processing'" class="text-center py-4 sm:py-6">
+                  <div
+                    class="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 mb-4 sm:mb-5"
+                  >
+                    <Loader2 class="h-7 w-7 sm:h-8 sm:w-8 text-violet-400 animate-spin" />
+                  </div>
+                  <h3 class="text-lg sm:text-xl font-bold text-white mb-2">Processing Payment</h3>
+                  <p class="text-zinc-400 text-sm">{{ paymentStatus }}</p>
+                </div>
+
+                <!-- Success Step -->
+                <div v-else-if="paymentStep === 'success'" class="text-center py-4 sm:py-6">
+                  <div
+                    class="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-500/30 mb-4 sm:mb-5"
+                  >
+                    <Check class="h-7 w-7 sm:h-8 sm:w-8 text-emerald-400" />
+                  </div>
+                  <h3 class="text-lg sm:text-xl font-bold text-white mb-2">Payment Successful!</h3>
+                  <p class="text-zinc-400 text-sm mb-5 sm:mb-6">
+                    <span class="font-semibold text-emerald-400">{{ selectedPack?.hours }} hours</span>
+                    added to your balance
+                  </p>
+                  <button
+                    class="w-full px-4 sm:px-5 py-2.5 sm:py-3 bg-gradient-to-r from-emerald-600 to-green-600 text-white rounded-lg sm:rounded-xl font-semibold transition-all duration-200 relative overflow-hidden group text-sm"
+                    @click="closePaymentModal"
+                  >
+                    <div
+                      class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
+                    />
+                    <span class="relative">Done</span>
+                  </button>
+                </div>
+
+                <!-- Error Step -->
+                <div v-else-if="paymentStep === 'error'" class="text-center py-4 sm:py-6">
+                  <div
+                    class="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gradient-to-br from-red-500/20 to-rose-500/20 border border-red-500/30 mb-4 sm:mb-5"
+                  >
+                    <X class="h-7 w-7 sm:h-8 sm:w-8 text-red-400" />
+                  </div>
+                  <h3 class="text-lg sm:text-xl font-bold text-white mb-2">Payment Failed</h3>
+                  <p class="text-zinc-400 text-sm mb-5 sm:mb-6">{{ errorMessage }}</p>
+                  <div class="space-y-2 sm:space-y-3">
+                    <button
+                      class="w-full px-4 sm:px-5 py-2.5 sm:py-3 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-lg sm:rounded-xl font-semibold transition-all duration-200 relative overflow-hidden group text-sm"
+                      @click="paymentStep = 'confirm'"
+                    >
+                      <div
+                        class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
+                      />
+                      <span class="relative">Try Again</span>
+                    </button>
+                    <button
+                      class="w-full px-4 sm:px-5 py-2.5 sm:py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg sm:rounded-xl transition-all duration-200 font-medium border border-zinc-700 hover:border-zinc-600 text-sm"
+                      @click="closePaymentModal"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-          <!-- Cancel Button -->
-          <button
-            class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
-            @click="closePaymentModal"
-            :disabled="processing"
-          >
-            Cancel
-          </button>
+          </Transition>
         </div>
-
-        <div v-else-if="paymentStep === 'processing'" class="text-center py-8">
-          <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-
-          <p class="text-muted-foreground">{{ paymentStatus }}</p>
-        </div>
-
-        <div v-else-if="paymentStep === 'success'" class="text-center py-8">
-          <Check class="h-16 w-16 text-green-500 mx-auto mb-4" />
-          <h3 class="text-xl font-bold mb-2">Payment Successful!</h3>
-
-          <p class="text-muted-foreground mb-4">{{ selectedPack?.hours }} hours added to your balance</p>
-          <button
-            class="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-md font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all"
-            @click="closePaymentModal"
-          >
-            Done
-          </button>
-        </div>
-
-        <div v-else-if="paymentStep === 'error'" class="text-center py-8">
-          <X class="h-16 w-16 text-red-500 mx-auto mb-4" />
-          <h3 class="text-xl font-bold mb-2">Payment Failed</h3>
-
-          <p class="text-muted-foreground mb-4">{{ errorMessage }}</p>
-          <button
-            class="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-md font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all"
-            @click="paymentStep = 'confirm'"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
-    </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -364,7 +430,18 @@
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
   import api from '@/services/api';
-  import { CreditCard, Check, AlertTriangle, Shield, TrendingUp, Lock, DollarSign, X } from 'lucide-vue-next';
+  import {
+    CreditCard,
+    Check,
+    AlertTriangle,
+    Shield,
+    TrendingUp,
+    Lock,
+    DollarSign,
+    X,
+    Loader2,
+    Wallet,
+  } from 'lucide-vue-next';
   const authStore = useAuthStore();
   const { success: showSuccessToast, error: showErrorToast } = useToast();
 
@@ -563,6 +640,71 @@
     }
   }
 
+  async function initiateStripePayment() {
+    processing.value = true;
+    paymentStep.value = 'processing';
+    paymentStatus.value = 'Creating checkout session...';
+
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const { listen } = await import('@tauri-apps/api/event');
+
+      // Create Stripe checkout session
+      const response = await api.post('/payments/stripe/create-session', {
+        pack_type: selectedPack.value.key,
+      });
+
+      if (!response.data.success) {
+        throw new Error(response.data.error || 'Failed to create checkout session');
+      }
+
+      const { url: checkoutUrl } = response.data;
+
+      // Set up listener for Stripe payment completion
+      const unlisten = await listen('stripe-payment-complete', async (event: any) => {
+        const paymentResult = event.payload;
+
+        if (paymentResult.success) {
+          // Payment was successful (webhook will credit the account)
+          paymentStep.value = 'success';
+          processing.value = false;
+
+          // Show success toast
+          showSuccessToast('Purchase successful', `${paymentResult.pack_hours} hours have been added to your account`);
+
+          // Cleanup listener
+          unlisten();
+
+          // Refresh balance (give webhook a moment to process)
+          setTimeout(async () => {
+            await fetchBalance();
+          }, 2000);
+        } else {
+          // This shouldn't happen as cancel page doesn't emit success
+          unlisten();
+        }
+      });
+
+      // Open Stripe checkout in browser
+      paymentStatus.value = 'Opening payment page...';
+      await invoke('open_stripe_payment_window', {
+        checkoutUrl: checkoutUrl,
+        packKey: selectedPack.value.key,
+        packHours: selectedPack.value.hours,
+      });
+
+      paymentStatus.value = 'Complete payment in your browser...';
+    } catch (error: any) {
+      errorMessage.value = error.message || 'Failed to create checkout session';
+      paymentStep.value = 'error';
+      processing.value = false;
+      showErrorToast(
+        'Payment failed',
+        error.message || 'An error occurred while processing your payment. Please try again.'
+      );
+    }
+  }
+
   function closePaymentModal() {
     if (!processing.value) {
       showPaymentModal.value = false;
@@ -575,5 +717,35 @@
 <style scoped>
   .gradient-overlay {
     background: linear-gradient(135deg, rgba(147, 51, 234, 0.1) 0%, transparent 50%, rgba(79, 70, 229, 0.1) 100%);
+  }
+
+  /* Modal backdrop transition */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 0.3s ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  /* Dialog transition */
+  .dialog-enter-active {
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 0.2s ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
   }
 </style>

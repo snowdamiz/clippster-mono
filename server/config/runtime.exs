@@ -28,6 +28,21 @@ if google_client_id && google_client_secret do
     client_secret: google_client_secret
 end
 
+# Stripe configuration (all environments)
+stripe_secret_key = System.get_env("STRIPE_SECRET_KEY")
+stripe_webhook_secret = System.get_env("STRIPE_WEBHOOK_SECRET")
+
+if stripe_secret_key do
+  config :stripity_stripe,
+    api_key: stripe_secret_key
+end
+
+# Store webhook secret in application config for access in controllers
+config :clippster_server, :stripe,
+  webhook_secret: stripe_webhook_secret,
+  success_url: System.get_env("STRIPE_SUCCESS_URL") || "http://localhost:48276/stripe-success",
+  cancel_url: System.get_env("STRIPE_CANCEL_URL") || "http://localhost:48276/stripe-cancel"
+
 # ## Using releases
 #
 # If you use `mix release`, you need to explicitly enable the server

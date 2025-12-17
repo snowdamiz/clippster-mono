@@ -48,7 +48,8 @@ defmodule ClippsterServerWeb.Endpoint do
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
     json_decoder: Phoenix.json_library(),
-    length: 100_000_000  # 100MB max request size for large audio files
+    length: 100_000_000,  # 100MB max request size for large audio files
+    body_reader: {ClippsterServerWeb.StripeWebhookPlug, :read_body, []}  # Capture raw body for Stripe webhooks
 
   # Debug: Print configuration info
   plug Plug.Logger, log: :debug
