@@ -948,8 +948,8 @@
     if (props.editorMode) {
       return props.currentTime;
     }
-    // In clip mode, show the current time from props
-    return props.currentTime;
+    // In clip mode, show the current time RELATIVE to clip start (0-based)
+    return Math.max(0, props.currentTime - props.clipStart);
   });
 
   const displayDuration = computed(() => {
@@ -957,8 +957,8 @@
     if (props.editorMode && props.editorTotalDuration > 0) {
       return props.editorTotalDuration;
     }
-    // In clip mode, use the video element's duration
-    return duration.value;
+    // In clip mode, show the CLIP duration, not full video duration
+    return Math.max(0, props.clipEnd - props.clipStart);
   });
 
   // Track actual image dimensions for stickers (stickerId -> {width, height})
