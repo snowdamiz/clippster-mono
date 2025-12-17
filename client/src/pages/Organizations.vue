@@ -36,13 +36,12 @@
 
           <div class="relative">
             <transition-group name="list" tag="div" class="space-y-2">
-              <router-link
+              <div
                 v-for="org in organizations"
                 :key="org.id"
-                :to="`/organization/${org.id}`"
-                class="group block bg-card border border-border/50 rounded-xl transition-all duration-200 hover:border-primary/30 hover:bg-accent/5 shadow-sm overflow-hidden"
+                class="bg-card border border-border/50 rounded-xl shadow-sm overflow-hidden"
               >
-                <!-- Row 1: Organization Identity -->
+                <!-- Organization Identity -->
                 <div class="flex items-center gap-3 px-4 py-3">
                   <!-- Logo -->
                   <div
@@ -69,9 +68,7 @@
                   <!-- Organization Info -->
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2">
-                      <h3
-                        class="font-semibold text-base text-foreground truncate group-hover:text-primary transition-colors"
-                      >
+                      <h3 class="font-semibold text-base text-foreground truncate">
                         {{ org.name }}
                       </h3>
                       <span
@@ -93,12 +90,21 @@
                     <p v-else class="text-xs text-muted-foreground/60 italic mt-0.5">No description</p>
                   </div>
 
-                  <!-- Arrow -->
-                  <ArrowRight
-                    class="h-5 w-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all flex-shrink-0"
-                  />
+                  <!-- Credit Balance -->
+                  <div class="flex items-center gap-2 flex-shrink-0">
+                    <div class="text-right">
+                      <div class="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                        <Clock class="h-4 w-4 text-violet-400" />
+                        <span>{{ formatCredits(orgCredits[org.id]?.hours_remaining) }}</span>
+                        <span class="text-muted-foreground font-normal">hrs</span>
+                      </div>
+                      <div class="text-xs text-muted-foreground">
+                        {{ formatCredits(orgCredits[org.id]?.hours_used) }} used
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </router-link>
+              </div>
             </transition-group>
           </div>
         </div>
@@ -127,7 +133,7 @@
 <script setup lang="ts">
   import { ref, computed, onMounted } from 'vue';
   import { useRouter } from 'vue-router';
-  import { Building2, Plus, ArrowRight } from 'lucide-vue-next';
+  import { Building2, Plus, Clock } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
@@ -139,6 +145,7 @@
   const loading = ref(true);
   const organizations = ref<any[]>([]);
   const failedImages = ref<Set<string>>(new Set());
+  const orgCredits = ref<Record<string, { hours_remaining: string; hours_used: string }>>({});
 
   const canCreateOrg = computed(() => {
     // User can create org if they don't already own one
@@ -154,10 +161,14 @@
 
     await loadOrganizations();
 
-    // If user is only a member of one org, go directly to it
+    // If user is only a member of one org AND is an admin/owner, go directly to it
+    // Regular members stay on this page - they don't have access to the dashboard
     if (organizations.value.length === 1) {
-      router.replace(`/organization/${organizations.value[0].id}`);
-      return;
+      const org = organizations.value[0];
+      if (org.role === 'owner' || org.role === 'admin') {
+        router.replace(`/organization/${org.id}`);
+        return;
+      }
     }
   });
 
@@ -167,6 +178,23 @@
       const result = await authStore.getOrganizations();
       if (result.success) {
         organizations.value = result.organizations || [];
+
+        // Load credits for each organization
+        await Promise.all(
+          organizations.value.map(async (org) => {
+            try {
+              const creditsResult = await authStore.getOrganizationCredits(org.id);
+              if (creditsResult.success && creditsResult.my_allocation) {
+                orgCredits.value[org.id] = {
+                  hours_remaining: creditsResult.my_allocation.hours_remaining,
+                  hours_used: creditsResult.my_allocation.hours_used,
+                };
+              }
+            } catch (err) {
+              console.error(`Failed to load credits for org ${org.id}:`, err);
+            }
+          })
+        );
       }
     } catch (error) {
       console.error('Failed to load organizations:', error);
@@ -179,6 +207,13 @@
     const img = event.target as HTMLImageElement;
     img.style.display = 'none';
     failedImages.value.add(orgId);
+  }
+
+  function formatCredits(value: string | undefined): string {
+    if (!value) return '0';
+    const num = parseFloat(value);
+    if (isNaN(num)) return '0';
+    return num.toFixed(2).replace(/\.?0+$/, '');
   }
 </script>
 

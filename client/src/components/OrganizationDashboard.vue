@@ -412,6 +412,85 @@
     <!-- Invite Member Dialog -->
     <InviteMemberDialog v-model="showInviteDialog" :organization-id="organizationId" @member-added="loadOrganization" />
 
+    <!-- Change Role Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showRoleDialog"
+          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+          @click.self="closeRoleDialog"
+        >
+          <Transition name="dialog" appear>
+            <div
+              class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden"
+            >
+              <!-- Decorative top accent -->
+              <div class="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-500" />
+
+              <div class="p-5 sm:p-6">
+                <div class="mb-5 text-center">
+                  <div
+                    class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 mb-4"
+                  >
+                    <Shield class="h-6 w-6 text-violet-400" />
+                  </div>
+                  <h2 class="text-lg sm:text-xl font-bold text-white tracking-tight">Change Member Role</h2>
+                  <p class="text-zinc-400 text-sm mt-1">Update role for {{ roleDialogMember?.user?.email }}</p>
+                </div>
+
+                <div class="mb-5 p-4 bg-zinc-900/80 rounded-xl border border-zinc-800">
+                  <div class="flex items-center justify-between">
+                    <div class="text-sm text-zinc-400">Current Role</div>
+                    <span
+                      :class="[
+                        'px-2.5 py-1 rounded-md text-xs font-medium',
+                        roleDialogMember?.role === 'admin'
+                          ? 'bg-violet-500/20 text-violet-400'
+                          : 'bg-zinc-700 text-zinc-300',
+                      ]"
+                    >
+                      {{ roleDialogMember?.role }}
+                    </span>
+                  </div>
+                  <div class="flex items-center justify-center my-3">
+                    <ArrowDown class="h-4 w-4 text-zinc-500" />
+                  </div>
+                  <div class="flex items-center justify-between">
+                    <div class="text-sm text-zinc-400">New Role</div>
+                    <span
+                      :class="[
+                        'px-2.5 py-1 rounded-md text-xs font-medium',
+                        roleDialogNewRole === 'admin'
+                          ? 'bg-violet-500/20 text-violet-400'
+                          : 'bg-zinc-700 text-zinc-300',
+                      ]"
+                    >
+                      {{ roleDialogNewRole }}
+                    </span>
+                  </div>
+                </div>
+
+                <div class="flex gap-3">
+                  <button
+                    class="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all font-medium border border-zinc-700 text-sm"
+                    @click="closeRoleDialog"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    class="flex-1 px-4 py-2.5 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white rounded-xl font-semibold transition-all text-sm"
+                    @click="confirmRoleChange"
+                  >
+                    Confirm Change
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- Buy Credits Modal -->
     <Teleport to="body">
       <Transition name="modal">
@@ -625,6 +704,7 @@
     Save,
     CheckCircle,
     Wallet,
+    ArrowDown,
   } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
   import { Button } from '@/components/ui/button';
@@ -664,6 +744,11 @@
 
   const activeTab = ref('members');
   const showInviteDialog = ref(false);
+
+  // Role change dialog state
+  const showRoleDialog = ref(false);
+  const roleDialogMember = ref<any>(null);
+  const roleDialogNewRole = ref<string>('');
 
   const editData = ref({
     name: '',
@@ -719,6 +804,13 @@
       if (orgResult.success) {
         organization.value = orgResult.organization;
         role.value = orgResult.role;
+
+        // Regular members should not access the dashboard - redirect to organizations list
+        if (role.value === 'member') {
+          router.replace('/organizations');
+          return;
+        }
+
         editData.value = {
           name: orgResult.organization.name,
           description: orgResult.organization.description || '',
@@ -801,11 +893,35 @@
   }
 
   function openRoleDialog(member: any) {
-    const newRole = member.role === 'admin' ? 'member' : 'admin';
-    if (confirm(`Change ${member.user?.email}'s role to ${newRole}?`)) {
-      authStore
-        .updateOrganizationMemberRole(organizationId.value, member.user_id, newRole)
-        .then(() => loadOrganization());
+    roleDialogMember.value = member;
+    roleDialogNewRole.value = member.role === 'admin' ? 'member' : 'admin';
+    showRoleDialog.value = true;
+  }
+
+  function closeRoleDialog() {
+    showRoleDialog.value = false;
+    roleDialogMember.value = null;
+    roleDialogNewRole.value = '';
+  }
+
+  async function confirmRoleChange() {
+    if (!roleDialogMember.value || !roleDialogNewRole.value) return;
+
+    // Capture values before closing dialog
+    const member = roleDialogMember.value;
+    const newRole = roleDialogNewRole.value;
+
+    // Close dialog immediately
+    showRoleDialog.value = false;
+    roleDialogMember.value = null;
+    roleDialogNewRole.value = '';
+
+    try {
+      await authStore.updateOrganizationMemberRole(organizationId.value, member.user_id, newRole);
+      showSuccess('Role updated', `${member.user?.email} is now a ${newRole}`);
+      loadOrganization();
+    } catch (err: any) {
+      showError('Failed to update role', err.message || 'An error occurred');
     }
   }
 
