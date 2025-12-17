@@ -192,6 +192,33 @@
                   </div>
                 </div>
               </template>
+              
+              <!-- Timeline Markers -->
+              <div
+                v-for="marker in visibleMarkers"
+                :key="marker.id"
+                class="absolute top-0 bottom-0 flex flex-col items-center cursor-pointer z-[60] group"
+                :class="{ 'opacity-100': props.selectedMarkerId === marker.id, 'opacity-80 hover:opacity-100': props.selectedMarkerId !== marker.id }"
+                :style="{ left: `${marker.leftPercent}%`, transform: 'translateX(-50%)' }"
+                @click.stop="emit('markerClick', marker.id)"
+                :title="marker.label || 'Marker'"
+              >
+                <!-- Marker flag icon -->
+                <div 
+                  class="w-6 h-6 flex items-center justify-center rounded-full transition-all duration-150"
+                  :class="props.selectedMarkerId === marker.id ? 'bg-yellow-500 shadow-lg shadow-yellow-500/50' : 'bg-yellow-500/80 group-hover:bg-yellow-500'"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="white" stroke="none">
+                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+                    <line x1="4" y1="22" x2="4" y2="15" stroke="white" stroke-width="2"/>
+                  </svg>
+                </div>
+                <!-- Marker line -->
+                <div 
+                  class="w-0.5 h-full transition-all duration-150"
+                  :class="props.selectedMarkerId === marker.id ? 'bg-yellow-500' : 'bg-yellow-500/60 group-hover:bg-yellow-500/80'"
+                ></div>
+              </div>
             </div>
           </div>
 
@@ -357,6 +384,9 @@
                     class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group"
                     :class="[
                       getSegmentClasses('trim', segmentLayout.segment.id, segmentLayout.segment.isDeleted),
+                      props.selectedSegmentIds?.has(segmentLayout.segment.id) 
+                        ? 'ring-2 ring-blue-400 ring-offset-1 ring-offset-black shadow-lg shadow-blue-400/30'
+                        : '',
                       isCutToolActive && cutHoverInfo?.segmentId === segmentLayout.segment.id
                         ? 'cursor-crosshair z-65 shadow-xl border-2 border-orange-400 ring-2 ring-orange-400/50 ring-offset-1 ring-offset-transparent'
                         : isCutToolActive
@@ -895,6 +925,11 @@
       // Undo/Redo props
       canUndo?: boolean;
       canRedo?: boolean;
+      // Multi-select props
+      selectedSegmentIds?: Set<string>;
+      // Marker props
+      markers?: Array<{ id: string; time: number; label?: string }>;
+      selectedMarkerId?: string | null;
     }>(),
     {
       audioGainDb: 0,
@@ -906,6 +941,9 @@
       videoSources: () => [],
       canUndo: false,
       canRedo: false,
+      selectedSegmentIds: () => new Set(),
+      markers: () => [],
+      selectedMarkerId: null,
     }
   );
 
@@ -916,6 +954,8 @@
     (e: 'deleteTrimSegment', segmentId: string): void;
     (e: 'undo'): void;
     (e: 'redo'): void;
+    (e: 'segmentSelect', segmentId: string, modifiers: { shift: boolean; ctrl: boolean }): void;
+    (e: 'markerClick', markerId: string): void;
     (e: 'updateAudioTrack', trackId: string, updates: Partial<AudioTrack>): void;
     (e: 'deleteAudioTrack', trackId: string): void;
     (e: 'updateTextOverlay', overlayId: string, updates: Partial<TextOverlay>): void;
@@ -1133,6 +1173,30 @@
       return Math.max(...props.videoSources.map((s) => s.end_time));
     }
     return sortedTrimSegments.value.reduce((sum, seg) => sum + (seg.endTime - seg.startTime), 0);
+  });
+
+  // Calculate visible markers with correct positioning
+  const visibleMarkers = computed(() => {
+    if (!props.markers || props.markers.length === 0) return [];
+    
+    // Calculate the visible time range
+    const visibleStart = props.clipStart;
+    const visibleEnd = props.clipEnd;
+    const visibleDuration = visibleEnd - visibleStart;
+    
+    // Filter and position markers within the visible range
+    return props.markers
+      .filter(marker => marker.time >= visibleStart && marker.time <= visibleEnd)
+      .map(marker => {
+        // Calculate position as percentage of visible timeline
+        const relativeTime = marker.time - visibleStart;
+        const leftPercent = (relativeTime / visibleDuration) * 100;
+        
+        return {
+          ...marker,
+          leftPercent,
+        };
+      });
   });
 
   // Calculate total duration including audio tracks (use the longest)
@@ -2081,7 +2145,13 @@
   }
 
   function onSegmentClick(e: MouseEvent, segment: TrimSegment) {
-    // Select the segment
+    // Emit multi-select event with modifier keys
+    emit('segmentSelect', segment.id, {
+      shift: e.shiftKey,
+      ctrl: e.ctrlKey || e.metaKey,
+    });
+
+    // Select the segment (for internal timeline state)
     selectItem('trim', segment.id);
 
     // Also seek to the clicked position within the segment

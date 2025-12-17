@@ -185,6 +185,7 @@ export interface DeleteCommandData {
   // State for undo (stored after execute)
   deletedSegment?: ClipSegment;
   segmentIndex?: number;
+  shiftedSegments?: Array<{ index: number; oldStart: number; oldEnd: number }>; // For ripple undo
   
   // Callback for reloading UI
   onReload?: () => Promise<void>;
@@ -233,18 +234,55 @@ export class DeleteCommand extends BaseCommand {
       }
       
       console.log(
-        `[DeleteCommand] Deleting segment ${segmentIndex} (${this.data.segmentId})`
+        `[DeleteCommand] Deleting segment ${segmentIndex} (${this.data.segmentId}) with ripple`
       );
+      
+      // Calculate the gap size (duration of deleted segment)
+      const deletedDuration = this.data.deletedSegment 
+        ? (this.data.deletedSegment.end_time - this.data.deletedSegment.start_time)
+        : 0;
+      
+      console.log(`[DeleteCommand] Deleted segment duration: ${deletedDuration}s`);
+      
+      // Store info about segments that will be shifted (for undo)
+      this.data.shiftedSegments = [];
+      
+      // Find all segments AFTER the deleted one
+      for (let i = segmentIndex + 1; i < segments.length; i++) {
+        this.data.shiftedSegments.push({
+          index: i,
+          oldStart: segments[i].start_time,
+          oldEnd: segments[i].end_time,
+        });
+      }
+      
+      console.log(`[DeleteCommand] Will shift ${this.data.shiftedSegments.length} segments left by ${deletedDuration}s`);
       
       // Perform the delete in database
       await deleteClipSegment(this.data.clipId, segmentIndex);
+      
+      // RIPPLE: Shift all subsequent segments left to close the gap
+      // After deletion, all indices shift down by 1
+      for (let i = 0; i < this.data.shiftedSegments.length; i++) {
+        const newIndex = segmentIndex + i; // New index after deletion
+        const oldStart = this.data.shiftedSegments[i].oldStart;
+        const oldEnd = this.data.shiftedSegments[i].oldEnd;
+        
+        // Shift left by the deleted duration
+        const newStart = oldStart - deletedDuration;
+        const newEnd = oldEnd - deletedDuration;
+        
+        console.log(`[DeleteCommand] Shifting segment ${newIndex}: ${oldStart}-${oldEnd} → ${newStart}-${newEnd}`);
+        
+        await updateClipSegment(this.data.clipId, newIndex, newStart, newEnd);
+      }
       
       // Call reload callback if provided
       if (this.data.onReload) {
         await this.data.onReload();
       }
       
-      console.log(`[DeleteCommand] Delete complete`);
+      console.log(`[DeleteCommand] Delete with ripple complete`);
     }
   }
 
@@ -259,12 +297,34 @@ export class DeleteCommand extends BaseCommand {
         throw new Error('Cannot undo: missing delete data');
       }
       
-      console.log('[DeleteCommand] Undoing delete - restoring segment at index', this.data.segmentIndex);
+      console.log('[DeleteCommand] Undoing delete with ripple - restoring segment at index', this.data.segmentIndex);
       console.log('[DeleteCommand] Restoring segment data:', {
         start_time: this.data.deletedSegment.start_time,
         end_time: this.data.deletedSegment.end_time,
         duration: this.data.deletedSegment.duration,
       });
+      
+      const deletedDuration = this.data.deletedSegment.end_time - this.data.deletedSegment.start_time;
+      
+      // REVERSE RIPPLE: First, shift all subsequent segments RIGHT to make room
+      if (this.data.shiftedSegments && this.data.shiftedSegments.length > 0) {
+        console.log(`[DeleteCommand] Reverse ripple: shifting ${this.data.shiftedSegments.length} segments right by ${deletedDuration}s`);
+        
+        // Restore segments to their original positions
+        for (let i = 0; i < this.data.shiftedSegments.length; i++) {
+          const segmentInfo = this.data.shiftedSegments[i];
+          const currentIndex = this.data.segmentIndex + i; // Current index (before re-insertion)
+          
+          console.log(`[DeleteCommand] Restoring segment ${currentIndex} to original position: ${segmentInfo.oldStart}-${segmentInfo.oldEnd}`);
+          
+          await updateClipSegment(
+            this.data.clipId,
+            currentIndex,
+            segmentInfo.oldStart,
+            segmentInfo.oldEnd
+          );
+        }
+      }
       
       // Re-insert the deleted segment at its original index
       await insertClipSegment(
@@ -275,7 +335,7 @@ export class DeleteCommand extends BaseCommand {
         this.data.deletedSegment.transcript
       );
       
-      console.log('[DeleteCommand] Segment restored successfully');
+      console.log('[DeleteCommand] Segment restored successfully with reverse ripple');
       
       // Call reload callback to update UI
       if (this.data.onReload) {

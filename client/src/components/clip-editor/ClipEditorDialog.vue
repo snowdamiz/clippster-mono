@@ -317,9 +317,14 @@
             :video-sources="videoSources"
             :can-undo="canUndo"
             :can-redo="canRedo"
+            :selected-segment-ids="selectedSegmentIds"
+            :markers="markers"
+            :selected-marker-id="selectedMarkerId"
             @seek="seekTo"
             @undo="performUndo"
             @redo="performRedo"
+            @segment-select="handleSegmentSelect"
+            @marker-click="jumpToMarker"
             @split-trim-segment="splitTrimSegment"
             @delete-trim-segment="deleteTrimSegment"
             @update-audio-track="updateAudioTrackLocal"
@@ -515,6 +520,19 @@
 
   // Clipboard for copy/paste
   const copiedSegment = ref<ClipSegment | null>(null);
+
+  // Multi-select state
+  const selectedSegmentIds = ref<Set<string>>(new Set());
+  const lastSelectedSegmentId = ref<string | null>(null); // For shift+click range selection
+
+  // Timeline markers
+  interface TimelineMarker {
+    id: string;
+    time: number; // Absolute time in video
+    label?: string;
+  }
+  const markers = ref<TimelineMarker[]>([]);
+  const selectedMarkerId = ref<string | null>(null);
 
   // Reactive undo/redo availability (updates after each operation)
   const undoRedoTrigger = ref(0); // Increment this to force reactivity
@@ -4303,6 +4321,18 @@
     } else if (e.key === 'v' && (e.ctrlKey || e.metaKey) && !isTyping) {
       e.preventDefault();
       performPaste();
+    } else if (e.key === 'Delete' && !isTyping) {
+      e.preventDefault();
+      if (selectedMarkerId.value) {
+        // Delete selected marker
+        deleteMarker(selectedMarkerId.value);
+      } else if (selectedSegmentIds.value.size > 0) {
+        // Delete selected segments
+        performMultiDelete();
+      }
+    } else if (e.key === 'm' && !isTyping) {
+      e.preventDefault();
+      addMarkerAtPlayhead();
     }
   }
 
@@ -4416,6 +4446,120 @@
       console.log('[ClipEditorDialog] Paste not yet implemented for editor mode');
     }
   }
+
+  // ============================================================================
+  // MULTI-SELECT HANDLERS
+  // ============================================================================
+
+  function handleSegmentSelect(segmentId: string, modifiers: { shift: boolean; ctrl: boolean }) {
+    console.log('[ClipEditorDialog] Segment select:', { segmentId, modifiers });
+
+    if (modifiers.shift && lastSelectedSegmentId.value) {
+      // Shift+Click: Select range
+      selectSegmentRange(lastSelectedSegmentId.value, segmentId);
+    } else if (modifiers.ctrl) {
+      // Ctrl+Click: Toggle selection
+      if (selectedSegmentIds.value.has(segmentId)) {
+        selectedSegmentIds.value.delete(segmentId);
+      } else {
+        selectedSegmentIds.value.add(segmentId);
+      }
+      lastSelectedSegmentId.value = segmentId;
+    } else {
+      // Regular click: Select only this segment
+      selectedSegmentIds.value.clear();
+      selectedSegmentIds.value.add(segmentId);
+      lastSelectedSegmentId.value = segmentId;
+    }
+
+    console.log('[ClipEditorDialog] Selected segments:', Array.from(selectedSegmentIds.value));
+  }
+
+  function selectSegmentRange(fromId: string, toId: string) {
+    // Find indices of both segments
+    const fromIndex = trimSegments.value.findIndex(seg => seg.id === fromId);
+    const toIndex = trimSegments.value.findIndex(seg => seg.id === toId);
+
+    if (fromIndex === -1 || toIndex === -1) return;
+
+    // Select all segments in range
+    const startIndex = Math.min(fromIndex, toIndex);
+    const endIndex = Math.max(fromIndex, toIndex);
+
+    for (let i = startIndex; i <= endIndex; i++) {
+      selectedSegmentIds.value.add(trimSegments.value[i].id);
+    }
+  }
+
+  function clearSelection() {
+    selectedSegmentIds.value.clear();
+    lastSelectedSegmentId.value = null;
+  }
+
+  async function performMultiDelete() {
+    if (selectedSegmentIds.value.size === 0) return;
+
+    console.log('[ClipEditorDialog] Multi-delete:', Array.from(selectedSegmentIds.value));
+
+    // For now, delete one at a time (simple approach)
+    // TODO: Create a MultiDeleteCommand for better undo/redo
+    for (const segmentId of selectedSegmentIds.value) {
+      // Find the actual segment index
+      const segmentIndex = trimSegments.value.findIndex(s => s.id === segmentId);
+      if (segmentIndex !== -1) {
+        await deleteTrimSegment(segmentId);
+      }
+    }
+
+    // Clear selection after delete
+    clearSelection();
+  }
+
+  // ============================================================================
+  // TIMELINE MARKERS
+  // ============================================================================
+
+  function addMarkerAtPlayhead() {
+    const currentTime = previewTime.value;
+    const markerId = `marker-${Date.now()}`;
+    
+    const newMarker: TimelineMarker = {
+      id: markerId,
+      time: currentTime,
+      label: `Marker ${markers.value.length + 1}`,
+    };
+    
+    markers.value.push(newMarker);
+    markers.value.sort((a, b) => a.time - b.time); // Keep sorted by time
+    
+    console.log('[ClipEditorDialog] Added marker at', currentTime, 'seconds');
+    
+    // TODO: Add MarkerCommand for undo/redo support
+  }
+
+  function deleteMarker(markerId: string) {
+    const index = markers.value.findIndex(m => m.id === markerId);
+    if (index !== -1) {
+      markers.value.splice(index, 1);
+      selectedMarkerId.value = null;
+      console.log('[ClipEditorDialog] Deleted marker', markerId);
+    }
+    
+    // TODO: Add MarkerCommand for undo/redo support
+  }
+
+  function jumpToMarker(markerId: string) {
+    const marker = markers.value.find(m => m.id === markerId);
+    if (marker) {
+      seekTo(marker.time);
+      selectedMarkerId.value = markerId;
+      console.log('[ClipEditorDialog] Jumped to marker at', marker.time, 'seconds');
+    }
+  }
+
+  // ============================================================================
+  // VIDEO HANDLERS
+  // ============================================================================
 
   // Handle video element loaded - apply any pending seek
   function onVideoLoaded() {
