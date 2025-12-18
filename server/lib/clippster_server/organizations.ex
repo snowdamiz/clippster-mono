@@ -264,7 +264,8 @@ defmodule ClippsterServer.Organizations do
          organization when not is_nil(organization) <- get_organization(organization_id),
          nil <- Accounts.get_user_by_email(email) |> then(fn user ->
            if user && is_member?(organization_id, user.id), do: :already_member, else: nil
-         end) do
+         end),
+         nil <- get_pending_invitation(organization_id, email) do
       
       # Generate plain token first
       plain_token = OrganizationInvitation.generate_token()
@@ -301,8 +302,24 @@ defmodule ClippsterServer.Organizations do
     else
       nil -> {:error, :organization_not_found}
       :already_member -> {:error, :already_member}
+      %OrganizationInvitation{} -> {:error, :invitation_pending}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  @doc """
+  Gets a pending, non-expired invitation for an email in an organization.
+  Returns nil if no such invitation exists.
+  """
+  def get_pending_invitation(organization_id, email) do
+    now = DateTime.utc_now()
+    
+    OrganizationInvitation
+    |> where([i], i.organization_id == ^organization_id)
+    |> where([i], i.email == ^email)
+    |> where([i], i.status == "pending")
+    |> where([i], i.expires_at > ^now)
+    |> Repo.one()
   end
 
   @doc """
@@ -383,6 +400,57 @@ defmodule ClippsterServer.Organizations do
         invitation
         |> OrganizationInvitation.cancel_changeset()
         |> Repo.update()
+    end
+  end
+
+  @doc """
+  Resends an invitation email.
+  Generates a new token and updates the expiry date.
+  """
+  def resend_invitation(organization_id, invitation_id, %User{} = user) do
+    invitation = 
+      OrganizationInvitation
+      |> where([i], i.id == ^invitation_id and i.organization_id == ^organization_id)
+      |> preload(:organization)
+      |> Repo.one()
+
+    cond do
+      is_nil(invitation) ->
+        {:error, :not_found}
+
+      not is_admin?(organization_id, user.id) ->
+        {:error, :unauthorized}
+
+      invitation.status != "pending" ->
+        {:error, :not_pending}
+
+      OrganizationInvitation.expired?(invitation) ->
+        {:error, :invitation_expired}
+
+      true ->
+        # Generate new token and extend expiry
+        plain_token = OrganizationInvitation.generate_token()
+        hashed_token = OrganizationInvitation.hash_token(plain_token)
+        new_expires_at = DateTime.utc_now() |> DateTime.add(7, :day) |> DateTime.truncate(:second)
+
+        case invitation
+             |> Ecto.Changeset.change(%{token: hashed_token, expires_at: new_expires_at})
+             |> Repo.update() do
+          {:ok, updated_invitation} ->
+            # Resend the email
+            invitation.email
+            |> Emails.organization_invitation_email(
+              invitation.organization.name,
+              user.name || user.email,
+              plain_token
+            )
+            |> Mailer.deliver()
+
+            {:ok, updated_invitation}
+
+          {:error, changeset} ->
+            {:error, changeset}
+        end
     end
   end
 

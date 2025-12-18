@@ -109,6 +109,61 @@
         </div>
         <!-- Members Tab -->
         <div v-else-if="activeTab === 'members'" class="p-6">
+          <!-- Pending Invitations Section (only show if there are invitations and user is admin) -->
+          <div v-if="isAdmin && invitations.length > 0" class="mb-6">
+            <div class="flex items-center justify-between mb-3">
+              <h2 class="text-base font-semibold text-foreground flex items-center gap-2">
+                <Mail class="h-4 w-4 text-muted-foreground" />
+                Pending Invitations
+              </h2>
+              <span class="text-sm text-muted-foreground">{{ invitations.length }} pending</span>
+            </div>
+
+            <div class="space-y-2">
+              <div
+                v-for="invitation in invitations"
+                :key="invitation.id"
+                class="flex items-center gap-4 p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg"
+              >
+                <div class="w-9 h-9 rounded-full bg-amber-500/10 flex items-center justify-center">
+                  <Mail class="h-4 w-4 text-amber-500" />
+                </div>
+
+                <div class="flex-1 min-w-0">
+                  <div class="font-medium text-foreground text-sm">{{ invitation.email }}</div>
+                  <div class="text-xs text-muted-foreground">Expires {{ formatDate(invitation.expires_at) }}</div>
+                </div>
+
+                <span
+                  :class="[
+                    'px-2 py-0.5 rounded-md text-xs font-medium',
+                    invitation.role === 'admin' ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground',
+                  ]"
+                >
+                  {{ invitation.role }}
+                </span>
+
+                <button
+                  @click="resendInvitation(invitation)"
+                  title="Resend invitation"
+                  :disabled="resendingInvitationId === invitation.id"
+                  class="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': resendingInvitationId === invitation.id }" />
+                </button>
+
+                <button
+                  @click="cancelInvitation(invitation.id)"
+                  title="Cancel invitation"
+                  class="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+                >
+                  <X class="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Team Members Section -->
           <div class="flex items-center justify-between mb-4">
             <h2 class="text-base font-semibold text-foreground">Team Members</h2>
             <span class="text-sm text-muted-foreground">{{ members.length }} total</span>
@@ -186,8 +241,9 @@
                     :style="getMemberMenuPosition(member.user_id)"
                     @click.stop
                   >
-                    <!-- Edit Member -->
+                    <!-- Edit Member (only for org-created users) -->
                     <button
+                      v-if="isOrgCreatedUser(member)"
                       class="w-full px-3 py-2 flex items-center gap-3 text-sm text-foreground/90 hover:bg-blue-500/15 hover:text-blue-400 transition-colors"
                       @click.stop="
                         openEditMemberDialog(member);
@@ -232,55 +288,6 @@
             <div v-if="members.length === 0" class="text-center py-12 text-muted-foreground">
               <Users class="h-10 w-10 mx-auto mb-3 opacity-50" />
               <p>No members yet. Invite your team to get started!</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Invitations Tab -->
-        <div v-if="activeTab === 'invitations'" class="p-6">
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-base font-semibold text-foreground">Pending Invitations</h2>
-            <span class="text-sm text-muted-foreground">{{ invitations.length }} pending</span>
-          </div>
-
-          <div class="space-y-2">
-            <div
-              v-for="invitation in invitations"
-              :key="invitation.id"
-              class="flex items-center gap-4 p-4 bg-muted/30 border border-border/50 rounded-lg"
-            >
-              <div class="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                <Mail class="h-5 w-5 text-muted-foreground" />
-              </div>
-
-              <div class="flex-1 min-w-0">
-                <div class="font-medium text-foreground">{{ invitation.email }}</div>
-                <div class="text-sm text-muted-foreground">Expires {{ formatDate(invitation.expires_at) }}</div>
-              </div>
-
-              <span
-                :class="[
-                  'px-2.5 py-1 rounded-md text-xs font-medium',
-                  invitation.role === 'admin' ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground',
-                ]"
-              >
-                {{ invitation.role }}
-              </span>
-
-              <Button
-                variant="ghost"
-                size="icon"
-                @click="cancelInvitation(invitation.id)"
-                title="Cancel invitation"
-                class="text-destructive hover:text-destructive"
-              >
-                <X class="h-4 w-4" />
-              </Button>
-            </div>
-
-            <div v-if="invitations.length === 0" class="text-center py-12 text-muted-foreground">
-              <Mail class="h-10 w-10 mx-auto mb-3 opacity-50" />
-              <p>No pending invitations</p>
             </div>
           </div>
         </div>
@@ -660,6 +667,95 @@
       </Transition>
     </Teleport>
 
+    <!-- Remove Member Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showRemoveMemberDialog"
+          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+          @click.self="closeRemoveMemberDialog"
+        >
+          <Transition name="dialog" appear>
+            <div
+              class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden"
+            >
+              <!-- Decorative top accent -->
+              <div class="h-1 w-full bg-gradient-to-r from-red-500 via-rose-500 to-pink-500" />
+
+              <div class="p-5 sm:p-6">
+                <div class="mb-5 text-center">
+                  <div
+                    class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-red-500/20 to-rose-500/20 border border-red-500/30 mb-4"
+                  >
+                    <Trash2 class="h-6 w-6 text-red-400" />
+                  </div>
+                  <h2 class="text-lg sm:text-xl font-bold text-white tracking-tight">Remove Member</h2>
+                  <p class="text-zinc-400 text-sm mt-1">This action cannot be undone</p>
+                </div>
+
+                <div class="mb-5 p-4 bg-zinc-900/80 rounded-xl border border-zinc-800">
+                  <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden">
+                      <img
+                        v-if="removeMemberDialogMember?.user?.avatar_url"
+                        :src="removeMemberDialogMember.user.avatar_url"
+                        :alt="removeMemberDialogMember.user.name || removeMemberDialogMember.user.email"
+                        class="w-full h-full object-cover"
+                        referrerpolicy="no-referrer"
+                      />
+                      <User v-else class="h-5 w-5 text-zinc-500" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="font-medium text-white truncate">
+                        {{ removeMemberDialogMember?.user?.name || removeMemberDialogMember?.user?.email }}
+                      </div>
+                      <div class="text-sm text-zinc-500 truncate">{{ removeMemberDialogMember?.user?.email }}</div>
+                    </div>
+                    <span
+                      :class="[
+                        'px-2 py-1 rounded-md text-xs font-medium flex-shrink-0',
+                        removeMemberDialogMember?.role === 'admin'
+                          ? 'bg-violet-500/20 text-violet-400'
+                          : 'bg-zinc-700 text-zinc-300',
+                      ]"
+                    >
+                      {{ removeMemberDialogMember?.role }}
+                    </span>
+                  </div>
+                </div>
+
+                <p class="text-sm text-zinc-400 mb-5">
+                  Are you sure you want to remove
+                  <span class="font-medium text-zinc-200">
+                    {{ removeMemberDialogMember?.user?.name || removeMemberDialogMember?.user?.email }}
+                  </span>
+                  from the organization? They will lose access to all organization resources.
+                </p>
+
+                <div class="flex gap-3">
+                  <button
+                    class="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all font-medium border border-zinc-700 text-sm disabled:opacity-50"
+                    @click="closeRemoveMemberDialog"
+                    :disabled="removeMemberProcessing"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    class="flex-1 px-4 py-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white rounded-xl font-semibold transition-all text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                    @click="executeRemoveMember"
+                    :disabled="removeMemberProcessing"
+                  >
+                    <Loader2 v-if="removeMemberProcessing" class="h-4 w-4 animate-spin" />
+                    {{ removeMemberProcessing ? 'Removing...' : 'Remove Member' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- Buy Credits Modal -->
     <Teleport to="body">
       <Transition name="modal">
@@ -875,6 +971,7 @@
     Eye,
     EyeOff,
     Sparkles,
+    RefreshCw,
   } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
   import { Button } from '@/components/ui/button';
@@ -911,6 +1008,7 @@
   const myAllocation = ref<any>(null);
   const role = ref<string>('');
   const allocations = ref<Record<number, number>>({});
+  const resendingInvitationId = ref<number | null>(null);
 
   const activeTab = ref('members');
   const showInviteDialog = ref(false);
@@ -919,6 +1017,11 @@
   const showRoleDialog = ref(false);
   const roleDialogMember = ref<any>(null);
   const roleDialogNewRole = ref<string>('');
+
+  // Remove member dialog state
+  const showRemoveMemberDialog = ref(false);
+  const removeMemberDialogMember = ref<any>(null);
+  const removeMemberProcessing = ref(false);
 
   // Member action menu state
   const openMemberMenuId = ref<number | null>(null);
@@ -950,12 +1053,17 @@
 
   const tabs = [
     { id: 'members', label: 'Members' },
-    { id: 'invitations', label: 'Invitations' },
     { id: 'credits', label: 'Credits' },
     { id: 'settings', label: 'Settings' },
   ];
 
   const isAdmin = computed(() => role.value === 'owner' || role.value === 'admin');
+
+  // Check if a member's user was created by this organization
+  function isOrgCreatedUser(member: any): boolean {
+    if (!member.user || !organizationId.value) return false;
+    return member.user.created_by_organization_id === Number(organizationId.value);
+  }
 
   // Pool balance as number for validation
   const poolBalance = computed(() => {
@@ -1086,14 +1194,49 @@
     }
   }
 
-  async function confirmRemoveMember(member: any) {
-    if (confirm(`Remove ${member.user?.email} from the organization?`)) {
-      try {
-        await authStore.removeOrganizationMember(organizationId.value, member.user_id);
-        members.value = members.value.filter((m) => m.id !== member.id);
-      } catch (err) {
-        console.error('Failed to remove member:', err);
+  async function resendInvitation(invitation: any) {
+    resendingInvitationId.value = invitation.id;
+    try {
+      const result = await authStore.resendOrganizationInvitation(organizationId.value, invitation.id);
+      if (result.success) {
+        showSuccess('Invitation resent', `Invitation email resent to ${invitation.email}`);
+        // Reload to get updated expiry date
+        loadOrganization();
+      } else {
+        showError('Failed to resend', result.error || 'Could not resend invitation');
       }
+    } catch (err: any) {
+      showError('Failed to resend', err.message || 'An error occurred');
+    } finally {
+      resendingInvitationId.value = null;
+    }
+  }
+
+  function confirmRemoveMember(member: any) {
+    removeMemberDialogMember.value = member;
+    showRemoveMemberDialog.value = true;
+  }
+
+  function closeRemoveMemberDialog() {
+    showRemoveMemberDialog.value = false;
+    removeMemberDialogMember.value = null;
+    removeMemberProcessing.value = false;
+  }
+
+  async function executeRemoveMember() {
+    if (!removeMemberDialogMember.value) return;
+
+    const member = removeMemberDialogMember.value;
+    removeMemberProcessing.value = true;
+
+    try {
+      await authStore.removeOrganizationMember(organizationId.value, member.user_id);
+      members.value = members.value.filter((m) => m.id !== member.id);
+      showSuccess('Member removed', `${member.user?.email} has been removed from the organization`);
+      closeRemoveMemberDialog();
+    } catch (err: any) {
+      showError('Failed to remove member', err.message || 'An error occurred');
+      removeMemberProcessing.value = false;
     }
   }
 

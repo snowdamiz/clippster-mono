@@ -127,6 +127,7 @@ defmodule ClippsterServerWeb.Router do
     # Organization invitations
     get "/organizations/:organization_id/invitations", OrganizationController, :list_invitations
     post "/organizations/:organization_id/invitations", OrganizationController, :create_invitation
+    post "/organizations/:organization_id/invitations/:id/resend", OrganizationController, :resend_invitation
     delete "/organizations/:organization_id/invitations/:id", OrganizationController, :cancel_invitation
     post "/invitations/:token/accept", OrganizationController, :accept_invitation
 

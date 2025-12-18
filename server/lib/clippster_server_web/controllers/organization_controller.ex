@@ -250,6 +250,13 @@ defmodule ClippsterServerWeb.OrganizationController do
           |> json(%{success: false, error: "Member not found"})
 
         member ->
+          # Verify this user was created by this organization
+          org_id_int = if is_binary(org_id), do: String.to_integer(org_id), else: org_id
+          unless member.user.created_by_organization_id == org_id_int do
+            conn
+            |> put_status(403)
+            |> json(%{success: false, error: "Can only edit users created by this organization"})
+          else
           # Build update attrs
           attrs = %{}
           attrs = if params["name"], do: Map.put(attrs, :name, params["name"]), else: attrs
@@ -293,6 +300,7 @@ defmodule ClippsterServerWeb.OrganizationController do
               |> put_status(422)
               |> json(%{success: false, error: format_errors(changeset)})
           end
+          end
       end
     end
   end
@@ -330,6 +338,11 @@ defmodule ClippsterServerWeb.OrganizationController do
         conn
         |> put_status(400)
         |> json(%{success: false, error: "User is already a member"})
+
+      {:error, :invitation_pending} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "An invitation has already been sent to this email address"})
 
       {:error, changeset} ->
         conn
@@ -382,6 +395,38 @@ defmodule ClippsterServerWeb.OrganizationController do
         conn
         |> put_status(400)
         |> json(%{success: false, error: "Invitation already processed"})
+    end
+  end
+
+  @doc """
+  Resend an invitation email.
+  """
+  def resend_invitation(conn, %{"organization_id" => org_id, "id" => invitation_id}) do
+    user = conn.assigns.current_user
+
+    case Organizations.resend_invitation(org_id, invitation_id, user) do
+      {:ok, _} ->
+        json(conn, %{success: true, message: "Invitation resent"})
+
+      {:error, :not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Invitation not found"})
+
+      {:error, :unauthorized} ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Not authorized"})
+
+      {:error, :invitation_expired} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invitation has expired"})
+
+      {:error, :not_pending} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invitation is no longer pending"})
     end
   end
 
@@ -632,7 +677,8 @@ defmodule ClippsterServerWeb.OrganizationController do
           id: member.user.id,
           email: member.user.email,
           name: member.user.name,
-          avatar_url: member.user.avatar_url
+          avatar_url: member.user.avatar_url,
+          created_by_organization_id: member.user.created_by_organization_id
         }
       else
         nil

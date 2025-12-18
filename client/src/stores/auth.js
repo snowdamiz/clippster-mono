@@ -965,6 +965,26 @@ export const useAuthStore = defineStore('auth', {
     },
 
     /**
+     * Resend an invitation email
+     */
+    async resendOrganizationInvitation(orgId, invitationId) {
+      try {
+        const response = await fetch(
+          `${API_BASE}/api/organizations/${orgId}/invitations/${invitationId}/resend`,
+          {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${this.token}` },
+          }
+        );
+
+        const data = await response.json();
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
      * Create a member account directly
      */
     async createOrganizationMember(orgId, email, password, role = 'member', name = '') {

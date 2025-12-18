@@ -20,8 +20,7 @@
             <!-- Close Button -->
             <button
               @click="close"
-              :disabled="loading"
-              class="absolute right-4 top-4 z-10 p-2 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 transition-colors disabled:opacity-50"
+              class="absolute right-4 top-4 z-10 p-2 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 transition-colors"
             >
               <X class="h-4 w-4 text-zinc-400" />
             </button>
@@ -170,22 +169,6 @@
                 </div>
               </div>
 
-              <!-- Error Message -->
-              <div v-if="error" class="mt-4 rounded-lg bg-red-500/10 border border-red-500/30 p-3">
-                <div class="flex items-start gap-2">
-                  <AlertTriangle class="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
-                  <p class="text-sm text-red-400">{{ error }}</p>
-                </div>
-              </div>
-
-              <!-- Success Message -->
-              <div v-if="success" class="mt-4 rounded-lg bg-green-500/10 border border-green-500/30 p-3">
-                <div class="flex items-start gap-2">
-                  <Check class="h-4 w-4 text-green-400 flex-shrink-0 mt-0.5" />
-                  <p class="text-sm text-green-400">{{ success }}</p>
-                </div>
-              </div>
-
               <!-- Actions -->
               <div class="flex gap-3 mt-6">
                 <button
@@ -197,10 +180,9 @@
 
                 <button
                   @click="submit"
-                  :disabled="!canSubmit || loading"
-                  class="flex-1 px-4 py-2.5 rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 text-white font-medium text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  :disabled="!canSubmit"
+                  class="flex-1 px-4 py-2.5 rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 text-white font-medium text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <Loader2 v-if="loading" class="h-4 w-4 animate-spin" />
                   {{ mode === 'invite' ? 'Send Invitation' : 'Create Account' }}
                 </button>
               </div>
@@ -214,7 +196,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
-  import { X, Mail, UserPlus, Info, Eye, EyeOff, AlertTriangle, Check, Loader2 } from 'lucide-vue-next';
+  import { X, Mail, UserPlus, Info, Eye, EyeOff } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
 
@@ -232,9 +214,6 @@
   const { success: showSuccess, error: showError } = useToast();
 
   const mode = ref<'invite' | 'create'>('invite');
-  const loading = ref(false);
-  const error = ref('');
-  const success = ref('');
   const showPassword = ref(false);
 
   const inviteData = ref({
@@ -261,12 +240,6 @@
     }
   });
 
-  // Reset form when mode changes
-  watch(mode, () => {
-    error.value = '';
-    success.value = '';
-  });
-
   // Reset form when dialog opens/closes
   watch(
     () => props.modelValue,
@@ -276,8 +249,6 @@
           mode.value = 'invite';
           inviteData.value = { email: '', role: 'member' };
           createData.value = { name: '', email: '', password: '', role: 'member' };
-          error.value = '';
-          success.value = '';
         }, 300);
       }
     }
@@ -293,31 +264,29 @@
     showPassword.value = true;
   }
 
-  async function submit() {
-    error.value = '';
-    success.value = '';
-
+  function submit() {
     if (mode.value === 'invite') {
-      loading.value = true;
-      try {
-        const result = await authStore.inviteOrganizationMember(
-          props.organizationId,
-          inviteData.value.email,
-          inviteData.value.role
-        );
+      // Invite mode: close dialog immediately and process in background
+      const email = inviteData.value.email;
+      const role = inviteData.value.role;
 
-        if (result.success) {
-          success.value = `Invitation sent to ${inviteData.value.email}`;
-          emit('memberAdded');
-          setTimeout(() => close(), 2000);
-        } else {
-          error.value = result.error || 'Failed to send invitation';
-        }
-      } catch (err: any) {
-        error.value = err.message || 'An error occurred';
-      } finally {
-        loading.value = false;
-      }
+      // Close dialog immediately
+      emit('update:modelValue', false);
+
+      // Process in background
+      authStore
+        .inviteOrganizationMember(props.organizationId, email, role)
+        .then((result) => {
+          if (result.success) {
+            showSuccess('Invitation sent', `Invitation sent to ${email}`);
+            emit('memberAdded');
+          } else {
+            showError('Failed to send invitation', result.error || 'An error occurred');
+          }
+        })
+        .catch((err: any) => {
+          showError('Failed to send invitation', err.message || 'An error occurred');
+        });
     } else {
       // Create account mode: close dialog immediately and process in background
       const name = createData.value.name;
@@ -346,9 +315,7 @@
   }
 
   function close() {
-    if (!loading.value) {
-      emit('update:modelValue', false);
-    }
+    emit('update:modelValue', false);
   }
 </script>
 
