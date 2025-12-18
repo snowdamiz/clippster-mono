@@ -112,10 +112,7 @@
           <!-- Pending Invitations Section (only show if there are invitations and user is admin) -->
           <div v-if="isAdmin && invitations.length > 0" class="mb-6">
             <div class="flex items-center justify-between mb-3">
-              <h2 class="text-base font-semibold text-foreground flex items-center gap-2">
-                <Mail class="h-4 w-4 text-muted-foreground" />
-                Pending Invitations
-              </h2>
+              <h2 class="text-base font-semibold text-foreground flex items-center gap-2">Pending Invitations</h2>
               <span class="text-sm text-muted-foreground">{{ invitations.length }} pending</span>
             </div>
 
@@ -402,10 +399,9 @@
           </div>
 
           <!-- Payment History Section (Admin Only) -->
-          <div v-if="isAdmin" class="mt-8 pt-6 border-t border-border">
+          <div v-if="isAdmin" class="mt-8">
             <div class="flex items-center justify-between mb-4">
               <h3 class="text-sm font-semibold text-foreground flex items-center gap-2">
-                <Receipt class="h-4 w-4 text-muted-foreground" />
                 Payment History
                 <span v-if="transactionsTotal > 0" class="text-xs font-normal text-muted-foreground">
                   ({{ transactionsTotal }} total)
@@ -551,98 +547,125 @@
         </div>
 
         <!-- Settings Tab -->
-        <div v-if="activeTab === 'settings'" class="divide-y divide-border">
-          <!-- General Settings Section -->
-          <div class="p-6">
-            <form @submit.prevent="updateOrganization" class="max-w-lg space-y-6">
-              <!-- Organization Name -->
-              <div class="space-y-1.5">
-                <label class="text-sm font-medium text-foreground">Organization Name</label>
-                <Input v-model="editData.name" placeholder="Enter organization name" />
+        <div v-if="activeTab === 'settings'" class="p-6">
+          <!-- Organization Section -->
+          <div class="mb-8">
+            <div class="flex items-center justify-between mb-4">
+              <div>
+                <h2 class="text-base font-semibold text-foreground">Organization</h2>
+                <p class="text-sm text-muted-foreground mt-0.5">
+                  Manage your organization's profile and member permissions
+                </p>
               </div>
-
-              <!-- Description -->
-              <div class="space-y-1.5">
-                <label class="text-sm font-medium text-foreground">Description</label>
-                <textarea
-                  v-model="editData.description"
-                  rows="3"
-                  placeholder="What does your organization do?"
-                  class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
-                />
-                <p class="text-xs text-muted-foreground/70">Optional · Visible to team members</p>
-              </div>
-
-              <!-- Member Permissions Section -->
-              <div class="pt-4 border-t border-border">
-                <h3 class="text-sm font-semibold text-foreground mb-4">Member Permissions</h3>
-
-                <!-- Allow AI Toggle -->
-                <div class="flex items-center justify-between p-3 bg-muted/30 border border-border/50 rounded-lg">
-                  <div class="flex-1 pr-4">
-                    <div class="flex items-center gap-2">
-                      <Sparkles class="h-4 w-4 text-primary" />
-                      <span class="text-sm font-medium text-foreground">Allow AI Clip Detection</span>
-                    </div>
-                    <p class="text-xs text-muted-foreground mt-1">
-                      When disabled, members created by this organization cannot use AI to detect clips.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    :aria-checked="editData.settings.allow_ai"
-                    @click="editData.settings.allow_ai = !editData.settings.allow_ai"
-                    :class="[
-                      'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
-                      editData.settings.allow_ai ? 'bg-primary' : 'bg-muted',
-                    ]"
-                  >
-                    <span
-                      :class="[
-                        'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                        editData.settings.allow_ai ? 'translate-x-5' : 'translate-x-0',
-                      ]"
-                    />
-                  </button>
-                </div>
-              </div>
-
-              <!-- Save Button -->
-              <div class="flex items-center gap-3 pt-1">
-                <Button type="submit" size="sm" :disabled="saving || !hasChanges">
-                  <Loader2 v-if="saving" class="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                  {{ saving ? 'Saving...' : 'Save Changes' }}
-                </Button>
+              <div class="flex items-center gap-3">
                 <Transition name="fade">
                   <span v-if="saveSuccess" class="text-xs text-emerald-500 flex items-center gap-1">
                     <CheckCircle class="h-3.5 w-3.5" />
                     Saved
                   </span>
                 </Transition>
+                <Button size="sm" :disabled="saving || !hasChanges" @click="updateOrganization">
+                  <Loader2 v-if="saving" class="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  {{ saving ? 'Saving...' : 'Save Changes' }}
+                </Button>
               </div>
-            </form>
+            </div>
+
+            <div class="space-y-3">
+              <!-- Organization Name -->
+              <div class="flex items-center gap-4 p-4 bg-muted/30 border border-border/50 rounded-lg">
+                <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <Building2 class="h-5 w-5 text-primary" />
+                </div>
+                <div class="flex-1 min-w-0">
+                  <label class="text-sm font-medium text-foreground">Organization Name</label>
+                  <p class="text-xs text-muted-foreground mt-0.5">The display name for your organization</p>
+                </div>
+                <div class="w-64">
+                  <Input v-model="editData.name" placeholder="Enter organization name" />
+                </div>
+              </div>
+
+              <!-- Description -->
+              <div class="flex items-start gap-4 p-4 bg-muted/30 border border-border/50 rounded-lg">
+                <div class="w-10 h-10 rounded-lg bg-muted/50 flex items-center justify-center flex-shrink-0">
+                  <FileText class="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div class="flex-1 min-w-0">
+                  <label class="text-sm font-medium text-foreground">Description</label>
+                  <p class="text-xs text-muted-foreground mt-0.5">Optional · Visible to team members</p>
+                </div>
+                <div class="w-64">
+                  <textarea
+                    v-model="editData.description"
+                    rows="2"
+                    placeholder="What does your organization do?"
+                    class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
+                  />
+                </div>
+              </div>
+
+              <!-- Allow AI Toggle -->
+              <div class="flex items-center gap-4 p-4 bg-muted/30 border border-border/50 rounded-lg">
+                <div class="w-10 h-10 rounded-lg bg-violet-500/10 flex items-center justify-center flex-shrink-0">
+                  <Sparkles class="h-5 w-5 text-violet-500" />
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium text-foreground">Allow AI Clip Detection</div>
+                  <p class="text-xs text-muted-foreground mt-0.5">
+                    When disabled, members created by this organization cannot use AI to detect clips
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  :aria-checked="editData.settings.allow_ai"
+                  @click="editData.settings.allow_ai = !editData.settings.allow_ai"
+                  :class="[
+                    'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+                    editData.settings.allow_ai ? 'bg-primary' : 'bg-muted',
+                  ]"
+                >
+                  <span
+                    :class="[
+                      'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                      editData.settings.allow_ai ? 'translate-x-5' : 'translate-x-0',
+                    ]"
+                  />
+                </button>
+              </div>
+            </div>
           </div>
 
-          <!-- Danger Zone -->
-          <div v-if="role === 'owner'" class="p-6">
-            <div class="flex items-center gap-3 mb-3">
-              <AlertTriangle class="h-4 w-4 text-destructive" />
-              <h3 class="text-sm font-medium text-destructive">Danger Zone</h3>
+          <!-- Danger Zone Section -->
+          <div v-if="role === 'owner'">
+            <div class="flex items-center gap-2 mb-4">
+              <h2 class="text-base font-semibold">Danger Zone</h2>
             </div>
-            <p class="text-sm text-muted-foreground mb-4 max-w-md">
-              Once you delete an organization, there is no going back. All members will be removed and this action
-              cannot be undone.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              class="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              @click="confirmDeleteOrg"
-            >
-              <Trash2 class="h-3.5 w-3.5 mr-1.5" />
-              Delete Organization
-            </Button>
+
+            <div class="p-4 bg-destructive/5 border border-destructive/20 rounded-lg">
+              <div class="flex items-start gap-4">
+                <div class="w-10 h-10 rounded-lg bg-destructive/10 flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle class="h-5 w-5 text-destructive" />
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium text-foreground">Delete Organization</div>
+                  <p class="text-xs text-muted-foreground mt-0.5 max-w-md">
+                    Once you delete an organization, there is no going back. All members will be removed and this action
+                    cannot be undone.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  class="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive flex-shrink-0"
+                  @click="confirmDeleteOrg"
+                >
+                  <Trash2 class="h-3.5 w-3.5 mr-1.5" />
+                  Delete
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1148,6 +1171,7 @@
     ChevronLeft,
     ChevronRight,
     DollarSign,
+    FileText,
   } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
   import { Button } from '@/components/ui/button';
