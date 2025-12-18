@@ -175,7 +175,7 @@
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted } from 'vue';
   import { Plus, Trash2, X, Loader2, Image as ImageIcon, Upload } from 'lucide-vue-next';
-  import type { ClipWatermark, ManualFramingConfigs, WatermarkRatioConfig } from '@/types';
+  import type { ClipWatermark, ManualFramingConfigs, ClipWatermarkRatioConfig } from '@/types';
   import { getAllWatermarkImages, type WatermarkImage } from '@/services/database';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
   import { invoke } from '@tauri-apps/api/core';
@@ -220,7 +220,7 @@
   }
 
   // Get watermark config for current aspect ratio
-  function getWatermarkConfig(watermark: ClipWatermark): WatermarkRatioConfig {
+  function getWatermarkConfig(watermark: ClipWatermark): ClipWatermarkRatioConfig {
     const ratio = props.previewAspectRatio;
     const perRatioConfig = watermark.perRatioConfigs?.[ratio];
 
@@ -230,7 +230,7 @@
 
     // Fall back to default values
     return {
-      position: watermark.position,
+      position: { ...watermark.position },
       scale: watermark.scale,
       opacity: watermark.opacity,
     };

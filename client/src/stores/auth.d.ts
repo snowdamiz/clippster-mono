@@ -31,6 +31,8 @@ export interface AuthResult {
   error?: string
   message?: string
   needsVerification?: boolean
+  needsOrgSetup?: boolean
+  user?: AuthUser
 }
 
 export interface OrganizationResult {
@@ -41,8 +43,12 @@ export interface OrganizationResult {
   role?: string
   members?: any[]
   invitations?: any[]
+  invitation?: any
   org_credits?: any
   my_allocation?: any
+  organization_id?: string
+  transactions?: any[]
+  total?: number
 }
 
 export interface AuthActions {
@@ -64,15 +70,20 @@ export interface AuthActions {
   startEmailVerificationListener(): Promise<void>
   clearPendingVerification(): void
 
+  // Account type
+  setAccountType(type: 'personal' | 'organization'): Promise<AuthResult>
+
   // Organization methods
-  createOrganization(name: string, description?: string): Promise<OrganizationResult>
+  createOrganization(orgData: { name: string; description?: string; logo_url?: string }): Promise<OrganizationResult>
   getOrganizations(): Promise<OrganizationResult>
   getOrganization(id: string): Promise<OrganizationResult>
-  updateOrganization(id: string, data: { name?: string; description?: string }): Promise<OrganizationResult>
+  updateOrganization(id: string, data: { name?: string; description?: string; settings?: any }): Promise<OrganizationResult>
   deleteOrganization(id: string): Promise<OrganizationResult>
   getOrganizationMembers(id: string): Promise<OrganizationResult>
   getOrganizationInvitations(id: string): Promise<OrganizationResult>
   inviteToOrganization(id: string, email: string, role: string): Promise<OrganizationResult>
+  inviteOrganizationMember(orgId: string, email: string, role: string): Promise<OrganizationResult>
+  createOrganizationMember(orgId: string, email: string, password: string, role?: string, name?: string): Promise<OrganizationResult>
   cancelOrganizationInvitation(orgId: string, invitationId: number): Promise<OrganizationResult>
   resendOrganizationInvitation(orgId: string, invitationId: number): Promise<OrganizationResult>
   removeOrganizationMember(orgId: string, userId: number): Promise<OrganizationResult>
@@ -80,6 +91,11 @@ export interface AuthActions {
   updateOrganizationMemberAccount(orgId: string, userId: number, updates: { name?: string; email?: string; password?: string }): Promise<OrganizationResult>
   getOrganizationCredits(id: string): Promise<OrganizationResult>
   allocateOrganizationCredits(orgId: string, userId: number, hours: number): Promise<OrganizationResult>
+  getOrganizationTransactions(id: string, options?: { limit?: number; offset?: number }): Promise<OrganizationResult>
+
+  // Invitation methods
+  getInvitationDetails(token: string): Promise<OrganizationResult>
+  acceptInvitation(token: string): Promise<OrganizationResult>
 }
 
 export const useAuthStore: () => Store<'auth', AuthState, {}, AuthActions>

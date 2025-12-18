@@ -159,7 +159,7 @@
     try {
       const result = await authStore.getOrganizations();
       if (result.success) {
-        organizations.value = result.organizations;
+        organizations.value = result.organizations ?? [];
 
         // If no org selected but user has orgs, select the first one
         if (!props.modelValue && organizations.value.length > 0) {

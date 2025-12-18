@@ -207,6 +207,8 @@ export interface SubtitleSettings {
   borderRadius: number;
   wordSpacing: number;
   selectedPresetId?: string | null;
+  // Per-aspect-ratio configurations for subtitle position and size overrides
+  perRatioConfigs?: Record<string, SubtitleOverride>;
 }
 
 export interface SubtitlePreset {
@@ -221,6 +223,8 @@ export interface SubtitlePreset {
 export interface SubtitleOverride {
   fontSize: number; // Override font size for this aspect ratio
   positionPercentage: number; // Override vertical position (0-100)
+  position?: { x: number; y: number }; // Override position as x,y coordinates (0-100)
+  maxWidth?: number; // Override max width for this aspect ratio
 }
 
 // Map of aspect ratio to subtitle overrides
@@ -805,8 +809,8 @@ export interface Sticker {
 
 export type StickerAnimation = 'none' | 'bounce' | 'spin' | 'pulse' | 'shake' | 'float' | 'fade';
 
-// Per-aspect-ratio configuration for watermarks
-export interface WatermarkRatioConfig {
+// Per-aspect-ratio configuration for clip watermarks (time-based in clip editor)
+export interface ClipWatermarkRatioConfig {
   position: { x: number; y: number }; // 0-100 percentage
   scale: number; // 0-100 (percentage of video width)
   opacity: number; // 0-100
@@ -824,7 +828,7 @@ export interface ClipWatermark {
   scale: number; // 0-100 (percentage of video width) - default/fallback scale
   opacity: number; // 0-100 - default/fallback opacity
   // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
-  perRatioConfigs?: Record<string, WatermarkRatioConfig>;
+  perRatioConfigs?: Record<string, ClipWatermarkRatioConfig>;
 }
 
 // Visual effects

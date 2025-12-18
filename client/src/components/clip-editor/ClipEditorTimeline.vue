@@ -328,7 +328,7 @@
 
               <!-- Clip Mode: Trim Segments -->
               <template v-else>
-                <template v-for="(segmentLayout, index) in segmentLayouts" :key="segmentLayout.segment.id">
+                <template v-for="(segmentLayout, _index) in segmentLayouts" :key="segmentLayout.segment.id">
                   <!-- Segment with waveform -->
                   <div
                     :ref="(el) => setSegmentRef(el, 'trim', segmentLayout.segment.id)"
@@ -1406,8 +1406,8 @@
     return 1;
   });
 
-  // Calculate height based on number of tracks
-  const calculatedHeight = computed(() => {
+  // Calculate height based on number of tracks (may be used in future)
+  const _calculatedHeight = computed(() => {
     const headerHeight = 44; // Timeline header with toolbar
     const rulerHeight = 32; // Timestamp ruler
     const videoTrackHeight = 48; // Video track
@@ -1464,7 +1464,7 @@
     }
   }
 
-  function setAudioWaveformCanvasRef(el: any, trackId: string) {
+  function _setAudioWaveformCanvasRef(el: any, trackId: string) {
     if (el) {
       audioWaveformCanvasRefs.value.set(trackId, el as HTMLCanvasElement);
     }
@@ -1500,7 +1500,7 @@
     };
   }
 
-  function getAudioSegmentStyle(layout: SegmentLayout, trackId: string): Record<string, string> {
+  function _getAudioSegmentStyle(layout: SegmentLayout, trackId: string): Record<string, string> {
     const colors = colorMap.emerald;
     const isSelected = selectedItemKey.value === `audio_${trackId}`;
 
@@ -1514,7 +1514,7 @@
     };
   }
 
-  function getAudioTrackStyle(track: AudioTrack): Record<string, string> {
+  function _getAudioTrackStyle(track: AudioTrack): Record<string, string> {
     const colors = colorMap.emerald;
     const isSelected = selectedItemKey.value === `audio_${track.id}`;
 
@@ -1547,8 +1547,8 @@
     selectedItemKey.value = `${type}_${id}`;
   }
 
-  // Check if a track type has an active/selected item
-  function isTrackActive(type: ItemType): boolean {
+  // Check if a track type has an active/selected item (may be used in future)
+  function _isTrackActive(type: ItemType): boolean {
     if (!selectedItemKey.value) return false;
     return selectedItemKey.value.startsWith(`${type}_`);
   }
@@ -2865,12 +2865,10 @@
       // Try resolutions in order of detail (highest first)
       const resolutionOrder = ['extreme', 'ultra', 'high', 'medium', 'low'];
       let peaks: any[] = [];
-      let usedResolution = 'high';
 
       for (const res of resolutionOrder) {
         if (resolutions[res]?.peaks?.length > 0) {
           peaks = resolutions[res].peaks;
-          usedResolution = res;
           break;
         }
       }

@@ -672,7 +672,11 @@
     </template>
 
     <!-- Invite Member Dialog -->
-    <InviteMemberDialog v-model="showInviteDialog" :organization-id="organizationId" @member-added="loadOrganization" />
+    <InviteMemberDialog
+      v-model="showInviteDialog"
+      :organization-id="organizationId ?? ''"
+      @member-added="loadOrganization"
+    />
 
     <!-- Change Role Dialog -->
     <Teleport to="body">
@@ -847,7 +851,7 @@
                     <button
                       type="submit"
                       class="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl font-semibold transition-all text-sm disabled:opacity-50 flex items-center justify-center gap-2"
-                      :disabled="editMemberSaving || (editMemberData.password && editMemberData.password.length < 8)"
+                      :disabled="editMemberSaving || !!(editMemberData.password && editMemberData.password.length < 8)"
                     >
                       <Loader2 v-if="editMemberSaving" class="h-4 w-4 animate-spin" />
                       {{ editMemberSaving ? 'Saving...' : 'Save Changes' }}
@@ -1315,7 +1319,8 @@
   });
 
   async function loadOrganization() {
-    if (!organizationId.value) {
+    const orgId = organizationId.value;
+    if (!orgId) {
       error.value = 'No organization found';
       loading.value = false;
       return;
@@ -1326,10 +1331,10 @@
 
     try {
       // Load organization details
-      const orgResult = await authStore.getOrganization(organizationId.value);
+      const orgResult = await authStore.getOrganization(orgId);
       if (orgResult.success) {
         organization.value = orgResult.organization;
-        role.value = orgResult.role;
+        role.value = orgResult.role ?? '';
 
         // Regular members should not access the dashboard - redirect to organizations list
         if (role.value === 'member') {
@@ -1350,21 +1355,21 @@
       }
 
       // Load members
-      const membersResult = await authStore.getOrganizationMembers(organizationId.value);
+      const membersResult = await authStore.getOrganizationMembers(orgId);
       if (membersResult.success) {
-        members.value = membersResult.members;
+        members.value = membersResult.members ?? [];
       }
 
       // Load invitations (if admin)
       if (isAdmin.value) {
-        const invitesResult = await authStore.getOrganizationInvitations(organizationId.value);
+        const invitesResult = await authStore.getOrganizationInvitations(orgId);
         if (invitesResult.success) {
-          invitations.value = invitesResult.invitations;
+          invitations.value = invitesResult.invitations ?? [];
         }
       }
 
       // Load credits
-      const creditsResult = await authStore.getOrganizationCredits(organizationId.value);
+      const creditsResult = await authStore.getOrganizationCredits(orgId);
       if (creditsResult.success) {
         credits.value = {
           hoursRemaining: creditsResult.org_credits.hours_remaining,
@@ -1380,19 +1385,20 @@
   }
 
   async function loadTransactions(page = 1) {
-    if (!organizationId.value || !isAdmin.value) return;
+    const orgId = organizationId.value;
+    if (!orgId || !isAdmin.value) return;
 
     transactionsLoading.value = true;
     try {
       const offset = (page - 1) * transactionsPerPage;
-      const result = await authStore.getOrganizationTransactions(organizationId.value, {
+      const result = await authStore.getOrganizationTransactions(orgId, {
         limit: transactionsPerPage,
         offset,
       });
 
       if (result.success) {
-        transactions.value = result.transactions;
-        transactionsTotal.value = result.total;
+        transactions.value = result.transactions ?? [];
+        transactionsTotal.value = result.total ?? 0;
         transactionsPage.value = page;
         transactionsLoaded.value = true;
       }
@@ -1462,8 +1468,10 @@
   }
 
   async function cancelInvitation(invitationId: number) {
+    const orgId = organizationId.value;
+    if (!orgId) return;
     try {
-      await authStore.cancelOrganizationInvitation(organizationId.value, invitationId);
+      await authStore.cancelOrganizationInvitation(orgId, invitationId);
       invitations.value = invitations.value.filter((i) => i.id !== invitationId);
     } catch (err) {
       console.error('Failed to cancel invitation:', err);
@@ -1471,9 +1479,11 @@
   }
 
   async function resendInvitation(invitation: any) {
+    const orgId = organizationId.value;
+    if (!orgId) return;
     resendingInvitationId.value = invitation.id;
     try {
-      const result = await authStore.resendOrganizationInvitation(organizationId.value, invitation.id);
+      const result = await authStore.resendOrganizationInvitation(orgId, invitation.id);
       if (result.success) {
         showSuccess('Invitation resent', `Invitation email resent to ${invitation.email}`);
         // Reload to get updated expiry date
@@ -1500,13 +1510,14 @@
   }
 
   async function executeRemoveMember() {
-    if (!removeMemberDialogMember.value) return;
+    const orgId = organizationId.value;
+    if (!removeMemberDialogMember.value || !orgId) return;
 
     const member = removeMemberDialogMember.value;
     removeMemberProcessing.value = true;
 
     try {
-      await authStore.removeOrganizationMember(organizationId.value, member.user_id);
+      await authStore.removeOrganizationMember(orgId, member.user_id);
       members.value = members.value.filter((m) => m.id !== member.id);
       showSuccess('Member removed', `${member.user?.email} has been removed from the organization`);
       closeRemoveMemberDialog();
@@ -1529,7 +1540,8 @@
   }
 
   async function confirmRoleChange() {
-    if (!roleDialogMember.value || !roleDialogNewRole.value) return;
+    const orgId = organizationId.value;
+    if (!roleDialogMember.value || !roleDialogNewRole.value || !orgId) return;
 
     // Capture values before closing dialog
     const member = roleDialogMember.value;
@@ -1541,7 +1553,7 @@
     roleDialogNewRole.value = '';
 
     try {
-      await authStore.updateOrganizationMemberRole(organizationId.value, member.user_id, newRole);
+      await authStore.updateOrganizationMemberRole(orgId, member.user_id, newRole);
       showSuccess('Role updated', `${member.user?.email} is now a ${newRole}`);
       loadOrganization();
     } catch (err: any) {
@@ -1684,6 +1696,9 @@
   }
 
   async function allocateCredits(userId: number) {
+    const orgId = organizationId.value;
+    if (!orgId) return;
+
     const hours = allocations.value[userId];
     if (!hours || hours <= 0) {
       showError('Invalid amount', 'Please enter a positive number of hours to allocate');
@@ -1696,7 +1711,7 @@
     }
 
     try {
-      const result = await authStore.allocateOrganizationCredits(organizationId.value, userId, hours);
+      const result = await authStore.allocateOrganizationCredits(orgId, userId, hours);
       if (result.success) {
         allocations.value[userId] = 0;
         showSuccess('Credits allocated', `${hours} hours allocated successfully`);
@@ -1711,13 +1726,16 @@
   }
 
   async function confirmDeleteOrg() {
+    const orgId = organizationId.value;
+    if (!orgId) return;
+
     if (
       confirm(
         'Are you sure you want to delete this organization? This action cannot be undone and will remove all members.'
       )
     ) {
       try {
-        await authStore.deleteOrganization(organizationId.value);
+        await authStore.deleteOrganization(orgId);
         router.push('/projects');
       } catch (err) {
         console.error('Failed to delete organization:', err);

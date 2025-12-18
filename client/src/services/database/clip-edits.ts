@@ -74,6 +74,7 @@ export interface ClipWatermarkRecord {
   clip_edit_id: string;
   watermark_id: string; // Reference to watermark_images table
   watermark_path: string; // File path for rendering
+  preview_url?: string; // Data URL for preview display
   start_time: number;
   end_time: number;
   position_x: number;

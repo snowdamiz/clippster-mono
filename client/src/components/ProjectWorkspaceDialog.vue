@@ -1072,6 +1072,27 @@
     return currentlyPlayingClipId.value;
   }
 
+  // Helper to measure watermark dimensions from file path
+  async function measureWatermarkDimensions(
+    filePath: string
+  ): Promise<{ width: number | null; height: number | null }> {
+    try {
+      const dataUrl = await invoke<string>('read_file_as_data_url', { filePath });
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          resolve({ width: img.naturalWidth, height: img.naturalHeight });
+        };
+        img.onerror = () => {
+          resolve({ width: null, height: null });
+        };
+        img.src = dataUrl;
+      });
+    } catch {
+      return { width: null, height: null };
+    }
+  }
+
   // Handle watermark settings change
   async function onWatermarkSettingsChanged(settings: WatermarkSettings) {
     watermarkSettings.value = settings;

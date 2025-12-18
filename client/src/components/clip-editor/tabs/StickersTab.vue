@@ -216,7 +216,7 @@
   const thumbnailCache = ref<Map<string, string>>(new Map());
   const { uploadImageAsset, onUploadComplete } = useImageAssetOperations();
 
-  const popularEmojis = [
+  const _popularEmojis = [
     '😀',
     '😂',
     '🤣',

@@ -729,7 +729,6 @@
   import ColorPicker from '@/components/ColorPicker.vue';
   import {
     Plus,
-    Upload,
     ChevronDown,
     Trash2,
     AlignLeft,

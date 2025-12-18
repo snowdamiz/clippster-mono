@@ -2088,7 +2088,7 @@
         for (const [ratio, config] of Object.entries(props.subtitleSettings.perRatioConfigs)) {
           editorOverrides[ratio] = {
             fontSize: config.fontSize,
-            positionPercentage: config.position.y, // Use Y position as the vertical position percentage
+            positionPercentage: config.position?.y ?? config.positionPercentage, // Use Y position as the vertical position percentage
             maxWidth: config.maxWidth,
           };
         }

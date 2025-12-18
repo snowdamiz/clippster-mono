@@ -98,9 +98,7 @@
               </Transition>
             </div>
             <!-- Custom Video Controls -->
-            <div
-              class="flex-shrink-0 bg-black/60 backdrop-blur-sm"
-            >
+            <div class="flex-shrink-0 bg-black/60 backdrop-blur-sm">
               <!-- Full-width Timeline/Seek Bar -->
               <div
                 ref="timelineRef"
@@ -129,10 +127,7 @@
                 <!-- Seek thumb - always visible, larger during drag -->
                 <div
                   class="absolute top-1/2 bg-violet-400 rounded-full shadow-md pointer-events-none"
-                  :class="[
-                    isDragging ? 'w-4 h-4' : 'w-3 h-3',
-                    { 'transition-all duration-75': !isDragging }
-                  ]"
+                  :class="[isDragging ? 'w-4 h-4' : 'w-3 h-3', { 'transition-all duration-75': !isDragging }]"
                   :style="{
                     left: `${progressPercent}%`,
                     transform: 'translate(-50%, -50%)',
@@ -144,7 +139,7 @@
                   class="absolute -top-8 bg-black/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded font-medium whitespace-nowrap z-20 pointer-events-none"
                   :style="{ left: `${isDragging ? progressPercent : hoverPosition}%`, transform: 'translateX(-50%)' }"
                 >
-                  {{ formatDuration(isDragging ? (progressPercent / 100) * duration : hoverTime) }}
+                  {{ formatDuration(isDragging ? (progressPercent / 100) * duration : (hoverTime ?? 0)) }}
                 </div>
               </div>
               <!-- Control Buttons and Time Display -->
@@ -455,15 +450,15 @@
   // Start dragging
   function startDrag(event: MouseEvent) {
     if (!videoElement.value) return;
-    
+
     isDragging.value = true;
     dragPercent.value = getPercentFromEvent(event);
     seekToPercent(dragPercent.value);
-    
+
     // Add document-level listeners for drag
     document.addEventListener('mousemove', onDrag);
     document.addEventListener('mouseup', stopDrag);
-    
+
     event.preventDefault();
   }
 
@@ -484,9 +479,9 @@
 
   function onTimelineHover(event: MouseEvent) {
     if (isDragging.value) return; // Don't update hover during drag
-    
+
     const percent = getPercentFromEvent(event);
-    
+
     let hoverTimeSeconds: number;
     if (isClipPreviewMode.value) {
       // Show time relative to clip start

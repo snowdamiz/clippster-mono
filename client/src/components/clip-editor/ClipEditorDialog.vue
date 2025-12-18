@@ -310,7 +310,7 @@
             :watermarks="watermarks"
             :effects="effects"
             :filter-segments="filterSegments"
-            :video-src="videoSrc"
+            :video-src="videoSrc ?? undefined"
             :audio-gain-db="effectiveAudioGainDb"
             :track-db-values="trackDbValues"
             :is-playing="isPlaying"
@@ -342,7 +342,7 @@
         :thumbnail-url="effectiveThumbnailUrl"
         :video-path="effectiveVideoPath"
         :clip-start-time="effectivePOIClipStartTime"
-        :clip-end-time="effectivePOIClipEndTime"
+        :clip-end-time="effectivePOIClipEndTime ?? undefined"
         @confirm="onManualPOIConfigConfirm"
       />
 
@@ -378,9 +378,7 @@
     ManualFramingConfigs,
     ManualFramingConfig,
     ClipWatermark,
-    WatermarkRatioConfig,
     ClipSubtitleSettings,
-    ClipSubtitleRatioConfig,
     WordInfo,
   } from '@/types';
   import {
@@ -409,7 +407,6 @@
     splitClipSegment,
     getClipSegmentsByClipId,
     // Video Editor imports
-    getVideoEditorProject,
     getVideoEditorSourcesByProjectId,
     createVideoEditorProject,
     createVideoEditorSource,
@@ -671,8 +668,8 @@
     return Math.max(...sourceVideoTimeRanges.value.map((r) => r.end));
   });
 
-  // Check if a time falls within any of the source video ranges
-  function isTimeInSourceRanges(time: number): boolean {
+  // Check if a time falls within any of the source video ranges (may be used in future)
+  function _isTimeInSourceRanges(time: number): boolean {
     for (const range of sourceVideoTimeRanges.value) {
       if (time >= range.start && time <= range.end) {
         return true;
@@ -899,8 +896,8 @@
     return sourceTransitions.value.find((t) => time >= t.startTime && time <= t.endTime) || null;
   });
 
-  // Get the "outgoing" source during a transition (the one fading out)
-  const transitionOutgoingSource = computed(() => {
+  // Get the "outgoing" source during a transition (the one fading out) - may be used in future
+  const _transitionOutgoingSource = computed(() => {
     if (!activeTransition.value) return null;
     return videoSources.value.find((s) => s.id === activeTransition.value!.sourceAId) || null;
   });
@@ -1000,10 +997,10 @@
     if (editorMode.value) {
       const source = videoSources.value.length > 0 ? videoSources.value[0] : null;
       if (source) {
-        // If trim_end is 0, use source duration (full video)
+        // If trim_end is 0 or null, use source duration (full video)
         // Calculate the effective duration from end_time - start_time + trim_start
         const sourceDuration = source.end_time - source.start_time;
-        return source.trim_end > 0 ? source.trim_end : source.trim_start + sourceDuration;
+        return source.trim_end && source.trim_end > 0 ? source.trim_end : source.trim_start + sourceDuration;
       }
       return 0;
     }
@@ -1040,7 +1037,7 @@
 
   // Transition canvas style - matches the video container
   const transitionCanvasStyle = computed(() => ({
-    objectFit: 'contain',
+    objectFit: 'contain' as const,
     width: '100%',
     height: '100%',
   }));
@@ -1217,8 +1214,8 @@
           start_time: overlay.startTime,
           end_time: overlay.endTime,
           style_data: JSON.stringify(overlay.style),
-          position_x: overlay.positionX,
-          position_y: overlay.positionY,
+          position_x: overlay.position.x,
+          position_y: overlay.position.y,
           per_ratio_configs_data: overlay.perRatioConfigs ? JSON.stringify(overlay.perRatioConfigs) : undefined,
         });
         newTextOverlays.push({
@@ -1226,9 +1223,9 @@
           text: newOverlay.text,
           startTime: newOverlay.start_time,
           endTime: newOverlay.end_time,
+          position: { x: newOverlay.position_x, y: newOverlay.position_y },
           style: JSON.parse(newOverlay.style_data || '{}'),
-          positionX: newOverlay.position_x,
-          positionY: newOverlay.position_y,
+          animation: overlay.animation,
           perRatioConfigs: newOverlay.per_ratio_configs_data
             ? JSON.parse(newOverlay.per_ratio_configs_data)
             : undefined,
@@ -1275,8 +1272,8 @@
           sticker_type: sticker.stickerType,
           start_time: sticker.startTime,
           end_time: sticker.endTime,
-          position_x: sticker.positionX,
-          position_y: sticker.positionY,
+          position_x: sticker.position.x,
+          position_y: sticker.position.y,
           scale: sticker.scale,
           rotation: sticker.rotation,
           per_ratio_configs_data: sticker.perRatioConfigs ? JSON.stringify(sticker.perRatioConfigs) : undefined,
@@ -1287,10 +1284,10 @@
           stickerType: newSticker.sticker_type as 'emoji' | 'image' | 'gif',
           startTime: newSticker.start_time,
           endTime: newSticker.end_time,
-          positionX: newSticker.position_x,
-          positionY: newSticker.position_y,
+          position: { x: newSticker.position_x, y: newSticker.position_y },
           scale: newSticker.scale,
           rotation: newSticker.rotation,
+          animation: sticker.animation,
           perRatioConfigs: newSticker.per_ratio_configs_data
             ? JSON.parse(newSticker.per_ratio_configs_data)
             : undefined,
@@ -1425,7 +1422,7 @@
       // Reload transcript data now that we're in editor mode
       // The projectId should already be set from clip mode, but trigger a refresh
       if (projectId.value) {
-        await loadTranscriptData();
+        await loadTranscriptData(projectId.value);
       }
 
       console.log(`[ClipEditorDialog] Promoted clip to video project: ${newProjectId}`);
@@ -2058,6 +2055,7 @@
           endTime: o.end_time,
           position: { x: o.position_x, y: o.position_y },
           style: JSON.parse(o.style_data || '{}'),
+          animation: (o as any).animation || 'none',
           perRatioConfigs: o.per_ratio_configs_data ? JSON.parse(o.per_ratio_configs_data) : undefined,
         }));
 
@@ -2065,12 +2063,13 @@
         stickers.value = fullEdit.stickers.map((s) => ({
           id: s.id,
           stickerPath: s.sticker_path,
-          stickerType: s.sticker_type,
+          stickerType: s.sticker_type as 'emoji' | 'image' | 'gif',
           startTime: s.start_time,
           endTime: s.end_time,
           position: { x: s.position_x, y: s.position_y },
           scale: s.scale,
           rotation: s.rotation,
+          animation: (s as any).animation || 'none',
           perRatioConfigs: s.per_ratio_configs_data ? JSON.parse(s.per_ratio_configs_data) : undefined,
         }));
 
@@ -2382,8 +2381,6 @@
       let source = currentVideoSourceId.value
         ? videoSources.value.find((s) => s.id === currentVideoSourceId.value)
         : null;
-
-      const usedFallback = !source;
 
       // If no tracked source or during transition, figure out the source from time
       if (!source) {
@@ -2743,7 +2740,7 @@
           // which might have a stale src from before a crossfade
           const videoHasCorrectSrc = videoElement.value && targetVideoUrl && videoElement.value.src === targetVideoUrl;
 
-          if (videoHasCorrectSrc) {
+          if (videoHasCorrectSrc && videoElement.value) {
             // Video already has the correct src - just seek directly
             console.log('[seekTo] Video already has correct src, seeking directly to:', timeInSource);
             videoElement.value.currentTime = timeInSource;
@@ -3139,7 +3136,7 @@
 
   // Clean up audio elements
   function cleanupAudioElements() {
-    audioElements.value.forEach((audio, trackId) => {
+    audioElements.value.forEach((audio, _trackId) => {
       audio.pause();
       audio.src = '';
     });
@@ -3726,8 +3723,8 @@
     }
   }
 
-  // Effect operations
-  async function addEffectLocal(type: string, settings: any) {
+  // Effect operations (prefixed with underscore as they may be used in future)
+  async function _addEffectLocal(type: string, settings: any) {
     if (!clipEditId.value) return;
 
     const effect = await createEffect(clipEditId.value, {
@@ -3760,7 +3757,7 @@
     }
   }
 
-  async function deleteEffectLocal(effectId: string) {
+  async function _deleteEffectLocal(effectId: string) {
     await deleteEffect(effectId);
     effects.value = effects.value.filter((e) => e.id !== effectId);
   }

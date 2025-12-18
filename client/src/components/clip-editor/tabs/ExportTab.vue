@@ -442,7 +442,7 @@
       buildProgress.value = 0;
       emit('buildStarted');
 
-      const { updateClipBuildStatus, getRawVideosByProjectId, createClipBuild } = await import('@/services/database');
+      const { updateClipBuildStatus, createClipBuild } = await import('@/services/database');
 
       // For clip mode, update database status
       if (!props.editorMode) {
@@ -673,9 +673,9 @@
     const mainSources: VideoEditorSource[] = [];
 
     for (const source of sources) {
-      if (source.source_name.startsWith('[Intro]')) {
+      if (source.source_name?.startsWith('[Intro]')) {
         introSource = source;
-      } else if (source.source_name.startsWith('[Outro]')) {
+      } else if (source.source_name?.startsWith('[Outro]')) {
         outroSource = source;
       } else {
         mainSources.push(source);
@@ -694,7 +694,7 @@
       const videoPath = mainSources[0].source_path;
 
       // Convert video sources to segments
-      const segments = mainSources.map((source, index) => ({
+      const segments = mainSources.map((source) => ({
         id: source.id,
         start_time: source.trim_start,
         end_time: source.trim_end ?? source.trim_start + (source.end_time - source.start_time),

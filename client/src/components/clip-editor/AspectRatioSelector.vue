@@ -52,7 +52,7 @@
 <script setup lang="ts">
   import { computed } from 'vue';
   import { Check } from 'lucide-vue-next';
-  import type { ManualFramingConfig, ManualFramingConfigs } from '@/types';
+  import type { ManualFramingConfigs } from '@/types';
 
   interface OtherRatio {
     value: string;

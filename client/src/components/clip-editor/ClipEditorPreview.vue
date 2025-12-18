@@ -568,7 +568,7 @@
     FilterSettings,
     ManualFramingConfigs,
     ClipWatermark,
-    WatermarkRatioConfig,
+    ClipWatermarkRatioConfig,
     ClipSubtitleSettings,
     WordInfo,
     WhisperSegment,
@@ -1485,7 +1485,7 @@
   });
 
   // Get watermark config for current aspect ratio
-  function getWatermarkConfigForRatio(watermark: ClipWatermark): WatermarkRatioConfig {
+  function getWatermarkConfigForRatio(watermark: ClipWatermark): ClipWatermarkRatioConfig {
     const ratio = props.previewAspectRatio;
     const perRatioConfig = watermark.perRatioConfigs?.[ratio];
 
@@ -1495,7 +1495,7 @@
 
     // Fall back to default values
     return {
-      position: watermark.position,
+      position: { ...watermark.position },
       scale: watermark.scale,
       opacity: watermark.opacity,
     };

@@ -246,7 +246,7 @@
 
 <script setup lang="ts">
   import { ref, onMounted } from 'vue';
-  import { Play, Plus, X, Loader2, Info, Upload } from 'lucide-vue-next';
+  import { Play, Plus, X, Loader2, Upload } from 'lucide-vue-next';
   import { getAllIntroOutros, createIntroOutro, type IntroOutro } from '@/services/database';
   import { invoke } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
@@ -259,7 +259,7 @@
     thumbnailUrl?: string;
   }
 
-  const props = defineProps<{
+  defineProps<{
     currentIntro?: AppliedIntroOutro | null;
     currentOutro?: AppliedIntroOutro | null;
   }>();
@@ -352,7 +352,7 @@
         return;
       }
 
-      const filePath = typeof selected === 'string' ? selected : selected.path;
+      const filePath = typeof selected === 'string' ? selected : (selected as { path?: string })?.path;
       if (!filePath) {
         isUploading.value = false;
         return;

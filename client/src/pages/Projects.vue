@@ -1019,7 +1019,9 @@
                       >
                         {{
                           formatDuration(
-                            inlineSeekDragging ? (inlineVideoProgress / 100) * inlineVideoClipDuration : inlineHoverTime
+                            inlineSeekDragging
+                              ? (inlineVideoProgress / 100) * inlineVideoClipDuration
+                              : (inlineHoverTime ?? 0)
                           )
                         }}
                       </div>

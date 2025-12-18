@@ -259,14 +259,14 @@
     if (!authStore.isAuthenticated) return '';
 
     // For email-based auth (Google or email/password), show email; for wallet auth, show formatted address
-    if (['google', 'email'].includes(authStore.authProvider) && authStore.email) {
+    if (authStore.authProvider && ['google', 'email'].includes(authStore.authProvider) && authStore.email) {
       return authStore.email;
     }
-    return formatAddress(authStore.walletAddress);
+    return formatAddress(authStore.walletAddress ?? '');
   });
 
   const disconnectButtonText = computed(() => {
-    return ['google', 'email'].includes(authStore.authProvider) ? 'Sign Out' : 'Disconnect';
+    return authStore.authProvider && ['google', 'email'].includes(authStore.authProvider) ? 'Sign Out' : 'Disconnect';
   });
 
   const handleDisconnect = () => {

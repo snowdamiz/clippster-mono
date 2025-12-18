@@ -275,7 +275,7 @@
 
       // Process in background
       authStore
-        .inviteOrganizationMember(props.organizationId, email, role)
+        .inviteOrganizationMember(String(props.organizationId), email, role)
         .then((result) => {
           if (result.success) {
             showSuccess('Invitation sent', `Invitation sent to ${email}`);
@@ -299,7 +299,7 @@
 
       // Process in background
       authStore
-        .createOrganizationMember(props.organizationId, email, password, role, name)
+        .createOrganizationMember(String(props.organizationId), email, password, role, name)
         .then((result) => {
           if (result.success) {
             showSuccess('Account created', `Account created for ${email}`);

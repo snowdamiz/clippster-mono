@@ -221,8 +221,8 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch } from 'vue';
-  import { Check, Sparkles, PencilRuler, ChevronRight, Layers, Crop } from 'lucide-vue-next';
+  import { ref, computed } from 'vue';
+  import { Check, Sparkles, PencilRuler, ChevronRight } from 'lucide-vue-next';
   import ManualPOIEditor from '@/components/poi/ManualPOIEditor.vue';
   import type { ManualFramingConfig, ManualFramingConfigs } from '@/types';
 
@@ -259,10 +259,10 @@
     set: (val) => emit('update:framingMode', val),
   });
 
-  const previewAspectRatio = computed(() => props.previewAspectRatio);
+  const _previewAspectRatio = computed(() => props.previewAspectRatio);
 
-  // Count of configured ratios
-  const configuredCount = computed(() => {
+  // Count of configured ratios (may be used in future)
+  const _configuredCount = computed(() => {
     return props.selectedAspectRatios.filter((ratio) => isRatioConfigured(ratio)).length;
   });
 

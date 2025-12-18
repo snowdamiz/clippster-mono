@@ -181,7 +181,7 @@
   import { ref } from 'vue';
   import { X } from 'lucide-vue-next';
   import { formatDuration, generateClipGradient, getSegmentDisplayTime } from '../utils/timelineUtils';
-  import type { TimelineClipTrackProps, ClipSegment } from '../types';
+  import type { TimelineClipTrackProps, ClipSegment, Clip } from '../types';
 
   defineProps<TimelineClipTrackProps>();
 

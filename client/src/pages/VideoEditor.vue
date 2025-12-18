@@ -100,7 +100,7 @@
                 <div class="absolute inset-0 z-0">
                   <img
                     v-if="getSourceThumbnails(project.id)[0]"
-                    :src="getSourceThumbnails(project.id)[0]"
+                    :src="getSourceThumbnails(project.id)[0] ?? undefined"
                     class="w-full h-full object-cover"
                   />
                   <div v-else class="w-full h-full bg-muted flex items-center justify-center">
