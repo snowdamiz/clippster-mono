@@ -372,6 +372,12 @@ pub fn run() {
                             sql: include_str!("../migrations/061_add_creator_watermark_position.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 62,
+                            description: "add_user_id_to_clips_and_raw_videos",
+                            sql: include_str!("../migrations/062_add_user_id_to_clips_and_raw_videos.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

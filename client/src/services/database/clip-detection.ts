@@ -1,4 +1,4 @@
-import { getDatabase, generateId, timestamp } from './core';
+import { getDatabase, generateId, timestamp, getCurrentUserId } from './core';
 import { createClipVersion } from './clip-versions';
 import { createClipDetectionSession } from './clip-detection-sessions';
 import {
@@ -164,6 +164,7 @@ export async function createVersionedClip(
   const db = await getDatabase();
   const clipId = generateId();
   const now = timestamp();
+  const userId = getCurrentUserId();
 
   // Look up the project name to store it on the clip
   // This preserves the project name even if the project is later deleted
@@ -174,8 +175,8 @@ export async function createVersionedClip(
   await db.execute(
     `INSERT INTO clips (
       id, project_id, project_name, name, file_path, built_thumbnail_path, start_time, end_time,
-      detection_session_id, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      detection_session_id, user_id, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       clipId,
       projectId,
@@ -186,6 +187,7 @@ export async function createVersionedClip(
       clipData.startTime,
       clipData.endTime,
       sessionId,
+      userId,
       now,
       now,
     ]

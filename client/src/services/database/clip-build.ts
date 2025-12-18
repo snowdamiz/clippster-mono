@@ -1,4 +1,4 @@
-import { getDatabase, timestamp, generateId } from './core';
+import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { Clip, ClipWithVersion, ClipBuild } from './types';
 
 // Update clip build status
@@ -290,12 +290,23 @@ export async function getClipWithBuildStatus(clipId: string): Promise<Clip | nul
 export async function getClipsCurrentlyBuilding(): Promise<Clip[]> {
   try {
     const db = await getDatabase();
+    const userId = getCurrentUserId();
 
-    const clips = await db.select<Clip[]>(`
-      SELECT * FROM clips
-      WHERE build_status = 'building'
-      ORDER BY updated_at DESC
-    `);
+    let clips: Clip[];
+    if (userId === null) {
+      clips = await db.select<Clip[]>(
+        `SELECT * FROM clips
+         WHERE build_status = 'building' AND user_id IS NULL
+         ORDER BY updated_at DESC`
+      );
+    } else {
+      clips = await db.select<Clip[]>(
+        `SELECT * FROM clips
+         WHERE build_status = 'building' AND (user_id = ? OR user_id IS NULL)
+         ORDER BY updated_at DESC`,
+        [userId]
+      );
+    }
 
     return clips;
   } catch (error) {
@@ -564,9 +575,20 @@ export async function hasCompletedBuilds(clipId: string): Promise<boolean> {
 export async function getAllClipsWithBuilds(): Promise<(Clip & { builds: ClipBuild[] })[]> {
   try {
     const db = await getDatabase();
+    const userId = getCurrentUserId();
 
-    // Get all clips
-    const clips = await db.select<Clip[]>('SELECT * FROM clips ORDER BY created_at DESC');
+    // Get all clips for current user
+    let clips: Clip[];
+    if (userId === null) {
+      clips = await db.select<Clip[]>(
+        'SELECT * FROM clips WHERE user_id IS NULL ORDER BY created_at DESC'
+      );
+    } else {
+      clips = await db.select<Clip[]>(
+        'SELECT * FROM clips WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC',
+        [userId]
+      );
+    }
 
     // Load builds for each clip
     const clipsWithBuilds = await Promise.all(

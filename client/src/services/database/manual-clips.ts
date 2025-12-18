@@ -1,4 +1,4 @@
-import { getDatabase, timestamp, generateId } from './core';
+import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import { getProject } from './projects';
 import { createClipVersion } from './clip-versions';
 import { createClipDetectionSession } from './clip-detection-sessions';
@@ -124,12 +124,15 @@ export async function createManualClip(
     console.error('[ManualClips] Failed to extract transcript for segment:', error);
   }
 
+  // Get current user ID for user isolation
+  const userId = getCurrentUserId();
+
   // Create the clip record
   await db.execute(
     `INSERT INTO clips (
       id, project_id, project_name, name, file_path, start_time, end_time,
-      detection_session_id, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      detection_session_id, user_id, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       clipId,
       projectId,
@@ -139,6 +142,7 @@ export async function createManualClip(
       clipData.startTime,
       clipData.endTime,
       sessionId,
+      userId,
       now,
       now,
     ]

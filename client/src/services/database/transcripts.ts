@@ -1,4 +1,4 @@
-import { getDatabase, timestamp, generateId } from './core';
+import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { Transcript, TranscriptSegment } from './types';
 
 // Transcript queries
@@ -82,25 +82,56 @@ export async function getTranscriptWithSegmentsByProjectId(
 // Search queries
 export async function searchTranscripts(query: string): Promise<any[]> {
   const db = await getDatabase();
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    return await db.select<any[]>(
+      `SELECT DISTINCT p.*
+       FROM projects p
+       JOIN transcripts t ON t.project_id = p.id
+       JOIN transcripts_fts fts ON fts.rowid = t.rowid
+       WHERE transcripts_fts MATCH ? AND p.user_id IS NULL
+       ORDER BY p.updated_at DESC`,
+      [query]
+    );
+  }
+
   return await db.select<any[]>(
     `SELECT DISTINCT p.*
      FROM projects p
      JOIN transcripts t ON t.project_id = p.id
      JOIN transcripts_fts fts ON fts.rowid = t.rowid
-     WHERE transcripts_fts MATCH ?
+     WHERE transcripts_fts MATCH ? AND (p.user_id = ? OR p.user_id IS NULL)
      ORDER BY p.updated_at DESC`,
-    [query]
+    [query, userId]
   );
 }
 
 export async function searchSegments(query: string): Promise<TranscriptSegment[]> {
   const db = await getDatabase();
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    return await db.select<TranscriptSegment[]>(
+      `SELECT ts.*
+       FROM transcript_segments ts
+       JOIN transcripts t ON ts.transcript_id = t.id
+       JOIN raw_videos rv ON t.raw_video_id = rv.id
+       JOIN transcript_segments_fts fts ON fts.rowid = ts.rowid
+       WHERE transcript_segments_fts MATCH ? AND rv.user_id IS NULL
+       ORDER BY ts.start_time`,
+      [query]
+    );
+  }
+
   return await db.select<TranscriptSegment[]>(
     `SELECT ts.*
      FROM transcript_segments ts
+     JOIN transcripts t ON ts.transcript_id = t.id
+     JOIN raw_videos rv ON t.raw_video_id = rv.id
      JOIN transcript_segments_fts fts ON fts.rowid = ts.rowid
-     WHERE transcript_segments_fts MATCH ?
+     WHERE transcript_segments_fts MATCH ? AND (rv.user_id = ? OR rv.user_id IS NULL)
      ORDER BY ts.start_time`,
-    [query]
+    [query, userId]
   );
 }
