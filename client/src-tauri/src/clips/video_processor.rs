@@ -2266,7 +2266,7 @@ pub async fn build_clip_with_framing_strategy(
                 intro_path,
                 outro_path,
                 intro_outro_cache,
-                watermark_settings,
+                None, // Don't apply watermark inside, we apply it at the end of this function to handle per-ratio settings correctly
                 audio_settings,
                 video_filter_segments,
             ).await?;

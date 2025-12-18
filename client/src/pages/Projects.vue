@@ -2603,7 +2603,20 @@
       // Prepare watermark settings if enabled
       let watermarkSettings = null;
       if (settings.watermark && settings.watermark.enabled && settings.watermark.watermarkId) {
-        const { getWatermarkImage } = await import('@/services/database');
+        const { getWatermarkImage, getCreatorProfileByProjectId } = await import('@/services/database');
+        
+        // Fetch per-ratio settings from creator profile
+        let perRatioSettings = null;
+        try {
+          // clip.segment_id is used as projectId in build call below
+          const profile = await getCreatorProfileByProjectId(clip.segment_id);
+          if (profile && profile.watermark_settings) {
+            perRatioSettings = JSON.parse(profile.watermark_settings);
+          }
+        } catch (e) {
+          console.warn('[Projects] Failed to load creator profile watermark settings:', e);
+        }
+
         const watermarkImage = await getWatermarkImage(settings.watermark.watermarkId);
         if (watermarkImage) {
           watermarkSettings = {
@@ -2616,6 +2629,7 @@
             positionY: settings.watermark.positionY,
             opacity: settings.watermark.opacity,
             scale: settings.watermark.scale,
+            perRatioSettings: perRatioSettings,
           };
         }
       }

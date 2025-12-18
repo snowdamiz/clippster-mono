@@ -356,9 +356,9 @@
       let assetWidth = asset.width;
       let assetHeight = asset.height;
 
-      // If dimensions are missing from DB, try to load them from the image
-      if (!assetWidth || !assetHeight) {
-        console.log('[StickersTab] Asset dimensions missing in DB, loading image to get dimensions...');
+      // If dimensions are missing from DB or invalid, try to load them from the image
+      if (!assetWidth || !assetHeight || assetWidth <= 0 || assetHeight <= 0) {
+        console.log('[StickersTab] Asset dimensions missing or invalid in DB, loading image to get dimensions...');
         try {
           const img = new Image();
           img.src = imageUrl;
@@ -384,9 +384,9 @@
 
       // Check for full-frame match
       if (assetWidth && assetHeight && props.videoDimensions?.width && props.videoDimensions?.height) {
-        // Allow some tolerance (e.g. 1%)
-        const widthMatch = Math.abs(assetWidth - props.videoDimensions.width) < props.videoDimensions.width * 0.01;
-        const heightMatch = Math.abs(assetHeight - props.videoDimensions.height) < props.videoDimensions.height * 0.01;
+        // Allow tolerance (e.g. 5%) to handle minor resolution mismatches
+        const widthMatch = Math.abs(assetWidth - props.videoDimensions.width) < props.videoDimensions.width * 0.05;
+        const heightMatch = Math.abs(assetHeight - props.videoDimensions.height) < props.videoDimensions.height * 0.05;
 
         console.log('[StickersTab] Match check:', { widthMatch, heightMatch, assetWidth, assetHeight, videoWidth: props.videoDimensions.width, videoHeight: props.videoDimensions.height });
 
@@ -397,7 +397,8 @@
           // base_size width equivalent: (video_height * 0.1)
 
           // scale = video.width / (video.height * 0.1)
-          const scale = props.videoDimensions.width / (props.videoDimensions.height * 0.1);
+          // Add 1% buffer to ensure full coverage (avoids 1px gaps at edges)
+          const scale = (props.videoDimensions.width / (props.videoDimensions.height * 0.1)) * 1.01;
 
           options = {
             scale: scale,
