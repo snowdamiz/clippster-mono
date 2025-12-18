@@ -430,7 +430,11 @@
     createVideoEditorWatermark,
     updateVideoEditorWatermark,
     deleteVideoEditorWatermark,
+    getWatermarkImage,
+    getWatermarkByServerId,
+    getProject,
   } from '@/services/database';
+  import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
   import type { VideoEditorSource, VideoEditorTab, SourceItem, VideoEditorTransition, IntroOutro } from '@/types';
   import { calculateCrossfadeOpacity } from '@/types';
 
@@ -477,6 +481,9 @@
       editorMode?: boolean;
       editorProjectId?: string | null;
       editorProjectName?: string;
+      // Creator profile watermark settings (auto-applied when opening)
+      creatorWatermarkId?: string | null;
+      creatorWatermarkSettings?: string | null; // JSON string of per-ratio settings
     }>(),
     {
       clipId: '',
@@ -487,6 +494,8 @@
       editorMode: false,
       editorProjectId: null,
       editorProjectName: 'Video Project',
+      creatorWatermarkId: null,
+      creatorWatermarkSettings: null,
     }
   );
 
@@ -3595,6 +3604,254 @@
     watermarks.value = watermarks.value.filter((w) => w.id !== watermarkId);
   }
 
+  // Auto-apply creator profile watermark settings when opening the clip editor
+  async function applyCreatorWatermark() {
+    // Skip if watermarks already exist
+    if (watermarks.value.length > 0) {
+      console.log('[ClipEditorDialog] Skipping creator watermark - already has watermarks');
+      return;
+    }
+
+    let watermarkId = props.creatorWatermarkId;
+    let watermarkSettingsJson = props.creatorWatermarkSettings;
+
+    // If no props provided and in editor mode, try to load from video sources' parent project
+    if (!watermarkId && editorMode.value && videoSources.value.length > 0) {
+      console.log('[ClipEditorDialog] No creator watermark props, trying to load from video sources...', {
+        editorMode: editorMode.value,
+        sourceCount: videoSources.value.length,
+        sources: videoSources.value.map((s) => ({ id: s.id, type: s.source_type, sourceId: s.source_id })),
+      });
+
+      // Try to find watermark settings from the first video source's parent project
+      for (const source of videoSources.value) {
+        let parentProjectId: string | null = null;
+
+        if (source.source_type === 'raw_video' && source.source_id) {
+          const rawVideo = await getRawVideo(source.source_id);
+          parentProjectId = rawVideo?.project_id || null;
+          console.log('[ClipEditorDialog] Raw video lookup:', {
+            sourceId: source.source_id,
+            rawVideo: rawVideo ? { id: rawVideo.id, project_id: rawVideo.project_id } : null,
+          });
+        } else if (source.source_type === 'clip' && source.source_id) {
+          const clip = await getClip(source.source_id);
+          parentProjectId = clip?.project_id || null;
+          console.log('[ClipEditorDialog] Clip lookup:', {
+            sourceId: source.source_id,
+            clip: clip ? { id: clip.id, project_id: clip.project_id } : null,
+          });
+        }
+
+        if (parentProjectId) {
+          const parentProject = await getProject(parentProjectId);
+          console.log(
+            '[ClipEditorDialog] Parent project:',
+            parentProject
+              ? {
+                  id: parentProject.id,
+                  name: parentProject.name,
+                  hasWatermarkSettings: !!parentProject.default_watermark_settings,
+                }
+              : null
+          );
+
+          // Check for watermark in the stored settings (format: { watermarkId, watermarkSettings })
+          if (parentProject?.default_watermark_settings) {
+            try {
+              const storedSettings = JSON.parse(parentProject.default_watermark_settings);
+              console.log('[ClipEditorDialog] Found stored watermark settings:', {
+                watermarkId: storedSettings.watermarkId,
+                hasWatermarkSettings: !!storedSettings.watermarkSettings,
+              });
+
+              if (storedSettings.watermarkId) {
+                console.log(
+                  '[ClipEditorDialog] Found watermark from parent project:',
+                  parentProject.name,
+                  'watermark:',
+                  storedSettings.watermarkId
+                );
+                watermarkId = storedSettings.watermarkId;
+
+                // Extract the per-ratio configs
+                if (storedSettings.watermarkSettings) {
+                  watermarkSettingsJson =
+                    typeof storedSettings.watermarkSettings === 'string'
+                      ? storedSettings.watermarkSettings
+                      : JSON.stringify(storedSettings.watermarkSettings);
+                }
+                break; // Found watermark, stop looking
+              }
+            } catch (e) {
+              console.warn('[ClipEditorDialog] Failed to parse parent project watermark settings:', e);
+            }
+          }
+        }
+      }
+    }
+
+    if (!watermarkId) {
+      console.log('[ClipEditorDialog] No creator watermark to apply');
+      return;
+    }
+
+    console.log('[ClipEditorDialog] Auto-applying creator watermark:', watermarkId);
+
+    try {
+      let watermarkRecord: { id: string; file_path: string; width?: number; height?: number } | null = null;
+      let previewUrl: string | null = null;
+      let filePath: string | null = null;
+
+      // Check if this is an organization asset (ID format: org-asset-{serverId})
+      if (watermarkId.startsWith('org-asset-')) {
+        const serverId = parseInt(watermarkId.replace('org-asset-', ''), 10);
+        console.log('[ClipEditorDialog] Loading org watermark with serverId:', serverId);
+
+        if (!isNaN(serverId)) {
+          // First try to load from local cache
+          const localWatermark = await getWatermarkByServerId(serverId);
+          if (localWatermark) {
+            console.log('[ClipEditorDialog] Found cached org watermark:', localWatermark.name);
+            watermarkRecord = localWatermark;
+            filePath = localWatermark.file_path;
+            previewUrl = await invoke<string>('read_file_as_data_url', { filePath: localWatermark.file_path });
+          } else {
+            // Not cached locally - get URL from server
+            console.log('[ClipEditorDialog] Org watermark not cached, fetching URL from server...');
+            const serverResponse = await getUserOrganizationAssets();
+            if (serverResponse.success && serverResponse.assets) {
+              const serverAsset = serverResponse.assets.find((a) => a.id === serverId && a.asset_type === 'watermark');
+              if (serverAsset && serverAsset.url) {
+                console.log('[ClipEditorDialog] Using server URL directly for watermark:', serverAsset.name);
+                previewUrl = serverAsset.url;
+                filePath = serverAsset.url;
+                watermarkRecord = {
+                  id: watermarkId,
+                  file_path: serverAsset.url,
+                  width: serverAsset.width,
+                  height: serverAsset.height,
+                };
+              }
+            }
+          }
+        }
+      } else {
+        // Regular watermark lookup by ID
+        const watermark = await getWatermarkImage(watermarkId);
+        if (watermark) {
+          watermarkRecord = watermark;
+          filePath = watermark.file_path;
+          previewUrl = await invoke<string>('read_file_as_data_url', { filePath: watermark.file_path });
+        }
+      }
+
+      if (!watermarkRecord || !filePath || !previewUrl) {
+        console.log('[ClipEditorDialog] Failed to load creator watermark data');
+        return;
+      }
+
+      // Parse per-ratio settings from creator profile
+      let perRatioConfigs:
+        | Record<
+            string,
+            { position: { x: number; y: number }; scale: number; opacity: number; isFullFrameOverlay?: boolean }
+          >
+        | undefined;
+      let defaultPosition = { x: 8, y: 92 };
+      let defaultScale = 15;
+      let defaultOpacity = 80;
+      let isFullFrameOverlay = false;
+
+      if (watermarkSettingsJson) {
+        try {
+          const creatorSettings =
+            typeof watermarkSettingsJson === 'string' ? JSON.parse(watermarkSettingsJson) : watermarkSettingsJson;
+
+          // Build per-ratio configs for the clip editor
+          perRatioConfigs = {};
+          for (const [ratio, config] of Object.entries(creatorSettings)) {
+            if (config && typeof config === 'object' && 'position' in config) {
+              const ratioConfig = config as {
+                position?: { x: number; y: number; scale: number; opacity: number; isFullFrameOverlay?: boolean };
+                watermarkId?: string;
+              };
+              if (ratioConfig.position) {
+                perRatioConfigs[ratio] = {
+                  position: { x: ratioConfig.position.x, y: ratioConfig.position.y },
+                  scale: ratioConfig.position.scale,
+                  opacity: ratioConfig.position.opacity,
+                  isFullFrameOverlay: ratioConfig.position.isFullFrameOverlay,
+                };
+                // Use 16:9 as default display settings
+                if (ratio === '16:9') {
+                  defaultPosition = { x: ratioConfig.position.x, y: ratioConfig.position.y };
+                  defaultScale = ratioConfig.position.scale;
+                  defaultOpacity = ratioConfig.position.opacity;
+                  isFullFrameOverlay = ratioConfig.position.isFullFrameOverlay ?? false;
+                }
+              }
+            }
+          }
+          console.log('[ClipEditorDialog] Parsed creator watermark settings:', {
+            defaultPosition,
+            defaultScale,
+            defaultOpacity,
+            isFullFrameOverlay,
+            ratioCount: Object.keys(perRatioConfigs).length,
+          });
+        } catch (e) {
+          console.warn('[ClipEditorDialog] Failed to parse creator watermark settings:', e);
+        }
+      }
+
+      // Create the watermark in the database
+      const editId = editorMode.value ? videoEditorEditId.value : clipEditId.value;
+      if (!editId) {
+        console.log('[ClipEditorDialog] No edit ID available, cannot add watermark');
+        return;
+      }
+
+      const watermarkData = {
+        watermark_id: watermarkId,
+        watermark_path: filePath,
+        preview_url: previewUrl,
+        start_time: 0,
+        end_time: totalSegmentDuration.value,
+        position_x: defaultPosition.x,
+        position_y: defaultPosition.y,
+        scale: defaultScale,
+        opacity: defaultOpacity,
+        per_ratio_configs_data: perRatioConfigs ? JSON.stringify(perRatioConfigs) : undefined,
+      };
+
+      const newWatermark = editorMode.value
+        ? await createVideoEditorWatermark(editId, watermarkData)
+        : await createWatermark(editId, watermarkData);
+
+      watermarks.value.push({
+        id: newWatermark.id,
+        watermarkId: newWatermark.watermark_id,
+        filePath: filePath,
+        previewUrl: previewUrl,
+        startTime: newWatermark.start_time,
+        endTime: newWatermark.end_time,
+        position: { x: newWatermark.position_x, y: newWatermark.position_y },
+        scale: newWatermark.scale,
+        opacity: newWatermark.opacity,
+        perRatioConfigs: perRatioConfigs,
+      });
+
+      console.log('[ClipEditorDialog] Creator watermark auto-applied successfully:', {
+        watermarkCount: watermarks.value.length,
+        watermarkIds: watermarks.value.map((w) => w.id),
+        totalDuration: totalSegmentDuration.value,
+      });
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to auto-apply creator watermark:', error);
+    }
+  }
+
   // Handle subtitle settings changes from SubtitlesTab
   function updateSubtitleSettings(newSettings: ClipSubtitleSettings) {
     subtitleSettings.value = newSettings;
@@ -4404,10 +4661,17 @@
           await loadProjectId(); // Load project ID for transcript/subtitles
           previewTime.value = 0;
           activeEditorTab.value = 'sources';
+
+          // Auto-apply creator watermark if available (from props or video sources)
+          await applyCreatorWatermark();
         } else if (props.clipId) {
           // Clip mode - existing behavior
           await loadEditData();
           await loadProjectId();
+
+          // Auto-apply creator watermark if provided and no existing watermarks
+          await applyCreatorWatermark();
+
           // Initialize to clip start time (absolute time)
           previewTime.value = props.clipStartTime;
 

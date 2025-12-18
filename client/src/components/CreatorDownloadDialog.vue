@@ -529,6 +529,15 @@
       // Auto-segment applies to the selected range (whether full or trimmed)
       const shouldAutoSegment = autoSegment.value && selectedDuration.value > 900;
 
+      // Pass creator watermark settings if available
+      const creatorWatermarkSettings =
+        props.creator?.watermark_id && props.creator?.watermark_settings
+          ? {
+              watermarkId: props.creator.watermark_id,
+              watermarkSettings: props.creator.watermark_settings,
+            }
+          : undefined;
+
       await startVodDownload(
         vod.title,
         videoUrl,
@@ -540,6 +549,7 @@
           autoSegment: shouldAutoSegment,
           segmentDuration: autoSegmentDuration.value * 60,
           provider: currentPlatformLink.value.platform as 'pumpfun' | 'kick',
+          creatorWatermarkSettings,
         }
       );
 

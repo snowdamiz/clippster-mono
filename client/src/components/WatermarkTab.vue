@@ -243,8 +243,10 @@
                 <img
                   :src="getWatermarkUrl(selectedWatermark)"
                   :alt="selectedWatermark.name"
-                  class="max-w-full max-h-full object-contain drop-shadow-lg"
-                  :style="{ opacity: localSettings.opacity / 100 }"
+                  :class="
+                    isFullFrameWatermark ? 'drop-shadow-lg' : 'max-w-full max-h-full object-contain drop-shadow-lg'
+                  "
+                  :style="getWatermarkImageStyle"
                 />
               </div>
               <!-- Fallback indicator when image not loaded -->
@@ -603,6 +605,24 @@
     const w = selectedWatermark.value.width ?? measuredWidth.value;
     const h = selectedWatermark.value.height ?? measuredHeight.value;
     return w === 1920 && h === 1080;
+  });
+
+  // Get watermark image style - for full-frame mode, fill the container
+  const getWatermarkImageStyle = computed(() => {
+    const baseStyle: Record<string, string | number> = {
+      opacity: localSettings.value.opacity / 100,
+    };
+
+    if (isFullFrameWatermark.value) {
+      return {
+        ...baseStyle,
+        width: '100%',
+        height: '100%',
+        objectFit: 'fill' as const,
+      };
+    }
+
+    return baseStyle;
   });
 
   const getWatermarkPreviewStyle = computed(() => {

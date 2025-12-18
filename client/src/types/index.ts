@@ -241,6 +241,7 @@ export interface WatermarkPositionSettings {
   y: number;
   opacity: number;
   scale: number;
+  isFullFrameOverlay?: boolean; // When true, position at 0,0 with 100% scale (full-frame overlay)
 }
 
 // Per-aspect-ratio watermark configuration

@@ -8,6 +8,7 @@ export interface Project {
   parent_id: string | null;
   platform: 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual' | null;
   audio_settings: string | null; // JSON string of AudioSettings
+  default_watermark_settings: string | null; // JSON string with watermark_id and watermark_settings from creator profile
   created_at: number;
   updated_at: number;
 }

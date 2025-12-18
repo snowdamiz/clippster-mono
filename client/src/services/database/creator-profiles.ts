@@ -360,6 +360,7 @@ export async function getCreatorProfileByProjectId(
   if (sessions.length > 0 && sessions[0].monitored_streamer_id) {
     const profile = await getCreatorProfileByMonitoredStreamer(sessions[0].monitored_streamer_id);
     if (profile) {
+      console.log('[CreatorProfiles] Found profile via livestream session');
       return profile;
     }
   }
@@ -372,10 +373,12 @@ export async function getCreatorProfileByProjectId(
   );
 
   if (projects.length === 0 || !projects[0].platform) {
+    console.log('[CreatorProfiles] No project or platform found for:', projectId);
     return null;
   }
 
   const projectPlatform = projects[0].platform;
+  console.log('[CreatorProfiles] Project platform:', projectPlatform);
 
   // Map project platform names to creator_platform_links platform values
   const platformMap: Record<string, CreatorPlatformLink['platform']> = {
@@ -387,6 +390,7 @@ export async function getCreatorProfileByProjectId(
 
   const linkPlatform = platformMap[projectPlatform];
   if (!linkPlatform) {
+    console.log('[CreatorProfiles] Unknown platform:', projectPlatform);
     return null;
   }
 
@@ -397,10 +401,20 @@ export async function getCreatorProfileByProjectId(
   );
 
   if (rawVideos.length === 0 || !rawVideos[0].source_mint_id) {
+    console.log(
+      '[CreatorProfiles] No raw videos with source_mint_id found for project:',
+      projectId
+    );
     return null;
   }
 
   const sourceMintId = rawVideos[0].source_mint_id;
+  console.log(
+    '[CreatorProfiles] Looking for creator link with platform:',
+    linkPlatform,
+    'platformId:',
+    sourceMintId
+  );
 
   // Find creator platform link by platform + platform_id
   // Use case-insensitive comparison for Kick channel slugs (and other platforms just in case)
@@ -410,8 +424,14 @@ export async function getCreatorProfileByProjectId(
   );
 
   if (links.length === 0) {
+    console.log(
+      '[CreatorProfiles] No creator platform link found for:',
+      linkPlatform,
+      sourceMintId
+    );
     return null;
   }
 
+  console.log('[CreatorProfiles] Found creator platform link:', links[0].creator_profile_id);
   return await getCreatorProfile(links[0].creator_profile_id);
 }

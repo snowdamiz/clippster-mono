@@ -362,7 +362,16 @@ export function useDownloads() {
     segmentRange?: { startTime: number; endTime: number },
     sourceClipId?: string,
     totalDuration?: number,
-    options: { autoSegment?: boolean; segmentDuration?: number; provider?: 'pumpfun' | 'kick' } = {}
+    options: {
+      autoSegment?: boolean;
+      segmentDuration?: number;
+      provider?: 'pumpfun' | 'kick';
+      // Watermark settings from creator profile (stored with project for automatic application)
+      creatorWatermarkSettings?: {
+        watermarkId: string;
+        watermarkSettings: string; // JSON string of per-ratio watermark settings
+      };
+    } = {}
   ): Promise<string> {
     await initialize();
 
@@ -386,7 +395,8 @@ export function useDownloads() {
         sourceClipId || mintId,
         totalDuration,
         segmentDuration,
-        provider
+        provider,
+        options.creatorWatermarkSettings
       );
     }
 
@@ -430,6 +440,11 @@ export function useDownloads() {
           [title]
         );
 
+        // Serialize watermark settings if provided
+        const watermarkSettingsJson = options.creatorWatermarkSettings
+          ? JSON.stringify(options.creatorWatermarkSettings)
+          : undefined;
+
         if (existingProjects.length > 0) {
           // Found an existing parent project
           parentProjectId = existingProjects[0].id;
@@ -440,7 +455,8 @@ export function useDownloads() {
             title,
             `Manual downloads from ${provider === 'kick' ? 'Kick' : 'PumpFun'} (${sourceLabel})`,
             undefined,
-            provider === 'kick' ? 'Kick' : 'PumpFun'
+            provider === 'kick' ? 'Kick' : 'PumpFun',
+            watermarkSettingsJson
           );
         }
 
@@ -449,16 +465,23 @@ export function useDownloads() {
           finalTitle,
           `Segment ${segmentNumber} of ${title}`,
           parentProjectId,
-          provider === 'kick' ? 'Kick' : 'PumpFun'
+          provider === 'kick' ? 'Kick' : 'PumpFun',
+          watermarkSettingsJson
         );
       } else {
+        // Serialize watermark settings if provided
+        const watermarkSettingsJson = options.creatorWatermarkSettings
+          ? JSON.stringify(options.creatorWatermarkSettings)
+          : undefined;
+
         // Full stream download - create a standard project
         const sourceLabel = provider === 'kick' ? `Channel: ${mintId}` : `Mint: ${mintId}`;
         projectId = await createProject(
           finalTitle,
           `Downloaded from ${provider === 'kick' ? 'Kick' : 'PumpFun'} (${sourceLabel})`,
           undefined,
-          provider === 'kick' ? 'Kick' : 'PumpFun'
+          provider === 'kick' ? 'Kick' : 'PumpFun',
+          watermarkSettingsJson
         );
       }
     } catch (error) {
@@ -552,7 +575,8 @@ export function useDownloads() {
     sourceClipId: string,
     totalDuration: number,
     maxSegmentDuration: number = 3600,
-    provider: 'pumpfun' | 'kick' = 'pumpfun'
+    provider: 'pumpfun' | 'kick' = 'pumpfun',
+    creatorWatermarkSettings?: { watermarkId: string; watermarkSettings: string }
   ): Promise<string> {
     await initialize();
 
@@ -583,11 +607,17 @@ export function useDownloads() {
     // Create a parent project for the auto-segmented download
     let parentProjectId: string | undefined;
     try {
+      // Serialize watermark settings if provided
+      const watermarkSettingsJson = creatorWatermarkSettings
+        ? JSON.stringify(creatorWatermarkSettings)
+        : undefined;
+
       parentProjectId = await createProject(
         title,
         `Auto-segmented download from ${provider === 'kick' ? 'Kick' : 'PumpFun'} (${provider === 'kick' ? 'Channel' : 'Mint'}: ${mintId}). ${numberOfSegments} parts.`,
         undefined,
-        provider === 'kick' ? 'Kick' : 'PumpFun'
+        provider === 'kick' ? 'Kick' : 'PumpFun',
+        watermarkSettingsJson
       );
     } catch (error) {
       console.warn(
