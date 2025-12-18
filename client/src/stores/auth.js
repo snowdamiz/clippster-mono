@@ -1071,5 +1071,26 @@ export const useAuthStore = defineStore('auth', {
         return { success: false, error: error.message };
       }
     },
+
+    /**
+     * Get organization transaction history
+     */
+    async getOrganizationTransactions(orgId, options = {}) {
+      try {
+        const params = new URLSearchParams();
+        if (options.limit) params.append('limit', options.limit);
+        if (options.offset) params.append('offset', options.offset);
+
+        const url = `${API_BASE}/api/organizations/${orgId}/transactions${params.toString() ? '?' + params.toString() : ''}`;
+        const response = await fetch(url, {
+          headers: { Authorization: `Bearer ${this.token}` },
+        });
+
+        const data = await response.json();
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
   },
 });

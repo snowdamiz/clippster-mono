@@ -242,8 +242,8 @@ defmodule ClippsterServerWeb.StripeController do
     if user_id && pack_type && hours do
       # Check if this is an organization purchase
       if organization_id do
-        # Add credits to organization pool
-        handle_org_stripe_payment(organization_id, hours, session_id)
+        # Add credits to organization pool with transaction record
+        handle_org_stripe_payment(organization_id, user_id, pack_type, hours, amount_usd, amount_total, session_id, payment_intent)
       else
         # Add credits to personal user balance (original flow)
         handle_personal_stripe_payment(user_id, pack_type, hours, amount_usd, amount_total, session_id, payment_intent)
@@ -281,16 +281,33 @@ defmodule ClippsterServerWeb.StripeController do
     end
   end
 
-  defp handle_org_stripe_payment(organization_id, hours, session_id) do
-    # Add credits to organization pool
+  defp handle_org_stripe_payment(organization_id, user_id, pack_type, hours, amount_usd, amount_total, session_id, payment_intent) do
+    # Add credits to organization pool with transaction record
     org_id = if is_binary(organization_id), do: String.to_integer(organization_id), else: organization_id
+    user_id_int = if is_binary(user_id), do: String.to_integer(user_id), else: user_id
     hours_int = if is_binary(hours), do: String.to_integer(hours), else: hours
+    amount = parse_decimal(amount_usd) || Decimal.div(Decimal.new(amount_total || 0), 100)
 
     IO.puts("[Stripe Webhook] Adding #{hours_int} hours to organization #{org_id} pool")
 
-    case Organizations.add_organization_credits(org_id, hours_int) do
-      {:ok, _org_credit} ->
-        IO.puts("[Stripe Webhook] Successfully added #{hours_int} hours to organization #{org_id}")
+    case Organizations.create_org_credit_transaction_and_add_credits(
+      org_id,
+      user_id_int,
+      pack_type,
+      hours_int,
+      amount,
+      nil,  # No SOL amount for Stripe
+      nil,  # No SOL rate for Stripe
+      "stripe_#{session_id}",  # Use session ID as unique identifier
+      "stripe",
+      stripe_session_id: session_id,
+      stripe_payment_intent_id: payment_intent
+    ) do
+      {:ok, %{transaction: _transaction, org_credit: _org_credit}} ->
+        IO.puts("[Stripe Webhook] Successfully added #{hours_int} hours to organization #{org_id} with transaction record")
+
+      {:error, :already_processed} ->
+        IO.puts("[Stripe Webhook] Transaction already processed for session #{session_id}")
 
       {:error, reason} ->
         IO.puts("[Stripe Webhook] Failed to add org credits: #{inspect(reason)}")

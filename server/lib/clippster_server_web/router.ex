@@ -137,6 +137,7 @@ defmodule ClippsterServerWeb.Router do
     # Organization credits
     get "/organizations/:organization_id/credits", OrganizationController, :get_credits
     post "/organizations/:organization_id/credits/allocate", OrganizationController, :allocate_credits
+    get "/organizations/:organization_id/transactions", OrganizationController, :get_transactions
 
     # Organization payments (Stripe)
     post "/organizations/:organization_id/payments/stripe/create-session", StripeController, :create_org_checkout_session

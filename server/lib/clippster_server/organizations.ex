@@ -12,6 +12,7 @@ defmodule ClippsterServer.Organizations do
     OrganizationMember,
     OrganizationInvitation,
     OrganizationCredit,
+    OrganizationCreditTransaction,
     MemberCreditAllocation
   }
   alias ClippsterServer.{Emails, Mailer}
@@ -593,6 +594,108 @@ defmodule ClippsterServer.Organizations do
         |> OrganizationCredit.add_hours_changeset(hours)
         |> Repo.update()
     end
+  end
+
+  @doc """
+  Creates an organization credit transaction and adds credits to the pool.
+  Used for both Solana and Stripe payments.
+  Returns {:ok, %{org_credit: ..., transaction: ...}} or {:error, reason}
+  """
+  def create_org_credit_transaction_and_add_credits(
+    organization_id,
+    user_id,
+    pack_type,
+    hours,
+    amount_usd,
+    amount_sol,
+    sol_usd_rate,
+    tx_signature,
+    payment_method,
+    stripe_opts \\ []
+  ) do
+    # Check if transaction already exists (idempotency)
+    case get_org_transaction_by_signature(tx_signature) do
+      nil ->
+        Repo.transaction(fn ->
+          # Create transaction record
+          tx_attrs = %{
+            organization_id: organization_id,
+            purchased_by_user_id: user_id,
+            pack_type: pack_type,
+            hours_purchased: Decimal.new(to_string(hours)),
+            amount_usd: Decimal.new(to_string(amount_usd)),
+            amount_sol: if(amount_sol, do: Decimal.new(to_string(amount_sol)), else: nil),
+            sol_usd_rate: if(sol_usd_rate, do: Decimal.new(to_string(sol_usd_rate)), else: nil),
+            tx_signature: tx_signature,
+            status: "confirmed",
+            payment_method: payment_method,
+            stripe_session_id: Keyword.get(stripe_opts, :stripe_session_id),
+            stripe_payment_intent_id: Keyword.get(stripe_opts, :stripe_payment_intent_id)
+          }
+
+          changeset = if payment_method == "stripe" do
+            OrganizationCreditTransaction.stripe_changeset(tx_attrs)
+          else
+            OrganizationCreditTransaction.solana_changeset(tx_attrs)
+          end
+
+          case Repo.insert(changeset) do
+            {:ok, transaction} ->
+              # Add credits to organization pool
+              {:ok, org_credit} = add_organization_credits(organization_id, hours)
+              %{org_credit: org_credit, transaction: transaction}
+
+            {:error, changeset} ->
+              Repo.rollback(changeset)
+          end
+        end)
+
+      _existing ->
+        {:error, :already_processed}
+    end
+  end
+
+  @doc """
+  Gets an organization transaction by its signature (tx_signature).
+  """
+  def get_org_transaction_by_signature(tx_signature) when is_binary(tx_signature) do
+    Repo.get_by(OrganizationCreditTransaction, tx_signature: tx_signature)
+  end
+  def get_org_transaction_by_signature(_), do: nil
+
+  @doc """
+  Gets an organization transaction by Stripe session ID.
+  """
+  def get_org_transaction_by_stripe_session(session_id) when is_binary(session_id) do
+    Repo.get_by(OrganizationCreditTransaction, stripe_session_id: session_id)
+  end
+  def get_org_transaction_by_stripe_session(_), do: nil
+
+  @doc """
+  Lists all credit transactions for an organization, ordered by most recent first.
+  Optionally supports pagination with limit and offset.
+  """
+  def list_organization_transactions(organization_id, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 50)
+    offset = Keyword.get(opts, :offset, 0)
+
+    query = from t in OrganizationCreditTransaction,
+      where: t.organization_id == ^organization_id,
+      order_by: [desc: t.inserted_at],
+      limit: ^limit,
+      offset: ^offset,
+      preload: [:purchased_by]
+
+    transactions = Repo.all(query)
+
+    # Get total count
+    count_query = from t in OrganizationCreditTransaction,
+      where: t.organization_id == ^organization_id,
+      select: count(t.id)
+
+    total = Repo.one(count_query)
+
+    {:ok, %{transactions: transactions, total: total}}
   end
 
   @doc """

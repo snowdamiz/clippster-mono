@@ -292,35 +292,58 @@
           </div>
         </div>
 
-        <!-- Credits Tab -->
-        <div v-if="activeTab === 'credits'" class="p-6">
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-base font-semibold text-foreground">Organization Credits</h2>
+        <!-- Billing Tab -->
+        <div v-if="activeTab === 'billing'" class="p-6">
+          <!-- Header with Buy Credits Button -->
+          <div class="flex items-center justify-between mb-6">
+            <div>
+              <h2 class="text-base font-semibold text-foreground">Billing & Credits</h2>
+              <p class="text-sm text-muted-foreground mt-0.5">
+                Manage your organization's credits and view payment history
+              </p>
+            </div>
             <Button v-if="isAdmin" @click="showBuyCreditsModal = true">
               <Wallet class="h-4 w-4 mr-1.5" />
               Buy Credits
             </Button>
           </div>
 
+          <!-- Credit Overview Cards -->
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-            <div class="bg-muted/30 border border-border/50 rounded-lg p-4">
-              <div class="text-sm text-muted-foreground mb-1">Pool Balance</div>
+            <div class="bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 rounded-lg p-4">
+              <div class="flex items-center gap-2 mb-2">
+                <Wallet class="h-4 w-4 text-primary" />
+                <span class="text-sm text-muted-foreground">Pool Balance</span>
+              </div>
               <div class="text-2xl font-bold text-foreground">{{ credits.hoursRemaining }} hrs</div>
+              <div class="text-xs text-muted-foreground mt-1">Available for allocation</div>
             </div>
             <div class="bg-muted/30 border border-border/50 rounded-lg p-4">
-              <div class="text-sm text-muted-foreground mb-1">Used</div>
+              <div class="flex items-center gap-2 mb-2">
+                <Clock class="h-4 w-4 text-muted-foreground" />
+                <span class="text-sm text-muted-foreground">Total Used</span>
+              </div>
               <div class="text-2xl font-bold text-foreground">{{ credits.hoursUsed }} hrs</div>
+              <div class="text-xs text-muted-foreground mt-1">All time usage</div>
             </div>
             <div class="bg-muted/30 border border-border/50 rounded-lg p-4">
-              <div class="text-sm text-muted-foreground mb-1">My Allocation</div>
+              <div class="flex items-center gap-2 mb-2">
+                <User class="h-4 w-4 text-muted-foreground" />
+                <span class="text-sm text-muted-foreground">My Allocation</span>
+              </div>
               <div class="text-2xl font-bold text-foreground">
                 {{ formatAllocation(myAllocation?.hours_remaining) }} hrs
               </div>
+              <div class="text-xs text-muted-foreground mt-1">Your remaining credits</div>
             </div>
           </div>
 
-          <div v-if="isAdmin">
-            <h3 class="text-sm font-semibold text-foreground mb-4">Member Allocations</h3>
+          <!-- Member Allocations Section (Admin Only) -->
+          <div v-if="isAdmin" class="mb-8">
+            <div class="flex items-center gap-2 mb-4">
+              <h3 class="text-sm font-semibold text-foreground">Member Allocations</h3>
+              <span class="text-xs text-muted-foreground">({{ members.length }} members)</span>
+            </div>
 
             <!-- Warning when pool is empty -->
             <div
@@ -376,6 +399,154 @@
                 </div>
               </div>
             </div>
+          </div>
+
+          <!-- Payment History Section (Admin Only) -->
+          <div v-if="isAdmin" class="mt-8 pt-6 border-t border-border">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Receipt class="h-4 w-4 text-muted-foreground" />
+                Payment History
+                <span v-if="transactionsTotal > 0" class="text-xs font-normal text-muted-foreground">
+                  ({{ transactionsTotal }} total)
+                </span>
+              </h3>
+              <button
+                v-if="!transactionsLoaded"
+                @click="loadTransactions(1)"
+                class="text-xs text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
+                :disabled="transactionsLoading"
+              >
+                <Loader2 v-if="transactionsLoading" class="h-3 w-3 animate-spin" />
+                <span>{{ transactionsLoading ? 'Loading...' : 'Load History' }}</span>
+              </button>
+              <button
+                v-else-if="transactions.length > 0"
+                @click="loadTransactions(transactionsPage)"
+                class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+                :disabled="transactionsLoading"
+              >
+                <RefreshCw class="h-3 w-3" :class="{ 'animate-spin': transactionsLoading }" />
+                Refresh
+              </button>
+            </div>
+
+            <!-- Not Loaded Yet State -->
+            <div
+              v-if="!transactionsLoaded && !transactionsLoading"
+              class="text-center py-8 bg-muted/20 border border-border/30 rounded-lg"
+            >
+              <Receipt class="h-10 w-10 mx-auto mb-3 text-muted-foreground/50" />
+              <p class="text-muted-foreground text-sm">Click "Load History" to view payment history</p>
+            </div>
+
+            <!-- Loading State -->
+            <div v-else-if="transactionsLoading && transactions.length === 0" class="space-y-2">
+              <div
+                v-for="i in 3"
+                :key="i"
+                class="flex items-center gap-4 p-3 bg-muted/20 border border-border/30 rounded-lg animate-pulse"
+              >
+                <div class="w-9 h-9 rounded-lg bg-muted/50"></div>
+                <div class="flex-1 space-y-2">
+                  <div class="h-4 w-32 bg-muted/50 rounded"></div>
+                  <div class="h-3 w-48 bg-muted/50 rounded"></div>
+                </div>
+                <div class="h-6 w-16 bg-muted/50 rounded"></div>
+              </div>
+            </div>
+
+            <!-- Empty State -->
+            <div
+              v-else-if="transactionsLoaded && transactions.length === 0"
+              class="text-center py-8 bg-muted/20 border border-border/30 rounded-lg"
+            >
+              <Receipt class="h-10 w-10 mx-auto mb-3 text-muted-foreground/50" />
+              <p class="text-muted-foreground text-sm">No payment history yet</p>
+              <p class="text-muted-foreground/70 text-xs mt-1">
+                Transactions will appear here after purchasing credits
+              </p>
+            </div>
+
+            <!-- Transaction List with Scrollable Container -->
+            <div v-else class="space-y-2">
+              <div class="max-h-[480px] overflow-y-auto space-y-2 pr-1 scrollbar-thin">
+                <div
+                  v-for="tx in transactions"
+                  :key="tx.id"
+                  class="flex items-center gap-3 p-3 bg-muted/20 border border-border/50 rounded-lg hover:bg-muted/30 transition-colors"
+                >
+                  <!-- Icon -->
+                  <div
+                    class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                    :class="tx.payment_method === 'stripe' ? 'bg-[#635bff]/10' : 'bg-violet-500/10'"
+                  >
+                    <CreditCard v-if="tx.payment_method === 'stripe'" class="h-4 w-4 text-[#635bff]" />
+                    <Wallet v-else class="h-4 w-4 text-violet-500" />
+                  </div>
+
+                  <!-- Details -->
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                      <span class="font-medium text-foreground text-sm">{{ getPackLabel(tx.pack_type) }}</span>
+                      <span class="text-xs px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500">
+                        {{ tx.status }}
+                      </span>
+                    </div>
+                    <div class="text-xs text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
+                      <span>{{ formatTransactionDate(tx.purchased_at) }}</span>
+                      <span class="text-muted-foreground/50">•</span>
+                      <span>{{ getPaymentMethodLabel(tx.payment_method) }}</span>
+                      <span v-if="tx.purchased_by" class="text-muted-foreground/50">•</span>
+                      <span v-if="tx.purchased_by">{{ tx.purchased_by.name || tx.purchased_by.email }}</span>
+                    </div>
+                  </div>
+
+                  <!-- Amount -->
+                  <div class="text-right flex-shrink-0">
+                    <div class="font-semibold text-foreground text-sm">${{ parseFloat(tx.amount_usd).toFixed(2) }}</div>
+                    <div class="text-xs text-primary font-medium">
+                      +{{ parseFloat(tx.hours_purchased).toFixed(0) }} hrs
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Pagination -->
+              <div
+                v-if="totalTransactionPages > 1"
+                class="flex items-center justify-between pt-3 border-t border-border/50 mt-3"
+              >
+                <span class="text-xs text-muted-foreground">
+                  Page {{ transactionsPage }} of {{ totalTransactionPages }} ({{ transactionsTotal }} transactions)
+                </span>
+                <div class="flex items-center gap-1">
+                  <button
+                    @click="loadTransactions(transactionsPage - 1)"
+                    :disabled="transactionsPage <= 1 || transactionsLoading"
+                    class="px-2.5 py-1 text-xs rounded-md bg-muted/50 hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+                  >
+                    <ChevronLeft class="h-3 w-3" />
+                    Previous
+                  </button>
+                  <button
+                    @click="loadTransactions(transactionsPage + 1)"
+                    :disabled="transactionsPage >= totalTransactionPages || transactionsLoading"
+                    class="px-2.5 py-1 text-xs rounded-md bg-muted/50 hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+                  >
+                    Next
+                    <ChevronRight class="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Non-Admin View: Just show allocation info -->
+          <div v-if="!isAdmin" class="text-center py-8 bg-muted/20 border border-border/30 rounded-lg">
+            <DollarSign class="h-10 w-10 mx-auto mb-3 text-muted-foreground/50" />
+            <p class="text-muted-foreground text-sm">Your credit allocation is shown above</p>
+            <p class="text-muted-foreground/70 text-xs mt-1">Contact an admin to request more credits</p>
           </div>
         </div>
 
@@ -972,6 +1143,11 @@
     EyeOff,
     Sparkles,
     RefreshCw,
+    Receipt,
+    Clock,
+    ChevronLeft,
+    ChevronRight,
+    DollarSign,
   } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
   import { Button } from '@/components/ui/button';
@@ -1043,6 +1219,14 @@
   const editMemberSaving = ref(false);
   const showPassword = ref(false);
 
+  // Transaction history state (lazy loaded)
+  const transactions = ref<any[]>([]);
+  const transactionsLoading = ref(false);
+  const transactionsTotal = ref(0);
+  const transactionsPage = ref(1);
+  const transactionsPerPage = 20;
+  const transactionsLoaded = ref(false);
+
   const editData = ref({
     name: '',
     description: '',
@@ -1053,7 +1237,7 @@
 
   const tabs = [
     { id: 'members', label: 'Members' },
-    { id: 'credits', label: 'Credits' },
+    { id: 'billing', label: 'Billing' },
     { id: 'settings', label: 'Settings' },
   ];
 
@@ -1094,6 +1278,15 @@
   watch(organizationId, () => {
     if (organizationId.value) {
       loadOrganization();
+    }
+  });
+
+  // Reset transaction state when switching away from billing tab (lazy load behavior)
+  watch(activeTab, (newTab, oldTab) => {
+    if (oldTab === 'billing' && newTab !== 'billing') {
+      // Optionally reset when leaving the tab to save memory
+      // transactions.value = [];
+      // transactionsLoaded.value = false;
     }
   });
 
@@ -1160,6 +1353,65 @@
     } finally {
       loading.value = false;
     }
+  }
+
+  async function loadTransactions(page = 1) {
+    if (!organizationId.value || !isAdmin.value) return;
+
+    transactionsLoading.value = true;
+    try {
+      const offset = (page - 1) * transactionsPerPage;
+      const result = await authStore.getOrganizationTransactions(organizationId.value, {
+        limit: transactionsPerPage,
+        offset,
+      });
+
+      if (result.success) {
+        transactions.value = result.transactions;
+        transactionsTotal.value = result.total;
+        transactionsPage.value = page;
+        transactionsLoaded.value = true;
+      }
+    } catch (err: any) {
+      console.error('Failed to load transactions:', err);
+    } finally {
+      transactionsLoading.value = false;
+    }
+  }
+
+  // Computed for transaction pagination
+  const totalTransactionPages = computed(() => Math.ceil(transactionsTotal.value / transactionsPerPage));
+
+  function formatTransactionDate(dateStr: string) {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  function getPaymentMethodLabel(method: string) {
+    switch (method) {
+      case 'stripe':
+        return 'Card';
+      case 'solana':
+        return 'Crypto';
+      default:
+        return method;
+    }
+  }
+
+  function getPackLabel(packType: string) {
+    const labels: Record<string, string> = {
+      starter: 'Starter Pack',
+      creator: 'Creator Pack',
+      pro: 'Pro Pack',
+      studio: 'Studio Pack',
+    };
+    return labels[packType] || packType;
   }
 
   async function updateOrganization() {
@@ -1684,5 +1936,23 @@
   .dialog-leave-to {
     opacity: 0;
     transform: scale(0.98);
+  }
+
+  /* Custom scrollbar for transaction list */
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.2);
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.3);
   }
 </style>

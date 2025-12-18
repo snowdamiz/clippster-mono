@@ -639,6 +639,65 @@ defmodule ClippsterServerWeb.OrganizationController do
     end
   end
 
+  @doc """
+  Get organization's credit transaction history.
+  Only admins can view transaction history.
+  """
+  def get_transactions(conn, %{"organization_id" => org_id} = params) do
+    user = conn.assigns.current_user
+
+    if Organizations.is_admin?(org_id, user.id) do
+      limit = Map.get(params, "limit", "50") |> parse_int(50)
+      offset = Map.get(params, "offset", "0") |> parse_int(0)
+
+      {:ok, %{transactions: transactions, total: total}} = 
+        Organizations.list_organization_transactions(org_id, limit: limit, offset: offset)
+
+      json(conn, %{
+        success: true,
+        transactions: Enum.map(transactions, &format_transaction/1),
+        total: total,
+        limit: limit,
+        offset: offset
+      })
+    else
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Only admins can view transaction history"})
+    end
+  end
+
+  defp format_transaction(transaction) do
+    %{
+      id: transaction.id,
+      pack_type: transaction.pack_type,
+      hours_purchased: Decimal.to_string(transaction.hours_purchased),
+      amount_usd: Decimal.to_string(transaction.amount_usd),
+      amount_sol: if(transaction.amount_sol, do: Decimal.to_string(transaction.amount_sol), else: nil),
+      payment_method: transaction.payment_method,
+      status: transaction.status,
+      purchased_at: DateTime.to_iso8601(transaction.inserted_at),
+      purchased_by: if transaction.purchased_by do
+        %{
+          id: transaction.purchased_by.id,
+          name: transaction.purchased_by.name,
+          email: transaction.purchased_by.email
+        }
+      else
+        nil
+      end
+    }
+  end
+
+  defp parse_int(value, default) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, _} -> int
+      :error -> default
+    end
+  end
+  defp parse_int(value, _default) when is_integer(value), do: value
+  defp parse_int(_, default), do: default
+
   # ============================================================================
   # Helpers
   # ============================================================================

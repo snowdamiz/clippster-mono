@@ -332,7 +332,7 @@ defmodule ClippsterServerWeb.PaymentController do
       # Verify the on-chain transaction
       case verify_transaction(tx_signature, from_address, expected_sol_amount) do
         {:ok, :verified} ->
-          process_confirmed_org_payment(conn, org, pack_info)
+          process_confirmed_org_payment(conn, org, pack_type, pack_info, tx_signature, expected_sol_amount, sol_usd_rate, user_id)
         
         {:error, reason} ->
           conn
@@ -367,15 +367,42 @@ defmodule ClippsterServerWeb.PaymentController do
     end
   end
 
-  defp process_confirmed_org_payment(conn, org, pack_info) do
+  defp process_confirmed_org_payment(conn, org, pack_type, pack_info, tx_signature, sol_amount, sol_usd_rate, user_id) do
     alias ClippsterServer.Organizations
 
-    # Add credits to organization pool
-    case Organizations.add_organization_credits(org.id, pack_info.hours) do
-      {:ok, org_credit} ->
+    # Record the transaction and add credits to organization pool
+    case Organizations.create_org_credit_transaction_and_add_credits(
+      org.id,
+      user_id,
+      pack_type,
+      pack_info.hours,
+      pack_info.usd,
+      sol_amount,
+      sol_usd_rate,
+      tx_signature,
+      "solana"
+    ) do
+      {:ok, %{org_credit: org_credit, transaction: transaction}} ->
         json(conn, %{
           success: true,
           message: "#{pack_info.hours} hours added to organization pool",
+          transaction: %{
+            id: transaction.id,
+            hours_purchased: Decimal.to_float(transaction.hours_purchased),
+            status: transaction.status
+          },
+          balance: %{
+            hours_remaining: Decimal.to_float(org_credit.hours_remaining),
+            hours_used: Decimal.to_float(org_credit.hours_used)
+          }
+        })
+
+      {:error, :already_processed} ->
+        # Transaction already exists, return success but no new credits
+        {:ok, org_credit} = Organizations.get_organization_credits(org.id)
+        json(conn, %{
+          success: true,
+          message: "Transaction already processed",
           balance: %{
             hours_remaining: Decimal.to_float(org_credit.hours_remaining),
             hours_used: Decimal.to_float(org_credit.hours_used)
