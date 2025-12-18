@@ -1776,8 +1776,6 @@
       }
 
       // Regular watermark: scale based on base width
-      const containerScale = overlayScaleFactor.value;
-      const baseWidth = WATERMARK_BASE_WIDTH * containerScale;
       const aspectRatio = dims.width / dims.height;
       const width = baseWidth;
       const height = baseWidth / aspectRatio;
@@ -1789,8 +1787,6 @@
     }
 
     // Fallback before image loads
-    const containerScale = overlayScaleFactor.value;
-    const baseWidth = WATERMARK_BASE_WIDTH * containerScale;
     return {
       width: `${baseWidth}px`,
       height: 'auto',

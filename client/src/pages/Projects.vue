@@ -1457,11 +1457,15 @@
   const projectsPerPage = 20;
 
   async function loadProjects(isBackgroundRefresh = false) {
+    console.log('[Projects] loadProjects called, isBackgroundRefresh:', isBackgroundRefresh);
     if (!isBackgroundRefresh) {
       loading.value = true;
     }
     try {
       projects.value = await getAllProjects();
+      console.log('[Projects] Loaded projects:', projects.value.length, 'total');
+      console.log('[Projects] Top-level projects:', projects.value.filter((p) => !p.parent_id).length);
+      console.log('[Projects] Child projects:', projects.value.filter((p) => p.parent_id).length);
 
       // Load clip counts and video thumbnails for each project
       for (const project of projects.value) {
@@ -3192,22 +3196,9 @@
   const filteredProjects = computed(() => {
     let result = projects.value;
 
-    // 0. Filter out projects associated with active downloads that don't have thumbnails yet
-    const activeList = getActiveDownloads();
-    const queuedList = getQueuedDownloads();
-    const allActiveDownloads = [...activeList, ...queuedList];
-    const activeDownloadProjectIds = new Set(
-      allActiveDownloads.flatMap((d) => [d.projectId, d.parentProjectId].filter(Boolean))
-    );
-
-    result = result.filter((p) => {
-      // If it's a project associated with an active/queued download
-      if (activeDownloadProjectIds.has(p.id)) {
-        // Only show if it has a thumbnail (meaning content has been processed)
-        return thumbnailCache.value.has(p.id);
-      }
-      return true;
-    });
+    // Note: We no longer filter out projects based on active downloads.
+    // Projects should always appear in folder view once created.
+    // Active downloads are shown separately in the Active Downloads section.
 
     // 1. Filter by View Mode (only if NOT searching)
     // If user is searching, we want to search across all projects regardless of folder structure
@@ -3921,8 +3912,10 @@
 
   // Listen for video added events (to update project thumbnails)
   function handleVideoAdded(event: Event) {
+    console.log('[Projects] video-added event received');
     const customEvent = event as CustomEvent;
     const detail = customEvent.detail;
+    console.log('[Projects] video-added detail:', detail);
 
     // Clear thumbnail cache for this project and any parent to force refresh
     if (detail && detail.projectId) {

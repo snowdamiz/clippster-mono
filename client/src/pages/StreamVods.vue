@@ -585,11 +585,12 @@
   const clipsPerPage = 20;
 
   // Computed properties for the unified download UI
+  // Use a generous tolerance (5 seconds or 1% of duration) to account for slider precision
   const isFullStreamSelected = computed(() => {
     if (!clipToDownload.value?.duration) return true;
-    return (
-      selectedTimeRange.value.startTime === 0 && selectedTimeRange.value.endTime >= clipToDownload.value.duration - 1
-    );
+    const duration = clipToDownload.value.duration;
+    const tolerance = Math.max(5, duration * 0.01); // At least 5 seconds or 1% of duration
+    return selectedTimeRange.value.startTime <= tolerance && selectedTimeRange.value.endTime >= duration - tolerance;
   });
 
   const selectedDuration = computed(() => {
