@@ -149,6 +149,7 @@
   import { useAuthStore } from '@/stores/auth';
   import { useWallet } from '@/composables/useWallet';
   import { useAIPermission } from '@/composables/useAIPermission';
+  import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { navigationItems } from '@/config/navigation';
   import BugReportDialog from '@/components/BugReportDialog.vue';
   import api from '@/services/api';
@@ -159,6 +160,7 @@
   const authStore = useAuthStore();
   const { formatAddress } = useWallet();
   const { isAIAllowed } = useAIPermission();
+  const { isLiveClipEnabled, initialize: initFeatureFlags } = useFeatureFlags();
 
   const emit = defineEmits<{
     'show-auth-modal': [];
@@ -195,7 +197,7 @@
     return authStore.user?.account_type === 'organization' && authStore.user?.owned_organization_id;
   });
 
-  // Filter navigation items based on admin/org status
+  // Filter navigation items based on admin/org status and feature flags
   const visibleNavigationItems = computed(() => {
     const filtered = navigationItems.filter((item) => {
       // Check admin-only items
@@ -211,6 +213,10 @@
         // For org account owners, always show Organizations
         if (isOrgAccountOwner.value) return true;
         return userOrganizations.value.length > 0;
+      }
+      // Hide Clip Live when feature is disabled
+      if (item.path === '/live-clip' && !isLiveClipEnabled.value) {
+        return false;
       }
       return true;
     });
@@ -345,6 +351,9 @@
 
     // Listen for auth state changes
     window.addEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
+
+    // Initialize feature flags
+    initFeatureFlags();
   });
 
   onUnmounted(() => {

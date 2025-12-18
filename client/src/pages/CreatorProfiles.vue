@@ -170,14 +170,18 @@
                   >
                     <!-- Left: Status -->
                     <div class="flex items-center gap-2">
+                      <!-- Monitoring status (only shown when Live Clip feature is enabled) -->
                       <span
-                        v-if="isCreatorMonitored(creator)"
+                        v-if="isLiveClipEnabled && isCreatorMonitored(creator)"
                         class="text-green-500 flex items-center gap-1.5 text-xs font-medium"
                       >
                         <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
                         {{ getCreatorStatusLabel(creator) }}
                       </span>
-                      <template v-else-if="creator.platform_links.some((l) => l.platform === 'pumpfun')">
+                      <!-- Live status for pumpfun creators (only shown when Live Clip feature is enabled) -->
+                      <template
+                        v-else-if="isLiveClipEnabled && creator.platform_links.some((l) => l.platform === 'pumpfun')"
+                      >
                         <span
                           v-if="isCreatorCheckingLive(creator)"
                           class="text-muted-foreground flex items-center gap-1.5 text-xs"
@@ -200,6 +204,7 @@
                           Offline
                         </span>
                       </template>
+                      <!-- Platform count (shown when Live Clip is disabled or no pumpfun link) -->
                       <span v-else class="text-xs text-muted-foreground">
                         {{ creator.platform_links.length }} platform{{ creator.platform_links.length !== 1 ? 's' : '' }}
                       </span>
@@ -235,8 +240,10 @@
                         <Download class="w-4 h-4" />
                         Download
                       </button>
-                      <!-- Monitoring Controls -->
-                      <template v-if="creator.platform_links.some((l) => l.platform === 'pumpfun')">
+                      <!-- Monitoring Controls (only shown when Live Clip feature is enabled) -->
+                      <template
+                        v-if="isLiveClipEnabled && creator.platform_links.some((l) => l.platform === 'pumpfun')"
+                      >
                         <template v-if="!isCreatorMonitored(creator)">
                           <!-- Record Button -->
                           <button
@@ -372,6 +379,7 @@
     Loader2,
     Building2,
   } from 'lucide-vue-next';
+  import { useFeatureFlags } from '@/composables/useFeatureFlags';
 
   // Extended type that can represent both local and org profiles
   interface DisplayCreatorProfile extends CreatorProfileWithLinks {
@@ -385,6 +393,7 @@
   const authStore = useAuthStore();
   const { success, error: showError } = useToast();
   const { activeSessions, monitoredStreamers, startMonitoring, stopMonitoring } = useLivestreamMonitoring();
+  const { isLiveClipEnabled } = useFeatureFlags();
 
   // State
   const loading = ref(true);

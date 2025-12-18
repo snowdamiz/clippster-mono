@@ -81,6 +81,9 @@ defmodule ClippsterServerWeb.Router do
 
     # Organization invitation (public - for viewing invitation details)
     get "/invitations/:token", OrganizationController, :get_invitation
+
+    # Public settings/feature flags
+    get "/settings/feature-flags", SettingsController, :get_feature_flags
   end
 
   # Protected routes (require authentication)
@@ -197,6 +200,10 @@ defmodule ClippsterServerWeb.Router do
     get "/admin/bug-reports", BugReportsController, :index
     put "/admin/bug-reports/:id", BugReportsController, :update
     delete "/admin/bug-reports/:id", BugReportsController, :delete
+
+    # Admin settings management
+    get "/admin/settings", AdminController, :get_settings
+    put "/admin/settings/:key", AdminController, :update_setting
   end
 
   

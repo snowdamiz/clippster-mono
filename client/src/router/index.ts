@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import { featureFlags } from '@/composables/useFeatureFlags';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -245,7 +246,7 @@ export function getDefaultRoute(
   return isOrgAccountOwner(user) ? '/organizations' : '/creators';
 }
 
-// Navigation guard for authentication and admin access
+// Navigation guard for authentication, admin access, and feature flags
 router.beforeEach((to, _from, next) => {
   const authStore = useAuthStore();
 
@@ -265,6 +266,12 @@ router.beforeEach((to, _from, next) => {
   // Prevent org-created accounts from accessing organization setup
   if (to.name === 'organization-setup' && authStore.user?.created_by_organization_id) {
     next('/projects');
+    return;
+  }
+
+  // Check Live Clip feature flag for /live-clip route
+  if (to.path.startsWith('/live-clip') && !featureFlags.isLiveClipEnabled.value) {
+    next('/creators');
     return;
   }
 

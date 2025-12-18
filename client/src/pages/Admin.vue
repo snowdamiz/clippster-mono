@@ -682,8 +682,64 @@
     <div v-if="activeTab === 'settings'" class="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div class="bg-card p-4 rounded-lg border border-border shadow-sm">
         <div class="flex items-center justify-between">
-          <h2 class="text-lg font-semibold text-foreground">UI Overrides</h2>
-          <span class="text-sm text-muted-foreground">Test UI behavior across different platforms</span>
+          <h2 class="text-lg font-semibold text-foreground">Settings</h2>
+          <span class="text-sm text-muted-foreground">Feature flags and UI configuration</span>
+        </div>
+      </div>
+
+      <!-- Feature Flags -->
+      <div class="bg-card border border-border rounded-lg shadow-sm p-6">
+        <div class="space-y-4">
+          <div>
+            <h3 class="text-md font-medium text-foreground mb-3">Feature Flags</h3>
+            <p class="text-sm text-muted-foreground mb-4">
+              Enable or disable features across the application. Changes take effect immediately for all users.
+            </p>
+
+            <div class="space-y-4">
+              <!-- Live Clip Feature Toggle -->
+              <div class="flex items-center justify-between p-4 bg-muted/30 rounded-lg border border-border/50">
+                <div class="flex-1">
+                  <div class="flex items-center gap-2">
+                    <Radio class="h-4 w-4 text-primary" />
+                    <span class="font-medium text-foreground">Live Clip</span>
+                  </div>
+                  <p class="text-sm text-muted-foreground mt-1">
+                    Enable real-time stream monitoring, recording, and clip detection features.
+                  </p>
+                </div>
+                <div class="flex items-center gap-3">
+                  <span v-if="featureFlagsLoading" class="text-xs text-muted-foreground flex items-center gap-1">
+                    <Loader2 class="h-3 w-3 animate-spin" />
+                    Loading...
+                  </span>
+                  <button
+                    @click="toggleLiveClipFeature"
+                    :disabled="featureFlagsLoading || updatingLiveClipFlag"
+                    class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    :class="isLiveClipEnabled ? 'bg-primary' : 'bg-muted'"
+                    role="switch"
+                    :aria-checked="isLiveClipEnabled"
+                  >
+                    <span
+                      class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                      :class="isLiveClipEnabled ? 'translate-x-5' : 'translate-x-0'"
+                    />
+                  </button>
+                </div>
+              </div>
+
+              <div
+                v-if="!isLiveClipEnabled"
+                class="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md"
+              >
+                <p class="text-sm text-amber-700 dark:text-amber-300">
+                  <strong>Live Clip is disabled.</strong>
+                  The Live Clip page and monitoring controls are hidden from all users.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -959,7 +1015,9 @@
     Monitor,
     Building2,
     Users,
+    Radio,
   } from 'lucide-vue-next';
+  import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import api from '@/services/api';
 
@@ -1108,6 +1166,15 @@
 
   // UI Override state
   const titleBarPlatformOverride = ref<string>('auto');
+
+  // Feature Flags state
+  const {
+    isLiveClipEnabled,
+    isLoading: featureFlagsLoading,
+    fetchFeatureFlags,
+    setLiveClipEnabled,
+  } = useFeatureFlags();
+  const updatingLiveClipFlag = ref(false);
 
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -1670,12 +1737,31 @@
     }
   };
 
+  // Toggle Live Clip feature flag
+  const toggleLiveClipFeature = async () => {
+    updatingLiveClipFlag.value = true;
+    try {
+      const newValue = !isLiveClipEnabled.value;
+      const success = await setLiveClipEnabled(newValue);
+      if (success) {
+        console.log(`🔐 Admin - Live Clip feature ${newValue ? 'enabled' : 'disabled'}`);
+      } else {
+        console.error('🔐 Admin - Failed to update Live Clip feature flag');
+      }
+    } catch (err) {
+      console.error('🔐 Admin - Error toggling Live Clip feature:', err);
+    } finally {
+      updatingLiveClipFlag.value = false;
+    }
+  };
+
   onMounted(() => {
     fetchUsers();
     fetchOrganizations();
     fetchBugReports();
     fetchAiStats();
     loadPlatformOverride();
+    fetchFeatureFlags();
   });
 </script>
 

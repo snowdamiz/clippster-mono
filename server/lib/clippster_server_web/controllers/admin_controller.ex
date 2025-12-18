@@ -4,6 +4,7 @@ defmodule ClippsterServerWeb.AdminController do
   alias ClippsterServer.Credits
   alias ClippsterServer.Organizations
   alias ClippsterServer.AI
+  alias ClippsterServer.AppSettings
 
   def get_ai_usage_stats(conn, _params) do
     stats = AI.get_usage_stats()
@@ -407,5 +408,57 @@ defmodule ClippsterServerWeb.AdminController do
       _ ->
         {:error, "Invalid #{key} value - must be a non-negative number"}
     end
+  end
+
+  # ============================================================================
+  # App Settings Management
+  # ============================================================================
+
+  @doc """
+  Get all application settings.
+  Requires admin authentication.
+  """
+  def get_settings(conn, _params) do
+    settings = AppSettings.get_all_settings()
+    feature_flags = AppSettings.get_feature_flags()
+
+    json(conn, %{
+      success: true,
+      settings: settings,
+      feature_flags: feature_flags
+    })
+  end
+
+  @doc """
+  Update a specific setting.
+  Requires admin authentication.
+  """
+  def update_setting(conn, %{"key" => key, "value" => value}) do
+    case AppSettings.set_setting(key, value) do
+      {:ok, setting} ->
+        json(conn, %{
+          success: true,
+          message: "Setting '#{key}' updated successfully",
+          setting: %{
+            key: setting.key,
+            value: setting.value
+          }
+        })
+
+      {:error, changeset} ->
+        conn
+        |> put_status(400)
+        |> json(%{
+          success: false,
+          error: "Failed to update setting",
+          details: format_changeset_errors(changeset)
+        })
+    end
+  end
+
+  def update_setting(conn, _params) do
+    conn
+    |> put_status(400)
+    |> json(%{success: false, error: "Missing required parameters: key and value"})
   end
 end
