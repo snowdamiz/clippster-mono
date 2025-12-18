@@ -155,6 +155,27 @@ defmodule ClippsterServerWeb.Router do
 
     # User's organization assets (for sync)
     get "/user/organization-assets", OrganizationAssetController, :user_assets
+
+    # Organization creator profiles
+    get "/organizations/:organization_id/creator-profiles", OrganizationCreatorProfileController, :index
+    get "/organizations/:organization_id/creator-profiles/:id", OrganizationCreatorProfileController, :show
+    post "/organizations/:organization_id/creator-profiles", OrganizationCreatorProfileController, :create
+    put "/organizations/:organization_id/creator-profiles/:id", OrganizationCreatorProfileController, :update
+    delete "/organizations/:organization_id/creator-profiles/:id", OrganizationCreatorProfileController, :delete
+    post "/organizations/:organization_id/creator-profiles/:id/image", OrganizationCreatorProfileController, :upload_image
+
+    # Creator profile platform links
+    post "/organizations/:organization_id/creator-profiles/:profile_id/platform-links", OrganizationCreatorProfileController, :add_platform_link
+    put "/organizations/:organization_id/creator-profiles/:profile_id/platform-links/:link_id", OrganizationCreatorProfileController, :update_platform_link
+    delete "/organizations/:organization_id/creator-profiles/:profile_id/platform-links/:link_id", OrganizationCreatorProfileController, :delete_platform_link
+
+    # Creator profile assignments
+    get "/organizations/:organization_id/creator-profiles/:profile_id/assignments", OrganizationCreatorProfileController, :list_assignments
+    post "/organizations/:organization_id/creator-profiles/:profile_id/assignments", OrganizationCreatorProfileController, :create_assignments
+    delete "/organizations/:organization_id/creator-profiles/:profile_id/assignments/:user_id", OrganizationCreatorProfileController, :delete_assignment
+
+    # User's assigned creator profiles
+    get "/user/assigned-creator-profiles", OrganizationCreatorProfileController, :user_assigned_profiles
   end
 
   # Admin-only routes

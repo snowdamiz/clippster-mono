@@ -289,6 +289,201 @@
           </div>
         </div>
 
+        <!-- Creator Profiles Tab -->
+        <div v-if="activeTab === 'creators'" class="p-6">
+          <div class="flex items-center justify-between mb-6">
+            <div>
+              <h2 class="text-base font-semibold text-foreground">Creator Profiles</h2>
+              <p class="text-sm text-muted-foreground mt-0.5">
+                Manage creator profiles and assign them to team members
+              </p>
+            </div>
+            <Button v-if="isAdmin" @click="openProfileDialog()">
+              <UserCircle class="h-4 w-4 mr-1.5" />
+              Add Profile
+            </Button>
+          </div>
+
+          <!-- Loading State -->
+          <div v-if="profilesLoading" class="flex items-center justify-center py-12">
+            <Loader2 class="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+
+          <!-- Profiles Grid -->
+          <div v-else-if="creatorProfiles.length > 0" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div
+              v-for="profile in creatorProfiles"
+              :key="profile.id"
+              class="group relative bg-gradient-to-br from-card to-card/80 border border-border/60 rounded-xl overflow-hidden hover:border-border hover:shadow-lg hover:shadow-black/5 transition-all duration-200"
+            >
+              <!-- Top Section: Avatar & Name -->
+              <div class="p-4 pb-3">
+                <div class="flex items-start gap-3.5">
+                  <!-- Avatar -->
+                  <div class="relative flex-shrink-0">
+                    <div
+                      class="w-14 h-14 rounded-xl bg-muted flex items-center justify-center overflow-hidden ring-2 ring-border/30 ring-offset-2 ring-offset-card"
+                    >
+                      <img
+                        v-if="profile.profile_image_url"
+                        :src="profile.profile_image_url"
+                        :alt="profile.name"
+                        class="w-full h-full object-cover"
+                      />
+                      <div
+                        v-else
+                        class="absolute inset-0 bg-gradient-to-br from-emerald-500/25 via-teal-500/15 to-cyan-500/20"
+                      ></div>
+                      <UserCircle
+                        v-if="!profile.profile_image_url"
+                        class="h-7 w-7 text-muted-foreground/40 relative z-10"
+                      />
+                    </div>
+                    <!-- Asset badges on avatar -->
+                    <div
+                      v-if="profile.intro_id || profile.outro_id || profile.watermark_id"
+                      class="absolute -bottom-1 -right-1 flex items-center"
+                    >
+                      <div class="flex -space-x-1">
+                        <div
+                          v-if="profile.intro_id"
+                          class="w-5 h-5 rounded-full bg-blue-500/20 border-2 border-card flex items-center justify-center"
+                          title="Intro video configured"
+                        >
+                          <Play class="w-2.5 h-2.5 text-blue-400" />
+                        </div>
+                        <div
+                          v-if="profile.outro_id"
+                          class="w-5 h-5 rounded-full bg-purple-500/20 border-2 border-card flex items-center justify-center"
+                          title="Outro video configured"
+                        >
+                          <SkipForward class="w-2.5 h-2.5 text-purple-400" />
+                        </div>
+                        <div
+                          v-if="profile.watermark_id"
+                          class="w-5 h-5 rounded-full bg-amber-500/20 border-2 border-card flex items-center justify-center"
+                          title="Watermark configured"
+                        >
+                          <ImageIcon class="w-2.5 h-2.5 text-amber-400" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Name & Description -->
+                  <div class="flex-1 min-w-0 pt-0.5">
+                    <h3 class="font-semibold text-foreground truncate text-[15px] leading-tight">{{ profile.name }}</h3>
+                    <p
+                      v-if="profile.description"
+                      class="text-xs text-muted-foreground line-clamp-2 mt-1 leading-relaxed"
+                    >
+                      {{ profile.description }}
+                    </p>
+                    <p v-else class="text-xs text-muted-foreground/50 italic mt-1">No description</p>
+                  </div>
+
+                  <!-- Actions (top right) -->
+                  <div
+                    class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity -mt-0.5 -mr-1"
+                  >
+                    <button
+                      v-if="isAdmin"
+                      @click="openAssignmentDialog(profile)"
+                      class="p-1.5 text-muted-foreground hover:text-violet-400 hover:bg-violet-500/10 rounded-lg transition-colors"
+                      title="Manage member assignments"
+                    >
+                      <Users class="h-4 w-4" />
+                    </button>
+                    <button
+                      v-if="isAdmin"
+                      @click="openProfileDialog(profile)"
+                      class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
+                      title="Edit profile"
+                    >
+                      <Pencil class="h-4 w-4" />
+                    </button>
+                    <button
+                      v-if="isAdmin"
+                      @click="handleDeleteProfile(profile)"
+                      :disabled="deletingProfileId === profile.id"
+                      class="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors disabled:opacity-50"
+                      title="Delete profile"
+                    >
+                      <Loader2 v-if="deletingProfileId === profile.id" class="h-4 w-4 animate-spin" />
+                      <Trash2 v-else class="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Bottom Section: Platform Links & Stats -->
+              <div class="px-4 pb-4 pt-2 border-t border-border/30 bg-muted/20">
+                <div class="flex items-center justify-between gap-3">
+                  <!-- Platform Links -->
+                  <div class="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
+                    <template v-if="profile.platform_links.length > 0">
+                      <div
+                        v-for="link in profile.platform_links.slice(0, 3)"
+                        :key="link.id"
+                        class="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium border backdrop-blur-sm"
+                        :style="{
+                          backgroundColor: getPlatformColor(link.platform) + '12',
+                          borderColor: getPlatformColor(link.platform) + '30',
+                          color: getPlatformColor(link.platform),
+                        }"
+                      >
+                        <img
+                          :src="getPlatformIcon(link.platform)"
+                          class="w-3.5 h-3.5"
+                          :style="{ filter: `drop-shadow(0 0 1px ${getPlatformColor(link.platform)})` }"
+                        />
+                        <span class="truncate max-w-[70px]">
+                          {{ link.display_name || truncatePlatformId(link.platform_id) }}
+                        </span>
+                      </div>
+                      <span v-if="profile.platform_links.length > 3" class="text-xs text-muted-foreground px-1.5">
+                        +{{ profile.platform_links.length - 3 }} more
+                      </span>
+                    </template>
+                    <div v-else class="flex items-center gap-1.5 text-xs text-muted-foreground/60">
+                      <Link2 class="w-3.5 h-3.5" />
+                      <span>No platforms linked</span>
+                    </div>
+                  </div>
+
+                  <!-- Assignment Count Badge -->
+                  <div
+                    class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium flex-shrink-0"
+                    :class="
+                      profile.assigned_count > 0
+                        ? 'bg-primary/10 text-primary border border-primary/20'
+                        : 'bg-muted/50 text-muted-foreground border border-border/50'
+                    "
+                  >
+                    <Users class="w-3.5 h-3.5" />
+                    <span>{{ profile.assigned_count }} {{ profile.assigned_count === 1 ? 'member' : 'members' }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Empty State -->
+          <div v-else class="text-center py-16 text-muted-foreground">
+            <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-muted/50 flex items-center justify-center">
+              <UserCircle class="h-8 w-8 opacity-40" />
+            </div>
+            <p class="font-medium text-foreground/80">No creator profiles yet</p>
+            <p v-if="isAdmin" class="text-sm mt-1.5 max-w-sm mx-auto">
+              Create profiles with platform links, intros, outros, and watermarks to assign to your team members.
+            </p>
+            <Button v-if="isAdmin" class="mt-4" @click="openProfileDialog()">
+              <UserCircle class="h-4 w-4 mr-1.5" />
+              Create First Profile
+            </Button>
+          </div>
+        </div>
+
         <!-- Assets Tab -->
         <div v-if="activeTab === 'assets'" class="p-6">
           <div class="flex items-center justify-between mb-6">
@@ -1447,6 +1642,24 @@
       </Transition>
     </Teleport>
 
+    <!-- Organization Profile Dialog -->
+    <OrganizationProfileDialog
+      :show="showProfileDialog"
+      :organization-id="organizationId ?? ''"
+      :profile="profileToEdit"
+      @close="closeProfileDialog"
+      @saved="handleProfileSaved"
+    />
+
+    <!-- Profile Assignment Dialog -->
+    <ProfileAssignmentDialog
+      :show="showAssignmentDialog"
+      :organization-id="organizationId ?? ''"
+      :profile="profileToAssign"
+      @close="closeAssignmentDialog"
+      @saved="handleAssignmentSaved"
+    />
+
     <!-- Video Player Dialog -->
     <VideoPlayerDialog
       :video="null"
@@ -1577,6 +1790,9 @@
     Sticker,
     Play,
     Pause,
+    UserCircle,
+    Link2,
+    SkipForward,
   } from 'lucide-vue-next';
   import {
     listOrganizationAssets,
@@ -1596,7 +1812,14 @@
   import { Input } from '@/components/ui/input';
   import InviteMemberDialog from './InviteMemberDialog.vue';
   import VideoPlayerDialog from './VideoPlayerDialog.vue';
+  import OrganizationProfileDialog from './OrganizationProfileDialog.vue';
+  import ProfileAssignmentDialog from './ProfileAssignmentDialog.vue';
   import api from '@/services/api';
+  import {
+    listOrganizationCreatorProfiles,
+    deleteOrganizationCreatorProfile,
+    type ServerOrganizationCreatorProfile,
+  } from '@/services/organizationProfilesApi';
   import { useToast } from '@/composables/useToast';
 
   // Audio waveform thumbnail (same as Assets.vue)
@@ -1682,6 +1905,16 @@
   const deletingAssetId = ref<number | null>(null);
   const collapsedAssetGroups = ref<Set<string>>(new Set());
 
+  // Creator profiles state
+  const creatorProfiles = ref<ServerOrganizationCreatorProfile[]>([]);
+  const profilesLoading = ref(false);
+  const profilesLoaded = ref(false);
+  const showProfileDialog = ref(false);
+  const profileToEdit = ref<ServerOrganizationCreatorProfile | null>(null);
+  const showAssignmentDialog = ref(false);
+  const profileToAssign = ref<ServerOrganizationCreatorProfile | null>(null);
+  const deletingProfileId = ref<number | null>(null);
+
   // Computed: Group assets by type for organized display
   const groupedAssets = computed(() => {
     const typeOrder = ['intro', 'outro', 'watermark', 'audio', 'image'];
@@ -1750,6 +1983,7 @@
 
   const tabs = [
     { id: 'members', label: 'Members' },
+    { id: 'creators', label: 'Creator Profiles' },
     { id: 'assets', label: 'Assets' },
     { id: 'billing', label: 'Billing' },
     { id: 'settings', label: 'Settings' },
@@ -3034,7 +3268,111 @@
     if (newTab === 'assets' && !assetsLoaded.value) {
       loadOrgAssets();
     }
+    if (newTab === 'creators' && !profilesLoaded.value) {
+      loadCreatorProfiles();
+    }
   });
+
+  // ============================================
+  // Creator Profiles Functions
+  // ============================================
+
+  async function loadCreatorProfiles() {
+    if (!organizationId.value) return;
+
+    profilesLoading.value = true;
+    try {
+      const response = await listOrganizationCreatorProfiles(organizationId.value);
+      if (response.success) {
+        creatorProfiles.value = response.profiles;
+        profilesLoaded.value = true;
+      } else {
+        console.error('[OrgDashboard] Failed to load creator profiles:', response.error);
+      }
+    } catch (err) {
+      console.error('[OrgDashboard] Failed to load creator profiles:', err);
+    } finally {
+      profilesLoading.value = false;
+    }
+  }
+
+  function openProfileDialog(profile?: ServerOrganizationCreatorProfile) {
+    profileToEdit.value = profile || null;
+    showProfileDialog.value = true;
+  }
+
+  function closeProfileDialog() {
+    showProfileDialog.value = false;
+    profileToEdit.value = null;
+  }
+
+  function handleProfileSaved() {
+    profilesLoaded.value = false;
+    loadCreatorProfiles();
+  }
+
+  function openAssignmentDialog(profile: ServerOrganizationCreatorProfile) {
+    profileToAssign.value = profile;
+    showAssignmentDialog.value = true;
+  }
+
+  function closeAssignmentDialog() {
+    showAssignmentDialog.value = false;
+    profileToAssign.value = null;
+  }
+
+  function handleAssignmentSaved() {
+    profilesLoaded.value = false;
+    loadCreatorProfiles();
+  }
+
+  async function handleDeleteProfile(profile: ServerOrganizationCreatorProfile) {
+    if (!organizationId.value || !isAdmin.value) return;
+
+    if (!confirm(`Are you sure you want to delete "${profile.name}"? This will unassign all members.`)) {
+      return;
+    }
+
+    deletingProfileId.value = profile.id;
+    try {
+      const response = await deleteOrganizationCreatorProfile(organizationId.value, profile.id);
+      if (response.success) {
+        creatorProfiles.value = creatorProfiles.value.filter((p) => p.id !== profile.id);
+        showSuccess('Profile Deleted', `"${profile.name}" has been deleted`);
+      } else {
+        showError('Delete Failed', response.error || 'Failed to delete profile');
+      }
+    } catch (err: any) {
+      showError('Delete Failed', err.message || 'Failed to delete profile');
+    } finally {
+      deletingProfileId.value = null;
+    }
+  }
+
+  function getPlatformIcon(platform: string): string {
+    const icons: Record<string, string> = {
+      pumpfun: '/capsule.svg',
+      kick: '/kick.svg',
+      twitch: '/twitch.svg',
+      youtube: '/youtube.svg',
+    };
+    return icons[platform] || '/capsule.svg';
+  }
+
+  function getPlatformColor(platform: string): string {
+    const colors: Record<string, string> = {
+      pumpfun: '#10b981',
+      kick: '#53FC18',
+      twitch: '#9146FF',
+      youtube: '#dc2626',
+    };
+    return colors[platform] || '#6b7280';
+  }
+
+  function truncatePlatformId(id: string): string {
+    if (!id || id.length < 10) return id;
+    return `${id.slice(0, 4)}...${id.slice(-4)}`;
+  }
 
   // Fetch pricing on mount
   onMounted(() => {

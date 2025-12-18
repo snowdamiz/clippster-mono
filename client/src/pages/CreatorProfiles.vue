@@ -8,7 +8,9 @@
     >
       <template #actions>
         <div class="relative w-[320px] shadow-sm group">
-          <div class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 pointer-events-none z-10">
+          <div
+            class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 pointer-events-none z-10"
+          >
             <Users class="w-4 h-4 text-muted-foreground" />
           </div>
           <Input
@@ -93,13 +95,18 @@
                         <h3 class="font-semibold text-base text-foreground truncate">
                           {{ creator.name }}
                         </h3>
+                        <!-- Organization Badge -->
+                        <div
+                          v-if="creator.isOrgProfile"
+                          class="flex items-center gap-1 px-2 py-0.5 bg-violet-500/10 text-violet-400 text-xs rounded-full border border-violet-500/20"
+                          :title="`Managed by ${creator.organization_name}`"
+                        >
+                          <Building2 class="w-3 h-3" />
+                          {{ creator.organization_name }}
+                        </div>
                         <!-- Asset Indicators -->
                         <div class="flex items-center gap-1">
-                          <div
-                            v-if="creator.intro_id"
-                            class="p-1 bg-blue-500/10 rounded"
-                            title="Has intro configured"
-                          >
+                          <div v-if="creator.intro_id" class="p-1 bg-blue-500/10 rounded" title="Has intro configured">
                             <Play class="w-3 h-3 text-blue-400" />
                           </div>
                           <div
@@ -134,14 +141,21 @@
                             color: getPlatformColor(link.platform),
                           }"
                         >
-                          <img :src="getPlatformIcon(link.platform)" class="w-3 h-3" :class="getPlatformIconClass(link.platform)" />
-                          <span class="truncate max-w-[80px]">{{ link.display_name || truncateId(link.platform_id) }}</span>
+                          <img
+                            :src="getPlatformIcon(link.platform)"
+                            class="w-3 h-3"
+                            :class="getPlatformIconClass(link.platform)"
+                          />
+                          <span class="truncate max-w-[80px]">
+                            {{ link.display_name || truncateId(link.platform_id) }}
+                          </span>
                         </div>
                       </div>
                     </div>
 
-                    <!-- Delete Button (top right) -->
+                    <!-- Delete Button (top right) - Only for local profiles -->
                     <button
+                      v-if="!creator.isOrgProfile"
                       @click.stop="confirmDeleteCreator(creator)"
                       class="p-2 rounded-lg text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 transition-colors"
                       title="Delete creator"
@@ -151,19 +165,30 @@
                   </div>
 
                   <!-- Row 2: Actions -->
-                  <div class="flex items-center justify-between gap-3 px-4 py-2.5 bg-muted/20 border-t border-border/30">
+                  <div
+                    class="flex items-center justify-between gap-3 px-4 py-2.5 bg-muted/20 border-t border-border/30"
+                  >
                     <!-- Left: Status -->
                     <div class="flex items-center gap-2">
-                      <span v-if="isCreatorMonitored(creator)" class="text-green-500 flex items-center gap-1.5 text-xs font-medium">
+                      <span
+                        v-if="isCreatorMonitored(creator)"
+                        class="text-green-500 flex items-center gap-1.5 text-xs font-medium"
+                      >
                         <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
                         {{ getCreatorStatusLabel(creator) }}
                       </span>
                       <template v-else-if="creator.platform_links.some((l) => l.platform === 'pumpfun')">
-                        <span v-if="isCreatorCheckingLive(creator)" class="text-muted-foreground flex items-center gap-1.5 text-xs">
+                        <span
+                          v-if="isCreatorCheckingLive(creator)"
+                          class="text-muted-foreground flex items-center gap-1.5 text-xs"
+                        >
                           <Loader2 class="w-3 h-3 animate-spin" />
                           Checking...
                         </span>
-                        <span v-else-if="isCreatorLive(creator)" class="text-red-500 flex items-center gap-1.5 text-xs font-medium">
+                        <span
+                          v-else-if="isCreatorLive(creator)"
+                          class="text-red-500 flex items-center gap-1.5 text-xs font-medium"
+                        >
                           <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
                           LIVE
                           <span v-if="getCreatorViewerCount(creator)" class="text-muted-foreground font-normal">
@@ -182,8 +207,9 @@
 
                     <!-- Right: Action Buttons -->
                     <div class="flex items-center gap-1">
-                      <!-- Edit Button -->
+                      <!-- Edit Button - Only for local profiles -->
                       <button
+                        v-if="!creator.isOrgProfile"
                         @click.stop="openEditDialog(creator)"
                         class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground hover:bg-muted"
                         title="Edit creator"
@@ -255,7 +281,6 @@
               </div>
             </div>
           </div>
-
         </div>
       </div>
 
@@ -323,6 +348,11 @@
     getMonitoredStreamerByMint,
     type CreatorProfileWithLinks,
   } from '@/services/database';
+  import {
+    getUserAssignedCreatorProfiles,
+    type ServerOrganizationCreatorProfile,
+  } from '@/services/organizationProfilesApi';
+  import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
   import { type PlatformId } from '@/config/platforms';
@@ -340,22 +370,32 @@
     Sparkles,
     Square,
     Loader2,
+    Building2,
   } from 'lucide-vue-next';
 
+  // Extended type that can represent both local and org profiles
+  interface DisplayCreatorProfile extends CreatorProfileWithLinks {
+    isOrgProfile?: boolean;
+    organization_id?: number;
+    organization_name?: string;
+    server_id?: number; // ID on the server for org profiles
+  }
+
   const router = useRouter();
+  const authStore = useAuthStore();
   const { success, error: showError } = useToast();
   const { activeSessions, monitoredStreamers, startMonitoring, stopMonitoring } = useLivestreamMonitoring();
 
   // State
   const loading = ref(true);
-  const creators = ref<CreatorProfileWithLinks[]>([]);
+  const creators = ref<DisplayCreatorProfile[]>([]);
   const searchQuery = ref('');
   const showProfileDialog = ref(false);
-  const creatorToEdit = ref<CreatorProfileWithLinks | null>(null);
+  const creatorToEdit = ref<DisplayCreatorProfile | null>(null);
   const showDeleteDialog = ref(false);
-  const creatorToDelete = ref<CreatorProfileWithLinks | null>(null);
+  const creatorToDelete = ref<DisplayCreatorProfile | null>(null);
   const showDownloadDialog = ref(false);
-  const creatorToDownload = ref<CreatorProfileWithLinks | null>(null);
+  const creatorToDownload = ref<DisplayCreatorProfile | null>(null);
 
   // Live status tracking (by platform_id for pumpfun links)
   const liveStatusMap = ref<Map<string, { isLive: boolean; viewerCount?: number; isChecking: boolean }>>(new Map());
@@ -370,8 +410,7 @@
       if (creator.name.toLowerCase().includes(query)) return true;
       // Match by platform link display name or ID
       return creator.platform_links.some(
-        (link) =>
-          link.display_name?.toLowerCase().includes(query) || link.platform_id.toLowerCase().includes(query)
+        (link) => link.display_name?.toLowerCase().includes(query) || link.platform_id.toLowerCase().includes(query)
       );
     });
   });
@@ -446,7 +485,23 @@
   async function loadCreators() {
     loading.value = true;
     try {
-      creators.value = await getAllCreatorProfiles();
+      // Load local profiles
+      const localProfiles = await getAllCreatorProfiles();
+      const displayProfiles: DisplayCreatorProfile[] = localProfiles.map((p) => ({
+        ...p,
+        isOrgProfile: false,
+      }));
+
+      // Load org profiles if user is authenticated
+      if (authStore.isAuthenticated) {
+        const orgResponse = await getUserAssignedCreatorProfiles();
+        if (orgResponse.success && orgResponse.profiles.length > 0) {
+          const orgDisplayProfiles = convertOrgProfilesToDisplay(orgResponse.profiles);
+          displayProfiles.push(...orgDisplayProfiles);
+        }
+      }
+
+      creators.value = displayProfiles;
     } catch (err) {
       console.error('Failed to load creators:', err);
       showError('Load Failed', 'Failed to load creator profiles');
@@ -455,8 +510,47 @@
     }
   }
 
+  /**
+   * Convert server organization profiles to the DisplayCreatorProfile format
+   */
+  function convertOrgProfilesToDisplay(orgProfiles: ServerOrganizationCreatorProfile[]): DisplayCreatorProfile[] {
+    return orgProfiles.map((profile) => ({
+      id: `org-${profile.id}`, // Prefix to avoid ID collision with local profiles
+      name: profile.name,
+      description: profile.description,
+      profile_image_path: profile.profile_image_url, // Use URL directly
+      intro_id: profile.intro_id ? `org-asset-${profile.intro_id}` : null,
+      outro_id: profile.outro_id ? `org-asset-${profile.outro_id}` : null,
+      watermark_id: profile.watermark_id ? `org-asset-${profile.watermark_id}` : null,
+      watermark_settings: profile.watermark_settings ? JSON.stringify(profile.watermark_settings) : null,
+      created_at: new Date(profile.inserted_at).getTime(),
+      updated_at: new Date(profile.updated_at).getTime(),
+      user_id: null, // Org profiles don't have a local user_id
+      platform_links: profile.platform_links.map((link) => ({
+        id: `org-link-${link.id}`,
+        creator_profile_id: `org-${profile.id}`,
+        platform: link.platform as PlatformId,
+        platform_id: link.platform_id,
+        display_name: link.display_name,
+        profile_image_url: link.profile_image_url,
+        is_primary: link.is_primary,
+        created_at: new Date(link.inserted_at).getTime(),
+        monitored_streamer_id: null, // Org profiles don't have monitoring yet
+      })),
+      isOrgProfile: true,
+      organization_id: profile.organization_id,
+      organization_name: profile.organization_name,
+      server_id: profile.id,
+    }));
+  }
+
   // Get the creator's profile image from platform links (similar to LiveClip.vue)
-  function getCreatorProfileImage(creator: CreatorProfileWithLinks): string | undefined {
+  function getCreatorProfileImage(creator: DisplayCreatorProfile): string | undefined {
+    // For org profiles, use the profile_image_url directly (stored as profile_image_path)
+    if (creator.isOrgProfile && creator.profile_image_path) {
+      return creator.profile_image_path;
+    }
+
     // First try to get from primary platform link
     const primaryLink = creator.platform_links.find((l) => l.is_primary) || creator.platform_links[0];
     if (primaryLink?.profile_image_url) {
@@ -473,7 +567,7 @@
     return undefined;
   }
 
-  function handleImageError(event: Event, _creator: CreatorProfileWithLinks) {
+  function handleImageError(event: Event, _creator: DisplayCreatorProfile) {
     const img = event.target as HTMLImageElement;
     // Hide broken image
     img.style.display = 'none';
@@ -521,7 +615,7 @@
   }
 
   // Monitoring status helpers
-  function isCreatorMonitored(creator: CreatorProfileWithLinks): boolean {
+  function isCreatorMonitored(creator: DisplayCreatorProfile): boolean {
     for (const link of creator.platform_links) {
       if (link.monitored_streamer_id && monitoredStreamers.value.has(link.monitored_streamer_id)) {
         return true;
@@ -530,7 +624,7 @@
     return false;
   }
 
-  function isCreatorLive(creator: CreatorProfileWithLinks): boolean {
+  function isCreatorLive(creator: DisplayCreatorProfile): boolean {
     for (const link of creator.platform_links) {
       if (link.monitored_streamer_id) {
         const session = activeSessions.value.get(link.monitored_streamer_id);
@@ -548,7 +642,7 @@
     return false;
   }
 
-  function isCreatorCheckingLive(creator: CreatorProfileWithLinks): boolean {
+  function isCreatorCheckingLive(creator: DisplayCreatorProfile): boolean {
     for (const link of creator.platform_links) {
       if (link.platform === 'pumpfun') {
         const status = liveStatusMap.value.get(link.platform_id);
@@ -560,7 +654,7 @@
     return false;
   }
 
-  function getCreatorViewerCount(creator: CreatorProfileWithLinks): number | undefined {
+  function getCreatorViewerCount(creator: DisplayCreatorProfile): number | undefined {
     for (const link of creator.platform_links) {
       if (link.platform === 'pumpfun') {
         const status = liveStatusMap.value.get(link.platform_id);
@@ -572,7 +666,7 @@
     return undefined;
   }
 
-  function getCreatorStatusLabel(creator: CreatorProfileWithLinks): string {
+  function getCreatorStatusLabel(creator: DisplayCreatorProfile): string {
     for (const link of creator.platform_links) {
       if (link.monitored_streamer_id) {
         const session = activeSessions.value.get(link.monitored_streamer_id);
@@ -596,7 +690,7 @@
     showProfileDialog.value = true;
   }
 
-  function openEditDialog(creator: CreatorProfileWithLinks) {
+  function openEditDialog(creator: DisplayCreatorProfile) {
     creatorToEdit.value = creator;
     showProfileDialog.value = true;
   }
@@ -611,7 +705,7 @@
     loadCreators();
   }
 
-  function confirmDeleteCreator(creator: CreatorProfileWithLinks) {
+  function confirmDeleteCreator(creator: DisplayCreatorProfile) {
     creatorToDelete.value = creator;
     showDeleteDialog.value = true;
   }
@@ -633,7 +727,7 @@
   }
 
   // VOD navigation
-  function viewCreatorVods(creator: CreatorProfileWithLinks) {
+  function viewCreatorVods(creator: DisplayCreatorProfile) {
     const primaryLink = creator.platform_links.find((l) => l.is_primary) || creator.platform_links[0];
     if (!primaryLink) {
       showError('No Platform', 'This creator has no platform links configured');
@@ -651,13 +745,13 @@
   }
 
   // Download dialog
-  function openDownloadDialog(creator: CreatorProfileWithLinks) {
+  function openDownloadDialog(creator: DisplayCreatorProfile) {
     creatorToDownload.value = creator;
     showDownloadDialog.value = true;
   }
 
   // Monitoring controls
-  async function startCreatorMonitoring(creator: CreatorProfileWithLinks, detectClips: boolean) {
+  async function startCreatorMonitoring(creator: DisplayCreatorProfile, detectClips: boolean) {
     const pumpfunLink = creator.platform_links.find((l) => l.platform === 'pumpfun');
     if (!pumpfunLink) {
       showError('No Supported Platforms', 'Live monitoring is currently only available for PumpFun streams');
@@ -722,17 +816,12 @@
       success('Monitoring Started', `Now monitoring "${creator.name}" (${mode})`);
     } catch (err) {
       console.error('Failed to start monitoring:', err);
-      const message =
-        err instanceof Error
-          ? err.message
-          : typeof err === 'string'
-            ? err
-            : 'Failed to start monitoring';
+      const message = err instanceof Error ? err.message : typeof err === 'string' ? err : 'Failed to start monitoring';
       showError('Monitoring Failed', message);
     }
   }
 
-  async function stopCreatorMonitoring(creator: CreatorProfileWithLinks) {
+  async function stopCreatorMonitoring(creator: DisplayCreatorProfile) {
     try {
       const streamerIds: string[] = [];
 

@@ -14,7 +14,10 @@ defmodule ClippsterServer.Organizations do
     OrganizationCredit,
     OrganizationCreditTransaction,
     MemberCreditAllocation,
-    OrganizationAsset
+    OrganizationAsset,
+    OrganizationCreatorProfile,
+    OrganizationCreatorPlatformLink,
+    OrganizationProfileAssignment
   }
   alias ClippsterServer.{Emails, Mailer}
   alias ClippsterServer.Storage
@@ -1029,6 +1032,302 @@ defmodule ClippsterServer.Organizations do
       |> where([a], a.organization_id in ^org_ids)
       |> select([a], %{id: a.id, organization_id: a.organization_id, updated_at: a.updated_at})
       |> Repo.all()
+    end
+  end
+
+  # ============================================================================
+  # Organization Creator Profiles
+  # ============================================================================
+
+  @doc """
+  Lists all creator profiles for an organization.
+  """
+  def list_creator_profiles(organization_id) do
+    OrganizationCreatorProfile
+    |> where([p], p.organization_id == ^organization_id)
+    |> preload([:platform_links, :intro, :outro, :watermark, assignments: :user])
+    |> order_by([p], desc: p.inserted_at)
+    |> Repo.all()
+  end
+
+  @doc """
+  Gets a single creator profile by ID.
+  """
+  def get_creator_profile(id) do
+    OrganizationCreatorProfile
+    |> preload([:platform_links, :intro, :outro, :watermark, :organization, assignments: :user])
+    |> Repo.get(id)
+  end
+
+  @doc """
+  Gets a creator profile by ID, scoped to an organization.
+  """
+  def get_creator_profile(organization_id, profile_id) do
+    OrganizationCreatorProfile
+    |> where([p], p.organization_id == ^organization_id and p.id == ^profile_id)
+    |> preload([:platform_links, :intro, :outro, :watermark, :organization, assignments: :user])
+    |> Repo.one()
+  end
+
+  @doc """
+  Creates a new creator profile for an organization.
+  Admin only.
+  """
+  def create_creator_profile(organization_id, attrs, %User{} = user) do
+    if is_admin?(organization_id, user.id) do
+      %OrganizationCreatorProfile{}
+      |> OrganizationCreatorProfile.create_changeset(Map.put(attrs, :organization_id, organization_id))
+      |> Repo.insert()
+      |> case do
+        {:ok, profile} ->
+          {:ok, get_creator_profile(profile.id)}
+        error ->
+          error
+      end
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Updates a creator profile.
+  Admin only.
+  """
+  def update_creator_profile(%OrganizationCreatorProfile{} = profile, attrs, %User{} = user) do
+    if is_admin?(profile.organization_id, user.id) do
+      profile
+      |> OrganizationCreatorProfile.update_changeset(attrs)
+      |> Repo.update()
+      |> case do
+        {:ok, updated} ->
+          {:ok, get_creator_profile(updated.id)}
+        error ->
+          error
+      end
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Deletes a creator profile.
+  Admin only.
+  """
+  def delete_creator_profile(%OrganizationCreatorProfile{} = profile, %User{} = user) do
+    if is_admin?(profile.organization_id, user.id) do
+      # Delete profile image from storage if exists
+      if profile.profile_image_url do
+        Storage.delete_file_by_url(profile.profile_image_url)
+      end
+
+      Repo.delete(profile)
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Deletes a creator profile by ID.
+  """
+  def delete_creator_profile_by_id(organization_id, profile_id, %User{} = user) do
+    case get_creator_profile(organization_id, profile_id) do
+      nil -> {:error, :not_found}
+      profile -> delete_creator_profile(profile, user)
+    end
+  end
+
+  @doc """
+  Uploads a profile image for a creator profile.
+  Returns the URL.
+  """
+  def upload_creator_profile_image(organization_id, profile_id, image_binary, filename) do
+    key = "orgs/#{organization_id}/profiles/#{profile_id}/#{filename}"
+
+    case Storage.upload_file(image_binary, key, content_type: "image/jpeg") do
+      {:ok, url} -> {:ok, url}
+      error -> error
+    end
+  end
+
+  # ============================================================================
+  # Creator Profile Platform Links
+  # ============================================================================
+
+  @doc """
+  Adds a platform link to a creator profile.
+  Admin only.
+  """
+  def add_creator_platform_link(organization_id, profile_id, attrs, %User{} = user) do
+    with true <- is_admin?(organization_id, user.id),
+         profile when not is_nil(profile) <- get_creator_profile(organization_id, profile_id) do
+      
+      %OrganizationCreatorPlatformLink{}
+      |> OrganizationCreatorPlatformLink.create_changeset(
+        Map.put(attrs, :organization_creator_profile_id, profile.id)
+      )
+      |> Repo.insert()
+    else
+      false -> {:error, :unauthorized}
+      nil -> {:error, :profile_not_found}
+    end
+  end
+
+  @doc """
+  Updates a platform link.
+  Admin only.
+  """
+  def update_creator_platform_link(organization_id, link_id, attrs, %User{} = user) do
+    link = Repo.get(OrganizationCreatorPlatformLink, link_id)
+    |> Repo.preload(:organization_creator_profile)
+
+    cond do
+      is_nil(link) ->
+        {:error, :not_found}
+
+      link.organization_creator_profile.organization_id != String.to_integer("#{organization_id}") ->
+        {:error, :not_found}
+
+      not is_admin?(organization_id, user.id) ->
+        {:error, :unauthorized}
+
+      true ->
+        link
+        |> OrganizationCreatorPlatformLink.update_changeset(attrs)
+        |> Repo.update()
+    end
+  end
+
+  @doc """
+  Deletes a platform link.
+  Admin only.
+  """
+  def delete_creator_platform_link(organization_id, link_id, %User{} = user) do
+    link = Repo.get(OrganizationCreatorPlatformLink, link_id)
+    |> Repo.preload(:organization_creator_profile)
+
+    cond do
+      is_nil(link) ->
+        {:error, :not_found}
+
+      link.organization_creator_profile.organization_id != String.to_integer("#{organization_id}") ->
+        {:error, :not_found}
+
+      not is_admin?(organization_id, user.id) ->
+        {:error, :unauthorized}
+
+      true ->
+        Repo.delete(link)
+    end
+  end
+
+  # ============================================================================
+  # Creator Profile Assignments
+  # ============================================================================
+
+  @doc """
+  Assigns a creator profile to one or more users.
+  Admin only. Users must be members of the organization.
+  """
+  def assign_creator_profile(organization_id, profile_id, user_ids, %User{} = admin) when is_list(user_ids) do
+    with true <- is_admin?(organization_id, admin.id),
+         profile when not is_nil(profile) <- get_creator_profile(organization_id, profile_id) do
+      
+      # Filter to only users who are members
+      valid_user_ids = user_ids
+      |> Enum.filter(fn uid -> is_member?(organization_id, uid) end)
+
+      results = Enum.map(valid_user_ids, fn user_id ->
+        %OrganizationProfileAssignment{}
+        |> OrganizationProfileAssignment.changeset(%{
+          organization_creator_profile_id: profile.id,
+          user_id: user_id
+        })
+        |> Repo.insert(on_conflict: :nothing)
+      end)
+
+      # Return count of successful assignments
+      successful = Enum.count(results, fn
+        {:ok, _} -> true
+        _ -> false
+      end)
+
+      {:ok, %{assigned: successful, total: length(user_ids)}}
+    else
+      false -> {:error, :unauthorized}
+      nil -> {:error, :profile_not_found}
+    end
+  end
+
+  @doc """
+  Unassigns a creator profile from a user.
+  Admin only.
+  """
+  def unassign_creator_profile(organization_id, profile_id, user_id, %User{} = admin) do
+    with true <- is_admin?(organization_id, admin.id),
+         profile when not is_nil(profile) <- get_creator_profile(organization_id, profile_id) do
+      
+      assignment = Repo.get_by(OrganizationProfileAssignment,
+        organization_creator_profile_id: profile.id,
+        user_id: user_id
+      )
+
+      case assignment do
+        nil -> {:error, :not_assigned}
+        a -> Repo.delete(a)
+      end
+    else
+      false -> {:error, :unauthorized}
+      nil -> {:error, :profile_not_found}
+    end
+  end
+
+  @doc """
+  Lists all assignments for a creator profile.
+  """
+  def list_profile_assignments(organization_id, profile_id) do
+    OrganizationProfileAssignment
+    |> join(:inner, [a], p in OrganizationCreatorProfile,
+      on: a.organization_creator_profile_id == p.id)
+    |> where([a, p], p.organization_id == ^organization_id and p.id == ^profile_id)
+    |> preload(:user)
+    |> Repo.all()
+  end
+
+  @doc """
+  Gets all creator profiles assigned to a user across all their organizations.
+  Used by members to see their assigned profiles.
+  """
+  def get_assigned_creator_profiles(user_id) do
+    OrganizationCreatorProfile
+    |> join(:inner, [p], a in OrganizationProfileAssignment,
+      on: a.organization_creator_profile_id == p.id)
+    |> where([p, a], a.user_id == ^user_id)
+    |> preload([:platform_links, :intro, :outro, :watermark, :organization])
+    |> order_by([p], desc: p.inserted_at)
+    |> Repo.all()
+  end
+
+  @doc """
+  Checks if a user has access to a creator profile.
+  User has access if they are assigned to the profile or are an admin of the organization.
+  """
+  def has_profile_access?(profile_id, user_id) do
+    profile = get_creator_profile(profile_id)
+
+    cond do
+      is_nil(profile) ->
+        false
+
+      is_admin?(profile.organization_id, user_id) ->
+        true
+
+      true ->
+        # Check if assigned
+        assignment = Repo.get_by(OrganizationProfileAssignment,
+          organization_creator_profile_id: profile_id,
+          user_id: user_id
+        )
+        assignment != nil
     end
   end
 end
