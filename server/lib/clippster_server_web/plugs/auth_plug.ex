@@ -27,15 +27,23 @@ defmodule ClippsterServerWeb.AuthPlug do
         user_id = claims["user_id"]
         
         # Load the full user record
-        user = Accounts.get_user(user_id)
-        
-        # Add user info to conn assigns
-        conn
-        |> assign(:current_user_id, user_id)
-        |> assign(:current_user, user)
-        |> assign(:current_wallet_address, claims["wallet_address"])
-        |> assign(:is_admin, claims["is_admin"])
-        |> assign(:current_user_claims, claims)
+        case Accounts.get_user(user_id) do
+          nil ->
+            # User doesn't exist (was deleted or invalid user_id)
+            conn
+            |> put_status(401)
+            |> Phoenix.Controller.json(%{error: "User not found"})
+            |> halt()
+          
+          user ->
+            # Add user info to conn assigns
+            conn
+            |> assign(:current_user_id, user_id)
+            |> assign(:current_user, user)
+            |> assign(:current_wallet_address, claims["wallet_address"])
+            |> assign(:is_admin, claims["is_admin"])
+            |> assign(:current_user_claims, claims)
+        end
 
       {:error, _reason} ->
         conn

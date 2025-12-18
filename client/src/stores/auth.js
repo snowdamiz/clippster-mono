@@ -633,25 +633,66 @@ export const useAuthStore = defineStore('auth', {
 
       if (token && userJson) {
         try {
+          // Parse user data first (don't set authenticated yet)
+          const parsedUser = JSON.parse(userJson);
+          
+          // Verify token is still valid before setting authenticated state
+          const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+          const response = await fetch(`${API_BASE}/api/auth/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          if (!response.ok) {
+            // Token is invalid - clear stored data
+            console.warn('[Auth] Stored token is invalid, clearing auth state');
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('wallet_address');
+            localStorage.removeItem('email');
+            localStorage.removeItem('user');
+            localStorage.removeItem('auth_provider');
+            return false;
+          }
+
+          const data = await response.json();
+          if (!data.success || !data.user) {
+            console.warn('[Auth] Token validation failed, clearing auth state');
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('wallet_address');
+            localStorage.removeItem('email');
+            localStorage.removeItem('user');
+            localStorage.removeItem('auth_provider');
+            return false;
+          }
+
+          // Token is valid - now set authenticated state
           this.token = token;
           this.walletAddress = walletAddress;
           this.email = email;
-          this.user = JSON.parse(userJson);
+          this.user = { ...parsedUser, ...data.user }; // Merge with fresh server data
           this.authProvider = authProvider;
           this.isAuthenticated = true;
+
+          // Update localStorage with fresh user data
+          localStorage.setItem('user', JSON.stringify(this.user));
 
           // Set user context for database queries and storage paths
           if (this.user && this.user.id) {
             await setUserContext(this.user.id);
           }
 
-          // Refresh user data from server to get latest account_type and other fields
-          await this.refreshUserData();
-
           return true;
         } catch (error) {
-          console.error('Failed to parse user data:', error);
-          await this.logout();
+          console.error('[Auth] Failed to verify auth:', error);
+          // On network errors, we could either:
+          // 1. Clear auth (strict) - user must re-login
+          // 2. Use cached data (lenient) - allows offline usage
+          // Going with strict for security
+          localStorage.removeItem('auth_token');
+          localStorage.removeItem('wallet_address');
+          localStorage.removeItem('email');
+          localStorage.removeItem('user');
+          localStorage.removeItem('auth_provider');
+          return false;
         }
       }
       return false;
