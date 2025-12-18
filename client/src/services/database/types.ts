@@ -442,6 +442,7 @@ export interface WatermarkSettings {
   scale: number; // 0-100 (percentage of video width)
   width?: number | null; // original watermark width (px) if known
   height?: number | null; // original watermark height (px) if known
+  isFullFrameOverlay?: boolean; // When true, position at 0,0 with 100% scale (full-frame overlay)
   // Optional per-aspect-ratio settings from creator profile
   // Each ratio can have its own watermark image AND position settings
   perRatioSettings?: CreatorWatermarkSettings | null;
@@ -471,6 +472,7 @@ export interface CreatorWatermarkPosition {
   y: number;
   opacity: number;
   scale: number;
+  isFullFrameOverlay?: boolean; // When true, position at 0,0 with 100% scale (full-frame overlay)
 }
 
 // Per-aspect-ratio watermark configuration

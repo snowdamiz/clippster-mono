@@ -310,8 +310,9 @@
     </PageLayout>
 
     <!-- Creator Profile Dialog -->
-    <CreatorProfileDialog
+    <ProfileDialog
       :show="showProfileDialog"
+      mode="local"
       :creator="creatorToEdit"
       @close="closeProfileDialog"
       @saved="handleCreatorSaved"
@@ -346,7 +347,7 @@
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
-  import CreatorProfileDialog from '@/components/CreatorProfileDialog.vue';
+  import ProfileDialog from '@/components/ProfileDialog.vue';
   import CreatorDownloadDialog from '@/components/CreatorDownloadDialog.vue';
   import {
     getAllCreatorProfiles,

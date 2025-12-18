@@ -1518,6 +1518,19 @@
   // Get the wrapper style for watermark positioning (no scale)
   function getWatermarkWrapperStyle(watermark: ClipWatermark): Record<string, string> {
     const config = getWatermarkConfigForRatio(watermark);
+
+    // Full-frame overlay mode: position at 0,0 and fill the entire frame
+    if (config.isFullFrameOverlay) {
+      return {
+        left: '0%',
+        top: '0%',
+        transform: 'none',
+        opacity: String(config.opacity / 100),
+        width: '100%',
+        height: '100%',
+      };
+    }
+
     return {
       left: `${config.position.x}%`,
       top: `${config.position.y}%`,
@@ -1529,6 +1542,16 @@
   // Get the content style for watermark scaling
   function getWatermarkContentStyle(watermark: ClipWatermark): Record<string, string> {
     const config = getWatermarkConfigForRatio(watermark);
+
+    // Full-frame overlay mode: no additional scaling
+    if (config.isFullFrameOverlay) {
+      return {
+        transform: 'none',
+        width: '100%',
+        height: '100%',
+      };
+    }
+
     // Use local value during drag for instant feedback
     const watermarkScale = localWatermarkScales.value[watermark.id] ?? config.scale / 15; // Convert from percentage to multiplier
 
@@ -1539,6 +1562,17 @@
 
   // Get the style for watermark image (scales width to base size, height auto)
   function getWatermarkImageStyle(watermark: ClipWatermark): Record<string, string> {
+    const config = getWatermarkConfigForRatio(watermark);
+
+    // Full-frame overlay mode: fill the entire container
+    if (config.isFullFrameOverlay) {
+      return {
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+      };
+    }
+
     const containerScale = overlayScaleFactor.value;
     // Base width at current container scale
     const baseWidth = WATERMARK_BASE_WIDTH * containerScale;

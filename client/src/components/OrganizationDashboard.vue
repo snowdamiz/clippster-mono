@@ -1643,8 +1643,9 @@
     </Teleport>
 
     <!-- Organization Profile Dialog -->
-    <OrganizationProfileDialog
+    <ProfileDialog
       :show="showProfileDialog"
+      mode="organization"
       :organization-id="organizationId ?? ''"
       :profile="profileToEdit"
       @close="closeProfileDialog"
@@ -1812,7 +1813,7 @@
   import { Input } from '@/components/ui/input';
   import InviteMemberDialog from './InviteMemberDialog.vue';
   import VideoPlayerDialog from './VideoPlayerDialog.vue';
-  import OrganizationProfileDialog from './OrganizationProfileDialog.vue';
+  import ProfileDialog from './ProfileDialog.vue';
   import ProfileAssignmentDialog from './ProfileAssignmentDialog.vue';
   import api from '@/services/api';
   import {

@@ -11,7 +11,14 @@
             class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-lg w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden max-h-[90vh] flex flex-col"
           >
             <!-- Decorative top accent -->
-            <div class="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 flex-shrink-0" />
+            <div
+              class="h-1 w-full flex-shrink-0"
+              :class="
+                mode === 'organization'
+                  ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500'
+                  : 'bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500'
+              "
+            />
 
             <!-- Header -->
             <div
@@ -19,9 +26,17 @@
             >
               <div class="flex items-center gap-3">
                 <div
-                  class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center border border-emerald-500/30"
+                  class="w-10 h-10 rounded-xl flex items-center justify-center border"
+                  :class="
+                    mode === 'organization'
+                      ? 'bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border-emerald-500/30'
+                      : 'bg-gradient-to-br from-violet-500/20 to-purple-500/20 border-violet-500/30'
+                  "
                 >
-                  <UserCircle class="h-5 w-5 text-emerald-400" />
+                  <UserCircle
+                    class="h-5 w-5"
+                    :class="mode === 'organization' ? 'text-emerald-400' : 'text-violet-400'"
+                  />
                 </div>
                 <h2 class="text-lg font-semibold text-white">
                   {{ isEditing ? 'Edit Creator Profile' : 'Create Creator Profile' }}
@@ -483,6 +498,17 @@
                           </div>
                         </div>
                       </div>
+                      <!-- Configure position button -->
+                      <button
+                        type="button"
+                        @click="openWatermarkPositionPicker"
+                        :disabled="!formData.watermark_id"
+                        class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-zinc-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        :class="{ 'border-amber-500/50 text-amber-400': formData.watermark_settings }"
+                        title="Configure watermark position"
+                      >
+                        <Settings2 class="h-4 w-4" />
+                      </button>
                       <input
                         ref="watermarkFileInput"
                         type="file"
@@ -501,6 +527,14 @@
                         <Upload v-else class="h-4 w-4" />
                       </button>
                     </div>
+                    <!-- Configured indicator -->
+                    <p
+                      v-if="formData.watermark_settings"
+                      class="text-xs text-amber-400/80 mt-1.5 flex items-center gap-1"
+                    >
+                      <Settings2 class="w-3 h-3" />
+                      Position configured for {{ getConfiguredRatiosCount() }} aspect ratio(s)
+                    </p>
                   </div>
                 </div>
               </div>
@@ -521,7 +555,12 @@
               <button
                 @click="handleSubmit"
                 :disabled="!isValid || saving"
-                class="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                class="px-5 py-2.5 text-white rounded-xl font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                :class="
+                  mode === 'organization'
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500'
+                    : 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500'
+                "
               >
                 <Loader2 v-if="saving" class="h-4 w-4 animate-spin" />
                 {{ saving ? 'Saving...' : isEditing ? 'Update Profile' : 'Create Profile' }}
@@ -532,10 +571,23 @@
       </div>
     </Transition>
   </Teleport>
+
+  <!-- Watermark Position Picker -->
+  <WatermarkPositionPicker
+    :show="showWatermarkPositionPicker"
+    :watermark-url="mode === 'organization' ? selectedWatermarkAsset?.url : undefined"
+    :watermark-file-path="mode === 'local' ? selectedWatermarkFilePath : undefined"
+    :watermark-id="selectedWatermarkId"
+    :watermark-width="selectedWatermarkDimensions.width"
+    :watermark-height="selectedWatermarkDimensions.height"
+    :settings="formData.watermark_settings || undefined"
+    @close="showWatermarkPositionPicker = false"
+    @save="handleWatermarkSettingsSave"
+  />
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch } from 'vue';
+  import { ref, computed, watch, onUnmounted } from 'vue';
   import {
     UserCircle,
     Plus,
@@ -548,6 +600,7 @@
     ChevronDown,
     Trash2,
     Users,
+    Settings2,
   } from 'lucide-vue-next';
   import {
     createOrganizationCreatorProfile,
@@ -561,15 +614,23 @@
     uploadOrganizationAsset,
     type ServerOrganizationAsset,
   } from '@/services/organizationAssetsApi';
+  import {
+    createCreatorProfile,
+    updateCreatorProfile,
+    addPlatformLink as dbAddPlatformLink,
+    deletePlatformLink as dbDeletePlatformLink,
+    getAllIntroOutros,
+    getAllWatermarkImages,
+    type CreatorProfileWithLinks,
+    type IntroOutro,
+    type WatermarkImage,
+  } from '@/services/database';
   import { extractMintId, searchPumpFunTokens, fetchTokenMetadataFromServer } from '@/services/pumpfun';
   import { extractChannelSlug } from '@/services/kick';
   import { useToast } from '@/composables/useToast';
-
-  interface Props {
-    show: boolean;
-    organizationId: string | number;
-    profile?: ServerOrganizationCreatorProfile | null;
-  }
+  import { useAssetOperations } from '@/composables/useAssetOperations';
+  import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
+  import WatermarkPositionPicker, { type CreatorWatermarkSettings } from './WatermarkPositionPicker.vue';
 
   type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube';
 
@@ -579,21 +640,51 @@
     display_name: string;
     profile_image_url?: string;
     is_primary: boolean;
-    id?: number; // Present if existing link
+    id?: number | string; // Present if existing link
     isNew?: boolean;
+  }
+
+  // Unified asset type for both modes
+  interface AssetItem {
+    id: number | string;
+    name: string;
+    url?: string;
+    file_path?: string;
+    width?: number | null;
+    height?: number | null;
+  }
+
+  interface Props {
+    show: boolean;
+    mode: 'organization' | 'local';
+    // Organization mode props
+    organizationId?: string | number;
+    profile?: ServerOrganizationCreatorProfile | null;
+    // Local mode props
+    creator?: CreatorProfileWithLinks | null;
   }
 
   const props = defineProps<Props>();
   const emit = defineEmits<{
     (e: 'close'): void;
-    (e: 'saved', profile: ServerOrganizationCreatorProfile): void;
+    (e: 'saved', profile?: ServerOrganizationCreatorProfile): void;
   }>();
 
   const { success: showSuccess, error: showError } = useToast();
 
+  // Asset operations for local mode
+  const { uploadAsset: uploadVideoAsset, onUploadComplete } = useAssetOperations();
+  const { uploadWatermark } = useWatermarkOperations();
+  const pendingUploadType = ref<'intro' | 'outro' | null>(null);
+
   const saving = ref(false);
   const fetchingProfileImage = ref(false);
+
+  // Assets storage
   const orgAssets = ref<ServerOrganizationAsset[]>([]);
+  const localIntros = ref<IntroOutro[]>([]);
+  const localOutros = ref<IntroOutro[]>([]);
+  const localWatermarks = ref<WatermarkImage[]>([]);
 
   // Dropdown state
   const openPlatformDropdown = ref<number | null>(null);
@@ -618,9 +709,10 @@
   const formData = ref<{
     name: string;
     description: string;
-    intro_id: number | null;
-    outro_id: number | null;
-    watermark_id: number | null;
+    intro_id: number | string | null;
+    outro_id: number | string | null;
+    watermark_id: number | string | null;
+    watermark_settings: CreatorWatermarkSettings | null;
     platformLinks: PlatformLinkInput[];
   }>({
     name: '',
@@ -628,19 +720,90 @@
     intro_id: null,
     outro_id: null,
     watermark_id: null,
+    watermark_settings: null,
     platformLinks: [],
   });
 
-  const isEditing = computed(() => !!props.profile);
+  // Watermark position picker state
+  const showWatermarkPositionPicker = ref(false);
+
+  // Computed assets based on mode
+  const introAssets = computed<AssetItem[]>(() => {
+    if (props.mode === 'organization') {
+      return orgAssets.value
+        .filter((a) => a.asset_type === 'intro')
+        .map((a) => ({ id: a.id, name: a.name, url: a.url, width: a.width, height: a.height }));
+    }
+    return localIntros.value.map((a) => ({ id: a.id, name: a.name, file_path: a.file_path }));
+  });
+
+  const outroAssets = computed<AssetItem[]>(() => {
+    if (props.mode === 'organization') {
+      return orgAssets.value
+        .filter((a) => a.asset_type === 'outro')
+        .map((a) => ({ id: a.id, name: a.name, url: a.url, width: a.width, height: a.height }));
+    }
+    return localOutros.value.map((a) => ({ id: a.id, name: a.name, file_path: a.file_path }));
+  });
+
+  const watermarkAssets = computed<AssetItem[]>(() => {
+    if (props.mode === 'organization') {
+      return orgAssets.value
+        .filter((a) => a.asset_type === 'watermark')
+        .map((a) => ({ id: a.id, name: a.name, url: a.url, width: a.width, height: a.height }));
+    }
+    return localWatermarks.value.map((a) => ({
+      id: a.id,
+      name: a.name,
+      file_path: a.file_path,
+      width: a.width,
+      height: a.height,
+    }));
+  });
+
+  // Get selected watermark asset for position picker
+  const selectedWatermarkAsset = computed(() => {
+    if (!formData.value.watermark_id) return null;
+    if (props.mode === 'organization') {
+      return orgAssets.value.find((a) => a.id === formData.value.watermark_id) || null;
+    }
+    return null;
+  });
+
+  const selectedWatermarkFilePath = computed(() => {
+    if (!formData.value.watermark_id || props.mode !== 'local') return undefined;
+    const wm = localWatermarks.value.find((w) => w.id === formData.value.watermark_id);
+    return wm?.file_path;
+  });
+
+  const selectedWatermarkId = computed(() => {
+    if (!formData.value.watermark_id) return undefined;
+    return String(formData.value.watermark_id);
+  });
+
+  const selectedWatermarkDimensions = computed(() => {
+    if (!formData.value.watermark_id) return { width: null, height: null };
+    if (props.mode === 'organization') {
+      const asset = orgAssets.value.find((a) => a.id === formData.value.watermark_id);
+      return { width: asset?.width ?? null, height: asset?.height ?? null };
+    }
+    const wm = localWatermarks.value.find((w) => w.id === formData.value.watermark_id);
+    return { width: wm?.width ?? null, height: wm?.height ?? null };
+  });
+
+  const isEditing = computed(() => {
+    return props.mode === 'organization' ? !!props.profile : !!props.creator;
+  });
 
   const isValid = computed(() => {
     if (!formData.value.name.trim()) return false;
+    // Local mode requires at least one platform link
+    if (props.mode === 'local') {
+      const validLinks = formData.value.platformLinks.filter((l) => l.platform_id.trim());
+      if (validLinks.length === 0) return false;
+    }
     return true;
   });
-
-  const introAssets = computed(() => orgAssets.value.filter((a) => a.asset_type === 'intro'));
-  const outroAssets = computed(() => orgAssets.value.filter((a) => a.asset_type === 'outro'));
-  const watermarkAssets = computed(() => orgAssets.value.filter((a) => a.asset_type === 'watermark'));
 
   watch(
     () => props.show,
@@ -648,21 +811,27 @@
       if (newVal) {
         openPlatformDropdown.value = null;
         openAssetDropdown.value = null;
+        showWatermarkPositionPicker.value = false;
 
-        // Load org assets
-        const response = await listOrganizationAssets(props.organizationId);
-        if (response.success) {
-          orgAssets.value = response.assets;
+        // Load assets based on mode
+        if (props.mode === 'organization' && props.organizationId) {
+          const response = await listOrganizationAssets(props.organizationId);
+          if (response.success) {
+            orgAssets.value = response.assets;
+          }
+        } else if (props.mode === 'local') {
+          await loadLocalAssets();
         }
 
         // Reset or populate form
-        if (props.profile) {
+        if (props.mode === 'organization' && props.profile) {
           formData.value = {
             name: props.profile.name,
             description: props.profile.description || '',
             intro_id: props.profile.intro_id,
             outro_id: props.profile.outro_id,
             watermark_id: props.profile.watermark_id,
+            watermark_settings: (props.profile.watermark_settings as CreatorWatermarkSettings) || null,
             platformLinks: props.profile.platform_links.map((link) => ({
               id: link.id,
               platform: link.platform as PlatformId,
@@ -673,6 +842,24 @@
               isNew: false,
             })),
           };
+        } else if (props.mode === 'local' && props.creator) {
+          formData.value = {
+            name: props.creator.name,
+            description: props.creator.description || '',
+            intro_id: props.creator.intro_id,
+            outro_id: props.creator.outro_id,
+            watermark_id: props.creator.watermark_id,
+            watermark_settings: props.creator.watermark_settings ? JSON.parse(props.creator.watermark_settings) : null,
+            platformLinks: props.creator.platform_links.map((link) => ({
+              id: link.id,
+              platform: link.platform as PlatformId,
+              platform_id: link.platform_id,
+              display_name: link.display_name || '',
+              profile_image_url: link.profile_image_url || '',
+              is_primary: Boolean(link.is_primary),
+              isNew: false,
+            })),
+          };
         } else {
           formData.value = {
             name: '',
@@ -680,12 +867,24 @@
             intro_id: null,
             outro_id: null,
             watermark_id: null,
+            watermark_settings: null,
             platformLinks: [],
           };
         }
       }
     }
   );
+
+  async function loadLocalAssets() {
+    try {
+      const allAssets = await getAllIntroOutros();
+      localIntros.value = allAssets.filter((a) => a.type === 'intro');
+      localOutros.value = allAssets.filter((a) => a.type === 'outro');
+      localWatermarks.value = await getAllWatermarkImages();
+    } catch (err) {
+      console.error('Failed to load local assets:', err);
+    }
+  }
 
   function closeDialog() {
     if (!saving.value) {
@@ -861,19 +1060,47 @@
     return asset?.name || 'No watermark';
   }
 
-  function selectIntro(id: number | null) {
+  function selectIntro(id: number | string | null) {
     formData.value.intro_id = id;
     openAssetDropdown.value = null;
   }
 
-  function selectOutro(id: number | null) {
+  function selectOutro(id: number | string | null) {
     formData.value.outro_id = id;
     openAssetDropdown.value = null;
   }
 
-  function selectWatermark(id: number | null) {
+  function selectWatermark(id: number | string | null) {
     formData.value.watermark_id = id;
     openAssetDropdown.value = null;
+    // Clear watermark settings if watermark is removed
+    if (!id) {
+      formData.value.watermark_settings = null;
+    }
+  }
+
+  // Open watermark position picker
+  function openWatermarkPositionPicker() {
+    if (!formData.value.watermark_id) return;
+    showWatermarkPositionPicker.value = true;
+  }
+
+  // Handle save from watermark position picker
+  function handleWatermarkSettingsSave(settings: CreatorWatermarkSettings) {
+    formData.value.watermark_settings = settings;
+    showWatermarkPositionPicker.value = false;
+  }
+
+  // Count how many aspect ratios have watermark configured
+  function getConfiguredRatiosCount(): number {
+    if (!formData.value.watermark_settings) return 0;
+    const settings = formData.value.watermark_settings;
+    let count = 0;
+    if (settings['16:9']) count++;
+    if (settings['9:16']) count++;
+    if (settings['1:1']) count++;
+    if (settings['4:5']) count++;
+    return count;
   }
 
   // ============================================
@@ -972,30 +1199,36 @@
   async function handleIntroUpload(event: Event) {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
-    if (!file || !props.organizationId) return;
+    if (!file) return;
 
     uploadingIntro.value = true;
     try {
-      const metadata = await extractVideoMetadata(file);
+      if (props.mode === 'organization' && props.organizationId) {
+        const metadata = await extractVideoMetadata(file);
+        const response = await uploadOrganizationAsset(props.organizationId, file, 'intro', {
+          name: file.name.replace(/\.[^/.]+$/, ''),
+          thumbnail: metadata.thumbnail ?? undefined,
+          duration: metadata.duration ?? undefined,
+          width: metadata.width ?? undefined,
+          height: metadata.height ?? undefined,
+        });
 
-      const response = await uploadOrganizationAsset(props.organizationId, file, 'intro', {
-        name: file.name.replace(/\.[^/.]+$/, ''),
-        thumbnail: metadata.thumbnail ?? undefined,
-        duration: metadata.duration ?? undefined,
-        width: metadata.width ?? undefined,
-        height: metadata.height ?? undefined,
-      });
-
-      if (response.success && response.asset) {
-        orgAssets.value.push(response.asset);
-        formData.value.intro_id = response.asset.id;
-        showSuccess('Intro Uploaded', `"${response.asset.name}" has been uploaded`);
+        if (response.success && response.asset) {
+          orgAssets.value.push(response.asset);
+          formData.value.intro_id = response.asset.id;
+          showSuccess('Intro Uploaded', `"${response.asset.name}" has been uploaded`);
+        } else {
+          showError('Upload Failed', response.error || 'Failed to upload intro');
+        }
       } else {
-        showError('Upload Failed', response.error || 'Failed to upload intro');
+        // Local mode
+        pendingUploadType.value = 'intro';
+        await uploadVideoAsset('intro');
       }
     } catch (err: any) {
       console.error('Intro upload error:', err);
       showError('Upload Failed', err.message || 'Failed to upload intro');
+      pendingUploadType.value = null;
     } finally {
       uploadingIntro.value = false;
       input.value = '';
@@ -1005,30 +1238,36 @@
   async function handleOutroUpload(event: Event) {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
-    if (!file || !props.organizationId) return;
+    if (!file) return;
 
     uploadingOutro.value = true;
     try {
-      const metadata = await extractVideoMetadata(file);
+      if (props.mode === 'organization' && props.organizationId) {
+        const metadata = await extractVideoMetadata(file);
+        const response = await uploadOrganizationAsset(props.organizationId, file, 'outro', {
+          name: file.name.replace(/\.[^/.]+$/, ''),
+          thumbnail: metadata.thumbnail ?? undefined,
+          duration: metadata.duration ?? undefined,
+          width: metadata.width ?? undefined,
+          height: metadata.height ?? undefined,
+        });
 
-      const response = await uploadOrganizationAsset(props.organizationId, file, 'outro', {
-        name: file.name.replace(/\.[^/.]+$/, ''),
-        thumbnail: metadata.thumbnail ?? undefined,
-        duration: metadata.duration ?? undefined,
-        width: metadata.width ?? undefined,
-        height: metadata.height ?? undefined,
-      });
-
-      if (response.success && response.asset) {
-        orgAssets.value.push(response.asset);
-        formData.value.outro_id = response.asset.id;
-        showSuccess('Outro Uploaded', `"${response.asset.name}" has been uploaded`);
+        if (response.success && response.asset) {
+          orgAssets.value.push(response.asset);
+          formData.value.outro_id = response.asset.id;
+          showSuccess('Outro Uploaded', `"${response.asset.name}" has been uploaded`);
+        } else {
+          showError('Upload Failed', response.error || 'Failed to upload outro');
+        }
       } else {
-        showError('Upload Failed', response.error || 'Failed to upload outro');
+        // Local mode
+        pendingUploadType.value = 'outro';
+        await uploadVideoAsset('outro');
       }
     } catch (err: any) {
       console.error('Outro upload error:', err);
       showError('Upload Failed', err.message || 'Failed to upload outro');
+      pendingUploadType.value = null;
     } finally {
       uploadingOutro.value = false;
       input.value = '';
@@ -1038,24 +1277,32 @@
   async function handleWatermarkUpload(event: Event) {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
-    if (!file || !props.organizationId) return;
+    if (!file) return;
 
     uploadingWatermark.value = true;
     try {
-      const dimensions = await extractImageDimensions(file);
+      if (props.mode === 'organization' && props.organizationId) {
+        const dimensions = await extractImageDimensions(file);
+        const response = await uploadOrganizationAsset(props.organizationId, file, 'watermark', {
+          name: file.name.replace(/\.[^/.]+$/, ''),
+          width: dimensions.width ?? undefined,
+          height: dimensions.height ?? undefined,
+        });
 
-      const response = await uploadOrganizationAsset(props.organizationId, file, 'watermark', {
-        name: file.name.replace(/\.[^/.]+$/, ''),
-        width: dimensions.width ?? undefined,
-        height: dimensions.height ?? undefined,
-      });
-
-      if (response.success && response.asset) {
-        orgAssets.value.push(response.asset);
-        formData.value.watermark_id = response.asset.id;
-        showSuccess('Watermark Uploaded', `"${response.asset.name}" has been uploaded`);
+        if (response.success && response.asset) {
+          orgAssets.value.push(response.asset);
+          formData.value.watermark_id = response.asset.id;
+          showSuccess('Watermark Uploaded', `"${response.asset.name}" has been uploaded`);
+        } else {
+          showError('Upload Failed', response.error || 'Failed to upload watermark');
+        }
       } else {
-        showError('Upload Failed', response.error || 'Failed to upload watermark');
+        // Local mode
+        const result = await uploadWatermark();
+        if (result.success && result.watermarkId) {
+          await loadLocalAssets();
+          formData.value.watermark_id = result.watermarkId;
+        }
       }
     } catch (err: any) {
       console.error('Watermark upload error:', err);
@@ -1065,6 +1312,36 @@
       input.value = '';
     }
   }
+
+  // Register callback for async intro/outro upload completion (local mode)
+  const unregisterUploadComplete = onUploadComplete(async () => {
+    if (pendingUploadType.value && props.mode === 'local') {
+      const uploadType = pendingUploadType.value;
+      pendingUploadType.value = null;
+
+      // Reload assets to get the newly uploaded one
+      await loadLocalAssets();
+
+      // Find the most recently created asset of the uploaded type
+      const assetList = uploadType === 'intro' ? localIntros.value : localOutros.value;
+      if (assetList.length > 0) {
+        // Sort by created_at descending to get the newest
+        const newest = assetList.reduce((a, b) => (a.created_at > b.created_at ? a : b));
+
+        // Auto-select the newest asset
+        if (uploadType === 'intro') {
+          formData.value.intro_id = newest.id;
+        } else {
+          formData.value.outro_id = newest.id;
+        }
+      }
+    }
+  });
+
+  // Clean up callback registration when component is unmounted
+  onUnmounted(() => {
+    unregisterUploadComplete();
+  });
 
   // ============================================
   // Form Submit
@@ -1092,95 +1369,200 @@
     saving.value = true;
 
     try {
-      let profile: ServerOrganizationCreatorProfile | undefined;
-
-      // Get profile image from platform links
-      const profileImageUrl = getProfileImageFromLinks();
-
-      if (isEditing.value && props.profile) {
-        // Update existing profile
-        const response = await updateOrganizationCreatorProfile(props.organizationId, props.profile.id, {
-          name: formData.value.name,
-          description: formData.value.description || null,
-          profile_image_url: profileImageUrl || null,
-          intro_id: formData.value.intro_id,
-          outro_id: formData.value.outro_id,
-          watermark_id: formData.value.watermark_id,
-        });
-
-        if (!response.success || !response.profile) {
-          throw new Error(response.error || 'Failed to update profile');
-        }
-
-        profile = response.profile;
-
-        // Handle platform link changes
-        const existingLinks = props.profile.platform_links;
-        const newLinks = formData.value.platformLinks;
-
-        // Delete removed links
-        for (const existing of existingLinks) {
-          const stillExists = newLinks.some((l) => l.id === existing.id);
-          if (!stillExists) {
-            await apiDeletePlatformLink(props.organizationId, props.profile.id, existing.id);
-          }
-        }
-
-        // Add new links
-        for (const link of newLinks) {
-          if (link.isNew && link.platform_id.trim()) {
-            await apiAddPlatformLink(props.organizationId, props.profile.id, {
-              platform: link.platform,
-              platform_id: link.platform_id,
-              display_name: link.display_name || undefined,
-              profile_image_url: link.profile_image_url || undefined,
-              is_primary: link.is_primary,
-            });
-          }
-        }
-
-        showSuccess('Profile Updated', `"${profile.name}" has been updated`);
+      if (props.mode === 'organization') {
+        await handleOrganizationSubmit();
       } else {
-        // Create new profile
-        const response = await createOrganizationCreatorProfile(props.organizationId, {
-          name: formData.value.name,
-          description: formData.value.description || undefined,
-          profile_image_url: profileImageUrl,
-          intro_id: formData.value.intro_id,
-          outro_id: formData.value.outro_id,
-          watermark_id: formData.value.watermark_id,
-        });
-
-        if (!response.success || !response.profile) {
-          throw new Error(response.error || 'Failed to create profile');
-        }
-
-        profile = response.profile;
-
-        // Add platform links
-        for (const link of formData.value.platformLinks) {
-          if (link.platform_id.trim()) {
-            await apiAddPlatformLink(props.organizationId, profile.id, {
-              platform: link.platform,
-              platform_id: link.platform_id,
-              display_name: link.display_name || undefined,
-              profile_image_url: link.profile_image_url || undefined,
-              is_primary: link.is_primary,
-            });
-          }
-        }
-
-        showSuccess('Profile Created', `"${profile.name}" has been created`);
+        await handleLocalSubmit();
       }
-
-      emit('saved', profile);
-      emit('close');
     } catch (err: any) {
       console.error('Failed to save profile:', err);
       showError('Save Failed', err.message || 'An error occurred');
     } finally {
       saving.value = false;
     }
+  }
+
+  async function handleOrganizationSubmit() {
+    if (!props.organizationId) return;
+
+    let profile: ServerOrganizationCreatorProfile | undefined;
+    const profileImageUrl = getProfileImageFromLinks();
+
+    if (isEditing.value && props.profile) {
+      // Update existing profile
+      const response = await updateOrganizationCreatorProfile(props.organizationId, props.profile.id, {
+        name: formData.value.name,
+        description: formData.value.description || null,
+        profile_image_url: profileImageUrl || null,
+        intro_id: formData.value.intro_id as number | null,
+        outro_id: formData.value.outro_id as number | null,
+        watermark_id: formData.value.watermark_id as number | null,
+        watermark_settings: formData.value.watermark_settings,
+      });
+
+      if (!response.success || !response.profile) {
+        throw new Error(response.error || 'Failed to update profile');
+      }
+
+      profile = response.profile;
+
+      // Handle platform link changes
+      const existingLinks = props.profile.platform_links;
+      const newLinks = formData.value.platformLinks;
+
+      // Delete removed links
+      for (const existing of existingLinks) {
+        const stillExists = newLinks.some((l) => l.id === existing.id);
+        if (!stillExists) {
+          await apiDeletePlatformLink(props.organizationId, props.profile.id, existing.id);
+        }
+      }
+
+      // Add new links
+      for (const link of newLinks) {
+        if (link.isNew && link.platform_id.trim()) {
+          await apiAddPlatformLink(props.organizationId, props.profile.id, {
+            platform: link.platform,
+            platform_id: link.platform_id,
+            display_name: link.display_name || undefined,
+            profile_image_url: link.profile_image_url || undefined,
+            is_primary: link.is_primary,
+          });
+        }
+      }
+
+      showSuccess('Profile Updated', `"${profile.name}" has been updated`);
+    } else {
+      // Create new profile
+      const response = await createOrganizationCreatorProfile(props.organizationId, {
+        name: formData.value.name,
+        description: formData.value.description || undefined,
+        profile_image_url: profileImageUrl,
+        intro_id: formData.value.intro_id as number | null,
+        outro_id: formData.value.outro_id as number | null,
+        watermark_id: formData.value.watermark_id as number | null,
+        watermark_settings: formData.value.watermark_settings || undefined,
+      });
+
+      if (!response.success || !response.profile) {
+        throw new Error(response.error || 'Failed to create profile');
+      }
+
+      profile = response.profile;
+
+      // Add platform links
+      for (const link of formData.value.platformLinks) {
+        if (link.platform_id.trim()) {
+          await apiAddPlatformLink(props.organizationId, profile.id, {
+            platform: link.platform,
+            platform_id: link.platform_id,
+            display_name: link.display_name || undefined,
+            profile_image_url: link.profile_image_url || undefined,
+            is_primary: link.is_primary,
+          });
+        }
+      }
+
+      showSuccess('Profile Created', `"${profile.name}" has been created`);
+    }
+
+    emit('saved', profile);
+    emit('close');
+  }
+
+  async function handleLocalSubmit() {
+    const validLinks = formData.value.platformLinks.filter((l) => l.platform_id.trim());
+
+    // Find the first existing profile image to reuse for all links
+    const firstProfileImage = validLinks.find((l) => l.profile_image_url)?.profile_image_url;
+
+    // Normalize platform IDs and handle profile images
+    for (const link of validLinks) {
+      if (link.platform === 'pumpfun') {
+        const mintId = extractMintId(link.platform_id.trim());
+        if (mintId) {
+          link.platform_id = mintId;
+        }
+        if (!link.profile_image_url && firstProfileImage) {
+          link.profile_image_url = firstProfileImage;
+        }
+      } else if (link.platform === 'kick') {
+        const slug = extractChannelSlug(link.platform_id.trim());
+        if (slug) {
+          link.platform_id = slug;
+        }
+      }
+    }
+
+    if (isEditing.value && props.creator) {
+      // Update existing creator
+      await updateCreatorProfile(props.creator.id, {
+        name: formData.value.name.trim(),
+        description: formData.value.description.trim() || null,
+        intro_id: formData.value.intro_id as string | null,
+        outro_id: formData.value.outro_id as string | null,
+        watermark_id: formData.value.watermark_id as string | null,
+        watermark_settings: formData.value.watermark_settings
+          ? JSON.stringify(formData.value.watermark_settings)
+          : null,
+      });
+
+      // Handle platform links
+      const formIds = new Set(validLinks.filter((l) => l.id && !l.isNew).map((l) => l.id));
+
+      // Delete removed links
+      for (const link of props.creator.platform_links) {
+        if (!formIds.has(link.id)) {
+          await dbDeletePlatformLink(link.id);
+        }
+      }
+
+      // Add new links
+      for (const link of validLinks) {
+        if (link.isNew || !link.id) {
+          await dbAddPlatformLink(
+            props.creator.id,
+            link.platform,
+            link.platform_id.trim(),
+            link.display_name.trim() || null,
+            link.profile_image_url || null,
+            null,
+            link.is_primary
+          );
+        }
+      }
+
+      showSuccess('Creator Updated', `"${formData.value.name}" has been updated`);
+    } else {
+      // Create new creator
+      const creatorId = await createCreatorProfile(
+        formData.value.name.trim(),
+        formData.value.description.trim() || null,
+        null, // profile_image_path
+        formData.value.intro_id as string | null,
+        formData.value.outro_id as string | null,
+        formData.value.watermark_id as string | null,
+        formData.value.watermark_settings ? JSON.stringify(formData.value.watermark_settings) : null
+      );
+
+      // Add platform links
+      for (const link of validLinks) {
+        await dbAddPlatformLink(
+          creatorId,
+          link.platform,
+          link.platform_id.trim(),
+          link.display_name.trim() || null,
+          link.profile_image_url || null,
+          null,
+          link.is_primary
+        );
+      }
+
+      showSuccess('Creator Created', `"${formData.value.name}" has been added`);
+    }
+
+    emit('saved');
+    emit('close');
   }
 </script>
 

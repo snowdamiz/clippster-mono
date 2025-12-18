@@ -1759,7 +1759,18 @@
 
     const settings = previewWatermarkSettings.value;
 
-    // Check if this is a full-frame 1920x1080 watermark (16:9 overlay)
+    // Check for explicit full-frame overlay mode flag
+    if (settings.isFullFrameOverlay) {
+      return {
+        width: '100%',
+        height: '100%',
+        left: '0%',
+        top: '0%',
+        transform: 'none',
+      };
+    }
+
+    // Check if this is a full-frame 1920x1080 watermark (16:9 overlay) - backward compatibility
     const wmWidth = previewWatermarkData.value?.width ?? null;
     const wmHeight = previewWatermarkData.value?.height ?? null;
     const ratio = wmWidth && wmHeight ? wmWidth / wmHeight : null;
@@ -2201,15 +2212,18 @@
               : creatorProfile.watermark_settings;
 
           // Get the 16:9 settings (default preview aspect ratio)
-          const ratioSettings = parsed['16:9'];
-          if (ratioSettings) {
+          const ratioConfig = parsed['16:9'];
+          if (ratioConfig) {
+            // Handle both old format (direct x/y/opacity/scale) and new format (position object)
+            const position = ratioConfig.position || ratioConfig;
             watermarkSettings = {
               enabled: true,
-              watermarkId: creatorProfile.watermark_id,
-              positionX: ratioSettings.x ?? 12,
-              positionY: ratioSettings.y ?? 92,
-              opacity: ratioSettings.opacity ?? 80,
-              scale: ratioSettings.scale ?? 20,
+              watermarkId: ratioConfig.watermarkId || creatorProfile.watermark_id,
+              positionX: position.x ?? 12,
+              positionY: position.y ?? 92,
+              opacity: position.opacity ?? 80,
+              scale: position.scale ?? 20,
+              isFullFrameOverlay: position.isFullFrameOverlay ?? false,
             };
           }
         } catch (e) {
