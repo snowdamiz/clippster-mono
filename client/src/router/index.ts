@@ -1,12 +1,19 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import { featureFlags } from '@/composables/useFeatureFlags';
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
       path: '/',
-      redirect: '/creators',
+      redirect: () => {
+        // Dynamic redirect based on user type
+        const authStore = useAuthStore();
+        const isOrgOwner =
+          authStore.user?.account_type === 'organization' && authStore.user?.owned_organization_id;
+        return isOrgOwner ? '/organizations' : '/creators';
+      },
     },
     {
       path: '/dashboard',
@@ -166,18 +173,109 @@ const router = createRouter({
         },
       ],
     },
+    // Authentication routes
+    {
+      path: '/login',
+      name: 'login',
+      component: () => import('@/components/Auth.vue'),
+    },
+    {
+      path: '/reset-password/:token',
+      name: 'reset-password',
+      component: () => import('@/pages/ResetPassword.vue'),
+    },
+    // Organization routes
+    {
+      path: '/organization/setup',
+      name: 'organization-setup',
+      component: () => import('@/components/OrganizationSetupWizard.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/organizations',
+      name: 'organizations',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'organizations-home',
+          component: () => import('@/pages/Organizations.vue'),
+        },
+      ],
+    },
+    {
+      path: '/organization',
+      name: 'organization',
+      redirect: '/organizations', // Redirect to list if no ID specified
+    },
+    {
+      path: '/organization/:id',
+      name: 'organization-detail',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'organization-detail-home',
+          component: () => import('@/components/OrganizationDashboard.vue'),
+        },
+      ],
+    },
+    // Invitation acceptance
+    {
+      path: '/invite/:token',
+      name: 'accept-invitation',
+      component: () => import('@/pages/AcceptInvitation.vue'),
+    },
   ],
 });
 
-// Navigation guard to check admin access only
+// Helper to check if a user is an organization account owner
+export function isOrgAccountOwner(
+  user?: { account_type?: string; owned_organization_id?: string | null } | null
+): boolean {
+  const userData = user ?? useAuthStore().user;
+  return userData?.account_type === 'organization' && !!userData?.owned_organization_id;
+}
+
+// Helper to get the default landing route for a user
+export function getDefaultRoute(
+  user?: { account_type?: string; owned_organization_id?: string | null } | null
+): string {
+  return isOrgAccountOwner(user) ? '/organizations' : '/creators';
+}
+
+// Navigation guard for authentication, admin access, and feature flags
 router.beforeEach((to, _from, next) => {
   const authStore = useAuthStore();
 
-  if (to.meta.requiresAdmin && (!authStore.isAuthenticated || !authStore.user?.is_admin)) {
-    next('/projects'); // Redirect to projects if not authenticated or not admin
-  } else {
-    next();
+  // Check if route requires authentication
+  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+    // Save intended destination and redirect to login
+    next({ path: '/login', query: { redirect: to.fullPath } });
+    return;
   }
+
+  // Check if route requires admin
+  if (to.meta.requiresAdmin && (!authStore.isAuthenticated || !authStore.user?.is_admin)) {
+    next('/projects');
+    return;
+  }
+
+  // Prevent org-created accounts from accessing organization setup
+  if (to.name === 'organization-setup' && authStore.user?.created_by_organization_id) {
+    next('/projects');
+    return;
+  }
+
+  // Check Live Clip feature flag for /live-clip route
+  if (to.path.startsWith('/live-clip') && !featureFlags.isLiveClipEnabled.value) {
+    next('/creators');
+    return;
+  }
+
+  next();
 });
 
 export default router;

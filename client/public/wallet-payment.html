@@ -338,11 +338,14 @@
 
         updateStatus('Transaction confirmed!');
 
-        // Send result to local callback server
+        // Send result to local callback server (include wallet address for verification)
+        // Using snake_case to match Rust struct field names
         const paymentResult = {
           signature,
-          packKey: paymentData.packKey,
-          authToken: paymentData.authToken
+          pack_key: paymentData.packKey,
+          auth_token: paymentData.authToken,
+          from_address: publicKey,
+          pack_hours: parseInt(paymentData.hours, 10)
         };
 
         try {

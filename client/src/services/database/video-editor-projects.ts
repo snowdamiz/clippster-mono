@@ -1,4 +1,4 @@
-import { getDatabase, generateId, timestamp } from './core';
+import { getDatabase, generateId, timestamp, getCurrentUserId } from './core';
 
 // ==========================================
 // Video Editor Types (Database Layer)
@@ -48,11 +48,12 @@ export async function createVideoEditorProject(
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
+  const userId = getCurrentUserId();
 
   await db.execute(
-    `INSERT INTO video_editor_projects (id, name, description, thumbnail_path, total_duration, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [id, name, description || null, null, 0, now, now]
+    `INSERT INTO video_editor_projects (id, name, description, thumbnail_path, total_duration, user_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, name, description || null, null, 0, userId, now, now]
   );
 
   return id;
@@ -69,8 +70,17 @@ export async function getVideoEditorProject(id: string): Promise<VideoEditorProj
 
 export async function getAllVideoEditorProjects(): Promise<VideoEditorProject[]> {
   const db = await getDatabase();
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    return await db.select<VideoEditorProject[]>(
+      'SELECT * FROM video_editor_projects WHERE user_id IS NULL ORDER BY updated_at DESC'
+    );
+  }
+
   return await db.select<VideoEditorProject[]>(
-    'SELECT * FROM video_editor_projects ORDER BY updated_at DESC'
+    'SELECT * FROM video_editor_projects WHERE user_id = ? OR user_id IS NULL ORDER BY updated_at DESC',
+    [userId]
   );
 }
 

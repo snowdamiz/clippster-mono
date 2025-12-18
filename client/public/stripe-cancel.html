@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment Cancelled - Clippster</title>
+  <style>
+    :root {
+      --background: oklch(0.145 0 0);
+      --foreground: oklch(0.985 0 0);
+      --card: oklch(0.145 0 0);
+      --primary: oklch(0.985 0 0);
+      --muted-foreground: oklch(0.708 0 0);
+      --warning: oklch(0.769 0.188 70.08);
+      --warning-bg: oklch(0.269 0.05 70.08);
+      --radius: 0.625rem;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: var(--background);
+      color: var(--foreground);
+      padding: 1.5rem;
+    }
+
+    .container {
+      max-width: 28rem;
+      width: 100%;
+    }
+
+    .card {
+      position: relative;
+      overflow: hidden;
+      border-radius: calc(var(--radius) * 2);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      background: var(--card);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    }
+
+    .gradient-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, transparent 50%, rgba(251, 191, 36, 0.05) 100%);
+      pointer-events: none;
+    }
+
+    .content {
+      position: relative;
+      padding: 2.5rem 2rem;
+      text-align: center;
+    }
+
+    .icon-container {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 1.5rem;
+      background: var(--warning-bg);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .icon-container svg {
+      width: 40px;
+      height: 40px;
+      color: var(--warning);
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      color: var(--warning);
+    }
+
+    p {
+      font-size: 0.9375rem;
+      color: var(--muted-foreground);
+      line-height: 1.5;
+      margin-bottom: 1.5rem;
+    }
+
+    .close-notice {
+      margin-top: 1rem;
+      font-size: 0.8125rem;
+      color: var(--muted-foreground);
+      opacity: 0.7;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="gradient-overlay"></div>
+      <div class="content">
+        <div class="icon-container">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </div>
+
+        <h1>Payment Cancelled</h1>
+        <p>Your payment was cancelled. No charges have been made to your account.</p>
+        <p>You can return to the application to try again or choose a different payment method.</p>
+
+        <p class="close-notice">You can close this window now.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Try to close the window after a delay
+    setTimeout(() => {
+      window.close();
+    }, 5000);
+  </script>
+</body>
+</html>
+

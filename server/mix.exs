@@ -45,6 +45,7 @@ defmodule ClippsterServer.MixProject do
       {:postgrex, ">= 0.0.0"},
       {:phoenix_live_dashboard, "~> 0.8.3"},
       {:swoosh, "~> 1.16"},
+      {:resend, "~> 0.4"},
       {:req, "~> 0.5"},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
@@ -62,7 +63,22 @@ defmodule ClippsterServer.MixProject do
       {:httpoison, "~> 2.2"},
       {:finch, "~> 0.19"},
       # Environment variable loading
-      {:dotenvy, "~> 0.8.0"}
+      {:dotenvy, "~> 0.8.0"},
+      # OAuth authentication
+      {:ueberauth, "~> 0.10"},
+      {:ueberauth_google, "~> 0.10"},
+      # Stripe payments
+      {:stripity_stripe, "~> 3.2"},
+      # Password hashing for email auth (pure Elixir, no native deps needed)
+      {:pbkdf2_elixir, "~> 2.0"},
+      # Cloudflare R2 storage (S3-compatible)
+      {:ex_aws, "~> 2.5"},
+      {:ex_aws_s3, "~> 2.5"},
+      {:sweet_xml, "~> 0.7"},
+      # HTTP client required by ExAws (with TLS support)
+      {:hackney, "~> 1.20"},
+      # CA certificates for HTTPS
+      {:certifi, "~> 2.12"}
     ]
   end
 

@@ -4,7 +4,6 @@
       v-if="showVideoPlayer"
       class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50"
       :class="zIndexClass"
-      @click.self="$emit('close')"
     >
       <Transition name="dialog" appear>
         <div
@@ -55,6 +54,21 @@
                 @loadedmetadata="onLoadedMetadata"
                 @ended="onVideoEnded"
               />
+
+              <!-- Watermark Overlay -->
+              <div
+                v-if="shouldShowWatermark"
+                class="absolute pointer-events-none z-10 transition-opacity duration-300"
+                :style="getWatermarkOverlayStyle"
+              >
+                <img
+                  :src="watermarkDataUrl"
+                  alt="Watermark"
+                  class="max-w-full max-h-full object-contain"
+                  :style="{ opacity: getWatermarkOpacity }"
+                  @load="onWatermarkLoad"
+                />
+              </div>
               <!-- Loading Indicator -->
               <div v-if="isVideoLoading" class="absolute inset-0 flex items-center justify-center bg-black/60">
                 <div class="flex flex-col items-center gap-3 sm:gap-4">
@@ -98,9 +112,7 @@
               </Transition>
             </div>
             <!-- Custom Video Controls -->
-            <div
-              class="flex-shrink-0 bg-black/60 backdrop-blur-sm"
-            >
+            <div class="flex-shrink-0 bg-black/60 backdrop-blur-sm">
               <!-- Full-width Timeline/Seek Bar -->
               <div
                 ref="timelineRef"
@@ -129,10 +141,7 @@
                 <!-- Seek thumb - always visible, larger during drag -->
                 <div
                   class="absolute top-1/2 bg-violet-400 rounded-full shadow-md pointer-events-none"
-                  :class="[
-                    isDragging ? 'w-4 h-4' : 'w-3 h-3',
-                    { 'transition-all duration-75': !isDragging }
-                  ]"
+                  :class="[isDragging ? 'w-4 h-4' : 'w-3 h-3', { 'transition-all duration-75': !isDragging }]"
                   :style="{
                     left: `${progressPercent}%`,
                     transform: 'translate(-50%, -50%)',
@@ -144,7 +153,7 @@
                   class="absolute -top-8 bg-black/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded font-medium whitespace-nowrap z-20 pointer-events-none"
                   :style="{ left: `${isDragging ? progressPercent : hoverPosition}%`, transform: 'translateX(-50%)' }"
                 >
-                  {{ formatDuration(isDragging ? (progressPercent / 100) * duration : hoverTime) }}
+                  {{ formatDuration(isDragging ? (progressPercent / 100) * duration : (hoverTime ?? 0)) }}
                 </div>
               </div>
               <!-- Control Buttons and Time Display -->
@@ -228,6 +237,10 @@
     showVideoPlayer: boolean;
     /** Optional: Video file path for clip preview mode (when video prop is not provided) */
     videoFilePath?: string | null;
+    /** Optional: Direct video URL (bypasses local video server - for cloud/remote videos) */
+    videoUrl?: string | null;
+    /** Optional: Video title to display when using videoUrl */
+    videoTitle?: string | null;
     /** Optional: Clip start time in seconds (enables clip preview mode) */
     clipStartTime?: number | null;
     /** Optional: Clip end time in seconds (enables clip preview mode) */
@@ -238,6 +251,8 @@
     clipSegmentName?: string | null;
     /** Optional: Higher z-index for nested dialogs */
     zIndex?: number;
+    /** Optional: Watermark settings for preview */
+    watermarkSettings?: any | null;
   }
 
   interface Emits {
@@ -246,11 +261,14 @@
 
   const props = withDefaults(defineProps<Props>(), {
     videoFilePath: null,
+    videoUrl: null,
+    videoTitle: null,
     clipStartTime: null,
     clipEndTime: null,
     clipName: null,
     clipSegmentName: null,
     zIndex: 50,
+    watermarkSettings: null,
   });
   const emit = defineEmits<Emits>();
 
@@ -268,10 +286,13 @@
   const effectiveStartTime = computed(() => props.clipStartTime ?? 0);
   const effectiveEndTime = computed(() => props.clipEndTime ?? duration.value);
 
-  // Computed: Display title (uses clipName in clip mode, otherwise video title)
+  // Computed: Display title (uses clipName in clip mode, videoTitle prop, or video title)
   const displayTitle = computed(() => {
     if (isClipPreviewMode.value && props.clipName) {
       return props.clipName;
+    }
+    if (props.videoTitle) {
+      return props.videoTitle;
     }
     return getVideoTitle(props.video);
   });
@@ -322,6 +343,177 @@
   const videoWidth = ref(16);
   const videoHeight = ref(9);
   const showReplayButton = ref(false);
+
+  // Watermark state
+  const watermarkDataUrl = ref<string | null>(null);
+  const watermarkDimensions = ref<{ width: number; height: number } | null>(null);
+  const localWatermarkDimensions = ref<{ width: number; height: number } | null>(null);
+
+  function onWatermarkLoad(event: Event) {
+    const img = event.target as HTMLImageElement;
+    if (img.naturalWidth && img.naturalHeight) {
+      localWatermarkDimensions.value = {
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+      };
+    }
+  }
+
+  // Normalize aspect ratio for settings lookup
+  const normalizedAspectRatio = computed(() => {
+    const w = videoWidth.value;
+    const h = videoHeight.value;
+    if (!w || !h) return '16:9';
+
+    const ratio = w / h;
+    if (Math.abs(ratio - 16 / 9) < 0.01) return '16:9';
+    if (Math.abs(ratio - 9 / 16) < 0.01) return '9:16';
+    if (Math.abs(ratio - 1) < 0.01) return '1:1';
+    if (Math.abs(ratio - 4 / 5) < 0.01) return '4:5';
+
+    return `${w}:${h}`;
+  });
+
+  // Load watermark when settings or aspect ratio change
+  watch(
+    [() => props.watermarkSettings, normalizedAspectRatio],
+    async ([settings, aspectRatio]) => {
+      if (!settings || !settings.enabled) {
+        watermarkDataUrl.value = null;
+        watermarkDimensions.value = null;
+        localWatermarkDimensions.value = null;
+        return;
+      }
+
+      // Determine correct watermark ID based on aspect ratio
+      let targetWatermarkId = settings.watermarkId;
+      const perRatio = settings.perRatioSettings;
+
+      if (perRatio && aspectRatio && perRatio[aspectRatio]) {
+        const ratioConfig = perRatio[aspectRatio];
+        if (ratioConfig && ratioConfig.watermarkId) {
+          targetWatermarkId = ratioConfig.watermarkId;
+        }
+      }
+
+      if (!targetWatermarkId) {
+        watermarkDataUrl.value = null;
+        watermarkDimensions.value = null;
+        localWatermarkDimensions.value = null;
+        return;
+      }
+
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const { getWatermarkImage } = await import('@/services/database');
+
+        const watermark = await getWatermarkImage(targetWatermarkId);
+        if (watermark) {
+          const dataUrl = await invoke<string>('read_file_as_data_url', {
+            filePath: watermark.file_path,
+          });
+          watermarkDataUrl.value = dataUrl;
+          watermarkDimensions.value = {
+            width: watermark.width || 0,
+            height: watermark.height || 0,
+          };
+          // Reset local dimensions, will be set on load
+          localWatermarkDimensions.value = null;
+        }
+      } catch (error) {
+        console.error('[VideoPlayerDialog] Failed to load watermark:', error);
+        watermarkDataUrl.value = null;
+        watermarkDimensions.value = null;
+        localWatermarkDimensions.value = null;
+      }
+    },
+    { immediate: true }
+  );
+
+  // Determine if watermark should show
+  const shouldShowWatermark = computed(() => {
+    if (!props.watermarkSettings?.enabled) return false;
+    if (!watermarkDataUrl.value) return false;
+
+    // Check if this aspect ratio has watermark disabled in per-ratio settings
+    const aspectRatioStr = normalizedAspectRatio.value;
+    const perRatio = props.watermarkSettings.perRatioSettings;
+    if (perRatio) {
+      if (aspectRatioStr in perRatio && perRatio[aspectRatioStr] === null) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  // Get watermark opacity (using per-ratio settings if available)
+  const getWatermarkOpacity = computed(() => {
+    if (!props.watermarkSettings) return 0.8;
+
+    const aspectRatioStr = normalizedAspectRatio.value;
+    const perRatio = props.watermarkSettings.perRatioSettings;
+    if (perRatio && perRatio[aspectRatioStr]) {
+      const config = perRatio[aspectRatioStr];
+      return (config.position?.opacity ?? props.watermarkSettings.opacity ?? 80) / 100;
+    }
+
+    return (props.watermarkSettings.opacity ?? 80) / 100;
+  });
+
+  // Get watermark overlay style (position and size)
+  const getWatermarkOverlayStyle = computed(() => {
+    if (!props.watermarkSettings) return {};
+
+    const settings = props.watermarkSettings;
+    const wmWidth = localWatermarkDimensions.value?.width ?? watermarkDimensions.value?.width ?? null;
+    const wmHeight = localWatermarkDimensions.value?.height ?? watermarkDimensions.value?.height ?? null;
+    const ratio = wmWidth && wmHeight ? wmWidth / wmHeight : null;
+    const is16x9 = ratio ? Math.abs(ratio - 16 / 9) < 0.02 : false;
+
+    // Check if this is a full-frame watermark
+    // We check against both native 16:9 resolution and normalized aspect ratio
+    const isFullFrame =
+      is16x9 &&
+      wmWidth !== null &&
+      wmHeight !== null &&
+      wmWidth >= 1600 &&
+      wmHeight >= 900 &&
+      normalizedAspectRatio.value === '16:9';
+
+    // Full-frame watermarks fill the frame
+    if (isFullFrame) {
+      return {
+        width: '100%',
+        height: '100%',
+        left: '0%',
+        top: '0%',
+        transform: 'none',
+      };
+    }
+
+    // Get position from per-ratio settings or fall back to default
+    let positionX = settings.positionX ?? 12;
+    let positionY = settings.positionY ?? 92;
+    let scale = settings.scale ?? 20;
+
+    const aspectRatioStr = normalizedAspectRatio.value;
+    const perRatio = settings.perRatioSettings;
+    if (perRatio && perRatio[aspectRatioStr]) {
+      const config = perRatio[aspectRatioStr];
+      if (config.position) {
+        positionX = config.position.x ?? positionX;
+        positionY = config.position.y ?? positionY;
+        scale = config.position.scale ?? scale;
+      }
+    }
+
+    return {
+      left: `${positionX}%`,
+      top: `${positionY}%`,
+      transform: 'translate(-50%, -50%)',
+      width: `${scale}%`,
+    };
+  });
 
   // Compute dialog style based on video aspect ratio
   const dialogStyle = computed(() => {
@@ -455,15 +647,15 @@
   // Start dragging
   function startDrag(event: MouseEvent) {
     if (!videoElement.value) return;
-    
+
     isDragging.value = true;
     dragPercent.value = getPercentFromEvent(event);
     seekToPercent(dragPercent.value);
-    
+
     // Add document-level listeners for drag
     document.addEventListener('mousemove', onDrag);
     document.addEventListener('mouseup', stopDrag);
-    
+
     event.preventDefault();
   }
 
@@ -484,9 +676,9 @@
 
   function onTimelineHover(event: MouseEvent) {
     if (isDragging.value) return; // Don't update hover during drag
-    
+
     const percent = getPercentFromEvent(event);
-    
+
     let hoverTimeSeconds: number;
     if (isClipPreviewMode.value) {
       // Show time relative to clip start
@@ -591,6 +783,13 @@
 
   // Initialize video source when video changes
   async function initializeVideo() {
+    // If a direct videoUrl is provided, use it directly (for cloud/remote videos)
+    if (props.videoUrl) {
+      resetVideoState();
+      videoSrc.value = props.videoUrl;
+      return;
+    }
+
     // Determine the file path from either video prop or videoFilePath prop
     const filePath = props.video?.file_path || props.videoFilePath;
 
@@ -632,8 +831,8 @@
     videoKey.value = `video-${Date.now()}`;
   }
 
-  // Watch for video changes (either video prop or videoFilePath prop)
-  watch(() => [props.video, props.videoFilePath], initializeVideo, { immediate: true });
+  // Watch for video changes (video prop, videoFilePath, or videoUrl)
+  watch(() => [props.video, props.videoFilePath, props.videoUrl], initializeVideo, { immediate: true });
 
   // Watch for dialog open/close to properly handle video state
   watch(
@@ -649,7 +848,7 @@
           videoElement.value.load();
         }
         resetVideoState();
-      } else if (newVal && !oldVal && (props.video || props.videoFilePath)) {
+      } else if (newVal && !oldVal && (props.video || props.videoFilePath || props.videoUrl)) {
         // Dialog is opening, ensure video is initialized
         initializeVideo();
       }

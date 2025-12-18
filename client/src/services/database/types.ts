@@ -8,6 +8,7 @@ export interface Project {
   parent_id: string | null;
   platform: 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual' | null;
   audio_settings: string | null; // JSON string of AudioSettings
+  default_watermark_settings: string | null; // JSON string with watermark_id and watermark_settings from creator profile
   created_at: number;
   updated_at: number;
 }
@@ -80,6 +81,11 @@ export interface IntroOutro {
   thumbnail_generation_status: 'pending' | 'processing' | 'completed' | 'failed' | null;
   created_at: number;
   updated_at: number;
+  // Organization asset fields (null for local assets)
+  organization_id?: string | null;
+  organization_name?: string | null;
+  server_id?: number | null;
+  sync_status?: 'synced' | 'downloading' | 'error' | null;
 }
 
 export interface Clip {
@@ -387,6 +393,11 @@ export interface WatermarkImage {
   file_size: number | null;
   created_at: number;
   updated_at: number;
+  // Organization asset fields (null for local assets)
+  organization_id?: string | null;
+  organization_name?: string | null;
+  server_id?: number | null;
+  sync_status?: 'synced' | 'downloading' | 'error' | null;
 }
 
 export interface AudioAsset {
@@ -399,6 +410,11 @@ export interface AudioAsset {
   channels: number | null;
   created_at: number;
   updated_at: number;
+  // Organization asset fields (null for local assets)
+  organization_id?: string | null;
+  organization_name?: string | null;
+  server_id?: number | null;
+  sync_status?: 'synced' | 'downloading' | 'error' | null;
 }
 
 export interface ImageAsset {
@@ -411,6 +427,11 @@ export interface ImageAsset {
   mime_type: string | null;
   created_at: number;
   updated_at: number;
+  // Organization asset fields (null for local assets)
+  organization_id?: string | null;
+  organization_name?: string | null;
+  server_id?: number | null;
+  sync_status?: 'synced' | 'downloading' | 'error' | null;
 }
 
 export interface WatermarkSettings {
@@ -422,6 +443,7 @@ export interface WatermarkSettings {
   scale: number; // 0-100 (percentage of video width)
   width?: number | null; // original watermark width (px) if known
   height?: number | null; // original watermark height (px) if known
+  isFullFrameOverlay?: boolean; // When true, position at 0,0 with 100% scale (full-frame overlay)
   // Optional per-aspect-ratio settings from creator profile
   // Each ratio can have its own watermark image AND position settings
   perRatioSettings?: CreatorWatermarkSettings | null;
@@ -451,6 +473,7 @@ export interface CreatorWatermarkPosition {
   y: number;
   opacity: number;
   scale: number;
+  isFullFrameOverlay?: boolean; // When true, position at 0,0 with 100% scale (full-frame overlay)
 }
 
 // Per-aspect-ratio watermark configuration

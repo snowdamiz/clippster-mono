@@ -85,8 +85,8 @@
     </nav>
     <!-- User info and logout at bottom -->
     <div class="absolute bottom-0 w-64 border-t border-border">
-      <!-- Credit Balance -->
-      <div class="px-2 pb-2 pt-2">
+      <!-- Credit Balance - Hidden for org members with AI disabled -->
+      <div v-if="isAIAllowed" class="px-2 pb-2 pt-2">
         <button
           @click="handleCreditClick"
           class="credit-balance-card w-full"
@@ -127,11 +127,13 @@
           </div>
         </button>
       </div>
-      <!-- Wallet info -->
+      <!-- User info -->
       <div :class="authStore.isAuthenticated ? 'px-4 pb-4 pt-4' : 'px-2 pb-2 pt-2'" class="border-t border-border">
-        <div v-if="authStore.isAuthenticated" class="flex items-center justify-between">
-          <span class="font-mono text-xs text-primary">{{ formattedAddress }}</span>
-          <button @click="handleDisconnect" class="disconnect-btn">Disconnect</button>
+        <div v-if="authStore.isAuthenticated" class="flex items-center justify-between gap-2 min-w-0">
+          <span class="font-mono text-xs text-primary truncate min-w-0" :title="formattedAddress">
+            {{ formattedAddress }}
+          </span>
+          <button @click="handleDisconnect" class="disconnect-btn flex-shrink-0">{{ disconnectButtonText }}</button>
         </div>
         <div v-else class="flex items-center justify-center">
           <button @click="showAuthModal" class="sign-in-btn">Sign In</button>
@@ -142,10 +144,12 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted } from 'vue';
+  import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
   import { useRoute, useRouter } from 'vue-router';
   import { useAuthStore } from '@/stores/auth';
   import { useWallet } from '@/composables/useWallet';
+  import { useAIPermission } from '@/composables/useAIPermission';
+  import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { navigationItems } from '@/config/navigation';
   import BugReportDialog from '@/components/BugReportDialog.vue';
   import api from '@/services/api';
@@ -155,6 +159,8 @@
   const router = useRouter();
   const authStore = useAuthStore();
   const { formatAddress } = useWallet();
+  const { isAIAllowed } = useAIPermission();
+  const { isLiveClipEnabled, initialize: initFeatureFlags } = useFeatureFlags();
 
   const emit = defineEmits<{
     'show-auth-modal': [];
@@ -164,28 +170,87 @@
   const loadingBalance = ref(false);
   const isNativeEnvironment = ref(false);
 
-  // Filter navigation items based on admin status
-  const visibleNavigationItems = computed(() => {
-    console.log('🔍 DashboardSidebar - Computing visible navigation items');
-    console.log('🔍 authStore.user:', authStore.user);
-    console.log('🔍 authStore.user?.is_admin:', authStore.user?.is_admin);
-    console.log('🔍 All navigation items:', navigationItems);
+  // Timer reference for cleanup
+  let balanceRefreshInterval: ReturnType<typeof setInterval> | null = null;
 
+  // Track user's organizations
+  const userOrganizations = ref<any[]>([]);
+
+  // Load user's organizations
+  async function loadUserOrganizations() {
+    if (!authStore.isAuthenticated) {
+      userOrganizations.value = [];
+      return;
+    }
+    try {
+      const result = await authStore.getOrganizations();
+      if (result.success) {
+        userOrganizations.value = result.organizations || [];
+      }
+    } catch (error) {
+      console.error('Failed to load organizations:', error);
+    }
+  }
+
+  // Check if user is an organization account owner
+  const isOrgAccountOwner = computed(() => {
+    return authStore.user?.account_type === 'organization' && authStore.user?.owned_organization_id;
+  });
+
+  // Filter navigation items based on admin/org status and feature flags
+  const visibleNavigationItems = computed(() => {
     const filtered = navigationItems.filter((item) => {
-      console.log(`🔍 Checking item: ${item.name}, adminOnly: ${item.adminOnly}`);
+      // Check admin-only items
       if (item.adminOnly) {
-        const isAdmin = authStore.user?.is_admin === true;
-        console.log(`🔍 ${item.name} - Admin check: ${isAdmin}`);
-        return isAdmin;
+        return authStore.user?.is_admin === true;
+      }
+      // Check organization owner-only items
+      if (item.orgOnly) {
+        return isOrgAccountOwner.value;
+      }
+      // Check organization member items (show if user is member of any org)
+      if (item.orgMember) {
+        // For org account owners, always show Organizations
+        if (isOrgAccountOwner.value) return true;
+        return userOrganizations.value.length > 0;
+      }
+      // Hide Clip Live when feature is disabled
+      if (item.path === '/live-clip' && !isLiveClipEnabled.value) {
+        return false;
       }
       return true;
     });
 
-    console.log('🔍 Filtered navigation items:', filtered);
+    // For organization account owners, move Organizations to the top
+    if (isOrgAccountOwner.value) {
+      const orgIndex = filtered.findIndex((item) => item.path === '/organizations');
+      if (orgIndex > 0) {
+        const [orgItem] = filtered.splice(orgIndex, 1);
+        filtered.unshift(orgItem);
+      }
+    }
+
     return filtered;
   });
 
+  // Watch for auth changes and load organizations
+  watch(
+    () => authStore.isAuthenticated,
+    (isAuth) => {
+      if (isAuth) {
+        loadUserOrganizations();
+      } else {
+        userOrganizations.value = [];
+      }
+    },
+    { immediate: true }
+  );
+
   const isActive = (path: string) => {
+    // Special case: /organizations should also match /organization/:id routes
+    if (path === '/organizations') {
+      return route.path.startsWith('/organizations') || route.path.startsWith('/organization/');
+    }
     return route.path.startsWith(path);
   };
 
@@ -197,11 +262,22 @@
   };
 
   const formattedAddress = computed(() => {
-    return authStore.isAuthenticated ? formatAddress(authStore.walletAddress) : '';
+    if (!authStore.isAuthenticated) return '';
+
+    // For email-based auth (Google or email/password), show email; for wallet auth, show formatted address
+    if (authStore.authProvider && ['google', 'email'].includes(authStore.authProvider) && authStore.email) {
+      return authStore.email;
+    }
+    return formatAddress(authStore.walletAddress ?? '');
+  });
+
+  const disconnectButtonText = computed(() => {
+    return authStore.authProvider && ['google', 'email'].includes(authStore.authProvider) ? 'Sign Out' : 'Disconnect';
   });
 
   const handleDisconnect = () => {
     authStore.logout();
+    router.push('/');
   };
 
   const showAuthModal = () => {
@@ -250,13 +326,45 @@
     }
   }
 
+  // Handle auth state changes (login/logout)
+  function handleAuthStateChanged(event: CustomEvent) {
+    console.log('[DashboardSidebar] Auth state changed, refetching balance. User ID:', event.detail?.userId);
+
+    if (event.detail?.userId === null) {
+      // User logged out - clear balance immediately
+      hoursRemaining.value = 0;
+    } else {
+      // User logged in - fetch new balance
+      fetchBalance();
+    }
+  }
+
   onMounted(() => {
     // Check if running in native Tauri environment
     isNativeEnvironment.value = typeof window !== 'undefined' && '__TAURI__' in window;
 
+    // Initial fetch
     fetchBalance();
+
     // Refresh balance every 30 seconds
-    setInterval(fetchBalance, 30000);
+    balanceRefreshInterval = setInterval(fetchBalance, 30000);
+
+    // Listen for auth state changes
+    window.addEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
+
+    // Initialize feature flags
+    initFeatureFlags();
+  });
+
+  onUnmounted(() => {
+    // Clear the interval to prevent memory leaks
+    if (balanceRefreshInterval) {
+      clearInterval(balanceRefreshInterval);
+      balanceRefreshInterval = null;
+    }
+
+    // Remove auth state change listener
+    window.removeEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
   });
 </script>
 

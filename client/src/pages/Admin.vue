@@ -30,6 +30,17 @@
         <RefreshCw class="h-4 w-4" />
         Refresh Stats
       </button>
+
+      <button
+        v-if="activeTab === 'organizations'"
+        @click="fetchOrganizations"
+        :disabled="organizationsLoading"
+        class="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md flex items-center gap-2 text-sm font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <RefreshCw v-if="!organizationsLoading" class="h-4 w-4" />
+        <Loader2 v-else class="h-4 w-4 animate-spin" />
+        Refresh Organizations
+      </button>
     </template>
 
     <!-- Tabs Navigation -->
@@ -45,7 +56,6 @@
             : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border/50',
         ]"
       >
-        <component :is="tab.icon" class="w-4 h-4 mr-2" />
         {{ tab.label }}
       </button>
     </div>
@@ -98,7 +108,7 @@
                     ID
                   </th>
                   <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Wallet Address
+                    Account
                   </th>
                   <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Role
@@ -119,16 +129,35 @@
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-foreground">#{{ user.id }}</td>
                   <td class="px-6 py-4 whitespace-nowrap">
                     <div class="flex items-center">
-                      <code class="text-xs bg-muted px-2 py-1 rounded font-mono text-primary">
-                        {{ formatWalletAddress(user.wallet_address) }}
-                      </code>
-                      <button
-                        @click="copyToClipboard(user.wallet_address)"
-                        class="ml-2 text-muted-foreground hover:text-foreground transition-colors"
-                        :title="`Copy ${user.wallet_address}`"
-                      >
-                        <Copy class="h-4 w-4" />
-                      </button>
+                      <!-- Show email for email/google providers, wallet address for wallet provider -->
+                      <template v-if="user.email && (!user.wallet_address || user.provider !== 'wallet')">
+                        <span class="text-xs bg-muted px-2 py-1 rounded text-primary flex items-center gap-1.5">
+                          <span class="text-muted-foreground">{{ getProviderIcon(user.provider) }}</span>
+                          {{ user.email }}
+                        </span>
+                        <button
+                          @click="copyToClipboard(user.email!)"
+                          class="ml-2 text-muted-foreground hover:text-foreground transition-colors"
+                          :title="`Copy ${user.email}`"
+                        >
+                          <Copy class="h-4 w-4" />
+                        </button>
+                      </template>
+                      <template v-else-if="user.wallet_address">
+                        <code class="text-xs bg-muted px-2 py-1 rounded font-mono text-primary">
+                          {{ formatWalletAddress(user.wallet_address) }}
+                        </code>
+                        <button
+                          @click="copyToClipboard(user.wallet_address!)"
+                          class="ml-2 text-muted-foreground hover:text-foreground transition-colors"
+                          :title="`Copy ${user.wallet_address}`"
+                        >
+                          <Copy class="h-4 w-4" />
+                        </button>
+                      </template>
+                      <template v-else>
+                        <span class="text-xs text-muted-foreground italic">No account info</span>
+                      </template>
                     </div>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
@@ -200,6 +229,123 @@
             </table>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Organizations Tab -->
+    <div v-if="activeTab === 'organizations'" class="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <!-- Loading State -->
+      <div v-if="organizationsLoading && !organizations.length" class="flex items-center justify-center py-12">
+        <div class="text-center">
+          <Loader2 class="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+          <p class="text-muted-foreground">Loading organizations...</p>
+        </div>
+      </div>
+
+      <!-- Organizations Table -->
+      <div v-else-if="organizations.length > 0" class="space-y-4">
+        <!-- Stats -->
+        <div class="bg-card p-4 rounded-lg border border-border shadow-sm">
+          <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-foreground">Organization Management</h2>
+            <span class="text-sm text-muted-foreground">
+              {{ organizations.length }} organization{{ organizations.length !== 1 ? 's' : '' }} total
+            </span>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <div class="bg-card border border-border rounded-md shadow-sm overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full">
+              <thead class="bg-muted/30">
+                <tr>
+                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    ID
+                  </th>
+                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Name
+                  </th>
+                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Members
+                  </th>
+                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Credits
+                  </th>
+                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Created
+                  </th>
+                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="bg-card divide-y divide-border">
+                <tr v-for="org in organizations" :key="org.id" class="hover:bg-muted/20 transition-colors">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-foreground">#{{ org.id }}</td>
+                  <td class="px-6 py-4">
+                    <div class="flex flex-col">
+                      <span class="text-sm font-medium text-foreground">{{ org.name }}</span>
+                      <span v-if="org.description" class="text-xs text-muted-foreground line-clamp-1">
+                        {{ org.description }}
+                      </span>
+                    </div>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    <span
+                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+                    >
+                      <Users class="h-3 w-3 mr-1" />
+                      {{ org.member_count }} member{{ org.member_count !== 1 ? 's' : '' }}
+                    </span>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm">
+                    <div class="flex flex-col space-y-1">
+                      <div class="flex items-center">
+                        <CreditCard class="h-3 w-3 mr-1 text-green-500" />
+                        <span class="font-medium text-foreground">
+                          {{ formatCredits(org.credits.hours_remaining) }}
+                        </span>
+                        <span class="text-muted-foreground ml-1">hours</span>
+                      </div>
+                      <div class="flex items-center text-xs text-muted-foreground">
+                        <span>{{ formatCredits(org.credits.hours_used) }} used</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
+                    {{ formatDate(org.created_at) }}
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm">
+                    <div class="flex items-center gap-2">
+                      <button
+                        @click="openOrgCreditDialog(org)"
+                        :disabled="updatingOrgCreditsId === org.id"
+                        class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-green-500/80 to-emerald-500/80 hover:from-green-500/90 hover:to-emerald-500/90 text-white text-xs font-medium rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Loader2 v-if="updatingOrgCreditsId === org.id" class="h-3 w-3 mr-1 animate-spin" />
+                        <CreditCard v-else class="h-3 w-3 mr-1" />
+                        Set Credits
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Empty State -->
+      <div v-else class="text-center py-12 bg-card border border-border rounded-lg">
+        <Building2 class="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+        <p class="text-muted-foreground mb-4">No organizations found</p>
+        <button
+          @click="fetchOrganizations"
+          class="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium transition-all"
+        >
+          Refresh Organizations
+        </button>
       </div>
     </div>
 
@@ -536,8 +682,64 @@
     <div v-if="activeTab === 'settings'" class="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div class="bg-card p-4 rounded-lg border border-border shadow-sm">
         <div class="flex items-center justify-between">
-          <h2 class="text-lg font-semibold text-foreground">UI Overrides</h2>
-          <span class="text-sm text-muted-foreground">Test UI behavior across different platforms</span>
+          <h2 class="text-lg font-semibold text-foreground">Settings</h2>
+          <span class="text-sm text-muted-foreground">Feature flags and UI configuration</span>
+        </div>
+      </div>
+
+      <!-- Feature Flags -->
+      <div class="bg-card border border-border rounded-lg shadow-sm p-6">
+        <div class="space-y-4">
+          <div>
+            <h3 class="text-md font-medium text-foreground mb-3">Feature Flags</h3>
+            <p class="text-sm text-muted-foreground mb-4">
+              Enable or disable features across the application. Changes take effect immediately for all users.
+            </p>
+
+            <div class="space-y-4">
+              <!-- Live Clip Feature Toggle -->
+              <div class="flex items-center justify-between p-4 bg-muted/30 rounded-lg border border-border/50">
+                <div class="flex-1">
+                  <div class="flex items-center gap-2">
+                    <Radio class="h-4 w-4 text-primary" />
+                    <span class="font-medium text-foreground">Live Clip</span>
+                  </div>
+                  <p class="text-sm text-muted-foreground mt-1">
+                    Enable real-time stream monitoring, recording, and clip detection features.
+                  </p>
+                </div>
+                <div class="flex items-center gap-3">
+                  <span v-if="featureFlagsLoading" class="text-xs text-muted-foreground flex items-center gap-1">
+                    <Loader2 class="h-3 w-3 animate-spin" />
+                    Loading...
+                  </span>
+                  <button
+                    @click="toggleLiveClipFeature"
+                    :disabled="featureFlagsLoading || updatingLiveClipFlag"
+                    class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    :class="isLiveClipEnabled ? 'bg-primary' : 'bg-muted'"
+                    role="switch"
+                    :aria-checked="isLiveClipEnabled"
+                  >
+                    <span
+                      class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                      :class="isLiveClipEnabled ? 'translate-x-5' : 'translate-x-0'"
+                    />
+                  </button>
+                </div>
+              </div>
+
+              <div
+                v-if="!isLiveClipEnabled"
+                class="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md"
+              >
+                <p class="text-sm text-amber-700 dark:text-amber-300">
+                  <strong>Live Clip is disabled.</strong>
+                  The Live Clip page and monitoring controls are hidden from all users.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -605,7 +807,7 @@
       :show="showPromoteDialog"
       title="Promote User to Admin"
       :message="'Are you sure you want to promote'"
-      :item-name="formatWalletAddress(userToPromote?.wallet_address || '')"
+      :item-name="userToPromote ? getUserDisplayName(userToPromote) : ''"
       suffix="to admin?"
       confirm-text="Promote"
       @close="handlePromoteDialogClose"
@@ -613,14 +815,14 @@
     />
 
     <!-- Credit Editing Modal -->
-    <div v-if="showCreditDialog" class="fixed inset-0 z-50 overflow-y-auto" @click.self="handleCreditDialogClose">
+    <div v-if="showCreditDialog" class="fixed inset-0 z-50 overflow-y-auto">
       <div class="flex min-h-screen items-center justify-center p-4">
         <div class="fixed inset-0 bg-black/50 backdrop-blur-sm"></div>
         <div class="relative bg-card border border-border rounded-lg shadow-xl max-w-md w-full p-6">
           <div class="mb-4">
             <h3 class="text-lg font-semibold text-foreground">Add User Credits</h3>
             <p class="text-sm text-muted-foreground mt-1">
-              Add credits for {{ formatWalletAddress(userToEditCredits?.wallet_address || '') }}
+              Add credits for {{ userToEditCredits ? getUserDisplayName(userToEditCredits) : '' }}
             </p>
           </div>
 
@@ -699,6 +901,97 @@
         </div>
       </div>
     </div>
+
+    <!-- Organization Credit Editing Modal -->
+    <div v-if="showOrgCreditDialog" class="fixed inset-0 z-50 overflow-y-auto" @click.self="handleOrgCreditDialogClose">
+      <div class="flex min-h-screen items-center justify-center p-4">
+        <div class="fixed inset-0 bg-black/50 backdrop-blur-sm"></div>
+        <div class="relative bg-card border border-border rounded-lg shadow-xl max-w-md w-full p-6">
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold text-foreground">Set Organization Credits</h3>
+            <p class="text-sm text-muted-foreground mt-1">
+              Set credits for
+              <span class="font-medium">{{ orgToEditCredits?.name }}</span>
+            </p>
+          </div>
+
+          <form @submit.prevent="updateOrgCredits" class="space-y-4">
+            <!-- Hours Remaining -->
+            <div>
+              <label for="org_hours_remaining" class="block text-sm font-medium text-foreground mb-1">
+                Hours Remaining
+              </label>
+              <input
+                id="org_hours_remaining"
+                v-model.number="orgCreditForm.hours_remaining"
+                type="number"
+                step="0.01"
+                min="0"
+                required
+                class="w-full px-3 py-2 bg-background border border-input rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                placeholder="Enter hours remaining"
+              />
+              <p class="text-xs text-muted-foreground mt-1">The total credit balance available to the organization</p>
+            </div>
+
+            <!-- Hours Used -->
+            <div>
+              <label for="org_hours_used" class="block text-sm font-medium text-foreground mb-1">Hours Used</label>
+              <input
+                id="org_hours_used"
+                v-model.number="orgCreditForm.hours_used"
+                type="number"
+                step="0.01"
+                min="0"
+                required
+                class="w-full px-3 py-2 bg-background border border-input rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                placeholder="Enter hours used"
+              />
+              <p class="text-xs text-muted-foreground mt-1">Total hours consumed by the organization (for tracking)</p>
+            </div>
+
+            <!-- Error Display -->
+            <div
+              v-if="orgCreditError"
+              class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3"
+            >
+              <p class="text-red-600 dark:text-red-400 text-sm">{{ orgCreditError }}</p>
+            </div>
+
+            <!-- Current Credits Display -->
+            <div v-if="orgToEditCredits?.credits" class="bg-muted/30 border border-border rounded-md p-3">
+              <p class="text-sm text-muted-foreground mb-1">Current balance:</p>
+              <div class="flex justify-between text-sm">
+                <span>Remaining: {{ formatCredits(orgToEditCredits.credits.hours_remaining) }} hours</span>
+                <span>Used: {{ formatCredits(orgToEditCredits.credits.hours_used) }} hours</span>
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex justify-end gap-3 pt-4">
+              <button
+                type="button"
+                @click="handleOrgCreditDialogClose"
+                class="px-4 py-2 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                :disabled="updatingOrgCreditsId !== null"
+                class="px-4 py-2 bg-gradient-to-r from-green-500/80 to-emerald-500/80 hover:from-green-500/90 hover:to-emerald-500/90 text-white rounded-md font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span v-if="updatingOrgCreditsId !== null" class="flex items-center">
+                  <Loader2 class="h-4 w-4 mr-1 animate-spin" />
+                  Updating...
+                </span>
+                <span v-else>Set Credits</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
   </PageLayout>
 </template>
 
@@ -720,13 +1013,19 @@
     FileText,
     Activity,
     Monitor,
+    Building2,
+    Users,
+    Radio,
   } from 'lucide-vue-next';
+  import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import api from '@/services/api';
 
   interface User {
     id: number;
-    wallet_address: string;
+    wallet_address: string | null;
+    email: string | null;
+    provider: string;
     is_admin: boolean;
     created_at: string;
     updated_at: string;
@@ -798,6 +1097,24 @@
     }>;
   }
 
+  interface Organization {
+    id: number;
+    name: string;
+    description: string | null;
+    member_count: number;
+    credits: {
+      hours_remaining: number;
+      hours_used: number;
+    };
+    created_at: string;
+  }
+
+  interface OrganizationsResponse {
+    success: boolean;
+    organizations: Organization[];
+    count: number;
+  }
+
   const authStore = useAuthStore();
   const users = ref<User[]>([]);
   const loading = ref(false);
@@ -817,10 +1134,11 @@
   // Tabs
   const activeTab = ref('users');
   const tabs = [
-    { id: 'users', label: 'Users', icon: User },
-    { id: 'bugs', label: 'Bug Reports', icon: FileText },
-    { id: 'ai', label: 'AI Usage', icon: Activity },
-    { id: 'settings', label: 'Settings', icon: Monitor },
+    { id: 'users', label: 'Users' },
+    { id: 'organizations', label: 'Organizations' },
+    { id: 'bugs', label: 'Bug Reports' },
+    { id: 'ai', label: 'AI Usage' },
+    { id: 'settings', label: 'Settings' },
   ];
 
   // Bug reports state
@@ -834,8 +1152,29 @@
   const showDeleteBugReportDialog = ref(false);
   const bugReportToDelete = ref<BugReport | null>(null);
 
+  // Organizations state
+  const organizations = ref<Organization[]>([]);
+  const organizationsLoading = ref(false);
+  const showOrgCreditDialog = ref(false);
+  const orgToEditCredits = ref<Organization | null>(null);
+  const updatingOrgCreditsId = ref<number | null>(null);
+  const orgCreditForm = ref({
+    hours_remaining: 0,
+    hours_used: 0,
+  });
+  const orgCreditError = ref<string | null>(null);
+
   // UI Override state
   const titleBarPlatformOverride = ref<string>('auto');
+
+  // Feature Flags state
+  const {
+    isLiveClipEnabled,
+    isLoading: featureFlagsLoading,
+    fetchFeatureFlags,
+    setLiveClipEnabled,
+  } = useFeatureFlags();
+  const updatingLiveClipFlag = ref(false);
 
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -867,9 +1206,29 @@
     }
   };
 
-  const formatWalletAddress = (address: string) => {
+  const formatWalletAddress = (address: string | null | undefined) => {
     if (!address) return '';
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  };
+
+  const getProviderIcon = (provider: string) => {
+    switch (provider) {
+      case 'google':
+        return '🔵';
+      case 'email':
+        return '✉️';
+      case 'wallet':
+        return '💳';
+      default:
+        return '👤';
+    }
+  };
+
+  const getUserDisplayName = (user: User) => {
+    if (user.email && (!user.wallet_address || user.provider !== 'wallet')) {
+      return user.email;
+    }
+    return formatWalletAddress(user.wallet_address);
   };
 
   const formatDate = (dateString: string) => {
@@ -1108,6 +1467,86 @@
     }
   };
 
+  const fetchOrganizations = async () => {
+    organizationsLoading.value = true;
+
+    try {
+      console.log('🔐 Admin - Fetching organizations...');
+      const response = await api.get('/admin/organizations');
+
+      console.log('🔐 Admin - Organizations response:', response.data);
+
+      if (response.data.success) {
+        organizations.value = response.data.organizations;
+        console.log(`🔐 Admin - Loaded ${response.data.organizations.length} organizations`);
+      } else {
+        throw new Error('Failed to load organizations data');
+      }
+    } catch (err) {
+      console.error('🔐 Admin - Error fetching organizations:', err);
+      error.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    } finally {
+      organizationsLoading.value = false;
+    }
+  };
+
+  const openOrgCreditDialog = (org: Organization) => {
+    orgToEditCredits.value = org;
+    orgCreditForm.value = {
+      hours_remaining: org.credits.hours_remaining,
+      hours_used: org.credits.hours_used,
+    };
+    orgCreditError.value = null;
+    showOrgCreditDialog.value = true;
+  };
+
+  const handleOrgCreditDialogClose = () => {
+    showOrgCreditDialog.value = false;
+    orgToEditCredits.value = null;
+    orgCreditForm.value = { hours_remaining: 0, hours_used: 0 };
+    orgCreditError.value = null;
+  };
+
+  const updateOrgCredits = async () => {
+    if (!orgToEditCredits.value) return;
+
+    updatingOrgCreditsId.value = orgToEditCredits.value.id;
+    orgCreditError.value = null;
+
+    try {
+      console.log(`🔐 Admin - Setting credits for org ${orgToEditCredits.value.id}...`);
+
+      const response = await api.put(`/admin/organizations/${orgToEditCredits.value.id}/credits`, {
+        hours_remaining: orgCreditForm.value.hours_remaining,
+        hours_used: orgCreditForm.value.hours_used,
+      });
+
+      console.log('🔐 Admin - Update org credits response:', response.data);
+
+      if (response.data.success) {
+        // Update the organization in the local state
+        const orgIndex = organizations.value.findIndex((o) => o.id === orgToEditCredits.value!.id);
+        if (orgIndex !== -1) {
+          organizations.value[orgIndex] = {
+            ...organizations.value[orgIndex],
+            credits: response.data.credits,
+          };
+        }
+        console.log(`🔐 Admin - Successfully updated credits for org ${orgToEditCredits.value.id}`);
+
+        // Close the dialog
+        handleOrgCreditDialogClose();
+      } else {
+        throw new Error(response.data.error || 'Failed to update credits');
+      }
+    } catch (err) {
+      console.error('🔐 Admin - Error updating org credits:', err);
+      orgCreditError.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    } finally {
+      updatingOrgCreditsId.value = null;
+    }
+  };
+
   const updateBugReportStatus = async (bugReportId: number, status: string) => {
     updatingBugReportId.value = bugReportId;
 
@@ -1298,11 +1737,31 @@
     }
   };
 
+  // Toggle Live Clip feature flag
+  const toggleLiveClipFeature = async () => {
+    updatingLiveClipFlag.value = true;
+    try {
+      const newValue = !isLiveClipEnabled.value;
+      const success = await setLiveClipEnabled(newValue);
+      if (success) {
+        console.log(`🔐 Admin - Live Clip feature ${newValue ? 'enabled' : 'disabled'}`);
+      } else {
+        console.error('🔐 Admin - Failed to update Live Clip feature flag');
+      }
+    } catch (err) {
+      console.error('🔐 Admin - Error toggling Live Clip feature:', err);
+    } finally {
+      updatingLiveClipFlag.value = false;
+    }
+  };
+
   onMounted(() => {
     fetchUsers();
+    fetchOrganizations();
     fetchBugReports();
     fetchAiStats();
     loadPlatformOverride();
+    fetchFeatureFlags();
   });
 </script>
 

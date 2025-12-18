@@ -1,4 +1,4 @@
-import { getDatabase, generateId, timestamp } from './core';
+import { getDatabase, generateId, timestamp, getCurrentUserId } from './core';
 import type { Clip } from './types';
 
 // Basic clip CRUD operations
@@ -18,9 +18,10 @@ export async function createClip(
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
+  const userId = getCurrentUserId();
 
   await db.execute(
-    'INSERT INTO clips (id, project_id, name, file_path, duration, start_time, end_time, order_index, intro_id, outro_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO clips (id, project_id, name, file_path, duration, start_time, end_time, order_index, intro_id, outro_id, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       id,
       projectId,
@@ -32,6 +33,7 @@ export async function createClip(
       options?.orderIndex || null,
       options?.introId || null,
       options?.outroId || null,
+      userId,
       now,
       now,
     ]
@@ -48,21 +50,52 @@ export async function getClip(id: string): Promise<Clip | null> {
 
 export async function getAllClips(): Promise<Clip[]> {
   const db = await getDatabase();
-  return await db.select<Clip[]>('SELECT * FROM clips ORDER BY created_at DESC');
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    return await db.select<Clip[]>(
+      'SELECT * FROM clips WHERE user_id IS NULL ORDER BY created_at DESC'
+    );
+  }
+
+  return await db.select<Clip[]>(
+    'SELECT * FROM clips WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC',
+    [userId]
+  );
 }
 
 export async function getGeneratedClips(): Promise<Clip[]> {
   const db = await getDatabase();
-  return await db.select<Clip[]>('SELECT * FROM clips WHERE status = ? ORDER BY created_at DESC', [
-    'generated',
-  ]);
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    return await db.select<Clip[]>(
+      'SELECT * FROM clips WHERE status = ? AND user_id IS NULL ORDER BY created_at DESC',
+      ['generated']
+    );
+  }
+
+  return await db.select<Clip[]>(
+    'SELECT * FROM clips WHERE status = ? AND (user_id = ? OR user_id IS NULL) ORDER BY created_at DESC',
+    ['generated', userId]
+  );
 }
 
 export async function getDetectedClips(): Promise<Clip[]> {
   const db = await getDatabase();
-  return await db.select<Clip[]>('SELECT * FROM clips WHERE status = ? ORDER BY created_at DESC', [
-    'detected',
-  ]);
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    return await db.select<Clip[]>(
+      'SELECT * FROM clips WHERE status = ? AND user_id IS NULL ORDER BY created_at DESC',
+      ['detected']
+    );
+  }
+
+  return await db.select<Clip[]>(
+    'SELECT * FROM clips WHERE status = ? AND (user_id = ? OR user_id IS NULL) ORDER BY created_at DESC',
+    ['detected', userId]
+  );
 }
 
 export async function getClipsByProjectId(projectId: string): Promise<Clip[]> {

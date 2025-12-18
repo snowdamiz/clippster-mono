@@ -1,10 +1,6 @@
 <template>
   <Transition name="modal">
-    <div
-      v-if="show"
-      class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
-      @click.self="$emit('close')"
-    >
+    <div v-if="show" class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50">
       <Transition name="dialog" appear>
         <div
           class="dialog-container bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-sm w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden max-h-[90vh] flex flex-col"

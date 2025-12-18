@@ -1,11 +1,7 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div
-        v-if="modelValue"
-        class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[70]"
-        @click.self="close"
-      >
+      <div v-if="modelValue" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[70]">
         <Transition name="dialog" appear>
           <div
             class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl w-full max-w-3xl mx-4 border border-white/10 max-h-[90vh] flex flex-col overflow-hidden shadow-2xl"

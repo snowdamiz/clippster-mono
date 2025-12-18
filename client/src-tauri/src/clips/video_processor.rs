@@ -17,6 +17,7 @@ fn build_video_filter_string(segments: Option<&Vec<VideoFilterSegment>>) -> Opti
 /// Build time-based filter string with adjusted time offsets
 /// Used when the output video starts at a different time than the source
 /// offset: the time offset to add to all filter start/end times
+#[allow(dead_code)]
 fn build_video_filter_string_with_offset(segments: Option<&Vec<VideoFilterSegment>>, offset: f64) -> Option<String> {
     let segments = segments?;
     if segments.is_empty() {
@@ -379,6 +380,7 @@ struct ResolvedWatermark {
     position_y: u32,
     opacity: u32,
     scale: u32,
+    is_full_frame_overlay: bool, // When true, position at 0,0 with 100% scale
 }
 
 // Helper function to get watermark settings for a specific aspect ratio
@@ -407,18 +409,18 @@ fn get_watermark_for_aspect_ratio(watermark: &WatermarkSettings, aspect_ratio: O
                     let height = config.height.or(watermark.height);
                     
                     // Use per-ratio position if available, otherwise fall back to default position
-                    let (position_x, position_y, opacity, scale) = if let Some(pos) = &config.position {
-                        (pos.x, pos.y, pos.opacity, pos.scale)
+                    let (position_x, position_y, opacity, scale, is_full_frame_overlay) = if let Some(pos) = &config.position {
+                        (pos.x, pos.y, pos.opacity, pos.scale, pos.is_full_frame_overlay.unwrap_or(false))
                     } else {
                         // No custom position for this ratio - use default position
-                        (watermark.position_x, watermark.position_y, watermark.opacity, watermark.scale)
+                        (watermark.position_x, watermark.position_y, watermark.opacity, watermark.scale, false)
                     };
                     
                     let has_custom_watermark = config.file_path.is_some() && config.file_path.as_ref() != Some(&watermark.file_path);
                     let has_custom_position = config.position.is_some();
                     
-                    println!("[Rust] Using per-ratio watermark for {}: file={}, custom_wm={}, custom_pos={}, x={}%, y={}%, opacity={}%, scale={}%", 
-                             ratio, file_path, has_custom_watermark, has_custom_position, position_x, position_y, opacity, scale);
+                    println!("[Rust] Using per-ratio watermark for {}: file={}, custom_wm={}, custom_pos={}, x={}%, y={}%, opacity={}%, scale={}%, full_frame={}", 
+                             ratio, file_path, has_custom_watermark, has_custom_position, position_x, position_y, opacity, scale, is_full_frame_overlay);
                     
                     return Some(ResolvedWatermark {
                         file_path,
@@ -428,6 +430,7 @@ fn get_watermark_for_aspect_ratio(watermark: &WatermarkSettings, aspect_ratio: O
                         position_y,
                         opacity,
                         scale,
+                        is_full_frame_overlay,
                     });
                 }
                 None => {
@@ -449,6 +452,7 @@ fn get_watermark_for_aspect_ratio(watermark: &WatermarkSettings, aspect_ratio: O
         position_y: watermark.position_y,
         opacity: watermark.opacity,
         scale: watermark.scale,
+        is_full_frame_overlay: false, // Default settings don't have this flag
     })
 }
 
@@ -503,29 +507,36 @@ async fn apply_watermark_to_video_with_ratio(
     };
     println!("[Rust] Final watermark dimensions: width={:?}, height={:?}", wm_actual_width, wm_actual_height);
     
-    // Detect if this watermark is effectively a full-frame 16:9 canvas.
-    // Accept common HD+ sizes to avoid strict 1920x1080 requirement (e.g., 2560x1440 will still scale down).
-    let is_full_frame_watermark = match (wm_actual_width, wm_actual_height) {
-        (Some(w), Some(h)) => {
-            let ratio = (w as f32) / (h as f32);
-            let ratio_diff = (ratio - (16.0 / 9.0)).abs();
-            println!("[Rust] Checking full-frame: dimensions {}x{}, ratio={:.4}, diff from 16:9={:.4}, w>={}, h>={}",
-                     w, h, ratio, ratio_diff, w >= 1600, h >= 900);
-            let is_full = ratio_diff < 0.02 && w >= 1600 && h >= 900;
-            if is_full {
-                println!("[Rust] ✓ Detected full-frame 16:9 watermark: {}x{}", w, h);
-            } else {
-                println!("[Rust] ✗ NOT a full-frame watermark (ratio_diff={:.4} < 0.02? {}, w>=1600? {}, h>=900? {})", 
-                         ratio_diff, ratio_diff < 0.02, w >= 1600, h >= 900);
+    // Check for explicit full-frame overlay flag first (user-configured)
+    // If not set, fall back to dimension-based detection for backward compatibility
+    let is_full_frame_watermark = if resolved.is_full_frame_overlay {
+        println!("[Rust] ✓ Full-frame overlay mode enabled via user setting");
+        true
+    } else {
+        // Detect if this watermark is effectively a full-frame 16:9 canvas.
+        // Accept common HD+ sizes to avoid strict 1920x1080 requirement (e.g., 2560x1440 will still scale down).
+        match (wm_actual_width, wm_actual_height) {
+            (Some(w), Some(h)) => {
+                let ratio = (w as f32) / (h as f32);
+                let ratio_diff = (ratio - (16.0 / 9.0)).abs();
+                println!("[Rust] Checking full-frame: dimensions {}x{}, ratio={:.4}, diff from 16:9={:.4}, w>={}, h>={}",
+                         w, h, ratio, ratio_diff, w >= 1600, h >= 900);
+                let is_full = ratio_diff < 0.02 && w >= 1600 && h >= 900;
+                if is_full {
+                    println!("[Rust] ✓ Detected full-frame 16:9 watermark: {}x{}", w, h);
+                } else {
+                    println!("[Rust] ✗ NOT a full-frame watermark (ratio_diff={:.4} < 0.02? {}, w>=1600? {}, h>=900? {})", 
+                             ratio_diff, ratio_diff < 0.02, w >= 1600, h >= 900);
+                }
+                is_full
             }
-            is_full
-        }
-        _ => {
-            println!("[Rust] Could not determine watermark dimensions, using standard placement");
-            false
+            _ => {
+                println!("[Rust] Could not determine watermark dimensions, using standard placement");
+                false
+            }
         }
     };
-    println!("[Rust] is_full_frame_watermark = {}", is_full_frame_watermark);
+    println!("[Rust] is_full_frame_watermark = {} (flag={}, auto-detect={})", is_full_frame_watermark, resolved.is_full_frame_overlay, !resolved.is_full_frame_overlay);
     
     // Calculate opacity (FFmpeg uses 0-1 range)
     let opacity = opacity_pct as f32 / 100.0;
@@ -2701,7 +2712,7 @@ pub async fn apply_stickers_to_video(
     // Process emoji stickers using drawtext filter
     for (idx, sticker) in emoji_stickers.iter().enumerate() {
         // Get position for this aspect ratio (fallback to default)
-        let (pos_x_pct, pos_y_pct, scale, rotation) = if let Some(ref configs) = sticker.per_ratio_configs {
+        let (pos_x_pct, pos_y_pct, scale, _rotation) = if let Some(ref configs) = sticker.per_ratio_configs {
             if let Some(config) = configs.get(aspect_ratio) {
                 (config.position.x, config.position.y, config.scale, config.rotation)
             } else {
@@ -2912,22 +2923,15 @@ pub async fn apply_clip_watermarks_to_video(
     // Process watermarks using overlay filter
     for (idx, watermark) in watermarks.iter().enumerate() {
         // Get position and settings for this aspect ratio (fallback to default)
-        let (pos_x_pct, pos_y_pct, scale, opacity) = if let Some(ref configs) = watermark.per_ratio_configs {
+        let (pos_x_pct, pos_y_pct, scale, opacity, is_full_frame) = if let Some(ref configs) = watermark.per_ratio_configs {
             if let Some(config) = configs.get(aspect_ratio) {
-                (config.position.x, config.position.y, config.scale, config.opacity)
+                (config.position.x, config.position.y, config.scale, config.opacity, config.is_full_frame_overlay.unwrap_or(false))
             } else {
-                (watermark.position_x, watermark.position_y, watermark.scale, watermark.opacity)
+                (watermark.position_x, watermark.position_y, watermark.scale, watermark.opacity, false)
             }
         } else {
-            (watermark.position_x, watermark.position_y, watermark.scale, watermark.opacity)
+            (watermark.position_x, watermark.position_y, watermark.scale, watermark.opacity, false)
         };
-        
-        // Calculate pixel position (center-anchored)
-        let pos_x = (pos_x_pct / 100.0 * video_width) as i32;
-        let pos_y = (pos_y_pct / 100.0 * video_height) as i32;
-        
-        // Calculate scaled width (scale is percentage of video width)
-        let scaled_width = (video_width * scale / 100.0).round() as i32;
         
         // Calculate alpha (opacity is 0-100)
         let alpha = opacity / 100.0;
@@ -2935,27 +2939,62 @@ pub async fn apply_clip_watermarks_to_video(
         let watermark_label = format!("wm{}", idx);
         let next_label = format!("wo{}", idx);
         
-        // Build watermark preprocessing filter with scale and alpha
-        // format=rgba ensures we have alpha channel, colorchannelmixer modifies the alpha
-        let watermark_filter = format!(
-            "[{}:v]scale={}:-1,format=rgba,colorchannelmixer=aa={}[{}]",
-            input_count, scaled_width, alpha, watermark_label
-        );
+        // Build watermark preprocessing and overlay based on full-frame mode
+        let (watermark_filter, overlay) = if is_full_frame {
+            // Full-frame overlay: scale to video size, position at 0,0
+            let wm_filter = format!(
+                "[{}:v]scale={}:{},format=rgba,colorchannelmixer=aa={}[{}]",
+                input_count, video_width as i32, video_height as i32, alpha, watermark_label
+            );
+            
+            let ovl = format!(
+                "[{}][{}]overlay=0:0:enable='between(t,{:.3},{:.3})'[{}]",
+                current_label,
+                watermark_label,
+                watermark.start_time,
+                watermark.end_time,
+                next_label
+            );
+            
+            println!("[Rust] Clip watermark {} using FULL-FRAME mode: video={}x{}, alpha={}", 
+                     idx, video_width as i32, video_height as i32, alpha);
+            
+            (wm_filter, ovl)
+        } else {
+            // Standard positioning with center-anchor
+            // Calculate pixel position (center-anchored)
+            let pos_x = (pos_x_pct / 100.0 * video_width) as i32;
+            let pos_y = (pos_y_pct / 100.0 * video_height) as i32;
+            
+            // Calculate scaled width (scale is percentage of video width)
+            let scaled_width = (video_width * scale / 100.0).round() as i32;
+            
+            // Build watermark preprocessing filter with scale and alpha
+            // format=rgba ensures we have alpha channel, colorchannelmixer modifies the alpha
+            let wm_filter = format!(
+                "[{}:v]scale={}:-1,format=rgba,colorchannelmixer=aa={}[{}]",
+                input_count, scaled_width, alpha, watermark_label
+            );
+            
+            // Overlay with timing and center-anchor positioning
+            let ovl = format!(
+                "[{}][{}]overlay=x={}-(overlay_w/2):y={}-(overlay_h/2):enable='between(t,{:.3},{:.3})'[{}]",
+                current_label,
+                watermark_label,
+                pos_x,
+                pos_y,
+                watermark.start_time,
+                watermark.end_time,
+                next_label
+            );
+            
+            println!("[Rust] Clip watermark {} using STANDARD mode: pos=({}, {}), scale={}, alpha={}", 
+                     idx, pos_x, pos_y, scaled_width, alpha);
+            
+            (wm_filter, ovl)
+        };
         
         filter_parts.push(watermark_filter);
-        
-        // Overlay with timing and center-anchor positioning
-        let overlay = format!(
-            "[{}][{}]overlay=x={}-(overlay_w/2):y={}-(overlay_h/2):enable='between(t,{:.3},{:.3})'[{}]",
-            current_label,
-            watermark_label,
-            pos_x,
-            pos_y,
-            watermark.start_time,
-            watermark.end_time,
-            next_label
-        );
-        
         filter_parts.push(overlay);
         current_label = next_label;
         

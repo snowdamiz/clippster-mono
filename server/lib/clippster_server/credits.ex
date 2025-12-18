@@ -82,6 +82,42 @@ defmodule ClippsterServer.Credits do
   end
 
   @doc """
+  Creates and confirms a Stripe transaction.
+  Called from the Stripe webhook when payment is confirmed.
+  """
+  def create_stripe_transaction(attrs) do
+    # Check if transaction already exists (idempotency)
+    stripe_session_id = attrs[:stripe_session_id] || attrs["stripe_session_id"]
+    
+    case get_transaction_by_stripe_session(stripe_session_id) do
+      nil ->
+        Repo.transaction(fn ->
+          # Create the transaction
+          case CreditTransaction.stripe_changeset(attrs) |> Repo.insert() do
+            {:ok, transaction} ->
+              # Add credits to user balance
+              {:ok, _user_credit} = add_credits(transaction.user_id, Decimal.to_float(transaction.hours_purchased))
+              transaction
+
+            {:error, changeset} ->
+              Repo.rollback(changeset)
+          end
+        end)
+
+      _existing ->
+        {:error, :already_processed}
+    end
+  end
+
+  @doc """
+  Gets a transaction by Stripe session ID
+  """
+  def get_transaction_by_stripe_session(session_id) when is_binary(session_id) do
+    Repo.get_by(CreditTransaction, stripe_session_id: session_id)
+  end
+  def get_transaction_by_stripe_session(_), do: nil
+
+  @doc """
   Confirms a transaction and adds credits to user balance
   """
   def confirm_transaction(tx_signature) do
@@ -181,6 +217,80 @@ defmodule ClippsterServer.Credits do
   end
 
   @doc """
+  Deducts credits with organization context.
+  
+  If organization_id is provided, deducts from the member's org allocation.
+  If organization_id is nil, deducts from personal credits.
+  
+  Returns:
+  - {:ok, %{source: :organization, org_id: id}} on org deduction success
+  - {:ok, %{source: :personal}} on personal deduction success
+  - {:error, :insufficient_credits, remaining, needed} on failure
+  - {:error, :not_a_member} if user is not a member of the org
+  - {:error, reason} on other failures
+  """
+  def deduct_credits_with_org_context(user_id, hours, organization_id) when is_nil(organization_id) do
+    # No org context - use personal credits
+    case deduct_credits(user_id, hours) do
+      {:ok, _} -> {:ok, %{source: :personal}}
+      {:error, _} -> 
+        {:ok, %{hours_remaining: remaining}} = get_user_balance(user_id)
+        {:error, :insufficient_credits, Decimal.to_float(remaining), hours}
+    end
+  end
+
+  def deduct_credits_with_org_context(user_id, hours, organization_id) do
+    alias ClippsterServer.Organizations
+    
+    # Check if user is a member of the organization
+    unless Organizations.is_member?(organization_id, user_id) do
+      {:error, :not_a_member}
+    else
+      # Try to deduct from member's org allocation
+      case Organizations.deduct_member_credits(organization_id, user_id, hours, true) do
+        {:ok, _allocation} ->
+          {:ok, %{source: :organization, org_id: organization_id}}
+        
+        {:error, :insufficient_credits} ->
+          # Get remaining allocation for error message
+          allocation = Organizations.get_member_allocation(organization_id, user_id)
+          remaining = if allocation do
+            Organizations.MemberCreditAllocation.remaining_hours(allocation)
+            |> Decimal.to_float()
+          else
+            0.0
+          end
+          {:error, :insufficient_credits, remaining, hours}
+        
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Gets the available credits for a specific context (personal or organization).
+  Returns the remaining hours available.
+  """
+  def get_context_balance(user_id, organization_id) when is_nil(organization_id) do
+    {:ok, %{hours_remaining: remaining}} = get_user_balance(user_id)
+    {:ok, %{source: :personal, hours_remaining: Decimal.to_float(remaining)}}
+  end
+
+  def get_context_balance(user_id, organization_id) do
+    alias ClippsterServer.Organizations
+    
+    case Organizations.get_member_allocation(organization_id, user_id) do
+      nil ->
+        {:ok, %{source: :organization, hours_remaining: 0.0, org_id: organization_id}}
+      
+      allocation ->
+        remaining = Organizations.MemberCreditAllocation.remaining_hours(allocation)
+        {:ok, %{source: :organization, hours_remaining: Decimal.to_float(remaining), org_id: organization_id}}
+    end
+  end
+
+  @doc """
   Lists all transactions for a user
   """
   def list_user_transactions(user_id) do
@@ -198,11 +308,66 @@ defmodule ClippsterServer.Credits do
   end
 
   @doc """
-  Checks if user has enough credits for a given duration
+  Checks if user has enough credits for a given duration.
+  Also checks organization credits if user is a member.
   """
   def has_enough_credits?(user_id, hours_needed) do
     {:ok, %{hours_remaining: remaining}} = get_user_balance(user_id)
-    Decimal.compare(remaining, Decimal.new(to_string(hours_needed))) != :lt
+    
+    if Decimal.compare(remaining, Decimal.new(to_string(hours_needed))) != :lt do
+      true
+    else
+      # Check organization allocations
+      check_organization_credits(user_id, hours_needed)
+    end
+  end
+
+  @doc """
+  Checks if user has credits in any organization they belong to.
+  """
+  def check_organization_credits(user_id, hours_needed) do
+    alias ClippsterServer.Organizations
+    
+    hours_decimal = Decimal.new(to_string(hours_needed))
+    
+    # Get all organizations the user is a member of
+    organizations = Organizations.list_user_organizations(user_id)
+    
+    Enum.any?(organizations, fn %{organization: org} ->
+      case Organizations.get_member_allocation(org.id, user_id) do
+        nil -> false
+        allocation ->
+          remaining = ClippsterServer.Organizations.MemberCreditAllocation.remaining_hours(allocation)
+          Decimal.compare(remaining, hours_decimal) != :lt
+      end
+    end)
+  end
+
+  @doc """
+  Gets the total available credits for a user including personal and org allocations.
+  """
+  def get_total_available_credits(user_id) do
+    alias ClippsterServer.Organizations
+    
+    {:ok, %{hours_remaining: personal_remaining}} = get_user_balance(user_id)
+    
+    # Sum up all organization allocations
+    organizations = Organizations.list_user_organizations(user_id)
+    
+    org_remaining = Enum.reduce(organizations, Decimal.new("0"), fn %{organization: org}, acc ->
+      case Organizations.get_member_allocation(org.id, user_id) do
+        nil -> acc
+        allocation ->
+          remaining = ClippsterServer.Organizations.MemberCreditAllocation.remaining_hours(allocation)
+          Decimal.add(acc, remaining)
+      end
+    end)
+    
+    {:ok, %{
+      personal: personal_remaining,
+      organization: org_remaining,
+      total: Decimal.add(personal_remaining, org_remaining)
+    }}
   end
 
   # ============================================================================

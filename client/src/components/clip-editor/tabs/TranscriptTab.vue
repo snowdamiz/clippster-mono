@@ -93,7 +93,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch, nextTick, onUnmounted, onMounted } from 'vue';
+  import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
   import { Loader2, FileText, Search, Clock } from 'lucide-vue-next';
 
@@ -409,14 +409,21 @@
         return;
       }
 
-      const result = await updateTranscriptWord(props.projectId, originalIndex, newText);
+      const wordIndex = originalIndex ?? -1;
+      if (wordIndex === -1) {
+        console.error('[TranscriptTab] Invalid word index');
+        cancelWordEdit();
+        return;
+      }
+
+      const result = await updateTranscriptWord(props.projectId, wordIndex, newText);
 
       if (result.success) {
-        console.log(`[TranscriptTab] Successfully updated word ${originalIndex}: "${oldText}" -> "${newText}"`);
+        console.log(`[TranscriptTab] Successfully updated word ${wordIndex}: "${oldText}" -> "${newText}"`);
 
         // Update local data immediately for responsive UI
-        if (transcriptData.value?.words[originalIndex]) {
-          const wordToUpdate = transcriptData.value.words[originalIndex] as any;
+        if (transcriptData.value?.words[wordIndex]) {
+          const wordToUpdate = transcriptData.value.words[wordIndex] as any;
           if (wordToUpdate.word !== undefined) {
             wordToUpdate.word = newText;
           }

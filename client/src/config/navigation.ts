@@ -10,6 +10,7 @@ import {
   Radio,
   Users,
   Clapperboard,
+  Building2,
 } from 'lucide-vue-next';
 
 export interface NavigationItem {
@@ -21,6 +22,8 @@ export interface NavigationItem {
   badge?: string;
   useImage?: boolean;
   adminOnly?: boolean;
+  orgOnly?: boolean; // Only show for organization account owners
+  orgMember?: boolean; // Show for any organization member
   action?: 'dialog'; // New property to handle dialog actions instead of routing
 }
 
@@ -64,6 +67,12 @@ export const navigationItems: NavigationItem[] = [
     name: 'Prompts',
     path: '/prompts',
     icon: MessageSquare,
+  },
+  {
+    name: 'Organizations',
+    path: '/organizations',
+    icon: Building2,
+    orgMember: true, // Show for any user who is a member of at least one organization
   },
   {
     name: 'Admin',

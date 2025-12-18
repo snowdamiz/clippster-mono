@@ -1,4 +1,4 @@
-import { getDatabase, timestamp, generateId } from './core';
+import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { WatermarkImage } from './types';
 
 export async function createWatermarkImage(
@@ -11,10 +11,11 @@ export async function createWatermarkImage(
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
+  const userId = getCurrentUserId();
 
   await db.execute(
-    'INSERT INTO watermark_images (id, name, file_path, width, height, file_size, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, name, filePath, width || null, height || null, fileSize || null, now, now]
+    'INSERT INTO watermark_images (id, name, file_path, width, height, file_size, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, name, filePath, width || null, height || null, fileSize || null, userId, now, now]
   );
 
   return id;
@@ -22,7 +23,18 @@ export async function createWatermarkImage(
 
 export async function getAllWatermarkImages(): Promise<WatermarkImage[]> {
   const db = await getDatabase();
-  return await db.select<WatermarkImage[]>('SELECT * FROM watermark_images ORDER BY name');
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    return await db.select<WatermarkImage[]>(
+      'SELECT * FROM watermark_images WHERE user_id IS NULL ORDER BY name'
+    );
+  }
+
+  return await db.select<WatermarkImage[]>(
+    'SELECT * FROM watermark_images WHERE user_id = ? OR user_id IS NULL ORDER BY name',
+    [userId]
+  );
 }
 
 export async function getWatermarkImage(id: string): Promise<WatermarkImage | null> {

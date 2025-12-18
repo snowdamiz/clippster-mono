@@ -304,7 +304,7 @@
                 </button>
 
                 <button
-                  v-if="canDetectClips(project.id) && !isProjectDetecting(project.id)"
+                  v-if="canDetectClips(project.id) && !isProjectDetecting(project.id) && isAIAllowed"
                   class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
                   title="Detect Clips"
                   @click.stop="startProjectDetection(project)"
@@ -412,7 +412,6 @@
     <div
       v-if="showFolderDialog && folderProject"
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-      @click.self="showFolderDialog = false"
     >
       <div
         class="bg-card rounded-lg w-full mx-4 border border-border flex flex-col overflow-hidden shadow-2xl transition-all duration-200 max-h-[80vh]"
@@ -598,7 +597,8 @@
                   v-if="
                     canDetectClips(project.id) &&
                     !isDetectionActive(project.id) &&
-                    !isProjectDetecting(folderProject?.id || '')
+                    !isProjectDetecting(folderProject?.id || '') &&
+                    isAIAllowed
                   "
                   class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
                   title="Detect Clips"
@@ -968,8 +968,8 @@
                     <img
                       :src="previewWatermarkData.dataUrl"
                       alt="Watermark"
-                      class="max-w-full max-h-full object-contain"
-                      :style="{ opacity: (previewWatermarkSettings.opacity || 80) / 100 }"
+                      :class="isPreviewWatermarkFullFrame ? '' : 'max-w-full max-h-full object-contain'"
+                      :style="getPreviewWatermarkImageStyle"
                     />
                   </div>
 
@@ -1018,7 +1018,9 @@
                       >
                         {{
                           formatDuration(
-                            inlineSeekDragging ? (inlineVideoProgress / 100) * inlineVideoClipDuration : inlineHoverTime
+                            inlineSeekDragging
+                              ? (inlineVideoProgress / 100) * inlineVideoClipDuration
+                              : (inlineHoverTime ?? 0)
                           )
                         }}
                       </div>
@@ -1116,7 +1118,6 @@
     <div
       v-if="showDeleteDialog"
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-      @click.self="handleDeleteDialogClose"
     >
       <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
         <h2 class="text-2xl font-bold mb-4">
@@ -1228,7 +1229,6 @@
     <div
       v-if="showBulkDeleteDialog"
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-      @click.self="handleBulkDeleteDialogClose"
     >
       <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
         <h2 class="text-2xl font-bold mb-4">Delete {{ selectedProjects.size }} Projects</h2>
@@ -1262,7 +1262,6 @@
     <div
       v-if="showBulkDeleteFolderChildrenDialog"
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]"
-      @click.self="handleBulkDeleteFolderChildrenDialogClose"
     >
       <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
         <h2 class="text-2xl font-bold mb-4">Delete {{ selectedFolderChildren.size }} Segments</h2>
@@ -1343,6 +1342,7 @@
     getCreatorProfileByProjectId,
     getIntroOutroById,
     getWatermarkImage,
+    getWatermarkByServerId,
     type Project,
     type RawVideo,
     type ClipWithVersionAndSegment,
@@ -1365,11 +1365,20 @@
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import DownloadCard from '@/components/DownloadCard.vue';
   import ClipDetectionConfirmDialog from '@/components/ClipDetectionConfirmDialog.vue';
-  import ClipBuildSettingsDialog, { type BuildSettings } from '@/components/ClipBuildSettingsDialog.vue';
+  import ClipBuildSettingsDialog, {
+    type BuildSettings,
+    type IntroOutroItem,
+  } from '@/components/ClipBuildSettingsDialog.vue';
+  import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
+  import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
   import { useChunkedClipDetection } from '@/composables/useChunkedClipDetection';
   import { useAuthStore } from '@/stores/auth';
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
+  import { useAIPermission } from '@/composables/useAIPermission';
   import { Button } from '@/components/ui/button';
+
+  // AI Permission check
+  const { isAIAllowed } = useAIPermission();
   import { utf8ToBase64 } from '@/utils/encoding';
   import { save } from '@tauri-apps/plugin-dialog';
 
@@ -1748,7 +1757,33 @@
 
     const settings = previewWatermarkSettings.value;
 
-    // Check if this is a full-frame 1920x1080 watermark (16:9 overlay)
+    // The inline player is always 16:9, so check for per-ratio settings for 16:9
+    const perRatio = settings.perRatioSettings;
+    const ratioConfig = perRatio?.['16:9'];
+
+    // Check for explicit full-frame overlay mode from per-ratio settings
+    if (ratioConfig?.position?.isFullFrameOverlay) {
+      return {
+        width: '100%',
+        height: '100%',
+        left: '0%',
+        top: '0%',
+        transform: 'none',
+      };
+    }
+
+    // Check for explicit full-frame overlay mode flag (top-level)
+    if (settings.isFullFrameOverlay) {
+      return {
+        width: '100%',
+        height: '100%',
+        left: '0%',
+        top: '0%',
+        transform: 'none',
+      };
+    }
+
+    // Check if this is a full-frame 1920x1080 watermark (16:9 overlay) - backward compatibility
     const wmWidth = previewWatermarkData.value?.width ?? null;
     const wmHeight = previewWatermarkData.value?.height ?? null;
     const ratio = wmWidth && wmHeight ? wmWidth / wmHeight : null;
@@ -1766,10 +1801,10 @@
       };
     }
 
-    // Standard watermarks use percentage-based positioning
-    const positionX = settings.positionX ?? 12;
-    const positionY = settings.positionY ?? 92;
-    const scale = settings.scale ?? 20;
+    // Use per-ratio position settings if available, otherwise fall back to top-level settings
+    const positionX = ratioConfig?.position?.x ?? settings.positionX ?? 12;
+    const positionY = ratioConfig?.position?.y ?? settings.positionY ?? 92;
+    const scale = ratioConfig?.position?.scale ?? settings.scale ?? 20;
 
     return {
       left: `${positionX}%`,
@@ -1778,6 +1813,69 @@
       width: `${scale}%`,
       maxWidth: `${scale}%`,
     };
+  });
+
+  // Computed opacity for watermark (uses per-ratio settings if available)
+  const getPreviewWatermarkOpacity = computed(() => {
+    if (!previewWatermarkSettings.value) return 0.8;
+
+    const settings = previewWatermarkSettings.value;
+
+    // The inline player is always 16:9, so check for per-ratio settings for 16:9
+    const perRatio = settings.perRatioSettings;
+    const ratioConfig = perRatio?.['16:9'];
+
+    // Use per-ratio opacity if available, otherwise fall back to top-level setting
+    const opacity = ratioConfig?.position?.opacity ?? settings.opacity ?? 80;
+    return opacity / 100;
+  });
+
+  // Check if preview watermark is in full-frame overlay mode
+  const isPreviewWatermarkFullFrame = computed(() => {
+    if (!previewWatermarkSettings.value) return false;
+
+    const settings = previewWatermarkSettings.value;
+
+    // The inline player is always 16:9, so check for per-ratio settings for 16:9
+    const perRatio = settings.perRatioSettings;
+    const ratioConfig = perRatio?.['16:9'];
+
+    // Check for explicit full-frame overlay mode from per-ratio settings
+    if (ratioConfig?.position?.isFullFrameOverlay) {
+      return true;
+    }
+
+    // Check for explicit full-frame overlay mode flag (top-level)
+    if (settings.isFullFrameOverlay) {
+      return true;
+    }
+
+    // Check if this is a full-frame 1920x1080 watermark (16:9 overlay) - auto-detect
+    const wmWidth = previewWatermarkData.value?.width ?? null;
+    const wmHeight = previewWatermarkData.value?.height ?? null;
+    const ratio = wmWidth && wmHeight ? wmWidth / wmHeight : null;
+    const is16x9 = ratio ? Math.abs(ratio - 16 / 9) < 0.02 : false;
+    const isFullFrame = is16x9 && wmWidth !== null && wmHeight !== null && wmWidth >= 1600 && wmHeight >= 900;
+
+    return isFullFrame;
+  });
+
+  // Get preview watermark image style - for full-frame mode, fill the container
+  const getPreviewWatermarkImageStyle = computed(() => {
+    const baseStyle: Record<string, string | number> = {
+      opacity: getPreviewWatermarkOpacity.value,
+    };
+
+    if (isPreviewWatermarkFullFrame.value) {
+      return {
+        ...baseStyle,
+        width: '100%',
+        height: '100%',
+        objectFit: 'fill' as const,
+      };
+    }
+
+    return baseStyle;
   });
 
   function getFolderChildren(projectId: string): Project[] {
@@ -2096,7 +2194,7 @@
     }
   });
 
-  // Load watermark for the clip preview based on creator profile
+  // Load watermark for the clip preview based on project settings or creator profile
   async function loadPreviewWatermark(clip: ClipWithVersionAndSegment) {
     previewWatermarkData.value = null;
     previewWatermarkSettings.value = null;
@@ -2110,95 +2208,223 @@
       }
       console.log('[Projects] loadPreviewWatermark: Loading for segment:', segmentProjectId);
 
-      // Get the creator profile for the segment (not the parent folder)
-      let creatorProfile = await getCreatorProfileByProjectId(segmentProjectId);
-      console.log(
-        '[Projects] loadPreviewWatermark: Creator profile for segment',
-        segmentProjectId,
-        ':',
-        creatorProfile
-      );
+      // First, check if the segment project or its parent has default_watermark_settings
+      let watermarkId: string | null = null;
+      let watermarkSettingsRaw: string | null = null;
 
-      // If no creator profile on segment, try the parent folder as fallback
-      if (!creatorProfile) {
-        const project = projects.value.find((p) => p.id === segmentProjectId);
-        if (project?.parent_id) {
-          creatorProfile = await getCreatorProfileByProjectId(project.parent_id);
-          console.log('[Projects] loadPreviewWatermark: Fallback to parent', project.parent_id, ':', creatorProfile);
+      const segmentProject = projects.value.find((p) => p.id === segmentProjectId);
+      if (segmentProject?.default_watermark_settings) {
+        try {
+          const storedSettings = JSON.parse(segmentProject.default_watermark_settings);
+          if (storedSettings.watermarkId) {
+            watermarkId = storedSettings.watermarkId;
+            watermarkSettingsRaw = storedSettings.watermarkSettings;
+            console.log('[Projects] loadPreviewWatermark: Found project-level watermark:', watermarkId);
+          }
+        } catch (e) {
+          console.warn('[Projects] loadPreviewWatermark: Failed to parse project watermark settings:', e);
         }
       }
 
-      if (!creatorProfile || !creatorProfile.watermark_id) {
-        console.log('[Projects] loadPreviewWatermark: No creator profile or watermark_id');
+      // If no project-level settings, check parent project
+      if (!watermarkId && segmentProject?.parent_id) {
+        const parentProject = projects.value.find((p) => p.id === segmentProject.parent_id);
+        if (parentProject?.default_watermark_settings) {
+          try {
+            const storedSettings = JSON.parse(parentProject.default_watermark_settings);
+            if (storedSettings.watermarkId) {
+              watermarkId = storedSettings.watermarkId;
+              watermarkSettingsRaw = storedSettings.watermarkSettings;
+              console.log('[Projects] loadPreviewWatermark: Found parent project-level watermark:', watermarkId);
+            }
+          } catch (e) {
+            console.warn('[Projects] loadPreviewWatermark: Failed to parse parent project watermark settings:', e);
+          }
+        }
+      }
+
+      // If no project-level settings, try creator profile lookup
+      if (!watermarkId) {
+        // Get the creator profile for the segment (not the parent folder)
+        let creatorProfile = await getCreatorProfileByProjectId(segmentProjectId);
+        console.log(
+          '[Projects] loadPreviewWatermark: Creator profile for segment',
+          segmentProjectId,
+          ':',
+          creatorProfile
+        );
+
+        // If no creator profile on segment, try the parent folder as fallback
+        if (!creatorProfile) {
+          const project = projects.value.find((p) => p.id === segmentProjectId);
+          if (project?.parent_id) {
+            creatorProfile = await getCreatorProfileByProjectId(project.parent_id);
+            console.log('[Projects] loadPreviewWatermark: Fallback to parent', project.parent_id, ':', creatorProfile);
+          }
+        }
+
+        if (creatorProfile?.watermark_id) {
+          watermarkId = creatorProfile.watermark_id;
+          watermarkSettingsRaw = creatorProfile.watermark_settings;
+        }
+      }
+
+      if (!watermarkId) {
+        console.log('[Projects] loadPreviewWatermark: No watermark_id found');
         return;
       }
 
       // Load the watermark image
-      const watermark = await getWatermarkImage(creatorProfile.watermark_id);
-      if (!watermark) return;
+      console.log('[Projects] loadPreviewWatermark: Loading watermark image for ID:', watermarkId);
 
-      // Load watermark data URL
-      const dataUrl = await invoke<string>('read_file_as_data_url', {
-        filePath: watermark.file_path,
-      });
-
-      // Get dimensions from database or measure the image
-      let wmWidth = watermark.width || undefined;
-      let wmHeight = watermark.height || undefined;
-
-      // If dimensions not in database, measure the image
-      if (!wmWidth || !wmHeight) {
-        try {
-          const measured = await new Promise<{ width: number; height: number } | null>((resolve) => {
-            const img = new Image();
-            img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-            img.onerror = () => resolve(null);
-            img.src = dataUrl;
-          });
-          if (measured) {
-            wmWidth = measured.width;
-            wmHeight = measured.height;
+      // Check if this is an organization asset (ID format: org-asset-{serverId})
+      if (watermarkId.startsWith('org-asset-')) {
+        const serverId = parseInt(watermarkId.replace('org-asset-', ''), 10);
+        console.log('[Projects] loadPreviewWatermark: Loading org watermark with serverId:', serverId);
+        if (!isNaN(serverId)) {
+          // First try to load from local cache
+          const localWatermark = await getWatermarkByServerId(serverId);
+          if (localWatermark) {
+            console.log('[Projects] loadPreviewWatermark: Found cached org watermark:', localWatermark.name);
+            const dataUrl = await invoke<string>('read_file_as_data_url', {
+              filePath: localWatermark.file_path,
+            });
+            const measured =
+              !localWatermark.width || !localWatermark.height
+                ? await new Promise<{ width: number; height: number } | null>((resolve) => {
+                    const img = new Image();
+                    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+                    img.onerror = () => resolve(null);
+                    img.src = dataUrl;
+                  })
+                : { width: localWatermark.width, height: localWatermark.height };
+            previewWatermarkData.value = {
+              dataUrl,
+              width: measured?.width || localWatermark.width || undefined,
+              height: measured?.height || localWatermark.height || undefined,
+            };
+            console.log('[Projects] loadPreviewWatermark: Org watermark loaded from cache');
+          } else {
+            // Not cached locally - stream directly from server URL
+            console.log('[Projects] loadPreviewWatermark: Org watermark not cached, fetching URL from server...');
+            try {
+              const serverResponse = await getUserOrganizationAssets();
+              if (serverResponse.success && serverResponse.assets) {
+                const serverAsset = serverResponse.assets.find(
+                  (a) => a.id === serverId && a.asset_type === 'watermark'
+                );
+                if (serverAsset && serverAsset.url) {
+                  console.log(
+                    '[Projects] loadPreviewWatermark: Using server URL directly for watermark:',
+                    serverAsset.name
+                  );
+                  // Use the server URL directly - measure dimensions from the loaded image
+                  const dimensions = await new Promise<{ width: number; height: number } | null>((resolve) => {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+                    img.onerror = () => resolve(null);
+                    img.src = serverAsset.url;
+                  });
+                  previewWatermarkData.value = {
+                    dataUrl: serverAsset.url,
+                    width: dimensions?.width,
+                    height: dimensions?.height,
+                  };
+                  console.log('[Projects] loadPreviewWatermark: Org watermark streaming from URL:', {
+                    width: dimensions?.width,
+                    height: dimensions?.height,
+                  });
+                } else {
+                  console.log('[Projects] loadPreviewWatermark: Server asset not found for serverId:', serverId);
+                  return;
+                }
+              }
+            } catch (fetchError) {
+              console.error('[Projects] loadPreviewWatermark: Failed to fetch org assets:', fetchError);
+              return;
+            }
           }
-        } catch {
-          // Ignore measurement errors
         }
+      } else {
+        // Regular watermark lookup by ID
+        const watermark = await getWatermarkImage(watermarkId);
+        if (!watermark) {
+          console.log('[Projects] loadPreviewWatermark: No watermark found in database for ID:', watermarkId);
+          return;
+        }
+        console.log('[Projects] loadPreviewWatermark: Watermark found:', watermark.name);
+
+        // Load watermark data URL
+        const dataUrl = await invoke<string>('read_file_as_data_url', {
+          filePath: watermark.file_path,
+        });
+
+        // Get dimensions from database or measure the image
+        let wmWidth = watermark.width || undefined;
+        let wmHeight = watermark.height || undefined;
+
+        // If dimensions not in database, measure the image
+        if (!wmWidth || !wmHeight) {
+          try {
+            const measured = await new Promise<{ width: number; height: number } | null>((resolve) => {
+              const img = new Image();
+              img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+              img.onerror = () => resolve(null);
+              img.src = dataUrl;
+            });
+            if (measured) {
+              wmWidth = measured.width;
+              wmHeight = measured.height;
+            }
+          } catch {
+            // Ignore measurement errors
+          }
+        }
+
+        previewWatermarkData.value = {
+          dataUrl,
+          width: wmWidth,
+          height: wmHeight,
+        };
+        console.log('[Projects] loadPreviewWatermark: Watermark data loaded:', { width: wmWidth, height: wmHeight });
       }
 
-      previewWatermarkData.value = {
-        dataUrl,
-        width: wmWidth,
-        height: wmHeight,
-      };
-      console.log('[Projects] loadPreviewWatermark: Watermark data loaded:', { width: wmWidth, height: wmHeight });
-
-      // Parse watermark settings from creator profile
+      // Parse watermark settings (from project or creator profile)
       let watermarkSettings: WatermarkSettings = {
         enabled: true,
-        watermarkId: creatorProfile.watermark_id,
+        watermarkId: watermarkId,
         positionX: 12,
         positionY: 92,
         opacity: 80,
         scale: 20,
+        perRatioSettings: null,
       };
 
       // Try to parse stored watermark settings
-      if (creatorProfile.watermark_settings) {
+      if (watermarkSettingsRaw) {
         try {
           const parsed =
-            typeof creatorProfile.watermark_settings === 'string'
-              ? JSON.parse(creatorProfile.watermark_settings)
-              : creatorProfile.watermark_settings;
+            typeof watermarkSettingsRaw === 'string' ? JSON.parse(watermarkSettingsRaw) : watermarkSettingsRaw;
 
-          // Get the 16:9 settings (default preview aspect ratio)
-          const ratioSettings = parsed['16:9'];
-          if (ratioSettings) {
+          // Store full per-ratio settings for use in getPreviewWatermarkStyle
+          watermarkSettings.perRatioSettings = parsed;
+
+          // Get the 16:9 settings (default preview aspect ratio for inline player)
+          const ratioConfig = parsed['16:9'];
+          if (ratioConfig) {
+            // Handle both old format (direct x/y/opacity/scale) and new format (position object)
+            const position = ratioConfig.position || ratioConfig;
             watermarkSettings = {
+              ...watermarkSettings,
               enabled: true,
-              watermarkId: creatorProfile.watermark_id,
-              positionX: ratioSettings.x ?? 12,
-              positionY: ratioSettings.y ?? 92,
-              opacity: ratioSettings.opacity ?? 80,
-              scale: ratioSettings.scale ?? 20,
+              watermarkId: ratioConfig.watermarkId || watermarkId,
+              positionX: position.x ?? 12,
+              positionY: position.y ?? 92,
+              opacity: position.opacity ?? 80,
+              scale: position.scale ?? 20,
+              isFullFrameOverlay: position.isFullFrameOverlay ?? false,
+              perRatioSettings: parsed,
             };
           }
         } catch (e) {
@@ -2624,6 +2850,60 @@
         }
       }
 
+      // Handle org assets: download on-demand if selected intro/outro is an org asset
+      let introPath = settings.intro?.file_path || null;
+      let outroPath = settings.outro?.file_path || null;
+
+      // Download org intro if needed
+      if ((settings.intro as IntroOutroItem)?.isOrgAsset && (settings.intro as IntroOutroItem).serverId) {
+        const intro = settings.intro as IntroOutroItem;
+        console.log('[Projects] Downloading org intro asset on-demand:', intro.name);
+        const introResult = await ensureAssetDownloaded({
+          id: intro.serverId!,
+          name: intro.name,
+          asset_type: 'intro',
+          url: intro.serverUrl || intro.file_path,
+          organization_id: Number(intro.organization_id),
+          organization_name: intro.organization_name || undefined,
+          duration: intro.duration || undefined,
+          thumbnail_url: intro.thumbnail_path || undefined,
+          inserted_at: intro.created_at,
+          updated_at: intro.updated_at,
+        } as ServerOrganizationAsset);
+
+        if (introResult.success && introResult.filePath) {
+          introPath = introResult.filePath;
+          console.log('[Projects] Org intro downloaded to:', introPath);
+        } else {
+          throw new Error(`Failed to download intro asset: ${introResult.error || 'Unknown error'}`);
+        }
+      }
+
+      // Download org outro if needed
+      if ((settings.outro as IntroOutroItem)?.isOrgAsset && (settings.outro as IntroOutroItem).serverId) {
+        const outro = settings.outro as IntroOutroItem;
+        console.log('[Projects] Downloading org outro asset on-demand:', outro.name);
+        const outroResult = await ensureAssetDownloaded({
+          id: outro.serverId!,
+          name: outro.name,
+          asset_type: 'outro',
+          url: outro.serverUrl || outro.file_path,
+          organization_id: Number(outro.organization_id),
+          organization_name: outro.organization_name || undefined,
+          duration: outro.duration || undefined,
+          thumbnail_url: outro.thumbnail_path || undefined,
+          inserted_at: outro.created_at,
+          updated_at: outro.updated_at,
+        } as ServerOrganizationAsset);
+
+        if (outroResult.success && outroResult.filePath) {
+          outroPath = outroResult.filePath;
+          console.log('[Projects] Org outro downloaded to:', outroPath);
+        } else {
+          throw new Error(`Failed to download outro asset: ${outroResult.error || 'Unknown error'}`);
+        }
+      }
+
       // Start the build using the correct command
       await invoke('build_clip_from_segments', {
         projectId: clip.segment_id,
@@ -2642,9 +2922,9 @@
         runNumber: clip.run_number || null,
         buildNumber: buildNumber,
         buildId: buildId,
-        introPath: settings.intro?.file_path || null,
+        introPath: introPath,
         introDuration: settings.intro?.duration || null,
-        outroPath: settings.outro?.file_path || null,
+        outroPath: outroPath,
         outroDuration: settings.outro?.duration || null,
         watermarkSettings: watermarkSettings,
         audioSettings: null,
@@ -3531,7 +3811,11 @@
     showProjectDetectDialog.value = true;
   }
 
-  async function onProjectDetectClipsConfirmed(_promptId: string, promptContent: string) {
+  async function onProjectDetectClipsConfirmed(
+    _promptId: string,
+    promptContent: string,
+    organizationId: number | null = null
+  ) {
     if (!projectToDetect.value || segmentsToDetect.value.length === 0) {
       return;
     }
@@ -3577,6 +3861,7 @@
               chunkDurationMinutes: 15,
               overlapSeconds: 30,
               forceReprocess: false,
+              organizationId: organizationId,
             });
 
             if (result.success) {

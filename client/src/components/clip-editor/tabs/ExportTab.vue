@@ -236,6 +236,16 @@
             <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
                 v-if="build.status === 'completed' && build.file_path"
+                @click="
+                  saveVideoToLocation(build.file_path, `${props.clipName || 'video'}.${build.output_format || 'mp4'}`)
+                "
+                class="p-1.5 rounded hover:bg-emerald-500/10 text-white/40 hover:text-emerald-400 transition-colors"
+                title="Save As..."
+              >
+                <Download :size="14" />
+              </button>
+              <button
+                v-if="build.status === 'completed' && build.file_path"
                 @click="openBuildFolder(build)"
                 class="p-1.5 rounded hover:bg-white/10 text-white/40 hover:text-white transition-colors"
                 title="Open folder"
@@ -280,7 +290,9 @@
   } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+  import { save } from '@tauri-apps/plugin-dialog';
   import { getClipBuilds, deleteClipBuild, type ClipBuild, type VideoEditorSource } from '@/services/database';
+  import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
 
   interface AppliedIntroOutro {
     id: string;
@@ -289,6 +301,14 @@
     duration: number | null;
     filePath: string;
     thumbnailUrl?: string;
+    // Org asset properties (for on-demand downloading)
+    isOrgAsset?: boolean;
+    serverId?: number;
+    serverUrl?: string;
+    organization_id?: string;
+    organization_name?: string;
+    created_at?: string;
+    updated_at?: string;
   }
 
   const props = defineProps<{
@@ -316,6 +336,8 @@
     editorProjectName?: string;
     currentIntro?: AppliedIntroOutro | null;
     currentOutro?: AppliedIntroOutro | null;
+    // Creator profile watermark settings
+    creatorProfileWatermarkSettings?: any | null;
   }>();
 
   const emit = defineEmits<{
@@ -442,7 +464,7 @@
       buildProgress.value = 0;
       emit('buildStarted');
 
-      const { updateClipBuildStatus, getRawVideosByProjectId, createClipBuild } = await import('@/services/database');
+      const { updateClipBuildStatus, createClipBuild } = await import('@/services/database');
 
       // For clip mode, update database status
       if (!props.editorMode) {
@@ -534,10 +556,9 @@
         })) ?? null;
 
       // Determine framing strategy
-      const framingStrategy =
-        props.framingMode === 'manual' && props.framingConfigs && Object.keys(props.framingConfigs).length > 0
-          ? 'manual'
-          : 'auto_poi';
+      // FramingStrategy is a complex struct - pass null to let backend handle detection
+      // Manual configs are passed separately via manualFramingConfigs parameter
+      const framingStrategy = null;
 
       if (props.editorMode && props.videoSources && props.videoSources.length > 0) {
         // Editor mode: build from video sources
@@ -610,11 +631,59 @@
           },
         ];
 
-    // Get intro/outro paths from currentIntro/currentOutro (for clip mode with applied intro/outro)
-    const introPath = props.currentIntro?.filePath ?? null;
+    // Handle org assets: download on-demand if current intro/outro is an org asset
+    let introPath = props.currentIntro?.filePath ?? null;
+    let outroPath = props.currentOutro?.filePath ?? null;
     const introDuration = props.currentIntro?.duration ?? null;
-    const outroPath = props.currentOutro?.filePath ?? null;
     const outroDuration = props.currentOutro?.duration ?? null;
+
+    // Download org intro if needed
+    if (props.currentIntro?.isOrgAsset && props.currentIntro.serverId) {
+      console.log('[ExportTab] Downloading org intro asset on-demand:', props.currentIntro.name);
+      const introResult = await ensureAssetDownloaded({
+        id: props.currentIntro.serverId,
+        name: props.currentIntro.name,
+        asset_type: 'intro',
+        url: props.currentIntro.serverUrl || props.currentIntro.filePath,
+        organization_id: Number(props.currentIntro.organization_id),
+        organization_name: props.currentIntro.organization_name || undefined,
+        duration: props.currentIntro.duration || undefined,
+        thumbnail_url: props.currentIntro.thumbnailUrl || undefined,
+        inserted_at: props.currentIntro.created_at,
+        updated_at: props.currentIntro.updated_at,
+      } as ServerOrganizationAsset);
+
+      if (introResult.success && introResult.filePath) {
+        introPath = introResult.filePath;
+        console.log('[ExportTab] Org intro downloaded to:', introPath);
+      } else {
+        throw new Error(`Failed to download intro asset: ${introResult.error || 'Unknown error'}`);
+      }
+    }
+
+    // Download org outro if needed
+    if (props.currentOutro?.isOrgAsset && props.currentOutro.serverId) {
+      console.log('[ExportTab] Downloading org outro asset on-demand:', props.currentOutro.name);
+      const outroResult = await ensureAssetDownloaded({
+        id: props.currentOutro.serverId,
+        name: props.currentOutro.name,
+        asset_type: 'outro',
+        url: props.currentOutro.serverUrl || props.currentOutro.filePath,
+        organization_id: Number(props.currentOutro.organization_id),
+        organization_name: props.currentOutro.organization_name || undefined,
+        duration: props.currentOutro.duration || undefined,
+        thumbnail_url: props.currentOutro.thumbnailUrl || undefined,
+        inserted_at: props.currentOutro.created_at,
+        updated_at: props.currentOutro.updated_at,
+      } as ServerOrganizationAsset);
+
+      if (outroResult.success && outroResult.filePath) {
+        outroPath = outroResult.filePath;
+        console.log('[ExportTab] Org outro downloaded to:', outroPath);
+      } else {
+        throw new Error(`Failed to download outro asset: ${outroResult.error || 'Unknown error'}`);
+      }
+    }
 
     // Build the clip
     await invoke('build_clip_from_segments', {
@@ -623,7 +692,7 @@
       clipName: props.clipName || 'Untitled',
       videoPath: projectVideo.file_path,
       segments: segments,
-      subtitleSettings: props.subtitleSettings,
+      subtitleSettings: subtitleSettingsWithDefaults,
       subtitleOverrides: null,
       transcriptWords: [],
       transcriptSegments: [],
@@ -639,7 +708,7 @@
       introDuration: introDuration,
       outroPath: outroPath,
       outroDuration: outroDuration,
-      watermarkSettings: null,
+      watermarkSettings: props.creatorProfileWatermarkSettings || null,
       audioSettings: audioSettings,
       framingStrategy: framingStrategy,
       manualFramingConfigs: props.framingConfigs || null,
@@ -673,9 +742,9 @@
     const mainSources: VideoEditorSource[] = [];
 
     for (const source of sources) {
-      if (source.source_name.startsWith('[Intro]')) {
+      if (source.source_name?.startsWith('[Intro]')) {
         introSource = source;
-      } else if (source.source_name.startsWith('[Outro]')) {
+      } else if (source.source_name?.startsWith('[Outro]')) {
         outroSource = source;
       } else {
         mainSources.push(source);
@@ -694,7 +763,7 @@
       const videoPath = mainSources[0].source_path;
 
       // Convert video sources to segments
-      const segments = mainSources.map((source, index) => ({
+      const segments = mainSources.map((source) => ({
         id: source.id,
         start_time: source.trim_start,
         end_time: source.trim_end ?? source.trim_start + (source.end_time - source.start_time),
@@ -708,6 +777,23 @@
       const outroPath = outroSource?.source_path ?? null;
       const outroDuration = outroSource ? outroSource.end_time - outroSource.start_time : null;
 
+      // Ensure subtitle settings have all required fields with defaults
+      const subtitleSettingsWithDefaults = props.subtitleSettings
+        ? {
+            positionPercentage: 15,
+            textOffsetX: 0,
+            textOffsetY: 0,
+            letterSpacing: 0,
+            wordSpacing: 0,
+            padding: 10,
+            borderRadius: 0,
+            lineHeight: 1.2,
+            maxWidth: 80,
+            textAlign: 'center' as const,
+            ...props.subtitleSettings,
+          }
+        : null;
+
       // Build using the existing segment-based command
       await invoke('build_clip_from_segments', {
         projectId: props.editorProjectId,
@@ -715,7 +801,7 @@
         clipName: props.editorProjectName || 'Video Project',
         videoPath: videoPath,
         segments: segments,
-        subtitleSettings: props.subtitleSettings,
+        subtitleSettings: subtitleSettingsWithDefaults,
         subtitleOverrides: null,
         transcriptWords: [],
         transcriptSegments: [],
@@ -731,7 +817,7 @@
         introDuration: introDuration,
         outroPath: outroPath,
         outroDuration: outroDuration,
-        watermarkSettings: null,
+        watermarkSettings: props.creatorProfileWatermarkSettings || null,
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,
         manualFramingConfigs: props.framingConfigs || null,
@@ -767,13 +853,30 @@
       const outroPath = outroSource?.source_path ?? null;
       const outroDuration = outroSource ? outroSource.end_time - outroSource.start_time : null;
 
+      // Ensure subtitle settings have all required fields with defaults
+      const subtitleSettingsWithDefaults = props.subtitleSettings
+        ? {
+            positionPercentage: 15,
+            textOffsetX: 0,
+            textOffsetY: 0,
+            letterSpacing: 0,
+            wordSpacing: 0,
+            padding: 10,
+            borderRadius: 0,
+            lineHeight: 1.2,
+            maxWidth: 80,
+            textAlign: 'center' as const,
+            ...props.subtitleSettings,
+          }
+        : null;
+
       await invoke('build_clip_from_segments', {
         projectId: props.editorProjectId,
         clipId: props.editorProjectId,
         clipName: props.editorProjectName || 'Video Project',
         videoPath: videoPath,
         segments: segments,
-        subtitleSettings: props.subtitleSettings,
+        subtitleSettings: subtitleSettingsWithDefaults,
         subtitleOverrides: null,
         transcriptWords: [],
         transcriptSegments: [],
@@ -789,7 +892,7 @@
         introDuration: introDuration,
         outroPath: outroPath,
         outroDuration: outroDuration,
-        watermarkSettings: null,
+        watermarkSettings: props.creatorProfileWatermarkSettings || null,
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,
         manualFramingConfigs: props.framingConfigs || null,
@@ -825,24 +928,84 @@
     }
   }
 
+  // Save exported video to user-selected location
+  async function saveVideoToLocation(sourcePath: string, defaultFilename: string) {
+    try {
+      console.log('[ExportTab] Opening save dialog for:', sourcePath);
+
+      // Show save file dialog
+      const savePath = await save({
+        title: 'Save Exported Video',
+        defaultPath: defaultFilename,
+        filters: [
+          {
+            name: 'Video Files',
+            extensions: ['mp4', 'mov'],
+          },
+        ],
+      });
+
+      if (savePath) {
+        console.log('[ExportTab] Copying video to:', savePath);
+
+        // Use invoke to call a Rust command to copy the file
+        try {
+          await invoke('copy_file', {
+            source: sourcePath,
+            destination: savePath,
+          });
+          alert(`Video saved successfully to:\n${savePath}`);
+        } catch (copyError) {
+          console.error('[ExportTab] Copy failed:', copyError);
+          alert(`Failed to copy video: ${copyError}`);
+        }
+      }
+    } catch (error) {
+      console.error('[ExportTab] Failed to save video:', error);
+      alert(`Failed to show save dialog: ${error}`);
+    }
+  }
+
   // Setup event listeners
   async function setupEventListeners() {
     // Listen for build progress
-    unlistenProgress = await listen<{ clipId: string; progress: number }>('clip-build-progress', (event) => {
-      if (event.payload.clipId === props.clipId) {
-        buildProgress.value = event.payload.progress;
+    unlistenProgress = await listen<{ clipId: string; clip_id?: string; progress: number }>(
+      'clip-build-progress',
+      (event) => {
+        console.log('[ExportTab] Received clip-build-progress event:', event.payload);
+
+        // Support both camelCase and snake_case
+        const eventClipId = event.payload.clipId || event.payload.clip_id;
+
+        if (eventClipId === props.clipId) {
+          console.log('[ExportTab] Progress update:', event.payload.progress, '%');
+          buildProgress.value = event.payload.progress;
+        }
       }
-    });
+    );
 
     // Listen for build completion
-    unlistenComplete = await listen<{ clipId: string; buildId?: string }>('clip-build-complete', (event) => {
-      if (event.payload.clipId === props.clipId) {
-        isBuilding.value = false;
-        buildProgress.value = 100;
-        loadBuilds();
-        emit('buildCompleted', event.payload.buildId || '');
+    unlistenComplete = await listen<{ clipId: string; clip_id?: string; buildId?: string; build_id?: string }>(
+      'clip-build-complete',
+      (event) => {
+        console.log('[ExportTab] Received clip-build-complete event:', event.payload);
+        console.log('[ExportTab] Current clipId prop:', props.clipId);
+
+        // Support both camelCase and snake_case
+        const eventClipId = event.payload.clipId || event.payload.clip_id;
+        const eventBuildId = event.payload.buildId || event.payload.build_id;
+
+        if (eventClipId === props.clipId) {
+          console.log('[ExportTab] ClipId matches! Setting build complete.');
+          isBuilding.value = false;
+          buildProgress.value = 100;
+          loadBuilds();
+          emit('buildCompleted', eventBuildId || '');
+        } else {
+          console.log('[ExportTab] ClipId mismatch:', eventClipId, '!==', props.clipId);
+        }
       }
-    });
+    );
 
     // Listen for build errors
     unlistenError = await listen<{ clipId: string; error: string }>('clip-build-error', (event) => {

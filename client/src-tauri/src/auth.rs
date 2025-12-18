@@ -17,15 +17,82 @@ pub struct PaymentResult {
     pub signature: String,
     pub pack_key: String,
     pub auth_token: String,
+    pub from_address: String,
+    pub pack_hours: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoogleAuthUser {
+    pub id: i64,
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub is_admin: bool,
+    pub account_type: Option<String>,
+    pub owned_organization_id: Option<i64>,
+    pub created_by_organization_id: Option<i64>,
+    #[serde(default)]
+    pub ai_allowed: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoogleAuthResult {
+    pub success: bool,
+    pub token: String,
+    pub provider: String,
+    pub user: GoogleAuthUser,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StripePaymentResult {
+    pub success: bool,
+    pub session_id: String,
+    pub pack_key: String,
+    pub pack_hours: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailAuthUser {
+    pub id: i64,
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub is_admin: bool,
+    pub account_type: Option<String>,
+    pub owned_organization_id: Option<i64>,
+    pub created_by_organization_id: Option<i64>,
+    #[serde(default)]
+    pub ai_allowed: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailVerificationResult {
+    pub success: bool,
+    #[serde(default)]
+    pub token: Option<String>,
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub user: Option<EmailAuthUser>,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 pub static AUTH_RESULT: Lazy<Arc<Mutex<Option<AuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static PAYMENT_RESULT: Lazy<Arc<Mutex<Option<PaymentResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+pub static GOOGLE_AUTH_RESULT: Lazy<Arc<Mutex<Option<GoogleAuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+pub static STRIPE_PAYMENT_RESULT: Lazy<Arc<Mutex<Option<StripePaymentResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+pub static EMAIL_VERIFICATION_RESULT: Lazy<Arc<Mutex<Option<EmailVerificationResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static AUTH_SERVER_PORT: u16 = 48274;
 pub static PAYMENT_SERVER_PORT: u16 = 48275;
+pub static GOOGLE_AUTH_SERVER_PORT: u16 = 54321;
+pub static STRIPE_SERVER_PORT: u16 = 48276;
+pub static EMAIL_VERIFICATION_SERVER_PORT: u16 = 54322;
 
 #[tauri::command]
 pub async fn open_wallet_auth_window(app: tauri::AppHandle) -> Result<(), String> {
+    // Clear any previous auth result to prevent stale data from being picked up
+    *AUTH_RESULT.lock().unwrap() = None;
+
     // Start local callback server if not already running
     start_auth_callback_server(app.clone());
 
@@ -93,6 +160,61 @@ pub async fn poll_payment_result() -> Result<Option<PaymentResult>, String> {
     if result.is_some() {
         // Clear after retrieval
         *PAYMENT_RESULT.lock().unwrap() = None;
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn open_google_auth_window(app: tauri::AppHandle, api_base: String) -> Result<(), String> {
+    // Clear any previous auth result to prevent stale data from being picked up
+    *GOOGLE_AUTH_RESULT.lock().unwrap() = None;
+
+    // Start local callback server if not already running
+    start_google_callback_server(app.clone());
+
+    // Open the Google OAuth page in the user's default browser
+    // The API server will redirect to Google and then to our callback
+    let auth_url = format!("{}/api/auth/google", api_base);
+
+    tauri_plugin_opener::open_url(auth_url, None::<&str>)
+        .map_err(|e| format!("Failed to open browser: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn poll_google_auth_result() -> Result<Option<GoogleAuthResult>, String> {
+    let result = GOOGLE_AUTH_RESULT.lock().unwrap().clone();
+    if result.is_some() {
+        // Clear after retrieval
+        *GOOGLE_AUTH_RESULT.lock().unwrap() = None;
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn open_stripe_payment_window(
+    app: tauri::AppHandle,
+    checkout_url: String,
+    pack_key: String,
+    pack_hours: u32,
+) -> Result<(), String> {
+    // Start Stripe callback server
+    start_stripe_callback_server(app.clone(), pack_key, pack_hours);
+
+    // Open Stripe Checkout in the user's default browser
+    tauri_plugin_opener::open_url(checkout_url, None::<&str>)
+        .map_err(|e| format!("Failed to open browser: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn poll_stripe_payment_result() -> Result<Option<StripePaymentResult>, String> {
+    let result = STRIPE_PAYMENT_RESULT.lock().unwrap().clone();
+    if result.is_some() {
+        // Clear after retrieval
+        *STRIPE_PAYMENT_RESULT.lock().unwrap() = None;
     }
     Ok(result)
 }
@@ -186,5 +308,163 @@ pub fn start_payment_callback_server(app: tauri::AppHandle) {
 
         println!("Starting local payment server on port {}", PAYMENT_SERVER_PORT);
         warp::serve(routes).run(([127, 0, 0, 1], PAYMENT_SERVER_PORT)).await;
+    });
+}
+
+pub fn start_google_callback_server(app: tauri::AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
+
+    if SERVER_STARTED.swap(true, Ordering::SeqCst) {
+        return; // Server already running
+    }
+
+    tokio::spawn(async move {
+        let google_auth_result = GOOGLE_AUTH_RESULT.clone();
+        let app_handle = app.clone();
+
+        // Callback endpoint for Google OAuth result
+        let google_callback = warp::path("google-callback")
+            .and(warp::post())
+            .and(warp::body::json())
+            .map(move |result: GoogleAuthResult| {
+                // Store the result
+                *google_auth_result.lock().unwrap() = Some(result.clone());
+
+                // Emit event to frontend
+                let _ = app_handle.emit("google-auth-complete", result);
+
+                warp::reply::json(&serde_json::json!({
+                    "success": true,
+                    "message": "Google authentication received. You can close this tab."
+                }))
+            });
+
+        // CORS configuration
+        let cors = warp::cors()
+            .allow_any_origin()
+            .allow_methods(vec!["GET", "POST", "OPTIONS"])
+            .allow_headers(vec!["Content-Type"]);
+
+        let routes = google_callback.with(cors);
+
+        println!("Starting Google auth callback server on port {}", GOOGLE_AUTH_SERVER_PORT);
+        warp::serve(routes).run(([127, 0, 0, 1], GOOGLE_AUTH_SERVER_PORT)).await;
+    });
+}
+
+pub fn start_stripe_callback_server(app: tauri::AppHandle, pack_key: String, pack_hours: u32) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
+
+    if SERVER_STARTED.swap(true, Ordering::SeqCst) {
+        return; // Server already running
+    }
+
+    tokio::spawn(async move {
+        let stripe_payment_result = STRIPE_PAYMENT_RESULT.clone();
+        let app_handle = app.clone();
+        let pack_key_clone = pack_key.clone();
+        let pack_hours_clone = pack_hours;
+
+        // Serve the stripe-success.html page
+        let stripe_payment_result_success = stripe_payment_result.clone();
+        let app_handle_success = app_handle.clone();
+        let pack_key_success = pack_key_clone.clone();
+        
+        let stripe_success_page = warp::path("stripe-success")
+            .and(warp::query::<std::collections::HashMap<String, String>>())
+            .map(move |params: std::collections::HashMap<String, String>| {
+                let session_id = params.get("session_id").cloned().unwrap_or_default();
+                
+                // Create the result
+                let result = StripePaymentResult {
+                    success: true,
+                    session_id: session_id.clone(),
+                    pack_key: pack_key_success.clone(),
+                    pack_hours: pack_hours_clone,
+                };
+
+                // Store the result
+                *stripe_payment_result_success.lock().unwrap() = Some(result.clone());
+
+                // Emit event to frontend
+                let _ = app_handle_success.emit("stripe-payment-complete", result);
+
+                warp::reply::html(include_str!("../../public/stripe-success.html"))
+            });
+
+        // Serve the stripe-cancel.html page
+        let stripe_cancel_page = warp::path("stripe-cancel")
+            .map(|| warp::reply::html(include_str!("../../public/stripe-cancel.html")));
+
+        // CORS configuration
+        let cors = warp::cors()
+            .allow_any_origin()
+            .allow_methods(vec!["GET", "POST", "OPTIONS"])
+            .allow_headers(vec!["Content-Type"]);
+
+        let routes = stripe_success_page.or(stripe_cancel_page).with(cors);
+
+        println!("Starting Stripe callback server on port {}", STRIPE_SERVER_PORT);
+        warp::serve(routes).run(([127, 0, 0, 1], STRIPE_SERVER_PORT)).await;
+    });
+}
+
+#[tauri::command]
+pub async fn poll_email_verification_result() -> Result<Option<EmailVerificationResult>, String> {
+    let result = EMAIL_VERIFICATION_RESULT.lock().unwrap().clone();
+    if result.is_some() {
+        // Clear after retrieval
+        *EMAIL_VERIFICATION_RESULT.lock().unwrap() = None;
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn start_email_verification_listener(app: tauri::AppHandle) -> Result<(), String> {
+    start_email_verification_callback_server(app);
+    Ok(())
+}
+
+pub fn start_email_verification_callback_server(app: tauri::AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
+
+    if SERVER_STARTED.swap(true, Ordering::SeqCst) {
+        return; // Server already running
+    }
+
+    tokio::spawn(async move {
+        let email_verification_result = EMAIL_VERIFICATION_RESULT.clone();
+        let app_handle = app.clone();
+
+        // Callback endpoint for email verification result (from magic link)
+        let email_verification_callback = warp::path("email-verification-callback")
+            .and(warp::post())
+            .and(warp::body::json())
+            .map(move |result: EmailVerificationResult| {
+                // Store the result
+                *email_verification_result.lock().unwrap() = Some(result.clone());
+
+                // Emit event to frontend
+                let _ = app_handle.emit("email-verification-complete", result);
+
+                warp::reply::json(&serde_json::json!({
+                    "success": true,
+                    "message": "Email verification received. You can close this tab."
+                }))
+            });
+
+        // CORS configuration
+        let cors = warp::cors()
+            .allow_any_origin()
+            .allow_methods(vec!["GET", "POST", "OPTIONS"])
+            .allow_headers(vec!["Content-Type"]);
+
+        let routes = email_verification_callback.with(cors);
+
+        println!("Starting email verification callback server on port {}", EMAIL_VERIFICATION_SERVER_PORT);
+        warp::serve(routes).run(([127, 0, 0, 1], EMAIL_VERIFICATION_SERVER_PORT)).await;
     });
 }

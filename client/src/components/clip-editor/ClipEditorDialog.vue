@@ -1,10 +1,6 @@
 <template>
   <Teleport to="body">
-    <div
-      v-if="modelValue"
-      class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
-      @click.self="close"
-    >
+    <div v-if="modelValue" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
       <div
         ref="dialogRef"
         class="bg-card rounded-md w-full h-full border border-border shadow-2xl flex flex-col overflow-hidden"
@@ -82,6 +78,7 @@
                   :text-overlays="textOverlays"
                   :stickers="stickers"
                   :watermarks="watermarks"
+                  :creator-profile-watermark-settings="props.creatorProfileWatermarkSettings"
                   :filter-settings="activeFilterSettings"
                   :segments="playbackSegments"
                   :preview-aspect-ratio="previewAspectRatio"
@@ -195,6 +192,7 @@
                   :preview-aspect-ratio="previewAspectRatio"
                   :selected-aspect-ratios="selectedAspectRatios"
                   :framing-configs="framingConfigs"
+                  :video-dimensions="videoDimensions"
                   @add-sticker="addStickerLocal"
                   @update-sticker="updateStickerLocal"
                   @delete-sticker="deleteStickerLocal"
@@ -288,6 +286,7 @@
                   :editor-project-name="editorProjectName"
                   :current-intro="currentIntro"
                   :current-outro="currentOutro"
+                  :creator-profile-watermark-settings="props.creatorProfileWatermarkSettings"
                   @go-to-aspect-tab="editorMode ? setEditorTab('aspect') : setActiveTab('aspect')"
                   @build-started="onBuildStarted"
                   @build-completed="onBuildCompleted"
@@ -310,18 +309,32 @@
             :watermarks="watermarks"
             :effects="effects"
             :filter-segments="filterSegments"
-            :video-src="videoSrc"
+            :video-src="videoSrc ?? undefined"
             :audio-gain-db="effectiveAudioGainDb"
             :track-db-values="trackDbValues"
             :is-playing="isPlaying"
             :editor-mode="editorMode"
             :video-sources="videoSources"
+            :can-undo="canUndo"
+            :can-redo="canRedo"
+            :selected-segment-ids="selectedSegmentIds"
+            :markers="markers"
+            :selected-marker-id="selectedMarkerId"
             @seek="seekTo"
+            @undo="performUndo"
+            @redo="performRedo"
+            @segment-select="handleSegmentSelect"
+            @marker-click="jumpToMarker"
             @split-trim-segment="splitTrimSegment"
+            @delete-trim-segment="deleteTrimSegment"
             @update-audio-track="updateAudioTrackLocal"
+            @delete-audio-track="deleteAudioTrackLocal"
             @update-text-overlay="updateTextOverlayLocal"
+            @delete-text-overlay="deleteTextOverlayLocal"
             @update-sticker="updateStickerLocal"
+            @delete-sticker="deleteStickerLocal"
             @update-watermark="updateWatermarkLocal"
+            @delete-watermark="deleteWatermarkLocal"
             @update-effect="updateEffectLocal"
             @update-filter-segment="updateFilterSegment"
             @update-source="updateVideoSource"
@@ -342,7 +355,7 @@
         :thumbnail-url="effectiveThumbnailUrl"
         :video-path="effectiveVideoPath"
         :clip-start-time="effectivePOIClipStartTime"
-        :clip-end-time="effectivePOIClipEndTime"
+        :clip-end-time="effectivePOIClipEndTime ?? undefined"
         @confirm="onManualPOIConfigConfirm"
       />
 
@@ -366,6 +379,8 @@
   import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
   import { Film, X, Loader2, Check } from 'lucide-vue-next';
   import { Separator } from '@/components/ui/separator';
+  import { CommandHistory, SplitCommand, DeleteCommand, PasteCommand } from '@/services/commands';
+  import type { ClipSegment } from '@/services/database';
   import type {
     ClipEditorTab,
     AudioTrack,
@@ -378,9 +393,7 @@
     ManualFramingConfigs,
     ManualFramingConfig,
     ClipWatermark,
-    WatermarkRatioConfig,
     ClipSubtitleSettings,
-    ClipSubtitleRatioConfig,
     WordInfo,
   } from '@/types';
   import {
@@ -407,9 +420,9 @@
     getClipWithBuildStatus,
     getClip,
     splitClipSegment,
+    deleteClipSegment,
     getClipSegmentsByClipId,
     // Video Editor imports
-    getVideoEditorProject,
     getVideoEditorSourcesByProjectId,
     createVideoEditorProject,
     createVideoEditorSource,
@@ -433,7 +446,11 @@
     createVideoEditorWatermark,
     updateVideoEditorWatermark,
     deleteVideoEditorWatermark,
+    getWatermarkImage,
+    getWatermarkByServerId,
+    getProject,
   } from '@/services/database';
+  import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
   import type { VideoEditorSource, VideoEditorTab, SourceItem, VideoEditorTransition, IntroOutro } from '@/types';
   import { calculateCrossfadeOpacity } from '@/types';
 
@@ -476,10 +493,15 @@
       clipEndTime?: number;
       clipTitle?: string;
       clipSegments?: ClipSegmentInput[];
+      // Creator profile watermark settings (for preview display)
+      creatorProfileWatermarkSettings?: any | null;
       // Editor mode props
       editorMode?: boolean;
       editorProjectId?: string | null;
       editorProjectName?: string;
+      // Creator profile watermark settings (auto-applied when opening)
+      creatorWatermarkId?: string | null;
+      creatorWatermarkSettings?: string | null; // JSON string of per-ratio settings
     }>(),
     {
       clipId: '',
@@ -487,9 +509,12 @@
       clipStartTime: 0,
       clipEndTime: 0,
       clipTitle: '',
+      creatorProfileWatermarkSettings: null,
       editorMode: false,
       editorProjectId: null,
       editorProjectName: 'Video Project',
+      creatorWatermarkId: null,
+      creatorWatermarkSettings: null,
     }
   );
 
@@ -499,10 +524,41 @@
     (e: 'editorSave', projectId: string): void;
   }>();
 
+  // Command history for undo/redo
+  const commandHistory = new CommandHistory();
+
+  // Clipboard for copy/paste
+  const copiedSegment = ref<ClipSegment | null>(null);
+
+  // Multi-select state
+  const selectedSegmentIds = ref<Set<string>>(new Set());
+  const lastSelectedSegmentId = ref<string | null>(null); // For shift+click range selection
+
+  // Timeline markers
+  interface TimelineMarker {
+    id: string;
+    time: number; // Absolute time in video
+    label?: string;
+  }
+  const markers = ref<TimelineMarker[]>([]);
+  const selectedMarkerId = ref<string | null>(null);
+
+  // Reactive undo/redo availability (updates after each operation)
+  const undoRedoTrigger = ref(0); // Increment this to force reactivity
+  const canUndo = computed(() => {
+    undoRedoTrigger.value; // Access to make it reactive
+    return commandHistory.canUndo();
+  });
+  const canRedo = computed(() => {
+    undoRedoTrigger.value; // Access to make it reactive
+    return commandHistory.canRedo();
+  });
+
   // Refs
   const dialogRef = ref<HTMLElement | null>(null);
   const previewRef = ref<InstanceType<typeof ClipEditorPreview> | null>(null);
   const videoElement = ref<HTMLVideoElement | null>(null);
+  const videoDimensions = ref({ width: 0, height: 0 });
   const clipEditId = ref<string | null>(null);
   const videoEditorEditId = ref<string | null>(null); // For video editor mode
 
@@ -550,6 +606,14 @@
     duration: number | null;
     filePath: string;
     thumbnailUrl?: string;
+    // Org asset properties (for on-demand downloading during export)
+    isOrgAsset?: boolean;
+    serverId?: number;
+    serverUrl?: string;
+    organization_id?: string;
+    organization_name?: string;
+    created_at?: string;
+    updated_at?: string;
   }
   const currentIntro = ref<AppliedIntroOutro | null>(null);
   const currentOutro = ref<AppliedIntroOutro | null>(null);
@@ -571,6 +635,23 @@
   const filterSegments = ref<FilterSegment[]>([]);
   const originalDb = ref(0);
   const trackDbValues = ref<Record<string, number>>({});
+
+  // Debug watcher for stickers
+  watch(
+    stickers,
+    (newStickers) => {
+      console.log(
+        '[ClipEditorDialog] Stickers updated:',
+        newStickers.map((s) => ({
+          id: s.id,
+          scale: s.scale,
+          path: s.stickerPath.slice(-20),
+          configs: s.perRatioConfigs,
+        }))
+      );
+    },
+    { deep: true }
+  );
 
   // Computed: audio tracks with streaming URLs for timeline/waveform rendering
   const audioTracksWithStreamingUrls = computed(() => {
@@ -671,8 +752,8 @@
     return Math.max(...sourceVideoTimeRanges.value.map((r) => r.end));
   });
 
-  // Check if a time falls within any of the source video ranges
-  function isTimeInSourceRanges(time: number): boolean {
+  // Check if a time falls within any of the source video ranges (may be used in future)
+  function _isTimeInSourceRanges(time: number): boolean {
     for (const range of sourceVideoTimeRanges.value) {
       if (time >= range.start && time <= range.end) {
         return true;
@@ -899,8 +980,8 @@
     return sourceTransitions.value.find((t) => time >= t.startTime && time <= t.endTime) || null;
   });
 
-  // Get the "outgoing" source during a transition (the one fading out)
-  const transitionOutgoingSource = computed(() => {
+  // Get the "outgoing" source during a transition (the one fading out) - may be used in future
+  const _transitionOutgoingSource = computed(() => {
     if (!activeTransition.value) return null;
     return videoSources.value.find((s) => s.id === activeTransition.value!.sourceAId) || null;
   });
@@ -1000,10 +1081,10 @@
     if (editorMode.value) {
       const source = videoSources.value.length > 0 ? videoSources.value[0] : null;
       if (source) {
-        // If trim_end is 0, use source duration (full video)
+        // If trim_end is 0 or null, use source duration (full video)
         // Calculate the effective duration from end_time - start_time + trim_start
         const sourceDuration = source.end_time - source.start_time;
-        return source.trim_end > 0 ? source.trim_end : source.trim_start + sourceDuration;
+        return source.trim_end && source.trim_end > 0 ? source.trim_end : source.trim_start + sourceDuration;
       }
       return 0;
     }
@@ -1040,7 +1121,7 @@
 
   // Transition canvas style - matches the video container
   const transitionCanvasStyle = computed(() => ({
-    objectFit: 'contain',
+    objectFit: 'contain' as const,
     width: '100%',
     height: '100%',
   }));
@@ -1217,8 +1298,8 @@
           start_time: overlay.startTime,
           end_time: overlay.endTime,
           style_data: JSON.stringify(overlay.style),
-          position_x: overlay.positionX,
-          position_y: overlay.positionY,
+          position_x: overlay.position.x,
+          position_y: overlay.position.y,
           per_ratio_configs_data: overlay.perRatioConfigs ? JSON.stringify(overlay.perRatioConfigs) : undefined,
         });
         newTextOverlays.push({
@@ -1226,9 +1307,9 @@
           text: newOverlay.text,
           startTime: newOverlay.start_time,
           endTime: newOverlay.end_time,
+          position: { x: newOverlay.position_x, y: newOverlay.position_y },
           style: JSON.parse(newOverlay.style_data || '{}'),
-          positionX: newOverlay.position_x,
-          positionY: newOverlay.position_y,
+          animation: overlay.animation,
           perRatioConfigs: newOverlay.per_ratio_configs_data
             ? JSON.parse(newOverlay.per_ratio_configs_data)
             : undefined,
@@ -1275,8 +1356,8 @@
           sticker_type: sticker.stickerType,
           start_time: sticker.startTime,
           end_time: sticker.endTime,
-          position_x: sticker.positionX,
-          position_y: sticker.positionY,
+          position_x: sticker.position.x,
+          position_y: sticker.position.y,
           scale: sticker.scale,
           rotation: sticker.rotation,
           per_ratio_configs_data: sticker.perRatioConfigs ? JSON.stringify(sticker.perRatioConfigs) : undefined,
@@ -1287,10 +1368,10 @@
           stickerType: newSticker.sticker_type as 'emoji' | 'image' | 'gif',
           startTime: newSticker.start_time,
           endTime: newSticker.end_time,
-          positionX: newSticker.position_x,
-          positionY: newSticker.position_y,
+          position: { x: newSticker.position_x, y: newSticker.position_y },
           scale: newSticker.scale,
           rotation: newSticker.rotation,
+          animation: sticker.animation,
           perRatioConfigs: newSticker.per_ratio_configs_data
             ? JSON.parse(newSticker.per_ratio_configs_data)
             : undefined,
@@ -1425,7 +1506,7 @@
       // Reload transcript data now that we're in editor mode
       // The projectId should already be set from clip mode, but trigger a refresh
       if (projectId.value) {
-        await loadTranscriptData();
+        await loadTranscriptData(projectId.value);
       }
 
       console.log(`[ClipEditorDialog] Promoted clip to video project: ${newProjectId}`);
@@ -1703,8 +1784,15 @@
     }
   }
 
+  // Extended intro/outro type that may include org asset properties
+  interface IntroOutroWithOrgProps extends IntroOutro {
+    isOrgAsset?: boolean;
+    serverId?: number;
+    serverUrl?: string;
+  }
+
   // Intro/Outro handlers
-  async function onAddIntro(intro: IntroOutro) {
+  async function onAddIntro(intro: IntroOutroWithOrgProps) {
     // Ensure we're in editor mode - if not, promote first
     if (!editorMode.value) {
       // For clip mode, we need to promote to video project first
@@ -1762,16 +1850,21 @@
       let thumbnailUrl: string | undefined;
       if (intro.thumbnail_path) {
         try {
-          const exists = await invoke<boolean>('check_file_exists', { path: intro.thumbnail_path });
-          if (exists) {
-            thumbnailUrl = await invoke<string>('read_file_as_data_url', { filePath: intro.thumbnail_path });
+          // For org assets, thumbnail_path is a URL, so use it directly
+          if (intro.isOrgAsset) {
+            thumbnailUrl = intro.thumbnail_path;
+          } else {
+            const exists = await invoke<boolean>('check_file_exists', { path: intro.thumbnail_path });
+            if (exists) {
+              thumbnailUrl = await invoke<string>('read_file_as_data_url', { filePath: intro.thumbnail_path });
+            }
           }
         } catch (err) {
           console.warn('[ClipEditorDialog] Failed to load intro thumbnail:', err);
         }
       }
 
-      // Track the current intro
+      // Track the current intro (including org asset properties for export)
       currentIntro.value = {
         id: intro.id,
         sourceId: newSource.id,
@@ -1779,18 +1872,26 @@
         duration: intro.duration,
         filePath: intro.file_path,
         thumbnailUrl,
+        // Include org asset properties for on-demand downloading during export
+        isOrgAsset: intro.isOrgAsset,
+        serverId: intro.serverId,
+        serverUrl: intro.serverUrl,
+        organization_id: intro.organization_id,
+        organization_name: intro.organization_name,
+        created_at: intro.created_at,
+        updated_at: intro.updated_at,
       };
 
       await recalculateProjectDuration(projectId);
       triggerAutoSave();
 
-      console.log('[ClipEditorDialog] Added intro:', intro.name);
+      console.log('[ClipEditorDialog] Added intro:', intro.name, intro.isOrgAsset ? '(org asset)' : '');
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to add intro:', error);
     }
   }
 
-  async function onAddOutro(outro: IntroOutro) {
+  async function onAddOutro(outro: IntroOutroWithOrgProps) {
     // Ensure we're in editor mode - if not, promote first
     if (!editorMode.value) {
       await promoteToVideoProject();
@@ -1836,16 +1937,21 @@
       let thumbnailUrl: string | undefined;
       if (outro.thumbnail_path) {
         try {
-          const exists = await invoke<boolean>('check_file_exists', { path: outro.thumbnail_path });
-          if (exists) {
-            thumbnailUrl = await invoke<string>('read_file_as_data_url', { filePath: outro.thumbnail_path });
+          // For org assets, thumbnail_path is a URL, so use it directly
+          if (outro.isOrgAsset) {
+            thumbnailUrl = outro.thumbnail_path;
+          } else {
+            const exists = await invoke<boolean>('check_file_exists', { path: outro.thumbnail_path });
+            if (exists) {
+              thumbnailUrl = await invoke<string>('read_file_as_data_url', { filePath: outro.thumbnail_path });
+            }
           }
         } catch (err) {
           console.warn('[ClipEditorDialog] Failed to load outro thumbnail:', err);
         }
       }
 
-      // Track the current outro
+      // Track the current outro (including org asset properties for export)
       currentOutro.value = {
         id: outro.id,
         sourceId: newSource.id,
@@ -1853,12 +1959,20 @@
         duration: outro.duration,
         filePath: outro.file_path,
         thumbnailUrl,
+        // Include org asset properties for on-demand downloading during export
+        isOrgAsset: outro.isOrgAsset,
+        serverId: outro.serverId,
+        serverUrl: outro.serverUrl,
+        organization_id: outro.organization_id,
+        organization_name: outro.organization_name,
+        created_at: outro.created_at,
+        updated_at: outro.updated_at,
       };
 
       await recalculateProjectDuration(projectId);
       triggerAutoSave();
 
-      console.log('[ClipEditorDialog] Added outro:', outro.name);
+      console.log('[ClipEditorDialog] Added outro:', outro.name, outro.isOrgAsset ? '(org asset)' : '');
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to add outro:', error);
     }
@@ -2058,6 +2172,7 @@
           endTime: o.end_time,
           position: { x: o.position_x, y: o.position_y },
           style: JSON.parse(o.style_data || '{}'),
+          animation: (o as any).animation || 'none',
           perRatioConfigs: o.per_ratio_configs_data ? JSON.parse(o.per_ratio_configs_data) : undefined,
         }));
 
@@ -2065,12 +2180,13 @@
         stickers.value = fullEdit.stickers.map((s) => ({
           id: s.id,
           stickerPath: s.sticker_path,
-          stickerType: s.sticker_type,
+          stickerType: s.sticker_type as 'emoji' | 'image' | 'gif',
           startTime: s.start_time,
           endTime: s.end_time,
           position: { x: s.position_x, y: s.position_y },
           scale: s.scale,
           rotation: s.rotation,
+          animation: (s as any).animation || 'none',
           perRatioConfigs: s.per_ratio_configs_data ? JSON.parse(s.per_ratio_configs_data) : undefined,
         }));
 
@@ -2106,6 +2222,83 @@
             };
           })
         );
+
+        // Load creator profile watermark if one exists for this project
+        // Note: projectId here is editorProjectId (video_editor_projects.id), not projects.id
+        // We need to find the actual project ID from a video source
+        console.log('[ClipEditorDialog] Checking for creator profile watermark (editor mode)');
+        try {
+          // Find a source with a source_id (clip or raw_video reference)
+          const sourceWithId = videoSources.value.find(
+            (s) => s.source_id && (s.source_type === 'clip' || s.source_type === 'raw_video')
+          );
+
+          let actualProjectId: string | null = null;
+          if (sourceWithId?.source_id) {
+            try {
+              if (sourceWithId.source_type === 'clip') {
+                const clip = await getClipWithBuildStatus(sourceWithId.source_id);
+                actualProjectId = clip?.project_id || null;
+              } else if (sourceWithId.source_type === 'raw_video') {
+                const rawVideo = await getRawVideo(sourceWithId.source_id);
+                actualProjectId = rawVideo?.project_id || null;
+              }
+            } catch (err) {
+              console.warn('[ClipEditorDialog] Failed to get project ID from source:', err);
+            }
+          }
+
+          console.log('[ClipEditorDialog] Actual project ID (editor mode):', actualProjectId);
+
+          if (actualProjectId) {
+            const { getCreatorProfileByProjectId } = await import('@/services/database');
+            const creatorProfile = await getCreatorProfileByProjectId(actualProjectId);
+            console.log('[ClipEditorDialog] Creator profile found (editor mode):', creatorProfile ? 'YES' : 'NO');
+
+            if (creatorProfile && creatorProfile.watermark_settings) {
+              console.log('[ClipEditorDialog] Watermark settings (editor mode):', creatorProfile.watermark_settings);
+              const watermarkSettings = JSON.parse(creatorProfile.watermark_settings);
+
+              // Check if this creator watermark is already in the list
+              const hasCreatorWatermark = watermarks.value.some((w) => w.watermarkId === creatorProfile.watermark_id);
+
+              if (!hasCreatorWatermark && watermarkSettings.watermarkPath) {
+                console.log('[ClipEditorDialog] Adding creator profile watermark (editor mode)');
+                console.log('[ClipEditorDialog] Watermark path (editor mode):', watermarkSettings.watermarkPath);
+                console.log('[ClipEditorDialog] Current watermarks count (editor mode):', watermarks.value.length);
+
+                // Load watermark preview
+                let previewUrl = watermarkSettings.watermarkPath;
+                try {
+                  previewUrl = await invoke<string>('read_file_as_data_url', {
+                    filePath: watermarkSettings.watermarkPath,
+                  });
+                } catch (err) {
+                  console.warn('[ClipEditorDialog] Failed to load creator watermark preview:', err);
+                }
+
+                // Add creator watermark to the list
+                watermarks.value.push({
+                  id: `creator-watermark-${creatorProfile.id}`,
+                  watermarkId: creatorProfile.watermark_id || undefined,
+                  filePath: watermarkSettings.watermarkPath,
+                  previewUrl: previewUrl,
+                  startTime: 0,
+                  endTime: 999999, // Show throughout entire video
+                  position: {
+                    x: watermarkSettings.position?.x ?? 0.9,
+                    y: watermarkSettings.position?.y ?? 0.9,
+                  },
+                  scale: watermarkSettings.scale ?? 0.15,
+                  opacity: watermarkSettings.opacity ?? 1.0,
+                  perRatioConfigs: watermarkSettings.perRatioConfigs,
+                });
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('[ClipEditorDialog] Failed to load creator profile watermark:', error);
+        }
 
         // Set up audio elements for existing tracks
         for (const track of audioTracks.value) {
@@ -2151,6 +2344,20 @@
       videoElement.value?.src?.slice(-30)
     );
     videoElement.value = element;
+
+    const updateDimensions = () => {
+      if (element.videoWidth && element.videoHeight) {
+        videoDimensions.value = { width: element.videoWidth, height: element.videoHeight };
+        console.log('[onVideoElementReady] Updated videoDimensions:', videoDimensions.value);
+      }
+    };
+
+    if (element.videoWidth && element.videoHeight) {
+      updateDimensions();
+    } else {
+      console.log('[onVideoElementReady] Video dimensions not ready, waiting for loadedmetadata');
+      element.addEventListener('loadedmetadata', updateDimensions, { once: true });
+    }
 
     // In editor mode, track the current source
     // But don't update during crossfade - the crossfade logic handles source tracking
@@ -2382,8 +2589,6 @@
       let source = currentVideoSourceId.value
         ? videoSources.value.find((s) => s.id === currentVideoSourceId.value)
         : null;
-
-      const usedFallback = !source;
 
       // If no tracked source or during transition, figure out the source from time
       if (!source) {
@@ -2743,7 +2948,7 @@
           // which might have a stale src from before a crossfade
           const videoHasCorrectSrc = videoElement.value && targetVideoUrl && videoElement.value.src === targetVideoUrl;
 
-          if (videoHasCorrectSrc) {
+          if (videoHasCorrectSrc && videoElement.value) {
             // Video already has the correct src - just seek directly
             console.log('[seekTo] Video already has correct src, seeking directly to:', timeInSource);
             videoElement.value.currentTime = timeInSource;
@@ -2883,42 +3088,64 @@
       return;
     }
 
-    // In clip mode, persist the split to the database (like Timeline.vue does)
+    // In clip mode, use command pattern for undo/redo support
     if (!editorMode.value && props.clipId) {
       try {
-        // Convert relative cut time to absolute source video time
-        const absoluteCutTime = props.clipStartTime + cutTime;
+        // Create reload callback
+        const reloadCallback = async () => {
+          console.log('[splitTrimSegment] Reloading segments from database...');
+          const dbSegments = await getClipSegmentsByClipId(props.clipId!);
+          console.log(
+            '[splitTrimSegment] Loaded segments from DB:',
+            dbSegments.map((s) => ({
+              start: s.start_time,
+              end: s.end_time,
+              duration: s.duration,
+            }))
+          );
+          if (dbSegments && dbSegments.length > 0) {
+            // Convert absolute times back to relative times
+            trimSegments.value = dbSegments.map((seg, index) => ({
+              id: `segment-${index}`,
+              startTime: seg.start_time - props.clipStartTime,
+              endTime: seg.end_time - props.clipStartTime,
+              isDeleted: false,
+            }));
+            console.log(
+              '[splitTrimSegment] Converted to relative times:',
+              trimSegments.value.map((s) => ({
+                id: s.id,
+                start: s.startTime,
+                end: s.endTime,
+              }))
+            );
+          }
+          // Emit save event to notify parent that clip was modified
+          emit('save', props.clipId!);
+        };
+
+        // Create and execute split command
+        const splitCommand = new SplitCommand(false, {
+          clipId: props.clipId,
+          segmentIndex,
+          clipStartTime: props.clipStartTime,
+          cutTime,
+          onReload: reloadCallback,
+        });
+
+        await commandHistory.executeCommand(splitCommand);
+        undoRedoTrigger.value++; // Trigger reactivity update
 
         console.log(
-          `[ClipEditorDialog] Splitting segment ${segmentIndex} at absolute time ${absoluteCutTime.toFixed(2)}s`
+          `[ClipEditorDialog] Split complete (with undo support), now have ${trimSegments.value.length} segments`
         );
-
-        // Call the database function to split the segment
-        await splitClipSegment(props.clipId, segmentIndex, absoluteCutTime);
-
-        // Reload segments from the database to stay in sync
-        const dbSegments = await getClipSegmentsByClipId(props.clipId);
-        if (dbSegments && dbSegments.length > 0) {
-          // Convert absolute times back to relative times
-          trimSegments.value = dbSegments.map((seg, index) => ({
-            id: `segment-${index}`,
-            startTime: seg.start_time - props.clipStartTime,
-            endTime: seg.end_time - props.clipStartTime,
-            isDeleted: false,
-          }));
-        }
-
-        console.log(`[ClipEditorDialog] Split complete, now have ${trimSegments.value.length} segments`);
-
-        // Emit save event to notify parent that clip was modified
-        emit('save', props.clipId);
       } catch (error) {
         console.error('[ClipEditorDialog] Failed to split segment:', error);
-        // Show error to user
         alert(`Failed to split segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } else {
       // Editor mode or no clip ID - just update local state (for video editor projects)
+      // TODO: Convert to command pattern when we implement editor mode split command
       const leftSegment: TrimSegment = {
         id: `segment-${Date.now()}-left`,
         startTime: segment.startTime,
@@ -2937,8 +3164,68 @@
       trimSegments.value.splice(segmentIndex, 1, leftSegment, rightSegment);
 
       console.log(
-        `[ClipEditorDialog] Split segment at ${cutTime.toFixed(2)}s - created ${leftSegment.id} and ${rightSegment.id}`
+        `[ClipEditorDialog] Split segment at ${cutTime.toFixed(2)}s - created ${leftSegment.id} and ${rightSegment.id} (no undo support yet in editor mode)`
       );
+    }
+  }
+
+  async function deleteTrimSegment(segmentId: string) {
+    // Find segment by ID (the ID is like "segment-0", "segment-1", etc.)
+    const segmentIndex = parseInt(segmentId.replace('segment-', ''));
+
+    if (isNaN(segmentIndex) || segmentIndex < 0 || segmentIndex >= trimSegments.value.length) {
+      console.warn('[ClipEditorDialog] Invalid segment index for deletion');
+      return;
+    }
+
+    // Prevent deleting the last segment
+    if (trimSegments.value.length <= 1) {
+      alert('Cannot delete the last remaining segment.');
+      return;
+    }
+
+    // In clip mode, use command pattern for undo/redo support
+    if (!editorMode.value && props.clipId) {
+      try {
+        // Create reload callback
+        const reloadCallback = async () => {
+          const dbSegments = await getClipSegmentsByClipId(props.clipId!);
+          if (dbSegments && dbSegments.length > 0) {
+            // Convert absolute times back to relative times
+            trimSegments.value = dbSegments.map((seg, index) => ({
+              id: `segment-${index}`,
+              startTime: seg.start_time - props.clipStartTime,
+              endTime: seg.end_time - props.clipStartTime,
+              isDeleted: false,
+            }));
+          }
+          // Emit save event to notify parent that clip was modified
+          emit('save', props.clipId!);
+        };
+
+        // Create and execute delete command
+        const deleteCommand = new DeleteCommand(false, {
+          clipId: props.clipId,
+          segmentId,
+          clipStartTime: props.clipStartTime,
+          onReload: reloadCallback,
+        });
+
+        await commandHistory.executeCommand(deleteCommand);
+        undoRedoTrigger.value++; // Trigger reactivity update
+
+        console.log(
+          `[ClipEditorDialog] Delete complete (with undo support), now have ${trimSegments.value.length} segments`
+        );
+      } catch (error) {
+        console.error('[ClipEditorDialog] Failed to delete segment:', error);
+        alert(`Failed to delete segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    } else {
+      // Editor mode or no clip ID - just update local state
+      // TODO: Convert to command pattern when we implement editor mode delete command
+      trimSegments.value.splice(segmentIndex, 1);
+      console.log(`[ClipEditorDialog] Deleted segment ${segmentIndex} (no undo support yet in editor mode)`);
     }
   }
 
@@ -3139,7 +3426,7 @@
 
   // Clean up audio elements
   function cleanupAudioElements() {
-    audioElements.value.forEach((audio, trackId) => {
+    audioElements.value.forEach((audio, _trackId) => {
       audio.pause();
       audio.src = '';
     });
@@ -3407,7 +3694,11 @@
   }
 
   // Sticker operations
-  async function addStickerLocal(stickerPath: string, type: 'emoji' | 'image' | 'gif') {
+  async function addStickerLocal(
+    stickerPath: string,
+    type: 'emoji' | 'image' | 'gif',
+    options?: { scale?: number; position?: { x: number; y: number } }
+  ) {
     const editId = editorMode.value ? videoEditorEditId.value : clipEditId.value;
     if (!editId) return;
 
@@ -3420,9 +3711,9 @@
       sticker_type: type,
       start_time: effectiveStartTime,
       end_time: effectiveEndTime,
-      position_x: 50,
-      position_y: 50,
-      scale: 1,
+      position_x: options?.position?.x ?? 50,
+      position_y: options?.position?.y ?? 50,
+      scale: options?.scale ?? 1,
       rotation: 0,
       animation: 'none',
     };
@@ -3555,6 +3846,254 @@
       await deleteWatermarkRecord(watermarkId);
     }
     watermarks.value = watermarks.value.filter((w) => w.id !== watermarkId);
+  }
+
+  // Auto-apply creator profile watermark settings when opening the clip editor
+  async function applyCreatorWatermark() {
+    // Skip if watermarks already exist
+    if (watermarks.value.length > 0) {
+      console.log('[ClipEditorDialog] Skipping creator watermark - already has watermarks');
+      return;
+    }
+
+    let watermarkId = props.creatorWatermarkId;
+    let watermarkSettingsJson = props.creatorWatermarkSettings;
+
+    // If no props provided and in editor mode, try to load from video sources' parent project
+    if (!watermarkId && editorMode.value && videoSources.value.length > 0) {
+      console.log('[ClipEditorDialog] No creator watermark props, trying to load from video sources...', {
+        editorMode: editorMode.value,
+        sourceCount: videoSources.value.length,
+        sources: videoSources.value.map((s) => ({ id: s.id, type: s.source_type, sourceId: s.source_id })),
+      });
+
+      // Try to find watermark settings from the first video source's parent project
+      for (const source of videoSources.value) {
+        let parentProjectId: string | null = null;
+
+        if (source.source_type === 'raw_video' && source.source_id) {
+          const rawVideo = await getRawVideo(source.source_id);
+          parentProjectId = rawVideo?.project_id || null;
+          console.log('[ClipEditorDialog] Raw video lookup:', {
+            sourceId: source.source_id,
+            rawVideo: rawVideo ? { id: rawVideo.id, project_id: rawVideo.project_id } : null,
+          });
+        } else if (source.source_type === 'clip' && source.source_id) {
+          const clip = await getClip(source.source_id);
+          parentProjectId = clip?.project_id || null;
+          console.log('[ClipEditorDialog] Clip lookup:', {
+            sourceId: source.source_id,
+            clip: clip ? { id: clip.id, project_id: clip.project_id } : null,
+          });
+        }
+
+        if (parentProjectId) {
+          const parentProject = await getProject(parentProjectId);
+          console.log(
+            '[ClipEditorDialog] Parent project:',
+            parentProject
+              ? {
+                  id: parentProject.id,
+                  name: parentProject.name,
+                  hasWatermarkSettings: !!parentProject.default_watermark_settings,
+                }
+              : null
+          );
+
+          // Check for watermark in the stored settings (format: { watermarkId, watermarkSettings })
+          if (parentProject?.default_watermark_settings) {
+            try {
+              const storedSettings = JSON.parse(parentProject.default_watermark_settings);
+              console.log('[ClipEditorDialog] Found stored watermark settings:', {
+                watermarkId: storedSettings.watermarkId,
+                hasWatermarkSettings: !!storedSettings.watermarkSettings,
+              });
+
+              if (storedSettings.watermarkId) {
+                console.log(
+                  '[ClipEditorDialog] Found watermark from parent project:',
+                  parentProject.name,
+                  'watermark:',
+                  storedSettings.watermarkId
+                );
+                watermarkId = storedSettings.watermarkId;
+
+                // Extract the per-ratio configs
+                if (storedSettings.watermarkSettings) {
+                  watermarkSettingsJson =
+                    typeof storedSettings.watermarkSettings === 'string'
+                      ? storedSettings.watermarkSettings
+                      : JSON.stringify(storedSettings.watermarkSettings);
+                }
+                break; // Found watermark, stop looking
+              }
+            } catch (e) {
+              console.warn('[ClipEditorDialog] Failed to parse parent project watermark settings:', e);
+            }
+          }
+        }
+      }
+    }
+
+    if (!watermarkId) {
+      console.log('[ClipEditorDialog] No creator watermark to apply');
+      return;
+    }
+
+    console.log('[ClipEditorDialog] Auto-applying creator watermark:', watermarkId);
+
+    try {
+      let watermarkRecord: { id: string; file_path: string; width?: number; height?: number } | null = null;
+      let previewUrl: string | null = null;
+      let filePath: string | null = null;
+
+      // Check if this is an organization asset (ID format: org-asset-{serverId})
+      if (watermarkId.startsWith('org-asset-')) {
+        const serverId = parseInt(watermarkId.replace('org-asset-', ''), 10);
+        console.log('[ClipEditorDialog] Loading org watermark with serverId:', serverId);
+
+        if (!isNaN(serverId)) {
+          // First try to load from local cache
+          const localWatermark = await getWatermarkByServerId(serverId);
+          if (localWatermark) {
+            console.log('[ClipEditorDialog] Found cached org watermark:', localWatermark.name);
+            watermarkRecord = localWatermark;
+            filePath = localWatermark.file_path;
+            previewUrl = await invoke<string>('read_file_as_data_url', { filePath: localWatermark.file_path });
+          } else {
+            // Not cached locally - get URL from server
+            console.log('[ClipEditorDialog] Org watermark not cached, fetching URL from server...');
+            const serverResponse = await getUserOrganizationAssets();
+            if (serverResponse.success && serverResponse.assets) {
+              const serverAsset = serverResponse.assets.find((a) => a.id === serverId && a.asset_type === 'watermark');
+              if (serverAsset && serverAsset.url) {
+                console.log('[ClipEditorDialog] Using server URL directly for watermark:', serverAsset.name);
+                previewUrl = serverAsset.url;
+                filePath = serverAsset.url;
+                watermarkRecord = {
+                  id: watermarkId,
+                  file_path: serverAsset.url,
+                  width: serverAsset.width,
+                  height: serverAsset.height,
+                };
+              }
+            }
+          }
+        }
+      } else {
+        // Regular watermark lookup by ID
+        const watermark = await getWatermarkImage(watermarkId);
+        if (watermark) {
+          watermarkRecord = watermark;
+          filePath = watermark.file_path;
+          previewUrl = await invoke<string>('read_file_as_data_url', { filePath: watermark.file_path });
+        }
+      }
+
+      if (!watermarkRecord || !filePath || !previewUrl) {
+        console.log('[ClipEditorDialog] Failed to load creator watermark data');
+        return;
+      }
+
+      // Parse per-ratio settings from creator profile
+      let perRatioConfigs:
+        | Record<
+            string,
+            { position: { x: number; y: number }; scale: number; opacity: number; isFullFrameOverlay?: boolean }
+          >
+        | undefined;
+      let defaultPosition = { x: 8, y: 92 };
+      let defaultScale = 15;
+      let defaultOpacity = 80;
+      let isFullFrameOverlay = false;
+
+      if (watermarkSettingsJson) {
+        try {
+          const creatorSettings =
+            typeof watermarkSettingsJson === 'string' ? JSON.parse(watermarkSettingsJson) : watermarkSettingsJson;
+
+          // Build per-ratio configs for the clip editor
+          perRatioConfigs = {};
+          for (const [ratio, config] of Object.entries(creatorSettings)) {
+            if (config && typeof config === 'object' && 'position' in config) {
+              const ratioConfig = config as {
+                position?: { x: number; y: number; scale: number; opacity: number; isFullFrameOverlay?: boolean };
+                watermarkId?: string;
+              };
+              if (ratioConfig.position) {
+                perRatioConfigs[ratio] = {
+                  position: { x: ratioConfig.position.x, y: ratioConfig.position.y },
+                  scale: ratioConfig.position.scale,
+                  opacity: ratioConfig.position.opacity,
+                  isFullFrameOverlay: ratioConfig.position.isFullFrameOverlay,
+                };
+                // Use 16:9 as default display settings
+                if (ratio === '16:9') {
+                  defaultPosition = { x: ratioConfig.position.x, y: ratioConfig.position.y };
+                  defaultScale = ratioConfig.position.scale;
+                  defaultOpacity = ratioConfig.position.opacity;
+                  isFullFrameOverlay = ratioConfig.position.isFullFrameOverlay ?? false;
+                }
+              }
+            }
+          }
+          console.log('[ClipEditorDialog] Parsed creator watermark settings:', {
+            defaultPosition,
+            defaultScale,
+            defaultOpacity,
+            isFullFrameOverlay,
+            ratioCount: Object.keys(perRatioConfigs).length,
+          });
+        } catch (e) {
+          console.warn('[ClipEditorDialog] Failed to parse creator watermark settings:', e);
+        }
+      }
+
+      // Create the watermark in the database
+      const editId = editorMode.value ? videoEditorEditId.value : clipEditId.value;
+      if (!editId) {
+        console.log('[ClipEditorDialog] No edit ID available, cannot add watermark');
+        return;
+      }
+
+      const watermarkData = {
+        watermark_id: watermarkId,
+        watermark_path: filePath,
+        preview_url: previewUrl,
+        start_time: 0,
+        end_time: totalSegmentDuration.value,
+        position_x: defaultPosition.x,
+        position_y: defaultPosition.y,
+        scale: defaultScale,
+        opacity: defaultOpacity,
+        per_ratio_configs_data: perRatioConfigs ? JSON.stringify(perRatioConfigs) : undefined,
+      };
+
+      const newWatermark = editorMode.value
+        ? await createVideoEditorWatermark(editId, watermarkData)
+        : await createWatermark(editId, watermarkData);
+
+      watermarks.value.push({
+        id: newWatermark.id,
+        watermarkId: newWatermark.watermark_id,
+        filePath: filePath,
+        previewUrl: previewUrl,
+        startTime: newWatermark.start_time,
+        endTime: newWatermark.end_time,
+        position: { x: newWatermark.position_x, y: newWatermark.position_y },
+        scale: newWatermark.scale,
+        opacity: newWatermark.opacity,
+        perRatioConfigs: perRatioConfigs,
+      });
+
+      console.log('[ClipEditorDialog] Creator watermark auto-applied successfully:', {
+        watermarkCount: watermarks.value.length,
+        watermarkIds: watermarks.value.map((w) => w.id),
+        totalDuration: totalSegmentDuration.value,
+      });
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to auto-apply creator watermark:', error);
+    }
   }
 
   // Handle subtitle settings changes from SubtitlesTab
@@ -3726,8 +4265,8 @@
     }
   }
 
-  // Effect operations
-  async function addEffectLocal(type: string, settings: any) {
+  // Effect operations (prefixed with underscore as they may be used in future)
+  async function _addEffectLocal(type: string, settings: any) {
     if (!clipEditId.value) return;
 
     const effect = await createEffect(clipEditId.value, {
@@ -3760,7 +4299,7 @@
     }
   }
 
-  async function deleteEffectLocal(effectId: string) {
+  async function _deleteEffectLocal(effectId: string) {
     await deleteEffect(effectId);
     effects.value = effects.value.filter((e) => e.id !== effectId);
   }
@@ -4099,6 +4638,66 @@
         })
       );
 
+      // Load creator profile watermark if one exists for this clip's project
+      console.log('[ClipEditorDialog] Checking for creator profile watermark (clip mode), clipId:', props.clipId);
+      try {
+        if (props.clipId) {
+          // Get the clip to find its project_id
+          const clip = await getClipWithBuildStatus(props.clipId);
+          const clipProjectId = clip?.project_id;
+          console.log('[ClipEditorDialog] Clip project ID:', clipProjectId);
+
+          if (clipProjectId) {
+            const { getCreatorProfileByProjectId } = await import('@/services/database');
+            const creatorProfile = await getCreatorProfileByProjectId(clipProjectId);
+            console.log('[ClipEditorDialog] Creator profile found (clip mode):', creatorProfile ? 'YES' : 'NO');
+
+            if (creatorProfile && creatorProfile.watermark_settings) {
+              console.log('[ClipEditorDialog] Watermark settings (clip mode):', creatorProfile.watermark_settings);
+              const watermarkSettings = JSON.parse(creatorProfile.watermark_settings);
+
+              // Check if this creator watermark is already in the list
+              const hasCreatorWatermark = watermarks.value.some((w) => w.watermarkId === creatorProfile.watermark_id);
+
+              if (!hasCreatorWatermark && watermarkSettings.watermarkPath) {
+                console.log('[ClipEditorDialog] Adding creator profile watermark for clip mode');
+                console.log('[ClipEditorDialog] Watermark path (clip mode):', watermarkSettings.watermarkPath);
+                console.log('[ClipEditorDialog] Current watermarks count (clip mode):', watermarks.value.length);
+
+                // Load watermark preview
+                let previewUrl = watermarkSettings.watermarkPath;
+                try {
+                  previewUrl = await invoke<string>('read_file_as_data_url', {
+                    filePath: watermarkSettings.watermarkPath,
+                  });
+                } catch (err) {
+                  console.warn('[ClipEditorDialog] Failed to load creator watermark preview:', err);
+                }
+
+                // Add creator watermark to the list
+                watermarks.value.push({
+                  id: `creator-watermark-${creatorProfile.id}`,
+                  watermarkId: creatorProfile.watermark_id || undefined,
+                  filePath: watermarkSettings.watermarkPath,
+                  previewUrl: previewUrl,
+                  startTime: 0,
+                  endTime: 999999, // Show throughout entire clip
+                  position: {
+                    x: watermarkSettings.position?.x ?? 0.9,
+                    y: watermarkSettings.position?.y ?? 0.9,
+                  },
+                  scale: watermarkSettings.scale ?? 0.15,
+                  opacity: watermarkSettings.opacity ?? 1.0,
+                  perRatioConfigs: watermarkSettings.perRatioConfigs,
+                });
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('[ClipEditorDialog] Failed to load creator profile watermark:', error);
+      }
+
       effects.value = fullEdit.effects.map((e) => ({
         id: e.id,
         type: e.effect_type as any,
@@ -4168,16 +4767,284 @@
   function handleKeyDown(e: KeyboardEvent) {
     if (!props.modelValue) return;
 
+    // Don't handle shortcuts if user is typing in input fields
+    const isTyping = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+
+    // Debug log for redo keys
+    if (e.key === 'z' || e.key === 'y') {
+      console.log('[handleKeyDown] Key pressed:', e.key, {
+        ctrl: e.ctrlKey,
+        meta: e.metaKey,
+        shift: e.shiftKey,
+        isTyping,
+      });
+    }
+
     if (e.key === 'Escape') {
       close();
-    } else if (e.key === ' ' && !e.target?.toString().includes('Input')) {
+    } else if (e.key === ' ' && !isTyping) {
       e.preventDefault();
       togglePlay();
     } else if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       saveNow(); // Save immediately on Ctrl+S
+    } else if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !isTyping) {
+      console.log('[handleKeyDown] Undo triggered');
+      e.preventDefault();
+      performUndo();
+    } else if (
+      ((e.key === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey) || (e.key === 'y' && (e.ctrlKey || e.metaKey))) &&
+      !isTyping
+    ) {
+      console.log('[handleKeyDown] Redo triggered!');
+      e.preventDefault();
+      performRedo();
+    } else if (e.key === 'c' && (e.ctrlKey || e.metaKey) && !isTyping) {
+      e.preventDefault();
+      performCopy();
+    } else if (e.key === 'v' && (e.ctrlKey || e.metaKey) && !isTyping) {
+      e.preventDefault();
+      performPaste();
+    } else if (e.key === 'Delete' && !isTyping) {
+      e.preventDefault();
+      if (selectedMarkerId.value) {
+        // Delete selected marker
+        deleteMarker(selectedMarkerId.value);
+      } else if (selectedSegmentIds.value.size > 0) {
+        // Delete selected segments
+        performMultiDelete();
+      }
+    } else if (e.key === 'm' && !isTyping) {
+      e.preventDefault();
+      addMarkerAtPlayhead();
     }
   }
+
+  // Undo/Redo operations
+  async function performUndo() {
+    try {
+      await commandHistory.undo();
+      undoRedoTrigger.value++; // Trigger reactivity update for button states
+      console.log('[ClipEditorDialog] ✅ Undo successful');
+    } catch (error) {
+      console.error('[ClipEditorDialog] Undo failed:', error);
+      alert('Could not undo the last operation');
+    }
+  }
+
+  async function performRedo() {
+    try {
+      console.log('[ClipEditorDialog] Attempting redo...');
+      console.log('[ClipEditorDialog] Can redo?', commandHistory.canRedo());
+      console.log('[ClipEditorDialog] Redo stack size:', commandHistory.getRedoStackSize());
+      await commandHistory.redo();
+      undoRedoTrigger.value++; // Trigger reactivity update for button states
+      console.log('[ClipEditorDialog] ✅ Redo successful');
+    } catch (error) {
+      console.error('[ClipEditorDialog] Redo failed:', error);
+      alert('Could not redo the operation');
+    }
+  }
+
+  // Copy/Paste operations
+  async function performCopy() {
+    // Get the currently selected segment
+    // For now, we'll copy the segment at the current playhead position
+    if (!editorMode.value && props.clipId) {
+      try {
+        const segments = await getClipSegmentsByClipId(props.clipId);
+        const currentRelativeTime = previewTime.value - props.clipStartTime;
+
+        // Find the segment that contains the current playhead position
+        const segmentToCopy = segments.find(
+          (seg) =>
+            currentRelativeTime >= seg.start_time - props.clipStartTime &&
+            currentRelativeTime < seg.end_time - props.clipStartTime
+        );
+
+        if (segmentToCopy) {
+          copiedSegment.value = segmentToCopy;
+          console.log('[ClipEditorDialog] ✅ Copied segment:', {
+            start: segmentToCopy.start_time,
+            end: segmentToCopy.end_time,
+            duration: segmentToCopy.duration,
+          });
+          console.log('[ClipEditorDialog] Segment copied to clipboard. Press Ctrl+V to paste.');
+        } else {
+          console.warn('[ClipEditorDialog] No segment at playhead to copy');
+          alert('No segment at current position');
+        }
+      } catch (error) {
+        console.error('[ClipEditorDialog] Copy failed:', error);
+        alert('Could not copy segment');
+      }
+    } else {
+      // TODO: Implement for editor mode
+      console.log('[ClipEditorDialog] Copy not yet implemented for editor mode');
+    }
+  }
+
+  async function performPaste() {
+    if (!copiedSegment.value) {
+      console.warn('[ClipEditorDialog] No segment in clipboard to paste');
+      alert('No segment copied. Press Ctrl+C to copy a segment first.');
+      return;
+    }
+
+    if (!editorMode.value && props.clipId) {
+      try {
+        const currentRelativeTime = previewTime.value - props.clipStartTime;
+
+        // Create reload callback
+        const reloadCallback = async () => {
+          const dbSegments = await getClipSegmentsByClipId(props.clipId!);
+          if (dbSegments && dbSegments.length > 0) {
+            trimSegments.value = dbSegments.map((seg, index) => ({
+              id: `segment-${index}`,
+              startTime: seg.start_time - props.clipStartTime,
+              endTime: seg.end_time - props.clipStartTime,
+              isDeleted: false,
+            }));
+          }
+          emit('save', props.clipId!);
+        };
+
+        // Create and execute paste command
+        const pasteCommand = new PasteCommand(false, {
+          clipId: props.clipId,
+          clipStartTime: props.clipStartTime,
+          pasteAtTime: currentRelativeTime,
+          copiedSegment: copiedSegment.value,
+          onReload: reloadCallback,
+        });
+
+        await commandHistory.executeCommand(pasteCommand);
+        undoRedoTrigger.value++; // Trigger reactivity update for button states
+
+        console.log('[ClipEditorDialog] ✅ Paste successful - segment added at playhead position');
+      } catch (error) {
+        console.error('[ClipEditorDialog] Paste failed:', error);
+        alert(`Could not paste segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    } else {
+      // TODO: Implement for editor mode
+      console.log('[ClipEditorDialog] Paste not yet implemented for editor mode');
+    }
+  }
+
+  // ============================================================================
+  // MULTI-SELECT HANDLERS
+  // ============================================================================
+
+  function handleSegmentSelect(segmentId: string, modifiers: { shift: boolean; ctrl: boolean }) {
+    console.log('[ClipEditorDialog] Segment select:', { segmentId, modifiers });
+
+    if (modifiers.shift && lastSelectedSegmentId.value) {
+      // Shift+Click: Select range
+      selectSegmentRange(lastSelectedSegmentId.value, segmentId);
+    } else if (modifiers.ctrl) {
+      // Ctrl+Click: Toggle selection
+      if (selectedSegmentIds.value.has(segmentId)) {
+        selectedSegmentIds.value.delete(segmentId);
+      } else {
+        selectedSegmentIds.value.add(segmentId);
+      }
+      lastSelectedSegmentId.value = segmentId;
+    } else {
+      // Regular click: Select only this segment
+      selectedSegmentIds.value.clear();
+      selectedSegmentIds.value.add(segmentId);
+      lastSelectedSegmentId.value = segmentId;
+    }
+
+    console.log('[ClipEditorDialog] Selected segments:', Array.from(selectedSegmentIds.value));
+  }
+
+  function selectSegmentRange(fromId: string, toId: string) {
+    // Find indices of both segments
+    const fromIndex = trimSegments.value.findIndex((seg) => seg.id === fromId);
+    const toIndex = trimSegments.value.findIndex((seg) => seg.id === toId);
+
+    if (fromIndex === -1 || toIndex === -1) return;
+
+    // Select all segments in range
+    const startIndex = Math.min(fromIndex, toIndex);
+    const endIndex = Math.max(fromIndex, toIndex);
+
+    for (let i = startIndex; i <= endIndex; i++) {
+      selectedSegmentIds.value.add(trimSegments.value[i].id);
+    }
+  }
+
+  function clearSelection() {
+    selectedSegmentIds.value.clear();
+    lastSelectedSegmentId.value = null;
+  }
+
+  async function performMultiDelete() {
+    if (selectedSegmentIds.value.size === 0) return;
+
+    console.log('[ClipEditorDialog] Multi-delete:', Array.from(selectedSegmentIds.value));
+
+    // For now, delete one at a time (simple approach)
+    // TODO: Create a MultiDeleteCommand for better undo/redo
+    for (const segmentId of selectedSegmentIds.value) {
+      // Find the actual segment index
+      const segmentIndex = trimSegments.value.findIndex((s) => s.id === segmentId);
+      if (segmentIndex !== -1) {
+        await deleteTrimSegment(segmentId);
+      }
+    }
+
+    // Clear selection after delete
+    clearSelection();
+  }
+
+  // ============================================================================
+  // TIMELINE MARKERS
+  // ============================================================================
+
+  function addMarkerAtPlayhead() {
+    const currentTime = previewTime.value;
+    const markerId = `marker-${Date.now()}`;
+
+    const newMarker: TimelineMarker = {
+      id: markerId,
+      time: currentTime,
+      label: `Marker ${markers.value.length + 1}`,
+    };
+
+    markers.value.push(newMarker);
+    markers.value.sort((a, b) => a.time - b.time); // Keep sorted by time
+
+    console.log('[ClipEditorDialog] Added marker at', currentTime, 'seconds');
+
+    // TODO: Add MarkerCommand for undo/redo support
+  }
+
+  function deleteMarker(markerId: string) {
+    const index = markers.value.findIndex((m) => m.id === markerId);
+    if (index !== -1) {
+      markers.value.splice(index, 1);
+      selectedMarkerId.value = null;
+      console.log('[ClipEditorDialog] Deleted marker', markerId);
+    }
+
+    // TODO: Add MarkerCommand for undo/redo support
+  }
+
+  function jumpToMarker(markerId: string) {
+    const marker = markers.value.find((m) => m.id === markerId);
+    if (marker) {
+      seekTo(marker.time);
+      selectedMarkerId.value = markerId;
+      console.log('[ClipEditorDialog] Jumped to marker at', marker.time, 'seconds');
+    }
+  }
+
+  // ============================================================================
+  // VIDEO HANDLERS
+  // ============================================================================
 
   // Handle video element loaded - apply any pending seek
   function onVideoLoaded() {
@@ -4353,6 +5220,31 @@
     { deep: true }
   );
 
+  // Watch for clip ID changes - clear command history when switching clips
+  watch(
+    () => props.clipId,
+    (newClipId, oldClipId) => {
+      if (newClipId && oldClipId && newClipId !== oldClipId) {
+        commandHistory.clear();
+        console.log('[ClipEditorDialog] Clip changed, command history cleared:', { oldClipId, newClipId });
+      }
+    }
+  );
+
+  // Watch for editor project ID changes - clear command history when switching projects
+  watch(
+    () => props.editorProjectId,
+    (newProjectId, oldProjectId) => {
+      if (newProjectId && oldProjectId && newProjectId !== oldProjectId) {
+        commandHistory.clear();
+        console.log('[ClipEditorDialog] Editor project changed, command history cleared:', {
+          oldProjectId,
+          newProjectId,
+        });
+      }
+    }
+  );
+
   // Lifecycle
   watch(
     () => props.modelValue,
@@ -4360,16 +5252,28 @@
       if (isOpen) {
         isInitialLoad.value = true; // Prevent auto-save during load
 
+        // Clear command history when opening a clip/project
+        // This ensures each clip/project starts with a fresh undo/redo stack
+        commandHistory.clear();
+        console.log('[ClipEditorDialog] Command history cleared for new clip/project');
+
         if (editorMode.value && editorProjectId.value) {
           // Editor mode - load video sources
           await loadEditorProject();
           await loadProjectId(); // Load project ID for transcript/subtitles
           previewTime.value = 0;
           activeEditorTab.value = 'sources';
+
+          // Auto-apply creator watermark if available (from props or video sources)
+          await applyCreatorWatermark();
         } else if (props.clipId) {
           // Clip mode - existing behavior
           await loadEditData();
           await loadProjectId();
+
+          // Auto-apply creator watermark if provided and no existing watermarks
+          await applyCreatorWatermark();
+
           // Initialize to clip start time (absolute time)
           previewTime.value = props.clipStartTime;
 
@@ -4411,6 +5315,9 @@
         // Clean up when dialog closes
         cleanupAudioElements();
         isPlaying.value = false;
+        // Clear command history when closing
+        commandHistory.clear();
+        console.log('[ClipEditorDialog] Command history cleared on close');
         // Reset aspect tab state
         videoPath.value = null;
         thumbnailUrl.value = null;
@@ -4446,6 +5353,8 @@
     if (saveTimeout) {
       clearTimeout(saveTimeout);
     }
+    // Clear command history when closing editor
+    commandHistory.clear();
   });
 </script>
 

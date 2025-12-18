@@ -126,17 +126,9 @@
     </div>
 
     <!-- Empty State -->
-    <EmptyState
-      v-else
-      title="No prompts yet"
-      description="Create your first prompt template to get started"
-      button-text="Create Prompt"
-      @action="navigateToNew"
-    >
+    <EmptyState v-else title="No prompts yet" description="Create your first prompt template to get started">
       <template #icon>
-        <div class="w-20 h-20 bg-purple-500/10 rounded-2xl flex items-center justify-center mb-4">
-          <MessageCircle class="h-10 w-10 text-purple-500" />
-        </div>
+        <MessageCircle class="h-16 w-16 text-muted-foreground" />
       </template>
     </EmptyState>
 
@@ -144,7 +136,6 @@
     <div
       v-if="showDeleteDialog"
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-      @click.self="showDeleteDialog = false"
     >
       <div
         class="bg-card rounded-xl p-6 max-w-md w-full mx-4 border border-border shadow-xl shadow-black/10 animate-in fade-in zoom-in duration-200"

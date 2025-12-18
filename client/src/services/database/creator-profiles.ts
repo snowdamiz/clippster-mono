@@ -1,19 +1,37 @@
-import { getDatabase, timestamp, generateId } from './core';
+import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { CreatorProfile, CreatorPlatformLink, CreatorProfileWithLinks } from './types';
 
 // ==================== Creator Profiles ====================
 
 export async function getAllCreatorProfiles(): Promise<CreatorProfileWithLinks[]> {
   const db = await getDatabase();
+  const userId = getCurrentUserId();
 
-  // Get all profiles
-  const profiles = await db.select<CreatorProfile[]>(
-    'SELECT * FROM creator_profiles ORDER BY created_at DESC'
-  );
+  // Get all profiles for current user
+  let profiles: CreatorProfile[];
+  if (userId === null) {
+    profiles = await db.select<CreatorProfile[]>(
+      'SELECT * FROM creator_profiles WHERE user_id IS NULL ORDER BY created_at DESC'
+    );
+  } else {
+    profiles = await db.select<CreatorProfile[]>(
+      'SELECT * FROM creator_profiles WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC',
+      [userId]
+    );
+  }
 
-  // Get all platform links
+  // Get profile IDs for filtering links
+  const profileIds = profiles.map((p) => p.id);
+
+  if (profileIds.length === 0) {
+    return [];
+  }
+
+  // Get all platform links for these profiles
+  const placeholders = profileIds.map(() => '?').join(',');
   const links = await db.select<CreatorPlatformLink[]>(
-    'SELECT * FROM creator_platform_links ORDER BY is_primary DESC, created_at ASC'
+    `SELECT * FROM creator_platform_links WHERE creator_profile_id IN (${placeholders}) ORDER BY is_primary DESC, created_at ASC`,
+    profileIds
   );
 
   // Group links by profile
@@ -77,10 +95,11 @@ export async function createCreatorProfile(
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
+  const userId = getCurrentUserId();
 
   await db.execute(
-    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, created_at, updated_at) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, user_id, created_at, updated_at) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       name,
@@ -90,6 +109,7 @@ export async function createCreatorProfile(
       outroId || null,
       watermarkId || null,
       watermarkSettings || DEFAULT_WATERMARK_SETTINGS,
+      userId,
       now,
       now,
     ]
@@ -340,6 +360,7 @@ export async function getCreatorProfileByProjectId(
   if (sessions.length > 0 && sessions[0].monitored_streamer_id) {
     const profile = await getCreatorProfileByMonitoredStreamer(sessions[0].monitored_streamer_id);
     if (profile) {
+      console.log('[CreatorProfiles] Found profile via livestream session');
       return profile;
     }
   }
@@ -352,10 +373,12 @@ export async function getCreatorProfileByProjectId(
   );
 
   if (projects.length === 0 || !projects[0].platform) {
+    console.log('[CreatorProfiles] No project or platform found for:', projectId);
     return null;
   }
 
   const projectPlatform = projects[0].platform;
+  console.log('[CreatorProfiles] Project platform:', projectPlatform);
 
   // Map project platform names to creator_platform_links platform values
   const platformMap: Record<string, CreatorPlatformLink['platform']> = {
@@ -367,6 +390,7 @@ export async function getCreatorProfileByProjectId(
 
   const linkPlatform = platformMap[projectPlatform];
   if (!linkPlatform) {
+    console.log('[CreatorProfiles] Unknown platform:', projectPlatform);
     return null;
   }
 
@@ -377,10 +401,20 @@ export async function getCreatorProfileByProjectId(
   );
 
   if (rawVideos.length === 0 || !rawVideos[0].source_mint_id) {
+    console.log(
+      '[CreatorProfiles] No raw videos with source_mint_id found for project:',
+      projectId
+    );
     return null;
   }
 
   const sourceMintId = rawVideos[0].source_mint_id;
+  console.log(
+    '[CreatorProfiles] Looking for creator link with platform:',
+    linkPlatform,
+    'platformId:',
+    sourceMintId
+  );
 
   // Find creator platform link by platform + platform_id
   // Use case-insensitive comparison for Kick channel slugs (and other platforms just in case)
@@ -390,8 +424,14 @@ export async function getCreatorProfileByProjectId(
   );
 
   if (links.length === 0) {
+    console.log(
+      '[CreatorProfiles] No creator platform link found for:',
+      linkPlatform,
+      sourceMintId
+    );
     return null;
   }
 
+  console.log('[CreatorProfiles] Found creator platform link:', links[0].creator_profile_id);
   return await getCreatorProfile(links[0].creator_profile_id);
 }

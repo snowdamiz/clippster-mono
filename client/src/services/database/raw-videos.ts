@@ -1,4 +1,4 @@
-import { getDatabase, timestamp, generateId } from './core';
+import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { RawVideo } from './types';
 
 // RawVideo queries
@@ -27,10 +27,11 @@ export async function createRawVideo(
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
+  const userId = getCurrentUserId();
 
   try {
     await db.execute(
-      'INSERT INTO raw_videos (id, project_id, file_path, original_filename, thumbnail_path, duration, width, height, frame_rate, codec, file_size, created_at, updated_at, source_clip_id, source_mint_id, segment_number, is_segment, segment_start_time, segment_end_time, original_project_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO raw_videos (id, project_id, file_path, original_filename, thumbnail_path, duration, width, height, frame_rate, codec, file_size, created_at, updated_at, source_clip_id, source_mint_id, segment_number, is_segment, segment_start_time, segment_end_time, original_project_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         id,
         options?.projectId || null,
@@ -52,6 +53,7 @@ export async function createRawVideo(
         options?.segmentStartTime || null,
         options?.segmentEndTime || null,
         options?.originalProjectId || null,
+        userId,
       ]
     );
 
@@ -63,7 +65,18 @@ export async function createRawVideo(
 
 export async function getAllRawVideos(): Promise<RawVideo[]> {
   const db = await getDatabase();
-  return await db.select<RawVideo[]>('SELECT * FROM raw_videos ORDER BY created_at DESC, id ASC');
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    return await db.select<RawVideo[]>(
+      'SELECT * FROM raw_videos WHERE user_id IS NULL ORDER BY created_at DESC, id ASC'
+    );
+  }
+
+  return await db.select<RawVideo[]>(
+    'SELECT * FROM raw_videos WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC, id ASC',
+    [userId]
+  );
 }
 
 // Check if segment tracking columns exist in the database

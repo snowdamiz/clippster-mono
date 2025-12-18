@@ -8,83 +8,112 @@ defmodule ClippsterServerWeb.ClipsController do
   alias ClippsterServer.Credits
   alias ClippsterServerWeb.ProgressChannel
 
-  def detect_chunked(conn, %{"project_id" => project_id, "prompt" => user_prompt, "chunks" => chunks_json}) do
+  def detect_chunked(conn, %{"project_id" => project_id, "prompt" => user_prompt, "chunks" => chunks_json} = params) do
     # Get user ID and admin status from token
     case get_user_id_from_token(conn) do
       {:ok, user_id, is_admin} ->
         IO.puts("[ClipsController] User authenticated: #{user_id}, Admin: #{is_admin}")
 
-        # Parse chunks JSON since FormData sends it as a string
-        chunks_metadata = case Jason.decode(chunks_json) do
-          {:ok, parsed_chunks} when is_list(parsed_chunks) ->
-            parsed_chunks
-          {:ok, _} ->
-            throw {:error, "chunks must be a list"}
-          {:error, _} ->
-            throw {:error, "chunks must be valid JSON"}
-        end
+        # Check if AI is allowed for this user (skip for admins)
+        ai_check = if is_admin, do: :ok, else: check_ai_allowed(user_id)
 
-        IO.puts("[ClipsController] Starting chunked clip detection for project #{project_id}")
-        IO.puts("[ClipsController] Processing #{length(chunks_metadata)} chunks")
-        IO.puts("[ClipsController] User prompt: #{String.slice(user_prompt, 0, 100)}...")
+        case ai_check do
+          {:error, message} ->
+            IO.puts("[ClipsController] AI blocked for user #{user_id}: #{message}")
+            conn
+            |> put_status(403)
+            |> json(%{
+              success: false,
+              error: "AI disabled",
+              details: message
+            })
 
-        # Check if chunks array is empty
-        if length(chunks_metadata) == 0 do
-          IO.puts("[ClipsController] No chunks provided - this indicates incomplete chunked transcript data")
-          throw {:error, "No chunks available for processing. The chunked transcript may be incomplete or not yet generated."}
-        end
+          :ok ->
+            # Parse chunks JSON since FormData sends it as a string
+            chunks_metadata = case Jason.decode(chunks_json) do
+              {:ok, parsed_chunks} when is_list(parsed_chunks) ->
+                parsed_chunks
+              {:ok, _} ->
+                throw {:error, "chunks must be a list"}
+              {:error, _} ->
+                throw {:error, "chunks must be valid JSON"}
+            end
 
-        # Determine processing mode based on chunk content
-        processing_mode = determine_chunk_processing_mode(chunks_metadata)
-        IO.puts("[ClipsController] Using processing mode: #{processing_mode}")
+            IO.puts("[ClipsController] Starting chunked clip detection for project #{project_id}")
+            IO.puts("[ClipsController] Processing #{length(chunks_metadata)} chunks")
+            IO.puts("[ClipsController] User prompt: #{String.slice(user_prompt, 0, 100)}...")
 
-        # Determine if this is a first run (raw audio) or followup run (pre-transcribed)
-        is_first_run = processing_mode == :raw_audio
-        IO.puts("[ClipsController] First run: #{is_first_run}")
+            # Check if chunks array is empty
+            if length(chunks_metadata) == 0 do
+              IO.puts("[ClipsController] No chunks provided - this indicates incomplete chunked transcript data")
+              throw {:error, "No chunks available for processing. The chunked transcript may be incomplete or not yet generated."}
+            end
 
-        # Calculate audio duration from chunks
-        duration_hours = calculate_duration_from_chunks(chunks_json)
-        IO.puts("[ClipsController] Audio duration: #{Float.round(duration_hours, 3)} hours")
+            # Determine processing mode based on chunk content
+            processing_mode = determine_chunk_processing_mode(chunks_metadata)
+            IO.puts("[ClipsController] Using processing mode: #{processing_mode}")
 
-        # Bypass credit deduction for admin users
-        credit_result = if is_admin do
-          IO.puts("[ClipsController] Admin user detected - bypassing credit charges")
-          {:ok, %{credits: 0.0, job_id: nil}}
-        else
-          # Deduct credits and create job record for regular users
-          case deduct_credits_and_create_job(user_id, duration_hours, is_first_run, project_id: project_id) do
-            {:ok, result} ->
-              {:ok, result}
-            {:error, :insufficient_credits, remaining, needed} ->
-              IO.puts("[ClipsController] Insufficient credits: have #{Float.round(remaining, 3)}, need #{Float.round(needed, 3)}")
-              {:halt, conn
-              |> put_status(402)
-              |> json(%{
-                success: false,
-                error: "Insufficient credits",
-                details: "You have #{Float.round(remaining, 3)} credits remaining, but #{Float.round(needed, 3)} credits are required for this operation.",
-                credits_required: needed,
-                credits_remaining: remaining
-              })}
+            # Determine if this is a first run (raw audio) or followup run (pre-transcribed)
+            is_first_run = processing_mode == :raw_audio
+            IO.puts("[ClipsController] First run: #{is_first_run}")
 
-            {:error, reason, details} ->
-              IO.puts("[ClipsController] Credit deduction failed: #{inspect(reason)} - #{inspect(details)}")
-              {:halt, conn
-              |> put_status(500)
-              |> json(%{
-                success: false,
-                error: "Credit deduction failed",
-                details: "Unable to process credits: #{inspect(details)}"
-              })}
-          end
-        end
+            # Calculate audio duration from chunks
+            duration_hours = calculate_duration_from_chunks(chunks_json)
+            IO.puts("[ClipsController] Audio duration: #{Float.round(duration_hours, 3)} hours")
 
-        # Continue with processing if not halted
-        case credit_result do
-          {:halt, response} -> response
-          {:ok, %{credits: credits, job_id: job_id}} ->
-            IO.puts("[ClipsController] Processing with credits deducted: #{Float.round(credits, 3)}, job_id: #{inspect(job_id)}")
-            process_chunked_clip_detection(conn, project_id, user_prompt, chunks_metadata, processing_mode, user_id, credits, is_admin, job_id)
+            # Extract optional organization_id for org credit deduction
+            organization_id = Map.get(params, "organization_id") |> parse_org_id()
+
+            # Bypass credit deduction for admin users
+            credit_result = if is_admin do
+              IO.puts("[ClipsController] Admin user detected - bypassing credit charges")
+              {:ok, %{credits: 0.0, job_id: nil, credit_source: :unlimited}}
+            else
+              # Deduct credits and create job record for regular users
+              case deduct_credits_and_create_job(user_id, duration_hours, is_first_run, project_id: project_id, organization_id: organization_id) do
+                {:ok, result} ->
+                  {:ok, result}
+                {:error, :insufficient_credits, remaining, needed} ->
+                  IO.puts("[ClipsController] Insufficient credits: have #{Float.round(remaining, 3)}, need #{Float.round(needed, 3)}")
+                  {:halt, conn
+                  |> put_status(402)
+                  |> json(%{
+                    success: false,
+                    error: "Insufficient credits",
+                    details: "You have #{Float.round(remaining, 3)} credits remaining, but #{Float.round(needed, 3)} credits are required for this operation.",
+                    credits_required: needed,
+                    credits_remaining: remaining
+                  })}
+
+                {:error, :not_a_member, details} ->
+                  IO.puts("[ClipsController] User not a member of organization")
+                  {:halt, conn
+                  |> put_status(403)
+                  |> json(%{
+                    success: false,
+                    error: "Not authorized",
+                    details: details
+                  })}
+
+                {:error, reason, details} ->
+                  IO.puts("[ClipsController] Credit deduction failed: #{inspect(reason)} - #{inspect(details)}")
+                  {:halt, conn
+                  |> put_status(500)
+                  |> json(%{
+                    success: false,
+                    error: "Credit deduction failed",
+                    details: "Unable to process credits: #{inspect(details)}"
+                  })}
+              end
+            end
+
+            # Continue with processing if not halted
+            case credit_result do
+              {:halt, response} -> response
+              {:ok, %{credits: credits, job_id: job_id, credit_source: credit_source}} ->
+                IO.puts("[ClipsController] Processing with credits deducted: #{Float.round(credits, 3)}, job_id: #{inspect(job_id)}, source: #{credit_source}")
+                process_chunked_clip_detection(conn, project_id, user_prompt, chunks_metadata, processing_mode, user_id, credits, is_admin, job_id)
+            end
         end
 
       {:error, reason} ->
@@ -391,56 +420,85 @@ defmodule ClippsterServerWeb.ClipsController do
       {:ok, user_id, is_admin} ->
         IO.puts("[ClipsController] User authenticated: #{user_id}, Admin: #{is_admin}")
 
-        # Check if we're using a cached transcript or fresh audio
-        using_cached_transcript = Map.get(params, "using_cached_transcript", "false") == "true"
-        is_first_run = not using_cached_transcript and Map.has_key?(params, "audio")
+        # Check if AI is allowed for this user (skip for admins)
+        ai_check = if is_admin, do: :ok, else: check_ai_allowed(user_id)
 
-        IO.puts("[ClipsController] Using cached transcript: #{using_cached_transcript}")
-        IO.puts("[ClipsController] First run: #{is_first_run}")
+        case ai_check do
+          {:error, message} ->
+            IO.puts("[ClipsController] AI blocked for user #{user_id}: #{message}")
+            conn
+            |> put_status(403)
+            |> json(%{
+              success: false,
+              error: "AI disabled",
+              details: message
+            })
 
-        # Calculate audio duration
-        duration_hours = calculate_audio_duration_hours(params)
-        IO.puts("[ClipsController] Audio duration: #{Float.round(duration_hours, 3)} hours")
+          :ok ->
+            # Check if we're using a cached transcript or fresh audio
+            using_cached_transcript = Map.get(params, "using_cached_transcript", "false") == "true"
+            is_first_run = not using_cached_transcript and Map.has_key?(params, "audio")
 
-        # Bypass credit deduction for admin users
-        credit_result = if is_admin do
-          IO.puts("[ClipsController] Admin user detected - bypassing credit charges")
-          {:ok, %{credits: 0.0, job_id: nil}}
-        else
-          # Deduct credits and create job record for regular users
-          case deduct_credits_and_create_job(user_id, duration_hours, is_first_run, [project_id: project_id]) do
-            {:ok, result} ->
-              {:ok, result}
-            {:error, :insufficient_credits, remaining, needed} ->
-              IO.puts("[ClipsController] Insufficient credits: have #{Float.round(remaining, 3)}, need #{Float.round(needed, 3)}")
-              {:halt, conn
-              |> put_status(402)
-              |> json(%{
-                success: false,
-                error: "Insufficient credits",
-                details: "You have #{Float.round(remaining, 3)} credits remaining, but #{Float.round(needed, 3)} credits are required for this operation.",
-                credits_required: needed,
-                credits_remaining: remaining
-              })}
+            IO.puts("[ClipsController] Using cached transcript: #{using_cached_transcript}")
+            IO.puts("[ClipsController] First run: #{is_first_run}")
 
-            {:error, reason, details} ->
-              IO.puts("[ClipsController] Credit deduction failed: #{inspect(reason)} - #{inspect(details)}")
-              {:halt, conn
-              |> put_status(500)
-              |> json(%{
-                success: false,
-                error: "Credit deduction failed",
-                details: "Unable to process credits: #{inspect(details)}"
-              })}
-          end
-        end
+            # Calculate audio duration
+            duration_hours = calculate_audio_duration_hours(params)
+            IO.puts("[ClipsController] Audio duration: #{Float.round(duration_hours, 3)} hours")
 
-        # Continue with processing if not halted
-        case credit_result do
-          {:halt, response} -> response
-          {:ok, %{credits: credits, job_id: job_id}} ->
-            IO.puts("[ClipsController] Processing with credits deducted: #{Float.round(credits, 3)}, job_id: #{inspect(job_id)}")
-            process_clip_detection(conn, params, user_id, credits, is_admin, job_id)
+            # Extract optional organization_id for org credit deduction
+            organization_id = Map.get(params, "organization_id") |> parse_org_id()
+
+            # Bypass credit deduction for admin users
+            credit_result = if is_admin do
+              IO.puts("[ClipsController] Admin user detected - bypassing credit charges")
+              {:ok, %{credits: 0.0, job_id: nil, credit_source: :unlimited}}
+            else
+              # Deduct credits and create job record for regular users
+              case deduct_credits_and_create_job(user_id, duration_hours, is_first_run, [project_id: project_id, organization_id: organization_id]) do
+                {:ok, result} ->
+                  {:ok, result}
+                {:error, :insufficient_credits, remaining, needed} ->
+                  IO.puts("[ClipsController] Insufficient credits: have #{Float.round(remaining, 3)}, need #{Float.round(needed, 3)}")
+                  {:halt, conn
+                  |> put_status(402)
+                  |> json(%{
+                    success: false,
+                    error: "Insufficient credits",
+                    details: "You have #{Float.round(remaining, 3)} credits remaining, but #{Float.round(needed, 3)} credits are required for this operation.",
+                    credits_required: needed,
+                    credits_remaining: remaining
+                  })}
+
+                {:error, :not_a_member, details} ->
+                  IO.puts("[ClipsController] User not a member of organization")
+                  {:halt, conn
+                  |> put_status(403)
+                  |> json(%{
+                    success: false,
+                    error: "Not authorized",
+                    details: details
+                  })}
+
+                {:error, reason, details} ->
+                  IO.puts("[ClipsController] Credit deduction failed: #{inspect(reason)} - #{inspect(details)}")
+                  {:halt, conn
+                  |> put_status(500)
+                  |> json(%{
+                    success: false,
+                    error: "Credit deduction failed",
+                    details: "Unable to process credits: #{inspect(details)}"
+                  })}
+              end
+            end
+
+            # Continue with processing if not halted
+            case credit_result do
+              {:halt, response} -> response
+              {:ok, %{credits: credits, job_id: job_id, credit_source: credit_source}} ->
+                IO.puts("[ClipsController] Processing with credits deducted: #{Float.round(credits, 3)}, job_id: #{inspect(job_id)}, source: #{credit_source}")
+                process_clip_detection(conn, params, user_id, credits, is_admin, job_id)
+            end
         end
 
       {:error, reason} ->
@@ -1585,7 +1643,8 @@ defmodule ClippsterServerWeb.ClipsController do
   end
 
   # Deduct credits based on processing type and duration
-  defp deduct_credits_for_processing(user_id, duration_hours, is_first_run) do
+  # Now supports optional organization_id for org credit deduction
+  defp deduct_credits_for_processing(user_id, duration_hours, is_first_run, organization_id) do
     # Determine credit rate based on processing type
     credit_rate = if is_first_run, do: 1.0, else: 0.7
 
@@ -1596,62 +1655,91 @@ defmodule ClippsterServerWeb.ClipsController do
     IO.puts("[ClipsController]   Processing type: #{if is_first_run, do: "First run", else: "Followup run"}")
     IO.puts("[ClipsController]   Credit rate: #{credit_rate}x")
     IO.puts("[ClipsController]   Credits to deduct: #{Float.round(credits_to_deduct, 3)}")
+    IO.puts("[ClipsController]   Organization context: #{inspect(organization_id)}")
 
-    # Check if user has enough credits
-    case Credits.get_user_balance(user_id) do
-      {:ok, %{hours_remaining: remaining}} when remaining != :unlimited ->
-        remaining_hours = Decimal.to_float(remaining)
-        if remaining_hours < credits_to_deduct do
-          {:error, :insufficient_credits, remaining_hours, credits_to_deduct}
-        else
-          # Deduct credits
-          case Credits.deduct_credits(user_id, credits_to_deduct) do
-            {:ok, _updated_credit} ->
-              IO.puts("[ClipsController] Successfully deducted #{Float.round(credits_to_deduct, 3)} credits")
-              {:ok, credits_to_deduct}
+    # First check if using org context
+    if organization_id do
+      # Use organization credits
+      case Credits.deduct_credits_with_org_context(user_id, credits_to_deduct, organization_id) do
+        {:ok, %{source: :organization, org_id: org_id}} ->
+          IO.puts("[ClipsController] Successfully deducted #{Float.round(credits_to_deduct, 3)} credits from org #{org_id}")
+          {:ok, credits_to_deduct, :organization}
 
-            {:error, reason} ->
-              IO.puts("[ClipsController] Failed to deduct credits: #{inspect(reason)}")
-              {:error, :deduction_failed, reason}
+        {:error, :insufficient_credits, remaining, needed} ->
+          IO.puts("[ClipsController] Insufficient org credits: have #{remaining}, need #{needed}")
+          {:error, :insufficient_credits, remaining, needed}
+
+        {:error, :not_a_member} ->
+          IO.puts("[ClipsController] User is not a member of organization #{organization_id}")
+          {:error, :not_a_member, "User is not a member of the specified organization"}
+
+        {:error, reason} ->
+          IO.puts("[ClipsController] Failed to deduct org credits: #{inspect(reason)}")
+          {:error, :deduction_failed, reason}
+      end
+    else
+      # Use personal credits (original flow)
+      case Credits.get_user_balance(user_id) do
+        {:ok, %{hours_remaining: remaining}} when remaining != :unlimited ->
+          remaining_hours = Decimal.to_float(remaining)
+          if remaining_hours < credits_to_deduct do
+            {:error, :insufficient_credits, remaining_hours, credits_to_deduct}
+          else
+            # Deduct credits
+            case Credits.deduct_credits(user_id, credits_to_deduct) do
+              {:ok, _updated_credit} ->
+                IO.puts("[ClipsController] Successfully deducted #{Float.round(credits_to_deduct, 3)} personal credits")
+                {:ok, credits_to_deduct, :personal}
+
+              {:error, reason} ->
+                IO.puts("[ClipsController] Failed to deduct credits: #{inspect(reason)}")
+                {:error, :deduction_failed, reason}
+            end
           end
-        end
 
-      {:ok, %{hours_remaining: :unlimited}} ->
-        IO.puts("[ClipsController] User has unlimited credits, no deduction needed")
-        {:ok, 0.0}
+        {:ok, %{hours_remaining: :unlimited}} ->
+          IO.puts("[ClipsController] User has unlimited credits, no deduction needed")
+          {:ok, 0.0, :unlimited}
+      end
     end
   end
 
   # Deducts credits and creates a processing job record for tracking.
-  # Returns {:ok, %{credits: amount, job_id: id}} on success.
+  # Returns {:ok, %{credits: amount, job_id: id, credit_source: source}} on success.
   # The job_id can be used by the client to cancel and get a refund.
+  # Supports optional organization_id for org credit deduction.
   defp deduct_credits_and_create_job(user_id, duration_hours, is_first_run, opts) do
     project_id = Keyword.get(opts, :project_id)
     video_url = Keyword.get(opts, :video_url)
     job_type = Keyword.get(opts, :job_type, "clip_detection")
+    organization_id = Keyword.get(opts, :organization_id)
 
-    # First deduct credits
-    case deduct_credits_for_processing(user_id, duration_hours, is_first_run) do
-      {:ok, credits_deducted} when is_number(credits_deducted) and credits_deducted > 0 ->
+    # First deduct credits (with optional org context)
+    case deduct_credits_for_processing(user_id, duration_hours, is_first_run, organization_id) do
+      {:ok, credits_deducted, credit_source} when is_number(credits_deducted) and credits_deducted > 0 ->
         # Create a processing job record for refund tracking
-        case Credits.create_processing_job(user_id, credits_deducted, duration_hours, [
+        job_opts = [
           project_id: project_id,
           video_url: video_url,
           job_type: job_type
-        ]) do
+        ]
+        # Add organization_id to job if using org credits
+        job_opts = if organization_id, do: [{:organization_id, organization_id} | job_opts], else: job_opts
+
+        case Credits.create_processing_job(user_id, credits_deducted, duration_hours, job_opts) do
           {:ok, job} ->
-            IO.puts("[ClipsController] Created processing job #{job.id} for tracking (#{Float.round(credits_deducted, 3)} credits)")
-            {:ok, %{credits: credits_deducted, job_id: job.id}}
+            IO.puts("[ClipsController] Created processing job #{job.id} for tracking (#{Float.round(credits_deducted, 3)} credits from #{credit_source})")
+            {:ok, %{credits: credits_deducted, job_id: job.id, credit_source: credit_source}}
 
           {:error, reason} ->
             IO.puts("[ClipsController] Warning: Failed to create job record: #{inspect(reason)}")
             # Still return success - job tracking is not critical
-            {:ok, %{credits: credits_deducted, job_id: nil}}
+            {:ok, %{credits: credits_deducted, job_id: nil, credit_source: credit_source}}
         end
 
-      {:ok, credits_deducted} when credits_deducted == 0 or credits_deducted == 0.0 ->
+      {:ok, credits_deducted, credit_source} when credits_deducted == 0 or credits_deducted == 0.0 ->
         # Admin user or unlimited - no job needed
-        {:ok, %{credits: 0.0, job_id: nil}}
+        {:ok, %{credits: 0.0, job_id: nil, credit_source: credit_source}}
 
       error ->
         error
@@ -1799,6 +1887,57 @@ defmodule ClippsterServerWeb.ClipsController do
         {:ok, _} -> IO.puts("[ClipsController] Refund successful")
         {:error, e} -> IO.puts("[ClipsController] Refund failed: #{inspect(e)}")
       end
+    end
+  end
+
+  # Parse organization_id from params, handling nil, empty string, and integers
+  defp parse_org_id(nil), do: nil
+  defp parse_org_id(""), do: nil
+  defp parse_org_id(id) when is_integer(id), do: id
+  defp parse_org_id(id) when is_binary(id) do
+    case Integer.parse(id) do
+      {int_id, ""} -> int_id
+      _ -> nil
+    end
+  end
+  defp parse_org_id(_), do: nil
+
+  # Check if AI clip detection is allowed for a user
+  # Returns :ok if allowed, or {:error, message} if blocked
+  defp check_ai_allowed(user_id) do
+    alias ClippsterServer.Accounts
+    alias ClippsterServer.Organizations
+
+    case Accounts.get_user(user_id) do
+      nil ->
+        {:error, "User not found"}
+
+      user ->
+        # Check if user was created by an organization
+        case user.created_by_organization_id do
+          nil ->
+            # User was not created by an org, AI is allowed
+            :ok
+
+          org_id ->
+            # User was created by an org, check org settings
+            case Organizations.get_organization(org_id) do
+              nil ->
+                # Org doesn't exist anymore, allow AI
+                :ok
+
+              organization ->
+                # Check if allow_ai is explicitly set to false
+                settings = organization.settings || %{}
+                allow_ai = Map.get(settings, "allow_ai", true)
+
+                if allow_ai == false do
+                  {:error, "AI clip detection has been disabled by your organization"}
+                else
+                  :ok
+                end
+            end
+        end
     end
   end
 end

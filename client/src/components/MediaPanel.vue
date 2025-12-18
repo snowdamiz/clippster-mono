@@ -38,15 +38,26 @@
             <XIcon class="h-3 w-3" />
           </button>
         </div>
-        <!-- Detect Button (when not detecting and has clips) -->
+        <!-- Detect Button (when not detecting and has clips) - Only show if AI is allowed -->
         <button
-          v-else-if="clips.length > 0"
+          v-else-if="clips.length > 0 && isAIAllowed"
           @click="handleDetectClips"
           class="group flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium text-muted-foreground/80 hover:text-foreground bg-white/[0.03] hover:bg-white/[0.06] rounded-md transition-all border border-white/[0.06] hover:border-white/[0.1]"
           title="Run clip detection again"
         >
           <Sparkles class="h-3 w-3 group-hover:text-violet-400 transition-colors" />
           Detect
+        </button>
+
+        <!-- Add Clip Button (when AI is not allowed and has clips) -->
+        <button
+          v-else-if="clips.length > 0 && !isAIAllowed"
+          @click="handleAddClip"
+          class="group flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium text-muted-foreground/80 hover:text-foreground bg-white/[0.03] hover:bg-white/[0.06] rounded-md transition-all border border-white/[0.06] hover:border-white/[0.1]"
+          title="Manually add a new clip"
+        >
+          <Plus class="h-3 w-3 group-hover:text-emerald-400 transition-colors" />
+          Add Clip
         </button>
       </div>
     </div>
@@ -80,6 +91,7 @@
       @scroll-to-timeline="onScrollToTimeline"
       @refresh-clips="refreshClips"
       @edit-clip="onEditClip"
+      @add-clip="handleAddClip"
     />
   </div>
 </template>
@@ -101,7 +113,11 @@
   import type { MediaPanelProps, MediaPanelEmits, WatermarkSettings } from '../types';
   import ClipsTab from './ClipsTab.vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
-  import { Sparkles, X as XIcon, Loader as LoaderIcon } from 'lucide-vue-next';
+  import { useAIPermission } from '@/composables/useAIPermission';
+  import { Sparkles, X as XIcon, Loader as LoaderIcon, Plus } from 'lucide-vue-next';
+
+  // AI Permission check
+  const { isAIAllowed } = useAIPermission();
 
   const props = withDefaults(defineProps<MediaPanelProps>(), {
     isGenerating: false,
@@ -281,6 +297,10 @@
 
   function handleCancelDetection() {
     emit('cancelDetection');
+  }
+
+  function handleAddClip() {
+    emit('addClip');
   }
 
   function onDeleteClip(clipId: string) {

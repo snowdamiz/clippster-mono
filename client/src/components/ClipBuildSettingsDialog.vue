@@ -1,11 +1,7 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div
-        v-if="modelValue"
-        class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60]"
-        @click.self="close"
-      >
+      <div v-if="modelValue" class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60]">
         <Transition name="dialog" appear>
           <div
             class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-xl sm:rounded-2xl w-full max-w-md sm:max-w-xl mx-2 sm:mx-4 border border-white/10 max-h-[92vh] sm:max-h-[90vh] flex flex-col overflow-hidden"
@@ -632,12 +628,21 @@
                       <div class="space-y-1.5 sm:space-y-2">
                         <div class="flex items-center justify-between">
                           <label class="text-[10px] sm:text-xs font-medium text-muted-foreground">Intro</label>
-                          <span
-                            v-if="defaultIntro && selectedIntro?.id === defaultIntro.id"
-                            class="text-[9px] px-1.5 py-0.5 bg-violet-500/20 text-violet-400 rounded-full border border-violet-500/30"
-                          >
-                            Creator Default
-                          </span>
+                          <div class="flex items-center gap-1">
+                            <span
+                              v-if="selectedIntro?.isOrgAsset"
+                              class="text-[9px] px-1.5 py-0.5 bg-indigo-500/20 text-indigo-400 rounded-full border border-indigo-500/30 flex items-center gap-1"
+                            >
+                              <Building2 class="h-2.5 w-2.5" />
+                              Org
+                            </span>
+                            <span
+                              v-if="defaultIntro && selectedIntro?.id === defaultIntro.id"
+                              class="text-[9px] px-1.5 py-0.5 bg-violet-500/20 text-violet-400 rounded-full border border-violet-500/30"
+                            >
+                              Creator Default
+                            </span>
+                          </div>
                         </div>
                         <div class="relative">
                           <button
@@ -687,7 +692,16 @@
                                 :class="{ 'bg-primary/10 text-primary': selectedIntro?.id === intro.id }"
                               >
                                 <div class="flex items-center justify-between">
-                                  <span class="truncate">{{ intro.name }}</span>
+                                  <div class="flex items-center gap-2 truncate">
+                                    <span class="truncate">{{ intro.name }}</span>
+                                    <span
+                                      v-if="intro.isOrgAsset"
+                                      class="text-[9px] px-1.5 py-0.5 bg-indigo-500/20 text-indigo-400 rounded-full border border-indigo-500/30 flex items-center gap-1 flex-shrink-0"
+                                    >
+                                      <Building2 class="h-2.5 w-2.5" />
+                                      {{ intro.organization_name || 'Org' }}
+                                    </span>
+                                  </div>
                                   <span class="text-xs text-muted-foreground ml-2 flex-shrink-0">
                                     {{ formatDuration(intro.duration || 0) }}
                                   </span>
@@ -711,12 +725,21 @@
                       <div class="space-y-1.5 sm:space-y-2">
                         <div class="flex items-center justify-between">
                           <label class="text-[10px] sm:text-xs font-medium text-muted-foreground">Outro</label>
-                          <span
-                            v-if="defaultOutro && selectedOutro?.id === defaultOutro.id"
-                            class="text-[9px] px-1.5 py-0.5 bg-violet-500/20 text-violet-400 rounded-full border border-violet-500/30"
-                          >
-                            Creator Default
-                          </span>
+                          <div class="flex items-center gap-1">
+                            <span
+                              v-if="selectedOutro?.isOrgAsset"
+                              class="text-[9px] px-1.5 py-0.5 bg-indigo-500/20 text-indigo-400 rounded-full border border-indigo-500/30 flex items-center gap-1"
+                            >
+                              <Building2 class="h-2.5 w-2.5" />
+                              Org
+                            </span>
+                            <span
+                              v-if="defaultOutro && selectedOutro?.id === defaultOutro.id"
+                              class="text-[9px] px-1.5 py-0.5 bg-violet-500/20 text-violet-400 rounded-full border border-violet-500/30"
+                            >
+                              Creator Default
+                            </span>
+                          </div>
                         </div>
                         <div class="relative">
                           <button
@@ -766,7 +789,16 @@
                                 :class="{ 'bg-primary/10 text-primary': selectedOutro?.id === outro.id }"
                               >
                                 <div class="flex items-center justify-between">
-                                  <span class="truncate">{{ outro.name }}</span>
+                                  <div class="flex items-center gap-2 truncate">
+                                    <span class="truncate">{{ outro.name }}</span>
+                                    <span
+                                      v-if="outro.isOrgAsset"
+                                      class="text-[9px] px-1.5 py-0.5 bg-indigo-500/20 text-indigo-400 rounded-full border border-indigo-500/30 flex items-center gap-1 flex-shrink-0"
+                                    >
+                                      <Building2 class="h-2.5 w-2.5" />
+                                      {{ outro.organization_name || 'Org' }}
+                                    </span>
+                                  </div>
                                   <span class="text-xs text-muted-foreground ml-2 flex-shrink-0">
                                     {{ formatDuration(outro.duration || 0) }}
                                   </span>
@@ -910,9 +942,12 @@
     CropIcon,
     SettingsIcon,
     SparkleIcon,
+    Building2,
   } from 'lucide-vue-next';
   import type { ClipWithVersion, WatermarkSettings } from '@/services/database';
   import { getAllIntroOutros, type IntroOutro } from '@/services/database';
+  import { getUserOrganizationAssets, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
+  import { useAuthStore } from '@/stores/auth';
   import ManualPOIEditor from './poi/ManualPOIEditor.vue';
   import SubtitleAdjustmentDialog from './SubtitleAdjustmentDialog.vue';
   import type {
@@ -922,6 +957,14 @@
     SubtitleSettings,
     IntroOutroRef,
   } from '@/types';
+
+  // Extended IntroOutro type that can be a local asset or server org asset
+  interface IntroOutroItem extends Omit<IntroOutro, 'id'> {
+    id: string;
+    isOrgAsset?: boolean;
+    serverId?: number;
+    serverUrl?: string; // For org assets, the streaming URL
+  }
 
   // Step definitions
   type StepId = 'platforms' | 'framing' | 'export' | 'addons';
@@ -967,8 +1010,8 @@
     quality: 'low' | 'medium' | 'high';
     frameRate: 30 | 60;
     format: 'mp4' | 'mov';
-    intro: IntroOutro | null;
-    outro: IntroOutro | null;
+    intro: IntroOutroItem | null;
+    outro: IntroOutroItem | null;
     watermark: WatermarkSettings | null;
     framingMode?: 'auto' | 'manual';
     manualFramingConfig?: import('@/types').ManualFramingConfig;
@@ -976,15 +1019,21 @@
     subtitleOverrides?: SubtitleOverrides;
   }
 
+  // Re-export the IntroOutroItem type for use in other components
+  export type { IntroOutroItem };
+
+  // Auth store for checking org memberships
+  const authStore = useAuthStore();
+
   // State
   const selectedRatios = ref<string[]>(['16:9']);
   const quality = ref<'low' | 'medium' | 'high'>('high');
   const frameRate = ref<30 | 60>(30);
   const outputFormat = ref<'mp4' | 'mov'>('mp4');
-  const intros = ref<IntroOutro[]>([]);
-  const outros = ref<IntroOutro[]>([]);
-  const selectedIntro = ref<IntroOutro | null>(null);
-  const selectedOutro = ref<IntroOutro | null>(null);
+  const intros = ref<IntroOutroItem[]>([]);
+  const outros = ref<IntroOutroItem[]>([]);
+  const selectedIntro = ref<IntroOutroItem | null>(null);
+  const selectedOutro = ref<IntroOutroItem | null>(null);
   const loadingAssets = ref(false);
   const showIntroDropdown = ref(false);
   const showOutroDropdown = ref(false);
@@ -1422,9 +1471,92 @@
   async function loadIntroOutros() {
     loadingAssets.value = true;
     try {
-      const allAssets = await getAllIntroOutros();
-      intros.value = allAssets.filter((a) => a.type === 'intro');
-      outros.value = allAssets.filter((a) => a.type === 'outro');
+      // Load local assets from database
+      const localAssets = await getAllIntroOutros();
+      const localIntros: IntroOutroItem[] = localAssets
+        .filter((a) => a.type === 'intro' && !a.organization_id) // Personal intros only
+        .map((a) => ({ ...a, isOrgAsset: false }));
+      const localOutros: IntroOutroItem[] = localAssets
+        .filter((a) => a.type === 'outro' && !a.organization_id) // Personal outros only
+        .map((a) => ({ ...a, isOrgAsset: false }));
+
+      // Load organization assets from server API (streaming, not downloaded)
+      let orgIntros: IntroOutroItem[] = [];
+      let orgOutros: IntroOutroItem[] = [];
+
+      // User belongs to an organization if they own one or were created by one
+      const user = authStore.user;
+      const hasOrganizations = user && (user.owned_organization_id || user.created_by_organization_id);
+      if (hasOrganizations) {
+        try {
+          const serverResponse = await getUserOrganizationAssets();
+          if (serverResponse.success) {
+            // Convert server assets to IntroOutroItem format
+            orgIntros = serverResponse.assets
+              .filter((a: ServerOrganizationAsset) => a.asset_type === 'intro')
+              .map((a: ServerOrganizationAsset) => ({
+                id: `org_${a.id}`,
+                name: a.name,
+                file_path: a.url, // Use server URL for streaming
+                type: 'intro' as const,
+                duration: a.duration || null,
+                thumbnail_path: a.thumbnail_url || null,
+                thumbnail_generation_status: 'completed' as const,
+                created_at: a.inserted_at,
+                updated_at: a.updated_at,
+                organization_id: String(a.organization_id),
+                organization_name: a.organization_name,
+                isOrgAsset: true,
+                serverId: a.id,
+                serverUrl: a.url,
+              }));
+
+            orgOutros = serverResponse.assets
+              .filter((a: ServerOrganizationAsset) => a.asset_type === 'outro')
+              .map((a: ServerOrganizationAsset) => ({
+                id: `org_${a.id}`,
+                name: a.name,
+                file_path: a.url, // Use server URL for streaming
+                type: 'outro' as const,
+                duration: a.duration || null,
+                thumbnail_path: a.thumbnail_url || null,
+                thumbnail_generation_status: 'completed' as const,
+                created_at: a.inserted_at,
+                updated_at: a.updated_at,
+                organization_id: String(a.organization_id),
+                organization_name: a.organization_name,
+                isOrgAsset: true,
+                serverId: a.id,
+                serverUrl: a.url,
+              }));
+          }
+        } catch (orgError) {
+          console.warn('Failed to load organization assets:', orgError);
+        }
+      }
+
+      // Combine local and org assets (org assets shown first)
+      intros.value = [...orgIntros, ...localIntros];
+      outros.value = [...orgOutros, ...localOutros];
+
+      console.log(
+        '[ClipBuildSettingsDialog] Loaded intros:',
+        intros.value.length,
+        '(org:',
+        orgIntros.length,
+        ', local:',
+        localIntros.length,
+        ')'
+      );
+      console.log(
+        '[ClipBuildSettingsDialog] Loaded outros:',
+        outros.value.length,
+        '(org:',
+        orgOutros.length,
+        ', local:',
+        localOutros.length,
+        ')'
+      );
     } catch (error) {
       console.error('Failed to load assets:', error);
     } finally {
@@ -1432,12 +1564,12 @@
     }
   }
 
-  function selectIntro(intro: IntroOutro | null) {
+  function selectIntro(intro: IntroOutroItem | null) {
     selectedIntro.value = intro;
     showIntroDropdown.value = false;
   }
 
-  function selectOutro(outro: IntroOutro | null) {
+  function selectOutro(outro: IntroOutroItem | null) {
     selectedOutro.value = outro;
     showOutroDropdown.value = false;
   }

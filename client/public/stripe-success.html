@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment Successful - Clippster</title>
+  <style>
+    :root {
+      --background: oklch(0.145 0 0);
+      --foreground: oklch(0.985 0 0);
+      --card: oklch(0.145 0 0);
+      --primary: oklch(0.985 0 0);
+      --muted-foreground: oklch(0.708 0 0);
+      --success: oklch(0.696 0.17 162.48);
+      --success-bg: oklch(0.269 0.05 162.48);
+      --radius: 0.625rem;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: var(--background);
+      color: var(--foreground);
+      padding: 1.5rem;
+    }
+
+    .container {
+      max-width: 28rem;
+      width: 100%;
+    }
+
+    .card {
+      position: relative;
+      overflow: hidden;
+      border-radius: calc(var(--radius) * 2);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      background: var(--card);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    }
+
+    .gradient-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, transparent 50%, rgba(34, 197, 94, 0.05) 100%);
+      pointer-events: none;
+    }
+
+    .content {
+      position: relative;
+      padding: 2.5rem 2rem;
+      text-align: center;
+    }
+
+    .icon-container {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 1.5rem;
+      background: var(--success-bg);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: scaleIn 0.5s ease-out;
+    }
+
+    .icon-container svg {
+      width: 40px;
+      height: 40px;
+      color: var(--success);
+    }
+
+    @keyframes scaleIn {
+      0% {
+        transform: scale(0);
+        opacity: 0;
+      }
+      50% {
+        transform: scale(1.1);
+      }
+      100% {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      color: var(--success);
+    }
+
+    p {
+      font-size: 0.9375rem;
+      color: var(--muted-foreground);
+      line-height: 1.5;
+      margin-bottom: 1.5rem;
+    }
+
+    .status {
+      font-size: 0.875rem;
+      color: var(--muted-foreground);
+      padding: 0.75rem 1rem;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: var(--radius);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .close-notice {
+      margin-top: 1.5rem;
+      font-size: 0.8125rem;
+      color: var(--muted-foreground);
+      opacity: 0.7;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="gradient-overlay"></div>
+      <div class="content">
+        <div class="icon-container">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+        </div>
+
+        <h1>Payment Successful!</h1>
+        <p>Your credit pack has been purchased successfully. Your credits have been added to your account.</p>
+
+        <div class="status" id="status">
+          Notifying application...
+        </div>
+
+        <p class="close-notice">You can close this window now.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // The Tauri callback server will intercept this page load and emit the event
+    // This page is just a confirmation for the user
+    
+    document.addEventListener('DOMContentLoaded', () => {
+      const statusEl = document.getElementById('status');
+      
+      // Update status after a short delay to show the app has been notified
+      setTimeout(() => {
+        statusEl.textContent = '✓ Application notified. You can close this tab.';
+        statusEl.style.color = 'var(--success)';
+      }, 1000);
+      
+      // Try to close the window after a delay
+      setTimeout(() => {
+        window.close();
+      }, 3000);
+    });
+  </script>
+</body>
+</html>
+

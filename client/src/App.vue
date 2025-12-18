@@ -5,7 +5,7 @@
   import TitleBar from '@/components/TitleBar.vue';
   import LoadingScreen from '@/components/LoadingScreen.vue';
   import AuthModal from '@/components/AuthModal.vue';
-  import { initDatabase, seedDefaultPrompt } from '@/services/database';
+  import { initDatabase, seedDefaultPrompt, ensureOrganizationAssetColumns } from '@/services/database';
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
   import { invoke } from '@tauri-apps/api/core';
@@ -16,10 +16,20 @@
   const titleBarPlatformOverride = ref('auto');
   const showAuthModal = ref(false);
 
+  // Key for router-view to force re-render on auth changes
+  const routerKey = ref(0);
+
   // Auth event listener function
   const handleAuthRequired = () => {
     console.log('[App] Auth required, showing auth modal');
     showAuthModal.value = true;
+  };
+
+  // Handle auth state changes (login/logout) by refreshing the router view
+  const handleAuthStateChanged = (event: CustomEvent) => {
+    console.log('[App] Auth state changed, refreshing data. User ID:', event.detail?.userId);
+    // Increment key to force Vue to re-mount all route components
+    routerKey.value++;
   };
 
   // Platform override functions
@@ -58,6 +68,9 @@
       showAuthModal.value = true;
     });
 
+    // Listen for auth state changes (login/logout) to refresh data
+    window.addEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
+
     // Listen for platform override events from Admin panel
     window.addEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
 
@@ -67,6 +80,9 @@
 
       // Seed default prompt if it doesn't exist
       await seedDefaultPrompt();
+
+      // Ensure organization asset columns exist (migration)
+      await ensureOrganizationAssetColumns();
     } catch (error) {
       console.error('[App] Failed to initialize database:', error);
     }
@@ -96,6 +112,7 @@
       showAuthModal.value = true;
     });
     window.removeEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
+    window.removeEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
   });
 </script>
 
@@ -112,8 +129,8 @@
     <div class="main-content">
       <!-- Toast notifications provider -->
       <Toast />
-      <!-- Router view for page content -->
-      <router-view />
+      <!-- Router view for page content (key changes on auth to force refresh) -->
+      <router-view :key="routerKey" />
       <!-- Global app close confirmation dialog -->
       <AppCloseDialog />
       <!-- Authentication Modal -->

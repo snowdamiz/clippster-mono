@@ -1,5 +1,5 @@
 -- Add watermark settings to creator_profiles
--- Migration: 051_add_creator_watermark_position
+-- Migration: 061_add_creator_watermark_position
 -- Created: 2025-01-09
 -- This allows each creator to have custom watermark positions per aspect ratio
 

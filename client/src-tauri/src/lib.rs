@@ -25,6 +25,20 @@ use std::sync::{Arc, Mutex};
 
 static CLIP_GENERATION_IN_PROGRESS: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
 
+/// Copy a file from source to destination
+#[tauri::command]
+async fn copy_file(source: String, destination: String) -> Result<(), String> {
+    use std::fs;
+    
+    println!("[Rust] Copying file from {} to {}", source, destination);
+    
+    fs::copy(&source, &destination)
+        .map_err(|e| format!("Failed to copy file: {}", e))?;
+    
+    println!("[Rust] File copied successfully");
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     println!("[Rust] Starting Tauri application");
@@ -360,6 +374,30 @@ pub fn run() {
                             sql: include_str!("../migrations/059_add_video_editor_edits.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 60,
+                            description: "add_user_id_to_tables",
+                            sql: include_str!("../migrations/060_add_user_id_to_tables.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 61,
+                            description: "add_creator_watermark_position",
+                            sql: include_str!("../migrations/061_add_creator_watermark_position.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 62,
+                            description: "add_user_id_to_clips_and_raw_videos",
+                            sql: include_str!("../migrations/062_add_user_id_to_clips_and_raw_videos.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 63,
+                            description: "add_project_watermark_settings",
+                            sql: include_str!("../migrations/063_add_project_watermark_settings.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -450,6 +488,12 @@ pub fn run() {
             auth::close_auth_window,
             auth::poll_auth_result,
             auth::poll_payment_result,
+            auth::open_google_auth_window,
+            auth::poll_google_auth_result,
+            auth::open_stripe_payment_window,
+            auth::poll_stripe_payment_result,
+            auth::start_email_verification_listener,
+            auth::poll_email_verification_result,
 
             // PumpFun commands
             pumpfun::get_pumpfun_clips,
@@ -494,6 +538,10 @@ pub fn run() {
             storage::delete_audio_file,
             storage::copy_image_to_storage,
             storage::delete_image_file,
+            storage::save_org_asset_file,
+            // User context for per-user storage
+            storage::set_current_user_id,
+            storage::clear_current_user_id,
 
             // Assets commands
             assets::upload_asset_async,
@@ -509,7 +557,10 @@ pub fn run() {
             // UI Utils commands
             ui_utils::setup_macos_titlebar,
             ui_utils::get_platform,
-            ui_utils::show_main_window
+            ui_utils::show_main_window,
+            
+            // File operations
+            copy_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

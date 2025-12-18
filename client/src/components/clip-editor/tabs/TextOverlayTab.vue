@@ -390,7 +390,6 @@
       <div
         v-if="showAddTextDialog"
         class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60]"
-        @click.self="showAddTextDialog = false"
       >
         <div class="bg-zinc-900 rounded-xl border border-white/10 w-full max-w-sm mx-4 overflow-hidden">
           <div class="flex items-center justify-between px-4 py-3 border-b border-white/10">
@@ -432,7 +431,6 @@
       <div
         v-if="showSavePresetDialog"
         class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60]"
-        @click.self="showSavePresetDialog = false"
       >
         <div class="bg-zinc-900 rounded-xl border border-white/10 w-full max-w-sm mx-4 overflow-hidden">
           <div class="flex items-center justify-between px-4 py-3 border-b border-white/10">
@@ -484,7 +482,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-  import { Plus, Type, ChevronDown, Trash2, Move, Pencil, X } from 'lucide-vue-next';
+  import { Plus, Type, ChevronDown, Trash2, Pencil, X } from 'lucide-vue-next';
   import type { TextOverlay, TextOverlayStyle } from '@/types';
   import type { CustomSubtitlePreset } from '@/services/database';
   import {
@@ -549,7 +547,7 @@
     return [...baseFontOptions, ...customFontNames];
   });
 
-  const quickStylePresets = [
+  const _quickStylePresets = [
     { id: 'title', name: 'Title', description: 'Large centered' },
     { id: 'lower-third', name: 'Lower Third', description: 'With background' },
     { id: 'caption', name: 'Caption', description: 'Subtitle style' },
@@ -567,7 +565,7 @@
     { value: 'bounce', label: 'Bounce' },
   ] as const;
 
-  const quickPositions = [
+  const _quickPositions = [
     { id: 'top-left', label: 'TL', x: 15, y: 15 },
     { id: 'top-center', label: 'Top', x: 50, y: 15 },
     { id: 'top-right', label: 'TR', x: 85, y: 15 },
@@ -724,7 +722,7 @@
     emit('updateText', selectedOverlayId.value!, { perRatioConfigs });
   }
 
-  function setQuickPosition(x: number, y: number) {
+  function _setQuickPosition(x: number, y: number) {
     if (!selectedOverlay.value) return;
     const ratio = props.previewAspectRatio;
     const overlay = selectedOverlay.value;
@@ -743,7 +741,7 @@
     emit('updateText', selectedOverlayId.value!, { perRatioConfigs });
   }
 
-  function isNearPosition(overlay: TextOverlay, x: number, y: number): boolean {
+  function _isNearPosition(overlay: TextOverlay, x: number, y: number): boolean {
     const threshold = 10;
     const position = getPositionForRatio(overlay);
     return Math.abs(position.x - x) < threshold && Math.abs(position.y - y) < threshold;
@@ -772,7 +770,7 @@
     }
   }
 
-  function applyQuickPreset(preset: { id: string; name: string }) {
+  function _applyQuickPreset(preset: { id: string; name: string }) {
     if (!selectedOverlay.value) return;
 
     const style = { ...defaultStyle };
@@ -804,7 +802,7 @@
     emit('updateText', selectedOverlayId.value!, { style });
   }
 
-  function applyCustomPreset(preset: CustomSubtitlePreset) {
+  function _applyCustomPreset(preset: CustomSubtitlePreset) {
     if (!selectedOverlay.value) return;
 
     const subtitleSettings = customPresetToSettings(preset);
@@ -843,7 +841,7 @@
     emit('updateText', selectedOverlayId.value!, { style });
   }
 
-  function saveCurrentAsPreset() {
+  function _saveCurrentAsPreset() {
     if (!selectedOverlay.value) return;
     showSavePresetDialog.value = true;
     newPresetName.value = '';

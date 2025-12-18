@@ -1,5 +1,17 @@
 // Re-export core functionality
-export { initDatabase, getDatabase, timestamp, generateId } from './database/core';
+export {
+  initDatabase,
+  getDatabase,
+  timestamp,
+  generateId,
+  // User context management
+  setCurrentUserId,
+  getCurrentUserId,
+  clearCurrentUserId,
+  requireCurrentUserId,
+  getUserIdCondition,
+  getUserIdParams,
+} from './database/core';
 
 // Re-export types
 export type {
@@ -74,6 +86,7 @@ export {
   getClipSegmentsByVersionId,
   updateClipSegment,
   splitClipSegment,
+  insertClipSegment,
   deleteClipSegment,
   realignClipSegment,
 } from './database/clip-segments';
@@ -421,3 +434,33 @@ export {
   type VideoEditorEffectRecord,
   type FullVideoEditorEdit,
 } from './database/video-editor-edits';
+
+// Organization assets exports
+export {
+  ensureOrganizationAssetColumns,
+  // Intro/Outro
+  createOrganizationIntroOutro,
+  getOrganizationIntroOutros,
+  getAllOrganizationIntroOutros,
+  getIntroOutroByServerId,
+  // Watermark
+  createOrganizationWatermark,
+  getOrganizationWatermarks,
+  getAllOrganizationWatermarks,
+  getWatermarkByServerId,
+  // Audio
+  createOrganizationAudioAsset,
+  getOrganizationAudioAssets,
+  getAllOrganizationAudioAssets,
+  getAudioAssetByServerId,
+  // Image
+  createOrganizationImageAsset,
+  getOrganizationImageAssets,
+  getAllOrganizationImageAssets,
+  getImageAssetByServerId,
+  // Sync helpers
+  getLocalOrgAssetServerIds,
+  deleteAssetsForRemovedOrganizations,
+  deleteOrgAssetByServerId,
+  updateAssetSyncStatus,
+} from './database/organization-assets';

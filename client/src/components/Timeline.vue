@@ -754,6 +754,8 @@
     hideClip,
     hideAllClips,
     isClipVisible,
+    toggleAddClipMode,
+    openCreateClipDialog,
   });
 
   // formatDuration is now imported from timelineUtils

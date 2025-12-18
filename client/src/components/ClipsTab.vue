@@ -43,15 +43,26 @@
         </button>
       </div>
 
-      <!-- Detect Button (when not detecting and has clips) -->
+      <!-- Detect Button (when not detecting and has clips) - Only show if AI is allowed -->
       <button
-        v-else-if="clips.length > 0"
+        v-else-if="clips.length > 0 && isAIAllowed"
         @click="handleDetectClips"
         class="group flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-muted-foreground/80 hover:text-foreground bg-white/[0.03] hover:bg-white/[0.06] rounded-lg transition-all border border-white/[0.06] hover:border-white/[0.1]"
         title="Run clip detection again"
       >
         <Sparkles class="h-3 w-3 group-hover:text-violet-400 transition-colors" />
         Detect
+      </button>
+
+      <!-- Add Clip Button (when AI is not allowed and has clips) -->
+      <button
+        v-else-if="clips.length > 0 && !isAIAllowed"
+        @click="handleAddClip"
+        class="group flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-muted-foreground/80 hover:text-foreground bg-white/[0.03] hover:bg-white/[0.06] rounded-lg transition-all border border-white/[0.06] hover:border-white/[0.1]"
+        title="Manually add a new clip"
+      >
+        <Plus class="h-3 w-3 group-hover:text-emerald-400 transition-colors" />
+        Add Clip
       </button>
     </div>
 
@@ -470,17 +481,39 @@
             </div>
 
             <h4 class="text-sm font-semibold text-foreground mb-2">No Clips Yet</h4>
-            <p class="text-xs text-muted-foreground/80 leading-relaxed mb-6 max-w-[200px]">
-              Start detecting clips from your video using AI-powered analysis
-            </p>
-            <button
-              @click="handleDetectClips"
-              class="group inline-flex items-center gap-2 px-5 py-2.5 text-xs font-medium text-white bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 rounded-lg transition-all duration-200 shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 hover:scale-[1.02] active:scale-[0.98]"
-              title="Detect Clips"
-            >
-              <Sparkles class="h-3.5 w-3.5" />
-              Detect Clips
-            </button>
+
+            <!-- AI Allowed: Show Detect Clips -->
+            <template v-if="isAIAllowed">
+              <p class="text-xs text-muted-foreground/80 leading-relaxed mb-6 max-w-[200px]">
+                Start detecting clips from your video using AI-powered analysis
+              </p>
+              <button
+                @click="handleDetectClips"
+                class="group inline-flex items-center gap-2 px-5 py-2.5 text-xs font-medium text-white bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 rounded-lg transition-all duration-200 shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 hover:scale-[1.02] active:scale-[0.98]"
+                title="Detect Clips"
+              >
+                <Sparkles class="h-3.5 w-3.5" />
+                Detect Clips
+              </button>
+            </template>
+
+            <!-- AI Not Allowed: Show Add Clip -->
+            <template v-else>
+              <p class="text-xs text-muted-foreground/80 leading-relaxed mb-6 max-w-[200px]">
+                Mark sections of your video as clips manually
+              </p>
+              <button
+                @click="handleAddClip"
+                class="group inline-flex items-center gap-2 px-5 py-2.5 text-xs font-medium text-white bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 rounded-lg transition-all duration-200 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30 hover:scale-[1.02] active:scale-[0.98]"
+                title="Add Clip Manually"
+              >
+                <Plus class="h-3.5 w-3.5" />
+                Add Clip
+              </button>
+              <p class="text-[10px] text-muted-foreground/60 mt-3 max-w-[180px]">
+                AI detection is disabled by your organization
+              </p>
+            </template>
           </div>
         </div>
       </div>
@@ -528,9 +561,12 @@
     Sparkles,
     Edit3,
     MoreVertical,
+    Plus,
   } from 'lucide-vue-next';
-  import ClipBuildSettingsDialog, { type BuildSettings } from './ClipBuildSettingsDialog.vue';
+  import { useAIPermission } from '@/composables/useAIPermission';
+  import ClipBuildSettingsDialog, { type BuildSettings, type IntroOutroItem } from './ClipBuildSettingsDialog.vue';
   import type { SubtitleSettings, WatermarkSettings, IntroOutroRef } from '@/types';
+  import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
   import type { AnalyzeSpeakersResponse } from '@/services/speaker-detection-api';
   import type { FramingStrategy as DbFramingStrategy, ParsedStrategyData } from '@/services/database/speaker-detection';
 
@@ -736,7 +772,11 @@
     scrollToTimeline: [];
     refreshClips: [];
     editClip: [clipId: string];
+    addClip: [];
   }>();
+
+  // AI Permission check
+  const { isAIAllowed } = useAIPermission();
 
   // State
   const hoveredClipId = ref<string | null>(null);
@@ -1343,6 +1383,10 @@
 
   function handleCancelDetection() {
     emit('cancelDetection');
+  }
+
+  function handleAddClip() {
+    emit('addClip');
   }
 
   async function handleCancelBuild(clipId: string) {
@@ -2045,7 +2089,7 @@
         for (const [ratio, config] of Object.entries(props.subtitleSettings.perRatioConfigs)) {
           editorOverrides[ratio] = {
             fontSize: config.fontSize,
-            positionPercentage: config.position.y, // Use Y position as the vertical position percentage
+            positionPercentage: config.position?.y ?? config.positionPercentage, // Use Y position as the vertical position percentage
             maxWidth: config.maxWidth,
           };
         }
@@ -2055,6 +2099,58 @@
           ...editorOverrides,
         };
         console.log('[ClipsTab] Merged subtitle overrides from clip editor:', finalSubtitleOverrides);
+      }
+
+      // Handle org assets: download on-demand if selected intro/outro is an org asset
+      let introPath = settings.intro?.file_path || null;
+      let outroPath = settings.outro?.file_path || null;
+
+      // Download org intro if needed
+      if (settings.intro?.isOrgAsset && settings.intro.serverId) {
+        console.log('[ClipsTab] Downloading org intro asset on-demand:', settings.intro.name);
+        const introResult = await ensureAssetDownloaded({
+          id: settings.intro.serverId,
+          name: settings.intro.name,
+          asset_type: 'intro',
+          url: settings.intro.serverUrl || settings.intro.file_path,
+          organization_id: Number(settings.intro.organization_id),
+          organization_name: settings.intro.organization_name || undefined,
+          duration: settings.intro.duration || undefined,
+          thumbnail_url: settings.intro.thumbnail_path || undefined,
+          inserted_at: settings.intro.created_at,
+          updated_at: settings.intro.updated_at,
+        } as ServerOrganizationAsset);
+
+        if (introResult.success && introResult.filePath) {
+          introPath = introResult.filePath;
+          console.log('[ClipsTab] Org intro downloaded to:', introPath);
+        } else {
+          throw new Error(`Failed to download intro asset: ${introResult.error || 'Unknown error'}`);
+        }
+      }
+
+      // Download org outro if needed
+      if (settings.outro?.isOrgAsset && settings.outro.serverId) {
+        console.log('[ClipsTab] Downloading org outro asset on-demand:', settings.outro.name);
+        const outroResult = await ensureAssetDownloaded({
+          id: settings.outro.serverId,
+          name: settings.outro.name,
+          asset_type: 'outro',
+          url: settings.outro.serverUrl || settings.outro.file_path,
+          organization_id: Number(settings.outro.organization_id),
+          organization_name: settings.outro.organization_name || undefined,
+          duration: settings.outro.duration || undefined,
+          thumbnail_url: settings.outro.thumbnail_path || undefined,
+          inserted_at: settings.outro.created_at,
+          updated_at: settings.outro.updated_at,
+        } as ServerOrganizationAsset);
+
+        if (outroResult.success && outroResult.filePath) {
+          outroPath = outroResult.filePath;
+          console.log('[ClipsTab] Org outro downloaded to:', outroPath);
+        } else {
+          throw new Error(`Failed to download outro asset: ${outroResult.error || 'Unknown error'}`);
+        }
       }
 
       await invoke('build_clip_from_segments', {
@@ -2075,9 +2171,9 @@
         runNumber: clip.run_number || null,
         buildNumber: buildNumber,
         buildId: buildId,
-        introPath: settings.intro?.file_path || null,
+        introPath: introPath,
         introDuration: settings.intro?.duration || null,
-        outroPath: settings.outro?.file_path || null,
+        outroPath: outroPath,
         outroDuration: settings.outro?.duration || null,
         watermarkSettings: watermarkSettings,
         audioSettings: audioSettings,

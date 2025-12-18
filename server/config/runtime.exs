@@ -7,6 +7,95 @@ import Config
 # any compile-time configuration in here, as it won't be applied.
 # The block below contains prod specific runtime configuration.
 
+# Load .env file if it exists (for local development)
+env_file = Path.join(File.cwd!(), ".env")
+if File.exists?(env_file) do
+  try do
+    env_vars = Dotenvy.source!(env_file)
+    Enum.each(env_vars, fn {key, value} -> System.put_env(key, value) end)
+  rescue
+    _ -> :ok
+  end
+end
+
+# Google OAuth configuration (all environments)
+google_client_id = System.get_env("GOOGLE_CLIENT_ID")
+google_client_secret = System.get_env("GOOGLE_CLIENT_SECRET")
+
+if google_client_id && google_client_secret do
+  config :ueberauth, Ueberauth.Strategy.Google.OAuth,
+    client_id: google_client_id,
+    client_secret: google_client_secret
+end
+
+# Stripe configuration (all environments)
+stripe_secret_key = System.get_env("STRIPE_SECRET_KEY")
+stripe_webhook_secret = System.get_env("STRIPE_WEBHOOK_SECRET")
+
+if stripe_secret_key do
+  config :stripity_stripe,
+    api_key: stripe_secret_key
+end
+
+# Store webhook secret in application config for access in controllers
+config :clippster_server, :stripe,
+  webhook_secret: stripe_webhook_secret,
+  success_url: System.get_env("STRIPE_SUCCESS_URL") || "http://localhost:48276/stripe-success",
+  cancel_url: System.get_env("STRIPE_CANCEL_URL") || "http://localhost:48276/stripe-cancel"
+
+# Resend email configuration (all environments)
+resend_api_key = System.get_env("RESEND_API_KEY")
+
+if resend_api_key do
+  config :clippster_server, ClippsterServer.Mailer,
+    adapter: Resend.Swoosh.Adapter,
+    api_key: resend_api_key
+end
+
+# Email auth configuration
+config :clippster_server, :email_auth,
+  from_email: System.get_env("EMAIL_FROM") || "noreply@clippster.app",
+  app_name: "Clippster",
+  verification_url_base: System.get_env("APP_URL") || "http://localhost:4000"
+
+# Cloudflare R2 storage configuration (for organization assets)
+r2_account_id = System.get_env("R2_ACCOUNT_ID")
+
+config :clippster_server, :r2,
+  account_id: r2_account_id,
+  access_key_id: System.get_env("R2_ACCESS_KEY_ID"),
+  secret_access_key: System.get_env("R2_SECRET_ACCESS_KEY"),
+  bucket_name: System.get_env("R2_BUCKET_NAME") || "clippster-org-assets",
+  public_url: System.get_env("R2_PUBLIC_URL")
+
+# ExAws configuration for Cloudflare R2 with proper TLS settings
+# Hackney needs specific SSL options to work with Cloudflare
+if r2_account_id do
+  r2_host = String.to_charlist("#{r2_account_id}.r2.cloudflarestorage.com")
+  
+  config :ex_aws, :hackney_opts,
+    follow_redirect: true,
+    connect_timeout: 60_000,
+    recv_timeout: 60_000,
+    # TLS settings for Cloudflare R2
+    ssl_options: [
+      # Use TLS 1.2 for broad compatibility (works on Windows)
+      versions: [:"tlsv1.2"],
+      # Server Name Indication - CRITICAL for Cloudflare
+      server_name_indication: r2_host,
+      # Use CA certificates from certifi for proper certificate validation
+      cacertfile: :certifi.cacertfile(),
+      # Enable proper certificate verification
+      verify: :verify_peer,
+      # Certificate chain verification depth
+      depth: 3,
+      # Proper hostname verification for OTP 21+
+      customize_hostname_check: [
+        match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+      ]
+    ]
+end
+
 # ## Using releases
 #
 # If you use `mix release`, you need to explicitly enable the server

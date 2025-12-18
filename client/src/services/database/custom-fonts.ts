@@ -1,4 +1,4 @@
-import { getDatabase, timestamp, generateId } from './core';
+import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 
 export interface CustomFont {
   id: string;
@@ -22,11 +22,12 @@ export async function createCustomFont(
   const db = await getDatabase();
   const id = generateId();
   const now = timestamp();
+  const userId = getCurrentUserId();
 
   await db.execute(
-    `INSERT INTO custom_fonts (id, name, file_name, file_path, file_type, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [id, name, fileName, filePath, fileType, now, now]
+    `INSERT INTO custom_fonts (id, name, file_name, file_path, file_type, user_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, name, fileName, filePath, fileType, userId, now, now]
   );
 
   return id;
@@ -37,10 +38,18 @@ export async function createCustomFont(
  */
 export async function getAllCustomFonts(): Promise<CustomFont[]> {
   const db = await getDatabase();
-  const fonts = await db.select<CustomFont[]>(
-    'SELECT * FROM custom_fonts ORDER BY name ASC'
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    return await db.select<CustomFont[]>(
+      'SELECT * FROM custom_fonts WHERE user_id IS NULL ORDER BY name ASC'
+    );
+  }
+
+  return await db.select<CustomFont[]>(
+    'SELECT * FROM custom_fonts WHERE user_id = ? OR user_id IS NULL ORDER BY name ASC',
+    [userId]
   );
-  return fonts;
 }
 
 /**
@@ -48,10 +57,7 @@ export async function getAllCustomFonts(): Promise<CustomFont[]> {
  */
 export async function getCustomFontById(id: string): Promise<CustomFont | null> {
   const db = await getDatabase();
-  const fonts = await db.select<CustomFont[]>(
-    'SELECT * FROM custom_fonts WHERE id = ?',
-    [id]
-  );
+  const fonts = await db.select<CustomFont[]>('SELECT * FROM custom_fonts WHERE id = ?', [id]);
   return fonts[0] || null;
 }
 
@@ -69,9 +75,9 @@ export async function deleteCustomFont(id: string): Promise<void> {
 export async function updateCustomFontName(id: string, name: string): Promise<void> {
   const db = await getDatabase();
   const now = timestamp();
-  await db.execute(
-    'UPDATE custom_fonts SET name = ?, updated_at = ? WHERE id = ?',
-    [name, now, id]
-  );
+  await db.execute('UPDATE custom_fonts SET name = ?, updated_at = ? WHERE id = ?', [
+    name,
+    now,
+    id,
+  ]);
 }
-

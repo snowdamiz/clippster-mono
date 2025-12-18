@@ -1,11 +1,7 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div
-        v-if="modelValue"
-        class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
-        @click.self="close"
-      >
+      <div v-if="modelValue" class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50">
         <Transition name="dialog" appear>
           <div
             class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-sm sm:max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden max-h-[90vh] overflow-y-auto"
@@ -90,6 +86,54 @@
                 </div>
               </div>
 
+              <!-- Credit Source Selector (shown when user has org credits) -->
+              <div v-if="showCreditSourceSelector" class="mb-4 sm:mb-5">
+                <label class="block text-xs sm:text-sm font-medium text-zinc-300 mb-1.5 sm:mb-2">Pay with</label>
+                <div class="space-y-2">
+                  <button
+                    v-for="option in creditSourceOptions"
+                    :key="option.type + (option.organizationId || '')"
+                    @click="option.type === 'personal' ? selectPersonal() : selectOrganization(option.organizationId!)"
+                    class="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-left flex items-center gap-3 transition-all text-sm border"
+                    :class="[
+                      selectedSource === option.type &&
+                      (option.type === 'personal' || selectedOrganizationId === option.organizationId)
+                        ? 'bg-violet-500/20 border-violet-500/50 text-white'
+                        : 'bg-zinc-900/80 border-zinc-800 text-zinc-300 hover:border-zinc-700 hover:text-white',
+                    ]"
+                  >
+                    <div
+                      class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                      :class="option.type === 'personal' ? 'bg-zinc-800' : 'bg-violet-500/20'"
+                    >
+                      <User v-if="option.type === 'personal'" class="h-4 w-4 text-zinc-400" />
+                      <Building2 v-else class="h-4 w-4 text-violet-400" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="font-medium truncate">{{ option.label }}</div>
+                      <div class="text-xs text-zinc-500">
+                        {{
+                          option.hoursRemaining === -1
+                            ? 'Unlimited'
+                            : `${option.hoursRemaining.toFixed(2)} hrs remaining`
+                        }}
+                      </div>
+                    </div>
+                    <div
+                      v-if="
+                        selectedSource === option.type &&
+                        (option.type === 'personal' || selectedOrganizationId === option.organizationId)
+                      "
+                      class="w-5 h-5 rounded-full bg-violet-500 flex items-center justify-center flex-shrink-0"
+                    >
+                      <svg class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
               <!-- Credit Information -->
               <div class="mb-4 sm:mb-5 p-3 sm:p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg sm:rounded-xl">
                 <div class="flex items-start gap-2 sm:gap-3">
@@ -148,8 +192,8 @@
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-  import { ChevronDown, Info, Loader2, Sparkles } from 'lucide-vue-next';
-  import { useCreditBalance } from '@/composables/useCreditBalance';
+  import { ChevronDown, Info, Loader2, Sparkles, Building2, User } from 'lucide-vue-next';
+  import { useCreditSource } from '@/composables/useCreditSource';
   import { useAuthStore } from '@/stores/auth';
   import { getAllPrompts } from '@/services/database';
 
@@ -173,7 +217,7 @@
 
   const emit = defineEmits<{
     'update:modelValue': [value: boolean];
-    confirm: [promptId: string, promptContent: string];
+    confirm: [promptId: string, promptContent: string, organizationId: number | null];
   }>();
 
   const showPromptDropdown = ref(false);
@@ -186,10 +230,27 @@
 
   const authStore = useAuthStore();
 
-  // Use credit balance composable
-  const { loading: loadingCredits, error: creditError, hoursRemaining, isAdmin, fetchBalance } = useCreditBalance();
+  // Use credit source composable (includes balance + org allocations)
+  const {
+    loading: loadingCredits,
+    selectedSource,
+    selectedOrganizationId,
+    creditSourceOptions,
+    showCreditSourceSelector,
+    selectedOption,
+    selectedSourceHoursRemaining,
+    organizationIdForApi,
+    fetchBalance,
+    hasEnoughCredits,
+    selectPersonal,
+    selectOrganization,
+    reset: resetCreditSource,
+  } = useCreditSource();
 
-  // Computed credit information
+  // Check if user is admin (has unlimited credits)
+  const isAdmin = computed(() => selectedSourceHoursRemaining.value === Infinity);
+
+  // Computed credit information based on selected source
   const creditInfo = computed(() => {
     if (isAdmin.value) {
       return 'Free (Admin Account)';
@@ -199,32 +260,24 @@
       return 'Loading credit information...';
     }
 
-    if (creditError.value) {
-      return 'Failed to load credit information';
-    }
-
-    if (hoursRemaining.value === null) {
-      return 'Loading credit information...';
-    }
-
     const hoursToCharge = effectiveDuration.value / 3600; // Convert seconds to hours
     // If already transcribed, charge 0.75 credits per hour, otherwise 1.0
     const rate = props.isTranscribed ? 0.75 : 1.0;
     const creditsToCharge = hoursToCharge * rate;
 
-    if (hoursRemaining.value === 0) {
-      return `No credits remaining. This operation requires ${creditsToCharge.toFixed(2)} credits.`;
+    const remaining = selectedSourceHoursRemaining.value;
+    const sourceName =
+      selectedOption.value?.type === 'organization' ? selectedOption.value.organizationName : 'Personal';
+
+    if (remaining === 0) {
+      return `No credits remaining in ${sourceName}. This operation requires ${creditsToCharge.toFixed(2)} credits.`;
     }
 
-    if (hoursRemaining.value === 'unlimited') {
-      return `This operation will charge ${creditsToCharge.toFixed(2)} credits. You have unlimited credits remaining.`;
+    if (remaining < creditsToCharge) {
+      return `Insufficient credits in ${sourceName}. You have ${remaining.toFixed(2)} credits, but this operation requires ${creditsToCharge.toFixed(2)} credits.`;
     }
 
-    if (hoursRemaining.value < creditsToCharge) {
-      return `Insufficient credits. You have ${hoursRemaining.value.toFixed(2)} credits, but this operation requires ${creditsToCharge.toFixed(2)} credits.`;
-    }
-
-    return `This operation will charge ${creditsToCharge.toFixed(2)} credits. You have ${hoursRemaining.value.toFixed(2)} credits remaining.`;
+    return `This operation will charge ${creditsToCharge.toFixed(2)} credits from ${sourceName}. You have ${remaining.toFixed(2)} credits remaining.`;
   });
 
   // Close dropdown when clicking outside
@@ -277,13 +330,13 @@
     }
 
     // Check credits for non-admin users
-    if (!isAdmin.value && hoursRemaining.value !== null && !creditError.value) {
+    if (!isAdmin.value) {
       const hoursToCharge = effectiveDuration.value / 3600;
       // If already transcribed, charge 0.75 credits per hour, otherwise 1.0
       const rate = props.isTranscribed ? 0.75 : 1.0;
       const creditsToCharge = hoursToCharge * rate;
 
-      if (hoursRemaining.value !== 'unlimited' && hoursRemaining.value < creditsToCharge) {
+      if (!hasEnoughCredits(creditsToCharge)) {
         error.value = 'Insufficient credits for this operation';
         return;
       }
@@ -293,7 +346,8 @@
     error.value = '';
 
     try {
-      emit('confirm', selectedPromptId.value, selectedPromptContent.value);
+      // Include organizationId if using org credits
+      emit('confirm', selectedPromptId.value, selectedPromptContent.value, organizationIdForApi.value);
       emit('update:modelValue', false);
     } catch (err) {
       console.error('Detection failed:', err);
@@ -339,6 +393,9 @@
         selectedPromptName.value = '';
         selectedPromptContent.value = '';
         showPromptDropdown.value = false;
+
+        // Reset credit source selection
+        resetCreditSource();
 
         loadUserCredits();
         loadPrompts();

@@ -107,6 +107,8 @@ pub struct WatermarkPositionSettings {
     pub y: u32,
     pub opacity: u32,
     pub scale: u32,
+    #[serde(default)]
+    pub is_full_frame_overlay: Option<bool>, // When true, position at 0,0 with 100% scale
 }
 
 // Per-aspect-ratio watermark configuration
@@ -231,6 +233,7 @@ impl VideoFilterSettings {
     
     /// Build FFmpeg video filter string for color grading
     /// Returns None if no filters are active
+    #[allow(dead_code)]
     pub fn to_ffmpeg_filter(&self) -> Option<String> {
         if !self.is_active() {
             return None;
@@ -959,6 +962,8 @@ pub struct ClipWatermarkRatioConfig {
     pub position: StickerPosition, // Reuse StickerPosition (x/y percentage)
     pub scale: f64,   // percentage of video width
     pub opacity: f64, // 0-100
+    #[serde(default)]
+    pub is_full_frame_overlay: Option<bool>, // When true, position at 0,0 with 100% scale
 }
 
 /// Clip watermark overlay settings for export (from clip editor)

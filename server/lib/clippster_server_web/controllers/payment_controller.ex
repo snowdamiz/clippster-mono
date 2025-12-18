@@ -48,8 +48,11 @@ defmodule ClippsterServerWeb.PaymentController do
 
   @doc """
   Get user's credit balance (requires authentication)
+  Returns personal credits, organization allocations, and total available.
   """
   def get_balance(conn, _params) do
+    alias ClippsterServer.Organizations
+
     with {:ok, user_id} <- get_user_id_from_token(conn),
          {:ok, claims} <- get_token_claims(conn) do
       # Check if user is admin - admins have unlimited credits
@@ -59,17 +62,31 @@ defmodule ClippsterServerWeb.PaymentController do
           balance: %{
             hours_remaining: :unlimited,
             hours_used: Decimal.new(0)
-          }
+          },
+          organization_allocations: [],
+          total_available: :unlimited
         })
       else
-        # Regular user - get actual balance
-        {:ok, balance} = Credits.get_user_balance(user_id)
+        # Regular user - get personal balance
+        {:ok, personal_balance} = Credits.get_user_balance(user_id)
+
+        # Get organization allocations
+        org_allocations = get_organization_allocations(user_id)
+
+        # Calculate total available
+        org_total = Enum.reduce(org_allocations, 0.0, fn alloc, acc ->
+          acc + alloc.hours_remaining
+        end)
+        total_available = Decimal.to_float(personal_balance.hours_remaining) + org_total
+
         json(conn, %{
           success: true,
           balance: %{
-            hours_remaining: Decimal.to_float(balance.hours_remaining),
-            hours_used: Decimal.to_float(balance.hours_used)
-          }
+            hours_remaining: Decimal.to_float(personal_balance.hours_remaining),
+            hours_used: Decimal.to_float(personal_balance.hours_used)
+          },
+          organization_allocations: org_allocations,
+          total_available: total_available
         })
       end
     else
@@ -83,6 +100,37 @@ defmodule ClippsterServerWeb.PaymentController do
         |> put_status(500)
         |> json(%{success: false, error: to_string(reason)})
     end
+  end
+
+  # Get all organization allocations for a user
+  defp get_organization_allocations(user_id) do
+    alias ClippsterServer.Organizations
+
+    Organizations.list_user_organizations(user_id)
+    |> Enum.map(fn %{organization: org, role: role} ->
+      allocation = Organizations.get_member_allocation(org.id, user_id)
+
+      if allocation do
+        %{
+          organization_id: org.id,
+          organization_name: org.name,
+          role: role,
+          hours_allocated: Decimal.to_float(allocation.hours_allocated),
+          hours_used: Decimal.to_float(allocation.hours_used),
+          hours_remaining: Decimal.to_float(Organizations.MemberCreditAllocation.remaining_hours(allocation))
+        }
+      else
+        %{
+          organization_id: org.id,
+          organization_name: org.name,
+          role: role,
+          hours_allocated: 0.0,
+          hours_used: 0.0,
+          hours_remaining: 0.0
+        }
+      end
+    end)
+    |> Enum.filter(fn alloc -> alloc.hours_allocated > 0 or alloc.role in ["owner", "admin"] end)
   end
 
   @doc """
@@ -135,21 +183,26 @@ defmodule ClippsterServerWeb.PaymentController do
   @doc """
   Confirm payment - verifies on-chain transaction and credits user
   SERVER validates all pricing - frontend values are ignored
+  
+  Note: from_address is provided by the client (the wallet that signed the transaction).
+  This allows users who signed up with email to still make payments with any Phantom wallet.
   """
   def confirm_payment(conn, %{
         "tx_signature" => tx_signature,
-        "pack_type" => pack_type
+        "pack_type" => pack_type,
+        "from_address" => from_address
       }) do
     with {:ok, user_id} <- get_user_id_from_token(conn),
-         {:ok, user} <- get_user(user_id),
+         {:ok, _user} <- get_user(user_id),
          {:ok, pack_info} <- validate_pack_type(pack_type),
          {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
       
       # SERVER calculates expected SOL amount - cannot be manipulated by frontend
       expected_sol_amount = pack_info.usd / sol_usd_rate
       
-      # Verify the on-chain transaction with server-calculated amount
-      case verify_transaction(tx_signature, user.wallet_address, expected_sol_amount) do
+      # Verify the on-chain transaction using the wallet address provided by the client
+      # This is the wallet that actually signed and sent the transaction via Phantom
+      case verify_transaction(tx_signature, from_address, expected_sol_amount) do
         {:ok, :verified} ->
           process_confirmed_payment(conn, tx_signature, pack_type, pack_info, expected_sol_amount, sol_usd_rate, user_id)
         
@@ -178,6 +231,198 @@ defmodule ClippsterServerWeb.PaymentController do
         conn
         |> put_status(503)
         |> json(%{success: false, error: "Price service unavailable"})
+    end
+  end
+  
+  # Fallback for requests without from_address (backward compatibility)
+  def confirm_payment(conn, %{"tx_signature" => _tx_signature, "pack_type" => _pack_type} = _params) do
+    conn
+    |> put_status(400)
+    |> json(%{success: false, error: "Missing required field: from_address. Please update your client."})
+  end
+
+  # ============================================================================
+  # Organization Payment Endpoints (Crypto/SOL)
+  # ============================================================================
+
+  @doc """
+  Generate a payment quote for organization credit purchase.
+  Only organization admins can request quotes for org purchases.
+  """
+  def get_org_quote(conn, %{"organization_id" => org_id, "pack_type" => pack_type}) do
+    alias ClippsterServer.Organizations
+
+    with {:ok, user_id} <- get_user_id_from_token(conn),
+         {:ok, org} <- get_organization(org_id),
+         true <- Organizations.is_admin?(org.id, user_id),
+         {:ok, pack_info} <- validate_pack_type(pack_type),
+         {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
+      
+      # Server calculates exact SOL amount
+      sol_amount = pack_info.usd / sol_usd_rate
+      company_wallet = Credits.get_company_wallet_address()
+      
+      # Generate quote with 5 minute expiry
+      quote = %{
+        pack_type: pack_type,
+        hours: pack_info.hours,
+        amount_usd: pack_info.usd,
+        amount_sol: sol_amount,
+        sol_usd_rate: sol_usd_rate,
+        company_wallet: company_wallet,
+        organization_id: org.id,
+        organization_name: org.name,
+        expires_at: DateTime.utc_now() |> DateTime.add(300, :second) |> DateTime.to_iso8601(),
+        quote_id: generate_quote_id()
+      }
+
+      json(conn, %{
+        success: true,
+        quote: quote
+      })
+    else
+      {:error, :unauthorized} ->
+        conn
+        |> put_status(401)
+        |> json(%{success: false, error: "Unauthorized"})
+
+      {:error, :organization_not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Organization not found"})
+
+      false ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Only organization admins can purchase credits"})
+
+      {:error, :invalid_pack} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invalid pack type"})
+
+      {:error, _reason} ->
+        conn
+        |> put_status(503)
+        |> json(%{success: false, error: "Price service unavailable"})
+    end
+  end
+
+  @doc """
+  Confirm organization crypto payment - verifies on-chain transaction and adds to org pool.
+  SERVER validates all pricing - frontend values are ignored.
+  """
+  def confirm_org_payment(conn, %{
+        "organization_id" => org_id,
+        "tx_signature" => tx_signature,
+        "pack_type" => pack_type,
+        "from_address" => from_address
+      }) do
+    alias ClippsterServer.Organizations
+
+    with {:ok, user_id} <- get_user_id_from_token(conn),
+         {:ok, org} <- get_organization(org_id),
+         true <- Organizations.is_admin?(org.id, user_id),
+         {:ok, pack_info} <- validate_pack_type(pack_type),
+         {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
+      
+      # SERVER calculates expected SOL amount - cannot be manipulated by frontend
+      expected_sol_amount = pack_info.usd / sol_usd_rate
+      
+      # Verify the on-chain transaction
+      case verify_transaction(tx_signature, from_address, expected_sol_amount) do
+        {:ok, :verified} ->
+          process_confirmed_org_payment(conn, org, pack_type, pack_info, tx_signature, expected_sol_amount, sol_usd_rate, user_id)
+        
+        {:error, reason} ->
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: "Payment verification failed: #{inspect(reason)}"})
+      end
+    else
+      {:error, :unauthorized} ->
+        conn
+        |> put_status(401)
+        |> json(%{success: false, error: "Unauthorized"})
+
+      {:error, :organization_not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Organization not found"})
+
+      false ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Only organization admins can purchase credits"})
+
+      {:error, :invalid_pack} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invalid pack type"})
+
+      {:error, _reason} ->
+        conn
+        |> put_status(503)
+        |> json(%{success: false, error: "Price service unavailable"})
+    end
+  end
+
+  defp process_confirmed_org_payment(conn, org, pack_type, pack_info, tx_signature, sol_amount, sol_usd_rate, user_id) do
+    alias ClippsterServer.Organizations
+
+    # Record the transaction and add credits to organization pool
+    case Organizations.create_org_credit_transaction_and_add_credits(
+      org.id,
+      user_id,
+      pack_type,
+      pack_info.hours,
+      pack_info.usd,
+      sol_amount,
+      sol_usd_rate,
+      tx_signature,
+      "solana"
+    ) do
+      {:ok, %{org_credit: org_credit, transaction: transaction}} ->
+        json(conn, %{
+          success: true,
+          message: "#{pack_info.hours} hours added to organization pool",
+          transaction: %{
+            id: transaction.id,
+            hours_purchased: Decimal.to_float(transaction.hours_purchased),
+            status: transaction.status
+          },
+          balance: %{
+            hours_remaining: Decimal.to_float(org_credit.hours_remaining),
+            hours_used: Decimal.to_float(org_credit.hours_used)
+          }
+        })
+
+      {:error, :already_processed} ->
+        # Transaction already exists, return success but no new credits
+        {:ok, org_credit} = Organizations.get_organization_credits(org.id)
+        json(conn, %{
+          success: true,
+          message: "Transaction already processed",
+          balance: %{
+            hours_remaining: Decimal.to_float(org_credit.hours_remaining),
+            hours_used: Decimal.to_float(org_credit.hours_used)
+          }
+        })
+
+      {:error, reason} ->
+        conn
+        |> put_status(500)
+        |> json(%{success: false, error: "Failed to add org credits: #{inspect(reason)}"})
+    end
+  end
+
+  defp get_organization(org_id) do
+    alias ClippsterServer.Organizations
+
+    org_id = if is_binary(org_id), do: String.to_integer(org_id), else: org_id
+    case Organizations.get_organization(org_id) do
+      nil -> {:error, :organization_not_found}
+      org -> {:ok, org}
     end
   end
 

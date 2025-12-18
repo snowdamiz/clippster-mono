@@ -4,8 +4,42 @@ use std::sync::Mutex;
 // Cache for storage paths to avoid repeated initialization
 static STORAGE_PATHS: Mutex<Option<StoragePaths>> = Mutex::new(None);
 
-/// Get the base storage directory for Clippster based on the OS
-pub fn get_storage_base_dir() -> Result<PathBuf, String> {
+// Current user ID for per-user storage paths
+static CURRENT_USER_ID: Mutex<Option<i64>> = Mutex::new(None);
+
+/// Set the current user ID for per-user storage paths.
+/// Call this after successful authentication.
+#[tauri::command]
+pub fn set_current_user_id(user_id: Option<i64>) -> Result<(), String> {
+    let mut current = CURRENT_USER_ID.lock().unwrap();
+    let old_user_id = *current;
+    *current = user_id;
+    
+    // Clear the cached storage paths when user changes
+    if old_user_id != user_id {
+        let mut cache = STORAGE_PATHS.lock().unwrap();
+        *cache = None;
+        println!("[Storage] User ID changed from {:?} to {:?}, clearing storage cache", old_user_id, user_id);
+    }
+    
+    println!("[Storage] Current user ID set to: {:?}", user_id);
+    Ok(())
+}
+
+/// Get the current user ID
+pub fn get_current_user_id() -> Option<i64> {
+    let current = CURRENT_USER_ID.lock().unwrap();
+    *current
+}
+
+/// Clear the current user ID on logout
+#[tauri::command]
+pub fn clear_current_user_id() -> Result<(), String> {
+    set_current_user_id(None)
+}
+
+/// Get the base storage directory for Clippster based on the OS (app-level, not user-specific)
+pub fn get_app_storage_dir() -> Result<PathBuf, String> {
     let base_dir = if cfg!(target_os = "windows") {
         // Windows: %LOCALAPPDATA%\Clippster
         std::env::var("LOCALAPPDATA")
@@ -29,6 +63,22 @@ pub fn get_storage_base_dir() -> Result<PathBuf, String> {
     };
 
     Ok(base_dir)
+}
+
+/// Get the base storage directory for the current user.
+/// If a user is logged in, returns user-specific path (e.g., Clippster/users/123/).
+/// If no user is logged in, returns app-level path (for backwards compatibility).
+pub fn get_storage_base_dir() -> Result<PathBuf, String> {
+    let app_dir = get_app_storage_dir()?;
+    
+    // Check if we have a current user
+    if let Some(user_id) = get_current_user_id() {
+        // User-specific storage: Clippster/users/{user_id}/
+        Ok(app_dir.join("users").join(user_id.to_string()))
+    } else {
+        // No user logged in - use app-level storage (backwards compatibility)
+        Ok(app_dir)
+    }
 }
 
 /// Tauri command to delete a video file from the filesystem
@@ -1308,4 +1358,74 @@ pub fn delete_audio_file(file_path: String) -> Result<(), String> {
 
     println!("[Rust] Audio deleted: {}", file_path);
     Ok(())
+}
+
+/// Tauri command to save an organization asset file from binary data.
+/// Used when downloading organization assets from the server.
+#[tauri::command]
+pub fn save_org_asset_file(
+    data: Vec<u8>,
+    filename: String,
+    asset_type: String,
+    organization_id: String,
+) -> Result<String, String> {
+    use std::fs;
+    use std::path::Path;
+
+    // Get base storage paths
+    let paths = init_storage_dirs()?;
+
+    // Determine the target directory based on asset type
+    let base_asset_dir = match asset_type.as_str() {
+        "intros" => paths.intros.clone(),
+        "outros" => paths.outros.clone(),
+        "watermarks" => paths.watermarks.clone(),
+        "audio" => paths.audio.clone(),
+        "images" => paths.images.clone(),
+        "thumbnails" => paths.thumbnails.clone(),
+        _ => paths.assets.clone(),
+    };
+
+    // Create organization-specific subdirectory
+    let org_dir = base_asset_dir.join("org").join(&organization_id);
+    fs::create_dir_all(&org_dir)
+        .map_err(|e| format!("Failed to create organization asset directory: {}", e))?;
+
+    // Sanitize filename
+    let safe_filename = sanitize_filename(&filename);
+    
+    // Generate unique filename with timestamp to avoid collisions
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    
+    let final_filename = format!("{}_{}", timestamp, safe_filename);
+    let destination_path = org_dir.join(&final_filename);
+
+    // Write the file
+    fs::write(&destination_path, &data)
+        .map_err(|e| format!("Failed to write organization asset file: {}", e))?;
+
+    let dest_str = destination_path.to_string_lossy().to_string();
+    println!(
+        "[Rust] Organization asset saved: {} -> {}",
+        filename, dest_str
+    );
+
+    Ok(dest_str)
+}
+
+/// Helper function to sanitize filenames for safe storage
+fn sanitize_filename(filename: &str) -> String {
+    filename
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }

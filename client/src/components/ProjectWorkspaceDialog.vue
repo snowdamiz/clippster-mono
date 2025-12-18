@@ -1,10 +1,6 @@
 <template>
   <Teleport to="body">
-    <div
-      v-if="modelValue"
-      class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
-      @click.self="close"
-    >
+    <div v-if="modelValue" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
       <div
         ref="dialogElementRef"
         class="bg-card rounded-md w-full h-full border border-border shadow-2xl"
@@ -66,6 +62,7 @@
                 @canPlay="onCanPlay"
                 @retryLoad="loadVideoForProject"
                 @videoElementReady="onVideoElementReady"
+                @watermarkIdChange="onWatermarkIdChange"
               />
               <!-- Video Controls Bar -->
               <VideoControls
@@ -113,6 +110,7 @@
                 @seekVideo="onSeekVideo"
                 @watermarkSettingsChanged="onWatermarkSettingsChanged"
                 @editClip="onEditClip"
+                @addClip="onAddClip"
               />
             </div>
           </div>
@@ -184,6 +182,12 @@
     :clip-end-time="clipEditorEndTime"
     :clip-title="clipEditorTitle"
     :clip-segments="clipEditorSegments"
+    :creator-watermark-id="watermarkSettings.enabled ? watermarkSettings.watermarkId : null"
+    :creator-watermark-settings="
+      watermarkSettings.enabled && watermarkSettings.perRatioSettings
+        ? JSON.stringify(watermarkSettings.perRatioSettings)
+        : null
+    "
     @save="onClipEditorSave"
   />
 </template>
@@ -238,6 +242,7 @@
     getClipsWithVersionsByProjectId,
     deleteClip,
     getWatermarkImage,
+    getWatermarkByServerId,
     getCreatorProfileByProjectId,
     getIntroOutroById,
     getProject,
@@ -259,6 +264,7 @@
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useVideoFocalPoint } from '@/composables/useVideoFocalPoint';
   import { useTranscriptData } from '@/composables/useTranscriptData';
+  import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
   import { useAuthStore } from '@/stores/auth';
   import { getRawVideosByProjectId } from '@/services/database';
@@ -340,6 +346,67 @@
 
   // Current watermark image data (for VideoPlayer)
   const currentWatermarkData = ref<{ dataUrl: string; width?: number; height?: number } | null>(null);
+  const currentWatermarkId = ref<string | null>(null);
+
+  // Helper to normalize aspect ratio string
+  const normalizedAspectRatio = computed(() => {
+    const { width, height } = selectedAspectRatio.value;
+    const ratio = width / height;
+    if (Math.abs(ratio - 16 / 9) < 0.01) return '16:9';
+    if (Math.abs(ratio - 9 / 16) < 0.01) return '9:16';
+    if (Math.abs(ratio - 1) < 0.01) return '1:1';
+    if (Math.abs(ratio - 4 / 5) < 0.01) return '4:5';
+    return `${width}:${height}`;
+  });
+
+  // Watch for settings or aspect ratio changes to load correct watermark data
+  watch(
+    [watermarkSettings, normalizedAspectRatio],
+    async ([settings, aspectRatioStr]) => {
+      if (!settings.enabled) {
+        currentWatermarkData.value = null;
+        currentWatermarkId.value = null;
+        return;
+      }
+
+      let targetId = settings.watermarkId;
+      const perRatio = settings.perRatioSettings;
+
+      if (perRatio && perRatio[aspectRatioStr]) {
+        const config = perRatio[aspectRatioStr];
+        if (config && config.watermarkId) {
+          targetId = config.watermarkId;
+        }
+      }
+
+      if (targetId !== currentWatermarkId.value) {
+        if (targetId) {
+          try {
+            const watermark = await getWatermarkImage(targetId);
+            if (watermark) {
+              const dataUrl = await invoke<string>('read_file_as_data_url', {
+                filePath: watermark.file_path,
+              });
+              currentWatermarkData.value = {
+                dataUrl,
+                width: watermark.width || undefined,
+                height: watermark.height || undefined,
+              };
+              currentWatermarkId.value = targetId;
+            }
+          } catch (e) {
+            console.error('[ProjectWorkspaceDialog] Failed to load watermark', e);
+            currentWatermarkData.value = null;
+            currentWatermarkId.value = null;
+          }
+        } else {
+          currentWatermarkData.value = null;
+          currentWatermarkId.value = null;
+        }
+      }
+    },
+    { deep: true, immediate: true }
+  );
 
   // Creator profile associated with this project (for preconfiguring settings)
   const creatorProfile = ref<CreatorProfileWithLinks | null>(null);
@@ -551,6 +618,16 @@
     showDetectConfirmDialog.value = true;
   }
 
+  /**
+   * Handle add clip request (for non-AI users).
+   * Activates the add clip mode on the Timeline so users can manually select a time range.
+   */
+  function onAddClip() {
+    if (timelineRef.value && timelineRef.value.toggleAddClipMode) {
+      timelineRef.value.toggleAddClipMode();
+    }
+  }
+
   async function onCancelDetection() {
     console.log('[ProjectWorkspaceDialog] Cancelling clip detection...');
 
@@ -586,7 +663,11 @@
     showSuccessToast('Detection Cancelled', 'Clip detection was cancelled. Any charged credits have been refunded.');
   }
 
-  async function onDetectClipsConfirmed(_promptId: string, promptContent: string) {
+  async function onDetectClipsConfirmed(
+    _promptId: string,
+    promptContent: string,
+    organizationId: number | null = null
+  ) {
     if (!props.project) {
       console.error('[ProjectWorkspaceDialog] No project available');
       return;
@@ -663,6 +744,7 @@
           chunkDurationMinutes: 15,
           overlapSeconds: 30,
           forceReprocess: false,
+          organizationId: organizationId,
         });
 
         if (result.success) {
@@ -1056,56 +1138,240 @@
     return currentlyPlayingClipId.value;
   }
 
+  // Helper to measure watermark dimensions from file path
+  async function measureWatermarkDimensions(
+    filePath: string
+  ): Promise<{ width: number | null; height: number | null }> {
+    try {
+      const dataUrl = await invoke<string>('read_file_as_data_url', { filePath });
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          resolve({ width: img.naturalWidth, height: img.naturalHeight });
+        };
+        img.onerror = () => {
+          resolve({ width: null, height: null });
+        };
+        img.src = dataUrl;
+      });
+    } catch {
+      return { width: null, height: null };
+    }
+  }
+
   // Handle watermark settings change
   async function onWatermarkSettingsChanged(settings: WatermarkSettings) {
     watermarkSettings.value = settings;
 
     // Load watermark data if we have a watermark ID
     if (settings.watermarkId && settings.enabled) {
-      try {
-        const watermark = await getWatermarkImage(settings.watermarkId);
-        if (watermark) {
-          // Load the image as data URL
-          const dataUrl = await invoke<string>('read_file_as_data_url', {
-            filePath: watermark.file_path,
-          });
-
-          // If width/height missing in DB, measure from the actual file so full-frame detection works
-          const measured =
-            !watermark.width || !watermark.height
-              ? await measureWatermarkDimensions(watermark.file_path)
-              : { width: watermark.width, height: watermark.height };
-
-          currentWatermarkData.value = {
-            dataUrl,
-            width: measured.width || watermark.width || undefined,
-            height: measured.height || watermark.height || undefined,
-          };
-        }
-      } catch (error) {
-        console.error('[ProjectWorkspaceDialog] Failed to load watermark:', error);
-        currentWatermarkData.value = null;
-      }
+      await loadWatermarkDataById(settings.watermarkId);
     } else {
       currentWatermarkData.value = null;
+    }
+  }
+
+  // Load watermark data by ID (used for initial load and when aspect ratio changes)
+  async function loadWatermarkDataById(watermarkId: string | null) {
+    console.log('[ProjectWorkspaceDialog] loadWatermarkDataById called with:', watermarkId);
+    if (!watermarkId) {
+      currentWatermarkData.value = null;
+      return;
+    }
+
+    try {
+      // Check if this is an organization asset (ID format: org-asset-{serverId})
+      if (watermarkId.startsWith('org-asset-')) {
+        const serverId = parseInt(watermarkId.replace('org-asset-', ''), 10);
+        console.log('[ProjectWorkspaceDialog] Loading org watermark with serverId:', serverId);
+        if (!isNaN(serverId)) {
+          // First try to load from local cache
+          const localWatermark = await getWatermarkByServerId(serverId);
+          if (localWatermark) {
+            console.log('[ProjectWorkspaceDialog] Found cached org watermark:', localWatermark.name);
+            const dataUrl = await invoke<string>('read_file_as_data_url', {
+              filePath: localWatermark.file_path,
+            });
+            const measured =
+              !localWatermark.width || !localWatermark.height
+                ? await measureWatermarkDimensions(localWatermark.file_path)
+                : { width: localWatermark.width, height: localWatermark.height };
+            currentWatermarkData.value = {
+              dataUrl,
+              width: measured.width || localWatermark.width || undefined,
+              height: measured.height || localWatermark.height || undefined,
+            };
+            console.log('[ProjectWorkspaceDialog] Org watermark loaded from cache');
+            return;
+          }
+
+          // Not cached locally - stream directly from server URL
+          console.log('[ProjectWorkspaceDialog] Org watermark not cached, fetching URL from server...');
+          try {
+            const serverResponse = await getUserOrganizationAssets();
+            if (serverResponse.success && serverResponse.assets) {
+              const serverAsset = serverResponse.assets.find((a) => a.id === serverId && a.asset_type === 'watermark');
+              if (serverAsset && serverAsset.url) {
+                console.log('[ProjectWorkspaceDialog] Using server URL directly for watermark:', serverAsset.name);
+                // Use the server URL directly - measure dimensions from the loaded image
+                const dimensions = await new Promise<{ width: number; height: number } | null>((resolve) => {
+                  const img = new Image();
+                  img.crossOrigin = 'anonymous';
+                  img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+                  img.onerror = () => resolve(null);
+                  img.src = serverAsset.url;
+                });
+                currentWatermarkData.value = {
+                  dataUrl: serverAsset.url,
+                  width: dimensions?.width,
+                  height: dimensions?.height,
+                };
+                console.log('[ProjectWorkspaceDialog] Org watermark streaming from URL:', {
+                  width: dimensions?.width,
+                  height: dimensions?.height,
+                });
+                return;
+              } else {
+                console.log('[ProjectWorkspaceDialog] Server asset not found for serverId:', serverId);
+              }
+            }
+          } catch (fetchError) {
+            console.error('[ProjectWorkspaceDialog] Failed to fetch org assets:', fetchError);
+          }
+        }
+        currentWatermarkData.value = null;
+        return;
+      }
+
+      // Regular watermark lookup by ID
+      const watermark = await getWatermarkImage(watermarkId);
+      console.log(
+        '[ProjectWorkspaceDialog] getWatermarkImage result:',
+        watermark ? { id: watermark.id, name: watermark.name, file_path: watermark.file_path } : null
+      );
+
+      if (watermark) {
+        // Load the image as data URL
+        const dataUrl = await invoke<string>('read_file_as_data_url', {
+          filePath: watermark.file_path,
+        });
+        console.log('[ProjectWorkspaceDialog] Loaded watermark as data URL, length:', dataUrl?.length);
+
+        // If width/height missing in DB, measure from the actual file so full-frame detection works
+        const measured =
+          !watermark.width || !watermark.height
+            ? await measureWatermarkDimensions(watermark.file_path)
+            : { width: watermark.width, height: watermark.height };
+
+        currentWatermarkData.value = {
+          dataUrl,
+          width: measured.width || watermark.width || undefined,
+          height: measured.height || watermark.height || undefined,
+        };
+        console.log('[ProjectWorkspaceDialog] Watermark data loaded:', {
+          width: currentWatermarkData.value.width,
+          height: currentWatermarkData.value.height,
+        });
+      } else {
+        console.log('[ProjectWorkspaceDialog] No watermark found in database for ID:', watermarkId);
+        currentWatermarkData.value = null;
+      }
+    } catch (error) {
+      console.error('[ProjectWorkspaceDialog] Failed to load watermark:', error);
+      currentWatermarkData.value = null;
+    }
+  }
+
+  // Handle watermark ID change (when aspect ratio changes and per-ratio settings specify a different watermark)
+  async function onWatermarkIdChange(watermarkId: string | null) {
+    if (watermarkId && watermarkSettings.value?.enabled) {
+      console.log('[ProjectWorkspaceDialog] Loading different watermark for aspect ratio:', watermarkId);
+      await loadWatermarkDataById(watermarkId);
     }
   }
 
   // Load creator profile and apply their default settings
   async function loadCreatorProfileSettings(projectId: string) {
     try {
-      const profile = await findCreatorProfileUpTree(projectId);
-      creatorProfile.value = profile;
+      console.log('[ProjectWorkspaceDialog] Loading creator profile for project:', projectId);
 
       // Reset creator defaults
       creatorDefaultIntro.value = null;
       creatorDefaultOutro.value = null;
 
-      if (profile) {
-        console.log('[ProjectWorkspaceDialog] Found creator profile:', profile.name);
+      // First, check if the project has default_watermark_settings stored directly
+      // This is used when downloading from CreatorProfiles (especially org profiles)
+      const project = await getProject(projectId);
+      if (project?.default_watermark_settings) {
+        console.log('[ProjectWorkspaceDialog] Found project-level watermark settings');
+        try {
+          const storedSettings = JSON.parse(project.default_watermark_settings);
+          if (storedSettings.watermarkId) {
+            console.log('[ProjectWorkspaceDialog] Applying project-level watermark:', storedSettings.watermarkId);
 
-        // Apply watermark settings from creator profile
-        if (profile.watermark_id) {
+            // Parse the per-ratio watermark settings
+            let perRatioSettings = null;
+            let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+            if (storedSettings.watermarkSettings) {
+              try {
+                perRatioSettings =
+                  typeof storedSettings.watermarkSettings === 'string'
+                    ? JSON.parse(storedSettings.watermarkSettings)
+                    : storedSettings.watermarkSettings;
+                // Use 16:9 as the default display position
+                const ratioConfig = perRatioSettings['16:9'];
+                if (ratioConfig?.position) {
+                  defaultPos = ratioConfig.position;
+                }
+              } catch (e) {
+                console.warn('[ProjectWorkspaceDialog] Failed to parse project watermark settings:', e);
+              }
+            }
+
+            const newSettings = {
+              ...watermarkSettings.value,
+              enabled: true,
+              watermarkId: storedSettings.watermarkId,
+              positionX: defaultPos.x,
+              positionY: defaultPos.y,
+              opacity: defaultPos.opacity,
+              scale: defaultPos.scale,
+              perRatioSettings: perRatioSettings,
+            };
+
+            console.log('[ProjectWorkspaceDialog] Applying project-level watermark settings:', {
+              watermarkId: newSettings.watermarkId,
+              defaultPos,
+              hasPerRatioSettings: !!perRatioSettings,
+            });
+
+            await nextTick();
+            if (mediaPanelRef.value) {
+              mediaPanelRef.value.setWatermarkSettings(newSettings);
+            }
+            await onWatermarkSettingsChanged(newSettings);
+
+            // Still try to load creator profile for intro/outro even if we have watermark from project
+          }
+        } catch (e) {
+          console.warn('[ProjectWorkspaceDialog] Failed to parse project default_watermark_settings:', e);
+        }
+      }
+
+      // Then try to find the creator profile (for intro/outro and watermark if not already set)
+      const profile = await getCreatorProfileByProjectId(projectId);
+      creatorProfile.value = profile;
+
+      if (profile) {
+        console.log(
+          '[ProjectWorkspaceDialog] Found creator profile:',
+          profile.name,
+          'watermark_id:',
+          profile.watermark_id
+        );
+
+        // Apply watermark settings from creator profile (if not already applied from project)
+        if (profile.watermark_id && !watermarkSettings.value.enabled) {
           console.log('[ProjectWorkspaceDialog] Applying creator watermark:', profile.watermark_id);
 
           // Parse the creator's per-ratio watermark settings
@@ -1115,7 +1381,11 @@
             try {
               perRatioSettings = JSON.parse(profile.watermark_settings);
               // Use 16:9 as the default display position
-              defaultPos = perRatioSettings['16:9'] || defaultPos;
+              // The structure is { '16:9': { watermarkId, position: { x, y, opacity, scale } } }
+              const ratioConfig = perRatioSettings['16:9'];
+              if (ratioConfig?.position) {
+                defaultPos = ratioConfig.position;
+              }
             } catch (e) {
               console.warn('[ProjectWorkspaceDialog] Failed to parse creator watermark settings:', e);
             }
@@ -1168,6 +1438,8 @@
             console.log('[ProjectWorkspaceDialog] Loaded creator default outro:', outro.name);
           }
         }
+      } else {
+        console.log('[ProjectWorkspaceDialog] No creator profile found for project:', projectId);
       }
     } catch (error) {
       console.error('[ProjectWorkspaceDialog] Failed to load creator profile:', error);

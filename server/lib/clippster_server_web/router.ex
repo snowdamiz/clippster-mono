@@ -51,22 +51,47 @@ defmodule ClippsterServerWeb.Router do
     post "/auth/challenge", AuthController, :request_challenge
     post "/auth/verify", AuthController, :verify_signature
 
+    # Google OAuth routes
+    get "/auth/google", AuthController, :google_request
+    get "/auth/google/callback", AuthController, :google_callback
+
+    # Email authentication routes
+    post "/auth/email/register", EmailAuthController, :register
+    post "/auth/email/verify-otp", EmailAuthController, :verify_otp
+    get "/auth/email/verify/:token", EmailAuthController, :verify_token
+    post "/auth/email/login", EmailAuthController, :login
+    post "/auth/email/resend-verification", EmailAuthController, :resend_verification
+    post "/auth/email/forgot-password", EmailAuthController, :forgot_password
+    post "/auth/email/reset-password", EmailAuthController, :reset_password
+
     # Payment and credit routes
     get "/pricing", PaymentController, :get_pricing
     get "/credits/balance", PaymentController, :get_balance
     post "/payments/quote", PaymentController, :get_quote
     post "/payments/confirm", PaymentController, :confirm_payment
 
+    # Stripe payment routes (webhook is public, no auth needed)
+    post "/stripe/webhook", StripeController, :webhook
+
     # Metadata routes
     get "/metadata/:mint_id", MetadataController, :fetch
 
     # Kick routes
     get "/kick/channels/:channel_slug/videos", KickController, :get_clips
+
+    # Organization invitation (public - for viewing invitation details)
+    get "/invitations/:token", OrganizationController, :get_invitation
+
+    # Public settings/feature flags
+    get "/settings/feature-flags", SettingsController, :get_feature_flags
   end
 
   # Protected routes (require authentication)
   scope "/api", ClippsterServerWeb do
     pipe_through :api_auth
+
+    # Get current user info (refreshes user data from server)
+    get "/auth/me", AuthController, :me
 
     post "/clips/detect", ClipsController, :detect
     post "/clips/detect-chunked", ClipsController, :detect_chunked
@@ -81,8 +106,79 @@ defmodule ClippsterServerWeb.Router do
     post "/jobs/:job_id/cancel", ProcessingJobController, :cancel
     post "/jobs/cancel-by-project", ProcessingJobController, :cancel_by_project
 
+    # Stripe checkout session creation (requires auth)
+    post "/payments/stripe/create-session", StripeController, :create_checkout_session
+
     # Bug report creation (requires authentication)
     post "/bug-reports", BugReportsController, :create
+
+    # OAuth account linking routes
+    post "/auth/link/google", AuthController, :link_google_account
+
+    # Account type selection (for new users)
+    post "/account/type", OrganizationController, :set_account_type
+
+    # Organization management
+    resources "/organizations", OrganizationController, only: [:index, :create, :show, :update, :delete]
+
+    # Organization members
+    get "/organizations/:organization_id/members", OrganizationController, :list_members
+    put "/organizations/:organization_id/members/:user_id", OrganizationController, :update_member
+    patch "/organizations/:organization_id/members/:user_id/account", OrganizationController, :update_member_account
+    delete "/organizations/:organization_id/members/:user_id", OrganizationController, :remove_member
+
+    # Organization invitations
+    get "/organizations/:organization_id/invitations", OrganizationController, :list_invitations
+    post "/organizations/:organization_id/invitations", OrganizationController, :create_invitation
+    post "/organizations/:organization_id/invitations/:id/resend", OrganizationController, :resend_invitation
+    delete "/organizations/:organization_id/invitations/:id", OrganizationController, :cancel_invitation
+    post "/invitations/:token/accept", OrganizationController, :accept_invitation
+
+    # Create member account directly (admin creates account for user)
+    post "/organizations/:organization_id/create-member", OrganizationController, :create_member_account
+
+    # Organization credits
+    get "/organizations/:organization_id/credits", OrganizationController, :get_credits
+    post "/organizations/:organization_id/credits/allocate", OrganizationController, :allocate_credits
+    get "/organizations/:organization_id/transactions", OrganizationController, :get_transactions
+
+    # Organization payments (Stripe)
+    post "/organizations/:organization_id/payments/stripe/create-session", StripeController, :create_org_checkout_session
+
+    # Organization payments (Crypto/SOL)
+    post "/organizations/:organization_id/payments/quote", PaymentController, :get_org_quote
+    post "/organizations/:organization_id/payments/confirm", PaymentController, :confirm_org_payment
+
+    # Organization assets
+    get "/organizations/:organization_id/assets", OrganizationAssetController, :index
+    get "/organizations/:organization_id/assets/:id", OrganizationAssetController, :show
+    post "/organizations/:organization_id/assets", OrganizationAssetController, :create
+    put "/organizations/:organization_id/assets/:id", OrganizationAssetController, :update
+    delete "/organizations/:organization_id/assets/:id", OrganizationAssetController, :delete
+
+    # User's organization assets (for sync)
+    get "/user/organization-assets", OrganizationAssetController, :user_assets
+
+    # Organization creator profiles
+    get "/organizations/:organization_id/creator-profiles", OrganizationCreatorProfileController, :index
+    get "/organizations/:organization_id/creator-profiles/:id", OrganizationCreatorProfileController, :show
+    post "/organizations/:organization_id/creator-profiles", OrganizationCreatorProfileController, :create
+    put "/organizations/:organization_id/creator-profiles/:id", OrganizationCreatorProfileController, :update
+    delete "/organizations/:organization_id/creator-profiles/:id", OrganizationCreatorProfileController, :delete
+    post "/organizations/:organization_id/creator-profiles/:id/image", OrganizationCreatorProfileController, :upload_image
+
+    # Creator profile platform links
+    post "/organizations/:organization_id/creator-profiles/:profile_id/platform-links", OrganizationCreatorProfileController, :add_platform_link
+    put "/organizations/:organization_id/creator-profiles/:profile_id/platform-links/:link_id", OrganizationCreatorProfileController, :update_platform_link
+    delete "/organizations/:organization_id/creator-profiles/:profile_id/platform-links/:link_id", OrganizationCreatorProfileController, :delete_platform_link
+
+    # Creator profile assignments
+    get "/organizations/:organization_id/creator-profiles/:profile_id/assignments", OrganizationCreatorProfileController, :list_assignments
+    post "/organizations/:organization_id/creator-profiles/:profile_id/assignments", OrganizationCreatorProfileController, :create_assignments
+    delete "/organizations/:organization_id/creator-profiles/:profile_id/assignments/:user_id", OrganizationCreatorProfileController, :delete_assignment
+
+    # User's assigned creator profiles
+    get "/user/assigned-creator-profiles", OrganizationCreatorProfileController, :user_assigned_profiles
   end
 
   # Admin-only routes
@@ -94,10 +190,20 @@ defmodule ClippsterServerWeb.Router do
     post "/admin/users/:user_id/promote", AdminController, :promote_user
     put "/admin/users/:user_id/credits", AdminController, :update_user_credits
 
+    # Admin organization management
+    get "/admin/organizations", AdminController, :list_organizations
+    get "/admin/organizations/:organization_id/credits", AdminController, :get_org_credits
+    post "/admin/organizations/:organization_id/credits/add", AdminController, :add_org_credits
+    put "/admin/organizations/:organization_id/credits", AdminController, :set_org_credits
+
     # Admin bug report management
     get "/admin/bug-reports", BugReportsController, :index
     put "/admin/bug-reports/:id", BugReportsController, :update
     delete "/admin/bug-reports/:id", BugReportsController, :delete
+
+    # Admin settings management
+    get "/admin/settings", AdminController, :get_settings
+    put "/admin/settings/:key", AdminController, :update_setting
   end
 
   

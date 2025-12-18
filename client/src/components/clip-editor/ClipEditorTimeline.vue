@@ -1,27 +1,42 @@
 <template>
   <div class="bg-gradient-to-t from-[#0a0a0a]/50 to-[#0a0a0a]/20 transition-all duration-300 ease-in-out">
-    <div class="pt-3 px-4 pb-3 flex flex-col max-h-[40vh]">
+    <div class="pt-6 px-6 pb-6 flex flex-col max-h-[55vh]">
       <!-- Timeline Header -->
-      <div class="flex items-center justify-between mb-2 pr-1 flex-shrink-0">
-        <div class="flex items-center gap-2">
+      <div class="flex items-center justify-between mb-4 pr-2 flex-shrink-0">
+        <div class="flex items-center gap-4">
           <!-- Timeline Toolbar -->
           <!-- Cut/Split Tool -->
-          <div class="flex items-center gap-0.5 bg-black/40 backdrop-blur-sm rounded-lg p-1 border border-white/[0.04]">
+          <div class="flex items-center gap-1 bg-black/40 backdrop-blur-sm rounded-lg p-1.5 border border-white/[0.04]">
             <!-- Cut Button -->
             <button
-              @click="toggleCutTool"
-              :class="[
-                'p-1 rounded-md transition-all duration-150',
-                isCutToolActive
-                  ? 'text-orange-400 bg-orange-500/20 shadow-sm shadow-orange-500/10'
-                  : 'text-white/50 hover:text-orange-400 hover:bg-orange-500/10',
-              ]"
-              :title="isCutToolActive ? 'Cut tool active (X to deactivate)' : 'Split segment (X key)'"
+              @click="performCutAtPlayhead"
+              class="p-2 rounded-md transition-all duration-150 text-white/50 hover:text-orange-400 hover:bg-orange-500/10"
+              title="Split at playhead (X key)"
             >
-              <Scissors :size="12" />
+              <Scissors :size="16" />
             </button>
             <!-- Separator -->
-            <div class="w-px h-4 bg-white/10 mx-0.5"></div>
+            <div class="w-px h-6 bg-white/10 mx-1"></div>
+            <!-- Undo Button -->
+            <button
+              @click="emit('undo')"
+              :disabled="!canUndo"
+              class="p-2 rounded-md transition-all duration-150 text-white/50 hover:text-blue-400 hover:bg-blue-500/10 disabled:text-white/20 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              title="Undo (Ctrl+Z)"
+            >
+              <Undo2 :size="16" />
+            </button>
+            <!-- Redo Button -->
+            <button
+              @click="emit('redo')"
+              :disabled="!canRedo"
+              class="p-2 rounded-md transition-all duration-150 text-white/50 hover:text-blue-400 hover:bg-blue-500/10 disabled:text-white/20 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              title="Redo (Ctrl+Y)"
+            >
+              <Redo2 :size="16" />
+            </button>
+            <!-- Separator -->
+            <div class="w-px h-6 bg-white/10 mx-1"></div>
             <!-- Reverse Button -->
             <button
               @mousedown="startContinuousSeeking('reverse')"
@@ -30,14 +45,14 @@
               @touchstart="startContinuousSeeking('reverse')"
               @touchend="stopContinuousSeeking"
               :class="[
-                'p-1 rounded-md transition-colors duration-150',
+                'p-2 rounded-md transition-colors duration-150',
                 isSeeking && seekDirection === 'reverse'
                   ? 'text-amber-400 bg-amber-500/20'
                   : 'text-white/50 hover:text-amber-400 hover:bg-amber-500/10',
               ]"
               :title="'Seek backward (← arrow key)'"
             >
-              <Rewind :size="12" />
+              <Rewind :size="16" />
             </button>
             <!-- Fast Forward Button -->
             <button
@@ -47,37 +62,37 @@
               @touchstart="startContinuousSeeking('forward')"
               @touchend="stopContinuousSeeking"
               :class="[
-                'p-1 rounded-md transition-colors duration-150',
+                'p-2 rounded-md transition-colors duration-150',
                 isSeeking && seekDirection === 'forward'
                   ? 'text-amber-400 bg-amber-500/20'
                   : 'text-white/50 hover:text-amber-400 hover:bg-amber-500/10',
               ]"
               :title="'Seek forward (→ arrow key)'"
             >
-              <FastForward :size="12" />
+              <FastForward :size="16" />
             </button>
           </div>
           <!-- Zoom Controls -->
           <div
-            class="flex items-center gap-1 bg-black/40 backdrop-blur-sm rounded-lg px-1.5 py-1 border border-white/[0.04]"
+            class="flex items-center gap-1.5 bg-black/40 backdrop-blur-sm rounded-lg px-2 py-1.5 border border-white/[0.04]"
           >
             <button
               @click="zoomOut"
-              :disabled="zoomLevel <= 1"
+              :disabled="zoomLevel <= MIN_ZOOM"
               class="p-1 rounded-md transition-colors duration-150 text-white/50 hover:text-white hover:bg-white/10 disabled:text-white/20 disabled:cursor-not-allowed"
               title="Zoom out"
             >
-              <Minus :size="12" />
+              <Minus :size="16" />
             </button>
-            <span class="text-[10px] text-white/60 font-mono tabular-nums min-w-[38px] text-center select-none">
+            <span class="text-sm text-white/60 font-mono tabular-nums min-w-[50px] text-center select-none px-1">
               {{ Math.round(zoomLevel * 100) }}%
             </span>
             <button
               @click="zoomIn"
-              class="p-1 rounded-md transition-colors duration-150 text-white/50 hover:text-white hover:bg-white/10"
+              class="p-1.5 rounded-md transition-colors duration-150 text-white/50 hover:text-white hover:bg-white/10"
               title="Zoom in"
             >
-              <Plus :size="12" />
+              <Plus :size="16" />
             </button>
           </div>
         </div>
@@ -85,11 +100,11 @@
           <!-- Show segment count if multiple segments -->
           <span
             v-if="sortedTrimSegments.length > 1"
-            class="text-[10px] text-violet-400/70 bg-violet-500/10 px-2 py-1 rounded-md"
+            class="text-xs text-violet-400/70 bg-violet-500/10 px-3 py-1.5 rounded-md"
           >
             {{ sortedTrimSegments.length }} segments
           </span>
-          <span class="text-[10px] text-white/40 bg-white/[0.04] px-2 py-1 rounded-md">
+          <span class="text-xs text-white/40 bg-white/[0.04] px-3 py-1.5 rounded-md">
             {{ formatTime(totalDuration) }}
           </span>
         </div>
@@ -177,22 +192,67 @@
                   </div>
                 </div>
               </template>
+
+              <!-- Timeline Markers -->
+              <div
+                v-for="marker in visibleMarkers"
+                :key="marker.id"
+                class="absolute top-0 bottom-0 flex flex-col items-center cursor-pointer z-[60] group"
+                :class="{
+                  'opacity-100': props.selectedMarkerId === marker.id,
+                  'opacity-80 hover:opacity-100': props.selectedMarkerId !== marker.id,
+                }"
+                :style="{ left: `${marker.leftPercent}%`, transform: 'translateX(-50%)' }"
+                @click.stop="emit('markerClick', marker.id)"
+                :title="marker.label || 'Marker'"
+              >
+                <!-- Marker flag icon -->
+                <div
+                  class="w-6 h-6 flex items-center justify-center rounded-full transition-all duration-150"
+                  :class="
+                    props.selectedMarkerId === marker.id
+                      ? 'bg-yellow-500 shadow-lg shadow-yellow-500/50'
+                      : 'bg-yellow-500/80 group-hover:bg-yellow-500'
+                  "
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="white"
+                    stroke="none"
+                  >
+                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                    <line x1="4" y1="22" x2="4" y2="15" stroke="white" stroke-width="2" />
+                  </svg>
+                </div>
+                <!-- Marker line -->
+                <div
+                  class="w-0.5 h-full transition-all duration-150"
+                  :class="
+                    props.selectedMarkerId === marker.id
+                      ? 'bg-yellow-500'
+                      : 'bg-yellow-500/60 group-hover:bg-yellow-500/80'
+                  "
+                ></div>
+              </div>
             </div>
           </div>
 
           <!-- Video Track -->
-          <div class="flex items-center h-12 border-b border-border/20 relative">
+          <div class="flex items-center h-24 border-b border-border/20 relative">
             <div
-              class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
+              class="track-label w-20 h-20 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
             >
-              <div class="font-medium flex items-center gap-1">
-                <Film :size="12" />
-                Video
+              <div class="font-medium flex items-center gap-1.5">
+                <Film :size="14" />
+                <span class="text-sm">Video</span>
               </div>
             </div>
             <div
               ref="videoTrackContentRef"
-              class="flex-1 h-8 relative"
+              class="flex-1 h-20 relative"
               @click="onTrackContentClick"
               @dragover.prevent="onTimelineDragOver"
               @drop.prevent="onTimelineDrop"
@@ -232,14 +292,21 @@
                   @mousedown="isCutToolActive ? onSourceClickForCut($event, source) : onSourceMouseDown($event, source)"
                   @click.stop="!isCutToolActive && onSourceClick($event, source)"
                 >
-                  <!-- Source background gradient -->
-                  <div class="absolute inset-0 bg-gradient-to-r from-violet-900/30 to-indigo-900/20"></div>
+                  <!-- Video thumbnails background (CapCut-style) -->
+                  <div class="absolute inset-0 bg-black flex overflow-hidden">
+                    <!-- Thumbnails will be tiled here -->
+                    <div class="absolute inset-0 bg-gradient-to-r from-violet-900/20 to-indigo-900/10"></div>
+                    <!-- TODO: Add actual video thumbnails here -->
+                    <div class="absolute inset-0 bg-[#1a1a1a] flex items-center justify-center">
+                      <span class="text-xs text-white/30">{{ source.source_name || 'Video' }}</span>
+                    </div>
+                  </div>
 
-                  <!-- Waveform canvas for this video source -->
+                  <!-- Waveform canvas overlay (semi-transparent over thumbnails) -->
                   <canvas
                     :ref="(el) => setSourceWaveformCanvasRef(el, source.id)"
-                    class="absolute inset-0 w-full h-full pointer-events-none"
-                    style="mix-blend-mode: normal; z-index: 5"
+                    class="absolute inset-0 w-full h-full pointer-events-none opacity-60"
+                    style="mix-blend-mode: screen; z-index: 5"
                   ></canvas>
 
                   <!-- Source label -->
@@ -328,13 +395,16 @@
 
               <!-- Clip Mode: Trim Segments -->
               <template v-else>
-                <template v-for="(segmentLayout, index) in segmentLayouts" :key="segmentLayout.segment.id">
+                <template v-for="(segmentLayout, _index) in segmentLayouts" :key="segmentLayout.segment.id">
                   <!-- Segment with waveform -->
                   <div
                     :ref="(el) => setSegmentRef(el, 'trim', segmentLayout.segment.id)"
                     class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group"
                     :class="[
                       getSegmentClasses('trim', segmentLayout.segment.id, segmentLayout.segment.isDeleted),
+                      props.selectedSegmentIds?.has(segmentLayout.segment.id)
+                        ? 'ring-2 ring-blue-400 ring-offset-1 ring-offset-black shadow-lg shadow-blue-400/30'
+                        : '',
                       isCutToolActive && cutHoverInfo?.segmentId === segmentLayout.segment.id
                         ? 'cursor-crosshair z-65 shadow-xl border-2 border-orange-400 ring-2 ring-orange-400/50 ring-offset-1 ring-offset-transparent'
                         : isCutToolActive
@@ -352,14 +422,21 @@
                     "
                     @click.stop="!isCutToolActive && onSegmentClick($event, segmentLayout.segment)"
                   >
-                    <!-- Segment background gradient -->
-                    <div class="absolute inset-0 bg-gradient-to-r from-violet-900/30 to-indigo-900/20"></div>
+                    <!-- Video thumbnails background (CapCut-style) -->
+                    <div class="absolute inset-0 bg-black flex overflow-hidden">
+                      <!-- Thumbnails will be tiled here -->
+                      <div class="absolute inset-0 bg-gradient-to-r from-violet-900/20 to-indigo-900/10"></div>
+                      <!-- TODO: Add actual video thumbnails here -->
+                      <div class="absolute inset-0 bg-[#1a1a1a] flex items-center justify-center">
+                        <span class="text-xs text-white/30">Video Segment</span>
+                      </div>
+                    </div>
 
-                    <!-- Waveform canvas for this segment -->
+                    <!-- Waveform canvas overlay (semi-transparent over thumbnails) -->
                     <canvas
                       :ref="(el) => setWaveformCanvasRef(el, segmentLayout.segment.id)"
-                      class="absolute inset-0 w-full h-full pointer-events-none"
-                      style="mix-blend-mode: normal; z-index: 5"
+                      class="absolute inset-0 w-full h-full pointer-events-none opacity-60"
+                      style="mix-blend-mode: screen; z-index: 5"
                     ></canvas>
 
                     <!-- Segment label (shows effective timeline times) -->
@@ -406,19 +483,19 @@
           <div
             v-for="track in audioTracks"
             :key="track.id"
-            class="flex items-center h-12 border-b border-border/20 relative"
+            class="flex items-center h-16 border-b border-border/20 relative"
           >
             <div
-              class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
+              class="track-label w-20 h-12 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
             >
-              <div class="font-medium flex items-center gap-1 truncate">
-                <Music :size="12" />
-                <span class="truncate max-w-[48px]">{{ track.name }}</span>
+              <div class="font-medium flex items-center gap-1.5 truncate">
+                <Music :size="14" />
+                <span class="truncate max-w-[48px] text-sm">{{ track.name }}</span>
               </div>
             </div>
             <div
               :ref="(el) => setSegmentRef(el, 'audio', track.id)"
-              class="flex-1 h-8 relative"
+              class="flex-1 h-12 relative"
               @click="onTrackContentClick"
             >
               <div class="absolute inset-0 bg-[#1a1a1a]/30 rounded-md cursor-pointer"></div>
@@ -772,6 +849,8 @@
     Scissors,
     Rewind,
     FastForward,
+    Undo2,
+    Redo2,
   } from 'lucide-vue-next';
   import { useAudioWaveform, type WaveformData } from '@/composables/useAudioWaveform';
   import { invoke } from '@tauri-apps/api/core';
@@ -861,6 +940,14 @@
       // Video editor mode props
       editorMode?: boolean;
       videoSources?: VideoEditorSource[];
+      // Undo/Redo props
+      canUndo?: boolean;
+      canRedo?: boolean;
+      // Multi-select props
+      selectedSegmentIds?: Set<string>;
+      // Marker props
+      markers?: Array<{ id: string; time: number; label?: string }>;
+      selectedMarkerId?: string | null;
     }>(),
     {
       audioGainDb: 0,
@@ -870,6 +957,11 @@
       isPlaying: false,
       editorMode: false,
       videoSources: () => [],
+      canUndo: false,
+      canRedo: false,
+      selectedSegmentIds: () => new Set(),
+      markers: () => [],
+      selectedMarkerId: null,
     }
   );
 
@@ -877,10 +969,19 @@
     (e: 'seek', time: number): void;
     (e: 'updateTrimSegment', segmentId: string, startTime: number, endTime: number): void;
     (e: 'splitTrimSegment', segmentId: string, cutTime: number): void;
+    (e: 'deleteTrimSegment', segmentId: string): void;
+    (e: 'undo'): void;
+    (e: 'redo'): void;
+    (e: 'segmentSelect', segmentId: string, modifiers: { shift: boolean; ctrl: boolean }): void;
+    (e: 'markerClick', markerId: string): void;
     (e: 'updateAudioTrack', trackId: string, updates: Partial<AudioTrack>): void;
+    (e: 'deleteAudioTrack', trackId: string): void;
     (e: 'updateTextOverlay', overlayId: string, updates: Partial<TextOverlay>): void;
+    (e: 'deleteTextOverlay', overlayId: string): void;
     (e: 'updateSticker', stickerId: string, updates: Partial<Sticker>): void;
+    (e: 'deleteSticker', stickerId: string): void;
     (e: 'updateWatermark', watermarkId: string, updates: Partial<ClipWatermark>): void;
+    (e: 'deleteWatermark', watermarkId: string): void;
     (e: 'updateEffect', effectId: string, updates: Partial<Effect>): void;
     (e: 'updateFilterSegment', segmentId: string, updates: Partial<FilterSegment>): void;
     // Video editor mode events
@@ -924,12 +1025,15 @@
   const sourceWaveformCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map());
   const sourceWaveformData = ref<Map<string, WaveformData>>(new Map());
   const sourceWaveformLoading = ref<Set<string>>(new Set());
-  const zoomLevel = ref(1);
-  const MIN_ZOOM = 1;
+
+  // CapCut-style zoom: Start more zoomed out, especially for short videos
+  const MIN_ZOOM = 0.2; // Allow zooming out to 20%
+  const zoomLevel = ref(0.5); // Start at 50% zoom by default (CapCut-like)
 
   // Calculate dynamic zoom step based on current zoom level
   // Lower zoom = smaller steps, higher zoom = larger steps
   function getZoomStep(): number {
+    if (zoomLevel.value < 1) return 0.05; // Fine control for zoomed-out views
     if (zoomLevel.value < 2) return 0.1;
     if (zoomLevel.value < 5) return 0.25;
     if (zoomLevel.value < 10) return 0.5;
@@ -946,6 +1050,20 @@
   function zoomOut() {
     const step = getZoomStep();
     zoomLevel.value = Math.max(MIN_ZOOM, zoomLevel.value - step);
+  }
+
+  // Calculate appropriate initial zoom based on video duration (CapCut-style)
+  function calculateInitialZoom(duration: number): number {
+    // For very short videos (< 10s), start zoomed out
+    if (duration < 10) return 0.3;
+    // For short videos (< 30s), start moderately zoomed out
+    if (duration < 30) return 0.4;
+    // For medium videos (< 60s), start at 50%
+    if (duration < 60) return 0.5;
+    // For longer videos, start at 60-80%
+    if (duration < 180) return 0.6;
+    // For very long videos, start at 100% (fill screen)
+    return 1.0;
   }
 
   // Continuous seeking state
@@ -1075,6 +1193,30 @@
     return sortedTrimSegments.value.reduce((sum, seg) => sum + (seg.endTime - seg.startTime), 0);
   });
 
+  // Calculate visible markers with correct positioning
+  const visibleMarkers = computed(() => {
+    if (!props.markers || props.markers.length === 0) return [];
+
+    // Calculate the visible time range
+    const visibleStart = props.clipStart;
+    const visibleEnd = props.clipEnd;
+    const visibleDuration = visibleEnd - visibleStart;
+
+    // Filter and position markers within the visible range
+    return props.markers
+      .filter((marker) => marker.time >= visibleStart && marker.time <= visibleEnd)
+      .map((marker) => {
+        // Calculate position as percentage of visible timeline
+        const relativeTime = marker.time - visibleStart;
+        const leftPercent = (relativeTime / visibleDuration) * 100;
+
+        return {
+          ...marker,
+          leftPercent,
+        };
+      });
+  });
+
   // Calculate total duration including audio tracks (use the longest)
   const totalDuration = computed(() => {
     // Editor mode: use props.duration directly (it's the editorDuration from parent)
@@ -1096,6 +1238,33 @@
     // Fallback to prop duration if nothing else
     return maxDuration > 0 ? maxDuration : props.duration;
   });
+
+  // Track if zoom has been manually adjusted
+  const hasManualZoom = ref(false);
+
+  // Watch for manual zoom changes
+  watch(zoomLevel, (newZoom, oldZoom) => {
+    // If zoom changed and it wasn't from the initial auto-zoom, mark as manual
+    if (oldZoom !== undefined && oldZoom !== 0.5 && newZoom !== oldZoom) {
+      hasManualZoom.value = true;
+    }
+  });
+
+  // Watch totalDuration and set appropriate initial zoom (CapCut-style)
+  watch(
+    totalDuration,
+    (newDuration) => {
+      if (newDuration > 0 && !hasManualZoom.value) {
+        const appropriateZoom = calculateInitialZoom(newDuration);
+        // Only set zoom on initial load, not after manual adjustments
+        zoomLevel.value = appropriateZoom;
+        console.log(
+          `[Timeline] Set initial zoom to ${Math.round(appropriateZoom * 100)}% for ${newDuration.toFixed(1)}s video`
+        );
+      }
+    },
+    { immediate: true }
+  );
 
   // Calculate segment layouts (segments are butted up against each other)
   const segmentLayouts = computed((): SegmentLayout[] => {
@@ -1406,12 +1575,12 @@
     return 1;
   });
 
-  // Calculate height based on number of tracks
-  const calculatedHeight = computed(() => {
+  // Calculate height based on number of tracks (may be used in future)
+  const _calculatedHeight = computed(() => {
     const headerHeight = 44; // Timeline header with toolbar
     const rulerHeight = 32; // Timestamp ruler
-    const videoTrackHeight = 48; // Video track
-    const otherTrackHeight = 48; // Other tracks (audio, text, etc.)
+    const videoTrackHeight = 96; // Video track (CapCut-style - taller for thumbnails)
+    const otherTrackHeight = 64; // Other tracks (audio, text, etc.) - increased for less cramped feel
     const padding = 16; // Bottom padding
 
     const otherTracksCount =
@@ -1464,7 +1633,7 @@
     }
   }
 
-  function setAudioWaveformCanvasRef(el: any, trackId: string) {
+  function _setAudioWaveformCanvasRef(el: any, trackId: string) {
     if (el) {
       audioWaveformCanvasRefs.value.set(trackId, el as HTMLCanvasElement);
     }
@@ -1500,7 +1669,7 @@
     };
   }
 
-  function getAudioSegmentStyle(layout: SegmentLayout, trackId: string): Record<string, string> {
+  function _getAudioSegmentStyle(layout: SegmentLayout, trackId: string): Record<string, string> {
     const colors = colorMap.emerald;
     const isSelected = selectedItemKey.value === `audio_${trackId}`;
 
@@ -1514,7 +1683,7 @@
     };
   }
 
-  function getAudioTrackStyle(track: AudioTrack): Record<string, string> {
+  function _getAudioTrackStyle(track: AudioTrack): Record<string, string> {
     const colors = colorMap.emerald;
     const isSelected = selectedItemKey.value === `audio_${track.id}`;
 
@@ -1547,8 +1716,8 @@
     selectedItemKey.value = `${type}_${id}`;
   }
 
-  // Check if a track type has an active/selected item
-  function isTrackActive(type: ItemType): boolean {
+  // Check if a track type has an active/selected item (may be used in future)
+  function _isTrackActive(type: ItemType): boolean {
     if (!selectedItemKey.value) return false;
     return selectedItemKey.value.startsWith(`${type}_`);
   }
@@ -2000,7 +2169,13 @@
   }
 
   function onSegmentClick(e: MouseEvent, segment: TrimSegment) {
-    // Select the segment
+    // Emit multi-select event with modifier keys
+    emit('segmentSelect', segment.id, {
+      shift: e.shiftKey,
+      ctrl: e.ctrlKey || e.metaKey,
+    });
+
+    // Select the segment (for internal timeline state)
     selectItem('trim', segment.id);
 
     // Also seek to the clicked position within the segment
@@ -2016,20 +2191,81 @@
     emit('seek', Math.max(segment.startTime, Math.min(segment.endTime, time)));
   }
 
-  // Cut tool functions
-  function toggleCutTool() {
-    isCutToolActive.value = !isCutToolActive.value;
+  // Delete selected item
+  function deleteSelectedItem() {
+    if (!selectedItemKey.value) return;
 
-    // Reset cut hover state when deactivating
-    if (!isCutToolActive.value) {
-      cutHoverInfo.value = null;
+    const [type, id] = selectedItemKey.value.split('_');
+
+    if (type === 'trim') {
+      // For trim segments, we need at least one segment remaining
+      if (sortedTrimSegments.value.length <= 1) {
+        console.warn('Cannot delete the last remaining segment');
+        return;
+      }
+      emit('deleteTrimSegment', id);
+    } else if (type === 'audio') {
+      emit('deleteAudioTrack', id);
+    } else if (type === 'text') {
+      emit('deleteTextOverlay', id);
+    } else if (type === 'sticker') {
+      emit('deleteSticker', id);
+    } else if (type === 'watermark') {
+      emit('deleteWatermark', id);
     }
 
-    // Clear selection and hover states when activating
-    if (isCutToolActive.value) {
-      selectedItemKey.value = null;
-      showHoverLine.value = false;
+    // Clear selection after deletion
+    selectedItemKey.value = null;
+  }
+
+  // Cut at playhead (CapCut style)
+  function performCutAtPlayhead() {
+    const currentTime = props.currentTime;
+    console.log('[Timeline] performCutAtPlayhead called at time:', currentTime);
+    console.log('[Timeline] Editor mode:', props.editorMode);
+    console.log('[Timeline] Available segments:', sortedTrimSegments.value);
+
+    // In editor mode, find which source contains the current time
+    if (props.editorMode && props.videoSources) {
+      console.log('[Timeline] Checking video sources:', props.videoSources);
+      for (const source of props.videoSources) {
+        if (currentTime >= source.start_time && currentTime < source.end_time) {
+          // Found the source containing the playhead
+          const cutTime = currentTime - source.start_time;
+          console.log('[Timeline] Found source to cut:', source.id, 'at time:', cutTime);
+          emit('splitSource', source.id, currentTime, cutTime);
+          return;
+        }
+      }
+      console.warn('[Timeline] No source found at current playhead position');
+      return;
     }
+
+    // In clip mode, find which segment contains the current time
+    const segment = sortedTrimSegments.value.find((s) => currentTime >= s.startTime && currentTime < s.endTime);
+
+    console.log('[Timeline] Looking for segment at time:', currentTime, 'Found:', segment);
+
+    if (!segment) {
+      console.warn('[Timeline] No segment found at current playhead position');
+      console.warn(
+        '[Timeline] Current time:',
+        currentTime,
+        'Segments:',
+        sortedTrimSegments.value.map((s) => ({ id: s.id, start: s.startTime, end: s.endTime }))
+      );
+      return;
+    }
+
+    // Don't allow cutting too close to segment edges (minimum 0.1s from each edge)
+    const minDistanceFromEdge = 0.1;
+    if (currentTime - segment.startTime < minDistanceFromEdge || segment.endTime - currentTime < minDistanceFromEdge) {
+      console.warn('[Timeline] Cut position too close to segment edge');
+      return;
+    }
+
+    // Perform the cut at the current time
+    emit('splitTrimSegment', segment.id, currentTime);
   }
 
   function onSegmentHoverForCut(event: MouseEvent, segment: TrimSegment) {
@@ -2079,8 +2315,8 @@
     // Emit the split event with the segment ID and cut time
     emit('splitTrimSegment', segment.id, cutHoverInfo.value.cutTime);
 
-    // Reset cut tool state
-    isCutToolActive.value = false;
+    // Keep cut tool active (like CapCut) - just clear hover info for next cut
+    // User can press X again to deactivate when done
     cutHoverInfo.value = null;
   }
 
@@ -2142,8 +2378,8 @@
     // Emit the split event with source ID, timeline position, and source time
     emit('splitSource', source.id, cutTimelinePosition, cutHoverInfo.value.cutTime);
 
-    // Reset cut tool state
-    isCutToolActive.value = false;
+    // Keep cut tool active (like CapCut) - just clear hover info for next cut
+    // User can press X again to deactivate when done
     cutHoverInfo.value = null;
   }
 
@@ -2865,12 +3101,10 @@
       // Try resolutions in order of detail (highest first)
       const resolutionOrder = ['extreme', 'ultra', 'high', 'medium', 'low'];
       let peaks: any[] = [];
-      let usedResolution = 'high';
 
       for (const res of resolutionOrder) {
         if (resolutions[res]?.peaks?.length > 0) {
           peaks = resolutions[res].peaks;
-          usedResolution = res;
           break;
         }
       }
@@ -4021,10 +4255,17 @@
       return;
     }
 
-    // Toggle cut tool with X key
+    // Delete selected item with Delete or Backspace key
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault();
+      deleteSelectedItem();
+      return;
+    }
+
+    // Perform cut at playhead with X key
     if (event.key === 'x' || event.key === 'X') {
       event.preventDefault();
-      toggleCutTool();
+      performCutAtPlayhead();
     }
 
     // Deactivate cut tool with Escape key
