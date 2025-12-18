@@ -28,17 +28,28 @@
       </template>
 
       <!-- Loading State -->
-      <div v-if="loading" class="space-y-2 pt-2">
-        <div v-for="i in 4" :key="i" class="bg-card border border-border/50 rounded-xl overflow-hidden animate-pulse">
-          <div class="flex items-center gap-3 px-4 py-3">
-            <div class="w-12 h-12 rounded-xl bg-muted/30"></div>
-            <div class="flex-1 space-y-2">
-              <div class="h-4 bg-muted/30 rounded w-32"></div>
-              <div class="h-3 bg-muted/30 rounded w-48"></div>
+      <div v-if="loading" class="space-y-3 pt-2">
+        <div v-for="i in 4" :key="i" class="bg-card border border-border/60 rounded-xl overflow-hidden">
+          <div class="flex items-start gap-4 p-4 animate-pulse">
+            <div class="w-14 h-14 rounded-lg bg-muted/40"></div>
+            <div class="flex-1 space-y-3">
+              <div class="space-y-2">
+                <div class="h-4 bg-muted/40 rounded w-36"></div>
+                <div class="h-3 bg-muted/30 rounded w-56"></div>
+              </div>
+              <div class="flex gap-2">
+                <div class="h-6 bg-muted/30 rounded-md w-24"></div>
+                <div class="h-6 bg-muted/30 rounded-md w-20"></div>
+              </div>
             </div>
           </div>
-          <div class="px-4 py-2.5 bg-muted/20 border-t border-border/30">
-            <div class="h-8 bg-muted/30 rounded w-full"></div>
+          <div class="flex items-center justify-between px-4 py-2.5 bg-muted/30 border-t border-border/40">
+            <div class="h-6 bg-muted/30 rounded-md w-20"></div>
+            <div class="flex gap-1">
+              <div class="h-7 bg-muted/30 rounded-md w-14"></div>
+              <div class="h-7 bg-muted/30 rounded-md w-14"></div>
+              <div class="h-7 bg-muted/30 rounded-md w-20"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -50,163 +61,180 @@
           <div class="w-full">
             <div
               v-if="filteredCreators.length > 0"
-              class="flex items-center justify-between px-4 text-sm text-muted-foreground font-medium mb-3"
+              class="flex items-center justify-between px-1 text-[13px] text-muted-foreground mb-3"
             >
-              <span>Creator Profiles</span>
-              <span>{{ filteredCreators.length }} total</span>
+              <span class="font-medium">All Creators</span>
+              <span class="tabular-nums">
+                {{ filteredCreators.length }} {{ filteredCreators.length === 1 ? 'profile' : 'profiles' }}
+              </span>
             </div>
 
             <div class="relative">
-              <transition-group name="list" tag="div" class="space-y-2">
+              <transition-group name="list" tag="div" class="space-y-3">
                 <div
                   v-for="creator in sortedCreators"
                   :key="creator.id"
-                  class="group bg-card border border-border/50 rounded-xl transition-all duration-200 hover:border-primary/30 hover:bg-accent/5 shadow-sm overflow-hidden"
+                  class="group bg-card rounded-xl border transition-all duration-200 overflow-hidden"
                   :class="{
-                    'border-green-500/30 bg-green-500/5': isCreatorMonitored(creator),
-                    'border-red-500/20 bg-red-500/5': !isCreatorMonitored(creator) && isCreatorLive(creator),
+                    'border-green-500/40 ring-1 ring-green-500/20': isCreatorMonitored(creator),
+                    'border-red-500/40 ring-1 ring-red-500/20': !isCreatorMonitored(creator) && isCreatorLive(creator),
+                    'border-border/60 hover:border-border': !isCreatorMonitored(creator) && !isCreatorLive(creator),
                   }"
                 >
-                  <!-- Row 1: Creator Identity -->
-                  <div class="flex items-center gap-3 px-4 py-3">
-                    <!-- Avatar -->
-                    <div
-                      class="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden relative bg-muted"
-                    >
-                      <img
-                        v-if="getCreatorProfileImage(creator)"
-                        :src="getCreatorProfileImage(creator)"
-                        class="w-full h-full object-cover absolute inset-0 z-20 rounded-xl border border-border"
-                        @error="handleImageError($event, creator)"
-                      />
+                  <!-- Main Content Row -->
+                  <div class="flex items-start gap-4 p-4">
+                    <!-- Avatar with status indicator -->
+                    <div class="relative flex-shrink-0">
+                      <div class="w-14 h-14 rounded-lg flex items-center justify-center overflow-hidden bg-muted/50">
+                        <img
+                          v-if="getCreatorProfileImage(creator)"
+                          :src="getCreatorProfileImage(creator)"
+                          class="w-full h-full object-cover"
+                          @error="handleImageError($event, creator)"
+                        />
+                        <div
+                          v-else
+                          class="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted to-muted/50"
+                        >
+                          <Users class="w-6 h-6 text-muted-foreground/40" />
+                        </div>
+                      </div>
+                      <!-- Live/Monitoring indicator dot -->
                       <div
-                        v-else
-                        class="absolute inset-0 bg-gradient-to-br from-primary/20 via-muted/30 to-primary/10"
-                      ></div>
-                      <Users
-                        v-if="!getCreatorProfileImage(creator)"
-                        class="w-6 h-6 relative z-10 text-muted-foreground/50"
-                      />
+                        v-if="isCreatorMonitored(creator) || isCreatorLive(creator)"
+                        class="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-card flex items-center justify-center"
+                        :class="{
+                          'bg-green-500': isCreatorMonitored(creator),
+                          'bg-red-500': !isCreatorMonitored(creator) && isCreatorLive(creator),
+                        }"
+                      >
+                        <span class="w-2 h-2 rounded-full bg-white/80 animate-pulse"></span>
+                      </div>
                     </div>
 
                     <!-- Creator Info -->
-                    <div class="flex-1 min-w-0">
-                      <div class="flex items-center gap-2">
-                        <h3 class="font-semibold text-base text-foreground truncate">
-                          {{ creator.name }}
-                        </h3>
-                        <!-- Organization Badge -->
-                        <div
-                          v-if="creator.isOrgProfile"
-                          class="flex items-center gap-1 px-2 py-0.5 bg-violet-500/10 text-violet-400 text-xs rounded-full border border-violet-500/20"
-                          :title="`Managed by ${creator.organization_name}`"
-                        >
-                          <Building2 class="w-3 h-3" />
-                          {{ creator.organization_name }}
+                    <div class="flex-1 min-w-0 space-y-2">
+                      <!-- Header: Name + Badges -->
+                      <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <div class="flex items-center gap-2 flex-wrap">
+                            <h3 class="font-semibold text-[15px] text-foreground truncate">
+                              {{ creator.name }}
+                            </h3>
+                            <!-- Organization Badge -->
+                            <div
+                              v-if="creator.isOrgProfile"
+                              class="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-500/10 text-violet-400 text-[11px] font-medium rounded-md"
+                              :title="`Managed by ${creator.organization_name}`"
+                            >
+                              <Building2 class="w-3 h-3" />
+                              {{ creator.organization_name }}
+                            </div>
+                          </div>
+                          <!-- Description -->
+                          <p v-if="creator.description" class="text-[13px] text-muted-foreground line-clamp-1 mt-0.5">
+                            {{ creator.description }}
+                          </p>
                         </div>
-                        <!-- Asset Indicators -->
-                        <div class="flex items-center gap-1">
-                          <div v-if="creator.intro_id" class="p-1 bg-blue-500/10 rounded" title="Has intro configured">
-                            <Play class="w-3 h-3 text-blue-400" />
+
+                        <!-- Asset Indicators (top right) -->
+                        <div
+                          v-if="creator.intro_id || creator.outro_id || creator.watermark_id"
+                          class="flex items-center gap-1 flex-shrink-0"
+                        >
+                          <div
+                            v-if="creator.intro_id"
+                            class="w-6 h-6 flex items-center justify-center rounded-md bg-blue-500/10"
+                            title="Has intro configured"
+                          >
+                            <Play class="w-3.5 h-3.5 text-blue-400" />
                           </div>
                           <div
                             v-if="creator.outro_id"
-                            class="p-1 bg-purple-500/10 rounded"
+                            class="w-6 h-6 flex items-center justify-center rounded-md bg-purple-500/10"
                             title="Has outro configured"
                           >
-                            <SkipForward class="w-3 h-3 text-purple-400" />
+                            <SkipForward class="w-3.5 h-3.5 text-purple-400" />
                           </div>
                           <div
                             v-if="creator.watermark_id"
-                            class="p-1 bg-amber-500/10 rounded"
+                            class="w-6 h-6 flex items-center justify-center rounded-md bg-amber-500/10"
                             title="Has watermark configured"
                           >
-                            <ImageIcon class="w-3 h-3 text-amber-400" />
+                            <ImageIcon class="w-3.5 h-3.5 text-amber-400" />
                           </div>
                         </div>
                       </div>
-                      <!-- Description -->
-                      <p v-if="creator.description" class="text-xs text-muted-foreground line-clamp-1 mt-0.5">
-                        {{ creator.description }}
-                      </p>
+
                       <!-- Platform Badges -->
-                      <div class="flex items-center gap-1.5 mt-1">
+                      <div class="flex items-center gap-2 flex-wrap">
                         <div
                           v-for="link in creator.platform_links"
                           :key="link.id"
-                          class="flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs border"
-                          :style="{
-                            backgroundColor: getPlatformColor(link.platform) + '10',
-                            borderColor: getPlatformColor(link.platform) + '25',
-                            color: getPlatformColor(link.platform),
-                          }"
+                          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium bg-muted/60"
                         >
                           <img
                             :src="getPlatformIcon(link.platform)"
-                            class="w-3 h-3"
+                            class="w-3.5 h-3.5 opacity-70"
                             :class="getPlatformIconClass(link.platform)"
                           />
-                          <span class="truncate max-w-[80px]">
+                          <span class="truncate max-w-[100px] text-muted-foreground">
                             {{ link.display_name || truncateId(link.platform_id) }}
                           </span>
                         </div>
                       </div>
                     </div>
-
-                    <!-- Delete Button (top right) - Only for local profiles -->
-                    <button
-                      v-if="!creator.isOrgProfile"
-                      @click.stop="confirmDeleteCreator(creator)"
-                      class="p-2 rounded-lg text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 transition-colors"
-                      title="Delete creator"
-                    >
-                      <Trash2 class="w-4 h-4" />
-                    </button>
                   </div>
 
-                  <!-- Row 2: Actions -->
+                  <!-- Actions Footer -->
                   <div
-                    class="flex items-center justify-between gap-3 px-4 py-2.5 bg-muted/20 border-t border-border/30"
+                    class="flex items-center justify-between gap-3 px-4 py-2.5 bg-muted/30 border-t border-border/40"
                   >
                     <!-- Left: Status -->
                     <div class="flex items-center gap-2">
                       <!-- Monitoring status (only shown when Live Clip feature is enabled) -->
-                      <span
+                      <div
                         v-if="isLiveClipEnabled && isCreatorMonitored(creator)"
-                        class="text-green-500 flex items-center gap-1.5 text-xs font-medium"
+                        class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-green-500/10 text-green-500 text-[12px] font-medium"
                       >
-                        <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                        <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
                         {{ getCreatorStatusLabel(creator) }}
-                      </span>
+                      </div>
                       <!-- Live status for pumpfun creators (only shown when Live Clip feature is enabled) -->
                       <template
                         v-else-if="isLiveClipEnabled && creator.platform_links.some((l) => l.platform === 'pumpfun')"
                       >
-                        <span
+                        <div
                           v-if="isCreatorCheckingLive(creator)"
-                          class="text-muted-foreground flex items-center gap-1.5 text-xs"
+                          class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted text-muted-foreground text-[12px]"
                         >
                           <Loader2 class="w-3 h-3 animate-spin" />
                           Checking...
-                        </span>
-                        <span
+                        </div>
+                        <div
                           v-else-if="isCreatorLive(creator)"
-                          class="text-red-500 flex items-center gap-1.5 text-xs font-medium"
+                          class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-red-500/10 text-red-500 text-[12px] font-medium"
                         >
-                          <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                          <span class="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
                           LIVE
-                          <span v-if="getCreatorViewerCount(creator)" class="text-muted-foreground font-normal">
-                            ({{ formatViewerCount(getCreatorViewerCount(creator)!) }})
+                          <span v-if="getCreatorViewerCount(creator)" class="text-red-400/70 font-normal">
+                            · {{ formatViewerCount(getCreatorViewerCount(creator)!) }} viewers
                           </span>
-                        </span>
-                        <span v-else class="text-muted-foreground/60 flex items-center gap-1.5 text-xs">
-                          <span class="w-2 h-2 rounded-full bg-muted-foreground/40"></span>
+                        </div>
+                        <div
+                          v-else
+                          class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/50 text-muted-foreground/60 text-[12px]"
+                        >
+                          <span class="w-1.5 h-1.5 rounded-full bg-muted-foreground/40"></span>
                           Offline
-                        </span>
+                        </div>
                       </template>
                       <!-- Platform count (shown when Live Clip is disabled or no pumpfun link) -->
-                      <span v-else class="text-xs text-muted-foreground">
-                        {{ creator.platform_links.length }} platform{{ creator.platform_links.length !== 1 ? 's' : '' }}
+                      <span v-else class="text-[12px] text-muted-foreground">
+                        {{ creator.platform_links.length }} platform{{
+                          creator.platform_links.length !== 1 ? 's' : ''
+                        }}
+                        linked
                       </span>
                     </div>
 
@@ -216,30 +244,44 @@
                       <button
                         v-if="!creator.isOrgProfile"
                         @click.stop="openEditDialog(creator)"
-                        class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground hover:bg-muted"
+                        class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
                         title="Edit creator"
                       >
-                        <Edit class="w-4 h-4" />
+                        <Edit class="w-3.5 h-3.5" />
                         Edit
                       </button>
                       <!-- VODs Button -->
                       <button
                         @click.stop="viewCreatorVods(creator)"
-                        class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground hover:bg-muted"
+                        class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
                         title="View VODs"
                       >
-                        <Video class="w-4 h-4" />
+                        <Video class="w-3.5 h-3.5" />
                         VODs
                       </button>
                       <!-- Download Button -->
                       <button
                         @click.stop="openDownloadDialog(creator)"
-                        class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground hover:bg-muted"
+                        class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
                         title="Download last VOD"
                       >
-                        <Download class="w-4 h-4" />
+                        <Download class="w-3.5 h-3.5" />
                         Download
                       </button>
+                      <!-- Delete Button - Only for local profiles -->
+                      <button
+                        v-if="!creator.isOrgProfile"
+                        @click.stop="confirmDeleteCreator(creator)"
+                        class="inline-flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                        title="Delete creator"
+                      >
+                        <Trash2 class="w-3.5 h-3.5" />
+                      </button>
+                      <!-- Separator before monitoring controls -->
+                      <div
+                        v-if="isLiveClipEnabled && creator.platform_links.some((l) => l.platform === 'pumpfun')"
+                        class="w-px h-5 bg-border/60 mx-1"
+                      ></div>
                       <!-- Monitoring Controls (only shown when Live Clip feature is enabled) -->
                       <template
                         v-if="isLiveClipEnabled && creator.platform_links.some((l) => l.platform === 'pumpfun')"
@@ -248,30 +290,30 @@
                           <!-- Record Button -->
                           <button
                             @click="startCreatorMonitoring(creator, false)"
-                            class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all bg-muted/50 hover:bg-muted text-foreground border border-border/50"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-muted hover:bg-muted/80 text-foreground transition-colors"
                             title="Record Only"
                           >
-                            <Video class="w-4 h-4 text-red-500" />
+                            <div class="w-2 h-2 rounded-full bg-red-500"></div>
                             Rec
                           </button>
                           <!-- Auto-Detect Button -->
                           <button
                             @click="startCreatorMonitoring(creator, true)"
-                            class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-primary hover:bg-primary/90 text-primary-foreground transition-colors"
                             title="Auto-Detect Clips"
                           >
-                            <Sparkles class="w-4 h-4" />
-                            Auto Detect
+                            <Sparkles class="w-3.5 h-3.5" />
+                            Auto
                           </button>
                         </template>
                         <template v-else>
                           <!-- Stop Button -->
                           <button
                             @click="stopCreatorMonitoring(creator)"
-                            class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors"
                             title="Stop Monitoring"
                           >
-                            <Square class="w-4 h-4" />
+                            <Square class="w-3.5 h-3.5" />
                             Stop
                           </button>
                         </template>
