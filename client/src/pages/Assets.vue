@@ -8,6 +8,17 @@
     >
       <template #actions>
         <div class="flex items-center gap-2">
+          <!-- Sync button for organization assets -->
+          <Button
+            v-if="hasOrganizations"
+            @click="triggerSync"
+            :disabled="isSyncing"
+            title="Sync organization assets"
+            class="flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Loader2 v-if="isSyncing" class="h-5 w-5 animate-spin" />
+            <RefreshCw v-else class="h-5 w-5" />
+          </Button>
           <Button @click="openIntrosFolder" title="Open assets folder" class="flex items-center gap-2">
             <Folder class="h-5 w-5" />
           </Button>
@@ -139,8 +150,9 @@
               <div class="absolute inset-0 bg-black/10"></div>
             </div>
 
-            <!-- Top left type badge -->
-            <div class="absolute top-4 left-4 z-5">
+            <!-- Top left badges -->
+            <div class="absolute top-4 left-4 z-5 flex flex-col gap-1">
+              <!-- Type badge -->
               <span
                 :class="[
                   'text-xs px-2 py-1 rounded-md flex items-center gap-1',
@@ -179,6 +191,26 @@
                           : 'Watermark'
                 }}
               </span>
+              <!-- Organization badge -->
+              <span
+                v-if="asset.organization_id"
+                class="text-xs px-2 py-1 rounded-md flex items-center gap-1 text-white/80 bg-indigo-500/30 backdrop-blur-sm"
+                :title="`From: ${asset.organization_name || 'Organization'}`"
+              >
+                <Building2 class="h-3 w-3" />
+                {{ asset.organization_name || 'Org' }}
+              </span>
+            </div>
+
+            <!-- Downloading overlay -->
+            <div
+              v-if="isAssetDownloading(asset)"
+              class="absolute inset-0 z-20 bg-black/60 flex items-center justify-center"
+            >
+              <div class="text-center text-white">
+                <Loader2 class="h-8 w-8 animate-spin mx-auto mb-2" />
+                <span class="text-sm">Downloading...</span>
+              </div>
             </div>
 
             <!-- Bottom Overlay with Info -->
@@ -343,6 +375,10 @@
     getAllWatermarkImages,
     getAllAudioAssets,
     getAllImageAssets,
+    getAllOrganizationIntroOutros,
+    getAllOrganizationWatermarks,
+    getAllOrganizationAudioAssets,
+    getAllOrganizationImageAssets,
     type IntroOutro,
     type WatermarkImage,
     type AudioAsset,
@@ -359,7 +395,12 @@
     Check,
     Music,
     Pause,
+    Building2,
+    RefreshCw,
+    Loader2,
   } from 'lucide-vue-next';
+  import { syncOrganizationAssets, useSyncProgress } from '@/services/orgAssetSync';
+  import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
   import { useAssetOperations } from '@/composables/useAssetOperations';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
@@ -388,6 +429,11 @@
   const watermarks = ref<WatermarkImage[]>([]);
   const audioAssets = ref<AudioAsset[]>([]);
   const imageAssets = ref<ImageAsset[]>([]);
+  // Organization assets (synced from server)
+  const orgIntroOutros = ref<IntroOutro[]>([]);
+  const orgWatermarks = ref<WatermarkImage[]>([]);
+  const orgAudioAssets = ref<AudioAsset[]>([]);
+  const orgImageAssets = ref<ImageAsset[]>([]);
   const loading = ref(true);
   const showDeleteDialog = ref(false);
   const assetToDelete = ref<DisplayAsset | null>(null);
@@ -396,6 +442,11 @@
   const showUploadDialog = ref(false);
   const thumbnailCache = ref<Map<string, string>>(new Map());
   const { error, success } = useToast();
+
+  // Sync state
+  const { progress: syncProgress, isDownloading, downloadingAssetIds } = useSyncProgress();
+  const authStore = useAuthStore();
+  const isSyncing = ref(false);
 
   // Audio player state
   const currentlyPlayingAudio = ref<string | null>(null);
@@ -416,13 +467,59 @@
   const { deleteAudioAsset, onUploadComplete: onAudioUploadComplete } = useAudioAssetOperations();
   const { deleteImageAsset, onUploadComplete: onImageUploadComplete } = useImageAssetOperations();
 
-  // Combined assets for display
-  const allAssets = computed<DisplayAsset[]>(() => {
-    const introOutros: DisplayAsset[] = assets.value.map((a) => ({ ...a, assetType: a.type as 'intro' | 'outro' }));
-    const wms: DisplayAsset[] = watermarks.value.map((w) => ({ ...w, assetType: 'watermark' as const }));
-    const audios: DisplayAsset[] = audioAssets.value.map((a) => ({ ...a, assetType: 'audio' as const }));
-    const images: DisplayAsset[] = imageAssets.value.map((i) => ({ ...i, assetType: 'image' as const }));
+  // Personal (local) assets
+  const personalAssets = computed<DisplayAsset[]>(() => {
+    const introOutros: DisplayAsset[] = assets.value
+      .filter((a) => !a.organization_id)
+      .map((a) => ({ ...a, assetType: a.type as 'intro' | 'outro' }));
+    const wms: DisplayAsset[] = watermarks.value
+      .filter((w) => !w.organization_id)
+      .map((w) => ({ ...w, assetType: 'watermark' as const }));
+    const audios: DisplayAsset[] = audioAssets.value
+      .filter((a) => !a.organization_id)
+      .map((a) => ({ ...a, assetType: 'audio' as const }));
+    const images: DisplayAsset[] = imageAssets.value
+      .filter((i) => !i.organization_id)
+      .map((i) => ({ ...i, assetType: 'image' as const }));
     return [...introOutros, ...wms, ...audios, ...images];
+  });
+
+  // Organization assets (grouped by organization)
+  const organizationAssets = computed(() => {
+    const orgAssetsList: DisplayAsset[] = [
+      ...orgIntroOutros.value.map((a) => ({ ...a, assetType: a.type as 'intro' | 'outro' })),
+      ...orgWatermarks.value.map((w) => ({ ...w, assetType: 'watermark' as const })),
+      ...orgAudioAssets.value.map((a) => ({ ...a, assetType: 'audio' as const })),
+      ...orgImageAssets.value.map((i) => ({ ...i, assetType: 'image' as const })),
+    ];
+
+    // Group by organization
+    const grouped = new Map<string, { name: string; assets: DisplayAsset[] }>();
+    for (const asset of orgAssetsList) {
+      const orgId = asset.organization_id || 'unknown';
+      const orgName = asset.organization_name || 'Organization';
+      if (!grouped.has(orgId)) {
+        grouped.set(orgId, { name: orgName, assets: [] });
+      }
+      grouped.get(orgId)!.assets.push(asset);
+    }
+    return grouped;
+  });
+
+  // Combined assets for display (personal + org)
+  const allAssets = computed<DisplayAsset[]>(() => {
+    const orgAssets: DisplayAsset[] = [
+      ...orgIntroOutros.value.map((a) => ({ ...a, assetType: a.type as 'intro' | 'outro' })),
+      ...orgWatermarks.value.map((w) => ({ ...w, assetType: 'watermark' as const })),
+      ...orgAudioAssets.value.map((a) => ({ ...a, assetType: 'audio' as const })),
+      ...orgImageAssets.value.map((i) => ({ ...i, assetType: 'image' as const })),
+    ];
+    return [...personalAssets.value, ...orgAssets];
+  });
+
+  // Check if user has any organization memberships
+  const hasOrganizations = computed(() => {
+    return authStore.organizationMemberships && authStore.organizationMemberships.length > 0;
   });
 
   // Pagination state
@@ -541,7 +638,7 @@
   async function loadAssets() {
     loading.value = true;
     try {
-      // Load intro/outros, watermarks, audio assets, and image assets
+      // Load personal intro/outros, watermarks, audio assets, and image assets
       const [introOutros, wms, audios, imgs] = await Promise.all([
         getAllIntroOutros(),
         getAllWatermarkImages(),
@@ -549,16 +646,35 @@
         getAllImageAssets(),
       ]);
 
-      assets.value = introOutros;
-      watermarks.value = wms;
-      audioAssets.value = audios;
-      imageAssets.value = imgs;
+      // Filter out organization assets from personal lists (they'll be loaded separately)
+      assets.value = introOutros.filter((a) => !a.organization_id);
+      watermarks.value = wms.filter((w) => !w.organization_id);
+      audioAssets.value = audios.filter((a) => !a.organization_id);
+      imageAssets.value = imgs.filter((i) => !i.organization_id);
+
+      // Load organization assets
+      const [orgIntros, orgWms, orgAudios, orgImgs] = await Promise.all([
+        getAllOrganizationIntroOutros(),
+        getAllOrganizationWatermarks(),
+        getAllOrganizationAudioAssets(),
+        getAllOrganizationImageAssets(),
+      ]);
+
+      orgIntroOutros.value = orgIntros;
+      orgWatermarks.value = orgWms;
+      orgAudioAssets.value = orgAudios;
+      orgImageAssets.value = orgImgs;
 
       // Reset pagination to first page when loading new assets
       currentPage.value = 1;
 
-      // Load thumbnails for existing video assets
+      // Load thumbnails for all video assets (personal)
       for (const asset of assets.value) {
+        await loadAssetThumbnail(asset);
+      }
+
+      // Load thumbnails for org video assets
+      for (const asset of orgIntroOutros.value) {
         await loadAssetThumbnail(asset);
       }
 
@@ -566,9 +682,15 @@
       for (const wm of watermarks.value) {
         await loadWatermarkThumbnail(wm);
       }
+      for (const wm of orgWatermarks.value) {
+        await loadWatermarkThumbnail(wm);
+      }
 
       // Set default icon for audio assets
       for (const audio of audioAssets.value) {
+        loadAudioThumbnail(audio);
+      }
+      for (const audio of orgAudioAssets.value) {
         loadAudioThumbnail(audio);
       }
 
@@ -576,11 +698,40 @@
       for (const img of imageAssets.value) {
         await loadImageThumbnail(img);
       }
+      for (const img of orgImageAssets.value) {
+        await loadImageThumbnail(img);
+      }
     } catch (err) {
       console.error('Failed to load assets:', err);
     } finally {
       loading.value = false;
     }
+  }
+
+  // Trigger organization asset sync
+  async function triggerSync() {
+    if (isSyncing.value) return;
+
+    isSyncing.value = true;
+    try {
+      const result = await syncOrganizationAssets();
+      if (result.downloaded > 0 || result.deleted > 0) {
+        success('Sync complete', `Downloaded ${result.downloaded}, removed ${result.deleted} organization assets`);
+        // Reload assets to show newly synced items
+        await loadAssets();
+      }
+    } catch (err) {
+      console.error('Sync failed:', err);
+      error('Sync failed', 'Failed to sync organization assets');
+    } finally {
+      isSyncing.value = false;
+    }
+  }
+
+  // Check if an asset is currently being downloaded
+  function isAssetDownloading(asset: DisplayAsset): boolean {
+    if (!asset.server_id) return false;
+    return downloadingAssetIds.value.has(asset.server_id);
   }
 
   async function loadWatermarkThumbnail(watermark: WatermarkImage) {

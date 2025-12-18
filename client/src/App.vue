@@ -5,10 +5,11 @@
   import TitleBar from '@/components/TitleBar.vue';
   import LoadingScreen from '@/components/LoadingScreen.vue';
   import AuthModal from '@/components/AuthModal.vue';
-  import { initDatabase, seedDefaultPrompt } from '@/services/database';
+  import { initDatabase, seedDefaultPrompt, ensureOrganizationAssetColumns } from '@/services/database';
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
   import { invoke } from '@tauri-apps/api/core';
+  import { syncOrganizationAssets } from '@/services/orgAssetSync';
 
   const { initializeWindowCloseHandler } = useWindowClose();
   const authStore = useAuthStore();
@@ -56,6 +57,21 @@
     // Check authentication status on app start
     try {
       await authStore.checkAuth();
+
+      // If user is authenticated, sync organization assets
+      if (authStore.isAuthenticated) {
+        console.log('[App] User authenticated, syncing organization assets...');
+        // Run sync in background (don't block startup)
+        syncOrganizationAssets()
+          .then((result) => {
+            if (result.downloaded > 0 || result.deleted > 0) {
+              console.log('[App] Organization asset sync complete:', result);
+            }
+          })
+          .catch((error) => {
+            console.error('[App] Organization asset sync failed:', error);
+          });
+      }
     } catch (error) {
       console.error('[App] Failed to check authentication:', error);
     }
@@ -80,6 +96,9 @@
 
       // Seed default prompt if it doesn't exist
       await seedDefaultPrompt();
+
+      // Ensure organization asset columns exist (migration)
+      await ensureOrganizationAssetColumns();
     } catch (error) {
       console.error('[App] Failed to initialize database:', error);
     }

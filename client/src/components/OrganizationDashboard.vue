@@ -289,6 +289,128 @@
           </div>
         </div>
 
+        <!-- Assets Tab -->
+        <div v-if="activeTab === 'assets'" class="p-6">
+          <div class="flex items-center justify-between mb-6">
+            <div>
+              <h2 class="text-base font-semibold text-foreground">Organization Assets</h2>
+              <p class="text-sm text-muted-foreground mt-0.5">
+                Upload intros, outros, watermarks, and other assets for your team
+              </p>
+            </div>
+            <Button v-if="isAdmin" @click="openUploadDialog">
+              <Upload class="h-4 w-4 mr-1.5" />
+              Upload Asset
+            </Button>
+          </div>
+
+          <!-- Loading State -->
+          <div v-if="assetsLoading" class="flex items-center justify-center py-12">
+            <Loader2 class="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+
+          <!-- Assets Grid -->
+          <div v-else-if="orgAssets.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div
+              v-for="asset in orgAssets"
+              :key="asset.id"
+              class="relative bg-background border border-border rounded-lg overflow-hidden group cursor-pointer hover:border-foreground/20 transition-all"
+              :class="{ 'ring-2 ring-primary': isAudioPlaying(asset.id) }"
+              @click="handleAssetClick(asset)"
+            >
+              <!-- Thumbnail/Preview -->
+              <div class="aspect-video bg-muted/50 flex items-center justify-center relative">
+                <!-- Audio assets use waveform thumbnail -->
+                <img
+                  v-if="asset.asset_type === 'audio'"
+                  :src="AUDIO_THUMBNAIL"
+                  :alt="asset.name"
+                  class="w-full h-full object-cover"
+                />
+                <!-- Video/image/watermark assets use thumbnail_url or url -->
+                <img
+                  v-else-if="asset.thumbnail_url || (asset.url && ['image', 'watermark'].includes(asset.asset_type))"
+                  :src="asset.thumbnail_url || asset.url"
+                  :alt="asset.name"
+                  class="w-full h-full object-cover"
+                  @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
+                />
+                <!-- Fallback icon -->
+                <component v-else :is="getAssetTypeIcon(asset.asset_type)" class="h-12 w-12 text-muted-foreground/30" />
+
+                <!-- Play overlay for video/audio assets -->
+                <div
+                  v-if="['intro', 'outro', 'audio'].includes(asset.asset_type)"
+                  class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                  :class="{ 'opacity-100': isAudioPlaying(asset.id) }"
+                >
+                  <button
+                    class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                    :title="asset.asset_type === 'audio' ? (isAudioPlaying(asset.id) ? 'Pause' : 'Play') : 'Play'"
+                    @click.stop="handleAssetClick(asset)"
+                  >
+                    <Pause v-if="asset.asset_type === 'audio' && isAudioPlaying(asset.id)" class="h-6 w-6" />
+                    <Play v-else class="h-6 w-6" />
+                  </button>
+                </div>
+              </div>
+
+              <!-- Asset Info -->
+              <div class="p-3">
+                <div class="flex items-center justify-between">
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-foreground truncate" :title="asset.name">
+                      {{ asset.name }}
+                    </p>
+                    <p class="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                      <span
+                        :class="[
+                          'px-1.5 py-0.5 rounded text-xs',
+                          asset.asset_type === 'intro'
+                            ? 'bg-blue-500/20 text-blue-400'
+                            : asset.asset_type === 'outro'
+                              ? 'bg-purple-500/20 text-purple-400'
+                              : asset.asset_type === 'watermark'
+                                ? 'bg-amber-500/20 text-amber-400'
+                                : asset.asset_type === 'audio'
+                                  ? 'bg-emerald-500/20 text-emerald-400'
+                                  : 'bg-cyan-500/20 text-cyan-400',
+                        ]"
+                      >
+                        {{ getAssetTypeLabel(asset.asset_type) }}
+                      </span>
+                      <span v-if="asset.duration" class="ml-1">
+                        {{ Math.floor(asset.duration / 60) }}:{{
+                          String(Math.floor(asset.duration % 60)).padStart(2, '0')
+                        }}
+                      </span>
+                    </p>
+                  </div>
+
+                  <!-- Delete Button (Admin only) -->
+                  <button
+                    v-if="isAdmin"
+                    @click.stop="handleDeleteAsset(asset)"
+                    :disabled="deletingAssetId === asset.id"
+                    class="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-50"
+                    title="Delete asset"
+                  >
+                    <Loader2 v-if="deletingAssetId === asset.id" class="h-4 w-4 animate-spin" />
+                    <Trash2 v-else class="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Empty State -->
+          <div v-else class="text-center py-12 text-muted-foreground">
+            <Package class="h-10 w-10 mx-auto mb-3 opacity-50" />
+            <p>No assets uploaded yet.</p>
+            <p v-if="isAdmin" class="text-sm mt-1">Upload intros, outros, watermarks, or other assets for your team.</p>
+          </div>
+        </div>
+
         <!-- Billing Tab -->
         <div v-if="activeTab === 'billing'" class="p-6">
           <!-- Header with Buy Credits Button -->
@@ -954,6 +1076,163 @@
       </Transition>
     </Teleport>
 
+    <!-- Upload Asset Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showUploadDialog"
+          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+          @click.self="closeUploadDialog"
+        >
+          <Transition name="dialog" appear>
+            <div
+              class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden"
+            >
+              <!-- Decorative top accent -->
+              <div class="h-1 w-full bg-gradient-to-r from-cyan-500 via-teal-500 to-emerald-500" />
+
+              <div class="p-5 sm:p-6">
+                <!-- Header -->
+                <div class="mb-5 text-center">
+                  <div
+                    class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500/20 to-teal-500/20 border border-cyan-500/30 mb-4"
+                  >
+                    <Upload class="h-6 w-6 text-cyan-400" />
+                  </div>
+                  <h2 class="text-lg sm:text-xl font-bold text-white tracking-tight">Upload Asset</h2>
+                  <p class="text-zinc-400 text-sm mt-1">
+                    {{ uploadDialogFile ? 'Configure your asset' : 'Select a file to upload' }}
+                  </p>
+                </div>
+
+                <!-- File Selection State -->
+                <div v-if="!uploadDialogFile" class="space-y-4">
+                  <button
+                    @click="selectFileForUpload"
+                    class="w-full p-8 border-2 border-dashed border-zinc-700 hover:border-cyan-500/50 rounded-xl transition-all group"
+                  >
+                    <div class="flex flex-col items-center gap-3">
+                      <div
+                        class="w-14 h-14 rounded-xl bg-zinc-800 group-hover:bg-cyan-500/10 flex items-center justify-center transition-colors"
+                      >
+                        <FolderOpen class="h-7 w-7 text-zinc-500 group-hover:text-cyan-400 transition-colors" />
+                      </div>
+                      <div class="text-center">
+                        <p class="text-zinc-300 font-medium">Click to browse files</p>
+                        <p class="text-zinc-500 text-xs mt-1">Video, image, or audio files</p>
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    class="w-full px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all font-medium border border-zinc-700 text-sm"
+                    @click="closeUploadDialog"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <!-- File Selected State -->
+                <div v-else class="space-y-4">
+                  <!-- File Info -->
+                  <div class="p-3 bg-zinc-900/80 rounded-xl border border-zinc-800">
+                    <div class="flex items-center gap-3">
+                      <div
+                        class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                        :class="getFileTypeIconBg(uploadDialogFileType)"
+                      >
+                        <component
+                          :is="getFileTypeIcon(uploadDialogFileType)"
+                          class="h-5 w-5"
+                          :class="getFileTypeIconColor(uploadDialogFileType)"
+                        />
+                      </div>
+                      <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-white truncate" :title="uploadDialogFile.name">
+                          {{ uploadDialogFile.name }}
+                        </p>
+                        <p class="text-xs text-zinc-500">
+                          {{ formatFileSize(uploadDialogFile.size) }} • {{ uploadDialogFileType.toUpperCase() }}
+                        </p>
+                      </div>
+                      <button
+                        @click="clearUploadFile"
+                        class="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded-md transition-colors"
+                        title="Remove file"
+                      >
+                        <X class="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Asset Type Selection -->
+                  <div class="space-y-2">
+                    <label class="text-sm font-medium text-zinc-300">Asset Type</label>
+                    <div class="grid grid-cols-2 gap-2">
+                      <button
+                        v-for="option in uploadDialogAssetOptions"
+                        :key="option.value"
+                        @click="uploadDialogSelectedType = option.value"
+                        :class="[
+                          'p-3 rounded-xl border text-left transition-all flex items-center gap-3',
+                          uploadDialogSelectedType === option.value
+                            ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400'
+                            : 'bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300',
+                        ]"
+                      >
+                        <component :is="option.icon" class="h-4 w-4 flex-shrink-0" />
+                        <span class="text-sm font-medium">{{ option.label }}</span>
+                        <span
+                          v-if="option.recommended"
+                          class="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400"
+                        >
+                          likely
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Asset Name (optional) -->
+                  <div class="space-y-2">
+                    <label class="text-sm font-medium text-zinc-300">
+                      Name
+                      <span class="text-zinc-500 font-normal">(optional)</span>
+                    </label>
+                    <input
+                      v-model="uploadDialogAssetName"
+                      type="text"
+                      :placeholder="uploadDialogFile.name"
+                      class="w-full px-3 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all text-sm"
+                    />
+                  </div>
+
+                  <!-- Actions -->
+                  <div class="flex gap-3 pt-2">
+                    <button
+                      class="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all font-medium border border-zinc-700 text-sm"
+                      @click="closeUploadDialog"
+                      :disabled="uploadingAsset"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      class="flex-1 px-4 py-2.5 bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500 text-white rounded-xl font-semibold transition-all text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                      @click="executeAssetUpload"
+                      :disabled="uploadingAsset || !uploadDialogSelectedType"
+                    >
+                      <Loader2 v-if="uploadingAsset" class="h-4 w-4 animate-spin" />
+                      <Upload v-else class="h-4 w-4" />
+                      {{ uploadingAsset ? 'Uploading...' : 'Upload' }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- Buy Credits Modal -->
     <Teleport to="body">
       <Transition name="modal">
@@ -1143,6 +1422,15 @@
         </div>
       </Transition>
     </Teleport>
+
+    <!-- Video Player Dialog -->
+    <VideoPlayerDialog
+      :video="null"
+      :video-url="videoToPlay?.url"
+      :video-title="videoToPlay?.name"
+      :show-video-player="showVideoPlayer"
+      @close="closeVideoPlayer"
+    />
   </div>
 </template>
 
@@ -1176,13 +1464,34 @@
     ChevronRight,
     DollarSign,
     FileText,
+    Package,
+    Image as ImageIcon,
+    Music,
+    Upload,
+    Film,
+    FolderOpen,
+    Sticker,
+    Play,
+    Pause,
   } from 'lucide-vue-next';
+  import {
+    listOrganizationAssets,
+    uploadOrganizationAsset,
+    deleteOrganizationAsset,
+    type ServerOrganizationAsset,
+  } from '@/services/organizationAssetsApi';
+  import { invoke } from '@tauri-apps/api/core';
   import { useAuthStore } from '@/stores/auth';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import InviteMemberDialog from './InviteMemberDialog.vue';
+  import VideoPlayerDialog from './VideoPlayerDialog.vue';
   import api from '@/services/api';
   import { useToast } from '@/composables/useToast';
+
+  // Audio waveform thumbnail (same as Assets.vue)
+  const AUDIO_THUMBNAIL =
+    'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiB2aWV3Qm94PSIwIDAgMjAwIDEyMCIgZmlsbD0ibm9uZSI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiBmaWxsPSIjMDY0RTNCIi8+CjxyZWN0IHg9IjMwIiB5PSI0NSIgd2lkdGg9IjgiIGhlaWdodD0iMzAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjQ1IiB5PSIzNSIgd2lkdGg9IjgiIGhlaWdodD0iNTAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjYwIiB5PSIyNSIgd2lkdGg9IjgiIGhlaWdodD0iNzAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9Ijc1IiB5PSI0MCIgd2lkdGg9IjgiIGhlaWdodD0iNDAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjkwIiB5PSIzMCIgd2lkdGg9IjgiIGhlaWdodD0iNjAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjEwNSIgeT0iMjAiIHdpZHRoPSI4IiBoZWlnaHQ9IjgwIiByeD0iMiIgZmlsbD0iIzEwQjk4MSIvPgo8cmVjdCB4PSIxMjAiIHk9IjM1IiB3aWR0aD0iOCIgaGVpZ2h0PSI1MCIgcng9IjIiIGZpbGw9IiMxMEI5ODEiLz4KPHJlY3QgeD0iMTM1IiB5PSI0NSIgd2lkdGg9IjgiIGhlaWdodD0iMzAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjE1MCIgeT0iMzAiIHdpZHRoPSI4IiBoZWlnaHQ9IjYwIiByeD0iMiIgZmlsbD0iIzEwQjk4MSIvPgo8cmVjdCB4PSIxNjUiIHk9IjQwIiB3aWR0aD0iOCIgaGVpZ2h0PSI0MCIgcng9IjIiIGZpbGw9IiMxMEI5ODEiLz4KPC9zdmc+';
 
   const route = useRoute();
   const router = useRouter();
@@ -1255,6 +1564,27 @@
   const transactionsPerPage = 20;
   const transactionsLoaded = ref(false);
 
+  // Organization assets state
+  const orgAssets = ref<ServerOrganizationAsset[]>([]);
+  const assetsLoading = ref(false);
+  const assetsLoaded = ref(false);
+  const uploadingAsset = ref(false);
+  const deletingAssetId = ref<number | null>(null);
+
+  // Upload dialog state
+  const showUploadDialog = ref(false);
+  const uploadDialogFile = ref<{ name: string; size: number; path: string; blob: Blob } | null>(null);
+  const uploadDialogFileType = ref('');
+  const uploadDialogSelectedType = ref<'intro' | 'outro' | 'watermark' | 'audio' | 'image' | ''>('');
+  const uploadDialogAssetName = ref('');
+  const uploadDialogAssetOptions = ref<Array<{ value: string; label: string; icon: any; recommended?: boolean }>>([]);
+
+  // Asset playback state
+  const showVideoPlayer = ref(false);
+  const videoToPlay = ref<ServerOrganizationAsset | null>(null);
+  const currentlyPlayingAudio = ref<number | null>(null);
+  const audioElement = ref<HTMLAudioElement | null>(null);
+
   const editData = ref({
     name: '',
     description: '',
@@ -1265,6 +1595,7 @@
 
   const tabs = [
     { id: 'members', label: 'Members' },
+    { id: 'assets', label: 'Assets' },
     { id: 'billing', label: 'Billing' },
     { id: 'settings', label: 'Settings' },
   ];
@@ -1301,6 +1632,11 @@
 
   onUnmounted(() => {
     document.removeEventListener('click', handleMemberMenuClickOutside);
+    // Clean up audio element
+    if (audioElement.value) {
+      audioElement.value.pause();
+      audioElement.value = null;
+    }
   });
 
   watch(organizationId, () => {
@@ -1932,6 +2268,470 @@
       paymentProcessing.value = false;
     }
   }
+
+  // ============================================
+  // Organization Assets Functions
+  // ============================================
+
+  async function loadOrgAssets() {
+    if (!organizationId.value || assetsLoaded.value) return;
+
+    assetsLoading.value = true;
+    try {
+      const response = await listOrganizationAssets(organizationId.value);
+      if (response.success) {
+        orgAssets.value = response.assets;
+        assetsLoaded.value = true;
+      } else {
+        console.error('Failed to load org assets:', response.error);
+      }
+    } catch (err) {
+      console.error('Failed to load org assets:', err);
+    } finally {
+      assetsLoading.value = false;
+    }
+  }
+
+  function openUploadDialog() {
+    showUploadDialog.value = true;
+    uploadDialogFile.value = null;
+    uploadDialogFileType.value = '';
+    uploadDialogSelectedType.value = '';
+    uploadDialogAssetName.value = '';
+    uploadDialogAssetOptions.value = [];
+  }
+
+  function closeUploadDialog() {
+    if (uploadingAsset.value) return;
+    showUploadDialog.value = false;
+    uploadDialogFile.value = null;
+    uploadDialogFileType.value = '';
+    uploadDialogSelectedType.value = '';
+    uploadDialogAssetName.value = '';
+    uploadDialogAssetOptions.value = [];
+  }
+
+  function clearUploadFile() {
+    uploadDialogFile.value = null;
+    uploadDialogFileType.value = '';
+    uploadDialogSelectedType.value = '';
+    uploadDialogAssetName.value = '';
+    uploadDialogAssetOptions.value = [];
+  }
+
+  function getAssetOptionsForFileType(
+    ext: string
+  ): Array<{ value: string; label: string; icon: any; recommended?: boolean }> {
+    const videoExtensions = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
+    const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+    const audioExtensions = ['mp3', 'wav', 'aac', 'm4a', 'ogg'];
+
+    if (videoExtensions.includes(ext)) {
+      return [
+        { value: 'intro', label: 'Intro', icon: Film, recommended: true },
+        { value: 'outro', label: 'Outro', icon: Film },
+      ];
+    } else if (imageExtensions.includes(ext)) {
+      return [
+        { value: 'watermark', label: 'Watermark', icon: ImageIcon, recommended: true },
+        { value: 'image', label: 'Sticker / Image', icon: Sticker },
+      ];
+    } else if (audioExtensions.includes(ext)) {
+      return [{ value: 'audio', label: 'Audio', icon: Music, recommended: true }];
+    }
+    // Fallback - show all options
+    return [
+      { value: 'intro', label: 'Intro', icon: Film },
+      { value: 'outro', label: 'Outro', icon: Film },
+      { value: 'watermark', label: 'Watermark', icon: ImageIcon },
+      { value: 'image', label: 'Sticker / Image', icon: Sticker },
+      { value: 'audio', label: 'Audio', icon: Music },
+    ];
+  }
+
+  function getFileTypeIcon(ext: string) {
+    const videoExtensions = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
+    const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+    const audioExtensions = ['mp3', 'wav', 'aac', 'm4a', 'ogg'];
+
+    if (videoExtensions.includes(ext)) return Film;
+    if (imageExtensions.includes(ext)) return ImageIcon;
+    if (audioExtensions.includes(ext)) return Music;
+    return Package;
+  }
+
+  function getFileTypeIconBg(ext: string): string {
+    const videoExtensions = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
+    const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+    const audioExtensions = ['mp3', 'wav', 'aac', 'm4a', 'ogg'];
+
+    if (videoExtensions.includes(ext)) return 'bg-blue-500/10';
+    if (imageExtensions.includes(ext)) return 'bg-amber-500/10';
+    if (audioExtensions.includes(ext)) return 'bg-emerald-500/10';
+    return 'bg-zinc-500/10';
+  }
+
+  function getFileTypeIconColor(ext: string): string {
+    const videoExtensions = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
+    const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+    const audioExtensions = ['mp3', 'wav', 'aac', 'm4a', 'ogg'];
+
+    if (videoExtensions.includes(ext)) return 'text-blue-400';
+    if (imageExtensions.includes(ext)) return 'text-amber-400';
+    if (audioExtensions.includes(ext)) return 'text-emerald-400';
+    return 'text-zinc-400';
+  }
+
+  function formatFileSize(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  async function selectFileForUpload() {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+
+      const filters = [
+        {
+          name: 'Media Files',
+          extensions: [
+            'mp4',
+            'mov',
+            'avi',
+            'mkv',
+            'webm',
+            'png',
+            'jpg',
+            'jpeg',
+            'gif',
+            'webp',
+            'mp3',
+            'wav',
+            'aac',
+            'm4a',
+            'ogg',
+          ],
+        },
+        { name: 'Video', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm'] },
+        { name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] },
+        { name: 'Audio', extensions: ['mp3', 'wav', 'aac', 'm4a', 'ogg'] },
+      ];
+
+      const selected = await open({ multiple: false, filters });
+      if (!selected || typeof selected !== 'string') return;
+
+      const fileName = selected.split(/[\\\/]/).pop() || 'file';
+      const ext = fileName.split('.').pop()?.toLowerCase() || '';
+
+      // Read file as base64 data URL using existing Tauri command
+      const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: selected });
+
+      // Convert data URL to Blob
+      const base64Match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+      if (!base64Match) {
+        throw new Error('Invalid data URL format');
+      }
+      const mimeType = base64Match[1];
+      const base64Data = base64Match[2];
+
+      // Decode base64 to binary
+      const binaryString = atob(base64Data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      const blob = new Blob([bytes], { type: mimeType });
+
+      // Update dialog state
+      uploadDialogFile.value = {
+        name: fileName,
+        size: blob.size,
+        path: selected,
+        blob,
+      };
+      uploadDialogFileType.value = ext;
+
+      // Get asset options based on file type
+      const options = getAssetOptionsForFileType(ext);
+      uploadDialogAssetOptions.value = options;
+
+      // Pre-select the recommended option
+      const recommended = options.find((o) => o.recommended);
+      if (recommended) {
+        uploadDialogSelectedType.value = recommended.value as any;
+      } else if (options.length > 0) {
+        uploadDialogSelectedType.value = options[0].value as any;
+      }
+    } catch (err: any) {
+      console.error('File selection error:', err);
+      showError('File selection failed', err.message || 'Failed to select file');
+    }
+  }
+
+  /**
+   * Video metadata result from probing a video blob.
+   */
+  interface VideoMetadata {
+    thumbnail: File | null;
+    duration: number | null;
+    width: number | null;
+    height: number | null;
+  }
+
+  /**
+   * Extracts metadata and generates a thumbnail from a video blob.
+   * Captures the middle frame for the thumbnail.
+   */
+  async function extractVideoMetadata(videoBlob: Blob): Promise<VideoMetadata> {
+    return new Promise((resolve) => {
+      const video = document.createElement('video');
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      const result: VideoMetadata = {
+        thumbnail: null,
+        duration: null,
+        width: null,
+        height: null,
+      };
+
+      if (!ctx) {
+        console.warn('Could not get canvas context for thumbnail generation');
+        resolve(result);
+        return;
+      }
+
+      video.preload = 'metadata';
+      video.muted = true;
+      video.playsInline = true;
+
+      const cleanup = () => {
+        URL.revokeObjectURL(video.src);
+        video.remove();
+        canvas.remove();
+      };
+
+      video.onloadedmetadata = () => {
+        // Capture video metadata
+        result.duration = video.duration;
+        result.width = video.videoWidth;
+        result.height = video.videoHeight;
+
+        // Seek to middle of video for thumbnail (or 1 second if video is short)
+        const seekTime = Math.min(video.duration / 2, 1);
+        video.currentTime = seekTime;
+      };
+
+      video.onseeked = () => {
+        // Set canvas dimensions to match video (max 640px width for reasonable thumbnail size)
+        const maxWidth = 640;
+        const scale = video.videoWidth > maxWidth ? maxWidth / video.videoWidth : 1;
+        canvas.width = video.videoWidth * scale;
+        canvas.height = video.videoHeight * scale;
+
+        // Draw the current frame to canvas
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // Convert to blob
+        canvas.toBlob(
+          (blob) => {
+            cleanup();
+            if (blob) {
+              result.thumbnail = new File([blob], 'thumbnail.jpg', { type: 'image/jpeg' });
+            }
+            resolve(result);
+          },
+          'image/jpeg',
+          0.85 // Quality
+        );
+      };
+
+      video.onerror = () => {
+        console.warn('Error loading video for metadata extraction');
+        cleanup();
+        resolve(result);
+      };
+
+      // Set a timeout in case video fails to load
+      setTimeout(() => {
+        if (!video.videoWidth) {
+          console.warn('Timeout waiting for video to load for metadata extraction');
+          cleanup();
+          resolve(result);
+        }
+      }, 10000);
+
+      video.src = URL.createObjectURL(videoBlob);
+    });
+  }
+
+  async function executeAssetUpload() {
+    if (!organizationId.value || !isAdmin.value || !uploadDialogFile.value || !uploadDialogSelectedType.value) return;
+
+    uploadingAsset.value = true;
+
+    try {
+      const file = new File([uploadDialogFile.value.blob], uploadDialogFile.value.name, {
+        type: uploadDialogFile.value.blob.type,
+      });
+
+      const assetName = uploadDialogAssetName.value.trim() || uploadDialogFile.value.name;
+
+      // Extract metadata and generate thumbnail for video assets (intro/outro)
+      let thumbnail: File | undefined;
+      let duration: number | undefined;
+      let width: number | undefined;
+      let height: number | undefined;
+
+      if (['intro', 'outro'].includes(uploadDialogSelectedType.value)) {
+        const metadata = await extractVideoMetadata(uploadDialogFile.value.blob);
+        if (metadata.thumbnail) {
+          thumbnail = metadata.thumbnail;
+        }
+        if (metadata.duration !== null) {
+          duration = metadata.duration;
+        }
+        if (metadata.width !== null) {
+          width = metadata.width;
+        }
+        if (metadata.height !== null) {
+          height = metadata.height;
+        }
+      }
+
+      const response = await uploadOrganizationAsset(organizationId.value, file, uploadDialogSelectedType.value, {
+        name: assetName,
+        thumbnail,
+        duration,
+        width,
+        height,
+      });
+
+      if (response.success && response.asset) {
+        orgAssets.value.unshift(response.asset);
+        showSuccess('Asset uploaded', `"${assetName}" has been uploaded successfully`);
+        closeUploadDialog();
+      } else {
+        showError('Upload failed', response.error || 'Failed to upload asset');
+      }
+    } catch (err: any) {
+      console.error('Asset upload error:', err);
+      showError('Upload failed', err.message || 'Failed to upload asset');
+    } finally {
+      uploadingAsset.value = false;
+    }
+  }
+
+  async function handleDeleteAsset(asset: ServerOrganizationAsset) {
+    if (!organizationId.value || !isAdmin.value) return;
+
+    deletingAssetId.value = asset.id;
+    try {
+      const response = await deleteOrganizationAsset(organizationId.value, asset.id);
+      if (response.success) {
+        orgAssets.value = orgAssets.value.filter((a) => a.id !== asset.id);
+        showSuccess('Asset deleted', `"${asset.name}" has been deleted`);
+      } else {
+        showError('Delete failed', response.error || 'Failed to delete asset');
+      }
+    } catch (err: any) {
+      showError('Delete failed', err.message || 'Failed to delete asset');
+    } finally {
+      deletingAssetId.value = null;
+    }
+  }
+
+  // ============================================
+  // Asset Playback Functions
+  // ============================================
+
+  function playVideoAsset(asset: ServerOrganizationAsset) {
+    videoToPlay.value = asset;
+    showVideoPlayer.value = true;
+  }
+
+  function closeVideoPlayer() {
+    showVideoPlayer.value = false;
+    videoToPlay.value = null;
+  }
+
+  function toggleAudioPlayback(asset: ServerOrganizationAsset) {
+    if (currentlyPlayingAudio.value === asset.id) {
+      // Stop playing
+      if (audioElement.value) {
+        audioElement.value.pause();
+        audioElement.value.currentTime = 0;
+      }
+      currentlyPlayingAudio.value = null;
+    } else {
+      // Stop any currently playing audio
+      if (audioElement.value) {
+        audioElement.value.pause();
+      }
+
+      // Create and play new audio using the presigned URL
+      audioElement.value = new Audio(asset.url);
+      audioElement.value.onended = () => {
+        currentlyPlayingAudio.value = null;
+      };
+      audioElement.value.onerror = () => {
+        showError('Playback Error', 'Failed to play audio file');
+        currentlyPlayingAudio.value = null;
+      };
+      audioElement.value.play();
+      currentlyPlayingAudio.value = asset.id;
+    }
+  }
+
+  function isAudioPlaying(assetId: number): boolean {
+    return currentlyPlayingAudio.value === assetId;
+  }
+
+  function handleAssetClick(asset: ServerOrganizationAsset) {
+    if (asset.asset_type === 'intro' || asset.asset_type === 'outro') {
+      playVideoAsset(asset);
+    } else if (asset.asset_type === 'audio') {
+      toggleAudioPlayback(asset);
+    }
+    // Images/watermarks don't have click action
+  }
+
+  function getAssetTypeLabel(type: string): string {
+    const labels: Record<string, string> = {
+      intro: 'Intro',
+      outro: 'Outro',
+      watermark: 'Watermark',
+      audio: 'Audio',
+      image: 'Image',
+    };
+    return labels[type] || type;
+  }
+
+  function getAssetTypeIcon(type: string) {
+    switch (type) {
+      case 'intro':
+      case 'outro':
+        return Film;
+      case 'watermark':
+      case 'image':
+        return ImageIcon;
+      case 'audio':
+        return Music;
+      default:
+        return Package;
+    }
+  }
+
+  // Load assets when switching to assets tab
+  watch(activeTab, (newTab) => {
+    if (newTab === 'assets' && !assetsLoaded.value) {
+      loadOrgAssets();
+    }
+  });
 
   // Fetch pricing on mount
   onMounted(() => {

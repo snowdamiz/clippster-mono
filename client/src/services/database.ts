@@ -433,3 +433,33 @@ export {
   type VideoEditorEffectRecord,
   type FullVideoEditorEdit,
 } from './database/video-editor-edits';
+
+// Organization assets exports
+export {
+  ensureOrganizationAssetColumns,
+  // Intro/Outro
+  createOrganizationIntroOutro,
+  getOrganizationIntroOutros,
+  getAllOrganizationIntroOutros,
+  getIntroOutroByServerId,
+  // Watermark
+  createOrganizationWatermark,
+  getOrganizationWatermarks,
+  getAllOrganizationWatermarks,
+  getWatermarkByServerId,
+  // Audio
+  createOrganizationAudioAsset,
+  getOrganizationAudioAssets,
+  getAllOrganizationAudioAssets,
+  getAudioAssetByServerId,
+  // Image
+  createOrganizationImageAsset,
+  getOrganizationImageAssets,
+  getAllOrganizationImageAssets,
+  getImageAssetByServerId,
+  // Sync helpers
+  getLocalOrgAssetServerIds,
+  deleteAssetsForRemovedOrganizations,
+  deleteOrgAssetByServerId,
+  updateAssetSyncStatus,
+} from './database/organization-assets';

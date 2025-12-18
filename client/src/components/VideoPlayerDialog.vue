@@ -223,6 +223,10 @@
     showVideoPlayer: boolean;
     /** Optional: Video file path for clip preview mode (when video prop is not provided) */
     videoFilePath?: string | null;
+    /** Optional: Direct video URL (bypasses local video server - for cloud/remote videos) */
+    videoUrl?: string | null;
+    /** Optional: Video title to display when using videoUrl */
+    videoTitle?: string | null;
     /** Optional: Clip start time in seconds (enables clip preview mode) */
     clipStartTime?: number | null;
     /** Optional: Clip end time in seconds (enables clip preview mode) */
@@ -241,6 +245,8 @@
 
   const props = withDefaults(defineProps<Props>(), {
     videoFilePath: null,
+    videoUrl: null,
+    videoTitle: null,
     clipStartTime: null,
     clipEndTime: null,
     clipName: null,
@@ -263,10 +269,13 @@
   const effectiveStartTime = computed(() => props.clipStartTime ?? 0);
   const effectiveEndTime = computed(() => props.clipEndTime ?? duration.value);
 
-  // Computed: Display title (uses clipName in clip mode, otherwise video title)
+  // Computed: Display title (uses clipName in clip mode, videoTitle prop, or video title)
   const displayTitle = computed(() => {
     if (isClipPreviewMode.value && props.clipName) {
       return props.clipName;
+    }
+    if (props.videoTitle) {
+      return props.videoTitle;
     }
     return getVideoTitle(props.video);
   });
@@ -586,6 +595,13 @@
 
   // Initialize video source when video changes
   async function initializeVideo() {
+    // If a direct videoUrl is provided, use it directly (for cloud/remote videos)
+    if (props.videoUrl) {
+      resetVideoState();
+      videoSrc.value = props.videoUrl;
+      return;
+    }
+
     // Determine the file path from either video prop or videoFilePath prop
     const filePath = props.video?.file_path || props.videoFilePath;
 
@@ -627,8 +643,8 @@
     videoKey.value = `video-${Date.now()}`;
   }
 
-  // Watch for video changes (either video prop or videoFilePath prop)
-  watch(() => [props.video, props.videoFilePath], initializeVideo, { immediate: true });
+  // Watch for video changes (video prop, videoFilePath, or videoUrl)
+  watch(() => [props.video, props.videoFilePath, props.videoUrl], initializeVideo, { immediate: true });
 
   // Watch for dialog open/close to properly handle video state
   watch(
@@ -644,7 +660,7 @@
           videoElement.value.load();
         }
         resetVideoState();
-      } else if (newVal && !oldVal && (props.video || props.videoFilePath)) {
+      } else if (newVal && !oldVal && (props.video || props.videoFilePath || props.videoUrl)) {
         // Dialog is opening, ensure video is initialized
         initializeVideo();
       }

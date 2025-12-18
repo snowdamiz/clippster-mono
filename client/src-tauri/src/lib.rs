@@ -518,6 +518,7 @@ pub fn run() {
             storage::delete_audio_file,
             storage::copy_image_to_storage,
             storage::delete_image_file,
+            storage::save_org_asset_file,
             // User context for per-user storage
             storage::set_current_user_id,
             storage::clear_current_user_id,

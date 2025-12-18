@@ -80,6 +80,11 @@ export interface IntroOutro {
   thumbnail_generation_status: 'pending' | 'processing' | 'completed' | 'failed' | null;
   created_at: number;
   updated_at: number;
+  // Organization asset fields (null for local assets)
+  organization_id?: string | null;
+  organization_name?: string | null;
+  server_id?: number | null;
+  sync_status?: 'synced' | 'downloading' | 'error' | null;
 }
 
 export interface Clip {
@@ -387,6 +392,11 @@ export interface WatermarkImage {
   file_size: number | null;
   created_at: number;
   updated_at: number;
+  // Organization asset fields (null for local assets)
+  organization_id?: string | null;
+  organization_name?: string | null;
+  server_id?: number | null;
+  sync_status?: 'synced' | 'downloading' | 'error' | null;
 }
 
 export interface AudioAsset {
@@ -399,6 +409,11 @@ export interface AudioAsset {
   channels: number | null;
   created_at: number;
   updated_at: number;
+  // Organization asset fields (null for local assets)
+  organization_id?: string | null;
+  organization_name?: string | null;
+  server_id?: number | null;
+  sync_status?: 'synced' | 'downloading' | 'error' | null;
 }
 
 export interface ImageAsset {
@@ -411,6 +426,11 @@ export interface ImageAsset {
   mime_type: string | null;
   created_at: number;
   updated_at: number;
+  // Organization asset fields (null for local assets)
+  organization_id?: string | null;
+  organization_name?: string | null;
+  server_id?: number | null;
+  sync_status?: 'synced' | 'downloading' | 'error' | null;
 }
 
 export interface WatermarkSettings {
