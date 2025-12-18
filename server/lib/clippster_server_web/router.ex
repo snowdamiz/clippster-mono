@@ -121,6 +121,7 @@ defmodule ClippsterServerWeb.Router do
     # Organization members
     get "/organizations/:organization_id/members", OrganizationController, :list_members
     put "/organizations/:organization_id/members/:user_id", OrganizationController, :update_member
+    patch "/organizations/:organization_id/members/:user_id/account", OrganizationController, :update_member_account
     delete "/organizations/:organization_id/members/:user_id", OrganizationController, :remove_member
 
     # Organization invitations

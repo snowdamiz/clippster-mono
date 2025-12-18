@@ -884,6 +884,30 @@ export const useAuthStore = defineStore('auth', {
     },
 
     /**
+     * Update member account details (admin only)
+     */
+    async updateOrganizationMemberAccount(orgId, userId, updates) {
+      try {
+        const response = await fetch(
+          `${API_BASE}/api/organizations/${orgId}/members/${userId}/account`,
+          {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${this.token}`,
+            },
+            body: JSON.stringify(updates),
+          }
+        );
+
+        const data = await response.json();
+        return data.success ? data : { success: false, error: data.error };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+
+    /**
      * Get pending invitations
      */
     async getOrganizationInvitations(orgId) {

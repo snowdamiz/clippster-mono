@@ -166,19 +166,66 @@
                 {{ member.role }}
               </span>
 
-              <div v-if="isAdmin && member.role !== 'owner'" class="flex gap-1">
-                <Button variant="ghost" size="icon" @click="openRoleDialog(member)" title="Change role">
-                  <Shield class="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  @click="confirmRemoveMember(member)"
-                  title="Remove member"
-                  class="text-destructive hover:text-destructive"
+              <!-- Member Actions Menu -->
+              <div v-if="isAdmin && member.role !== 'owner'" class="relative">
+                <button
+                  :ref="(el) => setMemberMenuButtonRef(el, member.user_id)"
+                  class="p-1.5 hover:bg-muted/80 rounded-md transition-colors text-muted-foreground hover:text-foreground"
+                  :class="{ 'bg-muted/80 text-foreground': openMemberMenuId === member.user_id }"
+                  title="Member actions"
+                  @click.stop="toggleMemberMenu(member.user_id)"
                 >
-                  <Trash2 class="h-4 w-4" />
-                </Button>
+                  <MoreVertical class="h-4 w-4" />
+                </button>
+
+                <!-- Action Menu Dropdown - Teleported to body -->
+                <Teleport to="body">
+                  <div
+                    v-if="openMemberMenuId === member.user_id"
+                    class="fixed z-[9999] w-[180px] bg-popover/95 backdrop-blur-md border border-border/60 rounded-lg shadow-xl shadow-black/20 py-1.5 overflow-hidden"
+                    :style="getMemberMenuPosition(member.user_id)"
+                    @click.stop
+                  >
+                    <!-- Edit Member -->
+                    <button
+                      class="w-full px-3 py-2 flex items-center gap-3 text-sm text-foreground/90 hover:bg-blue-500/15 hover:text-blue-400 transition-colors"
+                      @click.stop="
+                        openEditMemberDialog(member);
+                        closeMemberMenu();
+                      "
+                    >
+                      <Pencil class="h-4 w-4" />
+                      <span>Edit Member</span>
+                    </button>
+
+                    <!-- Change Role -->
+                    <button
+                      class="w-full px-3 py-2 flex items-center gap-3 text-sm text-foreground/90 hover:bg-primary/15 hover:text-primary transition-colors"
+                      @click.stop="
+                        openRoleDialog(member);
+                        closeMemberMenu();
+                      "
+                    >
+                      <Shield class="h-4 w-4" />
+                      <span>Change Role</span>
+                    </button>
+
+                    <!-- Divider -->
+                    <div class="my-1.5 border-t border-border/40"></div>
+
+                    <!-- Remove Member -->
+                    <button
+                      class="w-full px-3 py-2 flex items-center gap-3 text-sm text-destructive hover:bg-destructive/10 hover:text-destructive transition-colors"
+                      @click.stop="
+                        confirmRemoveMember(member);
+                        closeMemberMenu();
+                      "
+                    >
+                      <Trash2 class="h-4 w-4" />
+                      <span>Remove Member</span>
+                    </button>
+                  </div>
+                </Teleport>
               </div>
             </div>
 
@@ -260,7 +307,7 @@
             <div class="bg-muted/30 border border-border/50 rounded-lg p-4">
               <div class="text-sm text-muted-foreground mb-1">My Allocation</div>
               <div class="text-2xl font-bold text-foreground">
-                {{ myAllocation ? myAllocation.hoursRemaining : '0' }} hrs
+                {{ formatAllocation(myAllocation?.hours_remaining) }} hrs
               </div>
             </div>
           </div>
@@ -326,58 +373,38 @@
         </div>
 
         <!-- Settings Tab -->
-        <div v-if="activeTab === 'settings'" class="p-6 space-y-6">
+        <div v-if="activeTab === 'settings'" class="divide-y divide-border">
           <!-- General Settings Section -->
-          <div class="space-y-4">
-            <div class="flex items-center gap-3 mb-4">
-              <div class="p-2 bg-primary/10 rounded-lg">
-                <Settings class="h-4 w-4 text-primary" />
-              </div>
-              <div>
-                <h2 class="text-base font-semibold text-foreground">General Settings</h2>
-                <p class="text-xs text-muted-foreground">Manage your organization's basic information</p>
-              </div>
-            </div>
-
-            <form @submit.prevent="updateOrganization" class="space-y-5">
+          <div class="p-6">
+            <form @submit.prevent="updateOrganization" class="max-w-lg space-y-6">
               <!-- Organization Name -->
-              <div class="space-y-2">
-                <label class="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <Type class="h-3.5 w-3.5 text-muted-foreground" />
-                  Organization Name
-                </label>
-                <Input v-model="editData.name" placeholder="Enter organization name" class="max-w-md" />
-                <p class="text-xs text-muted-foreground">This is the name displayed to all team members</p>
+              <div class="space-y-1.5">
+                <label class="text-sm font-medium text-foreground">Organization Name</label>
+                <Input v-model="editData.name" placeholder="Enter organization name" />
               </div>
 
               <!-- Description -->
-              <div class="space-y-2">
-                <label class="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <FileText class="h-3.5 w-3.5 text-muted-foreground" />
-                  Description
-                </label>
+              <div class="space-y-1.5">
+                <label class="text-sm font-medium text-foreground">Description</label>
                 <textarea
                   v-model="editData.description"
                   rows="3"
                   placeholder="What does your organization do?"
-                  class="flex w-full max-w-md rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
+                  class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
                 />
-                <p class="text-xs text-muted-foreground">
-                  A brief description to help team members understand your organization's purpose
-                </p>
+                <p class="text-xs text-muted-foreground/70">Optional · Visible to team members</p>
               </div>
 
               <!-- Save Button -->
-              <div class="flex items-center gap-3 pt-2">
-                <Button type="submit" :disabled="saving || !hasChanges">
-                  <Loader2 v-if="saving" class="h-4 w-4 mr-2 animate-spin" />
-                  <Save v-else class="h-4 w-4 mr-2" />
+              <div class="flex items-center gap-3 pt-1">
+                <Button type="submit" size="sm" :disabled="saving || !hasChanges">
+                  <Loader2 v-if="saving" class="h-3.5 w-3.5 mr-1.5 animate-spin" />
                   {{ saving ? 'Saving...' : 'Save Changes' }}
                 </Button>
                 <Transition name="fade">
-                  <span v-if="saveSuccess" class="text-sm text-green-500 flex items-center gap-1.5">
-                    <CheckCircle class="h-4 w-4" />
-                    Changes saved
+                  <span v-if="saveSuccess" class="text-xs text-emerald-500 flex items-center gap-1">
+                    <CheckCircle class="h-3.5 w-3.5" />
+                    Saved
                   </span>
                 </Transition>
               </div>
@@ -385,25 +412,24 @@
           </div>
 
           <!-- Danger Zone -->
-          <div v-if="role === 'owner'" class="pt-6 border-t border-border">
-            <div class="bg-destructive/5 border border-destructive/20 rounded-lg p-5">
-              <div class="flex items-start gap-4">
-                <div class="p-2 bg-destructive/10 rounded-lg flex-shrink-0">
-                  <AlertTriangle class="h-5 w-5 text-destructive" />
-                </div>
-                <div class="flex-1 min-w-0">
-                  <h3 class="text-sm font-semibold text-destructive mb-1">Danger Zone</h3>
-                  <p class="text-sm text-muted-foreground mb-4">
-                    Once you delete an organization, there is no going back. All members will be removed and this action
-                    cannot be undone.
-                  </p>
-                  <Button variant="destructive" size="sm" @click="confirmDeleteOrg">
-                    <Trash2 class="h-4 w-4 mr-2" />
-                    Delete Organization
-                  </Button>
-                </div>
-              </div>
+          <div v-if="role === 'owner'" class="p-6">
+            <div class="flex items-center gap-3 mb-3">
+              <AlertTriangle class="h-4 w-4 text-destructive" />
+              <h3 class="text-sm font-medium text-destructive">Danger Zone</h3>
             </div>
+            <p class="text-sm text-muted-foreground mb-4 max-w-md">
+              Once you delete an organization, there is no going back. All members will be removed and this action
+              cannot be undone.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              class="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              @click="confirmDeleteOrg"
+            >
+              <Trash2 class="h-3.5 w-3.5 mr-1.5" />
+              Delete Organization
+            </Button>
           </div>
         </div>
       </div>
@@ -484,6 +510,114 @@
                     Confirm Change
                   </button>
                 </div>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Edit Member Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showEditMemberDialog"
+          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+          @click.self="closeEditMemberDialog"
+        >
+          <Transition name="dialog" appear>
+            <div
+              class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden"
+            >
+              <!-- Decorative top accent -->
+              <div class="h-1 w-full bg-gradient-to-r from-blue-500 via-cyan-500 to-teal-500" />
+
+              <div class="p-5 sm:p-6">
+                <div class="mb-5 text-center">
+                  <div
+                    class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500/30 mb-4"
+                  >
+                    <Pencil class="h-6 w-6 text-blue-400" />
+                  </div>
+                  <h2 class="text-lg sm:text-xl font-bold text-white tracking-tight">Edit Member</h2>
+                  <p class="text-zinc-400 text-sm mt-1">
+                    Update account details for {{ editMemberData.member?.user?.email }}
+                  </p>
+                </div>
+
+                <form @submit.prevent="saveEditMember" class="space-y-4">
+                  <!-- Name -->
+                  <div class="space-y-2">
+                    <label class="text-sm font-medium text-zinc-300">Name</label>
+                    <input
+                      v-model="editMemberData.name"
+                      type="text"
+                      placeholder="Enter name"
+                      class="w-full px-3 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all text-sm"
+                    />
+                  </div>
+
+                  <!-- Email -->
+                  <div class="space-y-2">
+                    <label class="text-sm font-medium text-zinc-300">Email</label>
+                    <input
+                      v-model="editMemberData.email"
+                      type="email"
+                      placeholder="Enter email"
+                      class="w-full px-3 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all text-sm"
+                    />
+                  </div>
+
+                  <!-- Password -->
+                  <div class="space-y-2">
+                    <label class="text-sm font-medium text-zinc-300">
+                      New Password
+                      <span class="text-zinc-500 font-normal">(leave empty to keep current)</span>
+                    </label>
+                    <div class="relative">
+                      <input
+                        v-model="editMemberData.password"
+                        :type="showPassword ? 'text' : 'password'"
+                        placeholder="Enter new password"
+                        class="w-full px-3 py-2.5 pr-10 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all text-sm"
+                      />
+                      <button
+                        type="button"
+                        @click="showPassword = !showPassword"
+                        class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                      >
+                        <EyeOff v-if="showPassword" class="h-4 w-4" />
+                        <Eye v-else class="h-4 w-4" />
+                      </button>
+                    </div>
+                    <p
+                      v-if="editMemberData.password && editMemberData.password.length < 8"
+                      class="text-xs text-amber-400"
+                    >
+                      Password must be at least 8 characters
+                    </p>
+                  </div>
+
+                  <!-- Actions -->
+                  <div class="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      class="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all font-medium border border-zinc-700 text-sm"
+                      @click="closeEditMemberDialog"
+                      :disabled="editMemberSaving"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      class="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl font-semibold transition-all text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                      :disabled="editMemberSaving || (editMemberData.password && editMemberData.password.length < 8)"
+                    >
+                      <Loader2 v-if="editMemberSaving" class="h-4 w-4 animate-spin" />
+                      {{ editMemberSaving ? 'Saving...' : 'Save Changes' }}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           </Transition>
@@ -684,14 +818,13 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted, watch } from 'vue';
+  import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
   import { useRoute, useRouter } from 'vue-router';
   import {
     Building2,
     Users,
     Mail,
     CreditCard,
-    Settings,
     UserPlus,
     User,
     Shield,
@@ -699,12 +832,13 @@
     X,
     Loader2,
     AlertTriangle,
-    Type,
-    FileText,
-    Save,
     CheckCircle,
     Wallet,
     ArrowDown,
+    MoreVertical,
+    Pencil,
+    Eye,
+    EyeOff,
   } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
   import { Button } from '@/components/ui/button';
@@ -750,6 +884,26 @@
   const roleDialogMember = ref<any>(null);
   const roleDialogNewRole = ref<string>('');
 
+  // Member action menu state
+  const openMemberMenuId = ref<number | null>(null);
+  const memberMenuButtonRefs = ref<Map<number, HTMLElement>>(new Map());
+
+  // Edit member dialog state
+  const showEditMemberDialog = ref(false);
+  const editMemberData = ref<{
+    member: any;
+    name: string;
+    email: string;
+    password: string;
+  }>({
+    member: null,
+    name: '',
+    email: '',
+    password: '',
+  });
+  const editMemberSaving = ref(false);
+  const showPassword = ref(false);
+
   const editData = ref({
     name: '',
     description: '',
@@ -780,6 +934,11 @@
 
   onMounted(() => {
     loadOrganization();
+    document.addEventListener('click', handleMemberMenuClickOutside);
+  });
+
+  onUnmounted(() => {
+    document.removeEventListener('click', handleMemberMenuClickOutside);
   });
 
   watch(organizationId, () => {
@@ -922,6 +1081,140 @@
       loadOrganization();
     } catch (err: any) {
       showError('Failed to update role', err.message || 'An error occurred');
+    }
+  }
+
+  // Member action menu functions
+  function setMemberMenuButtonRef(el: any, userId: number) {
+    if (el) {
+      memberMenuButtonRefs.value.set(userId, el);
+    } else {
+      memberMenuButtonRefs.value.delete(userId);
+    }
+  }
+
+  function toggleMemberMenu(userId: number) {
+    openMemberMenuId.value = openMemberMenuId.value === userId ? null : userId;
+  }
+
+  function closeMemberMenu() {
+    openMemberMenuId.value = null;
+  }
+
+  function getMemberMenuPosition(userId: number): Record<string, string> {
+    const button = memberMenuButtonRefs.value.get(userId);
+    if (!button) {
+      return { top: '0px', left: '0px' };
+    }
+
+    const rect = button.getBoundingClientRect();
+    const menuWidth = 180;
+    const menuMaxHeight = 120;
+    const padding = 8;
+
+    let top = rect.bottom + padding;
+    let left = rect.right - menuWidth;
+
+    // Ensure menu doesn't go off screen bottom
+    if (top + menuMaxHeight > window.innerHeight - padding) {
+      top = rect.top - menuMaxHeight - padding;
+    }
+
+    // Ensure menu doesn't go off screen left
+    if (left < padding) {
+      left = padding;
+    }
+
+    // Ensure menu doesn't go off screen right
+    if (left + menuWidth > window.innerWidth - padding) {
+      left = window.innerWidth - menuWidth - padding;
+    }
+
+    return {
+      top: `${top}px`,
+      left: `${left}px`,
+    };
+  }
+
+  function handleMemberMenuClickOutside(event: MouseEvent) {
+    const target = event.target as Node;
+
+    // Check if the click is inside any member action menu or its trigger button
+    if (openMemberMenuId.value !== null) {
+      const button = memberMenuButtonRefs.value.get(openMemberMenuId.value);
+      if (button && button.contains(target)) {
+        return;
+      }
+      openMemberMenuId.value = null;
+    }
+  }
+
+  // Edit member dialog functions
+  function openEditMemberDialog(member: any) {
+    editMemberData.value = {
+      member,
+      name: member.user?.name || '',
+      email: member.user?.email || '',
+      password: '',
+    };
+    showPassword.value = false;
+    showEditMemberDialog.value = true;
+  }
+
+  function closeEditMemberDialog() {
+    showEditMemberDialog.value = false;
+    editMemberData.value = {
+      member: null,
+      name: '',
+      email: '',
+      password: '',
+    };
+    showPassword.value = false;
+  }
+
+  async function saveEditMember() {
+    if (!editMemberData.value.member || !organizationId.value) return;
+
+    editMemberSaving.value = true;
+
+    try {
+      const updates: Record<string, string> = {};
+
+      // Only include changed fields
+      if (editMemberData.value.name !== (editMemberData.value.member.user?.name || '')) {
+        updates.name = editMemberData.value.name;
+      }
+      if (editMemberData.value.email !== (editMemberData.value.member.user?.email || '')) {
+        updates.email = editMemberData.value.email;
+      }
+      if (editMemberData.value.password) {
+        updates.password = editMemberData.value.password;
+      }
+
+      // Check if there are any changes
+      if (Object.keys(updates).length === 0) {
+        showError('No changes', 'No changes were made to the member account');
+        editMemberSaving.value = false;
+        return;
+      }
+
+      const result = await authStore.updateOrganizationMemberAccount(
+        organizationId.value,
+        editMemberData.value.member.user_id,
+        updates
+      );
+
+      if (result.success) {
+        showSuccess('Member updated', 'Member account has been updated successfully');
+        closeEditMemberDialog();
+        loadOrganization();
+      } else {
+        showError('Update failed', result.error || 'Failed to update member account');
+      }
+    } catch (err: any) {
+      showError('Update failed', err.message || 'An error occurred while updating the member');
+    } finally {
+      editMemberSaving.value = false;
     }
   }
 

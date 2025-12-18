@@ -203,7 +203,10 @@ defmodule ClippsterServer.Organizations do
   Gets a specific member record.
   """
   def get_member(organization_id, user_id) do
-    Repo.get_by(OrganizationMember, organization_id: organization_id, user_id: user_id)
+    OrganizationMember
+    |> where([m], m.organization_id == ^organization_id and m.user_id == ^user_id)
+    |> preload(:user)
+    |> Repo.one()
   end
 
   @doc """

@@ -3,6 +3,7 @@ defmodule ClippsterServerWeb.OrganizationController do
 
   alias ClippsterServer.Organizations
   alias ClippsterServer.Accounts
+  alias ClippsterServer.Repo
 
   plug ClippsterServerWeb.AuthPlug
 
@@ -226,6 +227,73 @@ defmodule ClippsterServerWeb.OrganizationController do
         conn
         |> put_status(404)
         |> json(%{success: false, error: "Member not found"})
+    end
+  end
+
+  @doc """
+  Update a member's account details (admin only).
+  """
+  def update_member_account(conn, %{"organization_id" => org_id, "user_id" => member_user_id} = params) do
+    user = conn.assigns.current_user
+
+    # Only admins can update member accounts
+    unless Organizations.is_admin?(org_id, user.id) do
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Only admins can update member accounts"})
+    else
+      # Get the member
+      case Organizations.get_member(org_id, member_user_id) do
+        nil ->
+          conn
+          |> put_status(404)
+          |> json(%{success: false, error: "Member not found"})
+
+        member ->
+          # Build update attrs
+          attrs = %{}
+          attrs = if params["name"], do: Map.put(attrs, :name, params["name"]), else: attrs
+          attrs = if params["email"], do: Map.put(attrs, :email, params["email"]), else: attrs
+
+          # Handle password separately
+          result = if params["password"] && String.length(params["password"]) >= 8 do
+            # Update with new password
+            member.user
+            |> Accounts.User.password_changeset(%{password: params["password"]})
+            |> then(fn changeset ->
+              # Also apply name/email changes
+              Ecto.Changeset.cast(changeset, attrs, [:name, :email])
+            end)
+            |> Repo.update()
+          else
+            # Update without password
+            if map_size(attrs) > 0 do
+              member.user
+              |> Ecto.Changeset.cast(%{}, [])
+              |> Ecto.Changeset.cast(attrs, [:name, :email])
+              |> Repo.update()
+            else
+              {:ok, member.user}
+            end
+          end
+
+          case result do
+            {:ok, updated_user} ->
+              json(conn, %{
+                success: true,
+                user: %{
+                  id: updated_user.id,
+                  email: updated_user.email,
+                  name: updated_user.name
+                }
+              })
+
+            {:error, changeset} ->
+              conn
+              |> put_status(422)
+              |> json(%{success: false, error: format_errors(changeset)})
+          end
+      end
     end
   end
 

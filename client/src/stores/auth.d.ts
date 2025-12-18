@@ -75,6 +75,7 @@ export interface AuthActions {
   cancelOrganizationInvitation(orgId: string, invitationId: number): Promise<OrganizationResult>
   removeOrganizationMember(orgId: string, userId: number): Promise<OrganizationResult>
   updateOrganizationMemberRole(orgId: string, userId: number, role: string): Promise<OrganizationResult>
+  updateOrganizationMemberAccount(orgId: string, userId: number, updates: { name?: string; email?: string; password?: string }): Promise<OrganizationResult>
   getOrganizationCredits(id: string): Promise<OrganizationResult>
   allocateOrganizationCredits(orgId: string, userId: number, hours: number): Promise<OrganizationResult>
 }
