@@ -236,6 +236,16 @@
             <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
                 v-if="build.status === 'completed' && build.file_path"
+                @click="
+                  saveVideoToLocation(build.file_path, `${props.clipName || 'video'}.${build.output_format || 'mp4'}`)
+                "
+                class="p-1.5 rounded hover:bg-emerald-500/10 text-white/40 hover:text-emerald-400 transition-colors"
+                title="Save As..."
+              >
+                <Download :size="14" />
+              </button>
+              <button
+                v-if="build.status === 'completed' && build.file_path"
                 @click="openBuildFolder(build)"
                 class="p-1.5 rounded hover:bg-white/10 text-white/40 hover:text-white transition-colors"
                 title="Open folder"
@@ -280,6 +290,7 @@
   } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+  import { save } from '@tauri-apps/plugin-dialog';
   import { getClipBuilds, deleteClipBuild, type ClipBuild, type VideoEditorSource } from '@/services/database';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
 
@@ -325,6 +336,8 @@
     editorProjectName?: string;
     currentIntro?: AppliedIntroOutro | null;
     currentOutro?: AppliedIntroOutro | null;
+    // Creator profile watermark settings
+    creatorProfileWatermarkSettings?: any | null;
   }>();
 
   const emit = defineEmits<{
@@ -543,10 +556,9 @@
         })) ?? null;
 
       // Determine framing strategy
-      const framingStrategy =
-        props.framingMode === 'manual' && props.framingConfigs && Object.keys(props.framingConfigs).length > 0
-          ? 'manual'
-          : 'auto_poi';
+      // FramingStrategy is a complex struct - pass null to let backend handle detection
+      // Manual configs are passed separately via manualFramingConfigs parameter
+      const framingStrategy = null;
 
       if (props.editorMode && props.videoSources && props.videoSources.length > 0) {
         // Editor mode: build from video sources
@@ -680,7 +692,7 @@
       clipName: props.clipName || 'Untitled',
       videoPath: projectVideo.file_path,
       segments: segments,
-      subtitleSettings: props.subtitleSettings,
+      subtitleSettings: subtitleSettingsWithDefaults,
       subtitleOverrides: null,
       transcriptWords: [],
       transcriptSegments: [],
@@ -696,7 +708,7 @@
       introDuration: introDuration,
       outroPath: outroPath,
       outroDuration: outroDuration,
-      watermarkSettings: null,
+      watermarkSettings: props.creatorProfileWatermarkSettings || null,
       audioSettings: audioSettings,
       framingStrategy: framingStrategy,
       manualFramingConfigs: props.framingConfigs || null,
@@ -765,6 +777,23 @@
       const outroPath = outroSource?.source_path ?? null;
       const outroDuration = outroSource ? outroSource.end_time - outroSource.start_time : null;
 
+      // Ensure subtitle settings have all required fields with defaults
+      const subtitleSettingsWithDefaults = props.subtitleSettings
+        ? {
+            positionPercentage: 15,
+            textOffsetX: 0,
+            textOffsetY: 0,
+            letterSpacing: 0,
+            wordSpacing: 0,
+            padding: 10,
+            borderRadius: 0,
+            lineHeight: 1.2,
+            maxWidth: 80,
+            textAlign: 'center' as const,
+            ...props.subtitleSettings,
+          }
+        : null;
+
       // Build using the existing segment-based command
       await invoke('build_clip_from_segments', {
         projectId: props.editorProjectId,
@@ -772,7 +801,7 @@
         clipName: props.editorProjectName || 'Video Project',
         videoPath: videoPath,
         segments: segments,
-        subtitleSettings: props.subtitleSettings,
+        subtitleSettings: subtitleSettingsWithDefaults,
         subtitleOverrides: null,
         transcriptWords: [],
         transcriptSegments: [],
@@ -788,7 +817,7 @@
         introDuration: introDuration,
         outroPath: outroPath,
         outroDuration: outroDuration,
-        watermarkSettings: null,
+        watermarkSettings: props.creatorProfileWatermarkSettings || null,
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,
         manualFramingConfigs: props.framingConfigs || null,
@@ -824,13 +853,30 @@
       const outroPath = outroSource?.source_path ?? null;
       const outroDuration = outroSource ? outroSource.end_time - outroSource.start_time : null;
 
+      // Ensure subtitle settings have all required fields with defaults
+      const subtitleSettingsWithDefaults = props.subtitleSettings
+        ? {
+            positionPercentage: 15,
+            textOffsetX: 0,
+            textOffsetY: 0,
+            letterSpacing: 0,
+            wordSpacing: 0,
+            padding: 10,
+            borderRadius: 0,
+            lineHeight: 1.2,
+            maxWidth: 80,
+            textAlign: 'center' as const,
+            ...props.subtitleSettings,
+          }
+        : null;
+
       await invoke('build_clip_from_segments', {
         projectId: props.editorProjectId,
         clipId: props.editorProjectId,
         clipName: props.editorProjectName || 'Video Project',
         videoPath: videoPath,
         segments: segments,
-        subtitleSettings: props.subtitleSettings,
+        subtitleSettings: subtitleSettingsWithDefaults,
         subtitleOverrides: null,
         transcriptWords: [],
         transcriptSegments: [],
@@ -846,7 +892,7 @@
         introDuration: introDuration,
         outroPath: outroPath,
         outroDuration: outroDuration,
-        watermarkSettings: null,
+        watermarkSettings: props.creatorProfileWatermarkSettings || null,
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,
         manualFramingConfigs: props.framingConfigs || null,
@@ -882,24 +928,84 @@
     }
   }
 
+  // Save exported video to user-selected location
+  async function saveVideoToLocation(sourcePath: string, defaultFilename: string) {
+    try {
+      console.log('[ExportTab] Opening save dialog for:', sourcePath);
+
+      // Show save file dialog
+      const savePath = await save({
+        title: 'Save Exported Video',
+        defaultPath: defaultFilename,
+        filters: [
+          {
+            name: 'Video Files',
+            extensions: ['mp4', 'mov'],
+          },
+        ],
+      });
+
+      if (savePath) {
+        console.log('[ExportTab] Copying video to:', savePath);
+
+        // Use invoke to call a Rust command to copy the file
+        try {
+          await invoke('copy_file', {
+            source: sourcePath,
+            destination: savePath,
+          });
+          alert(`Video saved successfully to:\n${savePath}`);
+        } catch (copyError) {
+          console.error('[ExportTab] Copy failed:', copyError);
+          alert(`Failed to copy video: ${copyError}`);
+        }
+      }
+    } catch (error) {
+      console.error('[ExportTab] Failed to save video:', error);
+      alert(`Failed to show save dialog: ${error}`);
+    }
+  }
+
   // Setup event listeners
   async function setupEventListeners() {
     // Listen for build progress
-    unlistenProgress = await listen<{ clipId: string; progress: number }>('clip-build-progress', (event) => {
-      if (event.payload.clipId === props.clipId) {
-        buildProgress.value = event.payload.progress;
+    unlistenProgress = await listen<{ clipId: string; clip_id?: string; progress: number }>(
+      'clip-build-progress',
+      (event) => {
+        console.log('[ExportTab] Received clip-build-progress event:', event.payload);
+
+        // Support both camelCase and snake_case
+        const eventClipId = event.payload.clipId || event.payload.clip_id;
+
+        if (eventClipId === props.clipId) {
+          console.log('[ExportTab] Progress update:', event.payload.progress, '%');
+          buildProgress.value = event.payload.progress;
+        }
       }
-    });
+    );
 
     // Listen for build completion
-    unlistenComplete = await listen<{ clipId: string; buildId?: string }>('clip-build-complete', (event) => {
-      if (event.payload.clipId === props.clipId) {
-        isBuilding.value = false;
-        buildProgress.value = 100;
-        loadBuilds();
-        emit('buildCompleted', event.payload.buildId || '');
+    unlistenComplete = await listen<{ clipId: string; clip_id?: string; buildId?: string; build_id?: string }>(
+      'clip-build-complete',
+      (event) => {
+        console.log('[ExportTab] Received clip-build-complete event:', event.payload);
+        console.log('[ExportTab] Current clipId prop:', props.clipId);
+
+        // Support both camelCase and snake_case
+        const eventClipId = event.payload.clipId || event.payload.clip_id;
+        const eventBuildId = event.payload.buildId || event.payload.build_id;
+
+        if (eventClipId === props.clipId) {
+          console.log('[ExportTab] ClipId matches! Setting build complete.');
+          isBuilding.value = false;
+          buildProgress.value = 100;
+          loadBuilds();
+          emit('buildCompleted', eventBuildId || '');
+        } else {
+          console.log('[ExportTab] ClipId mismatch:', eventClipId, '!==', props.clipId);
+        }
       }
-    });
+    );
 
     // Listen for build errors
     unlistenError = await listen<{ clipId: string; error: string }>('clip-build-error', (event) => {

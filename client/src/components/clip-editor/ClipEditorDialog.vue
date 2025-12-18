@@ -1,10 +1,6 @@
 <template>
   <Teleport to="body">
-    <div
-      v-if="modelValue"
-      class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
-      @click.self="close"
-    >
+    <div v-if="modelValue" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
       <div
         ref="dialogRef"
         class="bg-card rounded-md w-full h-full border border-border shadow-2xl flex flex-col overflow-hidden"
@@ -82,6 +78,7 @@
                   :text-overlays="textOverlays"
                   :stickers="stickers"
                   :watermarks="watermarks"
+                  :creator-profile-watermark-settings="props.creatorProfileWatermarkSettings"
                   :filter-settings="activeFilterSettings"
                   :segments="playbackSegments"
                   :preview-aspect-ratio="previewAspectRatio"
@@ -195,6 +192,7 @@
                   :preview-aspect-ratio="previewAspectRatio"
                   :selected-aspect-ratios="selectedAspectRatios"
                   :framing-configs="framingConfigs"
+                  :video-dimensions="videoDimensions"
                   @add-sticker="addStickerLocal"
                   @update-sticker="updateStickerLocal"
                   @delete-sticker="deleteStickerLocal"
@@ -288,6 +286,7 @@
                   :editor-project-name="editorProjectName"
                   :current-intro="currentIntro"
                   :current-outro="currentOutro"
+                  :creator-profile-watermark-settings="props.creatorProfileWatermarkSettings"
                   @go-to-aspect-tab="editorMode ? setEditorTab('aspect') : setActiveTab('aspect')"
                   @build-started="onBuildStarted"
                   @build-completed="onBuildCompleted"
@@ -316,12 +315,26 @@
             :is-playing="isPlaying"
             :editor-mode="editorMode"
             :video-sources="videoSources"
+            :can-undo="canUndo"
+            :can-redo="canRedo"
+            :selected-segment-ids="selectedSegmentIds"
+            :markers="markers"
+            :selected-marker-id="selectedMarkerId"
             @seek="seekTo"
+            @undo="performUndo"
+            @redo="performRedo"
+            @segment-select="handleSegmentSelect"
+            @marker-click="jumpToMarker"
             @split-trim-segment="splitTrimSegment"
+            @delete-trim-segment="deleteTrimSegment"
             @update-audio-track="updateAudioTrackLocal"
+            @delete-audio-track="deleteAudioTrackLocal"
             @update-text-overlay="updateTextOverlayLocal"
+            @delete-text-overlay="deleteTextOverlayLocal"
             @update-sticker="updateStickerLocal"
+            @delete-sticker="deleteStickerLocal"
             @update-watermark="updateWatermarkLocal"
+            @delete-watermark="deleteWatermarkLocal"
             @update-effect="updateEffectLocal"
             @update-filter-segment="updateFilterSegment"
             @update-source="updateVideoSource"
@@ -366,6 +379,8 @@
   import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
   import { Film, X, Loader2, Check } from 'lucide-vue-next';
   import { Separator } from '@/components/ui/separator';
+  import { CommandHistory, SplitCommand, DeleteCommand, PasteCommand } from '@/services/commands';
+  import type { ClipSegment } from '@/services/database';
   import type {
     ClipEditorTab,
     AudioTrack,
@@ -405,6 +420,7 @@
     getClipWithBuildStatus,
     getClip,
     splitClipSegment,
+    deleteClipSegment,
     getClipSegmentsByClipId,
     // Video Editor imports
     getVideoEditorSourcesByProjectId,
@@ -477,6 +493,8 @@
       clipEndTime?: number;
       clipTitle?: string;
       clipSegments?: ClipSegmentInput[];
+      // Creator profile watermark settings (for preview display)
+      creatorProfileWatermarkSettings?: any | null;
       // Editor mode props
       editorMode?: boolean;
       editorProjectId?: string | null;
@@ -491,6 +509,7 @@
       clipStartTime: 0,
       clipEndTime: 0,
       clipTitle: '',
+      creatorProfileWatermarkSettings: null,
       editorMode: false,
       editorProjectId: null,
       editorProjectName: 'Video Project',
@@ -505,10 +524,41 @@
     (e: 'editorSave', projectId: string): void;
   }>();
 
+  // Command history for undo/redo
+  const commandHistory = new CommandHistory();
+
+  // Clipboard for copy/paste
+  const copiedSegment = ref<ClipSegment | null>(null);
+
+  // Multi-select state
+  const selectedSegmentIds = ref<Set<string>>(new Set());
+  const lastSelectedSegmentId = ref<string | null>(null); // For shift+click range selection
+
+  // Timeline markers
+  interface TimelineMarker {
+    id: string;
+    time: number; // Absolute time in video
+    label?: string;
+  }
+  const markers = ref<TimelineMarker[]>([]);
+  const selectedMarkerId = ref<string | null>(null);
+
+  // Reactive undo/redo availability (updates after each operation)
+  const undoRedoTrigger = ref(0); // Increment this to force reactivity
+  const canUndo = computed(() => {
+    undoRedoTrigger.value; // Access to make it reactive
+    return commandHistory.canUndo();
+  });
+  const canRedo = computed(() => {
+    undoRedoTrigger.value; // Access to make it reactive
+    return commandHistory.canRedo();
+  });
+
   // Refs
   const dialogRef = ref<HTMLElement | null>(null);
   const previewRef = ref<InstanceType<typeof ClipEditorPreview> | null>(null);
   const videoElement = ref<HTMLVideoElement | null>(null);
+  const videoDimensions = ref({ width: 0, height: 0 });
   const clipEditId = ref<string | null>(null);
   const videoEditorEditId = ref<string | null>(null); // For video editor mode
 
@@ -585,6 +635,23 @@
   const filterSegments = ref<FilterSegment[]>([]);
   const originalDb = ref(0);
   const trackDbValues = ref<Record<string, number>>({});
+
+  // Debug watcher for stickers
+  watch(
+    stickers,
+    (newStickers) => {
+      console.log(
+        '[ClipEditorDialog] Stickers updated:',
+        newStickers.map((s) => ({
+          id: s.id,
+          scale: s.scale,
+          path: s.stickerPath.slice(-20),
+          configs: s.perRatioConfigs,
+        }))
+      );
+    },
+    { deep: true }
+  );
 
   // Computed: audio tracks with streaming URLs for timeline/waveform rendering
   const audioTracksWithStreamingUrls = computed(() => {
@@ -2156,6 +2223,83 @@
           })
         );
 
+        // Load creator profile watermark if one exists for this project
+        // Note: projectId here is editorProjectId (video_editor_projects.id), not projects.id
+        // We need to find the actual project ID from a video source
+        console.log('[ClipEditorDialog] Checking for creator profile watermark (editor mode)');
+        try {
+          // Find a source with a source_id (clip or raw_video reference)
+          const sourceWithId = videoSources.value.find(
+            (s) => s.source_id && (s.source_type === 'clip' || s.source_type === 'raw_video')
+          );
+
+          let actualProjectId: string | null = null;
+          if (sourceWithId?.source_id) {
+            try {
+              if (sourceWithId.source_type === 'clip') {
+                const clip = await getClipWithBuildStatus(sourceWithId.source_id);
+                actualProjectId = clip?.project_id || null;
+              } else if (sourceWithId.source_type === 'raw_video') {
+                const rawVideo = await getRawVideo(sourceWithId.source_id);
+                actualProjectId = rawVideo?.project_id || null;
+              }
+            } catch (err) {
+              console.warn('[ClipEditorDialog] Failed to get project ID from source:', err);
+            }
+          }
+
+          console.log('[ClipEditorDialog] Actual project ID (editor mode):', actualProjectId);
+
+          if (actualProjectId) {
+            const { getCreatorProfileByProjectId } = await import('@/services/database');
+            const creatorProfile = await getCreatorProfileByProjectId(actualProjectId);
+            console.log('[ClipEditorDialog] Creator profile found (editor mode):', creatorProfile ? 'YES' : 'NO');
+
+            if (creatorProfile && creatorProfile.watermark_settings) {
+              console.log('[ClipEditorDialog] Watermark settings (editor mode):', creatorProfile.watermark_settings);
+              const watermarkSettings = JSON.parse(creatorProfile.watermark_settings);
+
+              // Check if this creator watermark is already in the list
+              const hasCreatorWatermark = watermarks.value.some((w) => w.watermarkId === creatorProfile.watermark_id);
+
+              if (!hasCreatorWatermark && watermarkSettings.watermarkPath) {
+                console.log('[ClipEditorDialog] Adding creator profile watermark (editor mode)');
+                console.log('[ClipEditorDialog] Watermark path (editor mode):', watermarkSettings.watermarkPath);
+                console.log('[ClipEditorDialog] Current watermarks count (editor mode):', watermarks.value.length);
+
+                // Load watermark preview
+                let previewUrl = watermarkSettings.watermarkPath;
+                try {
+                  previewUrl = await invoke<string>('read_file_as_data_url', {
+                    filePath: watermarkSettings.watermarkPath,
+                  });
+                } catch (err) {
+                  console.warn('[ClipEditorDialog] Failed to load creator watermark preview:', err);
+                }
+
+                // Add creator watermark to the list
+                watermarks.value.push({
+                  id: `creator-watermark-${creatorProfile.id}`,
+                  watermarkId: creatorProfile.watermark_id || undefined,
+                  filePath: watermarkSettings.watermarkPath,
+                  previewUrl: previewUrl,
+                  startTime: 0,
+                  endTime: 999999, // Show throughout entire video
+                  position: {
+                    x: watermarkSettings.position?.x ?? 0.9,
+                    y: watermarkSettings.position?.y ?? 0.9,
+                  },
+                  scale: watermarkSettings.scale ?? 0.15,
+                  opacity: watermarkSettings.opacity ?? 1.0,
+                  perRatioConfigs: watermarkSettings.perRatioConfigs,
+                });
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('[ClipEditorDialog] Failed to load creator profile watermark:', error);
+        }
+
         // Set up audio elements for existing tracks
         for (const track of audioTracks.value) {
           if (!audioElements.value.has(track.id)) {
@@ -2200,6 +2344,20 @@
       videoElement.value?.src?.slice(-30)
     );
     videoElement.value = element;
+
+    const updateDimensions = () => {
+      if (element.videoWidth && element.videoHeight) {
+        videoDimensions.value = { width: element.videoWidth, height: element.videoHeight };
+        console.log('[onVideoElementReady] Updated videoDimensions:', videoDimensions.value);
+      }
+    };
+
+    if (element.videoWidth && element.videoHeight) {
+      updateDimensions();
+    } else {
+      console.log('[onVideoElementReady] Video dimensions not ready, waiting for loadedmetadata');
+      element.addEventListener('loadedmetadata', updateDimensions, { once: true });
+    }
 
     // In editor mode, track the current source
     // But don't update during crossfade - the crossfade logic handles source tracking
@@ -2930,42 +3088,64 @@
       return;
     }
 
-    // In clip mode, persist the split to the database (like Timeline.vue does)
+    // In clip mode, use command pattern for undo/redo support
     if (!editorMode.value && props.clipId) {
       try {
-        // Convert relative cut time to absolute source video time
-        const absoluteCutTime = props.clipStartTime + cutTime;
+        // Create reload callback
+        const reloadCallback = async () => {
+          console.log('[splitTrimSegment] Reloading segments from database...');
+          const dbSegments = await getClipSegmentsByClipId(props.clipId!);
+          console.log(
+            '[splitTrimSegment] Loaded segments from DB:',
+            dbSegments.map((s) => ({
+              start: s.start_time,
+              end: s.end_time,
+              duration: s.duration,
+            }))
+          );
+          if (dbSegments && dbSegments.length > 0) {
+            // Convert absolute times back to relative times
+            trimSegments.value = dbSegments.map((seg, index) => ({
+              id: `segment-${index}`,
+              startTime: seg.start_time - props.clipStartTime,
+              endTime: seg.end_time - props.clipStartTime,
+              isDeleted: false,
+            }));
+            console.log(
+              '[splitTrimSegment] Converted to relative times:',
+              trimSegments.value.map((s) => ({
+                id: s.id,
+                start: s.startTime,
+                end: s.endTime,
+              }))
+            );
+          }
+          // Emit save event to notify parent that clip was modified
+          emit('save', props.clipId!);
+        };
+
+        // Create and execute split command
+        const splitCommand = new SplitCommand(false, {
+          clipId: props.clipId,
+          segmentIndex,
+          clipStartTime: props.clipStartTime,
+          cutTime,
+          onReload: reloadCallback,
+        });
+
+        await commandHistory.executeCommand(splitCommand);
+        undoRedoTrigger.value++; // Trigger reactivity update
 
         console.log(
-          `[ClipEditorDialog] Splitting segment ${segmentIndex} at absolute time ${absoluteCutTime.toFixed(2)}s`
+          `[ClipEditorDialog] Split complete (with undo support), now have ${trimSegments.value.length} segments`
         );
-
-        // Call the database function to split the segment
-        await splitClipSegment(props.clipId, segmentIndex, absoluteCutTime);
-
-        // Reload segments from the database to stay in sync
-        const dbSegments = await getClipSegmentsByClipId(props.clipId);
-        if (dbSegments && dbSegments.length > 0) {
-          // Convert absolute times back to relative times
-          trimSegments.value = dbSegments.map((seg, index) => ({
-            id: `segment-${index}`,
-            startTime: seg.start_time - props.clipStartTime,
-            endTime: seg.end_time - props.clipStartTime,
-            isDeleted: false,
-          }));
-        }
-
-        console.log(`[ClipEditorDialog] Split complete, now have ${trimSegments.value.length} segments`);
-
-        // Emit save event to notify parent that clip was modified
-        emit('save', props.clipId);
       } catch (error) {
         console.error('[ClipEditorDialog] Failed to split segment:', error);
-        // Show error to user
         alert(`Failed to split segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } else {
       // Editor mode or no clip ID - just update local state (for video editor projects)
+      // TODO: Convert to command pattern when we implement editor mode split command
       const leftSegment: TrimSegment = {
         id: `segment-${Date.now()}-left`,
         startTime: segment.startTime,
@@ -2984,8 +3164,68 @@
       trimSegments.value.splice(segmentIndex, 1, leftSegment, rightSegment);
 
       console.log(
-        `[ClipEditorDialog] Split segment at ${cutTime.toFixed(2)}s - created ${leftSegment.id} and ${rightSegment.id}`
+        `[ClipEditorDialog] Split segment at ${cutTime.toFixed(2)}s - created ${leftSegment.id} and ${rightSegment.id} (no undo support yet in editor mode)`
       );
+    }
+  }
+
+  async function deleteTrimSegment(segmentId: string) {
+    // Find segment by ID (the ID is like "segment-0", "segment-1", etc.)
+    const segmentIndex = parseInt(segmentId.replace('segment-', ''));
+
+    if (isNaN(segmentIndex) || segmentIndex < 0 || segmentIndex >= trimSegments.value.length) {
+      console.warn('[ClipEditorDialog] Invalid segment index for deletion');
+      return;
+    }
+
+    // Prevent deleting the last segment
+    if (trimSegments.value.length <= 1) {
+      alert('Cannot delete the last remaining segment.');
+      return;
+    }
+
+    // In clip mode, use command pattern for undo/redo support
+    if (!editorMode.value && props.clipId) {
+      try {
+        // Create reload callback
+        const reloadCallback = async () => {
+          const dbSegments = await getClipSegmentsByClipId(props.clipId!);
+          if (dbSegments && dbSegments.length > 0) {
+            // Convert absolute times back to relative times
+            trimSegments.value = dbSegments.map((seg, index) => ({
+              id: `segment-${index}`,
+              startTime: seg.start_time - props.clipStartTime,
+              endTime: seg.end_time - props.clipStartTime,
+              isDeleted: false,
+            }));
+          }
+          // Emit save event to notify parent that clip was modified
+          emit('save', props.clipId!);
+        };
+
+        // Create and execute delete command
+        const deleteCommand = new DeleteCommand(false, {
+          clipId: props.clipId,
+          segmentId,
+          clipStartTime: props.clipStartTime,
+          onReload: reloadCallback,
+        });
+
+        await commandHistory.executeCommand(deleteCommand);
+        undoRedoTrigger.value++; // Trigger reactivity update
+
+        console.log(
+          `[ClipEditorDialog] Delete complete (with undo support), now have ${trimSegments.value.length} segments`
+        );
+      } catch (error) {
+        console.error('[ClipEditorDialog] Failed to delete segment:', error);
+        alert(`Failed to delete segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    } else {
+      // Editor mode or no clip ID - just update local state
+      // TODO: Convert to command pattern when we implement editor mode delete command
+      trimSegments.value.splice(segmentIndex, 1);
+      console.log(`[ClipEditorDialog] Deleted segment ${segmentIndex} (no undo support yet in editor mode)`);
     }
   }
 
@@ -3454,7 +3694,11 @@
   }
 
   // Sticker operations
-  async function addStickerLocal(stickerPath: string, type: 'emoji' | 'image' | 'gif') {
+  async function addStickerLocal(
+    stickerPath: string,
+    type: 'emoji' | 'image' | 'gif',
+    options?: { scale?: number; position?: { x: number; y: number } }
+  ) {
     const editId = editorMode.value ? videoEditorEditId.value : clipEditId.value;
     if (!editId) return;
 
@@ -3467,9 +3711,9 @@
       sticker_type: type,
       start_time: effectiveStartTime,
       end_time: effectiveEndTime,
-      position_x: 50,
-      position_y: 50,
-      scale: 1,
+      position_x: options?.position?.x ?? 50,
+      position_y: options?.position?.y ?? 50,
+      scale: options?.scale ?? 1,
       rotation: 0,
       animation: 'none',
     };
@@ -4394,6 +4638,66 @@
         })
       );
 
+      // Load creator profile watermark if one exists for this clip's project
+      console.log('[ClipEditorDialog] Checking for creator profile watermark (clip mode), clipId:', props.clipId);
+      try {
+        if (props.clipId) {
+          // Get the clip to find its project_id
+          const clip = await getClipWithBuildStatus(props.clipId);
+          const clipProjectId = clip?.project_id;
+          console.log('[ClipEditorDialog] Clip project ID:', clipProjectId);
+
+          if (clipProjectId) {
+            const { getCreatorProfileByProjectId } = await import('@/services/database');
+            const creatorProfile = await getCreatorProfileByProjectId(clipProjectId);
+            console.log('[ClipEditorDialog] Creator profile found (clip mode):', creatorProfile ? 'YES' : 'NO');
+
+            if (creatorProfile && creatorProfile.watermark_settings) {
+              console.log('[ClipEditorDialog] Watermark settings (clip mode):', creatorProfile.watermark_settings);
+              const watermarkSettings = JSON.parse(creatorProfile.watermark_settings);
+
+              // Check if this creator watermark is already in the list
+              const hasCreatorWatermark = watermarks.value.some((w) => w.watermarkId === creatorProfile.watermark_id);
+
+              if (!hasCreatorWatermark && watermarkSettings.watermarkPath) {
+                console.log('[ClipEditorDialog] Adding creator profile watermark for clip mode');
+                console.log('[ClipEditorDialog] Watermark path (clip mode):', watermarkSettings.watermarkPath);
+                console.log('[ClipEditorDialog] Current watermarks count (clip mode):', watermarks.value.length);
+
+                // Load watermark preview
+                let previewUrl = watermarkSettings.watermarkPath;
+                try {
+                  previewUrl = await invoke<string>('read_file_as_data_url', {
+                    filePath: watermarkSettings.watermarkPath,
+                  });
+                } catch (err) {
+                  console.warn('[ClipEditorDialog] Failed to load creator watermark preview:', err);
+                }
+
+                // Add creator watermark to the list
+                watermarks.value.push({
+                  id: `creator-watermark-${creatorProfile.id}`,
+                  watermarkId: creatorProfile.watermark_id || undefined,
+                  filePath: watermarkSettings.watermarkPath,
+                  previewUrl: previewUrl,
+                  startTime: 0,
+                  endTime: 999999, // Show throughout entire clip
+                  position: {
+                    x: watermarkSettings.position?.x ?? 0.9,
+                    y: watermarkSettings.position?.y ?? 0.9,
+                  },
+                  scale: watermarkSettings.scale ?? 0.15,
+                  opacity: watermarkSettings.opacity ?? 1.0,
+                  perRatioConfigs: watermarkSettings.perRatioConfigs,
+                });
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('[ClipEditorDialog] Failed to load creator profile watermark:', error);
+      }
+
       effects.value = fullEdit.effects.map((e) => ({
         id: e.id,
         type: e.effect_type as any,
@@ -4463,16 +4767,284 @@
   function handleKeyDown(e: KeyboardEvent) {
     if (!props.modelValue) return;
 
+    // Don't handle shortcuts if user is typing in input fields
+    const isTyping = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+
+    // Debug log for redo keys
+    if (e.key === 'z' || e.key === 'y') {
+      console.log('[handleKeyDown] Key pressed:', e.key, {
+        ctrl: e.ctrlKey,
+        meta: e.metaKey,
+        shift: e.shiftKey,
+        isTyping,
+      });
+    }
+
     if (e.key === 'Escape') {
       close();
-    } else if (e.key === ' ' && !e.target?.toString().includes('Input')) {
+    } else if (e.key === ' ' && !isTyping) {
       e.preventDefault();
       togglePlay();
     } else if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       saveNow(); // Save immediately on Ctrl+S
+    } else if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !isTyping) {
+      console.log('[handleKeyDown] Undo triggered');
+      e.preventDefault();
+      performUndo();
+    } else if (
+      ((e.key === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey) || (e.key === 'y' && (e.ctrlKey || e.metaKey))) &&
+      !isTyping
+    ) {
+      console.log('[handleKeyDown] Redo triggered!');
+      e.preventDefault();
+      performRedo();
+    } else if (e.key === 'c' && (e.ctrlKey || e.metaKey) && !isTyping) {
+      e.preventDefault();
+      performCopy();
+    } else if (e.key === 'v' && (e.ctrlKey || e.metaKey) && !isTyping) {
+      e.preventDefault();
+      performPaste();
+    } else if (e.key === 'Delete' && !isTyping) {
+      e.preventDefault();
+      if (selectedMarkerId.value) {
+        // Delete selected marker
+        deleteMarker(selectedMarkerId.value);
+      } else if (selectedSegmentIds.value.size > 0) {
+        // Delete selected segments
+        performMultiDelete();
+      }
+    } else if (e.key === 'm' && !isTyping) {
+      e.preventDefault();
+      addMarkerAtPlayhead();
     }
   }
+
+  // Undo/Redo operations
+  async function performUndo() {
+    try {
+      await commandHistory.undo();
+      undoRedoTrigger.value++; // Trigger reactivity update for button states
+      console.log('[ClipEditorDialog] ✅ Undo successful');
+    } catch (error) {
+      console.error('[ClipEditorDialog] Undo failed:', error);
+      alert('Could not undo the last operation');
+    }
+  }
+
+  async function performRedo() {
+    try {
+      console.log('[ClipEditorDialog] Attempting redo...');
+      console.log('[ClipEditorDialog] Can redo?', commandHistory.canRedo());
+      console.log('[ClipEditorDialog] Redo stack size:', commandHistory.getRedoStackSize());
+      await commandHistory.redo();
+      undoRedoTrigger.value++; // Trigger reactivity update for button states
+      console.log('[ClipEditorDialog] ✅ Redo successful');
+    } catch (error) {
+      console.error('[ClipEditorDialog] Redo failed:', error);
+      alert('Could not redo the operation');
+    }
+  }
+
+  // Copy/Paste operations
+  async function performCopy() {
+    // Get the currently selected segment
+    // For now, we'll copy the segment at the current playhead position
+    if (!editorMode.value && props.clipId) {
+      try {
+        const segments = await getClipSegmentsByClipId(props.clipId);
+        const currentRelativeTime = previewTime.value - props.clipStartTime;
+
+        // Find the segment that contains the current playhead position
+        const segmentToCopy = segments.find(
+          (seg) =>
+            currentRelativeTime >= seg.start_time - props.clipStartTime &&
+            currentRelativeTime < seg.end_time - props.clipStartTime
+        );
+
+        if (segmentToCopy) {
+          copiedSegment.value = segmentToCopy;
+          console.log('[ClipEditorDialog] ✅ Copied segment:', {
+            start: segmentToCopy.start_time,
+            end: segmentToCopy.end_time,
+            duration: segmentToCopy.duration,
+          });
+          console.log('[ClipEditorDialog] Segment copied to clipboard. Press Ctrl+V to paste.');
+        } else {
+          console.warn('[ClipEditorDialog] No segment at playhead to copy');
+          alert('No segment at current position');
+        }
+      } catch (error) {
+        console.error('[ClipEditorDialog] Copy failed:', error);
+        alert('Could not copy segment');
+      }
+    } else {
+      // TODO: Implement for editor mode
+      console.log('[ClipEditorDialog] Copy not yet implemented for editor mode');
+    }
+  }
+
+  async function performPaste() {
+    if (!copiedSegment.value) {
+      console.warn('[ClipEditorDialog] No segment in clipboard to paste');
+      alert('No segment copied. Press Ctrl+C to copy a segment first.');
+      return;
+    }
+
+    if (!editorMode.value && props.clipId) {
+      try {
+        const currentRelativeTime = previewTime.value - props.clipStartTime;
+
+        // Create reload callback
+        const reloadCallback = async () => {
+          const dbSegments = await getClipSegmentsByClipId(props.clipId!);
+          if (dbSegments && dbSegments.length > 0) {
+            trimSegments.value = dbSegments.map((seg, index) => ({
+              id: `segment-${index}`,
+              startTime: seg.start_time - props.clipStartTime,
+              endTime: seg.end_time - props.clipStartTime,
+              isDeleted: false,
+            }));
+          }
+          emit('save', props.clipId!);
+        };
+
+        // Create and execute paste command
+        const pasteCommand = new PasteCommand(false, {
+          clipId: props.clipId,
+          clipStartTime: props.clipStartTime,
+          pasteAtTime: currentRelativeTime,
+          copiedSegment: copiedSegment.value,
+          onReload: reloadCallback,
+        });
+
+        await commandHistory.executeCommand(pasteCommand);
+        undoRedoTrigger.value++; // Trigger reactivity update for button states
+
+        console.log('[ClipEditorDialog] ✅ Paste successful - segment added at playhead position');
+      } catch (error) {
+        console.error('[ClipEditorDialog] Paste failed:', error);
+        alert(`Could not paste segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    } else {
+      // TODO: Implement for editor mode
+      console.log('[ClipEditorDialog] Paste not yet implemented for editor mode');
+    }
+  }
+
+  // ============================================================================
+  // MULTI-SELECT HANDLERS
+  // ============================================================================
+
+  function handleSegmentSelect(segmentId: string, modifiers: { shift: boolean; ctrl: boolean }) {
+    console.log('[ClipEditorDialog] Segment select:', { segmentId, modifiers });
+
+    if (modifiers.shift && lastSelectedSegmentId.value) {
+      // Shift+Click: Select range
+      selectSegmentRange(lastSelectedSegmentId.value, segmentId);
+    } else if (modifiers.ctrl) {
+      // Ctrl+Click: Toggle selection
+      if (selectedSegmentIds.value.has(segmentId)) {
+        selectedSegmentIds.value.delete(segmentId);
+      } else {
+        selectedSegmentIds.value.add(segmentId);
+      }
+      lastSelectedSegmentId.value = segmentId;
+    } else {
+      // Regular click: Select only this segment
+      selectedSegmentIds.value.clear();
+      selectedSegmentIds.value.add(segmentId);
+      lastSelectedSegmentId.value = segmentId;
+    }
+
+    console.log('[ClipEditorDialog] Selected segments:', Array.from(selectedSegmentIds.value));
+  }
+
+  function selectSegmentRange(fromId: string, toId: string) {
+    // Find indices of both segments
+    const fromIndex = trimSegments.value.findIndex((seg) => seg.id === fromId);
+    const toIndex = trimSegments.value.findIndex((seg) => seg.id === toId);
+
+    if (fromIndex === -1 || toIndex === -1) return;
+
+    // Select all segments in range
+    const startIndex = Math.min(fromIndex, toIndex);
+    const endIndex = Math.max(fromIndex, toIndex);
+
+    for (let i = startIndex; i <= endIndex; i++) {
+      selectedSegmentIds.value.add(trimSegments.value[i].id);
+    }
+  }
+
+  function clearSelection() {
+    selectedSegmentIds.value.clear();
+    lastSelectedSegmentId.value = null;
+  }
+
+  async function performMultiDelete() {
+    if (selectedSegmentIds.value.size === 0) return;
+
+    console.log('[ClipEditorDialog] Multi-delete:', Array.from(selectedSegmentIds.value));
+
+    // For now, delete one at a time (simple approach)
+    // TODO: Create a MultiDeleteCommand for better undo/redo
+    for (const segmentId of selectedSegmentIds.value) {
+      // Find the actual segment index
+      const segmentIndex = trimSegments.value.findIndex((s) => s.id === segmentId);
+      if (segmentIndex !== -1) {
+        await deleteTrimSegment(segmentId);
+      }
+    }
+
+    // Clear selection after delete
+    clearSelection();
+  }
+
+  // ============================================================================
+  // TIMELINE MARKERS
+  // ============================================================================
+
+  function addMarkerAtPlayhead() {
+    const currentTime = previewTime.value;
+    const markerId = `marker-${Date.now()}`;
+
+    const newMarker: TimelineMarker = {
+      id: markerId,
+      time: currentTime,
+      label: `Marker ${markers.value.length + 1}`,
+    };
+
+    markers.value.push(newMarker);
+    markers.value.sort((a, b) => a.time - b.time); // Keep sorted by time
+
+    console.log('[ClipEditorDialog] Added marker at', currentTime, 'seconds');
+
+    // TODO: Add MarkerCommand for undo/redo support
+  }
+
+  function deleteMarker(markerId: string) {
+    const index = markers.value.findIndex((m) => m.id === markerId);
+    if (index !== -1) {
+      markers.value.splice(index, 1);
+      selectedMarkerId.value = null;
+      console.log('[ClipEditorDialog] Deleted marker', markerId);
+    }
+
+    // TODO: Add MarkerCommand for undo/redo support
+  }
+
+  function jumpToMarker(markerId: string) {
+    const marker = markers.value.find((m) => m.id === markerId);
+    if (marker) {
+      seekTo(marker.time);
+      selectedMarkerId.value = markerId;
+      console.log('[ClipEditorDialog] Jumped to marker at', marker.time, 'seconds');
+    }
+  }
+
+  // ============================================================================
+  // VIDEO HANDLERS
+  // ============================================================================
 
   // Handle video element loaded - apply any pending seek
   function onVideoLoaded() {
@@ -4648,12 +5220,42 @@
     { deep: true }
   );
 
+  // Watch for clip ID changes - clear command history when switching clips
+  watch(
+    () => props.clipId,
+    (newClipId, oldClipId) => {
+      if (newClipId && oldClipId && newClipId !== oldClipId) {
+        commandHistory.clear();
+        console.log('[ClipEditorDialog] Clip changed, command history cleared:', { oldClipId, newClipId });
+      }
+    }
+  );
+
+  // Watch for editor project ID changes - clear command history when switching projects
+  watch(
+    () => props.editorProjectId,
+    (newProjectId, oldProjectId) => {
+      if (newProjectId && oldProjectId && newProjectId !== oldProjectId) {
+        commandHistory.clear();
+        console.log('[ClipEditorDialog] Editor project changed, command history cleared:', {
+          oldProjectId,
+          newProjectId,
+        });
+      }
+    }
+  );
+
   // Lifecycle
   watch(
     () => props.modelValue,
     async (isOpen) => {
       if (isOpen) {
         isInitialLoad.value = true; // Prevent auto-save during load
+
+        // Clear command history when opening a clip/project
+        // This ensures each clip/project starts with a fresh undo/redo stack
+        commandHistory.clear();
+        console.log('[ClipEditorDialog] Command history cleared for new clip/project');
 
         if (editorMode.value && editorProjectId.value) {
           // Editor mode - load video sources
@@ -4713,6 +5315,9 @@
         // Clean up when dialog closes
         cleanupAudioElements();
         isPlaying.value = false;
+        // Clear command history when closing
+        commandHistory.clear();
+        console.log('[ClipEditorDialog] Command history cleared on close');
         // Reset aspect tab state
         videoPath.value = null;
         thumbnailUrl.value = null;
@@ -4748,6 +5353,8 @@
     if (saveTimeout) {
       clearTimeout(saveTimeout);
     }
+    // Clear command history when closing editor
+    commandHistory.clear();
   });
 </script>
 

@@ -120,7 +120,6 @@
       <div
         v-if="showKeyboardShortcuts"
         class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]"
-        @click.self="showKeyboardShortcuts = false"
       >
         <div
           class="bg-card rounded-lg p-6 max-w-3xl w-full mx-4 border border-border max-h-[85vh] flex flex-col relative"

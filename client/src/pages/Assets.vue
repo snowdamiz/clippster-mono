@@ -428,7 +428,6 @@
     <div
       v-if="showBulkDeleteDialog"
       class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-      @click.self="handleBulkDeleteDialogClose"
     >
       <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
         <h2 class="text-2xl font-bold mb-4">Delete {{ selectedAssets.size }} Assets</h2>

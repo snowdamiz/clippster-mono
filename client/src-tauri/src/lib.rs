@@ -25,6 +25,20 @@ use std::sync::{Arc, Mutex};
 
 static CLIP_GENERATION_IN_PROGRESS: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
 
+/// Copy a file from source to destination
+#[tauri::command]
+async fn copy_file(source: String, destination: String) -> Result<(), String> {
+    use std::fs;
+    
+    println!("[Rust] Copying file from {} to {}", source, destination);
+    
+    fs::copy(&source, &destination)
+        .map_err(|e| format!("Failed to copy file: {}", e))?;
+    
+    println!("[Rust] File copied successfully");
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     println!("[Rust] Starting Tauri application");
@@ -543,7 +557,10 @@ pub fn run() {
             // UI Utils commands
             ui_utils::setup_macos_titlebar,
             ui_utils::get_platform,
-            ui_utils::show_main_window
+            ui_utils::show_main_window,
+            
+            // File operations
+            copy_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

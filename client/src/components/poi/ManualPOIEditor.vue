@@ -1,11 +1,7 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div
-        v-if="modelValue"
-        class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[70]"
-        @click.self="close"
-      >
+      <div v-if="modelValue" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[70]">
         <Transition name="dialog" appear>
           <div
             class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl w-full max-w-4xl mx-4 border border-white/10 max-h-[90vh] flex flex-col overflow-hidden shadow-2xl"
@@ -319,16 +315,16 @@
   // Resolve watermark settings for the target aspect ratio
   const resolvedWatermark = computed((): WatermarkPreview | null => {
     if (!props.watermarkSettings?.enabled) return null;
-    
+
     const ratioKey = props.targetAspectRatio as '16:9' | '9:16' | '1:1' | '4:5';
     const perRatioConfig = props.watermarkSettings.perRatioSettings?.[ratioKey];
-    
+
     // If config is explicitly null, watermark is disabled for this ratio
     if (perRatioConfig === null) return null;
-    
+
     // Use per-ratio position if available, otherwise default
     const position = perRatioConfig?.position;
-    
+
     return {
       filePath: '', // Will be loaded by POITargetPanel
       x: position?.x ?? props.watermarkSettings.positionX,

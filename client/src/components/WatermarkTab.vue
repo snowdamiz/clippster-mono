@@ -426,7 +426,6 @@
       <div
         v-if="showSaveDialog"
         class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999]"
-        @click.self="closeSaveDialog"
       >
         <div class="bg-card rounded-xl w-full max-w-sm mx-4 border border-border shadow-2xl">
           <div class="px-4 py-3 border-b border-border/50">

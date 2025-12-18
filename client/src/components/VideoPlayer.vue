@@ -217,7 +217,7 @@
       <!-- Watermark Overlay -->
       <div
         v-if="shouldShowWatermark && videoSrc && !videoLoading"
-        class="absolute pointer-events-none z-15 transition-opacity duration-300"
+        class="absolute pointer-events-none z-10 transition-opacity duration-300"
         :style="getWatermarkOverlayStyle"
       >
         <img
@@ -771,6 +771,33 @@
     return props.watermarkData?.dataUrl || '';
   });
 
+  // Local state for watermark dimensions (in case DB didn't provide them)
+  const localWatermarkDimensions = ref<{ width: number; height: number } | null>(null);
+
+  // Update local dimensions when props change
+  watch(
+    () => props.watermarkData,
+    (newData) => {
+      if (newData?.width && newData?.height) {
+        localWatermarkDimensions.value = { width: newData.width, height: newData.height };
+      } else {
+        localWatermarkDimensions.value = null;
+      }
+    },
+    { immediate: true }
+  );
+
+  // Handle image load to get natural dimensions
+  function onWatermarkLoad(event: Event) {
+    const img = event.target as HTMLImageElement;
+    if (img.naturalWidth && img.naturalHeight) {
+      localWatermarkDimensions.value = {
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+      };
+    }
+  }
+
   // Get the aspect ratio string for looking up per-ratio settings
   const aspectRatioString = computed(() => {
     const { width, height } = props.aspectRatio;
@@ -821,8 +848,10 @@
     if (!props.watermarkSettings) return {};
 
     const settings = props.watermarkSettings;
-    const wmWidth = props.watermarkData?.width ?? null;
-    const wmHeight = props.watermarkData?.height ?? null;
+    // Use local dimensions if available, otherwise fallback to props
+    const wmWidth = localWatermarkDimensions.value?.width ?? props.watermarkData?.width ?? null;
+    const wmHeight = localWatermarkDimensions.value?.height ?? props.watermarkData?.height ?? null;
+
     const ratio = wmWidth && wmHeight ? wmWidth / wmHeight : null;
     const is16x9 = ratio ? Math.abs(ratio - 16 / 9) < 0.02 : false;
 

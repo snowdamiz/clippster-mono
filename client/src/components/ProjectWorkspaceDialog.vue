@@ -1,10 +1,6 @@
 <template>
   <Teleport to="body">
-    <div
-      v-if="modelValue"
-      class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
-      @click.self="close"
-    >
+    <div v-if="modelValue" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
       <div
         ref="dialogElementRef"
         class="bg-card rounded-md w-full h-full border border-border shadow-2xl"
@@ -350,6 +346,67 @@
 
   // Current watermark image data (for VideoPlayer)
   const currentWatermarkData = ref<{ dataUrl: string; width?: number; height?: number } | null>(null);
+  const currentWatermarkId = ref<string | null>(null);
+
+  // Helper to normalize aspect ratio string
+  const normalizedAspectRatio = computed(() => {
+    const { width, height } = selectedAspectRatio.value;
+    const ratio = width / height;
+    if (Math.abs(ratio - 16 / 9) < 0.01) return '16:9';
+    if (Math.abs(ratio - 9 / 16) < 0.01) return '9:16';
+    if (Math.abs(ratio - 1) < 0.01) return '1:1';
+    if (Math.abs(ratio - 4 / 5) < 0.01) return '4:5';
+    return `${width}:${height}`;
+  });
+
+  // Watch for settings or aspect ratio changes to load correct watermark data
+  watch(
+    [watermarkSettings, normalizedAspectRatio],
+    async ([settings, aspectRatioStr]) => {
+      if (!settings.enabled) {
+        currentWatermarkData.value = null;
+        currentWatermarkId.value = null;
+        return;
+      }
+
+      let targetId = settings.watermarkId;
+      const perRatio = settings.perRatioSettings;
+
+      if (perRatio && perRatio[aspectRatioStr]) {
+        const config = perRatio[aspectRatioStr];
+        if (config && config.watermarkId) {
+          targetId = config.watermarkId;
+        }
+      }
+
+      if (targetId !== currentWatermarkId.value) {
+        if (targetId) {
+          try {
+            const watermark = await getWatermarkImage(targetId);
+            if (watermark) {
+              const dataUrl = await invoke<string>('read_file_as_data_url', {
+                filePath: watermark.file_path,
+              });
+              currentWatermarkData.value = {
+                dataUrl,
+                width: watermark.width || undefined,
+                height: watermark.height || undefined,
+              };
+              currentWatermarkId.value = targetId;
+            }
+          } catch (e) {
+            console.error('[ProjectWorkspaceDialog] Failed to load watermark', e);
+            currentWatermarkData.value = null;
+            currentWatermarkId.value = null;
+          }
+        } else {
+          currentWatermarkData.value = null;
+          currentWatermarkId.value = null;
+        }
+      }
+    },
+    { deep: true, immediate: true }
+  );
 
   // Creator profile associated with this project (for preconfiguring settings)
   const creatorProfile = ref<CreatorProfileWithLinks | null>(null);

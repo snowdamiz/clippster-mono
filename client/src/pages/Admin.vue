@@ -815,7 +815,7 @@
     />
 
     <!-- Credit Editing Modal -->
-    <div v-if="showCreditDialog" class="fixed inset-0 z-50 overflow-y-auto" @click.self="handleCreditDialogClose">
+    <div v-if="showCreditDialog" class="fixed inset-0 z-50 overflow-y-auto">
       <div class="flex min-h-screen items-center justify-center p-4">
         <div class="fixed inset-0 bg-black/50 backdrop-blur-sm"></div>
         <div class="relative bg-card border border-border rounded-lg shadow-xl max-w-md w-full p-6">
