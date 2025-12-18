@@ -68,16 +68,18 @@ export async function deletePrompt(id: string): Promise<void> {
 export async function seedDefaultPrompt(): Promise<void> {
   const db = await getDatabase();
 
-  // Check if the default prompt already exists
-  const existing = await db.select<Prompt[]>('SELECT * FROM prompts WHERE name = ?', [
-    'Default Clip Detector',
-  ]);
+  // Check if a SYSTEM-WIDE default prompt already exists (user_id IS NULL)
+  // This ensures all users can see the default prompt
+  const existing = await db.select<Prompt[]>(
+    'SELECT * FROM prompts WHERE name = ? AND user_id IS NULL',
+    ['Default Clip Detector']
+  );
 
   if (existing.length > 0) {
     return;
   }
 
-  // Create the default prompt
+  // Create the default prompt with user_id = NULL (system-wide, visible to all users)
   const defaultPromptContent = `Analyze this stream transcript and identify ALL potential clip-worthy moments for TikTok/Shorts/X.
 
 **DETECTION PHILOSOPHY:**
@@ -116,8 +118,15 @@ export async function seedDefaultPrompt(): Promise<void> {
 - Strong emotions or shifts; humor/awkwardness; drama/tension/conflict; surprises/reveals; bold claims; unusual behavior; struggle/vulnerability; high energy; relatable/resonant lines; quotable statements; notable reactions or audience moments.
 - ANY interaction that feels "human" or "authentic".`;
 
+  const id = generateId();
+  const now = timestamp();
+
   try {
-    await createPrompt('Default Clip Detector', defaultPromptContent);
+    // Insert directly with user_id = NULL to make it a system-wide prompt
+    await db.execute(
+      'INSERT INTO prompts (id, name, content, user_id, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?)',
+      [id, 'Default Clip Detector', defaultPromptContent, now, now]
+    );
   } catch (error) {
     throw error;
   }
