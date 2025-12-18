@@ -1368,7 +1368,11 @@
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import DownloadCard from '@/components/DownloadCard.vue';
   import ClipDetectionConfirmDialog from '@/components/ClipDetectionConfirmDialog.vue';
-  import ClipBuildSettingsDialog, { type BuildSettings } from '@/components/ClipBuildSettingsDialog.vue';
+  import ClipBuildSettingsDialog, {
+    type BuildSettings,
+    type IntroOutroItem,
+  } from '@/components/ClipBuildSettingsDialog.vue';
+  import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
   import { useChunkedClipDetection } from '@/composables/useChunkedClipDetection';
   import { useAuthStore } from '@/stores/auth';
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
@@ -2631,6 +2635,60 @@
         }
       }
 
+      // Handle org assets: download on-demand if selected intro/outro is an org asset
+      let introPath = settings.intro?.file_path || null;
+      let outroPath = settings.outro?.file_path || null;
+
+      // Download org intro if needed
+      if ((settings.intro as IntroOutroItem)?.isOrgAsset && (settings.intro as IntroOutroItem).serverId) {
+        const intro = settings.intro as IntroOutroItem;
+        console.log('[Projects] Downloading org intro asset on-demand:', intro.name);
+        const introResult = await ensureAssetDownloaded({
+          id: intro.serverId!,
+          name: intro.name,
+          asset_type: 'intro',
+          url: intro.serverUrl || intro.file_path,
+          organization_id: Number(intro.organization_id),
+          organization_name: intro.organization_name || undefined,
+          duration: intro.duration || undefined,
+          thumbnail_url: intro.thumbnail_path || undefined,
+          inserted_at: intro.created_at,
+          updated_at: intro.updated_at,
+        } as ServerOrganizationAsset);
+
+        if (introResult.success && introResult.filePath) {
+          introPath = introResult.filePath;
+          console.log('[Projects] Org intro downloaded to:', introPath);
+        } else {
+          throw new Error(`Failed to download intro asset: ${introResult.error || 'Unknown error'}`);
+        }
+      }
+
+      // Download org outro if needed
+      if ((settings.outro as IntroOutroItem)?.isOrgAsset && (settings.outro as IntroOutroItem).serverId) {
+        const outro = settings.outro as IntroOutroItem;
+        console.log('[Projects] Downloading org outro asset on-demand:', outro.name);
+        const outroResult = await ensureAssetDownloaded({
+          id: outro.serverId!,
+          name: outro.name,
+          asset_type: 'outro',
+          url: outro.serverUrl || outro.file_path,
+          organization_id: Number(outro.organization_id),
+          organization_name: outro.organization_name || undefined,
+          duration: outro.duration || undefined,
+          thumbnail_url: outro.thumbnail_path || undefined,
+          inserted_at: outro.created_at,
+          updated_at: outro.updated_at,
+        } as ServerOrganizationAsset);
+
+        if (outroResult.success && outroResult.filePath) {
+          outroPath = outroResult.filePath;
+          console.log('[Projects] Org outro downloaded to:', outroPath);
+        } else {
+          throw new Error(`Failed to download outro asset: ${outroResult.error || 'Unknown error'}`);
+        }
+      }
+
       // Start the build using the correct command
       await invoke('build_clip_from_segments', {
         projectId: clip.segment_id,
@@ -2649,9 +2707,9 @@
         runNumber: clip.run_number || null,
         buildNumber: buildNumber,
         buildId: buildId,
-        introPath: settings.intro?.file_path || null,
+        introPath: introPath,
         introDuration: settings.intro?.duration || null,
-        outroPath: settings.outro?.file_path || null,
+        outroPath: outroPath,
         outroDuration: settings.outro?.duration || null,
         watermarkSettings: watermarkSettings,
         audioSettings: null,

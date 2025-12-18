@@ -172,7 +172,6 @@
   import { getAllProjects } from '@/services/database/projects';
   import { open } from '@tauri-apps/plugin-dialog';
   import { invoke } from '@tauri-apps/api/core';
-  import { syncOrganizationAssets } from '@/services/orgAssetSync';
 
   // Thumbnail cache for data URLs
   const thumbnailCache = ref<Map<string, string>>(new Map());
@@ -391,11 +390,6 @@
   // Lifecycle
   onMounted(() => {
     loadSources();
-
-    // Trigger organization asset sync in background
-    syncOrganizationAssets().catch((err) => {
-      console.warn('[SourcesTab] Organization asset sync failed:', err);
-    });
   });
 
   // Expose refresh method

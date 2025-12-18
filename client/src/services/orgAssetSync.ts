@@ -1,6 +1,7 @@
 /**
  * Organization Asset Sync Service
- * Handles syncing organization assets from the server to local storage.
+ * Handles on-demand downloading of organization assets from the server to local storage.
+ * Assets are downloaded only when needed for clip building.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -26,6 +27,9 @@ import {
   getImageAssetByServerId,
 } from '@/services/database';
 import { useAuthStore } from '@/stores/auth';
+
+// Re-export the type for convenience
+export type { ServerOrganizationAsset } from './organizationAssetsApi';
 
 // ============================================
 // Types
@@ -75,8 +79,101 @@ export function useSyncProgress() {
 }
 
 /**
+ * Result from ensureAssetDownloaded
+ */
+export interface EnsureAssetResult {
+  success: boolean;
+  filePath?: string;
+  error?: string;
+}
+
+/**
+ * Ensures an organization asset is downloaded and cached locally.
+ * If the asset already exists locally, returns the cached path.
+ * If not, downloads the asset and saves it locally.
+ *
+ * Used for on-demand downloading when an asset is selected for clip building.
+ *
+ * @param asset - The server organization asset to ensure is downloaded
+ * @returns The local file path of the asset
+ */
+export async function ensureAssetDownloaded(
+  asset: ServerOrganizationAsset
+): Promise<EnsureAssetResult> {
+  try {
+    // Ensure database schema is ready
+    await ensureOrganizationAssetColumns();
+
+    // Check if asset already exists locally by server_id
+    let existing: { file_path: string } | null = null;
+
+    if (asset.asset_type === 'intro' || asset.asset_type === 'outro') {
+      existing = await getIntroOutroByServerId(asset.id);
+    } else if (asset.asset_type === 'watermark') {
+      existing = await getWatermarkByServerId(asset.id);
+    } else if (asset.asset_type === 'audio') {
+      existing = await getAudioAssetByServerId(asset.id);
+    } else if (asset.asset_type === 'image') {
+      existing = await getImageAssetByServerId(asset.id);
+    }
+
+    if (existing) {
+      console.log(`[OrgSync] Asset ${asset.id} already cached locally: ${existing.file_path}`);
+      return { success: true, filePath: existing.file_path };
+    }
+
+    // Asset not cached, download it
+    console.log(`[OrgSync] Downloading asset on-demand: ${asset.name}`);
+    downloadingAssetIds.value.add(asset.id);
+
+    try {
+      const filePath = await downloadAndSaveAsset(asset);
+      return { success: true, filePath };
+    } finally {
+      downloadingAssetIds.value.delete(asset.id);
+    }
+  } catch (error: any) {
+    console.error(`[OrgSync] Failed to ensure asset downloaded:`, error);
+    return { success: false, error: error.message || 'Failed to download asset' };
+  }
+}
+
+/**
+ * Check if an organization asset is already cached locally.
+ * Does not download the asset.
+ *
+ * @param serverId - The server ID of the asset
+ * @param assetType - The type of the asset
+ * @returns The local file path if cached, null otherwise
+ */
+export async function getLocalAssetPath(
+  serverId: number,
+  assetType: 'intro' | 'outro' | 'watermark' | 'audio' | 'image'
+): Promise<string | null> {
+  try {
+    let existing: { file_path: string } | null = null;
+
+    if (assetType === 'intro' || assetType === 'outro') {
+      existing = await getIntroOutroByServerId(serverId);
+    } else if (assetType === 'watermark') {
+      existing = await getWatermarkByServerId(serverId);
+    } else if (assetType === 'audio') {
+      existing = await getAudioAssetByServerId(serverId);
+    } else if (assetType === 'image') {
+      existing = await getImageAssetByServerId(serverId);
+    }
+
+    return existing?.file_path || null;
+  } catch (error) {
+    console.error(`[OrgSync] Failed to check local asset:`, error);
+    return null;
+  }
+}
+
+/**
  * Sync organization assets for the current user.
  * Downloads new assets and removes assets from orgs the user is no longer in.
+ * @deprecated Use ensureAssetDownloaded for on-demand downloading instead.
  */
 export async function syncOrganizationAssets(): Promise<SyncResult> {
   const result: SyncResult = {
@@ -99,11 +196,15 @@ export async function syncOrganizationAssets(): Promise<SyncResult> {
       return result;
     }
 
-    // Get current user's organization memberships
-    const orgMemberships = authStore.organizationMemberships || [];
-    const currentOrgIds = orgMemberships.map((m: any) =>
-      String(m.organization?.id || m.organization_id)
-    );
+    // Get current user's organization IDs
+    // User belongs to org if they own it or were created by it
+    const currentOrgIds: string[] = [];
+    if (user.owned_organization_id) {
+      currentOrgIds.push(String(user.owned_organization_id));
+    }
+    if (user.created_by_organization_id) {
+      currentOrgIds.push(String(user.created_by_organization_id));
+    }
 
     console.log('[OrgSync] User org memberships:', currentOrgIds);
 
@@ -238,8 +339,9 @@ export async function syncOrganizationAssets(): Promise<SyncResult> {
 
 /**
  * Downloads a single asset from the server and saves it locally.
+ * @returns The local file path where the asset was saved
  */
-async function downloadAndSaveAsset(asset: ServerOrganizationAsset): Promise<void> {
+export async function downloadAndSaveAsset(asset: ServerOrganizationAsset): Promise<string> {
   const orgId = String(asset.organization_id);
   const orgName = asset.organization_name || 'Organization';
 
@@ -257,7 +359,7 @@ async function downloadAndSaveAsset(asset: ServerOrganizationAsset): Promise<voi
 
   if (existing) {
     console.log(`[OrgSync] Asset ${asset.id} already exists locally, skipping`);
-    return;
+    return existing.file_path;
   }
 
   // Download the file
@@ -357,6 +459,7 @@ async function downloadAndSaveAsset(asset: ServerOrganizationAsset): Promise<voi
   }
 
   console.log(`[OrgSync] Successfully saved asset: ${asset.name} -> ${localFilePath}`);
+  return localFilePath;
 }
 
 /**

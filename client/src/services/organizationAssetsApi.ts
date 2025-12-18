@@ -82,9 +82,40 @@ export async function listOrganizationAssets(
 export async function getUserOrganizationAssets(): Promise<ListAssetsResponse> {
   try {
     const response = await api.get<ListAssetsResponse>('/user/organization-assets');
-    return response.data;
+    console.log('[OrgAssetsApi] Raw response from /user/organization-assets:', response.data);
+
+    // Handle different response formats
+    const data = response.data;
+
+    // If the response has a success field, use it as-is
+    if (typeof data.success === 'boolean') {
+      return data;
+    }
+
+    // If the response is an array directly, wrap it
+    if (Array.isArray(data)) {
+      return { success: true, assets: data };
+    }
+
+    // If the response has an assets array but no success field, assume success
+    if (Array.isArray(data.assets)) {
+      return { success: true, assets: data.assets };
+    }
+
+    // If the response has a data field with assets
+    if (data.data && Array.isArray(data.data)) {
+      return { success: true, assets: data.data };
+    }
+
+    console.warn('[OrgAssetsApi] Unexpected response format:', data);
+    return { success: true, assets: [] };
   } catch (error: any) {
     console.error('[OrgAssetsApi] Failed to get user organization assets:', error);
+    console.error('[OrgAssetsApi] Error details:', {
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+    });
     return {
       success: false,
       assets: [],

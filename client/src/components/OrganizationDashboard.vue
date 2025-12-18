@@ -2780,8 +2780,9 @@
       if (response.success && response.asset) {
         orgAssets.value.unshift(response.asset);
 
-        // Also save to local database so it appears in Assets page
-        await saveAssetToLocalDatabase(response.asset, uploadDialogFile.value.blob, thumbnail);
+        // Note: We no longer save to local database immediately.
+        // Organization assets are now fetched directly from the server for display/playback.
+        // They will only be downloaded locally when selected for clip building (on-demand).
 
         showSuccess('Asset uploaded', `"${assetName}" has been uploaded successfully`);
         closeUploadDialog();
@@ -2819,7 +2820,9 @@
 
   /**
    * Save an uploaded organization asset to the local database.
-   * This ensures the asset appears in the user's Assets page immediately.
+   * @deprecated This function is no longer used. Organization assets are now
+   * fetched directly from the server for display/playback and only downloaded
+   * locally when selected for clip building (on-demand via ensureAssetDownloaded).
    */
   async function saveAssetToLocalDatabase(
     asset: ServerOrganizationAsset,

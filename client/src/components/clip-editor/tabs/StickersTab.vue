@@ -1,135 +1,72 @@
 <template>
   <div class="space-y-6">
     <div>
-      <h3 class="text-sm font-medium text-white mb-1">Stickers & Emojis</h3>
-      <p class="text-xs text-white/50 mb-4">
-        Add emojis, stickers, and images to your clip. Drag in preview to reposition.
-      </p>
+      <h3 class="text-sm font-medium text-white mb-1">Stickers & Images</h3>
+      <p class="text-xs text-white/50 mb-4">Add images, GIFs, and stickers to your video.</p>
     </div>
 
-    <!-- Add Image Button -->
-    <div>
-      <button
-        @click="openImagePicker"
-        class="w-full py-3 border-2 border-dashed border-white/20 hover:border-violet-500/50 rounded-lg text-sm text-white/60 hover:text-violet-400 transition-colors flex items-center justify-center gap-2"
-      >
-        <Plus :size="16" />
-        Add Image
-      </button>
-    </div>
+    <!-- Active Stickers List -->
+    <div v-if="stickers.length > 0" class="space-y-3">
+      <div class="flex items-center justify-between">
+        <h4 class="text-sm font-medium text-white">Active Stickers</h4>
+        <span class="text-[10px] text-white/40">
+          {{ stickers.length }} sticker{{ stickers.length !== 1 ? 's' : '' }}
+        </span>
+      </div>
 
-    <!-- Image Picker Modal -->
-    <Teleport to="body">
       <div
-        v-if="showImagePicker"
-        class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60]"
-        @click.self="closeImagePicker"
+        v-for="sticker in stickers"
+        :key="sticker.id"
+        class="p-3 bg-white/5 rounded-lg border border-white/10"
+        :class="{ 'ring-1 ring-cyan-500/50': selectedStickerId === sticker.id }"
       >
-        <div class="bg-zinc-900 rounded-xl border border-white/10 w-full max-w-md mx-4 overflow-hidden">
-          <!-- Header -->
-          <div class="flex items-center justify-between px-4 py-3 border-b border-white/10">
-            <h3 class="text-sm font-medium text-white">Add Image</h3>
-            <button @click="closeImagePicker" class="p-1 hover:bg-white/10 rounded transition-colors">
-              <X :size="16" class="text-white/60" />
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2 flex-1 min-w-0">
+            <Sticker :size="14" class="text-cyan-400 flex-shrink-0" />
+            <span class="text-xs text-white truncate">Sticker {{ sticker.stickerType }}</span>
+            <span
+              v-if="sticker.stickerType === 'gif'"
+              class="text-[10px] px-1.5 py-0.5 bg-cyan-500/20 text-cyan-400 rounded"
+            >
+              GIF
+            </span>
+          </div>
+          <div class="flex items-center gap-1">
+            <button
+              @click="selectSticker(sticker.id)"
+              class="p-1.5 rounded hover:bg-white/10 transition-colors"
+              :class="selectedStickerId === sticker.id ? 'bg-cyan-500/20' : ''"
+              title="Edit"
+            >
+              <Pencil :size="12" :class="selectedStickerId === sticker.id ? 'text-cyan-400' : 'text-white/50'" />
+            </button>
+            <button
+              @click="emit('deleteSticker', sticker.id)"
+              class="p-1.5 rounded hover:bg-white/10 transition-colors"
+              title="Remove"
+            >
+              <Trash2 :size="12" class="text-red-400" />
             </button>
           </div>
-
-          <!-- Content -->
-          <div class="p-4 space-y-4 max-h-[60vh] overflow-y-auto">
-            <!-- Upload New -->
-            <div>
-              <button
-                @click="handleUploadNew"
-                :disabled="isUploading"
-                class="w-full p-3 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 rounded-lg text-sm text-cyan-400 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                <Loader2 v-if="isUploading" :size="16" class="animate-spin" />
-                <Upload v-else :size="16" />
-                {{ isUploading ? 'Uploading...' : 'Upload New Image' }}
-              </button>
-              <p class="text-[10px] text-white/40 mt-1.5 text-center">PNG, JPG, WebP, GIF, BMP, TIFF</p>
-            </div>
-
-            <!-- Divider -->
-            <div class="flex items-center gap-3">
-              <div class="h-px flex-1 bg-white/10"></div>
-              <span class="text-xs text-white/40">or select from library</span>
-              <div class="h-px flex-1 bg-white/10"></div>
-            </div>
-
-            <!-- Image Library -->
-            <div>
-              <div v-if="loadingAssets" class="flex items-center justify-center py-8">
-                <Loader2 :size="20" class="animate-spin text-white/40" />
-              </div>
-
-              <div v-else-if="imageAssets.length === 0" class="py-8 text-center">
-                <ImageIcon :size="32" class="mx-auto text-white/20 mb-2" />
-                <p class="text-sm text-white/40">No image assets yet</p>
-                <p class="text-xs text-white/30 mt-1">Upload images to build your library</p>
-              </div>
-
-              <div v-else class="grid grid-cols-3 gap-2">
-                <button
-                  v-for="asset in imageAssets"
-                  :key="asset.id"
-                  @click="selectAsset(asset)"
-                  class="aspect-square bg-white/5 hover:bg-white/10 border border-white/10 hover:border-cyan-500/30 rounded-lg transition-colors overflow-hidden group relative"
-                >
-                  <img :src="getAssetThumbnail(asset)" :alt="asset.name" class="w-full h-full object-contain" />
-                  <div
-                    class="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center"
-                  >
-                    <Plus :size="20" class="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </div>
-                  <div class="absolute bottom-0 left-0 right-0 p-1 bg-gradient-to-t from-black/80 to-transparent">
-                    <p class="text-[9px] text-white/70 truncate">{{ asset.name }}</p>
-                  </div>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Teleport>
-
-    <!-- Stickers List -->
-    <div v-if="stickers.length > 0" class="space-y-3">
-      <h4 class="text-sm font-medium text-white">Your Stickers</h4>
-
-      <div v-for="sticker in stickers" :key="sticker.id" class="p-4 bg-white/5 rounded-lg border border-white/10">
-        <div class="flex items-start justify-between mb-3">
-          <div class="flex items-center gap-3">
-            <div class="w-10 h-10 flex items-center justify-center bg-white/5 rounded">
-              <span v-if="sticker.stickerType === 'emoji'" class="text-2xl">
-                {{ sticker.stickerPath }}
-              </span>
-              <img v-else :src="sticker.stickerPath" class="w-full h-full object-contain" alt="Sticker" />
-            </div>
-            <div>
-              <div class="text-sm text-white">
-                {{ sticker.stickerType === 'emoji' ? 'Emoji' : 'Sticker' }}
-              </div>
-              <div class="text-xs text-white/50">
-                {{ formatTime(sticker.startTime) }} - {{ formatTime(sticker.endTime) }}
-              </div>
-            </div>
-          </div>
-          <button @click="emit('deleteSticker', sticker.id)" class="p-1.5 rounded hover:bg-white/10 transition-colors">
-            <Trash2 :size="14" class="text-red-400" />
-          </button>
         </div>
 
-        <!-- Aspect Ratio Configuration Buttons -->
-        <div v-if="configuredAspectRatios.length > 0" class="mb-3 flex flex-wrap items-center gap-2">
-          <span class="text-[10px] text-white/40 uppercase tracking-wide">Configure for:</span>
+        <!-- Quick Info -->
+        <div class="flex items-center gap-3 text-[10px] text-white/40">
+          <span>{{ formatTime(sticker.startTime) }} - {{ formatTime(sticker.endTime) }}</span>
+          <span>{{ Math.round(sticker.scale * 100) }}%</span>
+        </div>
+
+        <!-- Aspect Ratio Config Buttons -->
+        <div v-if="configuredAspectRatios.length > 0" class="mt-2 flex flex-wrap items-center gap-1.5">
+          <span class="text-[9px] text-white/40 uppercase tracking-wide">Configure:</span>
           <button
             @click="switchToRatio('16:9')"
             :class="[
-              'px-2 py-1 rounded text-[10px] font-medium transition-all',
+              'px-1.5 py-0.5 rounded text-[9px] font-medium transition-all',
               previewAspectRatio === '16:9'
-                ? 'bg-violet-500 text-white ring-2 ring-violet-400 ring-offset-1 ring-offset-zinc-900'
-                : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white',
+                ? 'bg-cyan-500 text-white ring-1 ring-cyan-400'
+                : 'bg-white/10 text-white/60 hover:bg-white/20',
             ]"
           >
             16:9
@@ -139,46 +76,277 @@
             :key="ratio"
             @click="switchToRatio(ratio)"
             :class="[
-              'px-2 py-1 rounded text-[10px] font-medium transition-all flex items-center gap-1',
+              'px-1.5 py-0.5 rounded text-[9px] font-medium transition-all flex items-center gap-0.5',
               previewAspectRatio === ratio
-                ? 'bg-violet-500 text-white ring-2 ring-violet-400 ring-offset-1 ring-offset-zinc-900'
+                ? 'bg-cyan-500 text-white ring-1 ring-cyan-400'
                 : sticker.perRatioConfigs?.[ratio]
                   ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
-                  : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white',
+                  : 'bg-white/10 text-white/60 hover:bg-white/20',
             ]"
           >
             {{ ratio }}
-            <span v-if="sticker.perRatioConfigs?.[ratio]" class="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span>
+            <span v-if="sticker.perRatioConfigs?.[ratio]" class="w-1 h-1 bg-emerald-400 rounded-full"></span>
           </button>
         </div>
 
-        <!-- Timing -->
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-xs text-white/60 mb-1">Start</label>
-            <input
-              type="number"
-              :value="sticker.startTime"
-              @input="(e) => updateSticker(sticker.id, 'startTime', parseFloat((e.target as HTMLInputElement).value))"
-              step="0.1"
-              min="0"
-              :max="duration"
-              class="w-full px-2 py-1 bg-white/5 border border-white/10 rounded text-xs text-white"
-            />
+        <!-- Expanded Edit Panel -->
+        <div v-if="selectedStickerId === sticker.id" class="mt-3 pt-3 border-t border-white/10 space-y-3">
+          <!-- Timing -->
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-[10px] text-white/50 mb-1">Start Time</label>
+              <div class="flex items-center gap-1">
+                <input
+                  type="number"
+                  :value="sticker.startTime.toFixed(1)"
+                  @input="
+                    (e) => updateSticker(sticker.id, 'startTime', parseFloat((e.target as HTMLInputElement).value))
+                  "
+                  step="0.1"
+                  min="0"
+                  :max="duration"
+                  class="w-full px-2 py-1 bg-white/5 border border-white/10 rounded text-xs text-white"
+                />
+                <span class="text-[10px] text-white/40">s</span>
+              </div>
+            </div>
+            <div>
+              <label class="block text-[10px] text-white/50 mb-1">End Time</label>
+              <div class="flex items-center gap-1">
+                <input
+                  type="number"
+                  :value="sticker.endTime.toFixed(1)"
+                  @input="(e) => updateSticker(sticker.id, 'endTime', parseFloat((e.target as HTMLInputElement).value))"
+                  step="0.1"
+                  :min="sticker.startTime"
+                  :max="duration"
+                  class="w-full px-2 py-1 bg-white/5 border border-white/10 rounded text-xs text-white"
+                />
+                <span class="text-[10px] text-white/40">s</span>
+              </div>
+            </div>
           </div>
+
+          <!-- Scale & Rotation -->
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-[10px] text-white/50 mb-1">Scale</label>
+              <div class="flex items-center gap-1">
+                <input
+                  type="range"
+                  min="0.1"
+                  max="3"
+                  step="0.1"
+                  :value="getStickerConfig(sticker).scale"
+                  @input="
+                    (e) => updateStickerConfig(sticker.id, 'scale', parseFloat((e.target as HTMLInputElement).value))
+                  "
+                  class="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                />
+                <span class="text-[10px] text-white/50 w-8 text-right">
+                  {{ Math.round(getStickerConfig(sticker).scale * 100) }}%
+                </span>
+              </div>
+            </div>
+            <div>
+              <label class="block text-[10px] text-white/50 mb-1">Rotation</label>
+              <div class="flex items-center gap-1">
+                <input
+                  type="range"
+                  min="-180"
+                  max="180"
+                  step="5"
+                  :value="getStickerConfig(sticker).rotation"
+                  @input="
+                    (e) => updateStickerConfig(sticker.id, 'rotation', parseFloat((e.target as HTMLInputElement).value))
+                  "
+                  class="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                />
+                <span class="text-[10px] text-white/50 w-8 text-right">{{ getStickerConfig(sticker).rotation }}°</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Animation -->
           <div>
-            <label class="block text-xs text-white/60 mb-1">End</label>
-            <input
-              type="number"
-              :value="sticker.endTime"
-              @input="(e) => updateSticker(sticker.id, 'endTime', parseFloat((e.target as HTMLInputElement).value))"
-              step="0.1"
-              :min="sticker.startTime"
-              :max="duration"
-              class="w-full px-2 py-1 bg-white/5 border border-white/10 rounded text-xs text-white"
-            />
+            <label class="block text-[10px] text-white/50 mb-1">Animation</label>
+            <select
+              :value="sticker.animation"
+              @change="(e) => updateSticker(sticker.id, 'animation', (e.target as HTMLSelectElement).value)"
+              class="w-full px-2 py-1.5 bg-white/5 border border-white/10 rounded text-xs text-white"
+            >
+              <option v-for="anim in animationOptions" :key="anim.value" :value="anim.value">{{ anim.label }}</option>
+            </select>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Divider -->
+    <div class="h-px bg-white/10"></div>
+
+    <!-- Image Library Section -->
+    <div class="space-y-3">
+      <div class="flex items-center justify-between">
+        <h4 class="text-sm font-medium text-white">Image Library</h4>
+      </div>
+
+      <!-- Upload Button -->
+      <button
+        @click="handleUploadNew"
+        :disabled="isUploading"
+        class="w-full py-2.5 border-2 border-dashed border-white/20 hover:border-cyan-500/50 rounded-lg text-sm text-white/60 hover:text-cyan-400 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+      >
+        <Loader2 v-if="isUploading" :size="16" class="animate-spin" />
+        <Upload v-else :size="16" />
+        {{ isUploading ? 'Uploading...' : 'Upload Image' }}
+      </button>
+
+      <!-- Search -->
+      <div class="relative">
+        <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
+        <input
+          v-model="searchQuery"
+          type="text"
+          placeholder="Search images..."
+          class="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/40 focus:outline-none focus:border-cyan-500/50"
+        />
+      </div>
+
+      <!-- Tabs -->
+      <div class="flex items-center gap-1 p-1 bg-white/5 rounded-lg">
+        <button
+          @click="activeTab = 'personal'"
+          :class="[
+            'flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+            activeTab === 'personal' ? 'bg-cyan-500/20 text-cyan-300' : 'text-white/50 hover:text-white/70',
+          ]"
+        >
+          My Images ({{ personalImagesFiltered.length }})
+        </button>
+        <button
+          v-if="hasOrganizations"
+          @click="activeTab = 'organization'"
+          :class="[
+            'flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+            activeTab === 'organization' ? 'bg-teal-500/20 text-teal-300' : 'text-white/50 hover:text-white/70',
+          ]"
+        >
+          Organization ({{ orgImagesFiltered.length }})
+        </button>
+      </div>
+
+      <!-- Image Grid -->
+      <div class="max-h-[300px] overflow-y-auto pr-1">
+        <!-- Loading -->
+        <div v-if="loadingAssets" class="flex items-center justify-center py-6">
+          <Loader2 :size="20" class="animate-spin text-white/40" />
+        </div>
+
+        <!-- Personal Images -->
+        <template v-else-if="activeTab === 'personal'">
+          <div v-if="personalImagesFiltered.length === 0" class="py-6 text-center">
+            <ImageIcon :size="24" class="mx-auto text-white/20 mb-2" />
+            <p class="text-xs text-white/40">No images yet</p>
+            <p class="text-[10px] text-white/30 mt-1">Upload images to build your library</p>
+          </div>
+
+          <div v-else class="space-y-1.5">
+            <div
+              v-for="asset in personalImagesFiltered"
+              :key="asset.id"
+              @click="selectAsset(asset)"
+              class="group p-3 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-cyan-500/30 rounded-lg transition-all cursor-pointer"
+            >
+              <div class="flex items-center gap-3">
+                <!-- Thumbnail -->
+                <div class="w-16 h-10 rounded overflow-hidden bg-black/50 flex-shrink-0">
+                  <img
+                    v-if="getThumbnail(asset)"
+                    :src="getThumbnail(asset)"
+                    :alt="asset.name"
+                    class="w-full h-full object-cover"
+                  />
+                  <div v-else class="w-full h-full flex items-center justify-center">
+                    <ImageIcon :size="14" class="text-white/30" />
+                  </div>
+                </div>
+
+                <!-- Info -->
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-white truncate">{{ asset.name }}</p>
+                  <p class="text-xs text-white/40">
+                    {{ asset.width && asset.height ? `${asset.width}x${asset.height}` : 'Image' }}
+                    <span v-if="isGifAsset(asset)" class="text-cyan-400">• GIF</span>
+                  </p>
+                </div>
+
+                <!-- Add button -->
+                <button
+                  @click.stop="selectAsset(asset)"
+                  class="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Add to timeline"
+                >
+                  <Plus :size="14" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- Organization Images -->
+        <template v-else-if="activeTab === 'organization'">
+          <div v-if="orgImagesFiltered.length === 0" class="py-6 text-center">
+            <Building2 :size="24" class="mx-auto text-white/20 mb-2" />
+            <p class="text-xs text-white/40">No organization images</p>
+            <p class="text-[10px] text-white/30 mt-1">Organization admins can upload image assets</p>
+          </div>
+
+          <div v-else class="space-y-1.5">
+            <div
+              v-for="asset in orgImagesFiltered"
+              :key="asset.id"
+              @click="selectAsset(asset)"
+              class="group p-3 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-teal-500/30 rounded-lg transition-all cursor-pointer"
+            >
+              <div class="flex items-center gap-3">
+                <!-- Thumbnail -->
+                <div class="w-16 h-10 rounded overflow-hidden bg-black/50 flex-shrink-0">
+                  <img
+                    v-if="getThumbnail(asset)"
+                    :src="getThumbnail(asset)"
+                    :alt="asset.name"
+                    class="w-full h-full object-cover"
+                  />
+                  <div v-else class="w-full h-full flex items-center justify-center">
+                    <ImageIcon :size="14" class="text-white/30" />
+                  </div>
+                </div>
+
+                <!-- Info -->
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-1.5">
+                    <p class="text-sm text-white truncate">{{ asset.name }}</p>
+                    <Building2 :size="10" class="text-teal-400 flex-shrink-0" />
+                  </div>
+                  <p class="text-xs text-white/40">
+                    {{ asset.width && asset.height ? `${asset.width}x${asset.height}` : 'Image' }}
+                    <span v-if="asset.organization_name" class="text-teal-400/60">• {{ asset.organization_name }}</span>
+                  </p>
+                </div>
+
+                <!-- Add button -->
+                <button
+                  @click.stop="selectAsset(asset)"
+                  class="p-1.5 rounded-lg bg-teal-500/20 text-teal-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Add to timeline"
+                >
+                  <Plus :size="14" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
       </div>
     </div>
   </div>
@@ -186,111 +354,231 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted } from 'vue';
-  import { Upload, Trash2, Plus, X, Loader2, Image as ImageIcon } from 'lucide-vue-next';
-  import type { Sticker, ManualFramingConfigs } from '@/types';
+  import {
+    Sticker,
+    Plus,
+    Trash2,
+    Pencil,
+    Upload,
+    Search,
+    Loader2,
+    Building2,
+    Image as ImageIcon,
+  } from 'lucide-vue-next';
+  import type { Sticker as StickerType, ManualFramingConfigs } from '@/types';
   import { getAllImageAssets, type ImageAsset } from '@/services/database';
   import { useImageAssetOperations } from '@/composables/useImageAssetOperations';
+  import { getUserOrganizationAssets, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
+  import { useAuthStore } from '@/stores/auth';
   import { invoke } from '@tauri-apps/api/core';
 
+  // Extended ImageAsset type that includes org asset properties
+  interface ImageItem extends Omit<ImageAsset, 'id'> {
+    id: string;
+    isOrgAsset?: boolean;
+    serverId?: number;
+    serverUrl?: string;
+    organization_id?: string;
+    organization_name?: string;
+    thumbnail_path?: string | null;
+    mime_type?: string | null;
+  }
+
+  // Auth store for checking org memberships
+  const authStore = useAuthStore();
+
   const props = defineProps<{
-    stickers: Sticker[];
+    stickers: StickerType[];
     currentTime: number;
     duration: number;
-    previewAspectRatio: string; // Currently previewed aspect ratio
-    selectedAspectRatios: string[]; // All selected aspect ratios
-    framingConfigs: ManualFramingConfigs; // Framing configurations per aspect ratio
+    previewAspectRatio: string;
+    selectedAspectRatios: string[];
+    framingConfigs: ManualFramingConfigs;
   }>();
 
   const emit = defineEmits<{
     (e: 'addSticker', stickerPath: string, type: 'emoji' | 'image' | 'gif'): void;
-    (e: 'updateSticker', stickerId: string, updates: Partial<Sticker>): void;
+    (e: 'updateSticker', stickerId: string, updates: Partial<StickerType>): void;
     (e: 'deleteSticker', stickerId: string): void;
+    (e: 'selectSticker', stickerId: string): void;
     (e: 'update:previewAspectRatio', ratio: string): void;
   }>();
 
-  // Image picker state
-  const showImagePicker = ref(false);
-  const imageAssets = ref<ImageAsset[]>([]);
+  // State
+  const selectedStickerId = ref<string | null>(null);
+  const personalImages = ref<ImageItem[]>([]);
+  const orgImages = ref<ImageItem[]>([]);
+  const thumbnailCache = ref<Map<string, string>>(new Map());
   const loadingAssets = ref(false);
   const isUploading = ref(false);
-  const thumbnailCache = ref<Map<string, string>>(new Map());
+  const searchQuery = ref('');
+  const activeTab = ref<'personal' | 'organization'>('personal');
   const { uploadImageAsset, onUploadComplete } = useImageAssetOperations();
 
-  const _popularEmojis = [
-    '😀',
-    '😂',
-    '🤣',
-    '😍',
-    '🥰',
-    '😎',
-    '🤩',
-    '🥳',
-    '🔥',
-    '💯',
-    '⭐',
-    '✨',
-    '💫',
-    '🎉',
-    '🎊',
-    '🏆',
-    '❤️',
-    '💜',
-    '💙',
-    '💚',
-    '💛',
-    '🧡',
-    '🖤',
-    '💗',
-    '👍',
-    '👏',
-    '🙌',
-    '💪',
-    '🤝',
-    '✌️',
-    '🤟',
-    '👊',
+  const animationOptions = [
+    { value: 'none', label: 'None' },
+    { value: 'bounce', label: 'Bounce' },
+    { value: 'spin', label: 'Spin' },
+    { value: 'pulse', label: 'Pulse' },
+    { value: 'shake', label: 'Shake' },
+    { value: 'float', label: 'Float' },
+    { value: 'fade', label: 'Fade' },
   ];
 
-  // Check if an aspect ratio has been configured with custom framing
+  // Computed
+  const hasOrganizations = computed(() => {
+    const user = authStore.user;
+    return user && (user.owned_organization_id || user.created_by_organization_id);
+  });
+
+  const personalImagesFiltered = computed(() => {
+    if (!searchQuery.value) return personalImages.value;
+    const query = searchQuery.value.toLowerCase();
+    return personalImages.value.filter((a) => a.name.toLowerCase().includes(query));
+  });
+
+  const orgImagesFiltered = computed(() => {
+    if (!searchQuery.value) return orgImages.value;
+    const query = searchQuery.value.toLowerCase();
+    return orgImages.value.filter(
+      (a) => a.name.toLowerCase().includes(query) || a.organization_name?.toLowerCase().includes(query)
+    );
+  });
+
   function isRatioConfigured(ratio: string): boolean {
     const config = props.framingConfigs[ratio as keyof ManualFramingConfigs];
     return !!(config && config.regions && config.regions.length > 0);
   }
 
-  // Get list of aspect ratios that have been configured with custom framing
   const configuredAspectRatios = computed(() => {
     return props.selectedAspectRatios.filter((ratio) => isRatioConfigured(ratio));
   });
 
-  // Switch preview to a specific aspect ratio
-  function switchToRatio(ratio: string) {
-    emit('update:previewAspectRatio', ratio);
-  }
-
+  // Methods
   function formatTime(seconds: number): string {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
-  // Image picker functions
-  async function openImagePicker() {
-    showImagePicker.value = true;
-    await loadImageAssets();
+  function getStickerConfig(sticker: StickerType) {
+    const ratio = props.previewAspectRatio;
+    const ratioConfig = sticker.perRatioConfigs?.[ratio];
+    return ratioConfig || { position: sticker.position, scale: sticker.scale, rotation: sticker.rotation };
   }
 
-  function closeImagePicker() {
-    showImagePicker.value = false;
+  function selectSticker(id: string) {
+    selectedStickerId.value = selectedStickerId.value === id ? null : id;
+    if (selectedStickerId.value) {
+      emit('selectSticker', id);
+    }
+  }
+
+  function switchToRatio(ratio: string) {
+    emit('update:previewAspectRatio', ratio);
+  }
+
+  function updateSticker(stickerId: string, key: keyof StickerType, value: any) {
+    emit('updateSticker', stickerId, { [key]: value });
+  }
+
+  function updateStickerConfig(stickerId: string, key: 'scale' | 'rotation' | 'position', value: any) {
+    const sticker = props.stickers.find((s) => s.id === stickerId);
+    if (!sticker) return;
+
+    const ratio = props.previewAspectRatio;
+    const perRatioConfigs = sticker.perRatioConfigs ? { ...sticker.perRatioConfigs } : {};
+    const currentConfig = perRatioConfigs[ratio] || {
+      position: { ...sticker.position },
+      scale: sticker.scale,
+      rotation: sticker.rotation,
+    };
+
+    if (key === 'position') {
+      currentConfig.position = value;
+    } else {
+      currentConfig[key] = value;
+    }
+    perRatioConfigs[ratio] = currentConfig;
+
+    emit('updateSticker', stickerId, { perRatioConfigs });
+  }
+
+  function getThumbnail(asset: ImageItem): string {
+    const cached = thumbnailCache.value.get(asset.id);
+    if (cached) return cached;
+
+    if (asset.isOrgAsset && asset.thumbnail_path) {
+      return asset.thumbnail_path;
+    }
+    if (asset.isOrgAsset && asset.serverUrl) {
+      return asset.serverUrl;
+    }
+
+    return '';
+  }
+
+  function isGifAsset(asset: ImageItem): boolean {
+    return asset.file_path?.toLowerCase().endsWith('.gif') || asset.mime_type?.includes('gif') || false;
+  }
+
+  async function loadThumbnail(asset: ImageItem): Promise<void> {
+    if (thumbnailCache.value.has(asset.id)) return;
+
+    try {
+      if (asset.isOrgAsset) {
+        const url = asset.thumbnail_path || asset.serverUrl || asset.file_path;
+        if (url) {
+          thumbnailCache.value.set(asset.id, url);
+        }
+      } else if (asset.file_path) {
+        const exists = await invoke<boolean>('check_file_exists', { path: asset.file_path });
+        if (exists) {
+          const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: asset.file_path });
+          thumbnailCache.value.set(asset.id, dataUrl);
+        }
+      }
+    } catch (err) {
+      console.warn('[StickersTab] Failed to load thumbnail:', asset.id, err);
+    }
   }
 
   async function loadImageAssets() {
     loadingAssets.value = true;
     try {
-      imageAssets.value = await getAllImageAssets();
-      // Load thumbnails for all assets
-      for (const asset of imageAssets.value) {
-        await loadAssetThumbnail(asset);
+      const localAssets = await getAllImageAssets();
+      personalImages.value = localAssets.filter((a) => !a.organization_id).map((a) => ({ ...a, isOrgAsset: false }));
+
+      if (hasOrganizations.value) {
+        try {
+          const serverResponse = await getUserOrganizationAssets();
+          if (serverResponse.success && serverResponse.assets) {
+            orgImages.value = serverResponse.assets
+              .filter((a: ServerOrganizationAsset) => a.asset_type === 'image')
+              .map((a: ServerOrganizationAsset) => ({
+                id: `org_${a.id}`,
+                name: a.name,
+                file_path: a.url,
+                thumbnail_path: a.thumbnail_url || null,
+                organization_id: String(a.organization_id),
+                organization_name: a.organization_name,
+                width: a.width,
+                height: a.height,
+                mime_type: a.mime_type,
+                created_at: a.inserted_at,
+                updated_at: a.updated_at,
+                isOrgAsset: true,
+                serverId: a.id,
+                serverUrl: a.url,
+              }));
+          }
+        } catch (orgError) {
+          console.warn('[StickersTab] Failed to load organization images:', orgError);
+        }
       }
+
+      const allAssets = [...personalImages.value, ...orgImages.value];
+      await Promise.all(allAssets.map((asset) => loadThumbnail(asset)));
     } catch (err) {
       console.error('[StickersTab] Failed to load image assets:', err);
     } finally {
@@ -298,35 +586,12 @@
     }
   }
 
-  async function loadAssetThumbnail(asset: ImageAsset) {
-    if (!thumbnailCache.value.has(asset.id)) {
-      try {
-        const dataUrl = await invoke<string>('read_file_as_data_url', {
-          filePath: asset.file_path,
-        });
-        thumbnailCache.value.set(asset.id, dataUrl);
-      } catch (err) {
-        console.warn('[StickersTab] Failed to load asset thumbnail:', asset.id, err);
-      }
-    }
-  }
-
-  function getAssetThumbnail(asset: ImageAsset): string {
-    return thumbnailCache.value.get(asset.id) || '';
-  }
-
   async function handleUploadNew() {
     isUploading.value = true;
     try {
       const result = await uploadImageAsset();
-      if (result.success && result.imageAssetId) {
-        // Reload assets to include the new one
+      if (result.success) {
         await loadImageAssets();
-        // Find and select the newly uploaded asset
-        const newAsset = imageAssets.value.find((a) => a.id === result.imageAssetId);
-        if (newAsset) {
-          await selectAsset(newAsset);
-        }
       }
     } catch (err) {
       console.error('[StickersTab] Upload failed:', err);
@@ -335,40 +600,36 @@
     }
   }
 
-  async function selectAsset(asset: ImageAsset) {
+  async function selectAsset(asset: ImageItem) {
     try {
-      // Get the streaming URL for the image file
-      const port = await invoke<number>('get_video_server_port');
-      const encodedPath = btoa(unescape(encodeURIComponent(asset.file_path)));
-      const imageUrl = `http://localhost:${port}/video/${encodedPath}`;
+      let imageUrl: string;
 
-      // Determine if it's a gif
+      if (asset.isOrgAsset) {
+        imageUrl = asset.serverUrl || asset.file_path;
+      } else {
+        const port = await invoke<number>('get_video_server_port');
+        const encodedPath = btoa(unescape(encodeURIComponent(asset.file_path)));
+        imageUrl = `http://localhost:${port}/video/${encodedPath}`;
+      }
+
       const isGif = asset.file_path.toLowerCase().endsWith('.gif') || asset.mime_type?.includes('gif');
       const type = isGif ? 'gif' : 'image';
 
       emit('addSticker', imageUrl, type);
-      closeImagePicker();
     } catch (err) {
       console.error('[StickersTab] Failed to select asset:', err);
     }
   }
 
-  function updateSticker(stickerId: string, key: string, value: any) {
-    emit('updateSticker', stickerId, { [key]: value });
-  }
-
-  // Register for upload completion to refresh the asset list
   let unregisterUploadCallback: (() => void) | null = null;
 
   onMounted(() => {
+    loadImageAssets();
     unregisterUploadCallback = onUploadComplete(() => {
-      if (showImagePicker.value) {
-        loadImageAssets();
-      }
+      loadImageAssets();
     });
   });
 
-  // Cleanup on unmount
   onUnmounted(() => {
     if (unregisterUploadCallback) {
       unregisterUploadCallback();
@@ -377,12 +638,38 @@
 </script>
 
 <style scoped>
+  input[type='range'] {
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+  }
+
+  input[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: white;
+    cursor: pointer;
+  }
+
+  input[type='range']::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: white;
+    cursor: pointer;
+    border: none;
+  }
+
   select {
     background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
     background-position: right 0.5rem center;
     background-repeat: no-repeat;
     background-size: 1.5em 1.5em;
-    padding-right: 2.5rem;
+    padding-right: 2rem;
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
@@ -391,5 +678,22 @@
   select option {
     background-color: #18181b;
     color: white;
+  }
+
+  .overflow-y-auto::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .overflow-y-auto::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .overflow-y-auto::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+  }
+
+  .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
   }
 </style>

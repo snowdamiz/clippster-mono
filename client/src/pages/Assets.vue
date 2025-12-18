@@ -8,12 +8,12 @@
     >
       <template #actions>
         <div class="flex items-center gap-2">
-          <!-- Sync button for organization assets -->
+          <!-- Refresh button for organization assets -->
           <Button
             v-if="hasOrganizations"
             @click="triggerSync"
             :disabled="isSyncing"
-            title="Sync organization assets"
+            title="Refresh organization assets"
             class="flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Loader2 v-if="isSyncing" class="h-5 w-5 animate-spin" />
@@ -107,16 +107,11 @@
             :key="asset.id"
             class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
             :class="{ 'ring-2 ring-primary ring-offset-2 ring-offset-background': isAssetSelected(asset.id) }"
-            @click="
-              asset.assetType === 'intro' || asset.assetType === 'outro'
-                ? playAsset(asset as IntroOutro)
-                : asset.assetType === 'audio'
-                  ? toggleAudioPlayback(asset as AudioAsset)
-                  : null
-            "
+            @click="handleAssetClick(asset)"
           >
-            <!-- Selection Checkbox (visible on hover or when selected) -->
+            <!-- Selection Checkbox (visible on hover or when selected) - NOT for org assets -->
             <div
+              v-if="!asset.isOrgAsset"
               class="absolute top-4 right-4 z-30 transition-opacity"
               :class="isAssetSelected(asset.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
               @click.stop="toggleAssetSelection(asset.id)"
@@ -193,7 +188,7 @@
               </span>
               <!-- Organization badge -->
               <span
-                v-if="asset.organization_id"
+                v-if="asset.isOrgAsset || asset.organization_id"
                 class="text-xs px-2 py-1 rounded-md flex items-center gap-1 text-white/80 bg-indigo-500/30 backdrop-blur-sm"
                 :title="`From: ${asset.organization_name || 'Organization'}`"
               >
@@ -257,14 +252,14 @@
             <!-- Hover Overlay Buttons -->
             <div
               class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-3"
-              :class="{ 'opacity-100': asset.assetType === 'audio' && isAudioPlaying(asset.id) }"
+              :class="{ 'opacity-100': asset.assetType === 'audio' && isAudioPlaying(asset.id, asset.isOrgAsset) }"
             >
               <!-- Play button for video assets -->
               <button
                 v-if="asset.assetType === 'intro' || asset.assetType === 'outro'"
                 class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
                 title="Play"
-                @click.stop="playAsset(asset as IntroOutro)"
+                @click.stop="playAsset(asset as any)"
               >
                 <Play class="h-5 w-5" />
               </button>
@@ -272,13 +267,24 @@
               <button
                 v-if="asset.assetType === 'audio'"
                 class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                :title="isAudioPlaying(asset.id) ? 'Pause' : 'Play'"
-                @click.stop="toggleAudioPlayback(asset as AudioAsset)"
+                :title="isAudioPlaying(asset.id, asset.isOrgAsset) ? 'Pause' : 'Play'"
+                @click.stop="toggleAudioPlayback(asset as any)"
               >
-                <Pause v-if="isAudioPlaying(asset.id)" class="h-5 w-5" />
+                <Pause v-if="isAudioPlaying(asset.id, asset.isOrgAsset)" class="h-5 w-5" />
                 <Play v-else class="h-5 w-5" />
               </button>
+              <!-- Expand button for image/watermark assets -->
               <button
+                v-if="asset.assetType === 'image' || asset.assetType === 'watermark'"
+                class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
+                title="View full size"
+                @click.stop="openImagePreview(asset)"
+              >
+                <Maximize2 class="h-5 w-5" />
+              </button>
+              <!-- Delete button - NOT for org assets (they're managed at org level) -->
+              <button
+                v-if="!asset.isOrgAsset"
                 class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
                 title="Delete"
                 @click.stop="confirmDelete(asset)"
@@ -333,6 +339,91 @@
     <!-- Asset Upload Dialog -->
     <AssetUploadDialog :show="showUploadDialog" @close="showUploadDialog = false" @uploaded="handleUploadComplete" />
 
+    <!-- Image Preview Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showImagePreview && imageToPreview"
+          class="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50"
+          @click.self="closeImagePreview"
+        >
+          <Transition name="dialog" appear>
+            <div class="relative max-w-[90vw] max-h-[90vh] flex flex-col">
+              <!-- Close Button -->
+              <button
+                @click="closeImagePreview"
+                class="absolute -top-10 right-0 p-2 text-white/70 hover:text-white transition-colors rounded-full hover:bg-white/10"
+              >
+                <X class="h-6 w-6" />
+              </button>
+
+              <!-- Image Container -->
+              <div class="relative bg-zinc-900/50 rounded-xl overflow-hidden border border-white/10">
+                <img
+                  :src="getImagePreviewUrl(imageToPreview)"
+                  :alt="imageToPreview.name"
+                  class="max-w-[85vw] max-h-[80vh] object-contain"
+                />
+              </div>
+
+              <!-- Image Info -->
+              <div class="mt-4 flex items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                  <div
+                    class="p-2 rounded-lg"
+                    :class="imageToPreview.assetType === 'watermark' ? 'bg-amber-500/20' : 'bg-cyan-500/20'"
+                  >
+                    <ImageIcon
+                      class="h-5 w-5"
+                      :class="imageToPreview.assetType === 'watermark' ? 'text-amber-400' : 'text-cyan-400'"
+                    />
+                  </div>
+                  <div>
+                    <p class="text-white font-medium">{{ imageToPreview.name }}</p>
+                    <p class="text-zinc-400 text-sm">
+                      <span
+                        class="px-1.5 py-0.5 rounded text-xs mr-2"
+                        :class="
+                          imageToPreview.assetType === 'watermark'
+                            ? 'bg-amber-500/20 text-amber-400'
+                            : 'bg-cyan-500/20 text-cyan-400'
+                        "
+                      >
+                        {{ imageToPreview.assetType === 'watermark' ? 'Watermark' : 'Image' }}
+                      </span>
+                      <span v-if="getImageDimensions(imageToPreview)">
+                        {{ getImageDimensions(imageToPreview) }}
+                      </span>
+                      <!-- Organization badge -->
+                      <span
+                        v-if="imageToPreview.isOrgAsset || imageToPreview.organization_id"
+                        class="ml-2 px-1.5 py-0.5 rounded text-xs bg-indigo-500/20 text-indigo-400"
+                      >
+                        {{ (imageToPreview as any).organization_name || 'Organization' }}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+
+                <!-- Delete Button (only for personal assets) -->
+                <button
+                  v-if="!imageToPreview.isOrgAsset && !imageToPreview.organization_id"
+                  @click="
+                    confirmDelete(imageToPreview);
+                    closeImagePreview();
+                  "
+                  class="px-3 py-2 text-sm text-destructive hover:bg-destructive/10 rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <Trash2 class="h-4 w-4" />
+                  Delete
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- Bulk Delete Confirmation Modal -->
     <div
       v-if="showBulkDeleteDialog"
@@ -369,21 +460,18 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
+  import { ref, onMounted, onUnmounted, computed, watch, Teleport, Transition } from 'vue';
   import {
     getAllIntroOutros,
     getAllWatermarkImages,
     getAllAudioAssets,
     getAllImageAssets,
-    getAllOrganizationIntroOutros,
-    getAllOrganizationWatermarks,
-    getAllOrganizationAudioAssets,
-    getAllOrganizationImageAssets,
     type IntroOutro,
     type WatermarkImage,
     type AudioAsset,
     type ImageAsset,
   } from '@/services/database';
+  import { getUserOrganizationAssets, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
   import {
     Archive,
     Folder,
@@ -398,8 +486,10 @@
     Building2,
     RefreshCw,
     Loader2,
+    X,
+    Maximize2,
   } from 'lucide-vue-next';
-  import { syncOrganizationAssets, useSyncProgress } from '@/services/orgAssetSync';
+  import { useSyncProgress } from '@/services/orgAssetSync';
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
   import { useAssetOperations } from '@/composables/useAssetOperations';
@@ -420,20 +510,18 @@
 
   // Combined asset type for display
   type DisplayAsset =
-    | (IntroOutro & { assetType: 'intro' | 'outro' })
-    | (WatermarkImage & { assetType: 'watermark' })
-    | (AudioAsset & { assetType: 'audio' })
-    | (ImageAsset & { assetType: 'image' });
+    | (IntroOutro & { assetType: 'intro' | 'outro'; isOrgAsset?: false })
+    | (WatermarkImage & { assetType: 'watermark'; isOrgAsset?: false })
+    | (AudioAsset & { assetType: 'audio'; isOrgAsset?: false })
+    | (ImageAsset & { assetType: 'image'; isOrgAsset?: false })
+    | (ServerOrganizationAsset & { assetType: 'intro' | 'outro' | 'watermark' | 'audio' | 'image'; isOrgAsset: true });
 
   const assets = ref<IntroOutro[]>([]);
   const watermarks = ref<WatermarkImage[]>([]);
   const audioAssets = ref<AudioAsset[]>([]);
   const imageAssets = ref<ImageAsset[]>([]);
-  // Organization assets (synced from server)
-  const orgIntroOutros = ref<IntroOutro[]>([]);
-  const orgWatermarks = ref<WatermarkImage[]>([]);
-  const orgAudioAssets = ref<AudioAsset[]>([]);
-  const orgImageAssets = ref<ImageAsset[]>([]);
+  // Organization assets (from server - streamed, not synced locally)
+  const serverOrgAssets = ref<ServerOrganizationAsset[]>([]);
   const loading = ref(true);
   const showDeleteDialog = ref(false);
   const assetToDelete = ref<DisplayAsset | null>(null);
@@ -442,6 +530,10 @@
   const showUploadDialog = ref(false);
   const thumbnailCache = ref<Map<string, string>>(new Map());
   const { error, success } = useToast();
+
+  // Image preview state
+  const showImagePreview = ref(false);
+  const imageToPreview = ref<DisplayAsset | null>(null);
 
   // Sync state
   const { progress: syncProgress, isDownloading, downloadingAssetIds } = useSyncProgress();
@@ -471,55 +563,53 @@
   const personalAssets = computed<DisplayAsset[]>(() => {
     const introOutros: DisplayAsset[] = assets.value
       .filter((a) => !a.organization_id)
-      .map((a) => ({ ...a, assetType: a.type as 'intro' | 'outro' }));
+      .map((a) => ({ ...a, assetType: a.type as 'intro' | 'outro', isOrgAsset: false as const }));
     const wms: DisplayAsset[] = watermarks.value
       .filter((w) => !w.organization_id)
-      .map((w) => ({ ...w, assetType: 'watermark' as const }));
+      .map((w) => ({ ...w, assetType: 'watermark' as const, isOrgAsset: false as const }));
     const audios: DisplayAsset[] = audioAssets.value
       .filter((a) => !a.organization_id)
-      .map((a) => ({ ...a, assetType: 'audio' as const }));
+      .map((a) => ({ ...a, assetType: 'audio' as const, isOrgAsset: false as const }));
     const images: DisplayAsset[] = imageAssets.value
       .filter((i) => !i.organization_id)
-      .map((i) => ({ ...i, assetType: 'image' as const }));
+      .map((i) => ({ ...i, assetType: 'image' as const, isOrgAsset: false as const }));
     return [...introOutros, ...wms, ...audios, ...images];
   });
 
-  // Organization assets (grouped by organization)
+  // Organization assets (from server, grouped by organization)
   const organizationAssets = computed(() => {
-    const orgAssetsList: DisplayAsset[] = [
-      ...orgIntroOutros.value.map((a) => ({ ...a, assetType: a.type as 'intro' | 'outro' })),
-      ...orgWatermarks.value.map((w) => ({ ...w, assetType: 'watermark' as const })),
-      ...orgAudioAssets.value.map((a) => ({ ...a, assetType: 'audio' as const })),
-      ...orgImageAssets.value.map((i) => ({ ...i, assetType: 'image' as const })),
-    ];
-
     // Group by organization
     const grouped = new Map<string, { name: string; assets: DisplayAsset[] }>();
-    for (const asset of orgAssetsList) {
-      const orgId = asset.organization_id || 'unknown';
+    for (const asset of serverOrgAssets.value) {
+      const orgId = String(asset.organization_id);
       const orgName = asset.organization_name || 'Organization';
       if (!grouped.has(orgId)) {
         grouped.set(orgId, { name: orgName, assets: [] });
       }
-      grouped.get(orgId)!.assets.push(asset);
+      grouped.get(orgId)!.assets.push({
+        ...asset,
+        assetType: asset.asset_type,
+        isOrgAsset: true as const,
+      });
     }
     return grouped;
   });
 
-  // Combined assets for display (personal + org)
+  // Combined assets for display (personal + org from server)
   const allAssets = computed<DisplayAsset[]>(() => {
-    const orgAssets: DisplayAsset[] = [
-      ...orgIntroOutros.value.map((a) => ({ ...a, assetType: a.type as 'intro' | 'outro' })),
-      ...orgWatermarks.value.map((w) => ({ ...w, assetType: 'watermark' as const })),
-      ...orgAudioAssets.value.map((a) => ({ ...a, assetType: 'audio' as const })),
-      ...orgImageAssets.value.map((i) => ({ ...i, assetType: 'image' as const })),
-    ];
-    return [...personalAssets.value, ...orgAssets];
+    const orgAssetsDisplay: DisplayAsset[] = serverOrgAssets.value.map((a) => ({
+      ...a,
+      assetType: a.asset_type,
+      isOrgAsset: true as const,
+    }));
+    return [...personalAssets.value, ...orgAssetsDisplay];
   });
 
   // Check if user has any organization memberships
+  // User belongs to an organization if they own one or were created by one
   const hasOrganizations = computed(() => {
-    return authStore.organizationMemberships && authStore.organizationMemberships.length > 0;
+    const user = authStore.user;
+    return user && (user.owned_organization_id || user.created_by_organization_id);
   });
 
   // Pagination state
@@ -638,7 +728,7 @@
   async function loadAssets() {
     loading.value = true;
     try {
-      // Load personal intro/outros, watermarks, audio assets, and image assets
+      // Load personal intro/outros, watermarks, audio assets, and image assets from local database
       const [introOutros, wms, audios, imgs] = await Promise.all([
         getAllIntroOutros(),
         getAllWatermarkImages(),
@@ -646,60 +736,45 @@
         getAllImageAssets(),
       ]);
 
-      // Filter out organization assets from personal lists (they'll be loaded separately)
+      // Filter out organization assets from personal lists
       assets.value = introOutros.filter((a) => !a.organization_id);
       watermarks.value = wms.filter((w) => !w.organization_id);
       audioAssets.value = audios.filter((a) => !a.organization_id);
       imageAssets.value = imgs.filter((i) => !i.organization_id);
 
-      // Load organization assets
-      const [orgIntros, orgWms, orgAudios, orgImgs] = await Promise.all([
-        getAllOrganizationIntroOutros(),
-        getAllOrganizationWatermarks(),
-        getAllOrganizationAudioAssets(),
-        getAllOrganizationImageAssets(),
-      ]);
-
-      orgIntroOutros.value = orgIntros;
-      orgWatermarks.value = orgWms;
-      orgAudioAssets.value = orgAudios;
-      orgImageAssets.value = orgImgs;
+      // Load organization assets from server API (streaming, not downloaded)
+      if (hasOrganizations.value) {
+        await loadOrgAssetsFromServer();
+      } else {
+        serverOrgAssets.value = [];
+      }
 
       // Reset pagination to first page when loading new assets
       currentPage.value = 1;
 
-      // Load thumbnails for all video assets (personal)
+      // Load thumbnails for personal video assets
       for (const asset of assets.value) {
         await loadAssetThumbnail(asset);
       }
 
-      // Load thumbnails for org video assets
-      for (const asset of orgIntroOutros.value) {
-        await loadAssetThumbnail(asset);
-      }
-
-      // Load thumbnails for watermarks (they are images, so use them directly)
+      // Load thumbnails for personal watermarks
       for (const wm of watermarks.value) {
         await loadWatermarkThumbnail(wm);
       }
-      for (const wm of orgWatermarks.value) {
-        await loadWatermarkThumbnail(wm);
-      }
 
-      // Set default icon for audio assets
+      // Set default icon for personal audio assets
       for (const audio of audioAssets.value) {
         loadAudioThumbnail(audio);
       }
-      for (const audio of orgAudioAssets.value) {
-        loadAudioThumbnail(audio);
-      }
 
-      // Load thumbnails for image assets (they are images, so use them directly)
+      // Load thumbnails for personal image assets
       for (const img of imageAssets.value) {
         await loadImageThumbnail(img);
       }
-      for (const img of orgImageAssets.value) {
-        await loadImageThumbnail(img);
+
+      // For org assets, set thumbnails from server URLs
+      for (const orgAsset of serverOrgAssets.value) {
+        loadOrgAssetThumbnail(orgAsset);
       }
     } catch (err) {
       console.error('Failed to load assets:', err);
@@ -708,30 +783,81 @@
     }
   }
 
-  // Trigger organization asset sync
+  // Load organization assets from server API
+  async function loadOrgAssetsFromServer() {
+    try {
+      const response = await getUserOrganizationAssets();
+      if (response.success) {
+        serverOrgAssets.value = response.assets;
+      } else {
+        console.error('Failed to load org assets:', response.error);
+        serverOrgAssets.value = [];
+      }
+    } catch (err) {
+      console.error('Failed to load org assets from server:', err);
+      serverOrgAssets.value = [];
+    }
+  }
+
+  // Load thumbnail for server org asset (use server URLs directly)
+  function loadOrgAssetThumbnail(asset: ServerOrganizationAsset) {
+    const cacheKey = `org_${asset.id}`;
+    if (thumbnailCache.value.has(cacheKey)) return;
+
+    // For video assets (intro/outro), use thumbnail_url or default
+    if (asset.asset_type === 'intro' || asset.asset_type === 'outro') {
+      if (asset.thumbnail_url) {
+        thumbnailCache.value.set(cacheKey, asset.thumbnail_url);
+      } else {
+        // Use default icon
+        const defaultIcon =
+          asset.asset_type === 'intro'
+            ? 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiB2aWV3Qm94PSIwIDAgMjAwIDEyMCIgZmlsbD0ibm9uZSI+CiAgPHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIxMjAiIGZpbGw9IiMyMTI5Mzc2Ii8+CiAgPHBhdGggZD0iTTEwMCA0MEwxMjAgNDBMMTIwIDgwTDEwMCA4MEw4MCA4MEw4MCA0MEwxMDAgNDBaIiBmaWxsPSIjM0I4MkY2Ii8+CiAgPHRleHQgeD0iMTAwIiB5PSI5NSIgZm9udC1mYW1pbHk9IkFyaWFsLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmaWxsPSIjRkZGRkZGIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5JbnRybzwvdGV4dD4KPC9zdmc+'
+            : 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiB2aWV3Qm94PSIwIDAgMjAwIDEyMCIgZmlsbD0ibm9uZSI+CiAgPHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIxMjAiIGZpbGw9IiM3MzE5RDYiLz4KICA8cGF0aCBkPSJNODAgNDBMMTIwIDQwTDEyMCA4MEw4MCA4MEw0MCA4MEw0MCA0MEw4MCA0MFoiIGZpbGw9IiM5MzMzRUEiLz4KICA8dGV4dCB4PSIxMDAiIHk9Ijk1IiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkZGRkYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPk91dHJvPC90ZXh0Pgo8L3N2Zz4=';
+        thumbnailCache.value.set(cacheKey, defaultIcon);
+      }
+    }
+    // For watermarks and images, use the asset URL directly
+    else if (asset.asset_type === 'watermark' || asset.asset_type === 'image') {
+      thumbnailCache.value.set(cacheKey, asset.url);
+    }
+    // For audio, use default waveform icon
+    else if (asset.asset_type === 'audio') {
+      const defaultIcon =
+        'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiB2aWV3Qm94PSIwIDAgMjAwIDEyMCIgZmlsbD0ibm9uZSI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiBmaWxsPSIjMDY0RTNCIi8+CjxyZWN0IHg9IjMwIiB5PSI0NSIgd2lkdGg9IjgiIGhlaWdodD0iMzAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjQ1IiB5PSIzNSIgd2lkdGg9IjgiIGhlaWdodD0iNTAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjYwIiB5PSIyNSIgd2lkdGg9IjgiIGhlaWdodD0iNzAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9Ijc1IiB5PSI0MCIgd2lkdGg9IjgiIGhlaWdodD0iNDAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjkwIiB5PSIzMCIgd2lkdGg9IjgiIGhlaWdodD0iNjAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjEwNSIgeT0iMjAiIHdpZHRoPSI4IiBoZWlnaHQ9IjgwIiByeD0iMiIgZmlsbD0iIzEwQjk4MSIvPgo8cmVjdCB4PSIxMjAiIHk9IjM1IiB3aWR0aD0iOCIgaGVpZ2h0PSI1MCIgcng9IjIiIGZpbGw9IiMxMEI5ODEiLz4KPHJlY3QgeD0iMTM1IiB5PSI0NSIgd2lkdGg9IjgiIGhlaWdodD0iMzAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjE1MCIgeT0iMzAiIHdpZHRoPSI4IiBoZWlnaHQ9IjYwIiByeD0iMiIgZmlsbD0iIzEwQjk4MSIvPgo8cmVjdCB4PSIxNjUiIHk9IjQwIiB3aWR0aD0iOCIgaGVpZ2h0PSI0MCIgcng9IjIiIGZpbGw9IiMxMEI5ODEiLz4KPC9zdmc+';
+      thumbnailCache.value.set(cacheKey, defaultIcon);
+    }
+  }
+
+  // Refresh organization assets from server
   async function triggerSync() {
     if (isSyncing.value) return;
 
     isSyncing.value = true;
     try {
-      const result = await syncOrganizationAssets();
-      if (result.downloaded > 0 || result.deleted > 0) {
-        success('Sync complete', `Downloaded ${result.downloaded}, removed ${result.deleted} organization assets`);
-        // Reload assets to show newly synced items
-        await loadAssets();
+      await loadOrgAssetsFromServer();
+      // Update thumbnails for new org assets
+      for (const orgAsset of serverOrgAssets.value) {
+        loadOrgAssetThumbnail(orgAsset);
       }
+      success('Refreshed', 'Organization assets updated');
     } catch (err) {
-      console.error('Sync failed:', err);
-      error('Sync failed', 'Failed to sync organization assets');
+      console.error('Refresh failed:', err);
+      error('Refresh failed', 'Failed to refresh organization assets');
     } finally {
       isSyncing.value = false;
     }
   }
 
-  // Check if an asset is currently being downloaded
+  // Check if an asset is currently being downloaded (for org assets during on-demand download)
   function isAssetDownloading(asset: DisplayAsset): boolean {
-    if (!asset.server_id) return false;
-    return downloadingAssetIds.value.has(asset.server_id);
+    if (asset.isOrgAsset) {
+      return downloadingAssetIds.value.has(asset.id as number);
+    }
+    // For local assets with server_id (previously synced)
+    const localAsset = asset as IntroOutro | WatermarkImage | AudioAsset | ImageAsset;
+    if (!localAsset.server_id) return false;
+    return downloadingAssetIds.value.has(localAsset.server_id);
   }
 
   async function loadWatermarkThumbnail(watermark: WatermarkImage) {
@@ -841,8 +967,16 @@
 
   // Get thumbnail URL for any asset type (DisplayAsset)
   function getThumbnailUrl(asset: DisplayAsset): string | null {
-    const cached = thumbnailCache.value.get(asset.id);
+    // For org assets, use org_ prefix for cache key
+    const cacheKey = asset.isOrgAsset ? `org_${asset.id}` : String(asset.id);
+    const cached = thumbnailCache.value.get(cacheKey);
     if (cached) return cached;
+
+    // For org assets, try to load from server URL
+    if (asset.isOrgAsset) {
+      loadOrgAssetThumbnail(asset as ServerOrganizationAsset);
+      return thumbnailCache.value.get(cacheKey) || null;
+    }
 
     if (asset.assetType === 'watermark') {
       // Watermarks should have been loaded in loadWatermarkThumbnail
@@ -852,12 +986,12 @@
     if (asset.assetType === 'audio') {
       // Audio assets should have been loaded in loadAudioThumbnail
       loadAudioThumbnail(asset as AudioAsset);
-      return thumbnailCache.value.get(asset.id) || null;
+      return thumbnailCache.value.get(cacheKey) || null;
     }
 
     if (asset.assetType === 'image') {
       // Image assets should have been loaded in loadImageThumbnail
-      return thumbnailCache.value.get(asset.id) || null;
+      return thumbnailCache.value.get(cacheKey) || null;
     }
 
     return getAssetThumbnailUrl(asset as IntroOutro);
@@ -872,11 +1006,83 @@
     loadAssets();
   }
 
-  async function playAsset(asset: IntroOutro) {
+  // Handle click on any asset type
+  function handleAssetClick(asset: DisplayAsset) {
+    if (asset.assetType === 'intro' || asset.assetType === 'outro') {
+      playAsset(asset as any);
+    } else if (asset.assetType === 'audio') {
+      toggleAudioPlayback(asset as any);
+    } else if (asset.assetType === 'image' || asset.assetType === 'watermark') {
+      openImagePreview(asset);
+    }
+  }
+
+  // Image preview functions
+  function openImagePreview(asset: DisplayAsset) {
+    imageToPreview.value = asset;
+    showImagePreview.value = true;
+  }
+
+  function closeImagePreview() {
+    showImagePreview.value = false;
+    imageToPreview.value = null;
+  }
+
+  // Get URL for image preview (handles both org and local assets)
+  function getImagePreviewUrl(asset: DisplayAsset): string {
+    if (asset.isOrgAsset) {
+      // Organization asset - use server URL directly
+      return (asset as ServerOrganizationAsset).url;
+    }
+    // Local asset - use cached thumbnail (which is already a data URL)
+    const cacheKey = String(asset.id);
+    return thumbnailCache.value.get(cacheKey) || '';
+  }
+
+  // Get dimensions string for image preview
+  function getImageDimensions(asset: DisplayAsset): string | null {
+    if (asset.assetType === 'watermark') {
+      const wm = asset as WatermarkImage;
+      if (wm.width && wm.height) {
+        return `${wm.width}×${wm.height}`;
+      }
+    } else if (asset.assetType === 'image') {
+      const img = asset as ImageAsset;
+      if (img.width && img.height) {
+        return `${img.width}×${img.height}`;
+      }
+    }
+    // For org assets
+    if (asset.isOrgAsset) {
+      const orgAsset = asset as ServerOrganizationAsset;
+      if (orgAsset.width && orgAsset.height) {
+        return `${orgAsset.width}×${orgAsset.height}`;
+      }
+    }
+    return null;
+  }
+
+  async function playAsset(asset: IntroOutro | (ServerOrganizationAsset & { isOrgAsset: true })) {
     try {
-      // Create a fresh copy of the asset object to ensure reactivity
-      // This helps when reopening the same asset
-      assetToPlay.value = { ...asset } as any;
+      // For org assets, create a pseudo IntroOutro with the server URL as file_path
+      if ('isOrgAsset' in asset && asset.isOrgAsset) {
+        const orgAsset = asset as ServerOrganizationAsset;
+        // VideoPlayerDialog can take a video-url prop, so we'll set up a compatible object
+        assetToPlay.value = {
+          id: String(orgAsset.id),
+          name: orgAsset.name,
+          file_path: orgAsset.url, // Server URL for streaming
+          type: orgAsset.asset_type as 'intro' | 'outro',
+          duration: orgAsset.duration || null,
+          thumbnail_path: orgAsset.thumbnail_url || null,
+          thumbnail_generation_status: 'completed',
+          created_at: orgAsset.inserted_at,
+          updated_at: orgAsset.updated_at,
+        } as IntroOutro;
+      } else {
+        // Local asset - create a fresh copy
+        assetToPlay.value = { ...asset } as any;
+      }
       showAssetPlayer.value = true;
     } catch (err) {
       console.error('Failed to prepare asset:', err);
@@ -892,6 +1098,11 @@
   }
 
   function confirmDelete(asset: DisplayAsset) {
+    // Don't allow deleting org assets (they're managed at org level)
+    if (asset.isOrgAsset) {
+      error('Cannot Delete', 'Organization assets can only be deleted from the Organization Dashboard.');
+      return;
+    }
     assetToDelete.value = asset;
     showDeleteDialog.value = true;
   }
@@ -924,9 +1135,11 @@
   }
 
   // Audio playback functions
-  async function toggleAudioPlayback(audio: AudioAsset) {
+  async function toggleAudioPlayback(audio: AudioAsset | (ServerOrganizationAsset & { isOrgAsset: true })) {
     try {
-      if (currentlyPlayingAudio.value === audio.id) {
+      const audioId = 'isOrgAsset' in audio && audio.isOrgAsset ? `org_${audio.id}` : audio.id;
+
+      if (currentlyPlayingAudio.value === audioId) {
         // Stop playing
         if (audioElement.value) {
           audioElement.value.pause();
@@ -939,10 +1152,17 @@
           audioElement.value.pause();
         }
 
-        // Get the audio URL
-        const port = await invoke<number>('get_video_server_port');
-        const encodedPath = btoa(unescape(encodeURIComponent(audio.file_path)));
-        const audioUrl = `http://localhost:${port}/video/${encodedPath}`;
+        let audioUrl: string;
+
+        // For org assets, use server URL directly
+        if ('isOrgAsset' in audio && audio.isOrgAsset) {
+          audioUrl = (audio as ServerOrganizationAsset).url;
+        } else {
+          // For local assets, use local video server
+          const port = await invoke<number>('get_video_server_port');
+          const encodedPath = btoa(unescape(encodeURIComponent((audio as AudioAsset).file_path)));
+          audioUrl = `http://localhost:${port}/video/${encodedPath}`;
+        }
 
         // Create and play new audio
         audioElement.value = new Audio(audioUrl);
@@ -954,7 +1174,7 @@
           currentlyPlayingAudio.value = null;
         };
         await audioElement.value.play();
-        currentlyPlayingAudio.value = audio.id;
+        currentlyPlayingAudio.value = audioId;
       }
     } catch (err) {
       console.error('Failed to play audio:', err);
@@ -963,8 +1183,9 @@
     }
   }
 
-  function isAudioPlaying(audioId: string): boolean {
-    return currentlyPlayingAudio.value === audioId;
+  function isAudioPlaying(audioId: string | number, isOrgAsset?: boolean): boolean {
+    const checkId = isOrgAsset ? `org_${audioId}` : String(audioId);
+    return currentlyPlayingAudio.value === checkId;
   }
 
   async function openIntrosFolder() {
@@ -991,6 +1212,11 @@
   function toggleAssetSelection(assetId: string, event?: MouseEvent) {
     if (event) {
       event.stopPropagation();
+    }
+    // Don't allow selecting org assets (they're managed at org level)
+    const asset = allAssets.value.find((a) => String(a.id) === String(assetId));
+    if (asset?.isOrgAsset) {
+      return;
     }
     if (selectedAssets.value.has(assetId)) {
       selectedAssets.value.delete(assetId);
@@ -1027,8 +1253,11 @@
     try {
       for (const assetId of assetIds) {
         // Find the asset
-        const asset = allAssets.value.find((a) => a.id === assetId);
+        const asset = allAssets.value.find((a) => String(a.id) === String(assetId));
         if (!asset) continue;
+
+        // Skip org assets (they're managed at org level)
+        if (asset.isOrgAsset) continue;
 
         let result;
         if (asset.assetType === 'watermark') {
@@ -1116,5 +1345,35 @@
     position: relative;
     width: 100%;
     min-height: 100%;
+  }
+
+  /* Modal backdrop transition */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 0.3s ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  /* Dialog transition */
+  .dialog-enter-active {
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 0.2s ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
   }
 </style>

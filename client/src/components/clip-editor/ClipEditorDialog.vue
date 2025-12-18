@@ -547,6 +547,14 @@
     duration: number | null;
     filePath: string;
     thumbnailUrl?: string;
+    // Org asset properties (for on-demand downloading during export)
+    isOrgAsset?: boolean;
+    serverId?: number;
+    serverUrl?: string;
+    organization_id?: string;
+    organization_name?: string;
+    created_at?: string;
+    updated_at?: string;
   }
   const currentIntro = ref<AppliedIntroOutro | null>(null);
   const currentOutro = ref<AppliedIntroOutro | null>(null);
@@ -1700,8 +1708,15 @@
     }
   }
 
+  // Extended intro/outro type that may include org asset properties
+  interface IntroOutroWithOrgProps extends IntroOutro {
+    isOrgAsset?: boolean;
+    serverId?: number;
+    serverUrl?: string;
+  }
+
   // Intro/Outro handlers
-  async function onAddIntro(intro: IntroOutro) {
+  async function onAddIntro(intro: IntroOutroWithOrgProps) {
     // Ensure we're in editor mode - if not, promote first
     if (!editorMode.value) {
       // For clip mode, we need to promote to video project first
@@ -1759,16 +1774,21 @@
       let thumbnailUrl: string | undefined;
       if (intro.thumbnail_path) {
         try {
-          const exists = await invoke<boolean>('check_file_exists', { path: intro.thumbnail_path });
-          if (exists) {
-            thumbnailUrl = await invoke<string>('read_file_as_data_url', { filePath: intro.thumbnail_path });
+          // For org assets, thumbnail_path is a URL, so use it directly
+          if (intro.isOrgAsset) {
+            thumbnailUrl = intro.thumbnail_path;
+          } else {
+            const exists = await invoke<boolean>('check_file_exists', { path: intro.thumbnail_path });
+            if (exists) {
+              thumbnailUrl = await invoke<string>('read_file_as_data_url', { filePath: intro.thumbnail_path });
+            }
           }
         } catch (err) {
           console.warn('[ClipEditorDialog] Failed to load intro thumbnail:', err);
         }
       }
 
-      // Track the current intro
+      // Track the current intro (including org asset properties for export)
       currentIntro.value = {
         id: intro.id,
         sourceId: newSource.id,
@@ -1776,18 +1796,26 @@
         duration: intro.duration,
         filePath: intro.file_path,
         thumbnailUrl,
+        // Include org asset properties for on-demand downloading during export
+        isOrgAsset: intro.isOrgAsset,
+        serverId: intro.serverId,
+        serverUrl: intro.serverUrl,
+        organization_id: intro.organization_id,
+        organization_name: intro.organization_name,
+        created_at: intro.created_at,
+        updated_at: intro.updated_at,
       };
 
       await recalculateProjectDuration(projectId);
       triggerAutoSave();
 
-      console.log('[ClipEditorDialog] Added intro:', intro.name);
+      console.log('[ClipEditorDialog] Added intro:', intro.name, intro.isOrgAsset ? '(org asset)' : '');
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to add intro:', error);
     }
   }
 
-  async function onAddOutro(outro: IntroOutro) {
+  async function onAddOutro(outro: IntroOutroWithOrgProps) {
     // Ensure we're in editor mode - if not, promote first
     if (!editorMode.value) {
       await promoteToVideoProject();
@@ -1833,16 +1861,21 @@
       let thumbnailUrl: string | undefined;
       if (outro.thumbnail_path) {
         try {
-          const exists = await invoke<boolean>('check_file_exists', { path: outro.thumbnail_path });
-          if (exists) {
-            thumbnailUrl = await invoke<string>('read_file_as_data_url', { filePath: outro.thumbnail_path });
+          // For org assets, thumbnail_path is a URL, so use it directly
+          if (outro.isOrgAsset) {
+            thumbnailUrl = outro.thumbnail_path;
+          } else {
+            const exists = await invoke<boolean>('check_file_exists', { path: outro.thumbnail_path });
+            if (exists) {
+              thumbnailUrl = await invoke<string>('read_file_as_data_url', { filePath: outro.thumbnail_path });
+            }
           }
         } catch (err) {
           console.warn('[ClipEditorDialog] Failed to load outro thumbnail:', err);
         }
       }
 
-      // Track the current outro
+      // Track the current outro (including org asset properties for export)
       currentOutro.value = {
         id: outro.id,
         sourceId: newSource.id,
@@ -1850,12 +1883,20 @@
         duration: outro.duration,
         filePath: outro.file_path,
         thumbnailUrl,
+        // Include org asset properties for on-demand downloading during export
+        isOrgAsset: outro.isOrgAsset,
+        serverId: outro.serverId,
+        serverUrl: outro.serverUrl,
+        organization_id: outro.organization_id,
+        organization_name: outro.organization_name,
+        created_at: outro.created_at,
+        updated_at: outro.updated_at,
       };
 
       await recalculateProjectDuration(projectId);
       triggerAutoSave();
 
-      console.log('[ClipEditorDialog] Added outro:', outro.name);
+      console.log('[ClipEditorDialog] Added outro:', outro.name, outro.isOrgAsset ? '(org asset)' : '');
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to add outro:', error);
     }
