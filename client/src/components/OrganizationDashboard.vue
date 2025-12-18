@@ -309,95 +309,119 @@
             <Loader2 class="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
 
-          <!-- Assets Grid -->
-          <div v-else-if="orgAssets.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <!-- Assets List Grouped by Type -->
+          <div v-else-if="orgAssets.length > 0" class="space-y-4">
+            <!-- Asset Type Sections -->
             <div
-              v-for="asset in orgAssets"
-              :key="asset.id"
-              class="relative bg-background border border-border rounded-lg overflow-hidden group cursor-pointer hover:border-foreground/20 transition-all"
-              :class="{ 'ring-2 ring-primary': isAudioPlaying(asset.id) }"
-              @click="handleAssetClick(asset)"
+              v-for="group in groupedAssets"
+              :key="group.type"
+              class="border border-border rounded-lg overflow-hidden"
             >
-              <!-- Thumbnail/Preview -->
-              <div class="aspect-video bg-muted/50 flex items-center justify-center relative">
-                <!-- Audio assets use waveform thumbnail -->
-                <img
-                  v-if="asset.asset_type === 'audio'"
-                  :src="AUDIO_THUMBNAIL"
-                  :alt="asset.name"
-                  class="w-full h-full object-cover"
+              <!-- Section Header -->
+              <button
+                @click="toggleAssetGroup(group.type)"
+                class="w-full flex items-center gap-3 px-4 py-2.5 bg-muted/30 hover:bg-muted/50 transition-colors text-left"
+              >
+                <component
+                  :is="getAssetTypeIcon(group.type)"
+                  class="h-4 w-4 flex-shrink-0"
+                  :class="getAssetTypeColor(group.type)"
                 />
-                <!-- Video/image/watermark assets use thumbnail_url or url -->
-                <img
-                  v-else-if="asset.thumbnail_url || (asset.url && ['image', 'watermark'].includes(asset.asset_type))"
-                  :src="asset.thumbnail_url || asset.url"
-                  :alt="asset.name"
-                  class="w-full h-full object-cover"
-                  @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
+                <span class="text-sm font-medium text-foreground">{{ getAssetTypeLabel(group.type) }}s</span>
+                <span class="text-xs text-muted-foreground px-1.5 py-0.5 bg-muted rounded">
+                  {{ group.assets.length }}
+                </span>
+                <ChevronDown
+                  class="h-4 w-4 ml-auto text-muted-foreground transition-transform"
+                  :class="{ '-rotate-180': !collapsedAssetGroups.has(group.type) }"
                 />
-                <!-- Fallback icon -->
-                <component v-else :is="getAssetTypeIcon(asset.asset_type)" class="h-12 w-12 text-muted-foreground/30" />
+              </button>
 
-                <!-- Play overlay for video/audio assets -->
+              <!-- Section Content -->
+              <div v-if="!collapsedAssetGroups.has(group.type)" class="divide-y divide-border/50">
                 <div
-                  v-if="['intro', 'outro', 'audio'].includes(asset.asset_type)"
-                  class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                  :class="{ 'opacity-100': isAudioPlaying(asset.id) }"
+                  v-for="asset in group.assets"
+                  :key="asset.id"
+                  class="flex items-center gap-3 px-4 py-2 hover:bg-muted/20 transition-colors group"
+                  :class="{ 'bg-primary/5': isAudioPlaying(asset.id) }"
                 >
-                  <button
-                    class="p-3 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                    :title="asset.asset_type === 'audio' ? (isAudioPlaying(asset.id) ? 'Pause' : 'Play') : 'Play'"
-                    @click.stop="handleAssetClick(asset)"
+                  <!-- Thumbnail -->
+                  <div
+                    class="w-10 h-10 rounded-md bg-muted/50 flex-shrink-0 flex items-center justify-center overflow-hidden relative cursor-pointer"
+                    @click="handleAssetClick(asset)"
                   >
-                    <Pause v-if="asset.asset_type === 'audio' && isAudioPlaying(asset.id)" class="h-6 w-6" />
-                    <Play v-else class="h-6 w-6" />
-                  </button>
-                </div>
-              </div>
+                    <img
+                      v-if="asset.asset_type === 'audio'"
+                      :src="AUDIO_THUMBNAIL"
+                      :alt="asset.name"
+                      class="w-full h-full object-cover"
+                    />
+                    <img
+                      v-else-if="
+                        asset.thumbnail_url || (asset.url && ['image', 'watermark'].includes(asset.asset_type))
+                      "
+                      :src="asset.thumbnail_url || asset.url"
+                      :alt="asset.name"
+                      class="w-full h-full object-cover"
+                      @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
+                    />
+                    <component
+                      v-else
+                      :is="getAssetTypeIcon(asset.asset_type)"
+                      class="h-4 w-4 text-muted-foreground/50"
+                    />
 
-              <!-- Asset Info -->
-              <div class="p-3">
-                <div class="flex items-center justify-between">
-                  <div class="flex-1 min-w-0">
+                    <!-- Play indicator overlay -->
+                    <div
+                      v-if="['intro', 'outro', 'audio'].includes(asset.asset_type)"
+                      class="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      :class="{ 'opacity-100': isAudioPlaying(asset.id) }"
+                    >
+                      <Pause
+                        v-if="asset.asset_type === 'audio' && isAudioPlaying(asset.id)"
+                        class="h-4 w-4 text-white"
+                      />
+                      <Play v-else class="h-4 w-4 text-white" />
+                    </div>
+                  </div>
+
+                  <!-- Asset Info -->
+                  <div class="flex-1 min-w-0 cursor-pointer" @click="handleAssetClick(asset)">
                     <p class="text-sm font-medium text-foreground truncate" :title="asset.name">
                       {{ asset.name }}
                     </p>
-                    <p class="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                      <span
-                        :class="[
-                          'px-1.5 py-0.5 rounded text-xs',
-                          asset.asset_type === 'intro'
-                            ? 'bg-blue-500/20 text-blue-400'
-                            : asset.asset_type === 'outro'
-                              ? 'bg-purple-500/20 text-purple-400'
-                              : asset.asset_type === 'watermark'
-                                ? 'bg-amber-500/20 text-amber-400'
-                                : asset.asset_type === 'audio'
-                                  ? 'bg-emerald-500/20 text-emerald-400'
-                                  : 'bg-cyan-500/20 text-cyan-400',
-                        ]"
-                      >
-                        {{ getAssetTypeLabel(asset.asset_type) }}
-                      </span>
-                      <span v-if="asset.duration" class="ml-1">
+                    <p class="text-xs text-muted-foreground">
+                      <span v-if="asset.duration">
                         {{ Math.floor(asset.duration / 60) }}:{{
                           String(Math.floor(asset.duration % 60)).padStart(2, '0')
                         }}
                       </span>
+                      <span v-else-if="asset.width && asset.height">{{ asset.width }}×{{ asset.height }}</span>
                     </p>
                   </div>
 
-                  <!-- Delete Button (Admin only) -->
-                  <button
-                    v-if="isAdmin"
-                    @click.stop="handleDeleteAsset(asset)"
-                    :disabled="deletingAssetId === asset.id"
-                    class="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-50"
-                    title="Delete asset"
-                  >
-                    <Loader2 v-if="deletingAssetId === asset.id" class="h-4 w-4 animate-spin" />
-                    <Trash2 v-else class="h-4 w-4" />
-                  </button>
+                  <!-- Actions -->
+                  <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      v-if="['intro', 'outro', 'audio'].includes(asset.asset_type)"
+                      @click.stop="handleAssetClick(asset)"
+                      class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
+                      :title="asset.asset_type === 'audio' ? (isAudioPlaying(asset.id) ? 'Pause' : 'Play') : 'Play'"
+                    >
+                      <Pause v-if="asset.asset_type === 'audio' && isAudioPlaying(asset.id)" class="h-4 w-4" />
+                      <Play v-else class="h-4 w-4" />
+                    </button>
+                    <button
+                      v-if="isAdmin"
+                      @click.stop="handleDeleteAsset(asset)"
+                      :disabled="deletingAssetId === asset.id"
+                      class="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-50"
+                      title="Delete asset"
+                    >
+                      <Loader2 v-if="deletingAssetId === asset.id" class="h-4 w-4 animate-spin" />
+                      <Trash2 v-else class="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1431,6 +1455,85 @@
       :show-video-player="showVideoPlayer"
       @close="closeVideoPlayer"
     />
+
+    <!-- Image Preview Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showImagePreview && imageToPreview"
+          class="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50"
+          @click.self="closeImagePreview"
+        >
+          <Transition name="dialog" appear>
+            <div class="relative max-w-[90vw] max-h-[90vh] flex flex-col">
+              <!-- Close Button -->
+              <button
+                @click="closeImagePreview"
+                class="absolute -top-10 right-0 p-2 text-white/70 hover:text-white transition-colors rounded-full hover:bg-white/10"
+              >
+                <X class="h-6 w-6" />
+              </button>
+
+              <!-- Image Container -->
+              <div class="relative bg-zinc-900/50 rounded-xl overflow-hidden border border-white/10">
+                <img
+                  :src="imageToPreview.url"
+                  :alt="imageToPreview.name"
+                  class="max-w-[85vw] max-h-[80vh] object-contain"
+                />
+              </div>
+
+              <!-- Image Info -->
+              <div class="mt-4 flex items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                  <div
+                    class="p-2 rounded-lg"
+                    :class="imageToPreview.asset_type === 'watermark' ? 'bg-amber-500/20' : 'bg-cyan-500/20'"
+                  >
+                    <component
+                      :is="imageToPreview.asset_type === 'watermark' ? ImageIcon : Sticker"
+                      class="h-5 w-5"
+                      :class="imageToPreview.asset_type === 'watermark' ? 'text-amber-400' : 'text-cyan-400'"
+                    />
+                  </div>
+                  <div>
+                    <p class="text-white font-medium">{{ imageToPreview.name }}</p>
+                    <p class="text-zinc-400 text-sm">
+                      <span
+                        class="px-1.5 py-0.5 rounded text-xs mr-2"
+                        :class="
+                          imageToPreview.asset_type === 'watermark'
+                            ? 'bg-amber-500/20 text-amber-400'
+                            : 'bg-cyan-500/20 text-cyan-400'
+                        "
+                      >
+                        {{ getAssetTypeLabel(imageToPreview.asset_type) }}
+                      </span>
+                      <span v-if="imageToPreview.width && imageToPreview.height">
+                        {{ imageToPreview.width }}×{{ imageToPreview.height }}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+
+                <!-- Delete Button (Admin only) -->
+                <button
+                  v-if="isAdmin"
+                  @click="
+                    handleDeleteAsset(imageToPreview);
+                    closeImagePreview();
+                  "
+                  class="px-3 py-2 text-sm text-destructive hover:bg-destructive/10 rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <Trash2 class="h-4 w-4" />
+                  Delete
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -1462,6 +1565,7 @@
     Clock,
     ChevronLeft,
     ChevronRight,
+    ChevronDown,
     DollarSign,
     FileText,
     Package,
@@ -1480,6 +1584,12 @@
     deleteOrganizationAsset,
     type ServerOrganizationAsset,
   } from '@/services/organizationAssetsApi';
+  import {
+    createOrganizationIntroOutro,
+    createOrganizationWatermark,
+    createOrganizationAudioAsset,
+    createOrganizationImageAsset,
+  } from '@/services/database';
   import { invoke } from '@tauri-apps/api/core';
   import { useAuthStore } from '@/stores/auth';
   import { Button } from '@/components/ui/button';
@@ -1570,6 +1680,47 @@
   const assetsLoaded = ref(false);
   const uploadingAsset = ref(false);
   const deletingAssetId = ref<number | null>(null);
+  const collapsedAssetGroups = ref<Set<string>>(new Set());
+
+  // Computed: Group assets by type for organized display
+  const groupedAssets = computed(() => {
+    const typeOrder = ['intro', 'outro', 'watermark', 'audio', 'image'];
+    const groups: { type: string; assets: ServerOrganizationAsset[] }[] = [];
+
+    for (const type of typeOrder) {
+      const assets = orgAssets.value.filter((a) => a.asset_type === type);
+      if (assets.length > 0) {
+        groups.push({ type, assets });
+      }
+    }
+
+    return groups;
+  });
+
+  function toggleAssetGroup(type: string) {
+    if (collapsedAssetGroups.value.has(type)) {
+      collapsedAssetGroups.value.delete(type);
+    } else {
+      collapsedAssetGroups.value.add(type);
+    }
+  }
+
+  function getAssetTypeColor(type: string): string {
+    switch (type) {
+      case 'intro':
+        return 'text-blue-400';
+      case 'outro':
+        return 'text-purple-400';
+      case 'watermark':
+        return 'text-amber-400';
+      case 'audio':
+        return 'text-emerald-400';
+      case 'image':
+        return 'text-cyan-400';
+      default:
+        return 'text-muted-foreground';
+    }
+  }
 
   // Upload dialog state
   const showUploadDialog = ref(false);
@@ -1584,6 +1735,10 @@
   const videoToPlay = ref<ServerOrganizationAsset | null>(null);
   const currentlyPlayingAudio = ref<number | null>(null);
   const audioElement = ref<HTMLAudioElement | null>(null);
+
+  // Image preview state
+  const showImagePreview = ref(false);
+  const imageToPreview = ref<ServerOrganizationAsset | null>(null);
 
   const editData = ref({
     name: '',
@@ -2603,6 +2758,17 @@
         }
       }
 
+      // For image/watermark assets, extract dimensions
+      if (['watermark', 'image'].includes(uploadDialogSelectedType.value)) {
+        const dimensions = await extractImageDimensions(uploadDialogFile.value.blob);
+        if (dimensions.width !== null) {
+          width = dimensions.width;
+        }
+        if (dimensions.height !== null) {
+          height = dimensions.height;
+        }
+      }
+
       const response = await uploadOrganizationAsset(organizationId.value, file, uploadDialogSelectedType.value, {
         name: assetName,
         thumbnail,
@@ -2613,6 +2779,10 @@
 
       if (response.success && response.asset) {
         orgAssets.value.unshift(response.asset);
+
+        // Also save to local database so it appears in Assets page
+        await saveAssetToLocalDatabase(response.asset, uploadDialogFile.value.blob, thumbnail);
+
         showSuccess('Asset uploaded', `"${assetName}" has been uploaded successfully`);
         closeUploadDialog();
       } else {
@@ -2623,6 +2793,125 @@
       showError('Upload failed', err.message || 'Failed to upload asset');
     } finally {
       uploadingAsset.value = false;
+    }
+  }
+
+  /**
+   * Extract dimensions from an image blob.
+   */
+  async function extractImageDimensions(imageBlob: Blob): Promise<{ width: number | null; height: number | null }> {
+    return new Promise((resolve) => {
+      const img = new Image();
+
+      img.onload = () => {
+        resolve({ width: img.naturalWidth, height: img.naturalHeight });
+        URL.revokeObjectURL(img.src);
+      };
+
+      img.onerror = () => {
+        resolve({ width: null, height: null });
+        URL.revokeObjectURL(img.src);
+      };
+
+      img.src = URL.createObjectURL(imageBlob);
+    });
+  }
+
+  /**
+   * Save an uploaded organization asset to the local database.
+   * This ensures the asset appears in the user's Assets page immediately.
+   */
+  async function saveAssetToLocalDatabase(
+    asset: ServerOrganizationAsset,
+    fileBlob: Blob,
+    thumbnailFile?: File
+  ): Promise<void> {
+    const orgId = String(asset.organization_id);
+    const orgName = organization.value?.name || 'Organization';
+
+    try {
+      // Convert blob to array for Tauri
+      const arrayBuffer = await fileBlob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+
+      // Determine target folder based on asset type
+      let targetFolder: string;
+      switch (asset.asset_type) {
+        case 'intro':
+          targetFolder = 'intros';
+          break;
+        case 'outro':
+          targetFolder = 'outros';
+          break;
+        case 'watermark':
+          targetFolder = 'watermarks';
+          break;
+        case 'audio':
+          targetFolder = 'audio';
+          break;
+        case 'image':
+          targetFolder = 'images';
+          break;
+        default:
+          targetFolder = 'other';
+      }
+
+      // Save file locally using Tauri
+      const localFilePath = await invoke<string>('save_org_asset_file', {
+        data: Array.from(uint8Array),
+        filename: asset.name,
+        assetType: targetFolder,
+        organizationId: orgId,
+      });
+
+      // Save thumbnail if present
+      let thumbnailPath: string | null = null;
+      if (thumbnailFile) {
+        try {
+          const thumbBuffer = await thumbnailFile.arrayBuffer();
+          const thumbArray = new Uint8Array(thumbBuffer);
+          thumbnailPath = await invoke<string>('save_org_asset_file', {
+            data: Array.from(thumbArray),
+            filename: `thumb_${asset.name}.jpg`,
+            assetType: 'thumbnails',
+            organizationId: orgId,
+          });
+        } catch (thumbError) {
+          console.warn('Failed to save thumbnail locally:', thumbError);
+        }
+      }
+
+      // Create local database record based on asset type
+      if (asset.asset_type === 'intro' || asset.asset_type === 'outro') {
+        await createOrganizationIntroOutro(asset.asset_type, asset.name, localFilePath, orgId, orgName, asset.id, {
+          duration: asset.duration || undefined,
+          thumbnailPath,
+        });
+      } else if (asset.asset_type === 'watermark') {
+        await createOrganizationWatermark(asset.name, localFilePath, orgId, orgName, asset.id, {
+          width: asset.width || undefined,
+          height: asset.height || undefined,
+          fileSize: asset.file_size || undefined,
+        });
+      } else if (asset.asset_type === 'audio') {
+        await createOrganizationAudioAsset(asset.name, localFilePath, orgId, orgName, asset.id, {
+          duration: asset.duration || undefined,
+          fileSize: asset.file_size || undefined,
+        });
+      } else if (asset.asset_type === 'image') {
+        await createOrganizationImageAsset(asset.name, localFilePath, orgId, orgName, asset.id, {
+          width: asset.width || undefined,
+          height: asset.height || undefined,
+          fileSize: asset.file_size || undefined,
+          mimeType: asset.mime_type || undefined,
+        });
+      }
+
+      console.log(`[OrgUpload] Asset saved to local database: ${asset.name} -> ${localFilePath}`);
+    } catch (err) {
+      // Log but don't fail the upload - the asset is on the server
+      // User can sync later to get it locally
+      console.error('[OrgUpload] Failed to save asset locally:', err);
     }
   }
 
@@ -2696,8 +2985,19 @@
       playVideoAsset(asset);
     } else if (asset.asset_type === 'audio') {
       toggleAudioPlayback(asset);
+    } else if (asset.asset_type === 'image' || asset.asset_type === 'watermark') {
+      openImagePreview(asset);
     }
-    // Images/watermarks don't have click action
+  }
+
+  function openImagePreview(asset: ServerOrganizationAsset) {
+    imageToPreview.value = asset;
+    showImagePreview.value = true;
+  }
+
+  function closeImagePreview() {
+    showImagePreview.value = false;
+    imageToPreview.value = null;
   }
 
   function getAssetTypeLabel(type: string): string {

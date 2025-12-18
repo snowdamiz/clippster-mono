@@ -151,7 +151,7 @@
             </div>
 
             <!-- Top left badges -->
-            <div class="absolute top-4 left-4 z-5 flex flex-col gap-1">
+            <div class="absolute top-4 left-4 z-5 flex flex-row flex-wrap gap-1.5">
               <!-- Type badge -->
               <span
                 :class="[
