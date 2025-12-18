@@ -145,6 +145,16 @@ defmodule ClippsterServerWeb.Router do
     # Organization payments (Crypto/SOL)
     post "/organizations/:organization_id/payments/quote", PaymentController, :get_org_quote
     post "/organizations/:organization_id/payments/confirm", PaymentController, :confirm_org_payment
+
+    # Organization assets
+    get "/organizations/:organization_id/assets", OrganizationAssetController, :index
+    get "/organizations/:organization_id/assets/:id", OrganizationAssetController, :show
+    post "/organizations/:organization_id/assets", OrganizationAssetController, :create
+    put "/organizations/:organization_id/assets/:id", OrganizationAssetController, :update
+    delete "/organizations/:organization_id/assets/:id", OrganizationAssetController, :delete
+
+    # User's organization assets (for sync)
+    get "/user/organization-assets", OrganizationAssetController, :user_assets
   end
 
   # Admin-only routes

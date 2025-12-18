@@ -13,9 +13,11 @@ defmodule ClippsterServer.Organizations do
     OrganizationInvitation,
     OrganizationCredit,
     OrganizationCreditTransaction,
-    MemberCreditAllocation
+    MemberCreditAllocation,
+    OrganizationAsset
   }
   alias ClippsterServer.{Emails, Mailer}
+  alias ClippsterServer.Storage
 
   # ============================================================================
   # Organization CRUD
@@ -857,6 +859,177 @@ defmodule ClippsterServer.Organizations do
     OrganizationMember
     |> where([m], m.organization_id == ^organization_id)
     |> Repo.aggregate(:count)
+  end
+
+  # ============================================================================
+  # Organization Assets
+  # ============================================================================
+
+  @doc """
+  Lists all assets for an organization.
+  Optionally filter by asset_type.
+  """
+  def list_organization_assets(organization_id, opts \\ []) do
+    asset_type = Keyword.get(opts, :asset_type)
+
+    query = from a in OrganizationAsset,
+      where: a.organization_id == ^organization_id,
+      order_by: [desc: a.inserted_at],
+      preload: [:uploaded_by]
+
+    query = if asset_type do
+      where(query, [a], a.asset_type == ^asset_type)
+    else
+      query
+    end
+
+    Repo.all(query)
+  end
+
+  @doc """
+  Gets a single organization asset by ID.
+  """
+  def get_organization_asset(id) do
+    OrganizationAsset
+    |> preload(:uploaded_by)
+    |> Repo.get(id)
+  end
+
+  @doc """
+  Gets a single organization asset by ID, scoped to an organization.
+  """
+  def get_organization_asset(organization_id, asset_id) do
+    OrganizationAsset
+    |> where([a], a.organization_id == ^organization_id and a.id == ^asset_id)
+    |> preload(:uploaded_by)
+    |> Repo.one()
+  end
+
+  @doc """
+  Creates a new organization asset.
+  Uploads the file to R2 storage and creates the database record.
+  """
+  def create_organization_asset(organization_id, user_id, asset_type, file_binary, filename, opts \\ []) do
+    content_type = Keyword.get(opts, :content_type, "application/octet-stream")
+    thumbnail_binary = Keyword.get(opts, :thumbnail_binary)
+    duration = Keyword.get(opts, :duration)
+    width = Keyword.get(opts, :width)
+    height = Keyword.get(opts, :height)
+    file_size = byte_size(file_binary)
+
+    # Generate storage key and upload to R2
+    key = Storage.generate_key(organization_id, asset_type, filename)
+
+    with {:ok, url} <- Storage.upload_file(file_binary, key, content_type: content_type),
+         {:ok, thumbnail_url} <- maybe_upload_thumbnail(organization_id, asset_type, filename, thumbnail_binary) do
+      
+      # Create database record
+      attrs = %{
+        organization_id: organization_id,
+        uploaded_by_user_id: user_id,
+        asset_type: asset_type,
+        name: filename,
+        url: url,
+        thumbnail_url: thumbnail_url,
+        duration: duration,
+        width: width,
+        height: height,
+        file_size: file_size,
+        mime_type: content_type
+      }
+
+      %OrganizationAsset{}
+      |> OrganizationAsset.create_changeset(attrs)
+      |> Repo.insert()
+    end
+  end
+
+  defp maybe_upload_thumbnail(_org_id, _asset_type, _filename, nil), do: {:ok, nil}
+  defp maybe_upload_thumbnail(organization_id, asset_type, filename, thumbnail_binary) do
+    key = Storage.generate_thumbnail_key(organization_id, asset_type, filename)
+    case Storage.upload_file(thumbnail_binary, key, content_type: "image/jpeg") do
+      {:ok, url} -> {:ok, url}
+      {:error, _} -> {:ok, nil}  # Don't fail if thumbnail upload fails
+    end
+  end
+
+  @doc """
+  Updates an organization asset (name only).
+  """
+  def update_organization_asset(%OrganizationAsset{} = asset, attrs, %User{} = user) do
+    if is_admin?(asset.organization_id, user.id) do
+      asset
+      |> OrganizationAsset.update_changeset(attrs)
+      |> Repo.update()
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Deletes an organization asset.
+  Also deletes the file from R2 storage.
+  """
+  def delete_organization_asset(%OrganizationAsset{} = asset, %User{} = user) do
+    if is_admin?(asset.organization_id, user.id) do
+      Repo.transaction(fn ->
+        # Delete from R2
+        Storage.delete_file_by_url(asset.url)
+        if asset.thumbnail_url, do: Storage.delete_file_by_url(asset.thumbnail_url)
+
+        # Delete database record
+        case Repo.delete(asset) do
+          {:ok, deleted} -> deleted
+          {:error, changeset} -> Repo.rollback(changeset)
+        end
+      end)
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Deletes an organization asset by ID.
+  """
+  def delete_organization_asset_by_id(organization_id, asset_id, %User{} = user) do
+    case get_organization_asset(organization_id, asset_id) do
+      nil -> {:error, :not_found}
+      asset -> delete_organization_asset(asset, user)
+    end
+  end
+
+  @doc """
+  Gets all assets for organizations the user is a member of.
+  Returns a map of organization_id => [assets].
+  """
+  def get_assets_for_user_organizations(user_id) do
+    # Get all organizations the user is a member of
+    org_memberships = list_user_organizations(user_id)
+    
+    org_memberships
+    |> Enum.map(fn %{organization: org} ->
+      assets = list_organization_assets(org.id)
+      {org.id, %{organization: org, assets: assets}}
+    end)
+    |> Enum.into(%{})
+  end
+
+  @doc """
+  Gets all asset IDs for organizations the user is a member of.
+  Used for sync comparison.
+  """
+  def get_asset_ids_for_user_organizations(user_id) do
+    org_memberships = list_user_organizations(user_id)
+    org_ids = Enum.map(org_memberships, fn %{organization: org} -> org.id end)
+
+    if Enum.empty?(org_ids) do
+      []
+    else
+      OrganizationAsset
+      |> where([a], a.organization_id in ^org_ids)
+      |> select([a], %{id: a.id, organization_id: a.organization_id, updated_at: a.updated_at})
+      |> Repo.all()
+    end
   end
 end
 
