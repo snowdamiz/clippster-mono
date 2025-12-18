@@ -231,6 +231,7 @@ impl VideoFilterSettings {
     
     /// Build FFmpeg video filter string for color grading
     /// Returns None if no filters are active
+    #[allow(dead_code)]
     pub fn to_ffmpeg_filter(&self) -> Option<String> {
         if !self.is_active() {
             return None;

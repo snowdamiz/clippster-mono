@@ -17,6 +17,7 @@ fn build_video_filter_string(segments: Option<&Vec<VideoFilterSegment>>) -> Opti
 /// Build time-based filter string with adjusted time offsets
 /// Used when the output video starts at a different time than the source
 /// offset: the time offset to add to all filter start/end times
+#[allow(dead_code)]
 fn build_video_filter_string_with_offset(segments: Option<&Vec<VideoFilterSegment>>, offset: f64) -> Option<String> {
     let segments = segments?;
     if segments.is_empty() {
@@ -2701,7 +2702,7 @@ pub async fn apply_stickers_to_video(
     // Process emoji stickers using drawtext filter
     for (idx, sticker) in emoji_stickers.iter().enumerate() {
         // Get position for this aspect ratio (fallback to default)
-        let (pos_x_pct, pos_y_pct, scale, rotation) = if let Some(ref configs) = sticker.per_ratio_configs {
+        let (pos_x_pct, pos_y_pct, scale, _rotation) = if let Some(ref configs) = sticker.per_ratio_configs {
             if let Some(config) = configs.get(aspect_ratio) {
                 (config.position.x, config.position.y, config.scale, config.rotation)
             } else {

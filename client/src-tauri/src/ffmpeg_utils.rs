@@ -268,6 +268,7 @@ pub struct VideoSourceSegment {
 /// 
 /// # Returns
 /// Tuple of (filter_complex_string, output_stream_name)
+#[allow(dead_code)]
 pub fn build_crossfade_filter_complex(
     sources: &[VideoSourceSegment],
     transitions: &[CrossfadeTransition],
@@ -288,7 +289,6 @@ pub fn build_crossfade_filter_complex(
     }
 
     let mut filter_parts: Vec<String> = Vec::new();
-    let mut current_output = String::new();
 
     // First, scale all inputs to the same size
     for i in 0..sources.len() {
@@ -327,9 +327,7 @@ pub fn build_crossfade_filter_complex(
         last_stream = output_stream.clone();
     }
 
-    current_output = last_stream;
-
-    (filter_parts.join(";"), current_output)
+    (filter_parts.join(";"), last_stream)
 }
 
 /// Build FFmpeg audio crossfade filter for smooth audio transitions
@@ -340,6 +338,7 @@ pub fn build_crossfade_filter_complex(
 /// 
 /// # Returns
 /// Tuple of (audio_filter_string, output_stream_name)
+#[allow(dead_code)]
 pub fn build_audio_crossfade_filter(
     sources: &[VideoSourceSegment],
     transitions: &[CrossfadeTransition],
@@ -367,7 +366,7 @@ pub fn build_audio_crossfade_filter(
         // Calculate offset for audio crossfade
         let source_a = &sources[transition.source_a_index];
         let source_a_duration = source_a.timeline_end - source_a.timeline_start;
-        let offset = source_a_duration - transition.duration;
+        let _offset = source_a_duration - transition.duration;
 
         filter_parts.push(format!(
             "{}{}acrossfade=d={:.3}:c1=tri:c2=tri{}",
@@ -390,6 +389,7 @@ pub fn build_audio_crossfade_filter(
 /// 
 /// # Returns
 /// Vector of detected crossfade transitions
+#[allow(dead_code)]
 pub fn detect_source_transitions(sources: &[VideoSourceSegment]) -> Vec<CrossfadeTransition> {
     let mut transitions = Vec::new();
 
