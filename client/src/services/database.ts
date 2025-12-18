@@ -278,6 +278,7 @@ export {
   unlinkMonitoredStreamer,
   getCreatorProfileByMonitoredStreamer,
   getCreatorProfileByProjectId,
+  getCreatorProfileByPlatformId,
 } from './database/creator-profiles';
 
 // Audio settings exports

@@ -467,12 +467,16 @@
   import { useDownloads } from '@/composables/useDownloads';
   import { getNextSegmentNumber } from '@/services/database';
   import { Clock, ChevronDown, X, AlertTriangle, Download, Video, Search, Loader2, RotateCcw } from 'lucide-vue-next';
+  import { getCreatorProfileByPlatformId } from '@/services/database';
+  import { getUserAssignedCreatorProfiles } from '@/services/organizationProfilesApi';
+  import { useAuthStore } from '@/stores/auth';
 
   const router = useRouter();
   const route = useRoute();
   const { success, error: showError } = useToast();
   const { startDownload } = useDownloads();
   const platformStore = usePlatformStore();
+  const authStore = useAuthStore();
 
   // Auto-detected platform from input
   const detectedPlatform = ref<PlatformId | null>(null);
@@ -792,6 +796,50 @@
       // Auto-segment applies to the selected range (whether full or trimmed)
       const shouldAutoSegment = autoSegment.value && selectedDuration.value > 900;
 
+      // Look up creator profile by platform + platform ID to get watermark settings
+      // First try local profiles, then check organization profiles
+      let creatorWatermarkSettings: { watermarkId: string; watermarkSettings: string } | undefined;
+      if (detectedPlatform.value && platformStore.currentSearchId) {
+        try {
+          // Try local profiles first
+          const localProfile = await getCreatorProfileByPlatformId(
+            detectedPlatform.value,
+            platformStore.currentSearchId
+          );
+          if (localProfile?.watermark_id && localProfile?.watermark_settings) {
+            creatorWatermarkSettings = {
+              watermarkId: localProfile.watermark_id,
+              watermarkSettings: localProfile.watermark_settings,
+            };
+          }
+
+          // If not found locally, try organization profiles
+          if (!creatorWatermarkSettings && authStore.isAuthenticated) {
+            const orgResponse = await getUserAssignedCreatorProfiles();
+            if (orgResponse.success && orgResponse.profiles.length > 0) {
+              // Find a profile with a matching platform link
+              for (const orgProfile of orgResponse.profiles) {
+                const matchingLink = orgProfile.platform_links.find(
+                  (link) =>
+                    link.platform === detectedPlatform.value &&
+                    link.platform_id.toLowerCase() === platformStore.currentSearchId.toLowerCase()
+                );
+                if (matchingLink && orgProfile.watermark_id && orgProfile.watermark_settings) {
+                  creatorWatermarkSettings = {
+                    watermarkId: `org-asset-${orgProfile.watermark_id}`,
+                    watermarkSettings: JSON.stringify(orgProfile.watermark_settings),
+                  };
+                  break;
+                }
+              }
+            }
+          }
+        } catch (err) {
+          // Silently ignore - watermark just won't be applied
+          console.log('[StreamVods] Could not fetch creator profile for watermark:', err);
+        }
+      }
+
       await startDownload(
         clip.title,
         videoUrl,
@@ -803,6 +851,7 @@
           autoSegment: shouldAutoSegment,
           segmentDuration: autoSegmentDuration.value * 60,
           provider: currentPlatformConfig.value.provider as 'pumpfun' | 'kick',
+          creatorWatermarkSettings,
         }
       );
 
