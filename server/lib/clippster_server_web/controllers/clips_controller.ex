@@ -1644,7 +1644,7 @@ defmodule ClippsterServerWeb.ClipsController do
 
   # Deduct credits based on processing type and duration
   # Now supports optional organization_id for org credit deduction
-  defp deduct_credits_for_processing(user_id, duration_hours, is_first_run, organization_id \\ nil) do
+  defp deduct_credits_for_processing(user_id, duration_hours, is_first_run, organization_id) do
     # Determine credit rate based on processing type
     credit_rate = if is_first_run, do: 1.0, else: 0.7
 

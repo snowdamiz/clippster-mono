@@ -235,7 +235,7 @@ defmodule ClippsterServerWeb.PaymentController do
   end
   
   # Fallback for requests without from_address (backward compatibility)
-  def confirm_payment(conn, %{"tx_signature" => _tx_signature, "pack_type" => _pack_type} = params) do
+  def confirm_payment(conn, %{"tx_signature" => _tx_signature, "pack_type" => _pack_type} = _params) do
     conn
     |> put_status(400)
     |> json(%{success: false, error: "Missing required field: from_address. Please update your client."})

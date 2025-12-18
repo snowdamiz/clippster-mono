@@ -505,7 +505,7 @@ defmodule ClippsterServer.Organizations do
     end
   end
 
-  defp create_verified_user(email, password, created_by_organization_id, name \\ nil) do
+  defp create_verified_user(email, password, created_by_organization_id, name) do
     # Create user with email provider, already verified
     # Mark account as created by the organization
     user_attrs = %{

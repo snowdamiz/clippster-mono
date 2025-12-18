@@ -253,6 +253,12 @@ defmodule ClippsterServerWeb.StripeController do
     end
   end
 
+  defp handle_event(%{type: event_type}) do
+    IO.puts("[Stripe Webhook] Unhandled event type: #{event_type}")
+  end
+
+  defp handle_event(_), do: :ok
+
   defp handle_personal_stripe_payment(user_id, pack_type, hours, amount_usd, amount_total, session_id, payment_intent) do
     # Create and confirm the transaction for personal credits
     attrs = %{
@@ -313,12 +319,6 @@ defmodule ClippsterServerWeb.StripeController do
         IO.puts("[Stripe Webhook] Failed to add org credits: #{inspect(reason)}")
     end
   end
-
-  defp handle_event(%{type: event_type}) do
-    IO.puts("[Stripe Webhook] Unhandled event type: #{event_type}")
-  end
-
-  defp handle_event(_), do: :ok
 
   defp get_metadata_value(metadata, key) when is_map(metadata) do
     # Handle both string and atom keys
