@@ -2,6 +2,7 @@ defmodule ClippsterServerWeb.EmailAuthController do
   use ClippsterServerWeb, :controller
 
   alias ClippsterServer.Accounts
+  alias ClippsterServer.Organizations
   alias ClippsterServer.Auth.TokenGenerator
 
   @email_verification_callback_port 54322
@@ -55,6 +56,7 @@ defmodule ClippsterServerWeb.EmailAuthController do
 
         case TokenGenerator.generate_token(token_claims) do
           {:ok, token} ->
+            ai_allowed = check_ai_allowed_for_user(user)
             json(conn, %{
               success: true,
               token: token,
@@ -65,7 +67,8 @@ defmodule ClippsterServerWeb.EmailAuthController do
                 is_admin: user.is_admin,
                 account_type: user.account_type,
                 owned_organization_id: user.owned_organization_id,
-                created_by_organization_id: user.created_by_organization_id
+                created_by_organization_id: user.created_by_organization_id,
+                ai_allowed: ai_allowed
               }
             })
 
@@ -165,6 +168,7 @@ defmodule ClippsterServerWeb.EmailAuthController do
 
         case TokenGenerator.generate_token(token_claims) do
           {:ok, token} ->
+            ai_allowed = check_ai_allowed_for_user(user)
             json(conn, %{
               success: true,
               token: token,
@@ -175,7 +179,8 @@ defmodule ClippsterServerWeb.EmailAuthController do
                 is_admin: user.is_admin,
                 account_type: user.account_type,
                 owned_organization_id: user.owned_organization_id,
-                created_by_organization_id: user.created_by_organization_id
+                created_by_organization_id: user.created_by_organization_id,
+                ai_allowed: ai_allowed
               }
             })
 
@@ -387,6 +392,7 @@ defmodule ClippsterServerWeb.EmailAuthController do
   defp send_verification_success_html(conn, token, user) do
     escaped_email = (user.email || "") |> String.replace("\"", "\\\"")
     escaped_name = (user.name || "") |> String.replace("\"", "\\\"")
+    ai_allowed = check_ai_allowed_for_user(user)
 
     html_response = """
     <!DOCTYPE html>
@@ -429,7 +435,8 @@ defmodule ClippsterServerWeb.EmailAuthController do
             is_admin: #{user.is_admin},
             account_type: #{if user.account_type, do: "\"#{user.account_type}\"", else: "null"},
             owned_organization_id: #{user.owned_organization_id || "null"},
-            created_by_organization_id: #{user.created_by_organization_id || "null"}
+            created_by_organization_id: #{user.created_by_organization_id || "null"},
+            ai_allowed: #{ai_allowed}
           }
         };
 
@@ -512,6 +519,28 @@ defmodule ClippsterServerWeb.EmailAuthController do
     end)
     |> Enum.map(fn {field, errors} -> "#{field}: #{Enum.join(errors, ", ")}" end)
     |> Enum.join("; ")
+  end
+
+  # Check if AI is allowed for a user based on their organization's settings
+  defp check_ai_allowed_for_user(user) do
+    case user.created_by_organization_id do
+      nil ->
+        # User was not created by an org, AI is allowed
+        true
+
+      org_id ->
+        # User was created by an org, check org settings
+        case Organizations.get_organization(org_id) do
+          nil ->
+            # Org doesn't exist anymore, allow AI
+            true
+
+          organization ->
+            # Check if allow_ai is explicitly set to false
+            settings = organization.settings || %{}
+            Map.get(settings, "allow_ai", true) != false
+        end
+    end
   end
 end
 

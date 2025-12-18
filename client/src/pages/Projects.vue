@@ -304,7 +304,7 @@
                 </button>
 
                 <button
-                  v-if="canDetectClips(project.id) && !isProjectDetecting(project.id)"
+                  v-if="canDetectClips(project.id) && !isProjectDetecting(project.id) && isAIAllowed"
                   class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
                   title="Detect Clips"
                   @click.stop="startProjectDetection(project)"
@@ -598,7 +598,8 @@
                   v-if="
                     canDetectClips(project.id) &&
                     !isDetectionActive(project.id) &&
-                    !isProjectDetecting(folderProject?.id || '')
+                    !isProjectDetecting(folderProject?.id || '') &&
+                    isAIAllowed
                   "
                   class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
                   title="Detect Clips"
@@ -1369,7 +1370,11 @@
   import { useChunkedClipDetection } from '@/composables/useChunkedClipDetection';
   import { useAuthStore } from '@/stores/auth';
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
+  import { useAIPermission } from '@/composables/useAIPermission';
   import { Button } from '@/components/ui/button';
+
+  // AI Permission check
+  const { isAIAllowed } = useAIPermission();
   import { utf8ToBase64 } from '@/utils/encoding';
   import { save } from '@tauri-apps/plugin-dialog';
 

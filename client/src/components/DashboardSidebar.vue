@@ -85,8 +85,8 @@
     </nav>
     <!-- User info and logout at bottom -->
     <div class="absolute bottom-0 w-64 border-t border-border">
-      <!-- Credit Balance -->
-      <div class="px-2 pb-2 pt-2">
+      <!-- Credit Balance - Hidden for org members with AI disabled -->
+      <div v-if="isAIAllowed" class="px-2 pb-2 pt-2">
         <button
           @click="handleCreditClick"
           class="credit-balance-card w-full"
@@ -148,6 +148,7 @@
   import { useRoute, useRouter } from 'vue-router';
   import { useAuthStore } from '@/stores/auth';
   import { useWallet } from '@/composables/useWallet';
+  import { useAIPermission } from '@/composables/useAIPermission';
   import { navigationItems } from '@/config/navigation';
   import BugReportDialog from '@/components/BugReportDialog.vue';
   import api from '@/services/api';
@@ -157,6 +158,7 @@
   const router = useRouter();
   const authStore = useAuthStore();
   const { formatAddress } = useWallet();
+  const { isAIAllowed } = useAIPermission();
 
   const emit = defineEmits<{
     'show-auth-modal': [];

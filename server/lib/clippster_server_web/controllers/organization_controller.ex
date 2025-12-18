@@ -94,7 +94,7 @@ defmodule ClippsterServerWeb.OrganizationController do
         |> json(%{success: false, error: "Organization not found"})
 
       organization ->
-        attrs = Map.take(params, ["name", "description", "logo_url"])
+        attrs = Map.take(params, ["name", "description", "logo_url", "settings"])
         
         case Organizations.update_organization(organization, attrs, user) do
           {:ok, updated_org} ->
@@ -606,7 +606,8 @@ defmodule ClippsterServerWeb.OrganizationController do
       description: org.description,
       logo_url: org.logo_url,
       owner_id: org.owner_id,
-      created_at: org.inserted_at
+      created_at: org.inserted_at,
+      settings: org.settings || %{}
     }
   end
 

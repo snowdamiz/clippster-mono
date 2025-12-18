@@ -65,6 +65,7 @@ defmodule ClippsterServerWeb.AuthController do
 
       case TokenGenerator.generate_token(token_claims) do
         {:ok, token} ->
+          ai_allowed = check_ai_allowed_for_user(user)
           json(conn, %{
             success: true,
             token: token,
@@ -75,7 +76,8 @@ defmodule ClippsterServerWeb.AuthController do
               is_admin: user.is_admin,
               account_type: user.account_type,
               owned_organization_id: user.owned_organization_id,
-              created_by_organization_id: user.created_by_organization_id
+              created_by_organization_id: user.created_by_organization_id,
+              ai_allowed: ai_allowed
             }
           })
 
@@ -502,6 +504,7 @@ defmodule ClippsterServerWeb.AuthController do
     escaped_email = (user.email || "") |> String.replace("\"", "\\\"")
     escaped_name = (user.name || "") |> String.replace("\"", "\\\"")
     escaped_avatar = (user.avatar_url || "") |> String.replace("\"", "\\\"")
+    ai_allowed = check_ai_allowed_for_user(user)
     
     html_response = """
     <!DOCTYPE html>
@@ -545,7 +548,8 @@ defmodule ClippsterServerWeb.AuthController do
             is_admin: #{user.is_admin},
             account_type: #{if user.account_type, do: "\"#{user.account_type}\"", else: "null"},
             owned_organization_id: #{user.owned_organization_id || "null"},
-            created_by_organization_id: #{user.created_by_organization_id || "null"}
+            created_by_organization_id: #{user.created_by_organization_id || "null"},
+            ai_allowed: #{ai_allowed}
           }
         };
         
@@ -676,6 +680,9 @@ defmodule ClippsterServerWeb.AuthController do
   def me(conn, _params) do
     user = conn.assigns.current_user
 
+    # Check if AI is allowed for this user
+    ai_allowed = check_ai_allowed_for_user(user)
+
     json(conn, %{
       success: true,
       user: %{
@@ -687,9 +694,32 @@ defmodule ClippsterServerWeb.AuthController do
         is_admin: user.is_admin,
         account_type: user.account_type,
         owned_organization_id: user.owned_organization_id,
-        created_by_organization_id: user.created_by_organization_id
+        created_by_organization_id: user.created_by_organization_id,
+        ai_allowed: ai_allowed
       }
     })
+  end
+
+  # Check if AI is allowed for a user based on their organization's settings
+  defp check_ai_allowed_for_user(user) do
+    case user.created_by_organization_id do
+      nil ->
+        # User was not created by an org, AI is allowed
+        true
+
+      org_id ->
+        # User was created by an org, check org settings
+        case ClippsterServer.Organizations.get_organization(org_id) do
+          nil ->
+            # Org doesn't exist anymore, allow AI
+            true
+
+          organization ->
+            # Check if allow_ai is explicitly set to false
+            settings = organization.settings || %{}
+            Map.get(settings, "allow_ai", true) != false
+        end
+    end
   end
 
   defp verify_google_access_token(access_token) do

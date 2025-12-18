@@ -113,6 +113,7 @@
                 @seekVideo="onSeekVideo"
                 @watermarkSettingsChanged="onWatermarkSettingsChanged"
                 @editClip="onEditClip"
+                @addClip="onAddClip"
               />
             </div>
           </div>
@@ -549,6 +550,16 @@
 
     // Show confirmation dialog (prompt will be selected within the dialog)
     showDetectConfirmDialog.value = true;
+  }
+
+  /**
+   * Handle add clip request (for non-AI users).
+   * Activates the add clip mode on the Timeline so users can manually select a time range.
+   */
+  function onAddClip() {
+    if (timelineRef.value && timelineRef.value.toggleAddClipMode) {
+      timelineRef.value.toggleAddClipMode();
+    }
   }
 
   async function onCancelDetection() {
@@ -1099,7 +1110,7 @@
   // Load creator profile and apply their default settings
   async function loadCreatorProfileSettings(projectId: string) {
     try {
-      const profile = await findCreatorProfileUpTree(projectId);
+      const profile = await getCreatorProfileByProjectId(projectId);
       creatorProfile.value = profile;
 
       // Reset creator defaults

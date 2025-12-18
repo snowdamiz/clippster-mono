@@ -31,6 +31,8 @@ pub struct GoogleAuthUser {
     pub account_type: Option<String>,
     pub owned_organization_id: Option<i64>,
     pub created_by_organization_id: Option<i64>,
+    #[serde(default)]
+    pub ai_allowed: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +60,8 @@ pub struct EmailAuthUser {
     pub account_type: Option<String>,
     pub owned_organization_id: Option<i64>,
     pub created_by_organization_id: Option<i64>,
+    #[serde(default)]
+    pub ai_allowed: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

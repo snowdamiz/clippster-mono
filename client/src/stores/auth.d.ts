@@ -10,6 +10,7 @@ export interface AuthUser {
   account_type?: 'personal' | 'organization'
   owned_organization_id?: string | null
   created_by_organization_id?: number | null
+  ai_allowed?: boolean
 }
 
 export interface AuthState {

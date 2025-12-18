@@ -395,6 +395,41 @@
                 <p class="text-xs text-muted-foreground/70">Optional · Visible to team members</p>
               </div>
 
+              <!-- Member Permissions Section -->
+              <div class="pt-4 border-t border-border">
+                <h3 class="text-sm font-semibold text-foreground mb-4">Member Permissions</h3>
+
+                <!-- Allow AI Toggle -->
+                <div class="flex items-center justify-between p-3 bg-muted/30 border border-border/50 rounded-lg">
+                  <div class="flex-1 pr-4">
+                    <div class="flex items-center gap-2">
+                      <Sparkles class="h-4 w-4 text-primary" />
+                      <span class="text-sm font-medium text-foreground">Allow AI Clip Detection</span>
+                    </div>
+                    <p class="text-xs text-muted-foreground mt-1">
+                      When disabled, members created by this organization cannot use AI to detect clips.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    :aria-checked="editData.settings.allow_ai"
+                    @click="editData.settings.allow_ai = !editData.settings.allow_ai"
+                    :class="[
+                      'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+                      editData.settings.allow_ai ? 'bg-primary' : 'bg-muted',
+                    ]"
+                  >
+                    <span
+                      :class="[
+                        'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                        editData.settings.allow_ai ? 'translate-x-5' : 'translate-x-0',
+                      ]"
+                    />
+                  </button>
+                </div>
+              </div>
+
               <!-- Save Button -->
               <div class="flex items-center gap-3 pt-1">
                 <Button type="submit" size="sm" :disabled="saving || !hasChanges">
@@ -839,6 +874,7 @@
     Pencil,
     Eye,
     EyeOff,
+    Sparkles,
   } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
   import { Button } from '@/components/ui/button';
@@ -907,6 +943,9 @@
   const editData = ref({
     name: '',
     description: '',
+    settings: {
+      allow_ai: true,
+    },
   });
 
   const tabs = [
@@ -926,9 +965,12 @@
 
   const hasChanges = computed(() => {
     if (!organization.value) return false;
+    const orgSettings = organization.value.settings || {};
+    const currentAllowAi = orgSettings.allow_ai !== false; // Default to true
     return (
       editData.value.name !== organization.value.name ||
-      editData.value.description !== (organization.value.description || '')
+      editData.value.description !== (organization.value.description || '') ||
+      editData.value.settings.allow_ai !== currentAllowAi
     );
   });
 
@@ -970,9 +1012,13 @@
           return;
         }
 
+        const orgSettings = orgResult.organization.settings || {};
         editData.value = {
           name: orgResult.organization.name,
           description: orgResult.organization.description || '',
+          settings: {
+            allow_ai: orgSettings.allow_ai !== false, // Default to true
+          },
         };
       } else {
         throw new Error(orgResult.error);
