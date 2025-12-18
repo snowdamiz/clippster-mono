@@ -126,17 +126,9 @@
     </div>
 
     <!-- Empty State -->
-    <EmptyState
-      v-else
-      title="No prompts yet"
-      description="Create your first prompt template to get started"
-      button-text="Create Prompt"
-      @action="navigateToNew"
-    >
+    <EmptyState v-else title="No prompts yet" description="Create your first prompt template to get started">
       <template #icon>
-        <div class="w-20 h-20 bg-purple-500/10 rounded-2xl flex items-center justify-center mb-4">
-          <MessageCircle class="h-10 w-10 text-purple-500" />
-        </div>
+        <MessageCircle class="h-16 w-16 text-muted-foreground" />
       </template>
     </EmptyState>
 
