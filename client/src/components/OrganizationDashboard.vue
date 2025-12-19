@@ -887,6 +887,25 @@
           </div>
         </div>
 
+        <!-- Social Accounts Tab -->
+        <div v-else-if="activeTab === 'social'" class="p-6">
+          <SocialAccountsManager
+            :organization-id="organizationId ?? ''"
+            :is-admin="isAdmin"
+            :members="members"
+            @accounts-changed="loadOrganization"
+          />
+        </div>
+
+        <!-- Posts Tab -->
+        <div v-else-if="activeTab === 'posts'" class="p-6">
+          <PostSubmissionsList
+            :organization-id="organizationId ?? ''"
+            :is-admin="isAdmin"
+            :creator-profiles="creatorProfiles"
+          />
+        </div>
+
         <!-- Settings Tab -->
         <div v-if="activeTab === 'settings'" class="p-6">
           <!-- Organization Section -->
@@ -1815,6 +1834,8 @@
   import VideoPlayerDialog from './VideoPlayerDialog.vue';
   import ProfileDialog from './ProfileDialog.vue';
   import ProfileAssignmentDialog from './ProfileAssignmentDialog.vue';
+  import SocialAccountsManager from './organization/SocialAccountsManager.vue';
+  import PostSubmissionsList from './organization/PostSubmissionsList.vue';
   import api from '@/services/api';
   import {
     listOrganizationCreatorProfiles,
@@ -1985,6 +2006,8 @@
   const tabs = [
     { id: 'members', label: 'Members' },
     { id: 'creators', label: 'Creator Profiles' },
+    { id: 'social', label: 'Social Accounts' },
+    { id: 'posts', label: 'Posts' },
     { id: 'assets', label: 'Assets' },
     { id: 'billing', label: 'Billing' },
     { id: 'settings', label: 'Settings' },

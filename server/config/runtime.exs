@@ -58,6 +58,16 @@ config :clippster_server, :email_auth,
   app_name: "Clippster",
   verification_url_base: System.get_env("APP_URL") || "http://localhost:4000"
 
+# Instagram API configuration (Instagram Business Login)
+config :clippster_server, :instagram,
+  app_id: System.get_env("INSTAGRAM_APP_ID"),
+  app_secret: System.get_env("INSTAGRAM_APP_SECRET"),
+  redirect_uri: System.get_env("INSTAGRAM_REDIRECT_URI") || "http://localhost:5173/auth/instagram/callback"
+
+# Social token encryption key
+config :clippster_server, :social,
+  token_encryption_key: System.get_env("SOCIAL_TOKEN_ENCRYPTION_KEY")
+
 # Cloudflare R2 storage configuration (for organization assets)
 r2_account_id = System.get_env("R2_ACCOUNT_ID")
 
@@ -72,7 +82,7 @@ config :clippster_server, :r2,
 # Hackney needs specific SSL options to work with Cloudflare
 if r2_account_id do
   r2_host = String.to_charlist("#{r2_account_id}.r2.cloudflarestorage.com")
-  
+
   config :ex_aws, :hackney_opts,
     follow_redirect: true,
     connect_timeout: 60_000,

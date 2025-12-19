@@ -55,6 +55,11 @@ defmodule ClippsterServerWeb.Router do
     get "/auth/google", AuthController, :google_request
     get "/auth/google/callback", AuthController, :google_callback
 
+    # Instagram OAuth routes (for Tauri desktop app)
+    get "/auth/instagram/start", InstagramAuthController, :start_oauth
+    get "/auth/instagram/callback", InstagramAuthController, :oauth_callback
+    # The client obtains tokens via FB.login() and sends them to POST /social-accounts
+
     # Email authentication routes
     post "/auth/email/register", EmailAuthController, :register
     post "/auth/email/verify-otp", EmailAuthController, :verify_otp
@@ -179,6 +184,34 @@ defmodule ClippsterServerWeb.Router do
 
     # User's assigned creator profiles
     get "/user/assigned-creator-profiles", OrganizationCreatorProfileController, :user_assigned_profiles
+
+    # Instagram OAuth - exchange code for tokens (admin only)
+    post "/auth/instagram/exchange", InstagramAuthController, :exchange_code
+
+    # Organization social accounts
+    get "/organizations/:organization_id/social-accounts", SocialAccountController, :index
+    get "/organizations/:organization_id/social-accounts/:id", SocialAccountController, :show
+    post "/organizations/:organization_id/social-accounts", SocialAccountController, :create
+    put "/organizations/:organization_id/social-accounts/:id", SocialAccountController, :update
+    delete "/organizations/:organization_id/social-accounts/:id", SocialAccountController, :delete
+    post "/organizations/:organization_id/social-accounts/:id/refresh", SocialAccountController, :refresh_token
+
+    # Social account assignments
+    get "/organizations/:organization_id/social-accounts/:id/assignments", SocialAccountController, :list_assignments
+    post "/organizations/:organization_id/social-accounts/:id/assignments", SocialAccountController, :assign
+    delete "/organizations/:organization_id/social-accounts/:id/assignments/:user_id", SocialAccountController, :unassign
+
+    # User's assigned social accounts in an organization
+    get "/organizations/:organization_id/my-social-accounts", SocialAccountController, :my_accounts
+
+    # Post submissions
+    get "/organizations/:organization_id/posts", PostSubmissionController, :index
+    get "/organizations/:organization_id/posts/analytics", PostSubmissionController, :analytics_summary
+    get "/organizations/:organization_id/posts/:id", PostSubmissionController, :show
+    post "/organizations/:organization_id/posts/publish", PostSubmissionController, :publish
+    put "/organizations/:organization_id/posts/:id", PostSubmissionController, :update
+    post "/organizations/:organization_id/posts/:id/sync", PostSubmissionController, :sync_analytics
+    post "/organizations/:organization_id/posts/:id/reset-override", PostSubmissionController, :reset_override
   end
 
   # Admin-only routes
@@ -206,7 +239,7 @@ defmodule ClippsterServerWeb.Router do
     put "/admin/settings/:key", AdminController, :update_setting
   end
 
-  
+
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:clippster_server, :dev_routes) do
     # If you want to use the LiveDashboard in production, you should put
