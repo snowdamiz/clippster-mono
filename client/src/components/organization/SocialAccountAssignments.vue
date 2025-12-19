@@ -28,7 +28,7 @@
               :id="`member-${member.user_id}`"
               :checked="isAssigned(member.user_id)"
               :disabled="saving"
-              @update:checked="(checked) => toggleAssignment(member.user_id, checked as boolean)"
+              @update:checked="(checked: boolean) => toggleAssignment(member.user_id, checked)"
             />
 
             <!-- Member Avatar -->

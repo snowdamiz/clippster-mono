@@ -374,8 +374,8 @@
       let targetId = settings.watermarkId;
       const perRatio = settings.perRatioSettings;
 
-      if (perRatio && perRatio[aspectRatioStr]) {
-        const config = perRatio[aspectRatioStr];
+      if (perRatio && perRatio[aspectRatioStr as keyof typeof perRatio]) {
+        const config = perRatio[aspectRatioStr as keyof typeof perRatio];
         if (config && config.watermarkId) {
           targetId = config.watermarkId;
         }
@@ -1326,9 +1326,11 @@
                 }
 
                 // Use 16:9 as the default display position
-                const ratioConfig = perRatioSettings['16:9'];
-                if (ratioConfig?.position) {
-                  defaultPos = ratioConfig.position;
+                if (perRatioSettings) {
+                  const ratioConfig = perRatioSettings['16:9'];
+                  if (ratioConfig?.position) {
+                    defaultPos = ratioConfig.position;
+                  }
                 }
               } catch (e) {
                 console.warn('[ProjectWorkspaceDialog] Failed to parse project watermark settings:', e);
@@ -1343,7 +1345,7 @@
               positionY: defaultPos.y,
               opacity: defaultPos.opacity,
               scale: defaultPos.scale,
-              perRatioSettings: perRatioSettings,
+              perRatioSettings: perRatioSettings as import('@/types').PerRatioWatermarkSettings | null,
             };
 
             console.log('[ProjectWorkspaceDialog] Applying project-level watermark settings:', {

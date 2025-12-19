@@ -700,8 +700,8 @@
     isOrgAsset?: boolean;
     serverId?: number;
     serverUrl?: string;
-    organization_id?: string;
-    organization_name?: string;
+    organization_id?: string | null;
+    organization_name?: string | null;
     created_at?: string;
     updated_at?: string;
   }
@@ -2024,8 +2024,8 @@
         serverUrl: intro.serverUrl,
         organization_id: intro.organization_id,
         organization_name: intro.organization_name,
-        created_at: intro.created_at,
-        updated_at: intro.updated_at,
+        created_at: String(intro.created_at),
+        updated_at: String(intro.updated_at),
       };
 
       await recalculateProjectDuration(projectId);
@@ -2111,8 +2111,8 @@
         serverUrl: outro.serverUrl,
         organization_id: outro.organization_id,
         organization_name: outro.organization_name,
-        created_at: outro.created_at,
-        updated_at: outro.updated_at,
+        created_at: String(outro.created_at),
+        updated_at: String(outro.updated_at),
       };
 
       await recalculateProjectDuration(projectId);
@@ -2341,9 +2341,12 @@
           fullEdit.watermarks.map(async (w) => {
             // Convert file path to data URL for preview display
             let previewUrl = w.preview_url;
-            
+
             // If preview_url is already a valid URL or data URL, use it directly
-            if (previewUrl && (previewUrl.startsWith('http://') || previewUrl.startsWith('https://') || previewUrl.startsWith('data:'))) {
+            if (
+              previewUrl &&
+              (previewUrl.startsWith('http://') || previewUrl.startsWith('https://') || previewUrl.startsWith('data:'))
+            ) {
               // Already a valid URL, use as-is
             } else if (!previewUrl && w.watermark_path) {
               // Check if watermark_path is a URL (for org assets)
@@ -2435,7 +2438,7 @@
                 // Add creator watermark to the list
                 watermarks.value.push({
                   id: `creator-watermark-${creatorProfile.id}`,
-                  watermarkId: creatorProfile.watermark_id || undefined,
+                  watermarkId: creatorProfile.watermark_id ?? '',
                   filePath: watermarkSettings.watermarkPath,
                   previewUrl: previewUrl,
                   startTime: 0,
@@ -4109,7 +4112,13 @@
       // Collect all unique watermark IDs from per-ratio settings
       // Group ratios by their watermarkId so we can create separate watermarks for each
       const watermarkIdToRatios: Map<string, string[]> = new Map();
-      const ratioConfigs: Record<string, { position: { x: number; y: number; scale: number; opacity: number; isFullFrameOverlay?: boolean }; watermarkId?: string }> = {};
+      const ratioConfigs: Record<
+        string,
+        {
+          position: { x: number; y: number; scale: number; opacity: number; isFullFrameOverlay?: boolean };
+          watermarkId?: string;
+        }
+      > = {};
 
       if (creatorSettings) {
         for (const [ratio, config] of Object.entries(creatorSettings)) {
@@ -4118,7 +4127,7 @@
               position?: { x: number; y: number; scale: number; opacity: number; isFullFrameOverlay?: boolean };
               watermarkId?: string;
             };
-            
+
             // Store the full config for this ratio
             if (ratioConfig.position) {
               ratioConfigs[ratio] = {
@@ -4153,7 +4162,8 @@
         watermarkIdToRatios.set(watermarkId, ['16:9', '9:16', '1:1', '4:5']);
       }
 
-      console.log('[ClipEditorDialog] Watermark IDs to ratios mapping:', 
+      console.log(
+        '[ClipEditorDialog] Watermark IDs to ratios mapping:',
         Array.from(watermarkIdToRatios.entries()).map(([id, ratios]) => ({ id, ratios }))
       );
       console.log('[ClipEditorDialog] ratioConfigs:', JSON.stringify(ratioConfigs, null, 2));
@@ -4162,13 +4172,13 @@
       // We always overwrite to ensure stored data matches the project's watermark settings (source of truth)
       if (watermarks.value.length > 0 && Object.keys(ratioConfigs).length > 0) {
         console.log('[ClipEditorDialog] Force-syncing existing watermarks with creator profile settings');
-        
+
         for (const watermark of watermarks.value) {
           // Only sync watermarks that are from the creator profile (matching watermarkId)
           // Try direct lookup first
           let ratiosForThisWatermark = watermarkIdToRatios.get(watermark.watermarkId || '');
-          
-          // If not found and main watermarkId is in org-asset format, 
+
+          // If not found and main watermarkId is in org-asset format,
           // try normalizing the stored watermarkId to match the map key format
           if (!ratiosForThisWatermark && watermarkId?.startsWith('org-asset-') && watermark.watermarkId) {
             const wmIdStr = String(watermark.watermarkId);
@@ -4176,19 +4186,19 @@
               ratiosForThisWatermark = watermarkIdToRatios.get(`org-asset-${wmIdStr}`);
             }
           }
-          
+
           // Skip watermarks not in the creator profile (e.g., manually added watermarks)
           if (!ratiosForThisWatermark) {
             console.log('[ClipEditorDialog] Skipping non-creator-profile watermark:', watermark.watermarkId);
             continue;
           }
-          
+
           // Build updated perRatioConfigs from creator profile settings
           const updatedPerRatioConfigs: Record<
             string,
             { position: { x: number; y: number }; scale: number; opacity: number; isFullFrameOverlay?: boolean }
           > = {};
-          
+
           for (const [ratio, config] of Object.entries(ratioConfigs)) {
             if (ratiosForThisWatermark.includes(ratio)) {
               // This ratio uses this watermark - apply creator profile settings
@@ -4207,18 +4217,18 @@
               };
             }
           }
-          
+
           const newConfigs = JSON.stringify(updatedPerRatioConfigs);
-          
+
           console.log('[ClipEditorDialog] Force-updating perRatioConfigs for watermark:', watermark.id, {
             watermarkId: watermark.watermarkId,
             ratiosForThisWatermark,
             updatedPerRatioConfigs,
           });
-          
+
           // Update in-memory - always overwrite to match source of truth
           watermark.perRatioConfigs = updatedPerRatioConfigs;
-          
+
           // Also update the default position/scale/opacity from the primary ratio
           const primaryRatio = ratiosForThisWatermark.includes('16:9') ? '16:9' : ratiosForThisWatermark[0];
           if (primaryRatio && ratioConfigs[primaryRatio]) {
@@ -4227,7 +4237,7 @@
             watermark.scale = config.position.scale;
             watermark.opacity = config.position.opacity;
           }
-          
+
           // Save to database - always update to keep in sync
           const updateData = {
             position_x: watermark.position.x,
@@ -4236,18 +4246,18 @@
             opacity: watermark.opacity,
             per_ratio_configs_data: newConfigs,
           };
-          
+
           if (editorMode.value) {
             await updateVideoEditorWatermark(watermark.id, updateData);
           } else {
             await updateWatermarkRecord(watermark.id, updateData);
           }
         }
-        
+
         console.log('[ClipEditorDialog] Finished force-syncing existing watermarks with creator profile');
         return; // Don't create new watermarks, we've processed the existing ones
       }
-      
+
       // If no watermarks exist yet, create them
       if (watermarks.value.length > 0) {
         console.log('[ClipEditorDialog] Watermarks exist but no ratioConfigs to sync - skipping');
@@ -4256,11 +4266,11 @@
 
       // Helper function to load watermark data by ID
       async function loadWatermarkData(wmId: string): Promise<{
-        record: { id: string; file_path: string; width?: number; height?: number } | null;
+        record: { id: string; file_path: string; width?: number | null; height?: number | null } | null;
         previewUrl: string | null;
         filePath: string | null;
       }> {
-        let record: { id: string; file_path: string; width?: number; height?: number } | null = null;
+        let record: { id: string; file_path: string; width?: number | null; height?: number | null } | null = null;
         let preview: string | null = null;
         let path: string | null = null;
 
@@ -4282,7 +4292,9 @@
               console.log('[ClipEditorDialog] Org watermark not cached, downloading from server...');
               const serverResponse = await getUserOrganizationAssets();
               if (serverResponse.success && serverResponse.assets) {
-                const serverAsset = serverResponse.assets.find((a) => a.id === serverId && a.asset_type === 'watermark');
+                const serverAsset = serverResponse.assets.find(
+                  (a) => a.id === serverId && a.asset_type === 'watermark'
+                );
                 if (serverAsset && serverAsset.url) {
                   console.log('[ClipEditorDialog] Downloading org watermark:', serverAsset.name);
                   // Download and cache the asset locally (bypasses CORS)
@@ -4374,8 +4386,16 @@
           defaultOpacity = config.position.opacity;
         }
 
-        console.log('[ClipEditorDialog] Creating watermark for ID:', wmId, 'visible in ratios:', ratiosForThisWatermark);
-        console.log('[ClipEditorDialog] perRatioConfigsForThisWatermark:', JSON.stringify(perRatioConfigsForThisWatermark, null, 2));
+        console.log(
+          '[ClipEditorDialog] Creating watermark for ID:',
+          wmId,
+          'visible in ratios:',
+          ratiosForThisWatermark
+        );
+        console.log(
+          '[ClipEditorDialog] perRatioConfigsForThisWatermark:',
+          JSON.stringify(perRatioConfigsForThisWatermark, null, 2)
+        );
 
         const watermarkData = {
           watermark_id: wmId,
@@ -4932,9 +4952,12 @@
         fullEdit.watermarks.map(async (w) => {
           // Convert file path to data URL for preview display
           let previewUrl = w.preview_url;
-          
+
           // If preview_url is already a valid URL or data URL, use it directly
-          if (previewUrl && (previewUrl.startsWith('http://') || previewUrl.startsWith('https://') || previewUrl.startsWith('data:'))) {
+          if (
+            previewUrl &&
+            (previewUrl.startsWith('http://') || previewUrl.startsWith('https://') || previewUrl.startsWith('data:'))
+          ) {
             // Already a valid URL, use as-is
           } else if (!previewUrl && w.watermark_path) {
             // Check if watermark_path is a URL (for org assets)
@@ -5008,7 +5031,7 @@
                 // Add creator watermark to the list
                 watermarks.value.push({
                   id: `creator-watermark-${creatorProfile.id}`,
-                  watermarkId: creatorProfile.watermark_id || undefined,
+                  watermarkId: creatorProfile.watermark_id ?? '',
                   filePath: watermarkSettings.watermarkPath,
                   previewUrl: previewUrl,
                   startTime: 0,
