@@ -20,6 +20,7 @@ ureq = { version = "2", default-features = false, features = ["tls"] }
 zip = "0.6"
 tar = "0.4"
 xz2 = "0.1"
+flate2 = "1"
 
 [dependencies]
 tauri = { version = "2.3.0", features = ["macos-private-api", "protocol-asset", "native-tls-vendored"] }

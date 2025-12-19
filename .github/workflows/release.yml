@@ -46,33 +46,6 @@ jobs:
         run: yarn install
         working-directory: client
 
-      # macOS code signing - Import certificate into keychain
-      - name: Import Apple Certificate
-        if: matrix.platform == 'macos-latest'
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          # Skip if no certificate is configured
-          if [ -z "$APPLE_CERTIFICATE" ]; then
-            echo "No Apple certificate configured, skipping code signing setup"
-            exit 0
-          fi
-          
-          echo $APPLE_CERTIFICATE | base64 --decode > certificate.p12
-          
-          # Create a temporary keychain
-          security create-keychain -p actions build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p actions build.keychain
-          
-          # Import certificate
-          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
-          
-          # Clean up
-          rm certificate.p12
-
       - name: Build and Release
         uses: tauri-apps/tauri-action@v0
         env:

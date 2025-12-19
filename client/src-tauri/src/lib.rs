@@ -44,7 +44,7 @@ pub fn run() {
     println!("[Rust] Starting Tauri application");
     println!("[Rust] Registering SQL plugin...");
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations(
@@ -411,11 +411,16 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_process::init());
+
+    // Initialize updater plugin (desktop only) - must be at builder level for permissions
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+
+    builder
         .setup(|app| {
-            // Initialize updater plugin (desktop only)
-            #[cfg(desktop)]
-            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
 
