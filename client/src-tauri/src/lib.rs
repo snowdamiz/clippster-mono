@@ -53,7 +53,7 @@ pub fn run() {
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations(
-                    "sqlite:clippster_v22.db",
+                    "sqlite:clippster_v23.db",
                     migrations::get_migrations(),
                 )
                 .build(),
