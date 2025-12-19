@@ -8,6 +8,7 @@ defmodule ClippsterServer.Accounts do
   alias ClippsterServer.Accounts.User
   alias ClippsterServer.Credits
   alias ClippsterServer.{Emails, Mailer}
+  alias ClippsterServer.Auth.TokenGenerator
 
   # OTP expires in 10 minutes
   @otp_expiry_minutes 10
@@ -24,6 +25,23 @@ defmodule ClippsterServer.Accounts do
   def get_user(id) do
     Repo.get(User, id)
   end
+
+  @doc """
+  Verifies a JWT token and returns the associated user.
+  """
+  def verify_token(token) when is_binary(token) do
+    with {:ok, claims} <- TokenGenerator.verify_token(token),
+         user_id when not is_nil(user_id) <- claims["user_id"],
+         user when not is_nil(user) <- get_user(user_id) do
+      {:ok, user}
+    else
+      nil -> {:error, :user_not_found}
+      {:error, reason} -> {:error, reason}
+      _ -> {:error, :invalid_token}
+    end
+  end
+
+  def verify_token(_), do: {:error, :invalid_token}
 
   @doc """
   Gets a user by wallet address.

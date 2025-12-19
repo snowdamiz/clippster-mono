@@ -89,6 +89,24 @@ defmodule ClippsterServer.Social do
   end
 
   @doc """
+  Updates an existing social account by platform and platform_user_id.
+  Used when reconnecting an account that was previously connected.
+  Admin only.
+  """
+  def update_existing_account(organization_id, platform, platform_user_id, attrs, %User{} = user) do
+    if Organizations.is_admin?(organization_id, user.id) do
+      case get_social_account_by_platform(organization_id, platform, platform_user_id) do
+        nil ->
+          {:error, :not_found}
+        account ->
+          update_social_account(account, attrs)
+      end
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
   Refreshes the OAuth tokens for a social account.
   """
   def refresh_social_account_tokens(%SocialAccount{} = account, attrs) do
@@ -147,7 +165,7 @@ defmodule ClippsterServer.Social do
   def assign_social_account(organization_id, account_id, user_ids, %User{} = admin) when is_list(user_ids) do
     with true <- Organizations.is_admin?(organization_id, admin.id),
          account when not is_nil(account) <- get_social_account(organization_id, account_id) do
-      
+
       # Filter to only users who are members
       valid_user_ids = user_ids
       |> Enum.filter(fn uid -> Organizations.is_member?(organization_id, uid) end)
@@ -181,7 +199,7 @@ defmodule ClippsterServer.Social do
   def unassign_social_account(organization_id, account_id, user_id, %User{} = admin) do
     with true <- Organizations.is_admin?(organization_id, admin.id),
          account when not is_nil(account) <- get_social_account(organization_id, account_id) do
-      
+
       assignment = Repo.get_by(SocialAccountAssignment,
         organization_social_account_id: account.id,
         user_id: user_id
@@ -381,7 +399,7 @@ defmodule ClippsterServer.Social do
   def get_posts_needing_sync(opts \\ []) do
     limit = Keyword.get(opts, :limit, 100)
     min_age_hours = Keyword.get(opts, :min_age_hours, 1)
-    
+
     sync_threshold = DateTime.utc_now() |> DateTime.add(-min_age_hours, :hour)
 
     PostSubmission

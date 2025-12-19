@@ -55,7 +55,9 @@ defmodule ClippsterServerWeb.Router do
     get "/auth/google", AuthController, :google_request
     get "/auth/google/callback", AuthController, :google_callback
 
-    # Note: Instagram OAuth is handled client-side via Facebook JavaScript SDK
+    # Instagram OAuth routes (for Tauri desktop app)
+    get "/auth/instagram/start", InstagramAuthController, :start_oauth
+    get "/auth/instagram/callback", InstagramAuthController, :oauth_callback
     # The client obtains tokens via FB.login() and sends them to POST /social-accounts
 
     # Email authentication routes
@@ -183,8 +185,10 @@ defmodule ClippsterServerWeb.Router do
     # User's assigned creator profiles
     get "/user/assigned-creator-profiles", OrganizationCreatorProfileController, :user_assigned_profiles
 
+    # Instagram OAuth - exchange code for tokens (admin only)
+    post "/auth/instagram/exchange", InstagramAuthController, :exchange_code
+
     # Organization social accounts
-    # Note: Instagram connection is done via POST /social-accounts with token from client-side FB SDK
     get "/organizations/:organization_id/social-accounts", SocialAccountController, :index
     get "/organizations/:organization_id/social-accounts/:id", SocialAccountController, :show
     post "/organizations/:organization_id/social-accounts", SocialAccountController, :create
@@ -235,7 +239,7 @@ defmodule ClippsterServerWeb.Router do
     put "/admin/settings/:key", AdminController, :update_setting
   end
 
-  
+
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:clippster_server, :dev_routes) do
     # If you want to use the LiveDashboard in production, you should put
