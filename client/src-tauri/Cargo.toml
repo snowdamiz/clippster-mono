@@ -42,9 +42,7 @@ futures = "0.3"
 async-stream = "0.3"
 regex = "1.10"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-
-# OTA Updates (desktop only)
-[target.'cfg(desktop)'.dependencies]
+# OTA Updates - must be in regular deps for tauri-build to find permissions
 tauri-plugin-updater = { version = "2.3", default-features = false, features = ["rustls-tls"] }
 tauri-plugin-process = "2.3"
 
