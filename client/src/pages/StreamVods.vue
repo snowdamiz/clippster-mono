@@ -463,16 +463,21 @@
   import { usePlatformStore, type PlatformClip } from '@/stores/platform';
   import { platformConfigs, type PlatformId } from '@/config/platforms';
   import { extractMintId } from '@/services/pumpfun';
+  import { extractChannelSlug } from '@/services/kick';
   import { useToast } from '@/composables/useToast';
   import { useDownloads } from '@/composables/useDownloads';
   import { getNextSegmentNumber } from '@/services/database';
   import { Clock, ChevronDown, X, AlertTriangle, Download, Video, Search, Loader2, RotateCcw } from 'lucide-vue-next';
+  import { getCreatorProfileByPlatformId } from '@/services/database';
+  import { getUserAssignedCreatorProfiles } from '@/services/organizationProfilesApi';
+  import { useAuthStore } from '@/stores/auth';
 
   const router = useRouter();
   const route = useRoute();
   const { success, error: showError } = useToast();
   const { startDownload } = useDownloads();
   const platformStore = usePlatformStore();
+  const authStore = useAuthStore();
 
   // Auto-detected platform from input
   const detectedPlatform = ref<PlatformId | null>(null);
@@ -585,11 +590,12 @@
   const clipsPerPage = 20;
 
   // Computed properties for the unified download UI
+  // Use a generous tolerance (5 seconds or 1% of duration) to account for slider precision
   const isFullStreamSelected = computed(() => {
     if (!clipToDownload.value?.duration) return true;
-    return (
-      selectedTimeRange.value.startTime === 0 && selectedTimeRange.value.endTime >= clipToDownload.value.duration - 1
-    );
+    const duration = clipToDownload.value.duration;
+    const tolerance = Math.max(5, duration * 0.01); // At least 5 seconds or 1% of duration
+    return selectedTimeRange.value.startTime <= tolerance && selectedTimeRange.value.endTime >= duration - tolerance;
   });
 
   const selectedDuration = computed(() => {
@@ -791,6 +797,105 @@
       // Auto-segment applies to the selected range (whether full or trimmed)
       const shouldAutoSegment = autoSegment.value && selectedDuration.value > 900;
 
+      // Look up creator profile by platform + platform ID to get watermark settings
+      // First try local profiles, then check organization profiles
+      // This works for both PumpFun (mint ID) and Kick (channel slug)
+      let creatorWatermarkSettings: { watermarkId: string; watermarkSettings: string } | undefined;
+      if (detectedPlatform.value && platformStore.currentSearchId) {
+        console.log('[StreamVods] Looking up creator watermark for:', {
+          platform: detectedPlatform.value,
+          platformId: platformStore.currentSearchId,
+        });
+
+        try {
+          // Try local profiles first
+          const localProfile = await getCreatorProfileByPlatformId(
+            detectedPlatform.value,
+            platformStore.currentSearchId
+          );
+          if (localProfile?.watermark_id && localProfile?.watermark_settings) {
+            console.log('[StreamVods] Found local creator profile with watermark:', localProfile.name);
+            creatorWatermarkSettings = {
+              watermarkId: localProfile.watermark_id,
+              watermarkSettings: localProfile.watermark_settings,
+            };
+          }
+
+          // If not found locally, try organization profiles
+          if (!creatorWatermarkSettings && authStore.isAuthenticated) {
+            console.log('[StreamVods] No local profile found, checking organization profiles...');
+            const orgResponse = await getUserAssignedCreatorProfiles();
+            if (orgResponse.success && orgResponse.profiles.length > 0) {
+              console.log('[StreamVods] Searching', orgResponse.profiles.length, 'organization profiles');
+              // Find a profile with a matching platform link
+              for (const orgProfile of orgResponse.profiles) {
+                // Log all platform links for debugging
+                console.log('[StreamVods] Checking org profile:', orgProfile.name, 'platform_links:', 
+                  orgProfile.platform_links.map(l => ({ platform: l.platform, platform_id: l.platform_id }))
+                );
+                
+                const matchingLink = orgProfile.platform_links.find((link) => {
+                  if (link.platform !== detectedPlatform.value) return false;
+                  
+                  // Extract the normalized ID from the stored platform_id
+                  // This handles cases where the server stores full URLs instead of just IDs
+                  let storedId = link.platform_id;
+                  if (link.platform === 'kick') {
+                    // Try to extract channel slug from URL if it's a full URL
+                    const extractedSlug = extractChannelSlug(storedId);
+                    if (extractedSlug) storedId = extractedSlug;
+                  } else if (link.platform === 'pumpfun') {
+                    // Try to extract mint ID from URL if it's a full URL
+                    const extractedMint = extractMintId(storedId);
+                    if (extractedMint) storedId = extractedMint;
+                  }
+                  
+                  return storedId.toLowerCase() === platformStore.currentSearchId.toLowerCase();
+                });
+                if (matchingLink) {
+                  console.log('[StreamVods] Found matching org profile:', orgProfile.name, 'link:', matchingLink);
+                  if (orgProfile.watermark_id && orgProfile.watermark_settings) {
+                    // Transform watermark_settings to prefix per-ratio watermarkIds with org-asset-
+                    // The server returns raw server IDs (integers) for per-ratio watermarkIds
+                    const transformedSettings: Record<string, any> = {};
+                    for (const [ratio, config] of Object.entries(orgProfile.watermark_settings)) {
+                      if (config && typeof config === 'object') {
+                        const ratioConfig = config as { watermarkId?: number; position?: any };
+                        transformedSettings[ratio] = {
+                          ...ratioConfig,
+                          // Prefix the per-ratio watermarkId if present
+                          watermarkId: ratioConfig.watermarkId
+                            ? `org-asset-${ratioConfig.watermarkId}`
+                            : null,
+                        };
+                      } else {
+                        // null means disabled for this ratio
+                        transformedSettings[ratio] = config;
+                      }
+                    }
+
+                    creatorWatermarkSettings = {
+                      watermarkId: `org-asset-${orgProfile.watermark_id}`,
+                      watermarkSettings: JSON.stringify(transformedSettings),
+                    };
+                    console.log('[StreamVods] Using org watermark:', creatorWatermarkSettings.watermarkId);
+                    break;
+                  } else {
+                    console.log('[StreamVods] Org profile has no watermark configured');
+                  }
+                }
+              }
+              if (!creatorWatermarkSettings) {
+                console.log('[StreamVods] No matching org profile found. Looking for platform:', detectedPlatform.value, 'platformId:', platformStore.currentSearchId);
+              }
+            }
+          }
+        } catch (err) {
+          // Silently ignore - watermark just won't be applied
+          console.log('[StreamVods] Could not fetch creator profile for watermark:', err);
+        }
+      }
+
       await startDownload(
         clip.title,
         videoUrl,
@@ -802,6 +907,7 @@
           autoSegment: shouldAutoSegment,
           segmentDuration: autoSegmentDuration.value * 60,
           provider: currentPlatformConfig.value.provider as 'pumpfun' | 'kick',
+          creatorWatermarkSettings,
         }
       );
 

@@ -1537,7 +1537,7 @@
       console.log('[ClipsTab] Starting clip build for:', clip.id, 'with settings:', settings);
       console.log('[ClipsTab] Aspect ratios received:', settings.aspectRatios);
 
-      const { updateClipBuildStatus, getRawVideosByProjectId, getWatermarkImage, createClipBuild, getClipBuilds } =
+      const { updateClipBuildStatus, getRawVideosByProjectId, resolveWatermarkById, createClipBuild, getClipBuilds } =
         await import('@/services/database');
 
       // Update database status to building
@@ -1619,10 +1619,11 @@
 
       // Prepare watermark settings if enabled
       // Now supports per-aspect-ratio watermark files - each ratio can use a completely different watermark
+      // Uses resolveWatermarkById to handle both local IDs and org-asset-{serverId} format
       let watermarkSettings = null;
       if (settings.watermark && settings.watermark.enabled && settings.watermark.watermarkId) {
-        const defaultWatermarkImage = await getWatermarkImage(settings.watermark.watermarkId);
-        if (defaultWatermarkImage) {
+        const defaultWatermark = await resolveWatermarkById(settings.watermark.watermarkId);
+        if (defaultWatermark) {
           // Build per-ratio settings with resolved file paths
           // Each ratio can have its own watermark image AND position settings
           const buildPerRatioSettings: Record<
@@ -1649,18 +1650,19 @@
             } else if (perRatioConfig) {
               // Ratio has specific settings
               const ratioWatermarkId = perRatioConfig.watermarkId;
-              let ratioFilePath = defaultWatermarkImage.file_path;
-              let ratioWidth = defaultWatermarkImage.width ?? null;
-              let ratioHeight = defaultWatermarkImage.height ?? null;
+              let ratioFilePath = defaultWatermark.filePath;
+              let ratioWidth = defaultWatermark.width;
+              let ratioHeight = defaultWatermark.height;
 
               // If this ratio has a different watermark, fetch its file info
+              // resolveWatermarkById handles both local IDs and org-asset-{serverId} format
               if (ratioWatermarkId && ratioWatermarkId !== settings.watermark.watermarkId) {
-                const ratioWatermarkImage = await getWatermarkImage(ratioWatermarkId);
-                if (ratioWatermarkImage) {
-                  ratioFilePath = ratioWatermarkImage.file_path;
-                  ratioWidth = ratioWatermarkImage.width ?? null;
-                  ratioHeight = ratioWatermarkImage.height ?? null;
-                  console.log(`[ClipsTab] Using different watermark for ${ratio}: ${ratioWatermarkImage.name}`);
+                const ratioWatermark = await resolveWatermarkById(ratioWatermarkId);
+                if (ratioWatermark) {
+                  ratioFilePath = ratioWatermark.filePath;
+                  ratioWidth = ratioWatermark.width;
+                  ratioHeight = ratioWatermark.height;
+                  console.log(`[ClipsTab] Using different watermark for ${ratio}:`, ratioWatermarkId);
                 }
               }
 
@@ -1683,9 +1685,9 @@
               // No per-ratio config, use default watermark with default position
               buildPerRatioSettings[ratio] = {
                 watermarkId: settings.watermark.watermarkId,
-                filePath: defaultWatermarkImage.file_path,
-                width: defaultWatermarkImage.width ?? null,
-                height: defaultWatermarkImage.height ?? null,
+                filePath: defaultWatermark.filePath,
+                width: defaultWatermark.width,
+                height: defaultWatermark.height,
                 position: {
                   x: settings.watermark.positionX,
                   y: settings.watermark.positionY,
@@ -1699,9 +1701,9 @@
           watermarkSettings = {
             enabled: true,
             watermarkId: settings.watermark.watermarkId,
-            filePath: defaultWatermarkImage.file_path,
-            width: defaultWatermarkImage.width ?? null,
-            height: defaultWatermarkImage.height ?? null,
+            filePath: defaultWatermark.filePath,
+            width: defaultWatermark.width,
+            height: defaultWatermark.height,
             positionX: settings.watermark.positionX,
             positionY: settings.watermark.positionY,
             opacity: settings.watermark.opacity,
@@ -1711,7 +1713,8 @@
           };
           const defaultWatermarkId = settings.watermark?.watermarkId;
           console.log('[ClipsTab] Watermark settings for build:', {
-            defaultWatermark: defaultWatermarkImage.name,
+            defaultWatermarkId: defaultWatermarkId,
+            defaultFilePath: defaultWatermark.filePath,
             selectedRatios: settings.aspectRatios,
             perRatioSettings: Object.entries(buildPerRatioSettings).map(([ratio, config]) => ({
               ratio,

@@ -166,8 +166,15 @@ export function useDownloads() {
 
     // Listen for download completion
     await listen<DownloadResult>('download-complete', async (event) => {
+      console.log('[Downloads] Download complete event received:', event.payload.download_id);
       const download = activeDownloads.get(event.payload.download_id);
       if (download) {
+        console.log('[Downloads] Download found in activeDownloads:', {
+          id: download.id,
+          title: download.title,
+          projectId: download.projectId,
+          parentProjectId: download.parentProjectId,
+        });
         download.result = event.payload;
         saveState(); // Save result
 
@@ -252,6 +259,11 @@ export function useDownloads() {
                   }
 
                   // Notify UI to refresh projects
+                  console.log('[Downloads] Dispatching video-added event:', {
+                    rawVideoId,
+                    projectId: finalProjectId,
+                    parentProjectId: download.parentProjectId,
+                  });
                   window.dispatchEvent(
                     new CustomEvent('video-added', {
                       detail: { rawVideoId, projectId: finalProjectId },
@@ -431,14 +443,24 @@ export function useDownloads() {
       if (isSegmentDownload) {
         // For segments, try to find an existing parent project for this stream
         const db = await getDatabase();
+        const { getCurrentUserId } = await import('@/services/database');
+        const userId = getCurrentUserId();
 
         // Search for a project with the same name as the stream title (without "Segment X")
         // and that is a top-level project (no parent_id)
-        // We also want to make sure it's related to this Mint ID/Channel if possible.
-        const existingProjects = await db.select<{ id: string }[]>(
-          'SELECT id FROM projects WHERE name = ? AND parent_id IS NULL',
-          [title]
-        );
+        // IMPORTANT: Filter by user_id to only find projects owned by current user
+        let existingProjects: { id: string }[] = [];
+        if (userId !== null) {
+          existingProjects = await db.select<{ id: string }[]>(
+            'SELECT id FROM projects WHERE name = ? AND parent_id IS NULL AND (user_id = ? OR user_id IS NULL)',
+            [title, userId]
+          );
+        } else {
+          existingProjects = await db.select<{ id: string }[]>(
+            'SELECT id FROM projects WHERE name = ? AND parent_id IS NULL AND user_id IS NULL',
+            [title]
+          );
+        }
 
         // Serialize watermark settings if provided
         const watermarkSettingsJson = options.creatorWatermarkSettings
@@ -446,7 +468,7 @@ export function useDownloads() {
           : undefined;
 
         if (existingProjects.length > 0) {
-          // Found an existing parent project
+          // Found an existing parent project owned by current user
           parentProjectId = existingProjects[0].id;
         } else {
           // Create a new parent project
@@ -484,6 +506,11 @@ export function useDownloads() {
           watermarkSettingsJson
         );
       }
+      console.log('[Downloads] Project structure created:', {
+        projectId,
+        parentProjectId,
+        isSegmentDownload,
+      });
     } catch (error) {
       console.warn('[Downloads] Failed to create project structure for download:', error);
     }

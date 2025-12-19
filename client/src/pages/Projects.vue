@@ -1457,11 +1457,15 @@
   const projectsPerPage = 20;
 
   async function loadProjects(isBackgroundRefresh = false) {
+    console.log('[Projects] loadProjects called, isBackgroundRefresh:', isBackgroundRefresh);
     if (!isBackgroundRefresh) {
       loading.value = true;
     }
     try {
       projects.value = await getAllProjects();
+      console.log('[Projects] Loaded projects:', projects.value.length, 'total');
+      console.log('[Projects] Top-level projects:', projects.value.filter((p) => !p.parent_id).length);
+      console.log('[Projects] Child projects:', projects.value.filter((p) => p.parent_id).length);
 
       // Load clip counts and video thumbnails for each project
       for (const project of projects.value) {
@@ -2305,8 +2309,8 @@
             };
             console.log('[Projects] loadPreviewWatermark: Org watermark loaded from cache');
           } else {
-            // Not cached locally - stream directly from server URL
-            console.log('[Projects] loadPreviewWatermark: Org watermark not cached, fetching URL from server...');
+            // Not cached locally - download through Tauri (bypasses CORS)
+            console.log('[Projects] loadPreviewWatermark: Org watermark not cached, downloading from server...');
             try {
               const serverResponse = await getUserOrganizationAssets();
               if (serverResponse.success && serverResponse.assets) {
@@ -2314,27 +2318,34 @@
                   (a) => a.id === serverId && a.asset_type === 'watermark'
                 );
                 if (serverAsset && serverAsset.url) {
-                  console.log(
-                    '[Projects] loadPreviewWatermark: Using server URL directly for watermark:',
-                    serverAsset.name
-                  );
-                  // Use the server URL directly - measure dimensions from the loaded image
-                  const dimensions = await new Promise<{ width: number; height: number } | null>((resolve) => {
-                    const img = new Image();
-                    img.crossOrigin = 'anonymous';
-                    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-                    img.onerror = () => resolve(null);
-                    img.src = serverAsset.url;
-                  });
-                  previewWatermarkData.value = {
-                    dataUrl: serverAsset.url,
-                    width: dimensions?.width,
-                    height: dimensions?.height,
-                  };
-                  console.log('[Projects] loadPreviewWatermark: Org watermark streaming from URL:', {
-                    width: dimensions?.width,
-                    height: dimensions?.height,
-                  });
+                  console.log('[Projects] loadPreviewWatermark: Downloading org watermark:', serverAsset.name);
+                  // Download and cache the asset locally (bypasses CORS)
+                  const downloadResult = await ensureAssetDownloaded(serverAsset);
+                  if (downloadResult.success && downloadResult.filePath) {
+                    console.log('[Projects] loadPreviewWatermark: Org watermark downloaded to:', downloadResult.filePath);
+                    const dataUrl = await invoke<string>('read_file_as_data_url', {
+                      filePath: downloadResult.filePath,
+                    });
+                    // Measure dimensions from the loaded data URL
+                    const dimensions = await new Promise<{ width: number; height: number } | null>((resolve) => {
+                      const img = new Image();
+                      img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+                      img.onerror = () => resolve(null);
+                      img.src = dataUrl;
+                    });
+                    previewWatermarkData.value = {
+                      dataUrl,
+                      width: dimensions?.width || serverAsset.width || undefined,
+                      height: dimensions?.height || serverAsset.height || undefined,
+                    };
+                    console.log('[Projects] loadPreviewWatermark: Org watermark loaded from download:', {
+                      width: dimensions?.width,
+                      height: dimensions?.height,
+                    });
+                  } else {
+                    console.error('[Projects] loadPreviewWatermark: Failed to download org watermark:', downloadResult.error);
+                    return;
+                  }
                 } else {
                   console.log('[Projects] loadPreviewWatermark: Server asset not found for serverId:', serverId);
                   return;
@@ -3192,22 +3203,9 @@
   const filteredProjects = computed(() => {
     let result = projects.value;
 
-    // 0. Filter out projects associated with active downloads that don't have thumbnails yet
-    const activeList = getActiveDownloads();
-    const queuedList = getQueuedDownloads();
-    const allActiveDownloads = [...activeList, ...queuedList];
-    const activeDownloadProjectIds = new Set(
-      allActiveDownloads.flatMap((d) => [d.projectId, d.parentProjectId].filter(Boolean))
-    );
-
-    result = result.filter((p) => {
-      // If it's a project associated with an active/queued download
-      if (activeDownloadProjectIds.has(p.id)) {
-        // Only show if it has a thumbnail (meaning content has been processed)
-        return thumbnailCache.value.has(p.id);
-      }
-      return true;
-    });
+    // Note: We no longer filter out projects based on active downloads.
+    // Projects should always appear in folder view once created.
+    // Active downloads are shown separately in the Active Downloads section.
 
     // 1. Filter by View Mode (only if NOT searching)
     // If user is searching, we want to search across all projects regardless of folder structure
@@ -3921,8 +3919,10 @@
 
   // Listen for video added events (to update project thumbnails)
   function handleVideoAdded(event: Event) {
+    console.log('[Projects] video-added event received');
     const customEvent = event as CustomEvent;
     const detail = customEvent.detail;
+    console.log('[Projects] video-added detail:', detail);
 
     // Clear thumbnail cache for this project and any parent to force refresh
     if (detail && detail.projectId) {

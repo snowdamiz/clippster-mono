@@ -398,6 +398,12 @@ pub fn run() {
                             sql: include_str!("../migrations/063_add_project_watermark_settings.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 64,
+                            description: "add_preview_url_to_clip_watermarks",
+                            sql: include_str!("../migrations/064_add_preview_url_to_clip_watermarks.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -539,6 +545,7 @@ pub fn run() {
             storage::copy_image_to_storage,
             storage::delete_image_file,
             storage::save_org_asset_file,
+            storage::download_org_asset_from_url,
             // User context for per-user storage
             storage::set_current_user_id,
             storage::clear_current_user_id,

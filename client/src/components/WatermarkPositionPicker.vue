@@ -466,8 +466,13 @@
   const measuredHeight = ref<number | null>(null);
   const currentAspectRatio = ref<AspectRatioId>('16:9');
   const isFullFrameWatermark = computed(() => {
-    const w = props.watermarkWidth ?? measuredWidth.value;
-    const h = props.watermarkHeight ?? measuredHeight.value;
+    // If current ratio has its own watermark selected, use measured dimensions
+    // Otherwise fall back to default watermark props
+    const hasRatioSpecificWatermark = !!ratioWatermarkIds[currentAspectRatio.value];
+
+    const w = hasRatioSpecificWatermark ? measuredWidth.value : (props.watermarkWidth ?? measuredWidth.value);
+    const h = hasRatioSpecificWatermark ? measuredHeight.value : (props.watermarkHeight ?? measuredHeight.value);
+
     return w === 1920 && h === 1080;
   });
 
