@@ -500,6 +500,8 @@ pub fn run() {
             auth::poll_stripe_payment_result,
             auth::start_email_verification_listener,
             auth::poll_email_verification_result,
+            auth::open_instagram_auth_window,
+            auth::poll_instagram_auth_result,
 
             // PumpFun commands
             pumpfun::get_pumpfun_clips,

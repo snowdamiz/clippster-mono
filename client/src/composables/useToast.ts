@@ -83,9 +83,15 @@ export function useToastStore() {
   };
 }
 
+// Convenience function matching the showToast(message, type) pattern
+function showToast(message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') {
+  return addToast({ title: message, type });
+}
+
 export function useToast() {
   return {
     toast: addToast,
+    showToast,
     success,
     error,
     warning,

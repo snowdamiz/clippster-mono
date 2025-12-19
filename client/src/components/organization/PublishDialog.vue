@@ -56,7 +56,7 @@
               <SelectValue placeholder="Select a creator profile" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">None</SelectItem>
+              <SelectItem value="none">None</SelectItem>
               <SelectItem v-for="profile in creatorProfiles" :key="profile.id" :value="String(profile.id)">
                 {{ profile.name }}
               </SelectItem>
@@ -207,7 +207,10 @@
     try {
       const response = await publishPost(props.organizationId, {
         social_account_id: parseInt(selectedAccountId.value),
-        creator_profile_id: selectedCreatorProfileId.value ? parseInt(selectedCreatorProfileId.value) : undefined,
+        creator_profile_id:
+          selectedCreatorProfileId.value && selectedCreatorProfileId.value !== 'none'
+            ? parseInt(selectedCreatorProfileId.value)
+            : undefined,
         media_url: props.mediaUrl,
         caption: caption.value,
         media_type: postType.value,

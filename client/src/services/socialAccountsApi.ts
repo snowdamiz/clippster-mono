@@ -599,187 +599,78 @@ export async function getAnalyticsSummary(
 }
 
 // ============================================
-// Instagram Connection via Facebook SDK
+// Instagram Connection via Business Login (Tauri OAuth)
 // ============================================
 
 import {
-  initFacebookSdk,
-  connectInstagramAccount as fbConnectInstagram,
-  type InstagramAccount,
-} from '@/lib/facebook-sdk';
+  isTauri,
+  startInstagramOAuth,
+  onInstagramAuthComplete as onTauriInstagramAuthComplete,
+  type InstagramAuthResult,
+} from '@/lib/instagram-auth';
 
 /**
- * Connected Instagram account info from Facebook SDK
+ * Get the API base URL
  */
-export interface ConnectedInstagramInfo {
-  instagramAccount: InstagramAccount;
-  pageAccessToken: string;
-  facebookPageId: string;
-  facebookPageName: string;
+function getApiBase(): string {
+  return import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
 }
 
 /**
- * Result of connecting Instagram via Facebook SDK
+ * Get the auth token from local storage
  */
-export interface ConnectInstagramResult {
-  success: boolean;
-  accounts?: ConnectedInstagramInfo[];
-  error?: string;
+function getAuthToken(): string {
+  return localStorage.getItem('auth_token') || '';
 }
 
 /**
- * Initialize Facebook SDK (call once on app startup)
+ * Start Instagram OAuth flow.
+ * For Tauri: Opens browser and handles OAuth via local callback server.
+ * Returns a cleanup function.
  */
-export async function initializeFacebookSdk(): Promise<boolean> {
-  try {
-    await initFacebookSdk();
-    return true;
-  } catch (error) {
-    console.error('[SocialAccountsApi] Failed to initialize Facebook SDK:', error);
-    return false;
-  }
-}
-
-/**
- * Connect Instagram account(s) via Facebook SDK.
- * This opens the Facebook login popup and retrieves connected Instagram Business accounts.
- */
-export async function connectInstagramViaFacebook(): Promise<ConnectInstagramResult> {
-  try {
-    const result = await fbConnectInstagram();
-    return result;
-  } catch (error: any) {
-    console.error('[SocialAccountsApi] Facebook connection error:', error);
-    return {
-      success: false,
-      error: error.message || 'Failed to connect Instagram',
-    };
-  }
-}
-
-/**
- * Save a connected Instagram account to the server.
- * Call this after successfully connecting via Facebook SDK.
- */
-export async function saveConnectedInstagramAccount(
+export async function startInstagramOAuthPopup(
   organizationId: string | number,
-  accountInfo: ConnectedInstagramInfo
-): Promise<SocialAccountResponse> {
-  try {
-    const response = await api.post<SocialAccountResponse>(
-      `/organizations/${organizationId}/social-accounts`,
-      {
-        platform: 'instagram',
-        platform_user_id: accountInfo.instagramAccount.id,
-        username: accountInfo.instagramAccount.username,
-        display_name: accountInfo.instagramAccount.name || accountInfo.instagramAccount.username,
-        profile_image_url: accountInfo.instagramAccount.profile_picture_url,
-        access_token: accountInfo.pageAccessToken,
-        facebook_page_id: accountInfo.facebookPageId,
-        // Note: Page access tokens from Facebook don't expire if the user granted offline_access
-        // But we should implement token refresh on the server side
-      }
-    );
-    return response.data;
-  } catch (error: any) {
-    console.error('[SocialAccountsApi] Failed to save Instagram account:', error);
-    return {
-      success: false,
-      error: error.response?.data?.error || error.message || 'Failed to save account',
-    };
-  }
-}
-
-/**
- * Full flow: Connect Instagram via Facebook SDK and save to server.
- * Returns the list of successfully saved accounts.
- */
-export async function connectAndSaveInstagramAccounts(organizationId: string | number): Promise<{
-  success: boolean;
-  savedAccounts: SocialAccount[];
-  failedAccounts: Array<{ username: string; error: string }>;
-  error?: string;
-}> {
-  // Step 1: Connect via Facebook SDK
-  const connectResult = await connectInstagramViaFacebook();
-
-  if (!connectResult.success || !connectResult.accounts?.length) {
-    return {
-      success: false,
-      savedAccounts: [],
-      failedAccounts: [],
-      error: connectResult.error || 'No Instagram accounts found',
-    };
+  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
+): Promise<() => void> {
+  if (!isTauri()) {
+    throw new Error('Instagram OAuth is only supported in the Tauri desktop app');
   }
 
-  // Step 2: Save each account to the server
-  const savedAccounts: SocialAccount[] = [];
-  const failedAccounts: Array<{ username: string; error: string }> = [];
+  const apiBase = getApiBase();
+  const authToken = getAuthToken();
 
-  for (const accountInfo of connectResult.accounts) {
-    const saveResult = await saveConnectedInstagramAccount(organizationId, accountInfo);
+  if (!authToken) {
+    throw new Error('You must be logged in to connect Instagram');
+  }
 
-    if (saveResult.success && saveResult.account) {
-      savedAccounts.push(saveResult.account);
-    } else {
-      failedAccounts.push({
-        username: accountInfo.instagramAccount.username,
-        error: saveResult.error || 'Failed to save',
+  return startInstagramOAuth(organizationId, apiBase, authToken, (result: InstagramAuthResult) => {
+    if (onResult) {
+      onResult({
+        success: result.success,
+        account: result.account as SocialAccount | undefined,
+        error: result.error,
       });
     }
+  });
+}
+
+/**
+ * Listen for Instagram OAuth completion events.
+ * Returns cleanup function to remove listener.
+ */
+export function onInstagramAuthComplete(
+  callback: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
+): () => void {
+  if (!isTauri()) {
+    // Return no-op for non-Tauri
+    return () => {};
   }
 
-  return {
-    success: savedAccounts.length > 0,
-    savedAccounts,
-    failedAccounts,
-    error: savedAccounts.length === 0 ? 'Failed to save any accounts' : undefined,
-  };
-}
-
-// ============================================
-// Legacy OAuth Helper Functions (DEPRECATED)
-// These are kept for backward compatibility but should not be used.
-// Use connectAndSaveInstagramAccounts() instead.
-// ============================================
-
-/**
- * @deprecated Use connectAndSaveInstagramAccounts() instead
- */
-export function getInstagramOAuthUrl(organizationId: string | number): string {
-  console.warn(
-    '[SocialAccountsApi] getInstagramOAuthUrl is deprecated. Use connectAndSaveInstagramAccounts() instead.'
-  );
-  const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-  return `${baseUrl}/api/auth/instagram?organization_id=${organizationId}`;
-}
-
-/**
- * @deprecated Use connectAndSaveInstagramAccounts() instead
- */
-export function openInstagramOAuthPopup(organizationId: string | number): Promise<{
-  success: boolean;
-  platform?: string;
-  platform_user_id?: string;
-  username?: string;
-  display_name?: string;
-  profile_image_url?: string;
-  access_token?: string;
-  token_expires_at?: string;
-  reconnected?: boolean;
-  error?: string;
-}> {
-  console.warn(
-    '[SocialAccountsApi] openInstagramOAuthPopup is deprecated. Use connectAndSaveInstagramAccounts() instead.'
-  );
-  // Redirect to new flow
-  return connectAndSaveInstagramAccounts(organizationId).then((result) => ({
-    success: result.success,
-    platform: 'instagram',
-    platform_user_id: result.savedAccounts[0]?.platform_user_id,
-    username: result.savedAccounts[0]?.username,
-    display_name: result.savedAccounts[0]?.display_name,
-    profile_image_url: result.savedAccounts[0]?.profile_image_url,
-    error: result.error,
-  }));
+  return onTauriInstagramAuthComplete((result: InstagramAuthResult) => {
+    callback({
+      success: result.success,
+      account: result.account as SocialAccount | undefined,
+      error: result.error,
+    });
+  });
 }

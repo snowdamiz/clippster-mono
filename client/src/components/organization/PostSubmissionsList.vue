@@ -27,7 +27,7 @@
           <SelectValue placeholder="All Status" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">All Status</SelectItem>
+          <SelectItem value="all">All Status</SelectItem>
           <SelectItem value="published">Published</SelectItem>
           <SelectItem value="pending">Pending</SelectItem>
           <SelectItem value="publishing">Publishing</SelectItem>
@@ -40,7 +40,7 @@
           <SelectValue placeholder="All Platforms" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">All Platforms</SelectItem>
+          <SelectItem value="all">All Platforms</SelectItem>
           <SelectItem value="instagram">Instagram</SelectItem>
         </SelectContent>
       </Select>
@@ -50,7 +50,7 @@
           <SelectValue placeholder="All Creators" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">All Creators</SelectItem>
+          <SelectItem value="all">All Creators</SelectItem>
           <SelectItem v-for="profile in creatorProfiles" :key="profile.id" :value="String(profile.id)">
             {{ profile.name }}
           </SelectItem>
@@ -353,9 +353,9 @@
   });
 
   const filters = reactive({
-    status: '',
-    platform: '',
-    creatorProfileId: '',
+    status: 'all',
+    platform: 'all',
+    creatorProfileId: 'all',
   });
 
   const showEditDialog = ref(false);
@@ -385,9 +385,9 @@
     loading.value = true;
     try {
       const response = await listPostSubmissions(props.organizationId, {
-        status: filters.status || undefined,
-        platform: filters.platform || undefined,
-        creator_profile_id: filters.creatorProfileId ? parseInt(filters.creatorProfileId) : undefined,
+        status: filters.status !== 'all' ? filters.status : undefined,
+        platform: filters.platform !== 'all' ? filters.platform : undefined,
+        creator_profile_id: filters.creatorProfileId !== 'all' ? parseInt(filters.creatorProfileId) : undefined,
         limit: limit.value,
         offset: offset.value,
       });
@@ -409,7 +409,7 @@
   async function loadSummary() {
     try {
       const response = await getAnalyticsSummary(props.organizationId, {
-        creator_profile_id: filters.creatorProfileId ? parseInt(filters.creatorProfileId) : undefined,
+        creator_profile_id: filters.creatorProfileId !== 'all' ? parseInt(filters.creatorProfileId) : undefined,
       });
 
       if (response.success && response.summary) {

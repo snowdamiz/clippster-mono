@@ -139,31 +139,29 @@
     />
 
     <!-- Delete Confirmation Dialog -->
-    <AlertDialog :open="showDeleteDialog" @update:open="showDeleteDialog = $event">
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Disconnect Account</AlertDialogTitle>
-          <AlertDialogDescription>
+    <Dialog :open="showDeleteDialog" @update:open="showDeleteDialog = $event">
+      <DialogContent class="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle class="flex items-center gap-2">
+            <Trash2 class="h-5 w-5 text-destructive" />
+            Disconnect Account
+          </DialogTitle>
+          <DialogDescription>
             Are you sure you want to disconnect @{{ accountToDelete?.username }}? This will remove all member
             assignments and any posts will remain but won't be synced.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            @click="deleteAccount"
-          >
-            Disconnect
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter class="gap-2 sm:gap-0">
+          <Button variant="outline" @click="showDeleteDialog = false">Cancel</Button>
+          <Button variant="destructive" @click="deleteAccount">Disconnect</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted } from 'vue';
+  import { ref, computed, onMounted, onUnmounted } from 'vue';
   import { Button } from '@/components/ui/button';
   import {
     DropdownMenu,
@@ -173,22 +171,20 @@
     DropdownMenuTrigger,
   } from '@/components/ui/dropdown-menu';
   import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-  } from '@/components/ui/alert-dialog';
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+  } from '@/components/ui/dialog';
   import { Instagram, Plus, Users, MoreVertical, RefreshCw, XCircle, CheckCircle, Trash2 } from 'lucide-vue-next';
   import { useToast } from '@/composables/useToast';
   import SocialAccountAssignments from './SocialAccountAssignments.vue';
   import {
     listSocialAccounts,
-    connectAndSaveInstagramAccounts,
-    initializeFacebookSdk,
+    startInstagramOAuthPopup,
+    onInstagramAuthComplete,
     updateSocialAccount,
     deleteSocialAccount,
     refreshAccountToken,
@@ -227,11 +223,33 @@
   const showDeleteDialog = ref(false);
   const accountToDelete = ref<SocialAccount | null>(null);
 
-  onMounted(async () => {
-    // Initialize Facebook SDK on mount
-    await initializeFacebookSdk();
+  // Cleanup function for OAuth listener
+  let cleanupAuthListener: (() => void) | null = null;
+
+  onMounted(() => {
     loadAccounts();
+
+    // Set up listener for Instagram OAuth completion events (from Tauri)
+    cleanupAuthListener = onInstagramAuthComplete(handleAuthResult);
   });
+
+  // Clean up listener on unmount
+  onUnmounted(() => {
+    if (cleanupAuthListener) {
+      cleanupAuthListener();
+    }
+  });
+
+  async function handleAuthResult(result: { success: boolean; account?: any; error?: string }) {
+    if (result.success && result.account) {
+      showToast(`Instagram account @${result.account.username} connected successfully`, 'success');
+      await loadAccounts();
+      emit('accountsChanged');
+    } else if (result.error) {
+      showToast(result.error, 'error');
+    }
+    connecting.value = false;
+  }
 
   async function loadAccounts() {
     loading.value = true;
@@ -253,51 +271,12 @@
   async function connectInstagram() {
     connecting.value = true;
     try {
-      // Use the new Facebook SDK flow
-      const result = await connectAndSaveInstagramAccounts(props.organizationId);
-
-      if (result.success && result.savedAccounts.length > 0) {
-        const count = result.savedAccounts.length;
-        const accountNames = result.savedAccounts.map((a) => `@${a.username}`).join(', ');
-
-        if (count === 1) {
-          showToast(`Instagram account ${accountNames} connected successfully`, 'success');
-        } else {
-          showToast(`${count} Instagram accounts connected: ${accountNames}`, 'success');
-        }
-
-        // Show warnings for any failed accounts
-        for (const failed of result.failedAccounts) {
-          showToast(`Failed to save @${failed.username}: ${failed.error}`, 'error');
-        }
-
-        await loadAccounts();
-        emit('accountsChanged');
-      } else if (result.error) {
-        // Provide helpful error messages
-        if (result.error.includes('No Facebook Pages')) {
-          showToast(
-            'No Facebook Pages found. You need a Facebook Page connected to an Instagram Business account.',
-            'error'
-          );
-        } else if (result.error.includes('No Instagram Business')) {
-          showToast(
-            'No Instagram Business accounts found. Make sure your Instagram account is converted to a Business or Creator account and connected to a Facebook Page.',
-            'error'
-          );
-        } else if (result.error.includes('not authorized')) {
-          showToast('Please grant all required permissions to connect your Instagram account.', 'error');
-        } else {
-          showToast(result.error, 'error');
-        }
-      }
+      // Open Instagram OAuth via Tauri
+      // The result will be handled by the onInstagramAuthComplete listener or the callback
+      cleanupAuthListener = await startInstagramOAuthPopup(props.organizationId, handleAuthResult);
     } catch (error) {
       console.error('Failed to connect Instagram:', error);
-      showToast(
-        'Failed to connect Instagram. Make sure you have a Facebook Page connected to an Instagram Business account.',
-        'error'
-      );
-    } finally {
+      showToast(error instanceof Error ? error.message : 'Failed to connect Instagram.', 'error');
       connecting.value = false;
     }
   }
