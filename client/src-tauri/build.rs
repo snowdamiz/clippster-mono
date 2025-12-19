@@ -1,9 +1,10 @@
 use std::env;
 use std::fs::{self, File};
-use std::io::{self, Cursor, Read};
+use std::io::{self, Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 
 const NODE_VERSION: &str = "v20.11.0";
+const FFMPEG_STATIC_VERSION: &str = "b6.0";
 
 fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
@@ -26,22 +27,28 @@ fn main() {
 
 fn download_ffmpeg(binaries_dir: &Path, target_os: &str, target_arch: &str) {
     // Platform-specific ffmpeg binary names and URLs
-    let (ffmpeg_name, download_url) = match (target_os, target_arch) {
+    // Using eugeneware/ffmpeg-static for direct binary downloads (no archive extraction needed for macOS/Linux)
+    // Using BtbN for Windows (requires zip extraction)
+    let (ffmpeg_name, download_url, is_archive) = match (target_os, target_arch) {
         ("windows", "x86_64") => (
             "ffmpeg-x86_64-pc-windows-msvc.exe",
-            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip".to_string(),
+            true,
         ),
         ("macos", "x86_64") => (
             "ffmpeg-x86_64-apple-darwin",
-            "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip",
+            format!("https://github.com/eugeneware/ffmpeg-static/releases/download/{}/ffmpeg-darwin-x64", FFMPEG_STATIC_VERSION),
+            false,
         ),
         ("macos", "aarch64") => (
             "ffmpeg-aarch64-apple-darwin",
-            "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip",
+            format!("https://github.com/eugeneware/ffmpeg-static/releases/download/{}/ffmpeg-darwin-arm64", FFMPEG_STATIC_VERSION),
+            false,
         ),
         ("linux", "x86_64") => (
             "ffmpeg-x86_64-unknown-linux-gnu",
-            "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz",
+            format!("https://github.com/eugeneware/ffmpeg-static/releases/download/{}/ffmpeg-linux-x64", FFMPEG_STATIC_VERSION),
+            false,
         ),
         _ => {
             println!(
@@ -69,7 +76,13 @@ fn download_ffmpeg(binaries_dir: &Path, target_os: &str, target_arch: &str) {
     );
 
     // Download ffmpeg
-    match download_and_extract_ffmpeg(download_url, &ffmpeg_path) {
+    let result = if is_archive {
+        download_and_extract_ffmpeg(&download_url, &ffmpeg_path)
+    } else {
+        download_binary(&download_url, &ffmpeg_path)
+    };
+
+    match result {
         Ok(_) => println!(
             "cargo:warning=Successfully downloaded ffmpeg to {:?}",
             ffmpeg_path
@@ -83,6 +96,19 @@ fn download_ffmpeg(binaries_dir: &Path, target_os: &str, target_arch: &str) {
             println!("cargo:warning=Extract and place at: {:?}", ffmpeg_path);
         }
     }
+}
+
+/// Download a binary file directly (no archive extraction)
+fn download_binary(url: &str, output_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let response = ureq::get(url).call()?;
+    let mut bytes = Vec::new();
+    response.into_reader().read_to_end(&mut bytes)?;
+
+    let mut file = File::create(output_path)?;
+    file.write_all(&bytes)?;
+
+    set_executable_permissions(output_path)?;
+    Ok(())
 }
 
 fn download_node(binaries_dir: &Path, target_os: &str, target_arch: &str) {
