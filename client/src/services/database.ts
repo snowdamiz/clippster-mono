@@ -242,6 +242,7 @@ export {
   getWatermarkImage,
   updateWatermarkImage,
   deleteWatermarkImage,
+  resolveWatermarkById,
 } from './database/watermarks';
 
 // Watermark preset exports

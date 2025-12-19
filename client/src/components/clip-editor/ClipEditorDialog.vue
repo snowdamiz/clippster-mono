@@ -78,7 +78,7 @@
                   :text-overlays="textOverlays"
                   :stickers="stickers"
                   :watermarks="watermarks"
-                  :creator-profile-watermark-settings="props.creatorProfileWatermarkSettings"
+                  :creator-profile-watermark-settings="computedCreatorProfileWatermarkSettings"
                   :filter-settings="activeFilterSettings"
                   :segments="playbackSegments"
                   :preview-aspect-ratio="previewAspectRatio"
@@ -286,7 +286,7 @@
                   :editor-project-name="editorProjectName"
                   :current-intro="currentIntro"
                   :current-outro="currentOutro"
-                  :creator-profile-watermark-settings="props.creatorProfileWatermarkSettings"
+                  :creator-profile-watermark-settings="computedCreatorProfileWatermarkSettings"
                   @go-to-aspect-tab="editorMode ? setEditorTab('aspect') : setActiveTab('aspect')"
                   @build-started="onBuildStarted"
                   @build-completed="onBuildCompleted"
@@ -451,6 +451,7 @@
     getProject,
   } from '@/services/database';
   import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
+  import { ensureAssetDownloaded } from '@/services/orgAssetSync';
   import type { VideoEditorSource, VideoEditorTab, SourceItem, VideoEditorTransition, IntroOutro } from '@/types';
   import { calculateCrossfadeOpacity } from '@/types';
 
@@ -477,6 +478,95 @@
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
   import { invoke } from '@tauri-apps/api/core';
+
+  // Helper function to load watermark preview URL
+  // Handles: local files, URLs, org assets, and data URLs
+  async function loadWatermarkPreviewUrl(
+    watermarkId: string,
+    watermarkPath: string | null,
+    existingPreviewUrl: string | null
+  ): Promise<string> {
+    const PLACEHOLDER_SVG =
+      'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiB2aWV3Qm94PSIwIDAgMjAwIDEyMCIgZmlsbD0ibm9uZSI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiBmaWxsPSIjNzg1MDAwIi8+CjxjaXJjbGUgY3g9IjEwMCIgY3k9IjUwIiByPSIyMCIgZmlsbD0iI0Y1OUUwQiIvPgo8dGV4dCB4PSIxMDAiIHk9Ijk1IiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiNGRkZGRkYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPldhdGVybWFyazwvdGV4dD4KPC9zdmc+';
+
+    // 1. If we already have a valid preview URL (data URL or http URL), use it
+    if (existingPreviewUrl) {
+      if (existingPreviewUrl.startsWith('data:') || existingPreviewUrl.startsWith('http')) {
+        return existingPreviewUrl;
+      }
+    }
+
+    // 2. If watermark path is a URL, use it directly
+    if (watermarkPath && (watermarkPath.startsWith('http://') || watermarkPath.startsWith('https://'))) {
+      return watermarkPath;
+    }
+
+    // 3. If watermark path is already a data URL, use it
+    if (watermarkPath && watermarkPath.startsWith('data:')) {
+      return watermarkPath;
+    }
+
+    // 4. For org watermarks (org-asset-{serverId}), load from local cache or download
+    if (watermarkId.startsWith('org-asset-')) {
+      const serverId = parseInt(watermarkId.replace('org-asset-', ''), 10);
+      if (!isNaN(serverId)) {
+        try {
+          // Try local cache first
+          const localWatermark = await getWatermarkByServerId(serverId);
+          if (localWatermark) {
+            console.log('[ClipEditorDialog] Found cached org watermark:', localWatermark.name);
+            return await invoke<string>('read_file_as_data_url', { filePath: localWatermark.file_path });
+          }
+
+          // Not cached locally - download through Tauri (bypasses CORS)
+          console.log('[ClipEditorDialog] Org watermark not cached, downloading from server...');
+          const serverResponse = await getUserOrganizationAssets();
+          if (serverResponse.success && serverResponse.assets) {
+            const serverAsset = serverResponse.assets.find((a) => a.id === serverId && a.asset_type === 'watermark');
+            if (serverAsset && serverAsset.url) {
+              console.log('[ClipEditorDialog] Downloading org watermark:', serverAsset.name);
+              // Download and cache the asset locally (bypasses CORS)
+              const downloadResult = await ensureAssetDownloaded(serverAsset);
+              if (downloadResult.success && downloadResult.filePath) {
+                console.log('[ClipEditorDialog] Org watermark downloaded to:', downloadResult.filePath);
+                return await invoke<string>('read_file_as_data_url', { filePath: downloadResult.filePath });
+              } else {
+                console.error('[ClipEditorDialog] Failed to download org watermark:', downloadResult.error);
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('[ClipEditorDialog] Failed to load org watermark:', watermarkId, err);
+        }
+      }
+    }
+
+    // 5. For regular watermarks, try to load by ID from local database
+    if (watermarkId && !watermarkId.startsWith('org-asset-')) {
+      try {
+        const localWatermark = await getWatermarkImage(watermarkId);
+        if (localWatermark) {
+          console.log('[ClipEditorDialog] Found local watermark by ID:', watermarkId);
+          return await invoke<string>('read_file_as_data_url', { filePath: localWatermark.file_path });
+        }
+      } catch (err) {
+        console.warn('[ClipEditorDialog] Failed to load local watermark by ID:', watermarkId, err);
+      }
+    }
+
+    // 6. Try to read watermark path as a local file
+    if (watermarkPath) {
+      try {
+        return await invoke<string>('read_file_as_data_url', { filePath: watermarkPath });
+      } catch (err) {
+        console.warn('[ClipEditorDialog] Failed to load watermark from path:', watermarkPath, err);
+      }
+    }
+
+    // 7. Fallback to placeholder
+    console.warn('[ClipEditorDialog] Using placeholder for watermark:', watermarkId);
+    return PLACEHOLDER_SVG;
+  }
 
   interface ClipSegmentInput {
     start_time: number;
@@ -1118,6 +1208,62 @@
 
   // Effective audio gain for waveform visualization (uses originalDb which can be initialized from project settings)
   const effectiveAudioGainDb = computed(() => originalDb.value);
+
+  // Computed: transform creatorWatermarkId and creatorWatermarkSettings props into the format expected by ClipEditorPreview
+  // This allows the preview to load different watermark images for different aspect ratios
+  // NOTE: This is only used when watermarks are NOT being applied via applyCreatorWatermark() to avoid duplicates
+  const computedCreatorProfileWatermarkSettings = computed(() => {
+    // If explicit creatorProfileWatermarkSettings prop is provided, use it
+    if (props.creatorProfileWatermarkSettings) {
+      return props.creatorProfileWatermarkSettings;
+    }
+
+    // NOTE: We now ALWAYS return creator profile settings (even when timeline watermarks exist)
+    // ClipEditorPreview will use these settings as a FALLBACK for positioning timeline watermarks
+    // The shouldShowCreatorWatermark computed in ClipEditorPreview prevents duplicate watermarks
+
+    // If no creator watermark ID, return null
+    if (!props.creatorWatermarkId) {
+      return null;
+    }
+
+    // Parse the per-ratio settings if available
+    let perRatioSettings: Record<string, any> | null = null;
+    if (props.creatorWatermarkSettings) {
+      try {
+        perRatioSettings = JSON.parse(props.creatorWatermarkSettings);
+
+        // Transform per-ratio watermarkIds if main watermarkId is an org asset
+        // This handles cases where per-ratio watermarkIds are raw server IDs (numbers or numeric strings)
+        if (props.creatorWatermarkId?.startsWith('org-asset-') && perRatioSettings) {
+          for (const [ratio, config] of Object.entries(perRatioSettings)) {
+            if (config && typeof config === 'object') {
+              const ratioConfig = config as { watermarkId?: number | string; position?: any };
+              if (ratioConfig.watermarkId != null) {
+                const wmIdStr = String(ratioConfig.watermarkId);
+                if (!wmIdStr.startsWith('org-asset-')) {
+                  perRatioSettings[ratio] = {
+                    ...ratioConfig,
+                    watermarkId: `org-asset-${ratioConfig.watermarkId}`,
+                  };
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[ClipEditorDialog] Failed to parse creatorWatermarkSettings:', e);
+      }
+    }
+
+    // Build the format expected by ClipEditorPreview
+    // Format: { enabled, watermarkId, perRatioSettings: { '16:9': { watermarkId, position }, ... } }
+    return {
+      enabled: true,
+      watermarkId: props.creatorWatermarkId,
+      perRatioSettings: perRatioSettings,
+    };
+  });
 
   // Transition canvas style - matches the video container
   const transitionCanvasStyle = computed(() => ({
@@ -2195,16 +2341,25 @@
           fullEdit.watermarks.map(async (w) => {
             // Convert file path to data URL for preview display
             let previewUrl = w.preview_url;
-            if (!previewUrl && w.watermark_path) {
-              try {
-                previewUrl = await invoke<string>('read_file_as_data_url', {
-                  filePath: w.watermark_path,
-                });
-              } catch (err) {
-                console.warn('[ClipEditorDialog] Failed to load watermark preview:', w.id, err);
-                // Use a fallback placeholder
-                previewUrl =
-                  'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiB2aWV3Qm94PSIwIDAgMjAwIDEyMCIgZmlsbD0ibm9uZSI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiBmaWxsPSIjNzg1MDAwIi8+CjxjaXJjbGUgY3g9IjEwMCIgY3k9IjUwIiByPSIyMCIgZmlsbD0iI0Y1OUUwQiIvPgo8dGV4dCB4PSIxMDAiIHk9Ijk1IiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiNGRkZGRkYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPldhdGVybWFyazwvdGV4dD4KPC9zdmc+';
+            
+            // If preview_url is already a valid URL or data URL, use it directly
+            if (previewUrl && (previewUrl.startsWith('http://') || previewUrl.startsWith('https://') || previewUrl.startsWith('data:'))) {
+              // Already a valid URL, use as-is
+            } else if (!previewUrl && w.watermark_path) {
+              // Check if watermark_path is a URL (for org assets)
+              if (w.watermark_path.startsWith('http://') || w.watermark_path.startsWith('https://')) {
+                previewUrl = w.watermark_path;
+              } else {
+                // It's a local file path, convert to data URL
+                try {
+                  previewUrl = await invoke<string>('read_file_as_data_url', {
+                    filePath: w.watermark_path,
+                  });
+                } catch (err) {
+                  console.warn('[ClipEditorDialog] Failed to load watermark preview:', w.id, err);
+                  // Try to reload from watermark database using watermark_id
+                  previewUrl = await loadWatermarkPreviewUrl(w.watermark_id, w.watermark_path, null);
+                }
               }
             }
 
@@ -3849,13 +4004,8 @@
   }
 
   // Auto-apply creator profile watermark settings when opening the clip editor
+  // Also syncs existing watermarks' perRatioConfigs with current creator profile settings
   async function applyCreatorWatermark() {
-    // Skip if watermarks already exist
-    if (watermarks.value.length > 0) {
-      console.log('[ClipEditorDialog] Skipping creator watermark - already has watermarks');
-      return;
-    }
-
     let watermarkId = props.creatorWatermarkId;
     let watermarkSettingsJson = props.creatorWatermarkSettings;
 
@@ -3941,112 +4091,230 @@
     }
 
     console.log('[ClipEditorDialog] Auto-applying creator watermark:', watermarkId);
+    console.log('[ClipEditorDialog] Raw watermarkSettingsJson:', watermarkSettingsJson);
 
     try {
-      let watermarkRecord: { id: string; file_path: string; width?: number; height?: number } | null = null;
-      let previewUrl: string | null = null;
-      let filePath: string | null = null;
+      // Parse per-ratio settings from creator profile to check for different watermark images per ratio
+      let creatorSettings: Record<string, any> | null = null;
+      if (watermarkSettingsJson) {
+        try {
+          creatorSettings =
+            typeof watermarkSettingsJson === 'string' ? JSON.parse(watermarkSettingsJson) : watermarkSettingsJson;
+          console.log('[ClipEditorDialog] Parsed creatorSettings:', JSON.stringify(creatorSettings, null, 2));
+        } catch (e) {
+          console.warn('[ClipEditorDialog] Failed to parse creator watermark settings:', e);
+        }
+      }
 
-      // Check if this is an organization asset (ID format: org-asset-{serverId})
-      if (watermarkId.startsWith('org-asset-')) {
-        const serverId = parseInt(watermarkId.replace('org-asset-', ''), 10);
-        console.log('[ClipEditorDialog] Loading org watermark with serverId:', serverId);
+      // Collect all unique watermark IDs from per-ratio settings
+      // Group ratios by their watermarkId so we can create separate watermarks for each
+      const watermarkIdToRatios: Map<string, string[]> = new Map();
+      const ratioConfigs: Record<string, { position: { x: number; y: number; scale: number; opacity: number; isFullFrameOverlay?: boolean }; watermarkId?: string }> = {};
 
-        if (!isNaN(serverId)) {
-          // First try to load from local cache
-          const localWatermark = await getWatermarkByServerId(serverId);
-          if (localWatermark) {
-            console.log('[ClipEditorDialog] Found cached org watermark:', localWatermark.name);
-            watermarkRecord = localWatermark;
-            filePath = localWatermark.file_path;
-            previewUrl = await invoke<string>('read_file_as_data_url', { filePath: localWatermark.file_path });
-          } else {
-            // Not cached locally - get URL from server
-            console.log('[ClipEditorDialog] Org watermark not cached, fetching URL from server...');
-            const serverResponse = await getUserOrganizationAssets();
-            if (serverResponse.success && serverResponse.assets) {
-              const serverAsset = serverResponse.assets.find((a) => a.id === serverId && a.asset_type === 'watermark');
-              if (serverAsset && serverAsset.url) {
-                console.log('[ClipEditorDialog] Using server URL directly for watermark:', serverAsset.name);
-                previewUrl = serverAsset.url;
-                filePath = serverAsset.url;
-                watermarkRecord = {
-                  id: watermarkId,
-                  file_path: serverAsset.url,
-                  width: serverAsset.width,
-                  height: serverAsset.height,
-                };
+      if (creatorSettings) {
+        for (const [ratio, config] of Object.entries(creatorSettings)) {
+          if (config && typeof config === 'object') {
+            const ratioConfig = config as {
+              position?: { x: number; y: number; scale: number; opacity: number; isFullFrameOverlay?: boolean };
+              watermarkId?: string;
+            };
+            
+            // Store the full config for this ratio
+            if (ratioConfig.position) {
+              ratioConfigs[ratio] = {
+                position: ratioConfig.position,
+                watermarkId: ratioConfig.watermarkId,
+              };
+            }
+
+            // Use the ratio-specific watermarkId if provided, otherwise use the default
+            let effectiveWatermarkId = ratioConfig.watermarkId || watermarkId;
+
+            // Transform raw server IDs to org-asset format if main watermarkId is an org asset
+            // This matches the transformation done in computedCreatorProfileWatermarkSettings
+            if (watermarkId?.startsWith('org-asset-') && effectiveWatermarkId) {
+              const wmIdStr = String(effectiveWatermarkId);
+              if (!wmIdStr.startsWith('org-asset-')) {
+                effectiveWatermarkId = `org-asset-${effectiveWatermarkId}`;
               }
+            }
+
+            if (effectiveWatermarkId) {
+              const existingRatios = watermarkIdToRatios.get(effectiveWatermarkId) || [];
+              existingRatios.push(ratio);
+              watermarkIdToRatios.set(effectiveWatermarkId, existingRatios);
             }
           }
         }
-      } else {
-        // Regular watermark lookup by ID
-        const watermark = await getWatermarkImage(watermarkId);
-        if (watermark) {
-          watermarkRecord = watermark;
-          filePath = watermark.file_path;
-          previewUrl = await invoke<string>('read_file_as_data_url', { filePath: watermark.file_path });
-        }
       }
 
-      if (!watermarkRecord || !filePath || !previewUrl) {
-        console.log('[ClipEditorDialog] Failed to load creator watermark data');
+      // If no per-ratio settings found, just use the default watermarkId for all ratios
+      if (watermarkIdToRatios.size === 0 && watermarkId) {
+        watermarkIdToRatios.set(watermarkId, ['16:9', '9:16', '1:1', '4:5']);
+      }
+
+      console.log('[ClipEditorDialog] Watermark IDs to ratios mapping:', 
+        Array.from(watermarkIdToRatios.entries()).map(([id, ratios]) => ({ id, ratios }))
+      );
+      console.log('[ClipEditorDialog] ratioConfigs:', JSON.stringify(ratioConfigs, null, 2));
+
+      // If watermarks already exist, force-sync their perRatioConfigs with creator profile settings
+      // We always overwrite to ensure stored data matches the project's watermark settings (source of truth)
+      if (watermarks.value.length > 0 && Object.keys(ratioConfigs).length > 0) {
+        console.log('[ClipEditorDialog] Force-syncing existing watermarks with creator profile settings');
+        
+        for (const watermark of watermarks.value) {
+          // Only sync watermarks that are from the creator profile (matching watermarkId)
+          // Try direct lookup first
+          let ratiosForThisWatermark = watermarkIdToRatios.get(watermark.watermarkId || '');
+          
+          // If not found and main watermarkId is in org-asset format, 
+          // try normalizing the stored watermarkId to match the map key format
+          if (!ratiosForThisWatermark && watermarkId?.startsWith('org-asset-') && watermark.watermarkId) {
+            const wmIdStr = String(watermark.watermarkId);
+            if (!wmIdStr.startsWith('org-asset-')) {
+              ratiosForThisWatermark = watermarkIdToRatios.get(`org-asset-${wmIdStr}`);
+            }
+          }
+          
+          // Skip watermarks not in the creator profile (e.g., manually added watermarks)
+          if (!ratiosForThisWatermark) {
+            console.log('[ClipEditorDialog] Skipping non-creator-profile watermark:', watermark.watermarkId);
+            continue;
+          }
+          
+          // Build updated perRatioConfigs from creator profile settings
+          const updatedPerRatioConfigs: Record<
+            string,
+            { position: { x: number; y: number }; scale: number; opacity: number; isFullFrameOverlay?: boolean }
+          > = {};
+          
+          for (const [ratio, config] of Object.entries(ratioConfigs)) {
+            if (ratiosForThisWatermark.includes(ratio)) {
+              // This ratio uses this watermark - apply creator profile settings
+              updatedPerRatioConfigs[ratio] = {
+                position: { x: config.position.x, y: config.position.y },
+                scale: config.position.scale,
+                opacity: config.position.opacity,
+                isFullFrameOverlay: config.position.isFullFrameOverlay,
+              };
+            } else {
+              // This ratio uses a different watermark - hide this one
+              updatedPerRatioConfigs[ratio] = {
+                position: { x: 0, y: 0 },
+                scale: 0,
+                opacity: 0,
+              };
+            }
+          }
+          
+          const newConfigs = JSON.stringify(updatedPerRatioConfigs);
+          
+          console.log('[ClipEditorDialog] Force-updating perRatioConfigs for watermark:', watermark.id, {
+            watermarkId: watermark.watermarkId,
+            ratiosForThisWatermark,
+            updatedPerRatioConfigs,
+          });
+          
+          // Update in-memory - always overwrite to match source of truth
+          watermark.perRatioConfigs = updatedPerRatioConfigs;
+          
+          // Also update the default position/scale/opacity from the primary ratio
+          const primaryRatio = ratiosForThisWatermark.includes('16:9') ? '16:9' : ratiosForThisWatermark[0];
+          if (primaryRatio && ratioConfigs[primaryRatio]) {
+            const config = ratioConfigs[primaryRatio];
+            watermark.position = { x: config.position.x, y: config.position.y };
+            watermark.scale = config.position.scale;
+            watermark.opacity = config.position.opacity;
+          }
+          
+          // Save to database - always update to keep in sync
+          const updateData = {
+            position_x: watermark.position.x,
+            position_y: watermark.position.y,
+            scale: watermark.scale,
+            opacity: watermark.opacity,
+            per_ratio_configs_data: newConfigs,
+          };
+          
+          if (editorMode.value) {
+            await updateVideoEditorWatermark(watermark.id, updateData);
+          } else {
+            await updateWatermarkRecord(watermark.id, updateData);
+          }
+        }
+        
+        console.log('[ClipEditorDialog] Finished force-syncing existing watermarks with creator profile');
+        return; // Don't create new watermarks, we've processed the existing ones
+      }
+      
+      // If no watermarks exist yet, create them
+      if (watermarks.value.length > 0) {
+        console.log('[ClipEditorDialog] Watermarks exist but no ratioConfigs to sync - skipping');
         return;
       }
 
-      // Parse per-ratio settings from creator profile
-      let perRatioConfigs:
-        | Record<
-            string,
-            { position: { x: number; y: number }; scale: number; opacity: number; isFullFrameOverlay?: boolean }
-          >
-        | undefined;
-      let defaultPosition = { x: 8, y: 92 };
-      let defaultScale = 15;
-      let defaultOpacity = 80;
-      let isFullFrameOverlay = false;
+      // Helper function to load watermark data by ID
+      async function loadWatermarkData(wmId: string): Promise<{
+        record: { id: string; file_path: string; width?: number; height?: number } | null;
+        previewUrl: string | null;
+        filePath: string | null;
+      }> {
+        let record: { id: string; file_path: string; width?: number; height?: number } | null = null;
+        let preview: string | null = null;
+        let path: string | null = null;
 
-      if (watermarkSettingsJson) {
-        try {
-          const creatorSettings =
-            typeof watermarkSettingsJson === 'string' ? JSON.parse(watermarkSettingsJson) : watermarkSettingsJson;
+        // Check if this is an organization asset (ID format: org-asset-{serverId})
+        if (wmId.startsWith('org-asset-')) {
+          const serverId = parseInt(wmId.replace('org-asset-', ''), 10);
+          console.log('[ClipEditorDialog] Loading org watermark with serverId:', serverId);
 
-          // Build per-ratio configs for the clip editor
-          perRatioConfigs = {};
-          for (const [ratio, config] of Object.entries(creatorSettings)) {
-            if (config && typeof config === 'object' && 'position' in config) {
-              const ratioConfig = config as {
-                position?: { x: number; y: number; scale: number; opacity: number; isFullFrameOverlay?: boolean };
-                watermarkId?: string;
-              };
-              if (ratioConfig.position) {
-                perRatioConfigs[ratio] = {
-                  position: { x: ratioConfig.position.x, y: ratioConfig.position.y },
-                  scale: ratioConfig.position.scale,
-                  opacity: ratioConfig.position.opacity,
-                  isFullFrameOverlay: ratioConfig.position.isFullFrameOverlay,
-                };
-                // Use 16:9 as default display settings
-                if (ratio === '16:9') {
-                  defaultPosition = { x: ratioConfig.position.x, y: ratioConfig.position.y };
-                  defaultScale = ratioConfig.position.scale;
-                  defaultOpacity = ratioConfig.position.opacity;
-                  isFullFrameOverlay = ratioConfig.position.isFullFrameOverlay ?? false;
+          if (!isNaN(serverId)) {
+            // First try to load from local cache
+            const localWatermark = await getWatermarkByServerId(serverId);
+            if (localWatermark) {
+              console.log('[ClipEditorDialog] Found cached org watermark:', localWatermark.name);
+              record = localWatermark;
+              path = localWatermark.file_path;
+              preview = await invoke<string>('read_file_as_data_url', { filePath: localWatermark.file_path });
+            } else {
+              // Not cached locally - download through Tauri (bypasses CORS)
+              console.log('[ClipEditorDialog] Org watermark not cached, downloading from server...');
+              const serverResponse = await getUserOrganizationAssets();
+              if (serverResponse.success && serverResponse.assets) {
+                const serverAsset = serverResponse.assets.find((a) => a.id === serverId && a.asset_type === 'watermark');
+                if (serverAsset && serverAsset.url) {
+                  console.log('[ClipEditorDialog] Downloading org watermark:', serverAsset.name);
+                  // Download and cache the asset locally (bypasses CORS)
+                  const downloadResult = await ensureAssetDownloaded(serverAsset);
+                  if (downloadResult.success && downloadResult.filePath) {
+                    console.log('[ClipEditorDialog] Org watermark downloaded to:', downloadResult.filePath);
+                    preview = await invoke<string>('read_file_as_data_url', { filePath: downloadResult.filePath });
+                    path = downloadResult.filePath;
+                    record = {
+                      id: wmId,
+                      file_path: downloadResult.filePath,
+                      width: serverAsset.width,
+                      height: serverAsset.height,
+                    };
+                  } else {
+                    console.error('[ClipEditorDialog] Failed to download org watermark:', downloadResult.error);
+                  }
                 }
               }
             }
           }
-          console.log('[ClipEditorDialog] Parsed creator watermark settings:', {
-            defaultPosition,
-            defaultScale,
-            defaultOpacity,
-            isFullFrameOverlay,
-            ratioCount: Object.keys(perRatioConfigs).length,
-          });
-        } catch (e) {
-          console.warn('[ClipEditorDialog] Failed to parse creator watermark settings:', e);
+        } else {
+          // Regular watermark lookup by ID
+          const watermark = await getWatermarkImage(wmId);
+          if (watermark) {
+            record = watermark;
+            path = watermark.file_path;
+            preview = await invoke<string>('read_file_as_data_url', { filePath: watermark.file_path });
+          }
         }
+
+        return { record, previewUrl: preview, filePath: path };
       }
 
       // Create the watermark in the database
@@ -4056,39 +4324,93 @@
         return;
       }
 
-      const watermarkData = {
-        watermark_id: watermarkId,
-        watermark_path: filePath,
-        preview_url: previewUrl,
-        start_time: 0,
-        end_time: totalSegmentDuration.value,
-        position_x: defaultPosition.x,
-        position_y: defaultPosition.y,
-        scale: defaultScale,
-        opacity: defaultOpacity,
-        per_ratio_configs_data: perRatioConfigs ? JSON.stringify(perRatioConfigs) : undefined,
-      };
+      // Create a watermark entry for each unique watermarkId
+      for (const [wmId, ratiosForThisWatermark] of watermarkIdToRatios.entries()) {
+        const { record, previewUrl, filePath } = await loadWatermarkData(wmId);
 
-      const newWatermark = editorMode.value
-        ? await createVideoEditorWatermark(editId, watermarkData)
-        : await createWatermark(editId, watermarkData);
+        if (!record || !filePath || !previewUrl) {
+          console.log('[ClipEditorDialog] Failed to load watermark data for ID:', wmId);
+          continue;
+        }
 
-      watermarks.value.push({
-        id: newWatermark.id,
-        watermarkId: newWatermark.watermark_id,
-        filePath: filePath,
-        previewUrl: previewUrl,
-        startTime: newWatermark.start_time,
-        endTime: newWatermark.end_time,
-        position: { x: newWatermark.position_x, y: newWatermark.position_y },
-        scale: newWatermark.scale,
-        opacity: newWatermark.opacity,
-        perRatioConfigs: perRatioConfigs,
-      });
+        // Build per-ratio configs for this watermark
+        // Only include ratios where this watermark should be visible
+        // Set opacity to 0 for ratios that use a different watermark
+        const perRatioConfigsForThisWatermark: Record<
+          string,
+          { position: { x: number; y: number }; scale: number; opacity: number; isFullFrameOverlay?: boolean }
+        > = {};
 
-      console.log('[ClipEditorDialog] Creator watermark auto-applied successfully:', {
+        // Process all ratios from the creator settings
+        for (const [ratio, config] of Object.entries(ratioConfigs)) {
+          if (ratiosForThisWatermark.includes(ratio)) {
+            // This ratio uses this watermark - apply full settings
+            perRatioConfigsForThisWatermark[ratio] = {
+              position: { x: config.position.x, y: config.position.y },
+              scale: config.position.scale,
+              opacity: config.position.opacity,
+              isFullFrameOverlay: config.position.isFullFrameOverlay,
+            };
+          } else {
+            // This ratio uses a different watermark - hide this one (opacity 0)
+            perRatioConfigsForThisWatermark[ratio] = {
+              position: { x: 0, y: 0 },
+              scale: 0,
+              opacity: 0,
+            };
+          }
+        }
+
+        // Find default position from 16:9 if available, or first available ratio
+        let defaultPosition = { x: 8, y: 92 };
+        let defaultScale = 15;
+        let defaultOpacity = 80;
+
+        const primaryRatio = ratiosForThisWatermark.includes('16:9') ? '16:9' : ratiosForThisWatermark[0];
+        if (primaryRatio && ratioConfigs[primaryRatio]) {
+          const config = ratioConfigs[primaryRatio];
+          defaultPosition = { x: config.position.x, y: config.position.y };
+          defaultScale = config.position.scale;
+          defaultOpacity = config.position.opacity;
+        }
+
+        console.log('[ClipEditorDialog] Creating watermark for ID:', wmId, 'visible in ratios:', ratiosForThisWatermark);
+        console.log('[ClipEditorDialog] perRatioConfigsForThisWatermark:', JSON.stringify(perRatioConfigsForThisWatermark, null, 2));
+
+        const watermarkData = {
+          watermark_id: wmId,
+          watermark_path: filePath,
+          preview_url: previewUrl,
+          start_time: 0,
+          end_time: totalSegmentDuration.value,
+          position_x: defaultPosition.x,
+          position_y: defaultPosition.y,
+          scale: defaultScale,
+          opacity: defaultOpacity,
+          per_ratio_configs_data: JSON.stringify(perRatioConfigsForThisWatermark),
+        };
+
+        const newWatermark = editorMode.value
+          ? await createVideoEditorWatermark(editId, watermarkData)
+          : await createWatermark(editId, watermarkData);
+
+        watermarks.value.push({
+          id: newWatermark.id,
+          watermarkId: newWatermark.watermark_id,
+          filePath: filePath,
+          previewUrl: previewUrl,
+          startTime: newWatermark.start_time,
+          endTime: newWatermark.end_time,
+          position: { x: newWatermark.position_x, y: newWatermark.position_y },
+          scale: newWatermark.scale,
+          opacity: newWatermark.opacity,
+          perRatioConfigs: perRatioConfigsForThisWatermark,
+        });
+      }
+
+      console.log('[ClipEditorDialog] Creator watermark(s) auto-applied successfully:', {
         watermarkCount: watermarks.value.length,
-        watermarkIds: watermarks.value.map((w) => w.id),
+        watermarkIds: watermarks.value.map((w) => w.watermarkId),
         totalDuration: totalSegmentDuration.value,
       });
     } catch (error) {
@@ -4610,16 +4932,25 @@
         fullEdit.watermarks.map(async (w) => {
           // Convert file path to data URL for preview display
           let previewUrl = w.preview_url;
-          if (!previewUrl && w.watermark_path) {
-            try {
-              previewUrl = await invoke<string>('read_file_as_data_url', {
-                filePath: w.watermark_path,
-              });
-            } catch (err) {
-              console.warn('[ClipEditorDialog] Failed to load watermark preview:', w.id, err);
-              // Use a fallback placeholder
-              previewUrl =
-                'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiB2aWV3Qm94PSIwIDAgMjAwIDEyMCIgZmlsbD0ibm9uZSI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiBmaWxsPSIjNzg1MDAwIi8+CjxjaXJjbGUgY3g9IjEwMCIgY3k9IjUwIiByPSIyMCIgZmlsbD0iI0Y1OUUwQiIvPgo8dGV4dCB4PSIxMDAiIHk9Ijk1IiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiNGRkZGRkYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPldhdGVybWFyazwvdGV4dD4KPC9zdmc+';
+          
+          // If preview_url is already a valid URL or data URL, use it directly
+          if (previewUrl && (previewUrl.startsWith('http://') || previewUrl.startsWith('https://') || previewUrl.startsWith('data:'))) {
+            // Already a valid URL, use as-is
+          } else if (!previewUrl && w.watermark_path) {
+            // Check if watermark_path is a URL (for org assets)
+            if (w.watermark_path.startsWith('http://') || w.watermark_path.startsWith('https://')) {
+              previewUrl = w.watermark_path;
+            } else {
+              // It's a local file path, convert to data URL
+              try {
+                previewUrl = await invoke<string>('read_file_as_data_url', {
+                  filePath: w.watermark_path,
+                });
+              } catch (err) {
+                console.warn('[ClipEditorDialog] Failed to load watermark preview:', w.id, err);
+                // Try to reload from watermark database using watermark_id
+                previewUrl = await loadWatermarkPreviewUrl(w.watermark_id, w.watermark_path, null);
+              }
             }
           }
 

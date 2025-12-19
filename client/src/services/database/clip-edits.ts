@@ -576,13 +576,14 @@ export async function createWatermark(
 
   await db.execute(
     `INSERT INTO clip_watermarks 
-     (id, clip_edit_id, watermark_id, watermark_path, start_time, end_time, position_x, position_y, scale, opacity, per_ratio_configs_data, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, clip_edit_id, watermark_id, watermark_path, preview_url, start_time, end_time, position_x, position_y, scale, opacity, per_ratio_configs_data, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       clipEditId,
       data.watermark_id || '',
       data.watermark_path || '',
+      data.preview_url || null,
       data.start_time || 0,
       data.end_time || 0,
       data.position_x ?? 8,
@@ -599,6 +600,7 @@ export async function createWatermark(
     clip_edit_id: clipEditId,
     watermark_id: data.watermark_id || '',
     watermark_path: data.watermark_path || '',
+    preview_url: data.preview_url,
     start_time: data.start_time || 0,
     end_time: data.end_time || 0,
     position_x: data.position_x ?? 8,
@@ -633,6 +635,10 @@ export async function updateWatermarkRecord(
   if (data.watermark_path !== undefined) {
     updates.push('watermark_path = ?');
     values.push(data.watermark_path);
+  }
+  if (data.preview_url !== undefined) {
+    updates.push('preview_url = ?');
+    values.push(data.preview_url);
   }
   if (data.start_time !== undefined) {
     updates.push('start_time = ?');
