@@ -291,7 +291,13 @@
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { save } from '@tauri-apps/plugin-dialog';
-  import { getClipBuilds, deleteClipBuild, resolveWatermarkById, type ClipBuild, type VideoEditorSource } from '@/services/database';
+  import {
+    getClipBuilds,
+    deleteClipBuild,
+    resolveWatermarkById,
+    type ClipBuild,
+    type VideoEditorSource,
+  } from '@/services/database';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
 
   /**
@@ -397,8 +403,8 @@
     isOrgAsset?: boolean;
     serverId?: number;
     serverUrl?: string;
-    organization_id?: string;
-    organization_name?: string;
+    organization_id?: string | null;
+    organization_name?: string | null;
     created_at?: string;
     updated_at?: string;
   }
@@ -700,7 +706,7 @@
     textOverlaysForExport: any,
     stickersForExport: any,
     clipWatermarksForExport: any,
-    framingStrategy: string,
+    framingStrategy: string | null,
     resolvedWatermarkSettings: any | null
   ) {
     const { getRawVideosByProjectId } = await import('@/services/database');
@@ -786,6 +792,23 @@
       }
     }
 
+    // Ensure subtitle settings have all required fields with defaults
+    const subtitleSettingsWithDefaults = props.subtitleSettings
+      ? {
+          positionPercentage: 15,
+          textOffsetX: 0,
+          textOffsetY: 0,
+          letterSpacing: 0,
+          wordSpacing: 0,
+          padding: 10,
+          borderRadius: 0,
+          lineHeight: 1.2,
+          maxWidth: 80,
+          textAlign: 'center' as const,
+          ...props.subtitleSettings,
+        }
+      : null;
+
     // Build the clip
     await invoke('build_clip_from_segments', {
       projectId: props.projectId,
@@ -828,7 +851,7 @@
     textOverlaysForExport: any,
     stickersForExport: any,
     clipWatermarksForExport: any,
-    framingStrategy: string,
+    framingStrategy: string | null,
     resolvedWatermarkSettings: any | null
   ) {
     // In editor mode, video sources may come from different files

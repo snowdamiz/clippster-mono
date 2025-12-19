@@ -103,8 +103,8 @@ export async function getUserOrganizationAssets(): Promise<ListAssetsResponse> {
     }
 
     // If the response has a data field with assets
-    if (data.data && Array.isArray(data.data)) {
-      return { success: true, assets: data.data };
+    if ((data as any).data && Array.isArray((data as any).data)) {
+      return { success: true, assets: (data as any).data };
     }
 
     console.warn('[OrgAssetsApi] Unexpected response format:', data);

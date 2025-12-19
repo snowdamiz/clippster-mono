@@ -378,10 +378,7 @@
     isOrgAsset?: boolean;
     serverId?: number;
     serverUrl?: string;
-    organization_id?: string;
-    organization_name?: string;
     thumbnail_path?: string | null;
-    mime_type?: string | null;
   }
 
   // Auth store for checking org memberships
@@ -564,9 +561,10 @@
                 organization_name: a.organization_name,
                 width: a.width,
                 height: a.height,
+                file_size: null,
                 mime_type: a.mime_type,
-                created_at: a.inserted_at,
-                updated_at: a.updated_at,
+                created_at: new Date(a.inserted_at).getTime(),
+                updated_at: new Date(a.updated_at).getTime(),
                 isOrgAsset: true,
                 serverId: a.id,
                 serverUrl: a.url,

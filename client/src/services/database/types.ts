@@ -501,6 +501,7 @@ export interface CreatorProfile {
   outro_id: string | null;
   watermark_id: string | null;
   watermark_settings: string | null; // JSON string of WatermarkSettings
+  user_id: string | null;
   created_at: number;
   updated_at: number;
 }

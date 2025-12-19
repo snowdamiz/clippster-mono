@@ -254,6 +254,7 @@
 
   interface AppliedIntroOutro {
     id: string;
+    sourceId?: string;
     name: string;
     duration: number | null;
     filePath: string;
@@ -261,8 +262,8 @@
     isOrgAsset?: boolean;
     serverId?: number;
     serverUrl?: string;
-    organization_id?: string;
-    organization_name?: string;
+    organization_id?: string | null;
+    organization_name?: string | null;
     created_at?: string;
     updated_at?: string;
   }

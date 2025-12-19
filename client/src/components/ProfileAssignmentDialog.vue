@@ -190,7 +190,7 @@
 
         try {
           // Load organization members
-          const result = await authStore.getOrganizationMembers(props.organizationId);
+          const result = await authStore.getOrganizationMembers(String(props.organizationId));
           if (result.success) {
             members.value = result.members || [];
           }

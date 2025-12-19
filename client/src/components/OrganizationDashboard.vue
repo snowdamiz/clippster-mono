@@ -1983,7 +1983,14 @@
   const uploadDialogFileType = ref('');
   const uploadDialogSelectedType = ref<'intro' | 'outro' | 'watermark' | 'audio' | 'image' | ''>('');
   const uploadDialogAssetName = ref('');
-  const uploadDialogAssetOptions = ref<Array<{ value: string; label: string; icon: any; recommended?: boolean }>>([]);
+  const uploadDialogAssetOptions = ref<
+    Array<{
+      value: '' | 'intro' | 'outro' | 'watermark' | 'audio' | 'image';
+      label: string;
+      icon: any;
+      recommended?: boolean;
+    }>
+  >([]);
 
   // Asset playback state
   const showVideoPlayer = ref(false);
@@ -2870,7 +2877,7 @@
 
       // Get asset options based on file type
       const options = getAssetOptionsForFileType(ext);
-      uploadDialogAssetOptions.value = options;
+      uploadDialogAssetOptions.value = options as typeof uploadDialogAssetOptions.value;
 
       // Pre-select the recommended option
       const recommended = options.find((o) => o.recommended);

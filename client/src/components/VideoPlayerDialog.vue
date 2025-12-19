@@ -62,7 +62,7 @@
                 :style="getWatermarkOverlayStyle"
               >
                 <img
-                  :src="watermarkDataUrl"
+                  :src="watermarkDataUrl ?? undefined"
                   alt="Watermark"
                   class="max-w-full max-h-full object-contain"
                   :style="{ opacity: getWatermarkOpacity }"

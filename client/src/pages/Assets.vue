@@ -106,7 +106,7 @@
             v-for="asset in paginatedAssets"
             :key="asset.id"
             class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
-            :class="{ 'ring-2 ring-primary ring-offset-2 ring-offset-background': isAssetSelected(asset.id) }"
+            :class="{ 'ring-2 ring-primary ring-offset-2 ring-offset-background': isAssetSelected(String(asset.id)) }"
             @click="handleAssetClick(asset)"
           >
             <!-- Selection Checkbox (visible on hover or when selected) - NOT for org assets -->
@@ -245,7 +245,9 @@
                 <span class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
 
                 <!-- Created At -->
-                <span class="truncate">{{ formatRelativeTime(asset.created_at) }}</span>
+                <span class="truncate">
+                  {{ formatRelativeTime(asset.isOrgAsset ? (asset as any).inserted_at : (asset as any).created_at) }}
+                </span>
               </div>
             </div>
 
@@ -1075,8 +1077,8 @@
           duration: orgAsset.duration || null,
           thumbnail_path: orgAsset.thumbnail_url || null,
           thumbnail_generation_status: 'completed',
-          created_at: orgAsset.inserted_at,
-          updated_at: orgAsset.updated_at,
+          created_at: new Date(orgAsset.inserted_at).getTime(),
+          updated_at: new Date(orgAsset.updated_at).getTime(),
         } as IntroOutro;
       } else {
         // Local asset - create a fresh copy
@@ -1173,7 +1175,7 @@
           currentlyPlayingAudio.value = null;
         };
         await audioElement.value.play();
-        currentlyPlayingAudio.value = audioId;
+        currentlyPlayingAudio.value = String(audioId);
       }
     } catch (err) {
       console.error('Failed to play audio:', err);
@@ -1196,7 +1198,13 @@
       // Use the first asset file if available, otherwise use a dummy path
       if (allAssets.value.length > 0) {
         // Reveal the first asset file, which will open the assets folder
-        await revealItemInDir(allAssets.value[0].file_path);
+        const firstAsset = allAssets.value[0];
+        const filePath = firstAsset.isOrgAsset ? null : (firstAsset as any).file_path;
+        if (filePath) {
+          await revealItemInDir(filePath);
+        } else {
+          await revealItemInDir(assetsPath + '\\dummy.mp4');
+        }
       } else {
         // If no assets, append a dummy filename to open the assets folder
         // The file doesn't need to exist, revealItemInDir will still open the parent folder

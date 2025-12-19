@@ -831,7 +831,7 @@
             intro_id: props.profile.intro_id,
             outro_id: props.profile.outro_id,
             watermark_id: props.profile.watermark_id,
-            watermark_settings: (props.profile.watermark_settings as CreatorWatermarkSettings) || null,
+            watermark_settings: (props.profile.watermark_settings as unknown as CreatorWatermarkSettings) || null,
             platformLinks: props.profile.platform_links.map((link) => ({
               id: link.id,
               platform: link.platform as PlatformId,

@@ -2322,7 +2322,10 @@
                   // Download and cache the asset locally (bypasses CORS)
                   const downloadResult = await ensureAssetDownloaded(serverAsset);
                   if (downloadResult.success && downloadResult.filePath) {
-                    console.log('[Projects] loadPreviewWatermark: Org watermark downloaded to:', downloadResult.filePath);
+                    console.log(
+                      '[Projects] loadPreviewWatermark: Org watermark downloaded to:',
+                      downloadResult.filePath
+                    );
                     const dataUrl = await invoke<string>('read_file_as_data_url', {
                       filePath: downloadResult.filePath,
                     });
@@ -2343,7 +2346,10 @@
                       height: dimensions?.height,
                     });
                   } else {
-                    console.error('[Projects] loadPreviewWatermark: Failed to download org watermark:', downloadResult.error);
+                    console.error(
+                      '[Projects] loadPreviewWatermark: Failed to download org watermark:',
+                      downloadResult.error
+                    );
                     return;
                   }
                 } else {
@@ -2880,7 +2886,7 @@
           thumbnail_url: intro.thumbnail_path || undefined,
           inserted_at: intro.created_at,
           updated_at: intro.updated_at,
-        } as ServerOrganizationAsset);
+        } as unknown as ServerOrganizationAsset);
 
         if (introResult.success && introResult.filePath) {
           introPath = introResult.filePath;
@@ -2905,7 +2911,7 @@
           thumbnail_url: outro.thumbnail_path || undefined,
           inserted_at: outro.created_at,
           updated_at: outro.updated_at,
-        } as ServerOrganizationAsset);
+        } as unknown as ServerOrganizationAsset);
 
         if (outroResult.success && outroResult.filePath) {
           outroPath = outroResult.filePath;
