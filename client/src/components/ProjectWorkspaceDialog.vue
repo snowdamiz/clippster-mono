@@ -265,6 +265,7 @@
   import { useVideoFocalPoint } from '@/composables/useVideoFocalPoint';
   import { useTranscriptData } from '@/composables/useTranscriptData';
   import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
+  import { ensureAssetDownloaded } from '@/services/orgAssetSync';
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
   import { useAuthStore } from '@/stores/auth';
   import { getRawVideosByProjectId } from '@/services/database';
@@ -369,6 +370,7 @@
         return;
       }
 
+      // Determine target watermark ID (may be different per aspect ratio)
       let targetId = settings.watermarkId;
       const perRatio = settings.perRatioSettings;
 
@@ -379,30 +381,11 @@
         }
       }
 
+      // Only reload if the watermark ID changed
       if (targetId !== currentWatermarkId.value) {
-        if (targetId) {
-          try {
-            const watermark = await getWatermarkImage(targetId);
-            if (watermark) {
-              const dataUrl = await invoke<string>('read_file_as_data_url', {
-                filePath: watermark.file_path,
-              });
-              currentWatermarkData.value = {
-                dataUrl,
-                width: watermark.width || undefined,
-                height: watermark.height || undefined,
-              };
-              currentWatermarkId.value = targetId;
-            }
-          } catch (e) {
-            console.error('[ProjectWorkspaceDialog] Failed to load watermark', e);
-            currentWatermarkData.value = null;
-            currentWatermarkId.value = null;
-          }
-        } else {
-          currentWatermarkData.value = null;
-          currentWatermarkId.value = null;
-        }
+        currentWatermarkId.value = targetId;
+        // Use loadWatermarkDataById which handles both local and org-asset watermarks
+        await loadWatermarkDataById(targetId);
       }
     },
     { deep: true, immediate: true }
@@ -1205,32 +1188,35 @@
             return;
           }
 
-          // Not cached locally - stream directly from server URL
-          console.log('[ProjectWorkspaceDialog] Org watermark not cached, fetching URL from server...');
+          // Not cached locally - download through Tauri (bypasses CORS)
+          console.log('[ProjectWorkspaceDialog] Org watermark not cached, downloading from server...');
           try {
             const serverResponse = await getUserOrganizationAssets();
             if (serverResponse.success && serverResponse.assets) {
               const serverAsset = serverResponse.assets.find((a) => a.id === serverId && a.asset_type === 'watermark');
               if (serverAsset && serverAsset.url) {
-                console.log('[ProjectWorkspaceDialog] Using server URL directly for watermark:', serverAsset.name);
-                // Use the server URL directly - measure dimensions from the loaded image
-                const dimensions = await new Promise<{ width: number; height: number } | null>((resolve) => {
-                  const img = new Image();
-                  img.crossOrigin = 'anonymous';
-                  img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-                  img.onerror = () => resolve(null);
-                  img.src = serverAsset.url;
-                });
-                currentWatermarkData.value = {
-                  dataUrl: serverAsset.url,
-                  width: dimensions?.width,
-                  height: dimensions?.height,
-                };
-                console.log('[ProjectWorkspaceDialog] Org watermark streaming from URL:', {
-                  width: dimensions?.width,
-                  height: dimensions?.height,
-                });
-                return;
+                console.log('[ProjectWorkspaceDialog] Downloading org watermark:', serverAsset.name);
+                // Download and cache the asset locally (bypasses CORS)
+                const downloadResult = await ensureAssetDownloaded(serverAsset);
+                if (downloadResult.success && downloadResult.filePath) {
+                  console.log('[ProjectWorkspaceDialog] Org watermark downloaded to:', downloadResult.filePath);
+                  const dataUrl = await invoke<string>('read_file_as_data_url', {
+                    filePath: downloadResult.filePath,
+                  });
+                  const dimensions = await measureWatermarkDimensions(downloadResult.filePath);
+                  currentWatermarkData.value = {
+                    dataUrl,
+                    width: dimensions?.width || serverAsset.width || undefined,
+                    height: dimensions?.height || serverAsset.height || undefined,
+                  };
+                  console.log('[ProjectWorkspaceDialog] Org watermark loaded from download:', {
+                    width: dimensions?.width,
+                    height: dimensions?.height,
+                  });
+                  return;
+                } else {
+                  console.error('[ProjectWorkspaceDialog] Failed to download org watermark:', downloadResult.error);
+                }
               } else {
                 console.log('[ProjectWorkspaceDialog] Server asset not found for serverId:', serverId);
               }
@@ -1310,7 +1296,7 @@
             console.log('[ProjectWorkspaceDialog] Applying project-level watermark:', storedSettings.watermarkId);
 
             // Parse the per-ratio watermark settings
-            let perRatioSettings = null;
+            let perRatioSettings: Record<string, any> | null = null;
             let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
             if (storedSettings.watermarkSettings) {
               try {
@@ -1318,6 +1304,27 @@
                   typeof storedSettings.watermarkSettings === 'string'
                     ? JSON.parse(storedSettings.watermarkSettings)
                     : storedSettings.watermarkSettings;
+
+                // If main watermarkId is an org asset, transform per-ratio watermarkIds
+                // This handles legacy data where per-ratio watermarkIds were stored as raw server IDs
+                // Handles both numbers (3) and numeric strings ("3")
+                if (storedSettings.watermarkId?.startsWith('org-asset-') && perRatioSettings) {
+                  for (const [ratio, config] of Object.entries(perRatioSettings)) {
+                    if (config && typeof config === 'object') {
+                      const ratioConfig = config as { watermarkId?: number | string; position?: any };
+                      if (ratioConfig.watermarkId != null) {
+                        const wmIdStr = String(ratioConfig.watermarkId);
+                        if (!wmIdStr.startsWith('org-asset-')) {
+                          perRatioSettings[ratio] = {
+                            ...ratioConfig,
+                            watermarkId: `org-asset-${ratioConfig.watermarkId}`,
+                          };
+                        }
+                      }
+                    }
+                  }
+                }
+
                 // Use 16:9 as the default display position
                 const ratioConfig = perRatioSettings['16:9'];
                 if (ratioConfig?.position) {
@@ -1343,6 +1350,7 @@
               watermarkId: newSettings.watermarkId,
               defaultPos,
               hasPerRatioSettings: !!perRatioSettings,
+              perRatioSettings: JSON.stringify(perRatioSettings, null, 2),
             });
 
             await nextTick();

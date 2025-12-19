@@ -8,7 +8,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { ref, computed } from 'vue';
 import {
   getUserOrganizationAssets,
-  downloadAssetFile,
   type ServerOrganizationAsset,
 } from './organizationAssetsApi';
 import {
@@ -362,18 +361,6 @@ export async function downloadAndSaveAsset(asset: ServerOrganizationAsset): Prom
     return existing.file_path;
   }
 
-  // Download the file
-  console.log(`[OrgSync] Downloading asset: ${asset.name} from ${asset.url}`);
-  const downloadResult = await downloadAssetFile(asset.url);
-
-  if (!downloadResult.success || !downloadResult.blob) {
-    throw new Error(downloadResult.error || 'Failed to download asset file');
-  }
-
-  // Convert blob to array buffer for Tauri
-  const arrayBuffer = await downloadResult.blob.arrayBuffer();
-  const uint8Array = new Uint8Array(arrayBuffer);
-
   // Determine the target folder based on asset type
   let targetFolder: string;
   switch (asset.asset_type) {
@@ -396,9 +383,10 @@ export async function downloadAndSaveAsset(asset: ServerOrganizationAsset): Prom
       targetFolder = 'other';
   }
 
-  // Save the file using Tauri
-  const localFilePath = await invoke<string>('save_org_asset_file', {
-    data: Array.from(uint8Array),
+  // Download the file using Tauri (bypasses CORS)
+  console.log(`[OrgSync] Downloading asset: ${asset.name} from ${asset.url}`);
+  const localFilePath = await invoke<string>('download_org_asset_from_url', {
+    url: asset.url,
     filename: asset.name,
     assetType: targetFolder,
     organizationId: orgId,
@@ -408,17 +396,12 @@ export async function downloadAndSaveAsset(asset: ServerOrganizationAsset): Prom
   let thumbnailPath: string | null = null;
   if (asset.thumbnail_url) {
     try {
-      const thumbResult = await downloadAssetFile(asset.thumbnail_url);
-      if (thumbResult.success && thumbResult.blob) {
-        const thumbBuffer = await thumbResult.blob.arrayBuffer();
-        const thumbArray = new Uint8Array(thumbBuffer);
-        thumbnailPath = await invoke<string>('save_org_asset_file', {
-          data: Array.from(thumbArray),
-          filename: `thumb_${asset.name}.jpg`,
-          assetType: 'thumbnails',
-          organizationId: orgId,
-        });
-      }
+      thumbnailPath = await invoke<string>('download_org_asset_from_url', {
+        url: asset.thumbnail_url,
+        filename: `thumb_${asset.name}.jpg`,
+        assetType: 'thumbnails',
+        organizationId: orgId,
+      });
     } catch (thumbError) {
       console.warn(`[OrgSync] Failed to download thumbnail for ${asset.name}:`, thumbError);
     }
