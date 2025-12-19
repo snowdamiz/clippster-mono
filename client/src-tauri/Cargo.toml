@@ -42,6 +42,10 @@ async-stream = "0.3"
 regex = "1.10"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
+# OTA Updates
+tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls"] }
+tauri-plugin-process = "2"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"
 objc = "0.2"
