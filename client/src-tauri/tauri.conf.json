@@ -36,11 +36,18 @@
   "plugins": {
     "sql": {
       "preload": ["sqlite:clippster.db"]
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE1OTY1ODA3QzQ2NzE1NTkKUldSWkZXZkVCMWlXRllQNFpGRDdTazRWUTFGWGVwVGFsWWJlY0s5Nnc2RUJZdnp0WDd6UjhDL2cK",
+      "endpoints": [
+        "https://github.com/snowdamiz/clippster-mono/releases/latest/download/latest.json"
+      ]
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -58,6 +65,7 @@
       "binaries/node"
     ],
     "windows": {
+      "nsis": {},
       "wix": {
         "language": "en-US"
       }
