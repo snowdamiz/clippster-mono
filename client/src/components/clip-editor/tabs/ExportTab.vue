@@ -291,8 +291,100 @@
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { save } from '@tauri-apps/plugin-dialog';
-  import { getClipBuilds, deleteClipBuild, type ClipBuild, type VideoEditorSource } from '@/services/database';
+  import { getClipBuilds, deleteClipBuild, resolveWatermarkById, type ClipBuild, type VideoEditorSource } from '@/services/database';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
+
+  /**
+   * Resolves creator profile watermark settings to include file paths for the Rust backend.
+   * Handles both local watermarks and org-asset-{serverId} format.
+   */
+  async function resolveCreatorWatermarkSettings(settings: any): Promise<any | null> {
+    if (!settings?.enabled || !settings?.watermarkId) {
+      return null;
+    }
+
+    // Resolve the main/default watermark
+    const mainWatermark = await resolveWatermarkById(settings.watermarkId);
+    if (!mainWatermark) {
+      console.warn('[ExportTab] Failed to resolve main watermark:', settings.watermarkId);
+      return null;
+    }
+
+    // Build per-ratio settings with resolved file paths
+    const allRatios = ['16:9', '9:16', '1:1', '4:5'];
+    const resolvedPerRatioSettings: Record<string, any> = {};
+
+    for (const ratio of allRatios) {
+      const perRatioConfig = settings.perRatioSettings?.[ratio];
+
+      if (perRatioConfig === null) {
+        // Watermark explicitly disabled for this ratio
+        resolvedPerRatioSettings[ratio] = null;
+      } else if (perRatioConfig) {
+        // Ratio has specific settings
+        let ratioFilePath = mainWatermark.filePath;
+        let ratioWidth = mainWatermark.width;
+        let ratioHeight = mainWatermark.height;
+
+        // If this ratio has a different watermark, resolve its file info
+        const ratioWatermarkId = perRatioConfig.watermarkId;
+        if (ratioWatermarkId && ratioWatermarkId !== settings.watermarkId) {
+          const ratioWatermark = await resolveWatermarkById(ratioWatermarkId);
+          if (ratioWatermark) {
+            ratioFilePath = ratioWatermark.filePath;
+            ratioWidth = ratioWatermark.width;
+            ratioHeight = ratioWatermark.height;
+            console.log(`[ExportTab] Using different watermark for ${ratio}:`, ratioWatermarkId);
+          } else {
+            console.warn(`[ExportTab] Failed to resolve per-ratio watermark for ${ratio}:`, ratioWatermarkId);
+          }
+        }
+
+        // Use per-ratio position if available, otherwise fall back to default
+        const position = perRatioConfig.position || {
+          x: settings.positionX ?? 12,
+          y: settings.positionY ?? 92,
+          opacity: settings.opacity ?? 80,
+          scale: settings.scale ?? 20,
+        };
+
+        resolvedPerRatioSettings[ratio] = {
+          watermarkId: ratioWatermarkId || settings.watermarkId,
+          filePath: ratioFilePath,
+          width: ratioWidth,
+          height: ratioHeight,
+          position,
+        };
+      } else {
+        // No per-ratio config, use default watermark with default position
+        resolvedPerRatioSettings[ratio] = {
+          watermarkId: settings.watermarkId,
+          filePath: mainWatermark.filePath,
+          width: mainWatermark.width,
+          height: mainWatermark.height,
+          position: {
+            x: settings.positionX ?? 12,
+            y: settings.positionY ?? 92,
+            opacity: settings.opacity ?? 80,
+            scale: settings.scale ?? 20,
+          },
+        };
+      }
+    }
+
+    return {
+      enabled: true,
+      watermarkId: settings.watermarkId,
+      filePath: mainWatermark.filePath,
+      width: mainWatermark.width,
+      height: mainWatermark.height,
+      positionX: settings.positionX ?? 12,
+      positionY: settings.positionY ?? 92,
+      opacity: settings.opacity ?? 80,
+      scale: settings.scale ?? 20,
+      perRatioSettings: resolvedPerRatioSettings,
+    };
+  }
 
   interface AppliedIntroOutro {
     id: string;
@@ -560,6 +652,12 @@
       // Manual configs are passed separately via manualFramingConfigs parameter
       const framingStrategy = null;
 
+      // Resolve creator profile watermark settings with file paths
+      // This ensures org watermarks are downloaded and file paths are resolved for the Rust backend
+      const resolvedWatermarkSettings = props.creatorProfileWatermarkSettings
+        ? await resolveCreatorWatermarkSettings(props.creatorProfileWatermarkSettings)
+        : null;
+
       if (props.editorMode && props.videoSources && props.videoSources.length > 0) {
         // Editor mode: build from video sources
         await handleEditorModeExport(
@@ -569,7 +667,8 @@
           textOverlaysForExport,
           stickersForExport,
           clipWatermarksForExport,
-          framingStrategy
+          framingStrategy,
+          resolvedWatermarkSettings
         );
       } else {
         // Clip mode: use the original segment-based approach
@@ -580,7 +679,8 @@
           textOverlaysForExport,
           stickersForExport,
           clipWatermarksForExport,
-          framingStrategy
+          framingStrategy,
+          resolvedWatermarkSettings
         );
       }
 
@@ -600,7 +700,8 @@
     textOverlaysForExport: any,
     stickersForExport: any,
     clipWatermarksForExport: any,
-    framingStrategy: string
+    framingStrategy: string,
+    resolvedWatermarkSettings: any | null
   ) {
     const { getRawVideosByProjectId } = await import('@/services/database');
 
@@ -708,7 +809,7 @@
       introDuration: introDuration,
       outroPath: outroPath,
       outroDuration: outroDuration,
-      watermarkSettings: props.creatorProfileWatermarkSettings || null,
+      watermarkSettings: resolvedWatermarkSettings,
       audioSettings: audioSettings,
       framingStrategy: framingStrategy,
       manualFramingConfigs: props.framingConfigs || null,
@@ -727,7 +828,8 @@
     textOverlaysForExport: any,
     stickersForExport: any,
     clipWatermarksForExport: any,
-    framingStrategy: string
+    framingStrategy: string,
+    resolvedWatermarkSettings: any | null
   ) {
     // In editor mode, video sources may come from different files
     // We need to:
@@ -817,7 +919,7 @@
         introDuration: introDuration,
         outroPath: outroPath,
         outroDuration: outroDuration,
-        watermarkSettings: props.creatorProfileWatermarkSettings || null,
+        watermarkSettings: resolvedWatermarkSettings,
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,
         manualFramingConfigs: props.framingConfigs || null,
@@ -892,7 +994,7 @@
         introDuration: introDuration,
         outroPath: outroPath,
         outroDuration: outroDuration,
-        watermarkSettings: props.creatorProfileWatermarkSettings || null,
+        watermarkSettings: resolvedWatermarkSettings,
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,
         manualFramingConfigs: props.framingConfigs || null,

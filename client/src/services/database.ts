@@ -242,6 +242,7 @@ export {
   getWatermarkImage,
   updateWatermarkImage,
   deleteWatermarkImage,
+  resolveWatermarkById,
 } from './database/watermarks';
 
 // Watermark preset exports
@@ -278,6 +279,7 @@ export {
   unlinkMonitoredStreamer,
   getCreatorProfileByMonitoredStreamer,
   getCreatorProfileByProjectId,
+  getCreatorProfileByPlatformId,
 } from './database/creator-profiles';
 
 // Audio settings exports

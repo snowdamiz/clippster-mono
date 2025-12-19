@@ -346,6 +346,44 @@ export async function getCreatorProfileByMonitoredStreamer(
   return await getCreatorProfile(links[0].creator_profile_id);
 }
 
+/**
+ * Get a creator profile by platform and platform ID (e.g., 'pumpfun' + mint ID, or 'kick' + username)
+ * This is useful when downloading from the VODs page to apply creator watermark settings
+ */
+export async function getCreatorProfileByPlatformId(
+  platform: CreatorPlatformLink['platform'],
+  platformId: string
+): Promise<CreatorProfileWithLinks | null> {
+  const db = await getDatabase();
+  const userId = getCurrentUserId();
+
+  // Find the platform link by platform + platform_id (case-insensitive for flexibility)
+  const links = await db.select<CreatorPlatformLink[]>(
+    'SELECT * FROM creator_platform_links WHERE platform = ? AND LOWER(platform_id) = LOWER(?)',
+    [platform, platformId]
+  );
+
+  if (links.length === 0) {
+    return null;
+  }
+
+  // Get the full creator profile
+  const profile = await getCreatorProfile(links[0].creator_profile_id);
+  
+  if (!profile) {
+    return null;
+  }
+
+  // Check if the user has access to this profile (either owned by them or shared)
+  if (profile.user_id !== null && profile.user_id !== userId) {
+    // Profile is owned by someone else - check if user is in the same organization
+    // For now, just return null if user doesn't own it and it's not a null user_id (shared) profile
+    return null;
+  }
+
+  return profile;
+}
+
 export async function getCreatorProfileByProjectId(
   projectId: string
 ): Promise<CreatorProfileWithLinks | null> {

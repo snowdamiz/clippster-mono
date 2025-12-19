@@ -2309,8 +2309,8 @@
             };
             console.log('[Projects] loadPreviewWatermark: Org watermark loaded from cache');
           } else {
-            // Not cached locally - stream directly from server URL
-            console.log('[Projects] loadPreviewWatermark: Org watermark not cached, fetching URL from server...');
+            // Not cached locally - download through Tauri (bypasses CORS)
+            console.log('[Projects] loadPreviewWatermark: Org watermark not cached, downloading from server...');
             try {
               const serverResponse = await getUserOrganizationAssets();
               if (serverResponse.success && serverResponse.assets) {
@@ -2318,27 +2318,34 @@
                   (a) => a.id === serverId && a.asset_type === 'watermark'
                 );
                 if (serverAsset && serverAsset.url) {
-                  console.log(
-                    '[Projects] loadPreviewWatermark: Using server URL directly for watermark:',
-                    serverAsset.name
-                  );
-                  // Use the server URL directly - measure dimensions from the loaded image
-                  const dimensions = await new Promise<{ width: number; height: number } | null>((resolve) => {
-                    const img = new Image();
-                    img.crossOrigin = 'anonymous';
-                    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-                    img.onerror = () => resolve(null);
-                    img.src = serverAsset.url;
-                  });
-                  previewWatermarkData.value = {
-                    dataUrl: serverAsset.url,
-                    width: dimensions?.width,
-                    height: dimensions?.height,
-                  };
-                  console.log('[Projects] loadPreviewWatermark: Org watermark streaming from URL:', {
-                    width: dimensions?.width,
-                    height: dimensions?.height,
-                  });
+                  console.log('[Projects] loadPreviewWatermark: Downloading org watermark:', serverAsset.name);
+                  // Download and cache the asset locally (bypasses CORS)
+                  const downloadResult = await ensureAssetDownloaded(serverAsset);
+                  if (downloadResult.success && downloadResult.filePath) {
+                    console.log('[Projects] loadPreviewWatermark: Org watermark downloaded to:', downloadResult.filePath);
+                    const dataUrl = await invoke<string>('read_file_as_data_url', {
+                      filePath: downloadResult.filePath,
+                    });
+                    // Measure dimensions from the loaded data URL
+                    const dimensions = await new Promise<{ width: number; height: number } | null>((resolve) => {
+                      const img = new Image();
+                      img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+                      img.onerror = () => resolve(null);
+                      img.src = dataUrl;
+                    });
+                    previewWatermarkData.value = {
+                      dataUrl,
+                      width: dimensions?.width || serverAsset.width || undefined,
+                      height: dimensions?.height || serverAsset.height || undefined,
+                    };
+                    console.log('[Projects] loadPreviewWatermark: Org watermark loaded from download:', {
+                      width: dimensions?.width,
+                      height: dimensions?.height,
+                    });
+                  } else {
+                    console.error('[Projects] loadPreviewWatermark: Failed to download org watermark:', downloadResult.error);
+                    return;
+                  }
                 } else {
                   console.log('[Projects] loadPreviewWatermark: Server asset not found for serverId:', serverId);
                   return;

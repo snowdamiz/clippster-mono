@@ -1231,21 +1231,67 @@
         return;
       }
 
+      console.log('[ClipEditorPreview] Loading creator watermark for ratio:', aspectRatio, 'ID:', targetWatermarkId);
+
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        const { getWatermarkImage } = await import('@/services/database');
+        const { getWatermarkImage, getWatermarkByServerId } = await import('@/services/database');
 
-        const watermark = await getWatermarkImage(targetWatermarkId);
-        if (watermark) {
-          const dataUrl = await invoke<string>('read_file_as_data_url', {
-            filePath: watermark.file_path,
-          });
+        let dataUrl: string | null = null;
+        let dimensions: { width: number; height: number } | null = null;
+
+        // Check if this is an organization asset (ID format: org-asset-{serverId})
+        if (targetWatermarkId.startsWith('org-asset-')) {
+          const serverId = parseInt(targetWatermarkId.replace('org-asset-', ''), 10);
+          console.log('[ClipEditorPreview] Loading org watermark with serverId:', serverId);
+
+          if (!isNaN(serverId)) {
+            // First try to load from local cache
+            const localWatermark = await getWatermarkByServerId(serverId);
+            if (localWatermark) {
+              console.log('[ClipEditorPreview] Found cached org watermark:', localWatermark.name);
+              dataUrl = await invoke<string>('read_file_as_data_url', { filePath: localWatermark.file_path });
+              dimensions = { width: localWatermark.width || 0, height: localWatermark.height || 0 };
+            } else {
+              // Not cached locally - download through Tauri (bypasses CORS)
+              console.log('[ClipEditorPreview] Org watermark not cached, downloading from server...');
+              const { getUserOrganizationAssets } = await import('@/services/organizationAssetsApi');
+              const { ensureAssetDownloaded } = await import('@/services/orgAssetSync');
+              const serverResponse = await getUserOrganizationAssets();
+              if (serverResponse.success && serverResponse.assets) {
+                const serverAsset = serverResponse.assets.find((a) => a.id === serverId && a.asset_type === 'watermark');
+                if (serverAsset && serverAsset.url) {
+                  console.log('[ClipEditorPreview] Downloading org watermark:', serverAsset.name);
+                  // Download and cache the asset locally (bypasses CORS)
+                  const downloadResult = await ensureAssetDownloaded(serverAsset);
+                  if (downloadResult.success && downloadResult.filePath) {
+                    console.log('[ClipEditorPreview] Org watermark downloaded to:', downloadResult.filePath);
+                    dataUrl = await invoke<string>('read_file_as_data_url', { filePath: downloadResult.filePath });
+                    dimensions = { width: serverAsset.width || 0, height: serverAsset.height || 0 };
+                  } else {
+                    console.error('[ClipEditorPreview] Failed to download org watermark:', downloadResult.error);
+                  }
+                }
+              }
+            }
+          }
+        } else {
+          // Regular watermark lookup by ID
+          const watermark = await getWatermarkImage(targetWatermarkId);
+          if (watermark) {
+            dataUrl = await invoke<string>('read_file_as_data_url', { filePath: watermark.file_path });
+            dimensions = { width: watermark.width || 0, height: watermark.height || 0 };
+          }
+        }
+
+        if (dataUrl) {
           creatorWatermarkDataUrl.value = dataUrl;
-          // Set dimensions from DB if available, but onCreatorWatermarkLoad will refine it
-          creatorWatermarkDimensions.value = {
-            width: watermark.width || 0,
-            height: watermark.height || 0,
-          };
+          creatorWatermarkDimensions.value = dimensions;
+          console.log('[ClipEditorPreview] Loaded creator watermark successfully');
+        } else {
+          console.log('[ClipEditorPreview] No watermark data found for ID:', targetWatermarkId);
+          creatorWatermarkDataUrl.value = null;
+          creatorWatermarkDimensions.value = null;
         }
       } catch (error) {
         console.error('[ClipEditorPreview] Failed to load creator watermark:', error);
@@ -1260,6 +1306,12 @@
   const shouldShowCreatorWatermark = computed(() => {
     if (!props.creatorProfileWatermarkSettings?.enabled) return false;
     if (!creatorWatermarkDataUrl.value) return false;
+
+    // Don't show creator watermark if timeline watermarks exist
+    // Timeline watermarks handle display (and will use creator settings as fallback for positioning)
+    if (props.watermarks && props.watermarks.length > 0) {
+      return false;
+    }
 
     // Check if this aspect ratio has watermark disabled in per-ratio settings
     const perRatio = props.creatorProfileWatermarkSettings.perRatioSettings;
@@ -1321,12 +1373,20 @@
     let scale = settings.scale ?? 20;
 
     const perRatio = settings.perRatioSettings;
+    console.log('[ClipEditorPreview] getCreatorWatermarkOverlayStyle:', {
+      previewAspectRatio: props.previewAspectRatio,
+      hasPerRatio: !!perRatio,
+      perRatioKeys: perRatio ? Object.keys(perRatio) : [],
+      ratioConfig: perRatio ? perRatio[props.previewAspectRatio] : null,
+      defaultPosition: { x: positionX, y: positionY, scale },
+    });
     if (perRatio && perRatio[props.previewAspectRatio]) {
       const config = perRatio[props.previewAspectRatio];
       if (config.position) {
         positionX = config.position.x ?? positionX;
         positionY = config.position.y ?? positionY;
         scale = config.position.scale ?? scale;
+        console.log('[ClipEditorPreview] Using per-ratio position:', { x: positionX, y: positionY, scale });
       }
     }
 
@@ -1652,13 +1712,46 @@
   // Get watermark config for current aspect ratio
   function getWatermarkConfigForRatio(watermark: ClipWatermark): ClipWatermarkRatioConfig {
     const ratio = props.previewAspectRatio;
+    
+    // FIRST: Try to use creator profile settings if watermark matches
+    // This ensures we always use the source-of-truth positioning for creator watermarks
+    const creatorSettings = props.creatorProfileWatermarkSettings;
+    if (creatorSettings?.perRatioSettings && watermark.watermarkId) {
+      const creatorWmId = creatorSettings.watermarkId;
+      const wmId = watermark.watermarkId;
+      
+      // Check if IDs match (handle both raw and org-asset-X formats)
+      const idsMatch = (creatorWmId === wmId) || 
+                       (creatorWmId && wmId && (
+                         creatorWmId === `org-asset-${wmId}` ||
+                         wmId === `org-asset-${creatorWmId}` ||
+                         creatorWmId.replace('org-asset-', '') === wmId.replace('org-asset-', '')
+                       ));
+      
+      if (idsMatch) {
+        const ratioSettings = creatorSettings.perRatioSettings[ratio];
+        if (ratioSettings?.position) {
+          console.log('[ClipEditorPreview] Using creator profile settings for ratio:', ratio, {
+            watermarkId: wmId,
+            position: ratioSettings.position,
+          });
+          return {
+            position: { x: ratioSettings.position.x, y: ratioSettings.position.y },
+            scale: ratioSettings.position.scale,
+            opacity: ratioSettings.position.opacity,
+            isFullFrameOverlay: ratioSettings.position.isFullFrameOverlay,
+          };
+        }
+      }
+    }
+    
+    // SECOND: Fall back to stored perRatioConfigs (for non-creator watermarks)
     const perRatioConfig = watermark.perRatioConfigs?.[ratio];
-
     if (perRatioConfig) {
       return perRatioConfig;
     }
 
-    // Fall back to default values
+    // THIRD: Fall back to default values
     return {
       position: { ...watermark.position },
       scale: watermark.scale,
@@ -1681,8 +1774,38 @@
   const WATERMARK_BASE_WIDTH = 162;
 
   // Get the wrapper style for watermark positioning (no scale)
+  // Check if watermark matches creator profile watermark ID
+  function isCreatorProfileWatermark(watermark: ClipWatermark): boolean {
+    const creatorSettings = props.creatorProfileWatermarkSettings;
+    if (!creatorSettings?.watermarkId || !watermark.watermarkId) return false;
+    
+    const creatorWmId = String(creatorSettings.watermarkId);
+    const wmId = String(watermark.watermarkId);
+    
+    // Check for direct match or org-asset format variations
+    return (creatorWmId === wmId) || 
+           (creatorWmId === `org-asset-${wmId}`) ||
+           (wmId === `org-asset-${creatorWmId}`) ||
+           (creatorWmId.replace('org-asset-', '') === wmId.replace('org-asset-', ''));
+  }
+
   function getWatermarkWrapperStyle(watermark: ClipWatermark): Record<string, string> {
     const config = getWatermarkConfigForRatio(watermark);
+    const useCreatorStyle = isCreatorProfileWatermark(watermark);
+
+    // Log the actual position values being used
+    console.log('[ClipEditorPreview] getWatermarkWrapperStyle for ratio:', props.previewAspectRatio, {
+      watermarkId: watermark.watermarkId,
+      useCreatorStyle,
+      hasPerRatioConfigs: !!watermark.perRatioConfigs,
+      perRatioConfigKeys: watermark.perRatioConfigs ? Object.keys(watermark.perRatioConfigs) : [],
+      ratioConfigRaw: JSON.stringify(watermark.perRatioConfigs?.[props.previewAspectRatio]),
+      resolvedConfigRaw: JSON.stringify(config),
+      actualPositionX: config.position?.x,
+      actualPositionY: config.position?.y,
+      actualScale: config.scale,
+      actualOpacity: config.opacity,
+    });
 
     // Full-frame overlay mode: position at 0,0 and fill the entire frame
     if (config.isFullFrameOverlay) {
@@ -1693,6 +1816,18 @@
         opacity: String(config.opacity / 100),
         width: '100%',
         height: '100%',
+      };
+    }
+
+    // Use creator-style percentage-based sizing for creator profile watermarks
+    // This matches getCreatorWatermarkOverlayStyle exactly
+    if (useCreatorStyle) {
+      return {
+        left: `${config.position.x}%`,
+        top: `${config.position.y}%`,
+        transform: 'translate(-50%, -50%)',
+        opacity: String(config.opacity / 100),
+        width: `${config.scale}%`,  // Percentage-based sizing like creator watermark
       };
     }
 
@@ -1733,6 +1868,13 @@
       };
     }
 
+    // Creator profile watermarks use percentage-based sizing in wrapper, no transform needed
+    if (isCreatorProfileWatermark(watermark)) {
+      return {
+        transform: 'none',
+      };
+    }
+
     // Use local value during drag for instant feedback
     const watermarkScale = localWatermarkScales.value[watermark.id] ?? config.scale / 15; // Convert from percentage to multiplier
 
@@ -1751,6 +1893,16 @@
         width: '100%',
         height: '100%',
         objectFit: 'cover',
+      };
+    }
+
+    // Creator profile watermarks use percentage-based sizing (wrapper has width: X%)
+    // Image should fill the wrapper while maintaining aspect ratio - matches creator watermark styling
+    if (isCreatorProfileWatermark(watermark)) {
+      return {
+        maxWidth: '100%',
+        maxHeight: '100%',
+        objectFit: 'contain',
       };
     }
 

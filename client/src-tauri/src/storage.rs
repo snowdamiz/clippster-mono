@@ -1416,6 +1416,82 @@ pub fn save_org_asset_file(
     Ok(dest_str)
 }
 
+/// Tauri command to download a file from a URL and save it as an organization asset.
+/// This bypasses CORS restrictions by downloading through Rust.
+#[tauri::command]
+pub async fn download_org_asset_from_url(
+    url: String,
+    filename: String,
+    asset_type: String,
+    organization_id: String,
+) -> Result<String, String> {
+    use std::fs;
+
+    println!("[Rust] Downloading org asset from URL: {}", url);
+
+    // Download the file using reqwest (bypasses CORS)
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch URL: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("HTTP error: {}", response.status()));
+    }
+
+    let data = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read response body: {}", e))?;
+
+    println!("[Rust] Downloaded {} bytes", data.len());
+
+    // Get base storage paths
+    let paths = init_storage_dirs()?;
+
+    // Determine the target directory based on asset type
+    let base_asset_dir = match asset_type.as_str() {
+        "intros" => paths.intros.clone(),
+        "outros" => paths.outros.clone(),
+        "watermarks" => paths.watermarks.clone(),
+        "audio" => paths.audio.clone(),
+        "images" => paths.images.clone(),
+        "thumbnails" => paths.thumbnails.clone(),
+        _ => paths.assets.clone(),
+    };
+
+    // Create organization-specific subdirectory
+    let org_dir = base_asset_dir.join("org").join(&organization_id);
+    fs::create_dir_all(&org_dir)
+        .map_err(|e| format!("Failed to create organization asset directory: {}", e))?;
+
+    // Sanitize filename
+    let safe_filename = sanitize_filename(&filename);
+    
+    // Generate unique filename with timestamp to avoid collisions
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    
+    let final_filename = format!("{}_{}", timestamp, safe_filename);
+    let destination_path = org_dir.join(&final_filename);
+
+    // Write the file
+    fs::write(&destination_path, &data)
+        .map_err(|e| format!("Failed to write organization asset file: {}", e))?;
+
+    let dest_str = destination_path.to_string_lossy().to_string();
+    println!(
+        "[Rust] Organization asset downloaded and saved: {} -> {}",
+        filename, dest_str
+    );
+
+    Ok(dest_str)
+}
+
 /// Helper function to sanitize filenames for safe storage
 fn sanitize_filename(filename: &str) -> String {
     filename
