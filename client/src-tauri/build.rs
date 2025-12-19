@@ -1,7 +1,9 @@
 use std::env;
 use std::fs::{self, File};
-use std::io::{self, Cursor};
+use std::io::{self, Cursor, Read};
 use std::path::{Path, PathBuf};
+
+const NODE_VERSION: &str = "v20.11.0";
 
 fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
@@ -12,8 +14,19 @@ fn main() {
     let binaries_dir = manifest_dir.join("binaries");
     fs::create_dir_all(&binaries_dir).expect("Failed to create binaries directory");
 
+    // Download ffmpeg
+    download_ffmpeg(&binaries_dir, &target_os, &target_arch);
+
+    // Download node
+    download_node(&binaries_dir, &target_os, &target_arch);
+
+    // Run tauri-build
+    tauri_build::build();
+}
+
+fn download_ffmpeg(binaries_dir: &Path, target_os: &str, target_arch: &str) {
     // Platform-specific ffmpeg binary names and URLs
-    let (ffmpeg_name, download_url) = match (target_os.as_str(), target_arch.as_str()) {
+    let (ffmpeg_name, download_url) = match (target_os, target_arch) {
         ("windows", "x86_64") => (
             "ffmpeg-x86_64-pc-windows-msvc.exe",
             "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
@@ -31,7 +44,10 @@ fn main() {
             "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz",
         ),
         _ => {
-            println!("cargo:warning=Unsupported platform: {}-{}", target_os, target_arch);
+            println!(
+                "cargo:warning=Unsupported platform for ffmpeg: {}-{}",
+                target_os, target_arch
+            );
             return;
         }
     };
@@ -44,8 +60,6 @@ fn main() {
             "cargo:warning=ffmpeg binary already exists at {:?}",
             ffmpeg_path
         );
-        // Still need to run tauri-build
-        tauri_build::build();
         return;
     }
 
@@ -55,7 +69,7 @@ fn main() {
     );
 
     // Download ffmpeg
-    match download_and_extract_ffmpeg(download_url, &ffmpeg_path, &target_os) {
+    match download_and_extract_ffmpeg(download_url, &ffmpeg_path) {
         Ok(_) => println!(
             "cargo:warning=Successfully downloaded ffmpeg to {:?}",
             ffmpeg_path
@@ -69,15 +83,92 @@ fn main() {
             println!("cargo:warning=Extract and place at: {:?}", ffmpeg_path);
         }
     }
+}
 
-    // Run tauri-build after ensuring ffmpeg is present
-    tauri_build::build();
+fn download_node(binaries_dir: &Path, target_os: &str, target_arch: &str) {
+    // Platform-specific node binary names and URLs
+    let (node_name, download_url, archive_type, extract_path) = match (target_os, target_arch) {
+        ("windows", "x86_64") => (
+            "node-x86_64-pc-windows-msvc.exe",
+            format!(
+                "https://nodejs.org/dist/{}/node-{}-win-x64.zip",
+                NODE_VERSION, NODE_VERSION
+            ),
+            "zip",
+            format!("node-{}-win-x64/node.exe", NODE_VERSION),
+        ),
+        ("macos", "x86_64") => (
+            "node-x86_64-apple-darwin",
+            format!(
+                "https://nodejs.org/dist/{}/node-{}-darwin-x64.tar.gz",
+                NODE_VERSION, NODE_VERSION
+            ),
+            "tar.gz",
+            format!("node-{}-darwin-x64/bin/node", NODE_VERSION),
+        ),
+        ("macos", "aarch64") => (
+            "node-aarch64-apple-darwin",
+            format!(
+                "https://nodejs.org/dist/{}/node-{}-darwin-arm64.tar.gz",
+                NODE_VERSION, NODE_VERSION
+            ),
+            "tar.gz",
+            format!("node-{}-darwin-arm64/bin/node", NODE_VERSION),
+        ),
+        ("linux", "x86_64") => (
+            "node-x86_64-unknown-linux-gnu",
+            format!(
+                "https://nodejs.org/dist/{}/node-{}-linux-x64.tar.gz",
+                NODE_VERSION, NODE_VERSION
+            ),
+            "tar.gz",
+            format!("node-{}-linux-x64/bin/node", NODE_VERSION),
+        ),
+        _ => {
+            println!(
+                "cargo:warning=Unsupported platform for node: {}-{}",
+                target_os, target_arch
+            );
+            return;
+        }
+    };
+
+    let node_path = binaries_dir.join(node_name);
+
+    // Skip download if already exists
+    if node_path.exists() {
+        println!(
+            "cargo:warning=node binary already exists at {:?}",
+            node_path
+        );
+        return;
+    }
+
+    println!(
+        "cargo:warning=Downloading node {} for {}-{}...",
+        NODE_VERSION, target_os, target_arch
+    );
+
+    // Download node
+    match download_and_extract_node(&download_url, &node_path, archive_type, &extract_path) {
+        Ok(_) => println!(
+            "cargo:warning=Successfully downloaded node to {:?}",
+            node_path
+        ),
+        Err(e) => {
+            println!("cargo:warning=Failed to download node: {}", e);
+            println!(
+                "cargo:warning=Please download manually from: {}",
+                download_url
+            );
+            println!("cargo:warning=Extract and place at: {:?}", node_path);
+        }
+    }
 }
 
 fn download_and_extract_ffmpeg(
     url: &str,
     output_path: &Path,
-    _target_os: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Download the file
     let response = ureq::get(url).call()?;
@@ -86,26 +177,54 @@ fn download_and_extract_ffmpeg(
 
     // Extract based on file type
     if url.ends_with(".zip") {
-        extract_from_zip(&bytes, output_path)?;
+        extract_ffmpeg_from_zip(&bytes, output_path)?;
     } else if url.ends_with(".tar.xz") {
-        extract_from_tar_xz(&bytes, output_path)?;
+        extract_ffmpeg_from_tar_xz(&bytes, output_path)?;
     } else {
         return Err("Unsupported archive format".into());
     }
 
-    // Set executable permissions on Unix-like systems
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(output_path)?.permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(output_path, perms)?;
-    }
-
+    set_executable_permissions(output_path)?;
     Ok(())
 }
 
-fn extract_from_zip(bytes: &[u8], output_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn download_and_extract_node(
+    url: &str,
+    output_path: &Path,
+    archive_type: &str,
+    extract_path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Download the file
+    let response = ureq::get(url).call()?;
+    let mut bytes = Vec::new();
+    response.into_reader().read_to_end(&mut bytes)?;
+
+    // Extract based on archive type
+    match archive_type {
+        "zip" => extract_node_from_zip(&bytes, output_path, extract_path)?,
+        "tar.gz" => extract_node_from_tar_gz(&bytes, output_path, extract_path)?,
+        _ => return Err("Unsupported archive format".into()),
+    }
+
+    set_executable_permissions(output_path)?;
+    Ok(())
+}
+
+fn set_executable_permissions(_output_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(_output_path)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(_output_path, perms)?;
+    }
+    Ok(())
+}
+
+fn extract_ffmpeg_from_zip(
+    bytes: &[u8],
+    output_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     let reader = Cursor::new(bytes);
     let mut archive = zip::ZipArchive::new(reader)?;
 
@@ -131,7 +250,10 @@ fn extract_from_zip(bytes: &[u8], output_path: &Path) -> Result<(), Box<dyn std:
     Err("ffmpeg binary not found in archive".into())
 }
 
-fn extract_from_tar_xz(bytes: &[u8], output_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn extract_ffmpeg_from_tar_xz(
+    bytes: &[u8],
+    output_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     let reader = Cursor::new(bytes);
     let decompressor = xz2::read::XzDecoder::new(reader);
     let mut archive = tar::Archive::new(decompressor);
@@ -154,4 +276,56 @@ fn extract_from_tar_xz(bytes: &[u8], output_path: &Path) -> Result<(), Box<dyn s
     }
 
     Err("ffmpeg binary not found in archive".into())
+}
+
+fn extract_node_from_zip(
+    bytes: &[u8],
+    output_path: &Path,
+    extract_path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let reader = Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(reader)?;
+
+    // Find the specific node executable path
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        let file_name = file.name().to_string();
+
+        // Normalize path separators for comparison
+        let normalized_name = file_name.replace('\\', "/");
+        let normalized_extract = extract_path.replace('\\', "/");
+
+        if normalized_name == normalized_extract || normalized_name.ends_with(&normalized_extract) {
+            let mut output_file = File::create(output_path)?;
+            io::copy(&mut file, &mut output_file)?;
+            return Ok(());
+        }
+    }
+
+    Err(format!("node binary not found in archive at path: {}", extract_path).into())
+}
+
+fn extract_node_from_tar_gz(
+    bytes: &[u8],
+    output_path: &Path,
+    extract_path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let reader = Cursor::new(bytes);
+    let decompressor = flate2::read::GzDecoder::new(reader);
+    let mut archive = tar::Archive::new(decompressor);
+
+    // Find the specific node executable path
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let path = entry.path()?;
+        let path_str = path.to_string_lossy();
+
+        if path_str == extract_path || path_str.ends_with(extract_path) {
+            let mut output_file = File::create(output_path)?;
+            io::copy(&mut entry, &mut output_file)?;
+            return Ok(());
+        }
+    }
+
+    Err(format!("node binary not found in archive at path: {}", extract_path).into())
 }
