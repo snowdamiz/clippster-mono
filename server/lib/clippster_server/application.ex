@@ -65,6 +65,10 @@ defmodule ClippsterServer.Application do
       ClippsterServer.Auth.ChallengeStore,
       # Price service for SOL/USD rates
       ClippsterServer.PriceService,
+      # Social media analytics sync worker
+      ClippsterServer.Social.AnalyticsSyncWorker,
+      # Social media token refresh worker
+      ClippsterServer.Social.TokenRefreshWorker,
       # Start to serve requests, typically the last entry
       ClippsterServerWeb.Endpoint
     ]

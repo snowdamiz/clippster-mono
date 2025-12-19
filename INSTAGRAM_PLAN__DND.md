@@ -70,33 +70,82 @@ Create new migrations in [`server/priv/repo/migrations/`](server/priv/repo/migra
 - Track published posts with analytics fields
 - Links to social account, creator profile, and submitting user
 
-## Phase 2: Server - Instagram OAuth
+## Phase 2: Client-Side Facebook SDK OAuth (UPDATED)
 
-### New Files
+### Why Client-Side SDK?
 
-- [`server/lib/clippster_server/social/`](server/lib/clippster_server/social/) - New context module
-  - `social_account.ex` - Schema
-  - `social_account_assignment.ex` - Schema
-  - `post_submission.ex` - Schema  
-  - `instagram_api.ex` - Instagram Graph API client
-  - `token_encryption.ex` - Encrypt/decrypt OAuth tokens
+The Instagram Graph API requires authentication through **Facebook Login** (not Instagram Basic Display API which is deprecated). Using the Facebook JavaScript SDK provides:
 
-### OAuth Flow
+- Better UX with native popup flow
+- Proper handling of Instagram Business/Creator account permissions  
+- No server-side redirect complexity
+- Direct token retrieval in browser
 
-1. Admin initiates connect from dashboard
-2. Server redirects to Instagram OAuth (Meta Business API)
-3. Callback exchanges code for access/refresh tokens
-4. Tokens encrypted and stored with account metadata
+### OAuth Flow (Client-Side)
 
-**Key Routes to add in [`router.ex`](server/lib/clippster_server_web/router.ex):**
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Client    │     │ Facebook SDK│     │   Facebook  │     │   Server    │
+│  (Vue App)  │     │  (Browser)  │     │   OAuth     │     │  (Elixir)   │
+└──────┬──────┘     └──────┬──────┘     └──────┬──────┘     └──────┬──────┘
+       │                   │                   │                   │
+       │  FB.login()       │                   │                   │
+       │──────────────────>│                   │                   │
+       │                   │   OAuth Popup     │                   │
+       │                   │──────────────────>│                   │
+       │                   │                   │                   │
+       │                   │   Access Token    │                   │
+       │                   │<──────────────────│                   │
+       │   authResponse    │                   │                   │
+       │<──────────────────│                   │                   │
+       │                   │                   │                   │
+       │   POST /social-accounts (with token)  │                   │
+       │───────────────────────────────────────────────────────────>│
+       │                   │                   │                   │
+       │                   │                   │   Get IG accounts │
+       │                   │                   │   via Graph API   │
+       │                   │                   │<──────────────────│
+       │                   │                   │                   │
+       │   Account created │                   │                   │
+       │<───────────────────────────────────────────────────────────│
+```
+
+### Required Facebook Permissions
+
+```javascript
+FB.login(callback, {
+  scope: [
+    'instagram_basic',           // Basic Instagram account info
+    'instagram_content_publish', // Publish to Instagram
+    'instagram_manage_insights', // Read analytics
+    'pages_show_list',           // List connected Facebook Pages
+    'pages_read_engagement'      // Page engagement metrics
+  ].join(','),
+  return_scopes: true
+});
+```
+
+### New/Updated Files
+
+**Client:**
+- `client/src/lib/facebook-sdk.ts` - Facebook SDK initialization and helpers
+- `client/src/components/organization/SocialAccountsManager.vue` - Uses FB.login()
+
+**Server:**
+- `server/lib/clippster_server/social/platforms/instagram.ex` - Remove OAuth redirect, keep Graph API methods
+- `server/lib/clippster_server_web/controllers/social_account_controller.ex` - Accept token from client
+
+### Key Routes (Simplified)
 
 ```elixir
-# Instagram OAuth
-get "/auth/instagram", SocialAuthController, :instagram_request
-get "/auth/instagram/callback", SocialAuthController, :instagram_callback
+# No OAuth redirect routes needed - client handles OAuth via FB SDK
 
 # Organization social accounts (protected)
-resources "/organizations/:org_id/social-accounts", SocialAccountController
+get "/organizations/:org_id/social-accounts", SocialAccountController, :index
+post "/organizations/:org_id/social-accounts", SocialAccountController, :create  # Receives token from client
+get "/organizations/:org_id/social-accounts/:id", SocialAccountController, :show
+put "/organizations/:org_id/social-accounts/:id", SocialAccountController, :update
+delete "/organizations/:org_id/social-accounts/:id", SocialAccountController, :delete
 post "/organizations/:org_id/social-accounts/:id/refresh", SocialAccountController, :refresh_token
 
 # Account assignments
@@ -174,14 +223,19 @@ end
 ## Environment Variables Required
 
 ```bash
-# Instagram/Meta
-INSTAGRAM_CLIENT_ID=
-INSTAGRAM_CLIENT_SECRET=
-INSTAGRAM_REDIRECT_URI=
+# Facebook App (for Instagram Graph API)
+# Get these from https://developers.facebook.com/apps/
+VITE_FACEBOOK_APP_ID=           # Client-side (public)
+FACEBOOK_APP_SECRET=            # Server-side only (private)
 
-# Token encryption key
+# Token encryption key (generate with ClippsterServer.Social.TokenEncryption.generate_key())
 SOCIAL_TOKEN_ENCRYPTION_KEY=
 ```
+
+**Note:** The Facebook App must have:
+1. Instagram Graph API product added
+2. Instagram Basic Display product added (for backward compatibility)
+3. Valid OAuth redirect URIs configured (though not used with SDK flow)
 
 ## Key Implementation Notes
 
@@ -191,40 +245,25 @@ SOCIAL_TOKEN_ENCRYPTION_KEY=
 4. **Permissions**: Only org admins can connect accounts; members can only use assigned accounts
 5. **Analytics Sync**: Batch sync to minimize API calls, respect rate limits
 
-## Files to Create
+## Files to Create/Update
 
 | File | Purpose |
-
 |------|---------|
-
 | `server/lib/clippster_server/social.ex` | Social context module |
-
 | `server/lib/clippster_server/social/social_account.ex` | Schema |
-
 | `server/lib/clippster_server/social/social_account_assignment.ex` | Schema |
-
 | `server/lib/clippster_server/social/post_submission.ex` | Schema |
-
-| `server/lib/clippster_server/social/instagram_api.ex` | IG API client |
-
+| `server/lib/clippster_server/social/platforms/instagram.ex` | IG Graph API client (no OAuth redirect) |
 | `server/lib/clippster_server/social/token_encryption.ex` | Token crypto |
-
 | `server/lib/clippster_server/social/analytics_sync_worker.ex` | Sync worker |
-
 | `server/lib/clippster_server/social/platform.ex` | Platform behavior |
-
-| `server/lib/clippster_server_web/controllers/social_auth_controller.ex` | OAuth controller |
-
 | `server/lib/clippster_server_web/controllers/social_account_controller.ex` | Accounts CRUD |
-
 | `server/lib/clippster_server_web/controllers/post_submission_controller.ex` | Posts controller |
-
+| `client/src/lib/facebook-sdk.ts` | **NEW** - Facebook SDK initialization |
 | `client/src/services/socialAccountsApi.ts` | API service |
-
-| `client/src/components/organization/SocialAccountsManager.vue` | Account management UI |
-
+| `client/src/components/organization/SocialAccountsManager.vue` | Account management UI (uses FB SDK) |
 | `client/src/components/organization/SocialAccountAssignments.vue` | Assignment UI |
-
 | `client/src/components/organization/PostSubmissionsList.vue` | Posts dashboard |
-
 | `client/src/components/organization/PublishDialog.vue` | Publish modal |
+
+**Removed:** `social_auth_controller.ex` - No longer needed with client-side SDK flow

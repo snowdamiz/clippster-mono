@@ -1,0 +1,785 @@
+/**
+ * Social Accounts API Service
+ * Handles communication with the server for social media account management,
+ * account assignments, and post submissions.
+ */
+
+import api from './api';
+
+// ============================================
+// Types - Social Accounts
+// ============================================
+
+export interface SocialAccountAssignment {
+  id: number;
+  user_id: number;
+  assigned_at: string;
+  user: {
+    id: number;
+    email: string;
+    name: string | null;
+    avatar_url: string | null;
+  } | null;
+  assigned_by: {
+    id: number;
+    email: string;
+    name: string | null;
+  } | null;
+}
+
+export interface SocialAccount {
+  id: number;
+  platform: 'instagram' | 'tiktok' | 'twitter' | 'youtube';
+  platform_user_id: string;
+  username: string;
+  display_name: string | null;
+  profile_image_url: string | null;
+  is_active: boolean;
+  connected_at: string;
+  token_expires_at: string | null;
+  inserted_at: string;
+  updated_at: string;
+  assignments?: SocialAccountAssignment[];
+}
+
+export interface ListSocialAccountsResponse {
+  success: boolean;
+  accounts: SocialAccount[];
+  error?: string;
+}
+
+export interface SocialAccountResponse {
+  success: boolean;
+  account?: SocialAccount;
+  error?: string;
+}
+
+export interface AssignmentResponse {
+  success: boolean;
+  assigned?: number;
+  total?: number;
+  error?: string;
+}
+
+export interface ListAssignmentsResponse {
+  success: boolean;
+  assignments: SocialAccountAssignment[];
+  error?: string;
+}
+
+// ============================================
+// Types - Post Submissions
+// ============================================
+
+export interface PostAnalytics {
+  view_count: number;
+  like_count: number;
+  comment_count: number;
+  share_count: number;
+  save_count: number;
+  reach_count: number;
+  impressions_count: number;
+}
+
+export interface PostSubmission {
+  id: number;
+  organization_id: number;
+  platform: string;
+  post_id: string | null;
+  post_url: string | null;
+  media_type: string | null;
+  caption: string | null;
+  media_url: string | null;
+  thumbnail_url: string | null;
+  status: 'pending' | 'publishing' | 'published' | 'failed';
+  error_message: string | null;
+  posted_at: string | null;
+  last_synced_at: string | null;
+  manual_override: boolean;
+  analytics: PostAnalytics;
+  social_account: {
+    id: number;
+    platform: string;
+    username: string;
+    display_name: string | null;
+    profile_image_url: string | null;
+  } | null;
+  creator_profile: {
+    id: number;
+    name: string;
+    profile_image_url: string | null;
+  } | null;
+  submitted_by: {
+    id: number;
+    email: string;
+    name: string | null;
+    avatar_url: string | null;
+  } | null;
+  inserted_at: string;
+  updated_at: string;
+}
+
+export interface ListPostsResponse {
+  success: boolean;
+  posts: PostSubmission[];
+  total: number;
+  limit: number;
+  offset: number;
+  error?: string;
+}
+
+export interface PostResponse {
+  success: boolean;
+  post?: PostSubmission;
+  message?: string;
+  error?: string;
+}
+
+export interface AnalyticsSummary {
+  total_posts: number;
+  total_views: number;
+  total_likes: number;
+  total_comments: number;
+  total_shares: number;
+  total_saves: number;
+  total_reach: number;
+  total_impressions: number;
+}
+
+export interface AnalyticsSummaryResponse {
+  success: boolean;
+  summary?: AnalyticsSummary;
+  error?: string;
+}
+
+export interface DeleteResponse {
+  success: boolean;
+  error?: string;
+}
+
+// ============================================
+// Social Account API Functions
+// ============================================
+
+/**
+ * List all social accounts for an organization.
+ */
+export async function listSocialAccounts(
+  organizationId: string | number,
+  includeInactive = false
+): Promise<ListSocialAccountsResponse> {
+  try {
+    const params = includeInactive ? { include_inactive: 'true' } : {};
+    const response = await api.get<ListSocialAccountsResponse>(
+      `/organizations/${organizationId}/social-accounts`,
+      { params }
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to list accounts:', error);
+    return {
+      success: false,
+      accounts: [],
+      error: error.response?.data?.error || error.message || 'Failed to list accounts',
+    };
+  }
+}
+
+/**
+ * Get a single social account.
+ */
+export async function getSocialAccount(
+  organizationId: string | number,
+  accountId: number
+): Promise<SocialAccountResponse> {
+  try {
+    const response = await api.get<SocialAccountResponse>(
+      `/organizations/${organizationId}/social-accounts/${accountId}`
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to get account:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to get account',
+    };
+  }
+}
+
+/**
+ * Complete a social account connection after OAuth callback.
+ */
+export async function completeSocialConnection(data: {
+  organization_id: string | number;
+  platform: string;
+  platform_user_id: string;
+  username: string;
+  display_name?: string;
+  profile_image_url?: string;
+  access_token: string;
+  token_expires_at?: string;
+}): Promise<SocialAccountResponse> {
+  try {
+    const response = await api.post<SocialAccountResponse>('/auth/social/complete', data);
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to complete connection:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to complete connection',
+    };
+  }
+}
+
+/**
+ * Create a social account manually (for testing or alternative flows).
+ */
+export async function createSocialAccount(
+  organizationId: string | number,
+  data: {
+    platform: string;
+    platform_user_id: string;
+    username: string;
+    display_name?: string;
+    profile_image_url?: string;
+    access_token?: string;
+    refresh_token?: string;
+    token_expires_at?: string;
+  }
+): Promise<SocialAccountResponse> {
+  try {
+    const response = await api.post<SocialAccountResponse>(
+      `/organizations/${organizationId}/social-accounts`,
+      data
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to create account:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to create account',
+    };
+  }
+}
+
+/**
+ * Update a social account.
+ */
+export async function updateSocialAccount(
+  organizationId: string | number,
+  accountId: number,
+  data: {
+    display_name?: string;
+    is_active?: boolean;
+  }
+): Promise<SocialAccountResponse> {
+  try {
+    const response = await api.put<SocialAccountResponse>(
+      `/organizations/${organizationId}/social-accounts/${accountId}`,
+      data
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to update account:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to update account',
+    };
+  }
+}
+
+/**
+ * Delete a social account.
+ */
+export async function deleteSocialAccount(
+  organizationId: string | number,
+  accountId: number
+): Promise<DeleteResponse> {
+  try {
+    const response = await api.delete<DeleteResponse>(
+      `/organizations/${organizationId}/social-accounts/${accountId}`
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to delete account:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to delete account',
+    };
+  }
+}
+
+/**
+ * Trigger token refresh for an account.
+ */
+export async function refreshAccountToken(
+  organizationId: string | number,
+  accountId: number
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const response = await api.post<{ success: boolean; message?: string }>(
+      `/organizations/${organizationId}/social-accounts/${accountId}/refresh`
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to refresh token:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to refresh token',
+    };
+  }
+}
+
+// ============================================
+// Account Assignment API Functions
+// ============================================
+
+/**
+ * List assignments for a social account.
+ */
+export async function listAccountAssignments(
+  organizationId: string | number,
+  accountId: number
+): Promise<ListAssignmentsResponse> {
+  try {
+    const response = await api.get<ListAssignmentsResponse>(
+      `/organizations/${organizationId}/social-accounts/${accountId}/assignments`
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to list assignments:', error);
+    return {
+      success: false,
+      assignments: [],
+      error: error.response?.data?.error || error.message || 'Failed to list assignments',
+    };
+  }
+}
+
+/**
+ * Assign a social account to members.
+ */
+export async function assignSocialAccount(
+  organizationId: string | number,
+  accountId: number,
+  userIds: number[]
+): Promise<AssignmentResponse> {
+  try {
+    const response = await api.post<AssignmentResponse>(
+      `/organizations/${organizationId}/social-accounts/${accountId}/assignments`,
+      { user_ids: userIds }
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to assign account:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to assign account',
+    };
+  }
+}
+
+/**
+ * Unassign a social account from a member.
+ */
+export async function unassignSocialAccount(
+  organizationId: string | number,
+  accountId: number,
+  userId: number
+): Promise<DeleteResponse> {
+  try {
+    const response = await api.delete<DeleteResponse>(
+      `/organizations/${organizationId}/social-accounts/${accountId}/assignments/${userId}`
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to unassign account:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to unassign account',
+    };
+  }
+}
+
+/**
+ * Get accounts assigned to the current user in an organization.
+ */
+export async function getMyAssignedAccounts(
+  organizationId: string | number
+): Promise<ListSocialAccountsResponse> {
+  try {
+    const response = await api.get<ListSocialAccountsResponse>(
+      `/organizations/${organizationId}/my-social-accounts`
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to get assigned accounts:', error);
+    return {
+      success: false,
+      accounts: [],
+      error: error.response?.data?.error || error.message || 'Failed to get assigned accounts',
+    };
+  }
+}
+
+// ============================================
+// Post Submission API Functions
+// ============================================
+
+/**
+ * List post submissions for an organization.
+ */
+export async function listPostSubmissions(
+  organizationId: string | number,
+  options?: {
+    creator_profile_id?: number;
+    account_id?: number;
+    platform?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }
+): Promise<ListPostsResponse> {
+  try {
+    const response = await api.get<ListPostsResponse>(`/organizations/${organizationId}/posts`, {
+      params: options,
+    });
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to list posts:', error);
+    return {
+      success: false,
+      posts: [],
+      total: 0,
+      limit: 50,
+      offset: 0,
+      error: error.response?.data?.error || error.message || 'Failed to list posts',
+    };
+  }
+}
+
+/**
+ * Get a single post submission.
+ */
+export async function getPostSubmission(
+  organizationId: string | number,
+  postId: number
+): Promise<PostResponse> {
+  try {
+    const response = await api.get<PostResponse>(
+      `/organizations/${organizationId}/posts/${postId}`
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to get post:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to get post',
+    };
+  }
+}
+
+/**
+ * Publish a clip to a social platform.
+ */
+export async function publishPost(
+  organizationId: string | number,
+  data: {
+    social_account_id: number;
+    creator_profile_id?: number;
+    media_url: string;
+    caption?: string;
+    media_type?: 'image' | 'video' | 'reel';
+    thumbnail_url?: string;
+  }
+): Promise<PostResponse> {
+  try {
+    const response = await api.post<PostResponse>(
+      `/organizations/${organizationId}/posts/publish`,
+      data
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to publish post:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to publish post',
+    };
+  }
+}
+
+/**
+ * Update post analytics manually.
+ */
+export async function updatePostAnalytics(
+  organizationId: string | number,
+  postId: number,
+  analytics: Partial<PostAnalytics>
+): Promise<PostResponse> {
+  try {
+    const response = await api.put<PostResponse>(
+      `/organizations/${organizationId}/posts/${postId}`,
+      analytics
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to update analytics:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to update analytics',
+    };
+  }
+}
+
+/**
+ * Trigger analytics sync for a post.
+ */
+export async function syncPostAnalytics(
+  organizationId: string | number,
+  postId: number
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const response = await api.post<{ success: boolean; message?: string }>(
+      `/organizations/${organizationId}/posts/${postId}/sync`
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to sync analytics:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to sync analytics',
+    };
+  }
+}
+
+/**
+ * Reset manual override on a post.
+ */
+export async function resetPostOverride(
+  organizationId: string | number,
+  postId: number
+): Promise<PostResponse> {
+  try {
+    const response = await api.post<PostResponse>(
+      `/organizations/${organizationId}/posts/${postId}/reset-override`
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to reset override:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to reset override',
+    };
+  }
+}
+
+/**
+ * Get analytics summary for an organization.
+ */
+export async function getAnalyticsSummary(
+  organizationId: string | number,
+  options?: {
+    creator_profile_id?: number;
+    days?: number;
+  }
+): Promise<AnalyticsSummaryResponse> {
+  try {
+    const response = await api.get<AnalyticsSummaryResponse>(
+      `/organizations/${organizationId}/posts/analytics`,
+      { params: options }
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to get analytics summary:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to get analytics summary',
+    };
+  }
+}
+
+// ============================================
+// Instagram Connection via Facebook SDK
+// ============================================
+
+import {
+  initFacebookSdk,
+  connectInstagramAccount as fbConnectInstagram,
+  type InstagramAccount,
+} from '@/lib/facebook-sdk';
+
+/**
+ * Connected Instagram account info from Facebook SDK
+ */
+export interface ConnectedInstagramInfo {
+  instagramAccount: InstagramAccount;
+  pageAccessToken: string;
+  facebookPageId: string;
+  facebookPageName: string;
+}
+
+/**
+ * Result of connecting Instagram via Facebook SDK
+ */
+export interface ConnectInstagramResult {
+  success: boolean;
+  accounts?: ConnectedInstagramInfo[];
+  error?: string;
+}
+
+/**
+ * Initialize Facebook SDK (call once on app startup)
+ */
+export async function initializeFacebookSdk(): Promise<boolean> {
+  try {
+    await initFacebookSdk();
+    return true;
+  } catch (error) {
+    console.error('[SocialAccountsApi] Failed to initialize Facebook SDK:', error);
+    return false;
+  }
+}
+
+/**
+ * Connect Instagram account(s) via Facebook SDK.
+ * This opens the Facebook login popup and retrieves connected Instagram Business accounts.
+ */
+export async function connectInstagramViaFacebook(): Promise<ConnectInstagramResult> {
+  try {
+    const result = await fbConnectInstagram();
+    return result;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Facebook connection error:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to connect Instagram',
+    };
+  }
+}
+
+/**
+ * Save a connected Instagram account to the server.
+ * Call this after successfully connecting via Facebook SDK.
+ */
+export async function saveConnectedInstagramAccount(
+  organizationId: string | number,
+  accountInfo: ConnectedInstagramInfo
+): Promise<SocialAccountResponse> {
+  try {
+    const response = await api.post<SocialAccountResponse>(
+      `/organizations/${organizationId}/social-accounts`,
+      {
+        platform: 'instagram',
+        platform_user_id: accountInfo.instagramAccount.id,
+        username: accountInfo.instagramAccount.username,
+        display_name: accountInfo.instagramAccount.name || accountInfo.instagramAccount.username,
+        profile_image_url: accountInfo.instagramAccount.profile_picture_url,
+        access_token: accountInfo.pageAccessToken,
+        facebook_page_id: accountInfo.facebookPageId,
+        // Note: Page access tokens from Facebook don't expire if the user granted offline_access
+        // But we should implement token refresh on the server side
+      }
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to save Instagram account:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to save account',
+    };
+  }
+}
+
+/**
+ * Full flow: Connect Instagram via Facebook SDK and save to server.
+ * Returns the list of successfully saved accounts.
+ */
+export async function connectAndSaveInstagramAccounts(organizationId: string | number): Promise<{
+  success: boolean;
+  savedAccounts: SocialAccount[];
+  failedAccounts: Array<{ username: string; error: string }>;
+  error?: string;
+}> {
+  // Step 1: Connect via Facebook SDK
+  const connectResult = await connectInstagramViaFacebook();
+
+  if (!connectResult.success || !connectResult.accounts?.length) {
+    return {
+      success: false,
+      savedAccounts: [],
+      failedAccounts: [],
+      error: connectResult.error || 'No Instagram accounts found',
+    };
+  }
+
+  // Step 2: Save each account to the server
+  const savedAccounts: SocialAccount[] = [];
+  const failedAccounts: Array<{ username: string; error: string }> = [];
+
+  for (const accountInfo of connectResult.accounts) {
+    const saveResult = await saveConnectedInstagramAccount(organizationId, accountInfo);
+
+    if (saveResult.success && saveResult.account) {
+      savedAccounts.push(saveResult.account);
+    } else {
+      failedAccounts.push({
+        username: accountInfo.instagramAccount.username,
+        error: saveResult.error || 'Failed to save',
+      });
+    }
+  }
+
+  return {
+    success: savedAccounts.length > 0,
+    savedAccounts,
+    failedAccounts,
+    error: savedAccounts.length === 0 ? 'Failed to save any accounts' : undefined,
+  };
+}
+
+// ============================================
+// Legacy OAuth Helper Functions (DEPRECATED)
+// These are kept for backward compatibility but should not be used.
+// Use connectAndSaveInstagramAccounts() instead.
+// ============================================
+
+/**
+ * @deprecated Use connectAndSaveInstagramAccounts() instead
+ */
+export function getInstagramOAuthUrl(organizationId: string | number): string {
+  console.warn(
+    '[SocialAccountsApi] getInstagramOAuthUrl is deprecated. Use connectAndSaveInstagramAccounts() instead.'
+  );
+  const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+  return `${baseUrl}/api/auth/instagram?organization_id=${organizationId}`;
+}
+
+/**
+ * @deprecated Use connectAndSaveInstagramAccounts() instead
+ */
+export function openInstagramOAuthPopup(organizationId: string | number): Promise<{
+  success: boolean;
+  platform?: string;
+  platform_user_id?: string;
+  username?: string;
+  display_name?: string;
+  profile_image_url?: string;
+  access_token?: string;
+  token_expires_at?: string;
+  reconnected?: boolean;
+  error?: string;
+}> {
+  console.warn(
+    '[SocialAccountsApi] openInstagramOAuthPopup is deprecated. Use connectAndSaveInstagramAccounts() instead.'
+  );
+  // Redirect to new flow
+  return connectAndSaveInstagramAccounts(organizationId).then((result) => ({
+    success: result.success,
+    platform: 'instagram',
+    platform_user_id: result.savedAccounts[0]?.platform_user_id,
+    username: result.savedAccounts[0]?.username,
+    display_name: result.savedAccounts[0]?.display_name,
+    profile_image_url: result.savedAccounts[0]?.profile_image_url,
+    error: result.error,
+  }));
+}

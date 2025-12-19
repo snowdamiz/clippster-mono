@@ -55,6 +55,9 @@ defmodule ClippsterServerWeb.Router do
     get "/auth/google", AuthController, :google_request
     get "/auth/google/callback", AuthController, :google_callback
 
+    # Note: Instagram OAuth is handled client-side via Facebook JavaScript SDK
+    # The client obtains tokens via FB.login() and sends them to POST /social-accounts
+
     # Email authentication routes
     post "/auth/email/register", EmailAuthController, :register
     post "/auth/email/verify-otp", EmailAuthController, :verify_otp
@@ -179,6 +182,32 @@ defmodule ClippsterServerWeb.Router do
 
     # User's assigned creator profiles
     get "/user/assigned-creator-profiles", OrganizationCreatorProfileController, :user_assigned_profiles
+
+    # Organization social accounts
+    # Note: Instagram connection is done via POST /social-accounts with token from client-side FB SDK
+    get "/organizations/:organization_id/social-accounts", SocialAccountController, :index
+    get "/organizations/:organization_id/social-accounts/:id", SocialAccountController, :show
+    post "/organizations/:organization_id/social-accounts", SocialAccountController, :create
+    put "/organizations/:organization_id/social-accounts/:id", SocialAccountController, :update
+    delete "/organizations/:organization_id/social-accounts/:id", SocialAccountController, :delete
+    post "/organizations/:organization_id/social-accounts/:id/refresh", SocialAccountController, :refresh_token
+
+    # Social account assignments
+    get "/organizations/:organization_id/social-accounts/:id/assignments", SocialAccountController, :list_assignments
+    post "/organizations/:organization_id/social-accounts/:id/assignments", SocialAccountController, :assign
+    delete "/organizations/:organization_id/social-accounts/:id/assignments/:user_id", SocialAccountController, :unassign
+
+    # User's assigned social accounts in an organization
+    get "/organizations/:organization_id/my-social-accounts", SocialAccountController, :my_accounts
+
+    # Post submissions
+    get "/organizations/:organization_id/posts", PostSubmissionController, :index
+    get "/organizations/:organization_id/posts/analytics", PostSubmissionController, :analytics_summary
+    get "/organizations/:organization_id/posts/:id", PostSubmissionController, :show
+    post "/organizations/:organization_id/posts/publish", PostSubmissionController, :publish
+    put "/organizations/:organization_id/posts/:id", PostSubmissionController, :update
+    post "/organizations/:organization_id/posts/:id/sync", PostSubmissionController, :sync_analytics
+    post "/organizations/:organization_id/posts/:id/reset-override", PostSubmissionController, :reset_override
   end
 
   # Admin-only routes
