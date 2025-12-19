@@ -2,7 +2,6 @@ defmodule ClippsterServer.AppSettings do
   @moduledoc """
   Context module for managing application-wide settings.
   """
-  import Ecto.Query
   alias ClippsterServer.Repo
   alias ClippsterServer.AppSettings.Setting
 
@@ -29,8 +28,6 @@ defmodule ClippsterServer.AppSettings do
   Set a setting value. Creates or updates the setting.
   """
   def set_setting(key, value) do
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
-    
     case Repo.get(Setting, key) do
       nil ->
         %Setting{}
@@ -49,7 +46,7 @@ defmodule ClippsterServer.AppSettings do
   """
   def get_all_settings do
     settings = Repo.all(Setting)
-    
+
     Enum.reduce(settings, @default_settings, fn setting, acc ->
       Map.put(acc, setting.key, setting.value)
     end)
@@ -79,4 +76,3 @@ defmodule ClippsterServer.AppSettings do
     set_setting(@live_clip_enabled_key, to_string(enabled))
   end
 end
-
