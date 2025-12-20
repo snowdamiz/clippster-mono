@@ -157,6 +157,7 @@ export interface MonitoredStreamerRecord {
   profile_image_url?: string | null;
   stream_thumbnail_url?: string | null;
   segment_duration_minutes: number;
+  auto_dvr: number | boolean; // When enabled, temp recording starts automatically when streamer goes live
   created_at: number;
   updated_at: number;
 }

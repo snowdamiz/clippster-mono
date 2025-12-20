@@ -11,7 +11,7 @@ export interface TempSegmentInfo {
   endTime: number;
 }
 
-// State for a single temp recording (HLS-based for instant DVR)
+// State for a single temp recording
 export interface TempRecordingState {
   mintId: string;
   tempSessionId: string;
@@ -20,16 +20,6 @@ export interface TempRecordingState {
   segments: TempSegmentInfo[];
   totalDuration: number;
   streamEnded: boolean;
-  // HLS-specific fields
-  playlistPath: string | null;
-  outputDir: string | null;
-}
-
-// Response from backend when starting temp recording
-interface TempRecordingInfoResponse {
-  sessionId: string;
-  outputDir: string;
-  alreadyActive: boolean;
 }
 
 // Event payloads from backend
@@ -39,18 +29,6 @@ interface TempSegmentReadyPayload {
   segment: number;
   path: string;
   duration: number;
-}
-
-// HLS-specific segment payload with playlist info
-interface TempHlsSegmentPayload {
-  mintId: string;
-  tempSessionId: string;
-  segment: number;
-  path: string;
-  duration: number;
-  playlistPath: string;
-  totalSegments: number;
-  totalDuration: number;
 }
 
 interface TempStreamEndedPayload {
@@ -73,7 +51,7 @@ const unlistenFunctions: UnlistenFn[] = [];
 async function initializeListeners() {
   if (listenersInitialized) return;
 
-  // Listen for temp segment ready events (basic segment info)
+  // Listen for temp segment ready events
   const segmentUnlisten = await listen<TempSegmentReadyPayload>('temp-segment-ready', (event) => {
     const { mintId, tempSessionId, segment, path, duration } = event.payload;
     
@@ -106,61 +84,6 @@ async function initializeListeners() {
     tempRecordings.value = newMap;
 
     console.log(`[TempRecording] Segment ${segment} ready for ${mintId}, total duration: ${updatedState.totalDuration}s`);
-  });
-
-  // Listen for HLS-specific segment events (with playlist path for DVR)
-  const hlsSegmentUnlisten = await listen<TempHlsSegmentPayload>('temp-hls-segment', (event) => {
-    const { mintId, tempSessionId, segment, path, duration, playlistPath, totalDuration } = event.payload;
-    
-    const state = tempRecordings.value.get(mintId);
-    if (!state || state.tempSessionId !== tempSessionId) {
-      console.warn('[TempRecording] Received HLS segment for unknown session:', mintId, tempSessionId);
-      return;
-    }
-
-    // Calculate start time based on existing segments
-    const startTime = state.segments.length > 0 
-      ? state.segments[state.segments.length - 1].endTime 
-      : 0;
-    
-    // Check if segment already exists
-    const existingSegment = state.segments.find(s => s.segmentNumber === segment);
-    if (existingSegment) {
-      // Just update playlist path if needed
-      if (!state.playlistPath && playlistPath) {
-        const updatedState: TempRecordingState = {
-          ...state,
-          playlistPath,
-          totalDuration,
-        };
-        const newMap = new Map(tempRecordings.value);
-        newMap.set(mintId, updatedState);
-        tempRecordings.value = newMap;
-      }
-      return;
-    }
-    
-    const newSegment: TempSegmentInfo = {
-      segmentNumber: segment,
-      filePath: path,
-      startTime,
-      duration,
-      endTime: startTime + duration,
-    };
-
-    // Update state with HLS playlist info
-    const updatedState: TempRecordingState = {
-      ...state,
-      segments: [...state.segments, newSegment],
-      totalDuration: totalDuration || (startTime + duration),
-      playlistPath: playlistPath || state.playlistPath,
-    };
-    
-    const newMap = new Map(tempRecordings.value);
-    newMap.set(mintId, updatedState);
-    tempRecordings.value = newMap;
-
-    console.log(`[TempRecording] HLS segment ${segment} ready for ${mintId}, duration: ${duration}s, total: ${updatedState.totalDuration}s`);
   });
 
   // Listen for temp stream ended events
@@ -202,9 +125,9 @@ async function initializeListeners() {
     console.log(`[TempRecording] Recorder exited for ${mintId} with code: ${code}`);
   });
 
-  unlistenFunctions.push(segmentUnlisten, hlsSegmentUnlisten, streamEndedUnlisten, exitUnlisten);
+  unlistenFunctions.push(segmentUnlisten, streamEndedUnlisten, exitUnlisten);
   listenersInitialized = true;
-  console.log('[TempRecording] HLS event listeners initialized');
+  console.log('[TempRecording] Event listeners initialized');
 }
 
 export function useTempLivestreamRecording() {
@@ -214,53 +137,54 @@ export function useTempLivestreamRecording() {
   const getTempRecordingState = (mintId: string) => computed(() => tempRecordings.value.get(mintId));
 
   /**
-   * Start a temp HLS recording for a mint (for watch-only DVR with instant rewind)
-   * Uses 4-second segments by default for responsive DVR like Kick
+   * Start a temp recording for a mint (for watch-only DVR)
    * Returns the temp session ID if successful
    */
-  async function startTempRecording(mintId: string, segmentDurationSeconds: number = 4): Promise<string> {
+  async function startTempRecording(mintId: string, segmentDurationMinutes: number = 3): Promise<string> {
     // Initialize listeners if needed
     await initializeListeners();
 
-    // Check if we already have the state locally
+    // Check if we already have a recording
     if (tempRecordings.value.has(mintId)) {
       const existing = tempRecordings.value.get(mintId)!;
-      console.log(`[TempRecording] Already tracking ${mintId}, returning existing session: ${existing.tempSessionId}`);
+      console.log(`[TempRecording] Already recording ${mintId}, returning existing session: ${existing.tempSessionId}`);
       return existing.tempSessionId;
     }
 
-    // Start HLS recording via backend (returns existing session info if already active)
-    const response = await invoke<TempRecordingInfoResponse>('start_temp_livestream_recording', {
-      mintId,
-      segmentDurationSeconds,
-    });
+    try {
+      // Start recording via backend
+      const tempSessionId = await invoke<string>('start_temp_livestream_recording', {
+        mintId,
+        segmentDurationMinutes,
+      });
 
-    const { sessionId, outputDir, alreadyActive } = response;
-    
-    // Create/update state with HLS-specific fields
-    const state: TempRecordingState = {
-      mintId,
-      tempSessionId: sessionId,
-      isRecording: true,
-      startedAt: Date.now(),
-      segments: [],
-      totalDuration: 0,
-      streamEnded: false,
-      playlistPath: outputDir ? `${outputDir}\\playlist.m3u8` : null,
-      outputDir,
-    };
+      // Create initial state
+      const state: TempRecordingState = {
+        mintId,
+        tempSessionId,
+        isRecording: true,
+        startedAt: Date.now(),
+        segments: [],
+        totalDuration: 0,
+        streamEnded: false,
+      };
 
-    const newMap = new Map(tempRecordings.value);
-    newMap.set(mintId, state);
-    tempRecordings.value = newMap;
+      const newMap = new Map(tempRecordings.value);
+      newMap.set(mintId, state);
+      tempRecordings.value = newMap;
 
-    if (alreadyActive) {
-      console.log(`[TempRecording] Connected to existing HLS recording for ${mintId} with session ${sessionId}`);
-    } else {
-      console.log(`[TempRecording] Started HLS recording for ${mintId} with session ${sessionId} (${segmentDurationSeconds}s segments)`);
+      console.log(`[TempRecording] Started recording for ${mintId} with session ${tempSessionId}`);
+      return tempSessionId;
+    } catch (error) {
+      // If error is "already active", try to return existing session
+      if (String(error).includes('already active')) {
+        const existing = tempRecordings.value.get(mintId);
+        if (existing) {
+          return existing.tempSessionId;
+        }
+      }
+      throw error;
     }
-    
-    return sessionId;
   }
 
   /**
@@ -362,20 +286,6 @@ export function useTempLivestreamRecording() {
   }
 
   /**
-   * Get HLS playlist path for DVR playback
-   */
-  function getPlaylistPath(mintId: string): string | null {
-    return tempRecordings.value.get(mintId)?.playlistPath || null;
-  }
-
-  /**
-   * Get output directory for a temp recording
-   */
-  function getOutputDir(mintId: string): string | null {
-    return tempRecordings.value.get(mintId)?.outputDir || null;
-  }
-
-  /**
    * Cleanup all temp recordings (called on app close)
    */
   async function cleanupAllTempRecordings(): Promise<void> {
@@ -406,7 +316,6 @@ export function useTempLivestreamRecording() {
     getTotalDuration,
     hasStreamEnded,
     getTempSessionId,
-    getPlaylistPath,
-    getOutputDir,
   };
 }
+

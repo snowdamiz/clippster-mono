@@ -1,7 +1,6 @@
 import { ref, computed, watch, onUnmounted, type Ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import Hls from 'hls.js';
 import {
   Room,
   RoomEvent,
@@ -80,11 +79,6 @@ export interface LivestreamViewerState {
   isTempRecording: boolean; // True if using temp recording (no persistent project)
   tempSessionId: string | null;
   
-  // HLS DVR (instant rewind like Kick)
-  hlsPlaylistUrl: string | null; // URL to HLS playlist for DVR playback
-  hlsPlaylistPath: string | null; // File path to HLS playlist (for FFmpeg clipping)
-  hlsReady: boolean; // True when HLS is ready for seeking
-  
   // Watermark
   creatorProfile: CreatorProfileWithLinks | null;
   watermarkId: string | null;
@@ -137,9 +131,6 @@ export function useLivestreamViewer() {
     projectId: null,
     isTempRecording: false,
     tempSessionId: null,
-    hlsPlaylistUrl: null,
-    hlsPlaylistPath: null,
-    hlsReady: false,
     creatorProfile: null,
     watermarkId: null,
     watermarkSettings: null,
@@ -153,17 +144,8 @@ export function useLivestreamViewer() {
   const liveVideoTrack = ref<VideoTrack | null>(null);
   const liveAudioTrack = ref<AudioTrack | null>(null);
   
-  // DVR video element (for HLS playback)
+  // DVR video element (for segment playback)
   const dvrVideoElement = ref<HTMLVideoElement | null>(null);
-  
-  // HLS.js instance for DVR playback (instant rewind like Kick)
-  let hlsInstance: Hls | null = null;
-  
-  // HLS error recovery tracking
-  let hlsFragErrorCount = 0;
-  let hlsLastErrorTime = 0;
-  const HLS_MAX_FRAG_ERRORS = 5; // Max consecutive frag errors before giving up
-  const HLS_ERROR_RESET_TIME = 5000; // Reset error count after 5 seconds of no errors
   
   // Reconnection state
   let reconnectAttempts = 0;
@@ -667,26 +649,14 @@ export function useLivestreamViewer() {
       return;
     }
     
-    // Start temp HLS recording for DVR (NOT persistent recording)
-    // Uses 4-second HLS segments for instant rewind like Kick
+    // Start temp recording for DVR (NOT persistent recording)
+    // This allows users to watch and clip without creating a project
     try {
-      const tempSessionId = await tempRecording.startTempRecording(mintId, 4); // 4-second segments
+      const tempSessionId = await tempRecording.startTempRecording(mintId, 3);
       state.value.tempSessionId = tempSessionId;
       state.value.isTempRecording = true;
       state.value.projectId = null;
-      
-      // Get the HLS playlist URL and path
-      const playlistPath = tempRecording.getPlaylistPath(mintId);
-      if (playlistPath) {
-        state.value.hlsPlaylistPath = playlistPath; // Store path for FFmpeg clipping
-        const port = await invoke<number>('get_video_server_port');
-        const encodedPath = btoa(unescape(encodeURIComponent(playlistPath)));
-        state.value.hlsPlaylistUrl = `http://localhost:${port}/video/${encodedPath}`;
-        console.log('[LiveViewer] HLS playlist URL:', state.value.hlsPlaylistUrl);
-        console.log('[LiveViewer] HLS playlist Path:', playlistPath);
-      }
-      
-      console.log('[LiveViewer] Started HLS temp recording for DVR:', tempSessionId);
+      console.log('[LiveViewer] Started temp recording for DVR:', tempSessionId);
     } catch (error) {
       console.warn('[LiveViewer] Failed to start temp recording:', error);
       // Even if temp recording fails, we can still watch live (just no DVR)
@@ -741,22 +711,6 @@ export function useLivestreamViewer() {
           endTime: seg.endTime,
         }));
         state.value.totalRecordedDuration = tempRecording.getTotalDuration(state.value.mintId);
-        
-        // Update HLS playlist URL and path if not already set
-        if (!state.value.hlsPlaylistUrl || !state.value.hlsPlaylistPath) {
-          const playlistPath = tempRecording.getPlaylistPath(state.value.mintId);
-          if (playlistPath) {
-            state.value.hlsPlaylistPath = playlistPath; // Store path for FFmpeg clipping
-            try {
-              const port = await invoke<number>('get_video_server_port');
-              const encodedPath = btoa(unescape(encodeURIComponent(playlistPath)));
-              state.value.hlsPlaylistUrl = `http://localhost:${port}/video/${encodedPath}`;
-              console.log('[LiveViewer] Updated HLS playlist URL:', state.value.hlsPlaylistUrl);
-            } catch (e) {
-              console.warn('[LiveViewer] Failed to get video server port:', e);
-            }
-          }
-        }
       }
       return;
     }
@@ -903,9 +857,6 @@ export function useLivestreamViewer() {
       videoElement.value.load(); // Reset the video element
     }
     
-    // Destroy HLS instance
-    destroyHls();
-    
     if (dvrVideoElement.value) {
       dvrVideoElement.value.pause();
       dvrVideoElement.value.src = '';
@@ -955,9 +906,6 @@ export function useLivestreamViewer() {
     state.value.streamerId = null;
     state.value.isTempRecording = false;
     state.value.tempSessionId = null;
-    state.value.hlsPlaylistUrl = null;
-    state.value.hlsPlaylistPath = null;
-    state.value.hlsReady = false;
     state.value.sessionId = null;
     state.value.projectId = null;
     state.value.availableSegments = [];
@@ -1004,29 +952,7 @@ export function useLivestreamViewer() {
   
   function handleDvrTimeUpdate() {
     if (dvrVideoElement.value && state.value.playbackMode === 'dvr') {
-      // For HLS, currentTime is the position within the recording
-      // We need to convert it to stream position for the UI
-      if (hlsInstance && state.value.hlsReady) {
-        // Calculate the earliest stream position that's available in our recording
-        const earliestStreamPosition = Math.max(0, state.value.liveEdgeTime - state.value.totalRecordedDuration);
-        
-        // Convert recording position to stream position
-        const positionInRecording = dvrVideoElement.value.currentTime;
-        const streamPosition = earliestStreamPosition + positionInRecording;
-        
-        state.value.playbackPosition = streamPosition;
-        
-        // Update total recorded duration if we have buffered more
-        if (dvrVideoElement.value.buffered.length > 0) {
-          const bufferedEnd = dvrVideoElement.value.buffered.end(dvrVideoElement.value.buffered.length - 1);
-          if (bufferedEnd > state.value.totalRecordedDuration) {
-            state.value.totalRecordedDuration = bufferedEnd;
-          }
-        }
-        return;
-      }
-      
-      // For legacy segment playback, update position based on current segment
+      // Update playback position based on current segment
       const currentSegment = getCurrentDvrSegment();
       if (currentSegment) {
         state.value.playbackPosition = currentSegment.startTime + dvrVideoElement.value.currentTime;
@@ -1036,13 +962,7 @@ export function useLivestreamViewer() {
   
   function handleDvrEnded() {
     if (state.value.playbackMode === 'dvr') {
-      // For HLS, go to live when stream ends
-      if (hlsInstance) {
-        goToLive();
-        return;
-      }
-      
-      // For legacy segment playback, try to play next segment or go to live
+      // Try to play next segment or go to live
       const nextSegment = getNextDvrSegment();
       if (nextSegment) {
         playSegment(nextSegment);
@@ -1146,34 +1066,11 @@ export function useLivestreamViewer() {
   
   // Seeking
   async function seek(positionSeconds: number) {
-    // Calculate the earliest position we can seek to
-    // For HLS DVR, we can only go back as far as we have recorded content
-    const earliestPosition = Math.max(0, state.value.liveEdgeTime - state.value.totalRecordedDuration);
+    const targetPosition = Math.max(0, Math.min(positionSeconds, state.value.liveEdgeTime));
     
-    // Clamp target position to available range
-    const targetPosition = Math.max(earliestPosition, Math.min(positionSeconds, state.value.liveEdgeTime));
-    
-    console.log('[LiveViewer] Seek requested:', positionSeconds, 
-      'clamped to:', targetPosition,
-      'range:', earliestPosition, '-', state.value.liveEdgeTime,
-      'recorded duration:', state.value.totalRecordedDuration);
-    
-    // Check if no recorded content yet
-    if (state.value.totalRecordedDuration < 5) {
-      console.log('[LiveViewer] Not enough recorded content yet, staying at live edge');
-      await goToLive();
-      return;
-    }
-    
-    // Check if seeking to live edge (within 5 seconds)
+    // Check if seeking to live edge
     if (targetPosition >= state.value.liveEdgeTime - 5) {
       await goToLive();
-      return;
-    }
-    
-    // If already in DVR mode with HLS, just seek within HLS
-    if (state.value.playbackMode === 'dvr' && hlsInstance && state.value.hlsReady) {
-      await seekHls(targetPosition);
       return;
     }
     
@@ -1193,9 +1090,6 @@ export function useLivestreamViewer() {
     state.value.playbackPosition = state.value.liveEdgeTime;
     state.value.playbackSpeed = 1;
     
-    // Destroy HLS instance if active
-    destroyHls();
-    
     // Stop DVR playback
     if (dvrVideoElement.value) {
       dvrVideoElement.value.pause();
@@ -1214,18 +1108,7 @@ export function useLivestreamViewer() {
   }
   
   async function switchToDvrMode(targetPosition: number) {
-    // Calculate earliest position we can seek to
-    const earliestPosition = Math.max(0, state.value.liveEdgeTime - state.value.totalRecordedDuration);
-    
-    // Calculate the position within the HLS recording (0 = start of recording)
-    // targetPosition is in "stream time", we need to convert to "recording time"
-    const positionInRecording = Math.max(0, targetPosition - earliestPosition);
-    
-    console.log('[LiveViewer] Switching to DVR mode:',
-      'targetPosition:', targetPosition,
-      'earliestPosition:', earliestPosition,
-      'positionInRecording:', positionInRecording,
-      'totalRecordedDuration:', state.value.totalRecordedDuration);
+    console.log('[LiveViewer] Switching to DVR mode at position:', targetPosition);
     
     state.value.isAtLiveEdge = false;
     state.value.playbackMode = 'dvr';
@@ -1240,14 +1123,7 @@ export function useLivestreamViewer() {
       liveAudioTrack.value.detach(videoElement.value);
     }
     
-    // For HLS temp recordings, use HLS.js for instant seeking
-    if (state.value.isTempRecording && state.value.hlsPlaylistUrl && dvrVideoElement.value) {
-      // Pass the position within the recording, not the stream position
-      await initHlsPlayback(positionInRecording, targetPosition);
-      return;
-    }
-    
-    // Fallback: Find the segment containing the target position (for legacy MP4 segments)
+    // Find the segment containing the target position
     const targetSegment = state.value.availableSegments.find(
       seg => targetPosition >= seg.startTime && targetPosition < seg.endTime
     );
@@ -1257,210 +1133,6 @@ export function useLivestreamViewer() {
     } else {
       console.warn('[LiveViewer] No segment found for position:', targetPosition);
       state.value.isBuffering = false;
-    }
-  }
-  
-  // Initialize HLS.js playback for DVR (instant rewind like Kick)
-  // positionInRecording: the position within the HLS recording (0 = start of recording)
-  // streamPosition: the position in the overall stream timeline (for UI display)
-  async function initHlsPlayback(positionInRecording: number, streamPosition?: number) {
-    if (!dvrVideoElement.value || !state.value.hlsPlaylistUrl) {
-      console.warn('[LiveViewer] Cannot init HLS: missing video element or playlist URL');
-      state.value.isBuffering = false;
-      return;
-    }
-    
-    // Destroy existing HLS instance if any
-    if (hlsInstance) {
-      hlsInstance.destroy();
-      hlsInstance = null;
-    }
-    
-    console.log('[LiveViewer] initHlsPlayback - positionInRecording:', positionInRecording, 
-      'streamPosition:', streamPosition,
-      'totalRecordedDuration:', state.value.totalRecordedDuration);
-    
-    // Check if HLS.js is supported
-    if (!Hls.isSupported()) {
-      // Fallback for Safari which has native HLS support
-      if (dvrVideoElement.value.canPlayType('application/vnd.apple.mpegurl')) {
-        console.log('[LiveViewer] Using native HLS support');
-        dvrVideoElement.value.src = state.value.hlsPlaylistUrl;
-        dvrVideoElement.value.currentTime = positionInRecording;
-        applyAudioSettings();
-        try {
-          await dvrVideoElement.value.play();
-          state.value.isPlaying = true;
-          state.value.hlsReady = true;
-        } catch (error) {
-          console.error('[LiveViewer] Native HLS playback failed:', error);
-        }
-        state.value.isBuffering = false;
-        return;
-      }
-      console.error('[LiveViewer] HLS.js not supported and no native support');
-      state.value.isBuffering = false;
-      return;
-    }
-    
-    console.log('[LiveViewer] Initializing HLS.js with playlist:', state.value.hlsPlaylistUrl);
-    
-    // Store the stream position offset for time display calculation
-    // This is the difference between stream time and recording time
-    const earliestStreamPosition = state.value.liveEdgeTime - state.value.totalRecordedDuration;
-    
-    // Reset error tracking for new instance
-    hlsFragErrorCount = 0;
-    hlsLastErrorTime = 0;
-    
-    // Create HLS instance with optimized config for DVR
-    hlsInstance = new Hls({
-      enableWorker: true,
-      lowLatencyMode: false, // We want full DVR, not low latency
-      backBufferLength: 90, // Keep 90 seconds of back buffer for seeking
-      maxBufferLength: 30, // Buffer 30 seconds ahead
-      maxMaxBufferLength: 60,
-      liveSyncDurationCount: 3,
-      liveMaxLatencyDurationCount: 10,
-      // Aggressive segment fetching for faster startup
-      maxBufferSize: 60 * 1000 * 1000, // 60MB
-      maxBufferHole: 0.5,
-      // More tolerant settings for live DVR with segments being written
-      fragLoadingMaxRetry: 6, // More retries for fragments
-      fragLoadingRetryDelay: 500, // Shorter delay between retries
-      manifestLoadingMaxRetry: 4,
-      levelLoadingMaxRetry: 4,
-    });
-    
-    // Attach to video element
-    hlsInstance.attachMedia(dvrVideoElement.value);
-    
-    // Handle HLS events
-    hlsInstance.on(Hls.Events.MEDIA_ATTACHED, () => {
-      console.log('[LiveViewer] HLS media attached, loading source...');
-      hlsInstance?.loadSource(state.value.hlsPlaylistUrl!);
-    });
-    
-    hlsInstance.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
-      console.log('[LiveViewer] HLS manifest parsed, levels:', data.levels.length, 
-        'seeking to positionInRecording:', positionInRecording);
-      state.value.hlsReady = true;
-      
-      // Seek to target position within the recording
-      if (dvrVideoElement.value) {
-        dvrVideoElement.value.currentTime = positionInRecording;
-        dvrVideoElement.value.playbackRate = state.value.playbackSpeed;
-        applyAudioSettings();
-        
-        dvrVideoElement.value.play().then(() => {
-          state.value.isPlaying = true;
-          state.value.isBuffering = false;
-          console.log('[LiveViewer] HLS playback started at positionInRecording:', positionInRecording);
-        }).catch(err => {
-          console.error('[LiveViewer] HLS play failed:', err);
-          state.value.isBuffering = false;
-        });
-      }
-    });
-    
-    hlsInstance.on(Hls.Events.LEVEL_LOADED, (event, data) => {
-      // Update total duration from HLS
-      if (data.details.totalduration) {
-        state.value.totalRecordedDuration = data.details.totalduration;
-      }
-    });
-    
-    hlsInstance.on(Hls.Events.ERROR, (event, data) => {
-      const now = Date.now();
-      
-      // Reset error count if enough time has passed since last error
-      if (now - hlsLastErrorTime > HLS_ERROR_RESET_TIME) {
-        hlsFragErrorCount = 0;
-      }
-      hlsLastErrorTime = now;
-      
-      // Handle non-fatal fragment parsing errors (common during live DVR seeking)
-      if (!data.fatal && data.details === 'fragParsingError') {
-        hlsFragErrorCount++;
-        console.warn(`[LiveViewer] HLS fragment parsing error (${hlsFragErrorCount}/${HLS_MAX_FRAG_ERRORS}):`, data.reason || 'unknown');
-        
-        if (hlsFragErrorCount >= HLS_MAX_FRAG_ERRORS) {
-          console.error('[LiveViewer] Too many fragment parsing errors, attempting media recovery...');
-          hlsFragErrorCount = 0;
-          hlsInstance?.recoverMediaError();
-        }
-        // For non-fatal errors, HLS.js will continue trying automatically
-        return;
-      }
-      
-      // Log other non-fatal errors but don't intervene
-      if (!data.fatal) {
-        console.warn('[LiveViewer] HLS non-fatal error:', data.type, data.details, data.reason || '');
-        return;
-      }
-      
-      // Handle fatal errors
-      console.error('[LiveViewer] HLS fatal error:', data.type, data.details);
-      switch (data.type) {
-        case Hls.ErrorTypes.NETWORK_ERROR:
-          console.log('[LiveViewer] Fatal network error, trying to recover...');
-          hlsInstance?.startLoad();
-          break;
-        case Hls.ErrorTypes.MEDIA_ERROR:
-          console.log('[LiveViewer] Fatal media error, trying to recover...');
-          hlsInstance?.recoverMediaError();
-          break;
-        default:
-          console.error('[LiveViewer] Unrecoverable HLS error');
-          destroyHls();
-          state.value.isBuffering = false;
-          break;
-      }
-    });
-    
-    hlsInstance.on(Hls.Events.FRAG_BUFFERED, () => {
-      // Reset fragment error count on successful buffer
-      hlsFragErrorCount = 0;
-      
-      // Segment buffered - update available duration
-      if (dvrVideoElement.value?.buffered.length > 0) {
-        const bufferedEnd = dvrVideoElement.value.buffered.end(dvrVideoElement.value.buffered.length - 1);
-        if (bufferedEnd > state.value.totalRecordedDuration) {
-          state.value.totalRecordedDuration = bufferedEnd;
-        }
-      }
-    });
-  }
-  
-  // Destroy HLS instance
-  function destroyHls() {
-    if (hlsInstance) {
-      hlsInstance.destroy();
-      hlsInstance = null;
-      state.value.hlsReady = false;
-    }
-  }
-  
-  // Seek within HLS stream
-  // Seek within HLS stream - targetPosition is in stream time
-  async function seekHls(targetStreamPosition: number) {
-    if (!dvrVideoElement.value) return;
-    
-    // Convert stream position to recording position
-    const earliestStreamPosition = Math.max(0, state.value.liveEdgeTime - state.value.totalRecordedDuration);
-    const positionInRecording = Math.max(0, targetStreamPosition - earliestStreamPosition);
-    
-    console.log('[LiveViewer] seekHls - targetStreamPosition:', targetStreamPosition,
-      'earliestStreamPosition:', earliestStreamPosition,
-      'positionInRecording:', positionInRecording);
-    
-    if (hlsInstance && state.value.hlsReady) {
-      // HLS.js handles seeking - seek to position within recording
-      dvrVideoElement.value.currentTime = positionInRecording;
-      // The handleDvrTimeUpdate will update playbackPosition to the correct stream position
-    } else if (state.value.hlsPlaylistUrl) {
-      // HLS not initialized yet, initialize with target position
-      await initHlsPlayback(positionInRecording, targetStreamPosition);
     }
   }
   

@@ -4,70 +4,6 @@ use std::path::PathBuf;
 
 pub static VIDEO_SERVER_PORT: u16 = 48276;
 
-/// Try to find an HLS segment file in the temp pumpfun_live directories
-/// This handles the case where HLS.js requests segments using relative URLs
-fn find_hls_segment(filename: &str) -> Option<PathBuf> {
-    // HLS segment filenames look like: {mintId}_temp_{timestamp}_segment_{number}.ts
-    // They're stored in: {temp_dir}/pumpfun_live/{mintId}/
-    
-    println!("[VideoServer] Looking for HLS segment: {}", filename);
-    
-    if !filename.ends_with(".ts") && !filename.ends_with(".m3u8") {
-        println!("[VideoServer] Not an HLS file (wrong extension)");
-        return None;
-    }
-    
-    // Try to extract the mintId from the filename
-    // Format: {mintId}_temp_{timestamp}_segment_{number}.ts
-    let parts: Vec<&str> = filename.split("_temp_").collect();
-    if parts.len() < 2 {
-        println!("[VideoServer] Could not extract mintId from filename (no _temp_ found)");
-        return None;
-    }
-    
-    let mint_id = parts[0];
-    println!("[VideoServer] Extracted mintId: {}", mint_id);
-    
-    // Get the temp directory path
-    match crate::storage::init_storage_dirs() {
-        Ok(storage_paths) => {
-            let segment_path = storage_paths.temp
-                .join("pumpfun_live")
-                .join(mint_id)
-                .join(filename);
-            
-            println!("[VideoServer] Checking path: {}", segment_path.display());
-            
-            if segment_path.exists() {
-                println!("[VideoServer] Found HLS segment at: {}", segment_path.display());
-                return Some(segment_path);
-            } else {
-                println!("[VideoServer] Segment NOT found at: {}", segment_path.display());
-                
-                // List files in directory to help debug
-                let dir_path = storage_paths.temp.join("pumpfun_live").join(mint_id);
-                if dir_path.exists() {
-                    if let Ok(entries) = std::fs::read_dir(&dir_path) {
-                        let files: Vec<_> = entries
-                            .filter_map(|e| e.ok())
-                            .map(|e| e.file_name().to_string_lossy().to_string())
-                            .take(10)
-                            .collect();
-                        println!("[VideoServer] Files in dir (first 10): {:?}", files);
-                    }
-                } else {
-                    println!("[VideoServer] Directory does not exist: {}", dir_path.display());
-                }
-            }
-        },
-        Err(e) => {
-            println!("[VideoServer] Failed to get storage dirs: {}", e);
-        }
-    }
-    
-    None
-}
-
 pub async fn start_video_server_impl() {
     static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
 
@@ -79,37 +15,29 @@ pub async fn start_video_server_impl() {
         .and(warp::get())
         .and(warp::header::optional::<String>("range"))
         .and_then(|encoded_path: String, range_header: Option<String>| async move {
-            // First, try to decode as base64-encoded path
+            // Decode the base64-encoded path
             use base64::{Engine as _, engine::general_purpose};
-            
-            let file_path = match general_purpose::STANDARD.decode(&encoded_path) {
-                Ok(decoded) => {
-                    match String::from_utf8(decoded) {
-                        Ok(s) => PathBuf::from(&s),
-                        Err(_) => {
-                            return Ok::<_, warp::Rejection>(warp::reply::with_status(
-                                warp::reply::json(&serde_json::json!({"error": "Invalid path encoding"})),
-                                warp::http::StatusCode::BAD_REQUEST
-                            ).into_response());
-                        }
-                    }
-                },
+            let decoded = match general_purpose::STANDARD.decode(encoded_path) {
+                Ok(d) => d,
                 Err(_) => {
-                    // Base64 decode failed - check if this is an HLS segment request
-                    // HLS.js requests segments using relative URLs from the playlist
-                    if let Some(segment_path) = find_hls_segment(&encoded_path) {
-                        segment_path
-                    } else {
-                        return Ok(warp::reply::with_status(
-                            warp::reply::json(&serde_json::json!({
-                                "error": "Invalid path encoding",
-                                "hint": "Path must be base64-encoded or a valid HLS segment filename"
-                            })),
-                            warp::http::StatusCode::BAD_REQUEST
-                        ).into_response());
-                    }
+                    return Ok::<_, warp::Rejection>(warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"error": "Invalid path encoding"})),
+                        warp::http::StatusCode::BAD_REQUEST
+                    ).into_response());
                 }
             };
+
+            let path_str = match String::from_utf8(decoded) {
+                Ok(s) => s,
+                Err(_) => {
+                    return Ok(warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"error": "Invalid path encoding"})),
+                        warp::http::StatusCode::BAD_REQUEST
+                    ).into_response());
+                }
+            };
+
+            let file_path = PathBuf::from(&path_str);
 
             if !file_path.exists() {
                 return Ok(warp::reply::with_status(
@@ -139,9 +67,6 @@ pub async fn start_video_server_impl() {
                 Some("mov") => "video/quicktime",
                 Some("avi") => "video/x-msvideo",
                 Some("mkv") => "video/x-matroska",
-                // HLS formats (for DVR streaming)
-                Some("m3u8") => "application/vnd.apple.mpegurl",
-                Some("ts") => "video/MP2T",
                 // Audio formats
                 Some("mp3") => "audio/mpeg",
                 Some("wav") => "audio/wav",

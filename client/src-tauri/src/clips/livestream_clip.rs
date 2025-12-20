@@ -29,7 +29,7 @@ pub struct SegmentInfo {
 /// 
 /// This function:
 /// 1. Finds all segment files that cover the requested time range
-/// 2. Concatenates them if needed (or uses HLS playlist directly for HLS recordings)
+/// 2. Concatenates them if needed
 /// 3. Extracts the precise clip duration
 /// 4. Applies watermark if provided
 /// 5. Returns the output file path
@@ -44,7 +44,6 @@ pub async fn extract_livestream_clip(
     project_id: Option<String>,
     watermark_id: Option<String>,
     watermark_settings: Option<String>,  // JSON string of watermark settings
-    hls_playlist_path: Option<String>,   // Optional HLS playlist for direct seeking
 ) -> Result<String, String> {
     println!("[Rust] extract_livestream_clip called:");
     println!("[Rust]   session_id: {}", session_id);
@@ -52,7 +51,6 @@ pub async fn extract_livestream_clip(
     println!("[Rust]   clip_duration: {}s", clip_duration);
     println!("[Rust]   clip_name: {}", clip_name);
     println!("[Rust]   segments count: {}", segments.len());
-    println!("[Rust]   hls_playlist: {:?}", hls_playlist_path.is_some());
     println!("[Rust]   watermark_id: {:?}", watermark_id);
 
     // Calculate clip start time
@@ -124,26 +122,25 @@ pub async fn extract_livestream_clip(
         message: "Extracting clip from segments...".to_string(),
     });
 
-    // If HLS playlist is available, use it directly for better seeking
-    // This is more efficient than concatenating individual .ts segments
-    let extracted_path = if let Some(ref playlist) = hls_playlist_path {
-        if std::path::Path::new(playlist).exists() {
-            println!("[Rust] Using HLS playlist for extraction: {}", playlist);
-            extract_from_hls_playlist(
-                &app,
-                playlist,
-                clip_start_time,
-                clip_duration,
-                &temp_dir,
-            ).await?
-        } else {
-            // Fall back to segment-based extraction
-            println!("[Rust] HLS playlist not found, using segment-based extraction");
-            extract_from_segments(&app, &relevant_segments, clip_start_time, clip_end_time, clip_duration, &temp_dir).await?
-        }
+    // If single segment, extract directly
+    // If multiple segments, we need to concatenate first then extract
+    let extracted_path = if relevant_segments.len() == 1 {
+        extract_single_segment_clip(
+            &app,
+            relevant_segments[0],
+            clip_start_time,
+            clip_duration,
+            &temp_dir,
+        ).await?
     } else {
-        // Use segment-based extraction (for legacy MP4 segments or when no playlist)
-        extract_from_segments(&app, &relevant_segments, clip_start_time, clip_end_time, clip_duration, &temp_dir).await?
+        extract_multi_segment_clip(
+            &app,
+            &relevant_segments,
+            clip_start_time,
+            clip_end_time,
+            clip_duration,
+            &temp_dir,
+        ).await?
     };
 
     let _ = app.emit("clip-extraction-progress", ClipExtractionProgress {
@@ -196,85 +193,6 @@ pub async fn extract_livestream_clip(
     println!("[Rust] Clip extracted successfully: {}", output_path.display());
 
     Ok(output_path.to_string_lossy().to_string())
-}
-
-/// Helper to extract from segments (single or multi)
-async fn extract_from_segments(
-    app: &tauri::AppHandle,
-    segments: &[&SegmentInfo],
-    clip_start_time: f64,
-    clip_end_time: f64,
-    clip_duration: f64,
-    temp_dir: &PathBuf,
-) -> Result<PathBuf, String> {
-    if segments.len() == 1 {
-        extract_single_segment_clip(app, segments[0], clip_start_time, clip_duration, temp_dir).await
-    } else {
-        extract_multi_segment_clip(app, segments, clip_start_time, clip_end_time, clip_duration, temp_dir).await
-    }
-}
-
-/// Extract clip directly from HLS playlist
-/// This is more efficient for HLS recordings as FFmpeg handles the seeking natively
-async fn extract_from_hls_playlist(
-    app: &tauri::AppHandle,
-    playlist_path: &str,
-    clip_start_time: f64,
-    clip_duration: f64,
-    temp_dir: &PathBuf,
-) -> Result<PathBuf, String> {
-    let shell = app.shell();
-    
-    let output_path = temp_dir.join(format!("clip_{}.mp4", uuid::Uuid::new_v4()));
-
-    // Detect hardware encoder
-    let encoder = detect_hardware_encoder(app, "high").await;
-
-    // Build FFmpeg args for HLS input
-    // Using -ss before -i for fast seeking in HLS
-    let mut args = vec![
-        "-ss".to_string(), format!("{:.3}", clip_start_time),
-        "-i".to_string(), playlist_path.to_string(),
-        "-t".to_string(), format!("{:.3}", clip_duration),
-        "-c:v".to_string(), encoder.codec.clone(),
-    ];
-
-    // Add preset if applicable
-    if let Some(preset) = &encoder.preset {
-        args.push("-preset".to_string());
-        args.push(preset.clone());
-    }
-
-    // Add quality parameter
-    args.push(encoder.quality_param.clone());
-    args.push(encoder.quality_value.clone());
-
-    // Add common parameters
-    args.extend_from_slice(&[
-        "-c:a".to_string(), "aac".to_string(),
-        "-b:a".to_string(), "192k".to_string(),
-        "-pix_fmt".to_string(), "yuv420p".to_string(),
-        "-movflags".to_string(), "+faststart".to_string(),
-        "-avoid_negative_ts".to_string(), "make_zero".to_string(),
-        "-y".to_string(),
-        output_path.to_string_lossy().to_string(),
-    ]);
-
-    println!("[Rust] Running FFmpeg for HLS playlist extraction (seek: {}s, duration: {}s)...", clip_start_time, clip_duration);
-
-    let output = shell.sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg HLS extraction failed: {}", stderr));
-    }
-
-    Ok(output_path)
 }
 
 /// Extract clip from a single segment

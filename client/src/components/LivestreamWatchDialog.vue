@@ -346,7 +346,6 @@
               :display-name="props.displayName"
               :mint-id="props.mintId"
               :is-temp-recording="viewer.state.value.isTempRecording"
-              :hls-playlist-path="viewer.state.value.hlsPlaylistPath"
               @close="showClipModal = false"
               @clip-created="handleClipCreated"
             />

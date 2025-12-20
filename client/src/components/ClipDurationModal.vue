@@ -228,8 +228,6 @@ interface Props {
   displayName?: string;
   mintId?: string;
   isTempRecording?: boolean;
-  // HLS playlist path for efficient clip extraction
-  hlsPlaylistPath?: string | null;
 }
 
 interface Emits {
@@ -354,7 +352,6 @@ async function createClip() {
       projectId: effectiveProjectId,
       watermarkId: props.watermarkId || null,
       watermarkSettings: props.watermarkSettings ? JSON.stringify(props.watermarkSettings) : null,
-      hlsPlaylistPath: props.hlsPlaylistPath || null, // HLS playlist for efficient extraction
     });
 
     createdClipPath.value = result;

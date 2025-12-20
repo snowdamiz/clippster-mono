@@ -87,39 +87,17 @@ struct TempStreamEndedPayload {
     temp_session_id: String,
 }
 
-// HLS-specific payload for DVR (includes playlist path for instant seek)
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct TempHlsSegmentPayload {
-    mint_id: String,
-    temp_session_id: String,
-    segment: u32,
-    path: String,
-    duration: f64,
-    playlist_path: String,
-    total_segments: u32,
-    total_duration: f64,
-}
-
 #[derive(Debug)]
 struct RecordingEntry {
     stop_tx: Option<oneshot::Sender<()>>,
     task: tokio::task::JoinHandle<()>,
 }
 
-// Temp recording entry with session info for DVR
-struct TempRecordingEntry {
-    stop_tx: Option<oneshot::Sender<()>>,
-    task: tokio::task::JoinHandle<()>,
-    session_id: String,
-    output_dir: String,
-}
-
 static ACTIVE_RECORDINGS: Lazy<Arc<Mutex<HashMap<String, RecordingEntry>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 // Separate tracking for temp recordings (used for watch-only DVR)
-static ACTIVE_TEMP_RECORDINGS: Lazy<Arc<Mutex<HashMap<String, TempRecordingEntry>>>> =
+static ACTIVE_TEMP_RECORDINGS: Lazy<Arc<Mutex<HashMap<String, RecordingEntry>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
@@ -367,35 +345,20 @@ pub async fn stop_livestream_recording(mint_id: String) -> Result<(), String> {
 // TEMP RECORDING COMMANDS (for Watch-only DVR)
 // ==========================================
 
-/// Response struct for temp recording start/info
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TempRecordingInfo {
-    pub session_id: String,
-    pub output_dir: String,
-    pub already_active: bool,
-}
-
 /// Start a temporary livestream recording for watch-only DVR functionality.
 /// This saves to the temp directory and will be cleaned up when the stream ends or dialog closes.
-/// Uses HLS format with short segments for instant DVR capability.
-/// Returns existing session info if already recording (not an error).
 #[tauri::command]
 pub async fn start_temp_livestream_recording(
     app: tauri::AppHandle,
     mint_id: String,
-    segment_duration_seconds: Option<u32>,
-) -> Result<TempRecordingInfo, String> {
-    // Check if we already have a temp recording for this mint - return existing info
+    segment_duration_minutes: Option<u32>,
+) -> Result<String, String> {
+    // Check if we already have a temp recording for this mint
     {
         let recordings = ACTIVE_TEMP_RECORDINGS.lock().unwrap();
-        if let Some(entry) = recordings.get(&mint_id) {
-            println!("[TempRecorder] Returning existing session for {}: {}", mint_id, entry.session_id);
-            return Ok(TempRecordingInfo {
-                session_id: entry.session_id.clone(),
-                output_dir: entry.output_dir.clone(),
-                already_active: true,
-            });
+        if recordings.contains_key(&mint_id) {
+            // Return existing session ID if already recording
+            return Err("Temp recording already active for this mint".to_string());
         }
     }
     
@@ -432,9 +395,7 @@ pub async fn start_temp_livestream_recording(
     let app_handle = app.clone();
     let mint_clone = mint_id.clone();
     let session_clone = temp_session_id.clone();
-    let output_clone = output_str.clone();
-    // Default to 4 seconds for HLS DVR (instant rewind capability)
-    let segment_duration = segment_duration_seconds.unwrap_or(4);
+    let segment_duration = segment_duration_minutes.unwrap_or(3); // Default to 3 minutes for temp (shorter for responsiveness)
 
     let task = tokio::spawn(async move {
         if let Err(err) = run_temp_recorder_process(
@@ -442,9 +403,8 @@ pub async fn start_temp_livestream_recording(
             script_path,
             mint_clone,
             session_clone,
-            output_clone,
+            output_str,
             segment_duration,
-            "hls".to_string(), // Use HLS format for temp recordings
             stop_rx,
         )
         .await
@@ -455,31 +415,14 @@ pub async fn start_temp_livestream_recording(
 
     ACTIVE_TEMP_RECORDINGS.lock().unwrap().insert(
         mint_id.clone(),
-        TempRecordingEntry {
+        RecordingEntry {
             stop_tx: Some(stop_tx),
             task,
-            session_id: temp_session_id.clone(),
-            output_dir: output_str.clone(),
         },
     );
 
-    println!("[TempRecorder] Started HLS temp recording for {} with session {} ({}s segments)", mint_id, temp_session_id, segment_duration);
-    Ok(TempRecordingInfo {
-        session_id: temp_session_id,
-        output_dir: output_str,
-        already_active: false,
-    })
-}
-
-/// Get info about an existing temp recording
-#[tauri::command]
-pub fn get_temp_recording_info(mint_id: String) -> Option<TempRecordingInfo> {
-    let recordings = ACTIVE_TEMP_RECORDINGS.lock().unwrap();
-    recordings.get(&mint_id).map(|entry| TempRecordingInfo {
-        session_id: entry.session_id.clone(),
-        output_dir: entry.output_dir.clone(),
-        already_active: true,
-    })
+    println!("[TempRecorder] Started temp recording for {} with session {}", mint_id, temp_session_id);
+    Ok(temp_session_id)
 }
 
 /// Stop a temporary livestream recording
@@ -547,23 +490,20 @@ pub async fn stop_all_temp_recordings() {
 }
 
 /// Run the temp recorder process (similar to persistent but emits temp-specific events)
-/// Uses HLS format for instant DVR capability
 async fn run_temp_recorder_process(
     app: tauri::AppHandle,
     script_path: String,
     mint_id: String,
     temp_session_id: String,
     output_dir: String,
-    segment_duration_seconds: u32,
-    output_format: String,
+    segment_duration_minutes: u32,
     mut stop_rx: oneshot::Receiver<()>,
 ) -> Result<(), String> {
     use tauri_plugin_shell::process::CommandEvent;
 
-    let segment_duration_str = segment_duration_seconds.to_string();
+    let segment_duration_str = segment_duration_minutes.to_string();
 
-    // Spawn Node sidecar with HLS format
-    // Args: mintId, sessionId, outputDir, segmentSeconds, outputFormat
+    // Spawn Node sidecar
     let (mut rx, mut child) = app.shell()
         .sidecar("node")
         .map_err(|e| format!("Failed to create node sidecar: {}", e))?
@@ -573,12 +513,11 @@ async fn run_temp_recorder_process(
             &temp_session_id,
             &output_dir,
             &segment_duration_str,
-            &output_format,
         ])
         .spawn()
         .map_err(|e| format!("Failed to spawn temp recorder sidecar: {}", e))?;
 
-    println!("[TempRecorder] Started Node sidecar with PID: {:?} (format: {}, segment: {}s)", child.pid(), output_format, segment_duration_seconds);
+    println!("[TempRecorder] Started Node sidecar with PID: {:?}", child.pid());
 
     let mut stopping = false;
     let mut kill_timer = Box::pin(tokio::time::sleep(tokio::time::Duration::from_secs(3600 * 24)));
@@ -647,17 +586,12 @@ async fn run_temp_recorder_process(
 }
 
 /// Handle output lines from temp recorder (emits temp-specific events)
-/// For HLS recordings, emits both segment events and HLS-specific events with playlist info
 fn handle_temp_recorder_line(
     app: &tauri::AppHandle,
     mint_id: &str,
     temp_session_id: &str,
     content: String,
 ) {
-    // Track total duration for HLS segments
-    static TEMP_TOTAL_DURATION: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, f64>>> = 
-        std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
-    
     if content.trim().is_empty() {
         return;
     }
@@ -666,45 +600,14 @@ fn handle_temp_recorder_line(
         Ok(event) => match event.event_type.as_str() {
             "segment_complete" => {
                 if let (Some(segment), Some(path)) = (event.segment, event.path) {
-                    let duration = event.duration.unwrap_or(4.0); // 4 sec default for HLS
                     let payload = TempSegmentReadyPayload {
                         mint_id: mint_id.to_string(),
                         temp_session_id: temp_session_id.to_string(),
                         segment,
                         path,
-                        duration,
+                        duration: event.duration.unwrap_or(180.0), // 3 min default for temp
                     };
                     let _ = app.emit("temp-segment-ready", payload);
-                }
-            }
-            "hls_segment" => {
-                // HLS-specific event with playlist path for DVR
-                if let (Some(segment), Some(path)) = (event.segment, event.path.clone()) {
-                    let duration = event.duration.unwrap_or(4.0);
-                    let total_segments = event.extra.get("totalSegments")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(segment as u64) as u32;
-                    let playlist_path = event.extra.get("playlistPath")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    
-                    // Update total duration
-                    let mut durations = TEMP_TOTAL_DURATION.lock().unwrap();
-                    let total_duration = durations.entry(mint_id.to_string()).or_insert(0.0);
-                    *total_duration += duration;
-                    
-                    let payload = TempHlsSegmentPayload {
-                        mint_id: mint_id.to_string(),
-                        temp_session_id: temp_session_id.to_string(),
-                        segment,
-                        path,
-                        duration,
-                        playlist_path,
-                        total_segments,
-                        total_duration: *total_duration,
-                    };
-                    let _ = app.emit("temp-hls-segment", payload);
                 }
             }
             "stream_ended" => {
@@ -713,10 +616,6 @@ fn handle_temp_recorder_line(
                     temp_session_id: temp_session_id.to_string(),
                 };
                 let _ = app.emit("temp-stream-ended", payload);
-                
-                // Clean up duration tracking
-                let mut durations = TEMP_TOTAL_DURATION.lock().unwrap();
-                durations.remove(mint_id);
             }
             "log" => {
                 // Just log to console for temp recordings, don't emit to frontend activity log

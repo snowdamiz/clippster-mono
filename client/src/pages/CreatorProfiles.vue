@@ -858,6 +858,7 @@
               profileImageUrl: streamer.profile_image_url || undefined,
               streamThumbnailUrl: streamer.stream_thumbnail_url || undefined,
               segmentDurationMinutes: streamer.segment_duration_minutes ?? 5,
+              autoDvr: Boolean(streamer.auto_dvr),
             },
           ],
           { detectClips }

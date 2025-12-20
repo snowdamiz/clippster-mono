@@ -8,9 +8,10 @@
       @mousemove="handleMouseMove"
       @mouseleave="handleMouseLeave"
     >
-      <!-- Recorded/Available Progress (full bar since we only show recorded content) -->
+      <!-- Recorded/Available Progress -->
       <div
-        class="absolute h-full bg-zinc-600 rounded-full transition-all w-full"
+        class="absolute h-full bg-zinc-600 rounded-full transition-all"
+        :style="{ width: `${recordedPercent}%` }"
       />
 
       <!-- Playback Progress -->
@@ -58,7 +59,7 @@
         :style="{ left: `${hoverPositionPercent}%` }"
       >
         <div class="bg-zinc-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap border border-zinc-700">
-          -{{ formatTime(liveEdgeTime - hoverPosition) }}
+          {{ formatTime(hoverPosition) }}
         </div>
         <div class="absolute left-1/2 -translate-x-1/2 -bottom-1 w-2 h-2 bg-zinc-900 border-b border-r border-zinc-700 rotate-45" />
       </div>
@@ -73,9 +74,9 @@
 
     <!-- Time Labels and Controls Row -->
     <div class="flex items-center justify-between mt-2 text-xs">
-      <!-- Time in recording (relative to DVR start) -->
+      <!-- Current Time -->
       <div class="text-white font-mono min-w-[60px]">
-        -{{ formatTime(liveEdgeTime - playbackPosition) }}
+        {{ formatTime(playbackPosition) }}
       </div>
 
       <!-- Center: Behind Live / Go Live Button -->
@@ -103,9 +104,9 @@
         </span>
       </div>
 
-      <!-- Recorded duration available -->
+      <!-- Total Duration -->
       <div class="text-zinc-400 font-mono min-w-[60px] text-right">
-        {{ formatTime(totalRecordedDuration) }}
+        {{ formatTime(liveEdgeTime) }}
       </div>
     </div>
   </div>
@@ -140,24 +141,19 @@ const hoverPosition = ref<number | null>(null);
 // Computed
 const segments = computed(() => props.availableSegments);
 
-// Calculate the earliest recorded position (start of recording in stream time)
-const earliestRecordedPosition = computed(() => {
-  return Math.max(0, props.liveEdgeTime - props.totalRecordedDuration);
-});
-
-// Calculate playback position as percentage of recorded content
-// Timeline now only shows recorded content (0% = start of recording, 100% = live edge)
 const playbackPercent = computed(() => {
-  if (props.totalRecordedDuration <= 0) return 100; // At live edge if nothing recorded
-  const positionInRecording = props.playbackPosition - earliestRecordedPosition.value;
-  return Math.min(100, Math.max(0, (positionInRecording / props.totalRecordedDuration) * 100));
+  if (props.liveEdgeTime <= 0) return 0;
+  return Math.min(100, (props.playbackPosition / props.liveEdgeTime) * 100);
 });
 
-// Hover position as percentage of recorded content
+const recordedPercent = computed(() => {
+  if (props.liveEdgeTime <= 0) return 0;
+  return Math.min(100, (props.totalRecordedDuration / props.liveEdgeTime) * 100);
+});
+
 const hoverPositionPercent = computed(() => {
-  if (hoverPosition.value === null || props.totalRecordedDuration <= 0) return 0;
-  const positionInRecording = hoverPosition.value - earliestRecordedPosition.value;
-  return Math.min(100, Math.max(0, (positionInRecording / props.totalRecordedDuration) * 100));
+  if (hoverPosition.value === null || props.liveEdgeTime <= 0) return 0;
+  return Math.min(100, (hoverPosition.value / props.liveEdgeTime) * 100);
 });
 
 const behindLiveFormatted = computed(() => {
@@ -184,23 +180,17 @@ function formatTime(seconds: number): string {
 }
 
 function getSegmentPosition(endTime: number): number {
-  if (props.totalRecordedDuration <= 0) return 0;
-  // Convert segment end time (in stream time) to position in recording
-  const positionInRecording = endTime - earliestRecordedPosition.value;
-  return Math.min(100, Math.max(0, (positionInRecording / props.totalRecordedDuration) * 100));
+  if (props.liveEdgeTime <= 0) return 0;
+  return Math.min(100, (endTime / props.liveEdgeTime) * 100);
 }
 
 function getPositionFromEvent(event: MouseEvent): number {
-  if (!trackRef.value) return props.liveEdgeTime;
+  if (!trackRef.value) return 0;
   
   const rect = trackRef.value.getBoundingClientRect();
   const x = Math.max(0, Math.min(event.clientX - rect.left, rect.width));
   const percent = x / rect.width;
-  
-  // Convert percentage to stream position
-  // Timeline shows only recorded content, so 0% = earliestRecordedPosition, 100% = liveEdgeTime
-  const positionInRecording = percent * props.totalRecordedDuration;
-  return earliestRecordedPosition.value + positionInRecording;
+  return percent * props.liveEdgeTime;
 }
 
 // Event handlers
