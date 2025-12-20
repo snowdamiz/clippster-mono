@@ -676,14 +676,69 @@ export function useDvrRecording() {
     let saveChain: Promise<void> = Promise.resolve();
     // Keep a local chunk index to ensure monotonicity regardless of session state updates
     let localChunkIndex = session.chunkIndex;
+    // Track when we last received a valid chunk (for smart force flush)
+    let lastValidChunkAt = Date.now();
+    // Track consecutive empty chunks for recovery
+    let consecutiveEmptyChunks = 0;
+    const MAX_CONSECUTIVE_EMPTY_CHUNKS = 5;
 
     recorder.ondataavailable = (event) => {
       console.log(`[DvrRecording] ondataavailable fired, size: ${event.data.size} bytes`);
 
       if (event.data.size === 0) {
-        console.log('[DvrRecording] Empty chunk received, skipping');
+        consecutiveEmptyChunks++;
+        console.log(
+          `[DvrRecording] Empty chunk received (${consecutiveEmptyChunks} consecutive), skipping`
+        );
+
+        // If we get too many empty chunks, try to recover by stopping and restarting
+        if (consecutiveEmptyChunks >= MAX_CONSECUTIVE_EMPTY_CHUNKS) {
+          console.warn('[DvrRecording] Too many empty chunks, attempting recovery...');
+          consecutiveEmptyChunks = 0;
+
+          // Stop and restart the MediaRecorder to try to recover
+          const currentSession = activeDvrSessions.value.get(mintId);
+          if (currentSession && currentSession.mediaRecorder?.state === 'recording') {
+            try {
+              // Stop current recording - this will trigger onstop
+              currentSession.mediaRecorder.stop();
+
+              // Restart after a brief delay
+              setTimeout(() => {
+                const session = activeDvrSessions.value.get(mintId);
+                if (session && session.mediaStream?.active && !session.isRecording) {
+                  console.log('[DvrRecording] Restarting MediaRecorder after recovery...');
+                  // Create new MediaRecorder with the same stream
+                  const newRecorder = new MediaRecorder(session.mediaStream, {
+                    mimeType,
+                    videoBitsPerSecond: 4000000,
+                    audioBitsPerSecond: 128000,
+                  });
+
+                  // Re-attach handlers
+                  newRecorder.ondataavailable = recorder.ondataavailable;
+                  newRecorder.onerror = recorder.onerror;
+                  newRecorder.onstop = recorder.onstop;
+
+                  session.mediaRecorder = newRecorder;
+                  newRecorder.start(DVR_CHUNK_DURATION_SECONDS * 1000);
+                  session.isRecording = true;
+                  lastValidChunkAt = Date.now();
+
+                  console.log('[DvrRecording] MediaRecorder restarted successfully');
+                }
+              }, 500);
+            } catch (e) {
+              console.error('[DvrRecording] Failed to recover MediaRecorder:', e);
+            }
+          }
+        }
         return;
       }
+
+      // Reset empty chunk counter and track valid chunk time
+      consecutiveEmptyChunks = 0;
+      lastValidChunkAt = Date.now();
 
       saveChain = saveChain
         .then(async () => {
@@ -767,11 +822,41 @@ export function useDvrRecording() {
     console.log('[DvrRecording] MediaRecorder state:', recorder.state);
     console.log('[DvrRecording] MediaStream active:', mediaStream.active);
 
+    // Smart force flush - only flush if we haven't received a valid chunk in too long
+    // This prevents interfering with natural chunk emission while still recovering
+    // from browser throttling scenarios
+    const FORCE_FLUSH_THRESHOLD_MS = DVR_CHUNK_DURATION_SECONDS * 1000 * 2.5; // 2.5x chunk duration (10 seconds)
+    const forceFlushInterval = setInterval(() => {
+      const currentSession = activeDvrSessions.value.get(mintId);
+      if (!currentSession || !currentSession.isRecording || !currentSession.mediaRecorder) {
+        clearInterval(forceFlushInterval);
+        return;
+      }
+
+      // Only force flush if we haven't received a valid chunk in a while
+      const timeSinceLastChunk = Date.now() - lastValidChunkAt;
+      if (timeSinceLastChunk >= FORCE_FLUSH_THRESHOLD_MS) {
+        if (currentSession.mediaRecorder.state === 'recording') {
+          console.log(
+            '[DvrRecording] Force flushing - no valid chunk received in',
+            timeSinceLastChunk,
+            'ms'
+          );
+          try {
+            currentSession.mediaRecorder.requestData();
+          } catch (e) {
+            // Ignore errors - requestData might not be supported in all cases
+          }
+        }
+      }
+    }, DVR_CHUNK_DURATION_SECONDS * 1000); // Check every chunk duration
+
     // Debug: log MediaRecorder status periodically
     const statusInterval = setInterval(() => {
       const currentSession = activeDvrSessions.value.get(mintId);
       if (!currentSession || !currentSession.isRecording) {
         clearInterval(statusInterval);
+        clearInterval(forceFlushInterval);
         return;
       }
 

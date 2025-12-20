@@ -56,7 +56,6 @@
                           {{ viewer.state.value.viewerCount }}
                         </span>
                         <span v-if="viewer.isLive.value" class="text-red-400 font-medium">LIVE</span>
-                        <span v-else class="text-yellow-400">{{ viewer.behindLiveFormatted.value }}</span>
                       </div>
                     </div>
                   </div>
@@ -102,8 +101,8 @@
                   <span :class="connectionStatusTextColor">{{ connectionStatusText }}</span>
                 </div>
                 <div class="flex justify-between">
-                  <span class="text-zinc-400">Playback Mode</span>
-                  <span class="text-white capitalize">{{ viewer.state.value.playbackMode }}</span>
+                  <span class="text-zinc-400">Recorded</span>
+                  <span class="text-white">{{ formatTime(viewer.state.value.totalRecordedDuration) }}</span>
                 </div>
               </div>
             </div>
@@ -116,26 +115,7 @@
               @mouseleave="handleMouseLeave"
             >
               <!-- Live Video (LiveKit) -->
-              <video
-                ref="liveVideoRef"
-                :class="[
-                  'w-full h-full object-contain transition-opacity duration-200',
-                  viewer.state.value.playbackMode === 'live' ? 'opacity-100' : 'opacity-0 absolute inset-0',
-                ]"
-                autoplay
-                playsinline
-                muted
-              />
-
-              <!-- DVR Video (MSE Playback - single element) -->
-              <video
-                ref="dvrVideoRef"
-                :class="[
-                  'w-full h-full object-contain transition-opacity duration-200 absolute inset-0',
-                  viewer.state.value.playbackMode === 'dvr' ? 'opacity-100 z-10' : 'opacity-0 z-0',
-                ]"
-                playsinline
-              />
+              <video ref="liveVideoRef" class="w-full h-full object-contain" autoplay playsinline muted />
 
               <!-- Watermark Overlay -->
               <div
@@ -205,15 +185,10 @@
                 ]"
               >
                 <div class="bg-gradient-to-t from-black/90 via-black/60 to-transparent pt-16 pb-4 px-4">
-                  <!-- DVR Timeline -->
-                  <LivestreamTimeline
-                    :playback-position="viewer.state.value.playbackPosition"
-                    :live-edge-time="viewer.state.value.liveEdgeTime"
+                  <!-- Recording Progress Indicator -->
+                  <LivestreamRecordingBar
                     :total-recorded-duration="viewer.state.value.totalRecordedDuration"
-                    :is-at-live-edge="viewer.state.value.isAtLiveEdge"
-                    :available-segments="viewer.state.value.availableSegments"
-                    @seek="handleSeek"
-                    @go-live="handleGoLive"
+                    :live-edge-time="viewer.state.value.liveEdgeTime"
                   />
 
                   <!-- Control Bar -->
@@ -255,52 +230,20 @@
                         </div>
                       </div>
 
-                      <!-- Time Display -->
-                      <div class="text-white text-sm font-mono">
-                        {{ formatTime(viewer.state.value.playbackPosition) }}
-                        /
-                        {{ formatTime(viewer.state.value.liveEdgeTime) }}
-                      </div>
-
-                      <!-- Behind Live Indicator -->
-                      <button
-                        v-if="!viewer.state.value.isAtLiveEdge"
-                        @click="handleGoLive"
-                        class="px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs font-medium rounded-full transition-colors flex items-center gap-1"
+                      <!-- Live Indicator -->
+                      <div
+                        class="flex items-center gap-2 px-3 py-1 bg-red-600/90 text-white text-xs font-medium rounded-full"
                       >
-                        <Radio class="w-3 h-3" />
-                        Go Live
-                      </button>
+                        <div class="relative w-2 h-2">
+                          <div class="absolute inset-0 bg-white rounded-full" />
+                          <div class="absolute inset-0 bg-white rounded-full animate-ping opacity-75" />
+                        </div>
+                        <span>LIVE</span>
+                      </div>
                     </div>
 
                     <!-- Right Controls -->
                     <div class="flex items-center gap-2">
-                      <!-- Playback Speed (DVR only) -->
-                      <div v-if="!viewer.state.value.isAtLiveEdge" class="relative">
-                        <button
-                          @click="showSpeedMenu = !showSpeedMenu"
-                          class="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
-                        >
-                          {{ viewer.state.value.playbackSpeed }}x
-                        </button>
-                        <div
-                          v-if="showSpeedMenu"
-                          class="absolute bottom-full mb-2 right-0 bg-zinc-900 border border-zinc-700 rounded-lg py-1 min-w-[80px]"
-                        >
-                          <button
-                            v-for="speed in [1, 1.25, 1.5, 2]"
-                            :key="speed"
-                            @click="setPlaybackSpeed(speed)"
-                            :class="[
-                              'w-full px-3 py-1 text-sm text-left hover:bg-zinc-700 transition-colors',
-                              viewer.state.value.playbackSpeed === speed ? 'text-violet-400' : 'text-white',
-                            ]"
-                          >
-                            {{ speed }}x
-                          </button>
-                        </div>
-                      </div>
-
                       <!-- Clip Button -->
                       <button
                         @click="openClipModal"
@@ -379,7 +322,6 @@
     Volume2,
     Volume1,
     VolumeX,
-    Radio,
     Scissors,
     PictureInPicture2,
     Maximize,
@@ -387,7 +329,7 @@
   } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import { useLivestreamViewer } from '@/composables/useLivestreamViewer';
-  import LivestreamTimeline from './LivestreamTimeline.vue';
+  import LivestreamRecordingBar from './LivestreamRecordingBar.vue';
   import ClipDurationModal from './ClipDurationModal.vue';
   import { getWatermarkImage, resolveWatermarkById } from '@/services/database';
 
@@ -412,7 +354,6 @@
   const containerRef = ref<HTMLDivElement | null>(null);
   const videoContainerRef = ref<HTMLDivElement | null>(null);
   const liveVideoRef = ref<HTMLVideoElement | null>(null);
-  const dvrVideoRef = ref<HTMLVideoElement | null>(null);
 
   // Composable
   const viewer = useLivestreamViewer();
@@ -421,7 +362,6 @@
   const isFullscreen = ref(false);
   const showControls = ref(true);
   const showStatsPopup = ref(false);
-  const showSpeedMenu = ref(false);
   const showClipModal = ref(false);
   const watermarkUrl = ref<string | null>(null);
   let controlsTimeout: number | null = null;
@@ -556,19 +496,6 @@
     viewer.setVolume(parseFloat(target.value));
   }
 
-  function handleSeek(position: number) {
-    viewer.seek(position);
-  }
-
-  function handleGoLive() {
-    viewer.goToLive();
-  }
-
-  function setPlaybackSpeed(speed: number) {
-    viewer.setPlaybackSpeed(speed);
-    showSpeedMenu.value = false;
-  }
-
   function openClipModal() {
     showClipModal.value = true;
   }
@@ -600,7 +527,7 @@
   }
 
   async function togglePip() {
-    const video = viewer.state.value.playbackMode === 'live' ? liveVideoRef.value : dvrVideoRef.value;
+    const video = liveVideoRef.value;
     if (!video) return;
 
     try {
@@ -624,22 +551,6 @@
         event.preventDefault();
         viewer.togglePlayPause();
         break;
-      case 'arrowleft':
-        event.preventDefault();
-        viewer.seekRelative(-10);
-        break;
-      case 'arrowright':
-        event.preventDefault();
-        viewer.seekRelative(10);
-        break;
-      case 'j':
-        event.preventDefault();
-        viewer.seekRelative(-30);
-        break;
-      case 'l':
-        event.preventDefault();
-        viewer.seekRelative(30);
-        break;
       case 'm':
         event.preventDefault();
         viewer.toggleMute();
@@ -654,21 +565,7 @@
         break;
       case 'c':
         event.preventDefault();
-        if (event.shiftKey) {
-          // Shift+C opens full modal
-          openClipModal();
-        } else {
-          // Quick 30s clip
-          quickClip();
-        }
-        break;
-      case 'home':
-        event.preventDefault();
-        viewer.seek(0);
-        break;
-      case 'end':
-        event.preventDefault();
-        handleGoLive();
+        openClipModal();
         break;
       case 'escape':
         event.preventDefault();
@@ -678,43 +575,6 @@
           handleClose();
         }
         break;
-      case '<':
-      case ',':
-        event.preventDefault();
-        decreaseSpeed();
-        break;
-      case '>':
-      case '.':
-        event.preventDefault();
-        increaseSpeed();
-        break;
-    }
-  }
-
-  function quickClip() {
-    // Create a 30-second clip immediately
-    if (viewer.state.value.totalRecordedDuration >= 30) {
-      // Emit event or call clip creation directly
-      // For now, just open modal with 30s preset
-      showClipModal.value = true;
-    }
-  }
-
-  function decreaseSpeed() {
-    const speeds = [1, 1.25, 1.5, 2];
-    const current = viewer.state.value.playbackSpeed;
-    const index = speeds.indexOf(current);
-    if (index > 0) {
-      setPlaybackSpeed(speeds[index - 1]);
-    }
-  }
-
-  function increaseSpeed() {
-    const speeds = [1, 1.25, 1.5, 2];
-    const current = viewer.state.value.playbackSpeed;
-    const index = speeds.indexOf(current);
-    if (index < speeds.length - 1) {
-      setPlaybackSpeed(speeds[index + 1]);
     }
   }
 
@@ -732,16 +592,12 @@
         // Connect when dialog opens
         await nextTick();
 
-        console.log('[WatchDialog] Setting video elements...');
+        console.log('[WatchDialog] Setting video element...');
         console.log('[WatchDialog] liveVideoRef:', !!liveVideoRef.value);
-        console.log('[WatchDialog] dvrVideoRef:', !!dvrVideoRef.value);
 
-        // Set video elements first
+        // Set video element first
         if (liveVideoRef.value) {
           viewer.setVideoElement(liveVideoRef.value);
-        }
-        if (dvrVideoRef.value) {
-          viewer.setDvrVideoElement(dvrVideoRef.value);
         }
 
         // Connect to livestream
@@ -830,6 +686,7 @@
   /* Volume slider styling */
   input[type='range'] {
     -webkit-appearance: none;
+    appearance: none;
     background: transparent;
   }
 

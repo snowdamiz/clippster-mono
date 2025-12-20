@@ -18,10 +18,12 @@ pub struct ClipExtractionProgress {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SegmentInfo {
-    pub segment_number: i32,
+    #[serde(rename = "segmentNumber")]
+    pub _segment_number: i32,
     pub file_path: String,
     pub start_time: f64,
-    pub duration: f64,
+    #[serde(rename = "duration")]
+    pub _duration: f64,
     pub end_time: f64,
 }
 
