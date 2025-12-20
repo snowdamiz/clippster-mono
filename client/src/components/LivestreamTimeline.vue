@@ -8,7 +8,7 @@
       @mousemove="handleMouseMove"
       @mouseleave="handleMouseLeave"
     >
-      <!-- Recorded/Available Progress -->
+      <!-- DVR Recorded Region -->
       <div
         class="absolute h-full bg-zinc-600 rounded-full transition-all"
         :style="{ width: `${recordedPercent}%` }"
@@ -146,6 +146,7 @@ const playbackPercent = computed(() => {
   return Math.min(100, (props.playbackPosition / props.liveEdgeTime) * 100);
 });
 
+// Recorded content percentage of timeline
 const recordedPercent = computed(() => {
   if (props.liveEdgeTime <= 0) return 0;
   return Math.min(100, (props.totalRecordedDuration / props.liveEdgeTime) * 100);

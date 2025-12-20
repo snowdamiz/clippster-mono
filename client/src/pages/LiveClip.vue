@@ -469,8 +469,8 @@
     activityLogs,
     addActivityLog,
     clearLogs,
-    tempRecordingSessions,
-    hasTempRecording,
+    dvrSessions,
+    hasDvrRecording,
   } = useLivestreamMonitoring();
 
   const { hoursRemaining, fetchBalance } = useCreditBalance();
@@ -638,13 +638,13 @@
     }
   });
 
-  watch([activeSessions, monitoredStreamers, tempRecordingSessions], () => syncDetectionState(), { deep: true });
+  watch([activeSessions, monitoredStreamers, dvrSessions], () => syncDetectionState(), { deep: true });
 
   function syncDetectionState() {
     streamers.value = streamers.value.map((streamer) => {
       const monitored = monitoredStreamers.value.get(streamer.id);
       const session = activeSessions.value.get(streamer.id);
-      const tempSession = tempRecordingSessions.value.get(streamer.id);
+      const dvrSession = dvrSessions.value.get(streamer.id);
 
       return {
         ...streamer,
@@ -654,7 +654,7 @@
         // When actively monitoring, derive live status from session state
         isLive: monitored ? (session ? true : streamer.isLive) : streamer.isLive,
         // Track temp recording status for DVR availability
-        hasTempRecording: !!tempSession,
+        hasTempRecording: !!dvrSession,
       };
     });
   }

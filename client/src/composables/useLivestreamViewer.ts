@@ -19,7 +19,7 @@ import {
 } from '@/services/database';
 import type { LiveStatus, LiveSession, SegmentEventPayload } from '@/types/livestream';
 import { useLivestreamMonitoring } from './useLivestreamMonitoring';
-import { useTempLivestreamRecording, type TempSegmentInfo } from './useTempLivestreamRecording';
+import { useDvrRecording, type DvrChunk } from './useDvrRecording';
 
 // PumpFun LiveKit API endpoints
 const PUMPFUN_LIVESTREAM_API = 'https://livestream-api.pump.fun';
@@ -55,10 +55,11 @@ export interface LivestreamViewerState {
   streamQuality: string | null;
   latencyMs: number | null;
   
-  // DVR Timeline
-  recordingStartTime: number | null; // Unix timestamp when recording started
-  liveEdgeTime: number; // Current live edge in seconds from stream start
-  playbackPosition: number; // Current playback position in seconds from stream start
+  // DVR Timeline (all times are relative to DVR start, not stream start)
+  recordingStartTime: number | null; // Unix timestamp when stream originally started (for reference)
+  dvrStartTime: number | null; // Unix timestamp when DVR recording started (this is the timeline origin)
+  liveEdgeTime: number; // Current live edge in seconds from DVR start
+  playbackPosition: number; // Current playback position in seconds from DVR start
   isAtLiveEdge: boolean;
   availableSegments: SegmentInfo[];
   totalRecordedDuration: number; // Total seconds of recorded content
@@ -99,10 +100,12 @@ const MUTED_STORAGE_KEY = 'livestream-viewer-muted';
 
 export function useLivestreamViewer() {
   // Get the monitoring composable to access active sessions
-  const { activeSessions, monitoredStreamers, startMonitoring, stopMonitoring, tempRecordingSessions } = useLivestreamMonitoring();
+  const { activeSessions, monitoredStreamers, startMonitoring, stopMonitoring, dvrSessions, dvrRecording } = useLivestreamMonitoring();
   
-  // Get the temp recording composable
-  const tempRecording = useTempLivestreamRecording();
+  // DVR recording composable is now accessed through monitoring (singleton pattern)
+  
+  // Constants
+  const LIVE_EDGE_THRESHOLD = 5; // seconds - within this range switches to live mode
   
   // Core state
   const state = ref<LivestreamViewerState>({
@@ -116,6 +119,7 @@ export function useLivestreamViewer() {
     streamQuality: null,
     latencyMs: null,
     recordingStartTime: null,
+    dvrStartTime: null,
     liveEdgeTime: 0,
     playbackPosition: 0,
     isAtLiveEdge: true,
@@ -156,6 +160,10 @@ export function useLivestreamViewer() {
   let liveEdgeUpdateInterval: number | null = null;
   let segmentPollInterval: number | null = null;
   
+  // DVR chunk transition state
+  let waitingForNextChunk = false;
+  let waitingForChunkInterval: number | null = null;
+  
   // Event listeners
   const unlistenFunctions: UnlistenFn[] = [];
   
@@ -176,8 +184,15 @@ export function useLivestreamViewer() {
     const mins = minutes % 60;
     return `${hours}h ${mins}m behind`;
   });
-  const canSeekBackward = computed(() => state.value.playbackPosition > 0);
+  // Can only seek backward if there's DVR content and we're not at position 0
+  const canSeekBackward = computed(() => {
+    const hasDvrContent = state.value.availableSegments.length > 0;
+    return hasDvrContent && state.value.playbackPosition > 0;
+  });
   const canSeekForward = computed(() => !state.value.isAtLiveEdge);
+  // How much recorded DVR content is available to rewind through
+  const availableDvrDuration = computed(() => state.value.totalRecordedDuration);
+  // Current position represents how much content we can clip from
   const availableClipDuration = computed(() => state.value.playbackPosition);
   
   // Helper functions
@@ -411,9 +426,9 @@ export function useLivestreamViewer() {
         });
       });
       
-      // Start auto-recording if enabled
+      // Start DVR if enabled (for clipping/seeking capability)
       if (autoStartRecording) {
-        await ensureRecordingStarted(streamerId, mintId, displayName, profileImageUrl);
+        await ensureDvrAvailable(streamerId, mintId, displayName, profileImageUrl);
       }
       
       // Start live edge update timer
@@ -621,9 +636,9 @@ export function useLivestreamViewer() {
     }, delay);
   }
   
-  // Ensure recording is started for clipping/DVR capability
-  // This now uses TEMP recording by default (no persistent project created)
-  async function ensureRecordingStarted(
+  // Ensure DVR is available for clipping/DVR capability
+  // DVR is now browser-based (MediaRecorder), not FFmpeg-based
+  async function ensureDvrAvailable(
     streamerId: string,
     mintId: string,
     displayName: string,
@@ -639,40 +654,81 @@ export function useLivestreamViewer() {
       return;
     }
     
-    // Check if already has temp recording from monitoring
-    const tempSession = tempRecordingSessions.value.get(streamerId);
-    if (tempSession) {
-      state.value.tempSessionId = tempSession.tempSessionId;
+    // Check if DVR session already exists (started by monitoring)
+    if (dvrRecording.isDvrSessionActive(mintId)) {
       state.value.isTempRecording = true;
-      state.value.projectId = null; // No project for temp recording
-      console.log('[LiveViewer] Using existing temp recording session:', tempSession.tempSessionId);
+      state.value.projectId = null;
+      
+      // Update available DVR chunks
+      updateDvrChunksFromSession(mintId);
+      
+      console.log('[LiveViewer] Using existing DVR session for:', mintId);
       return;
     }
     
-    // Start temp recording for DVR (NOT persistent recording)
-    // This allows users to watch and clip without creating a project
+    // Start DVR recording for watch-only mode
+    // This creates a background LiveKit connection with MediaRecorder
     try {
-      const tempSessionId = await tempRecording.startTempRecording(mintId, 3);
-      state.value.tempSessionId = tempSessionId;
+      await dvrRecording.startDvrSession(mintId, streamerId, displayName);
       state.value.isTempRecording = true;
       state.value.projectId = null;
-      console.log('[LiveViewer] Started temp recording for DVR:', tempSessionId);
+      console.log('[LiveViewer] Started DVR session for:', mintId);
     } catch (error) {
-      console.warn('[LiveViewer] Failed to start temp recording:', error);
-      // Even if temp recording fails, we can still watch live (just no DVR)
+      console.warn('[LiveViewer] Failed to start DVR session:', error);
+      // Even if DVR fails, we can still watch live (just no DVR/seeking capability)
+    }
+  }
+  
+  // Update available segments from DVR session
+  // All times are relative to DVR start (not stream start)
+  function updateDvrChunksFromSession(mintId: string) {
+    const dvrSession = dvrRecording.getDvrSession(mintId);
+    const chunks = dvrRecording.getChunks(mintId);
+    
+    // Debug logging
+    if (!dvrSession) {
+      console.log('[LiveViewer] No DVR session found for:', mintId);
+    }
+    
+    // Set DVR start time if we have a session
+    if (dvrSession && !state.value.dvrStartTime) {
+      state.value.dvrStartTime = dvrSession.startedAt;
+      console.log('[LiveViewer] DVR start time set:', new Date(dvrSession.startedAt).toISOString());
+    }
+    
+    if (chunks.length > 0) {
+      // Chunks are already relative to DVR start, use them directly
+      state.value.availableSegments = chunks.map(chunk => ({
+        segmentNumber: chunk.index,
+        filePath: chunk.path,
+        startTime: chunk.startTime,
+        duration: chunk.duration,
+        endTime: chunk.endTime,
+      }));
+      
+      state.value.totalRecordedDuration = dvrRecording.getTotalDuration(mintId);
+      
+      // Only log when chunks change
+      if (state.value.availableSegments.length !== chunks.length) {
+        console.log(`[LiveViewer] DVR chunks updated: ${chunks.length} chunks, ${state.value.totalRecordedDuration}s total`);
+      }
     }
   }
   
   // Live edge update timer
+  // Timeline is relative to DVR start, not stream start
   function startLiveEdgeUpdates() {
     if (liveEdgeUpdateInterval) {
       clearInterval(liveEdgeUpdateInterval);
     }
     
     liveEdgeUpdateInterval = window.setInterval(() => {
-      if (state.value.recordingStartTime) {
-        const now = Math.floor(Date.now() / 1000);
-        state.value.liveEdgeTime = now - state.value.recordingStartTime;
+      // Use DVR start time if available, otherwise fall back to recording start time
+      const referenceTime = state.value.dvrStartTime || (state.value.recordingStartTime ? state.value.recordingStartTime * 1000 : null);
+      
+      if (referenceTime) {
+        const now = Date.now();
+        state.value.liveEdgeTime = Math.floor((now - referenceTime) / 1000);
         
         // Update playback position if at live edge
         if (state.value.isAtLiveEdge && state.value.playbackMode === 'live') {
@@ -698,20 +754,9 @@ export function useLivestreamViewer() {
   }
   
   async function updateAvailableSegments() {
-    // For temp recordings, get segments from the temp recording composable
+    // For DVR (browser-based recording), get chunks from the DVR composable
     if (state.value.isTempRecording && state.value.mintId) {
-      const tempSegments = tempRecording.getSegments(state.value.mintId);
-      if (tempSegments.length > 0) {
-        // Convert TempSegmentInfo to SegmentInfo (they're the same structure)
-        state.value.availableSegments = tempSegments.map(seg => ({
-          segmentNumber: seg.segmentNumber,
-          filePath: seg.filePath,
-          startTime: seg.startTime,
-          duration: seg.duration,
-          endTime: seg.endTime,
-        }));
-        state.value.totalRecordedDuration = tempRecording.getTotalDuration(state.value.mintId);
-      }
+      updateDvrChunksFromSession(state.value.mintId);
       return;
     }
     
@@ -778,49 +823,20 @@ export function useLivestreamViewer() {
       }
     });
     
-    // Listen for temp recording segments (for watch-only DVR)
-    const tempUnlisten = await listen<{
-      mintId: string;
-      tempSessionId: string;
-      segment: number;
-      path: string;
-      duration: number;
-    }>('temp-segment-ready', (event) => {
-      if (event.payload.mintId === state.value.mintId && state.value.isTempRecording) {
-        // Update temp session ID if not set
-        if (!state.value.tempSessionId) {
-          state.value.tempSessionId = event.payload.tempSessionId;
-        }
-        
-        // Add new segment to available segments
-        const newSegment: SegmentInfo = {
-          segmentNumber: event.payload.segment,
-          filePath: event.payload.path,
-          startTime: state.value.totalRecordedDuration,
-          duration: event.payload.duration,
-          endTime: state.value.totalRecordedDuration + event.payload.duration,
-        };
-        
-        state.value.availableSegments = [...state.value.availableSegments, newSegment];
-        state.value.totalRecordedDuration += event.payload.duration;
-        
-        console.log(`[LiveViewer] Temp segment ${event.payload.segment} ready, total duration: ${state.value.totalRecordedDuration}s`);
+    // For DVR mode, poll the DVR session for new chunks (since MediaRecorder runs in same process)
+    // DVR chunks are added directly to the session state, we just need to sync them
+    const dvrUpdateInterval = window.setInterval(() => {
+      if (state.value.isTempRecording && state.value.mintId) {
+        updateDvrChunksFromSession(state.value.mintId);
       }
-    });
+    }, 2000);  // Check for new chunks every 2 seconds
     
-    // Listen for temp stream ended (for watch-only DVR)
-    const tempStreamEndedUnlisten = await listen<{
-      mintId: string;
-      tempSessionId: string;
-    }>('temp-stream-ended', (event) => {
-      if (event.payload.mintId === state.value.mintId && state.value.isTempRecording) {
-        console.log('[LiveViewer] Temp stream ended, stream is no longer live');
-        // The stream has ended - we can still use DVR but no more new segments will arrive
-        // Connection state change will be handled by LiveKit room events
-      }
-    });
+    // Store cleanup function
+    const cleanupDvrInterval = () => {
+      clearInterval(dvrUpdateInterval);
+    };
     
-    unlistenFunctions.push(unlisten, tempUnlisten, tempStreamEndedUnlisten);
+    unlistenFunctions.push(unlisten, cleanupDvrInterval as any);
   }
   
   // Disconnect from livestream
@@ -843,6 +859,9 @@ export function useLivestreamViewer() {
       reconnectTimeout = null;
     }
     
+    // Stop waiting for next chunk if active
+    stopWaitingForChunk();
+    
     // Clean up event listeners
     for (const unlisten of unlistenFunctions) {
       unlisten();
@@ -861,6 +880,22 @@ export function useLivestreamViewer() {
       dvrVideoElement.value.pause();
       dvrVideoElement.value.src = '';
       dvrVideoElement.value.load();
+    }
+    
+    // Clean up blob URLs
+    if (currentBlobUrl) {
+      URL.revokeObjectURL(currentBlobUrl);
+      currentBlobUrl = null;
+    }
+    if (pendingBlobUrl) {
+      URL.revokeObjectURL(pendingBlobUrl);
+      pendingBlobUrl = null;
+    }
+    
+    // Cancel any pending seek
+    if (seekAbortController) {
+      seekAbortController.abort();
+      seekAbortController = null;
     }
     
     // Detach tracks from any elements they might be attached to
@@ -910,6 +945,9 @@ export function useLivestreamViewer() {
     state.value.projectId = null;
     state.value.availableSegments = [];
     state.value.totalRecordedDuration = 0;
+    state.value.dvrStartTime = null;
+    state.value.liveEdgeTime = 0;
+    state.value.playbackPosition = 0;
     
     console.log('[LiveViewer] Disconnect complete');
   }
@@ -952,24 +990,106 @@ export function useLivestreamViewer() {
   
   function handleDvrTimeUpdate() {
     if (dvrVideoElement.value && state.value.playbackMode === 'dvr') {
-      // Update playback position based on current segment
-      const currentSegment = getCurrentDvrSegment();
-      if (currentSegment) {
-        state.value.playbackPosition = currentSegment.startTime + dvrVideoElement.value.currentTime;
-      }
+      // Update playback position directly from video currentTime
+      // (since we're using concatenated file, currentTime is absolute position)
+      state.value.playbackPosition = dvrVideoElement.value.currentTime;
     }
   }
   
+  // Handle DVR video ended event
   function handleDvrEnded() {
-    if (state.value.playbackMode === 'dvr') {
-      // Try to play next segment or go to live
-      const nextSegment = getNextDvrSegment();
-      if (nextSegment) {
-        playSegment(nextSegment);
+    if (state.value.playbackMode !== 'dvr') return;
+    
+    console.log('[LiveViewer] DVR video ended at position:', state.value.playbackPosition);
+    
+    // Check if we're close to live
+    const timeBehindLive = state.value.liveEdgeTime - state.value.playbackPosition;
+    
+    if (timeBehindLive <= LIVE_EDGE_THRESHOLD) {
+      // Close enough to live - switch to live mode
+      console.log('[LiveViewer] Caught up to live edge, switching to live mode');
+      goToLive();
+    } else {
+      // Still behind but the recording has ended - check if new chunks are available
+      console.log('[LiveViewer] DVR ended but still behind live, checking for new chunks...');
+      waitForNextChunk();
+    }
+  }
+  
+  function waitForNextChunk() {
+    if (waitingForNextChunk) return;
+    
+    waitingForNextChunk = true;
+    state.value.isBuffering = true;
+    
+    const currentPosition = state.value.playbackPosition;
+    const previousChunkCount = state.value.availableSegments.length;
+    
+    console.log('[LiveViewer] Waiting for new chunks, current position:', currentPosition, 'chunks:', previousChunkCount);
+    
+    // Poll for new chunks every 500ms
+    waitingForChunkInterval = window.setInterval(async () => {
+      // Update available segments from DVR session
+      if (state.value.mintId && state.value.isTempRecording) {
+        updateDvrChunksFromSession(state.value.mintId);
+      }
+      
+      // Check if new chunks are available
+      const newChunkCount = state.value.availableSegments.length;
+      
+      if (newChunkCount > previousChunkCount) {
+        // New chunk is available - reload the concatenated file and continue
+        console.log('[LiveViewer] New chunks available:', newChunkCount, 'vs', previousChunkCount);
+        stopWaitingForChunk();
+        
+        // Force reload by resetting the data size tracker
+        currentDvrDataSize = 0;
+        
+        // Get the last segment to continue from current position
+        const lastSegment = state.value.availableSegments[state.value.availableSegments.length - 1];
+        if (lastSegment) {
+          // Find the segment containing our current position
+          const currentSegment = state.value.availableSegments.find(
+            seg => currentPosition >= seg.startTime && currentPosition < seg.endTime
+          ) || state.value.availableSegments[0];
+          
+          await playSegment(currentSegment, currentPosition - currentSegment.startTime);
+        }
       } else {
-        // No more segments, go to live
+        // Check if stream has ended
+        if (state.value.mintId && dvrRecording.hasStreamEnded(state.value.mintId)) {
+          // Stream ended and no more chunks - go to last available position
+          console.log('[LiveViewer] Stream ended, no more chunks available');
+          stopWaitingForChunk();
+          state.value.isBuffering = false;
+          
+          // Check if we should go to live (stream just ended)
+          const timeBehindLive = state.value.liveEdgeTime - state.value.playbackPosition;
+          if (timeBehindLive <= LIVE_EDGE_THRESHOLD) {
+            goToLive();
+          }
+        }
+      }
+    }, 500);
+    
+    // Timeout after 30 seconds of waiting
+    setTimeout(() => {
+      if (waitingForNextChunk) {
+        console.warn('[LiveViewer] Timeout waiting for next chunk');
+        stopWaitingForChunk();
+        state.value.isBuffering = false;
+        
+        // Try to go live as fallback
         goToLive();
       }
+    }, 30000);
+  }
+  
+  function stopWaitingForChunk() {
+    waitingForNextChunk = false;
+    if (waitingForChunkInterval) {
+      clearInterval(waitingForChunkInterval);
+      waitingForChunkInterval = null;
     }
   }
   
@@ -1028,48 +1148,145 @@ export function useLivestreamViewer() {
   
   // Volume controls
   function setVolume(volume: number) {
+    console.log('[LiveViewer] setVolume called:', volume);
     state.value.volume = Math.max(0, Math.min(1, volume));
     saveVolumePreference(state.value.volume);
     applyAudioSettings();
   }
   
   function setMuted(muted: boolean) {
+    console.log('[LiveViewer] setMuted called:', muted);
     state.value.isMuted = muted;
     saveMutedPreference(muted);
     applyAudioSettings();
   }
   
   function toggleMute() {
+    console.log('[LiveViewer] toggleMute called, current:', state.value.isMuted);
     setMuted(!state.value.isMuted);
   }
   
   function applyAudioSettings() {
+    console.log('[LiveViewer] applyAudioSettings:', {
+      mode: state.value.playbackMode,
+      volume: state.value.volume,
+      isMuted: state.value.isMuted,
+      hasLiveElement: !!videoElement.value,
+      hasDvrElement: !!dvrVideoElement.value
+    });
+    
+    // Apply to both elements - settings should be synced
     if (videoElement.value) {
+      // Remove the HTML muted attribute if unmuting (it can interfere)
+      if (!state.value.isMuted) {
+        videoElement.value.removeAttribute('muted');
+      }
       videoElement.value.volume = state.value.volume;
       videoElement.value.muted = state.value.isMuted;
+      console.log('[LiveViewer] Applied to live element:', {
+        actualVolume: videoElement.value.volume,
+        actualMuted: videoElement.value.muted,
+        hasMutedAttr: videoElement.value.hasAttribute('muted')
+      });
     }
+    
     if (dvrVideoElement.value) {
+      // Remove the HTML muted attribute if unmuting
+      if (!state.value.isMuted) {
+        dvrVideoElement.value.removeAttribute('muted');
+      }
       dvrVideoElement.value.volume = state.value.volume;
       dvrVideoElement.value.muted = state.value.isMuted;
+      console.log('[LiveViewer] Applied to DVR element:', {
+        actualVolume: dvrVideoElement.value.volume,
+        actualMuted: dvrVideoElement.value.muted,
+        hasMutedAttr: dvrVideoElement.value.hasAttribute('muted')
+      });
+    }
+  }
+  
+  // Pause live playback (for DVR mode) - keeps tracks so we can return to live
+  function stopLivePlayback() {
+    console.log('[LiveViewer] Pausing live playback for DVR mode');
+    
+    // Detach live tracks from the video element
+    if (liveVideoTrack.value && videoElement.value) {
+      liveVideoTrack.value.detach(videoElement.value);
+    }
+    if (liveAudioTrack.value && videoElement.value) {
+      liveAudioTrack.value.detach(videoElement.value);
+    }
+    
+    // Completely silence and pause the live video element
+    if (videoElement.value) {
+      videoElement.value.pause();
+      videoElement.value.muted = true;
+      videoElement.value.volume = 0;
+      // Clear srcObject but don't stop the tracks (we need them for returning to live)
+      videoElement.value.srcObject = null;
+      videoElement.value.src = '';
+      videoElement.value.load(); // Reset the element
     }
   }
   
   // Playback speed (DVR only)
+  // Supported speeds for UI
+  const SUPPORTED_PLAYBACK_SPEEDS = [0.5, 1, 1.25, 1.5, 2] as const;
+  
   function setPlaybackSpeed(speed: number) {
+    // Only allow speed changes in DVR mode (live mode is always 1x - real-time)
     if (state.value.playbackMode === 'dvr') {
-      state.value.playbackSpeed = speed;
+      // Clamp to valid speeds
+      const validSpeed = Math.max(0.5, Math.min(2, speed));
+      state.value.playbackSpeed = validSpeed;
       if (dvrVideoElement.value) {
-        dvrVideoElement.value.playbackRate = speed;
+        dvrVideoElement.value.playbackRate = validSpeed;
       }
     }
   }
   
-  // Seeking
+  // Cycle through playback speeds (useful for keyboard shortcuts)
+  function cyclePlaybackSpeed() {
+    if (state.value.playbackMode !== 'dvr') return;
+    
+    const currentIndex = SUPPORTED_PLAYBACK_SPEEDS.indexOf(state.value.playbackSpeed as any);
+    const nextIndex = (currentIndex + 1) % SUPPORTED_PLAYBACK_SPEEDS.length;
+    setPlaybackSpeed(SUPPORTED_PLAYBACK_SPEEDS[nextIndex]);
+  }
+  
+  // Seeking (all positions are relative to DVR start)
+  let lastSeekTime = 0;
+  let lastSeekPosition = -1;
+  
   async function seek(positionSeconds: number) {
     const targetPosition = Math.max(0, Math.min(positionSeconds, state.value.liveEdgeTime));
     
-    // Check if seeking to live edge
-    if (targetPosition >= state.value.liveEdgeTime - 5) {
+    // Debounce rapid seeks to the same position
+    const now = Date.now();
+    if (Math.abs(targetPosition - lastSeekPosition) < 0.5 && now - lastSeekTime < 100) {
+      console.log('[LiveViewer] Debouncing rapid seek to same position');
+      return;
+    }
+    lastSeekTime = now;
+    lastSeekPosition = targetPosition;
+    
+    const timeBehindLive = state.value.liveEdgeTime - targetPosition;
+    
+    // Check if seeking near live edge (within threshold)
+    if (timeBehindLive <= LIVE_EDGE_THRESHOLD) {
+      await goToLive();
+      return;
+    }
+    
+    // Check if seeking before DVR start (position 0)
+    if (targetPosition < 0) {
+      await seek(0);
+      return;
+    }
+    
+    // Check if we have ANY DVR content at all
+    if (state.value.availableSegments.length === 0) {
+      console.log('[LiveViewer] No DVR content available yet, staying at live');
       await goToLive();
       return;
     }
@@ -1082,45 +1299,77 @@ export function useLivestreamViewer() {
     await seek(state.value.playbackPosition + deltaSeconds);
   }
   
+  // Convenience seeking functions
+  async function seekForward(seconds: number = 10) {
+    await seek(state.value.playbackPosition + seconds);
+  }
+  
+  async function seekBackward(seconds: number = 10) {
+    await seek(Math.max(0, state.value.playbackPosition - seconds));
+  }
+  
   async function goToLive() {
     console.log('[LiveViewer] Going to live');
+    
+    // Cancel any pending seek
+    if (seekAbortController) {
+      seekAbortController.abort();
+      seekAbortController = null;
+    }
     
     state.value.isAtLiveEdge = true;
     state.value.playbackMode = 'live';
     state.value.playbackPosition = state.value.liveEdgeTime;
     state.value.playbackSpeed = 1;
     
-    // Stop DVR playback
+    // Stop DVR playback and cleanup blob URLs
     if (dvrVideoElement.value) {
       dvrVideoElement.value.pause();
       dvrVideoElement.value.src = '';
+      dvrVideoElement.value.load();
     }
+    if (currentBlobUrl) {
+      URL.revokeObjectURL(currentBlobUrl);
+      currentBlobUrl = null;
+    }
+    if (pendingBlobUrl) {
+      URL.revokeObjectURL(pendingBlobUrl);
+      pendingBlobUrl = null;
+    }
+    // Reset DVR data size so next DVR seek will reload
+    currentDvrDataSize = 0;
     
-    // Attach live tracks
+    // Re-attach live tracks and resume playback
     if (videoElement.value && liveVideoTrack.value) {
+      // Restore volume first (it was set to 0 in stopLivePlayback)
+      videoElement.value.volume = state.value.volume;
+      
       liveVideoTrack.value.attach(videoElement.value);
       if (liveAudioTrack.value) {
         liveAudioTrack.value.attach(videoElement.value);
       }
+      // Restore audio settings (this will unmute if user preference is not muted)
       applyAudioSettings();
+      // Ensure element is playing
+      try {
+        await videoElement.value.play();
+      } catch (e) {
+        console.log('[LiveViewer] Play error (might be normal for LiveKit):', e);
+      }
       state.value.isPlaying = true;
     }
   }
   
   async function switchToDvrMode(targetPosition: number) {
     console.log('[LiveViewer] Switching to DVR mode at position:', targetPosition);
+    console.log('[LiveViewer] Available segments:', state.value.availableSegments.length, 
+                'Total recorded:', state.value.totalRecordedDuration);
     
-    state.value.isAtLiveEdge = false;
-    state.value.playbackMode = 'dvr';
-    state.value.playbackPosition = targetPosition;
-    state.value.isBuffering = true;
-    
-    // Detach live tracks
-    if (liveVideoTrack.value && videoElement.value) {
-      liveVideoTrack.value.detach(videoElement.value);
-    }
-    if (liveAudioTrack.value && videoElement.value) {
-      liveAudioTrack.value.detach(videoElement.value);
+    // First, check if we have ANY segments available
+    if (state.value.availableSegments.length === 0) {
+      console.warn('[LiveViewer] No DVR segments available, staying at live');
+      await goToLive();
+      return;
     }
     
     // Find the segment containing the target position
@@ -1128,13 +1377,64 @@ export function useLivestreamViewer() {
       seg => targetPosition >= seg.startTime && targetPosition < seg.endTime
     );
     
-    if (targetSegment) {
-      await playSegment(targetSegment, targetPosition - targetSegment.startTime);
-    } else {
+    if (!targetSegment) {
+      // No segment for this position - find nearest available
       console.warn('[LiveViewer] No segment found for position:', targetPosition);
-      state.value.isBuffering = false;
+      
+      // Find the closest segment
+      let closestSegment = state.value.availableSegments[0];
+      let closestDistance = Math.abs(targetPosition - closestSegment.startTime);
+      
+      for (const seg of state.value.availableSegments) {
+        const distStart = Math.abs(targetPosition - seg.startTime);
+        const distEnd = Math.abs(targetPosition - seg.endTime);
+        const dist = Math.min(distStart, distEnd);
+        
+        if (dist < closestDistance) {
+          closestDistance = dist;
+          closestSegment = seg;
+        }
+      }
+      
+      // If target is before all segments, go to earliest
+      if (targetPosition < closestSegment.startTime) {
+        console.log('[LiveViewer] Seeking to earliest available segment at:', closestSegment.startTime);
+        state.value.isAtLiveEdge = false;
+        state.value.playbackMode = 'dvr';
+        state.value.playbackPosition = closestSegment.startTime;
+        state.value.isBuffering = true;
+        
+        // Completely stop live playback
+        stopLivePlayback();
+        
+        await playSegment(closestSegment, 0);
+        return;
+      }
+      
+      // Target is after all recorded content - go to live
+      console.log('[LiveViewer] Target position is after all recorded content, going to live');
+      await goToLive();
+      return;
     }
+    
+    // We have a valid target segment
+    state.value.isAtLiveEdge = false;
+    state.value.playbackMode = 'dvr';
+    state.value.playbackPosition = targetPosition;
+    state.value.isBuffering = true;
+    
+    // Completely stop live playback
+    stopLivePlayback();
+    
+    await playSegment(targetSegment, targetPosition - targetSegment.startTime);
   }
+  
+  // Track current blob URL for cleanup
+  let currentBlobUrl: string | null = null;
+  let pendingBlobUrl: string | null = null;
+  let isSeekInProgress = false;
+  let seekAbortController: AbortController | null = null;
+  let currentDvrDataSize = 0; // Track if we need to reload
   
   async function playSegment(segment: SegmentInfo, seekTime: number = 0) {
     if (!dvrVideoElement.value) {
@@ -1142,23 +1442,155 @@ export function useLivestreamViewer() {
       return;
     }
     
+    // Cancel any pending seek operation
+    if (seekAbortController) {
+      seekAbortController.abort();
+    }
+    seekAbortController = new AbortController();
+    const abortSignal = seekAbortController.signal;
+    
+    // If already seeking, wait a bit
+    if (isSeekInProgress) {
+      console.log('[LiveViewer] Seek already in progress, waiting...');
+      await new Promise(resolve => setTimeout(resolve, 50));
+      if (abortSignal.aborted) return;
+    }
+    
+    isSeekInProgress = true;
+    
     try {
-      // Get video URL from local server
-      const port = await invoke<number>('get_video_server_port');
-      const encodedPath = btoa(unescape(encodeURIComponent(segment.filePath)));
-      const videoUrl = `http://localhost:${port}/video/${encodedPath}`;
+      const mintId = state.value.mintId;
       
-      dvrVideoElement.value.src = videoUrl;
-      dvrVideoElement.value.currentTime = seekTime;
+      if (!mintId) {
+        console.error('[LiveViewer] No mint ID available for DVR playback');
+        return;
+      }
+      
+      // Calculate the absolute seek position within the recording
+      const absoluteSeekTime = segment.startTime + seekTime;
+      
+      console.log(`[LiveViewer] Loading DVR for mint ${mintId}, seeking to ${absoluteSeekTime}s`);
+      
+      // Read ALL chunks concatenated for continuous playback
+      // This ensures we have all keyframes available for proper decoding
+      const chunkData = await invoke<number[]>('read_all_dvr_chunks', {
+        mintId
+      });
+      
+      // Check if aborted
+      if (abortSignal.aborted) {
+        console.log('[LiveViewer] Seek was aborted');
+        return;
+      }
+      
+      // Convert to Uint8Array and create blob URL
+      const uint8Array = new Uint8Array(chunkData);
+      const blob = new Blob([uint8Array], { type: 'video/webm' });
+      
+      console.log(`[LiveViewer] Created blob URL for concatenated DVR, size: ${uint8Array.length} bytes`);
+      
+      // Check if we need to reload (new data available) or just seek
+      const needsReload = currentBlobUrl === null || uint8Array.length !== currentDvrDataSize;
+      
+      if (needsReload) {
+        // Store the old URL to cleanup after the new one is loaded
+        const oldBlobUrl = currentBlobUrl;
+        pendingBlobUrl = URL.createObjectURL(blob);
+        
+        // Check if aborted again
+        if (abortSignal.aborted) {
+          URL.revokeObjectURL(pendingBlobUrl);
+          pendingBlobUrl = null;
+          return;
+        }
+        
+        // Pause current video before changing source
+        dvrVideoElement.value.pause();
+        
+        // Set the new source
+        currentBlobUrl = pendingBlobUrl;
+        pendingBlobUrl = null;
+        currentDvrDataSize = uint8Array.length;
+        dvrVideoElement.value.src = currentBlobUrl;
+        
+        // Wait for video to be ready
+        await new Promise<void>((resolve, reject) => {
+          const video = dvrVideoElement.value!;
+          const timeoutId = setTimeout(() => {
+            video.removeEventListener('canplay', onCanPlay);
+            video.removeEventListener('loadedmetadata', onLoadedMetadata);
+            video.removeEventListener('error', onError);
+            // Try to proceed anyway if metadata loaded
+            if (video.readyState >= 1) {
+              resolve();
+            } else {
+              reject(new Error('Video load timeout'));
+            }
+          }, 10000);
+          
+          const onCanPlay = () => {
+            clearTimeout(timeoutId);
+            video.removeEventListener('canplay', onCanPlay);
+            video.removeEventListener('loadedmetadata', onLoadedMetadata);
+            video.removeEventListener('error', onError);
+            resolve();
+          };
+          const onLoadedMetadata = () => {
+            // Video metadata loaded - we might be able to start playing
+            console.log('[LiveViewer] DVR metadata loaded, duration:', video.duration);
+          };
+          const onError = (e: Event) => {
+            clearTimeout(timeoutId);
+            video.removeEventListener('canplay', onCanPlay);
+            video.removeEventListener('loadedmetadata', onLoadedMetadata);
+            video.removeEventListener('error', onError);
+            const videoEl = e.target as HTMLVideoElement;
+            console.error('[LiveViewer] Video error:', videoEl.error);
+            reject(new Error('Video failed to load: ' + (videoEl.error?.message || 'unknown')));
+          };
+          video.addEventListener('canplay', onCanPlay);
+          video.addEventListener('loadedmetadata', onLoadedMetadata);
+          video.addEventListener('error', onError);
+          // Trigger load
+          video.load();
+        });
+        
+        // Cleanup old URL after new one is ready
+        if (oldBlobUrl) {
+          URL.revokeObjectURL(oldBlobUrl);
+        }
+      }
+      
+      // Check if aborted
+      if (abortSignal.aborted) {
+        return;
+      }
+      
+      // Seek to the target position
+      console.log(`[LiveViewer] Seeking to ${absoluteSeekTime}s, video duration: ${dvrVideoElement.value.duration}`);
+      dvrVideoElement.value.currentTime = absoluteSeekTime;
       dvrVideoElement.value.playbackRate = state.value.playbackSpeed;
+      
+      // Apply audio settings before AND after play to ensure they take effect
       applyAudioSettings();
       
       await dvrVideoElement.value.play();
+      
+      // Re-apply after play() in case browser reset them
+      applyAudioSettings();
+      
       state.value.isPlaying = true;
       state.value.isBuffering = false;
-    } catch (error) {
+    } catch (error: any) {
+      // Ignore abort errors
+      if (error?.name === 'AbortError' || abortSignal.aborted) {
+        console.log('[LiveViewer] Seek was cancelled');
+        return;
+      }
       console.error('[LiveViewer] Failed to play segment:', error);
       state.value.isBuffering = false;
+    } finally {
+      isSeekInProgress = false;
     }
   }
   
@@ -1190,6 +1622,7 @@ export function useLivestreamViewer() {
     canSeekBackward,
     canSeekForward,
     availableClipDuration,
+    availableDvrDuration,
     
     // Video elements
     videoElement,
@@ -1211,14 +1644,19 @@ export function useLivestreamViewer() {
     setMuted,
     toggleMute,
     setPlaybackSpeed,
+    cyclePlaybackSpeed,
+    SUPPORTED_PLAYBACK_SPEEDS,
     
     // Seeking
     seek,
     seekRelative,
+    seekForward,
+    seekBackward,
     goToLive,
     
     // Utility
     updateAvailableSegments,
   };
 }
+
 

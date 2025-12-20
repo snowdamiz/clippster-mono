@@ -14,6 +14,7 @@ mod pumpfun;
 mod waveform;
 mod focal_detection;
 mod commands;
+mod dvr;
 
 // Import items from modules
 use downloads::ACTIVE_DOWNLOADS;
@@ -511,12 +512,6 @@ pub fn run() {
             pumpfun::start_livestream_recording,
             pumpfun::stop_livestream_recording,
             pumpfun::stop_all_livestream_recordings,
-            // Temp recording commands (for watch-only DVR)
-            pumpfun::start_temp_livestream_recording,
-            pumpfun::stop_temp_livestream_recording,
-            pumpfun::is_temp_recording_active,
-            pumpfun::get_temp_recording_path,
-            pumpfun::cleanup_temp_recording,
 
             // Download commands
             downloads::download_pumpfun_vod,
@@ -578,7 +573,17 @@ pub fn run() {
             ui_utils::show_main_window,
             
             // File operations
-            copy_file
+            copy_file,
+
+            // DVR commands
+            dvr::save_dvr_chunk,
+            dvr::get_dvr_chunk_path,
+            dvr::cleanup_dvr_chunks,
+            dvr::list_dvr_chunks,
+            dvr::get_dvr_directory,
+            dvr::has_dvr_chunks,
+            dvr::read_dvr_chunk,
+            dvr::read_all_dvr_chunks
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
