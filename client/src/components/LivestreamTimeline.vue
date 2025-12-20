@@ -9,10 +9,7 @@
       @mouseleave="handleMouseLeave"
     >
       <!-- DVR Recorded Region -->
-      <div
-        class="absolute h-full bg-zinc-600 rounded-full transition-all"
-        :style="{ width: `${recordedPercent}%` }"
-      />
+      <div class="absolute h-full bg-zinc-600 rounded-full transition-all" :style="{ width: `${recordedPercent}%` }" />
 
       <!-- Playback Progress -->
       <div
@@ -42,10 +39,7 @@
       </div>
 
       <!-- Live Edge Indicator (pulsing red dot) -->
-      <div
-        v-if="isAtLiveEdge"
-        class="absolute top-1/2 right-0 -translate-y-1/2 translate-x-1/2 pointer-events-none"
-      >
+      <div v-if="isAtLiveEdge" class="absolute top-1/2 right-0 -translate-y-1/2 translate-x-1/2 pointer-events-none">
         <div class="relative">
           <div class="w-3 h-3 bg-red-500 rounded-full" />
           <div class="absolute inset-0 w-3 h-3 bg-red-500 rounded-full animate-ping opacity-75" />
@@ -61,7 +55,9 @@
         <div class="bg-zinc-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap border border-zinc-700">
           {{ formatTime(hoverPosition) }}
         </div>
-        <div class="absolute left-1/2 -translate-x-1/2 -bottom-1 w-2 h-2 bg-zinc-900 border-b border-r border-zinc-700 rotate-45" />
+        <div
+          class="absolute left-1/2 -translate-x-1/2 -bottom-1 w-2 h-2 bg-zinc-900 border-b border-r border-zinc-700 rotate-45"
+        />
       </div>
 
       <!-- Hover Line -->
@@ -76,7 +72,7 @@
     <div class="flex items-center justify-between mt-2 text-xs">
       <!-- Current Time -->
       <div class="text-white font-mono min-w-[60px]">
-        {{ formatTime(playbackPosition) }}
+        {{ formatTime(effectivePlaybackPosition) }}
       </div>
 
       <!-- Center: Behind Live / Go Live Button -->
@@ -113,148 +109,160 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
-import type { SegmentInfo } from '@/composables/useLivestreamViewer';
+  import { ref, computed, onMounted, onUnmounted } from 'vue';
+  import type { SegmentInfo } from '@/composables/useLivestreamViewer';
 
-interface Props {
-  playbackPosition: number;
-  liveEdgeTime: number;
-  totalRecordedDuration: number;
-  isAtLiveEdge: boolean;
-  availableSegments: SegmentInfo[];
-}
-
-interface Emits {
-  (e: 'seek', position: number): void;
-  (e: 'go-live'): void;
-}
-
-const props = defineProps<Props>();
-const emit = defineEmits<Emits>();
-
-// Refs
-const trackRef = ref<HTMLDivElement | null>(null);
-const isDragging = ref(false);
-const isHovering = ref(false);
-const hoverPosition = ref<number | null>(null);
-
-// Computed
-const segments = computed(() => props.availableSegments);
-
-const playbackPercent = computed(() => {
-  if (props.liveEdgeTime <= 0) return 0;
-  return Math.min(100, (props.playbackPosition / props.liveEdgeTime) * 100);
-});
-
-// Recorded content percentage of timeline
-const recordedPercent = computed(() => {
-  if (props.liveEdgeTime <= 0) return 0;
-  return Math.min(100, (props.totalRecordedDuration / props.liveEdgeTime) * 100);
-});
-
-const hoverPositionPercent = computed(() => {
-  if (hoverPosition.value === null || props.liveEdgeTime <= 0) return 0;
-  return Math.min(100, (hoverPosition.value / props.liveEdgeTime) * 100);
-});
-
-const behindLiveFormatted = computed(() => {
-  const seconds = props.liveEdgeTime - props.playbackPosition;
-  if (seconds < 60) return `${Math.floor(seconds)}s behind`;
-  const minutes = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  if (minutes < 60) return `${minutes}m ${secs}s behind`;
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return `${hours}h ${mins}m behind`;
-});
-
-// Helper functions
-function formatTime(seconds: number): string {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-
-  if (hrs > 0) {
-    return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  interface Props {
+    playbackPosition: number;
+    liveEdgeTime: number;
+    totalRecordedDuration: number;
+    isAtLiveEdge: boolean;
+    availableSegments: SegmentInfo[];
   }
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
 
-function getSegmentPosition(endTime: number): number {
-  if (props.liveEdgeTime <= 0) return 0;
-  return Math.min(100, (endTime / props.liveEdgeTime) * 100);
-}
-
-function getPositionFromEvent(event: MouseEvent): number {
-  if (!trackRef.value) return 0;
-  
-  const rect = trackRef.value.getBoundingClientRect();
-  const x = Math.max(0, Math.min(event.clientX - rect.left, rect.width));
-  const percent = x / rect.width;
-  return percent * props.liveEdgeTime;
-}
-
-// Event handlers
-function handleMouseDown(event: MouseEvent) {
-  event.preventDefault();
-  isDragging.value = true;
-  
-  const position = getPositionFromEvent(event);
-  emit('seek', position);
-  
-  // Add global mouse event listeners for dragging
-  document.addEventListener('mousemove', handleGlobalMouseMove);
-  document.addEventListener('mouseup', handleGlobalMouseUp);
-}
-
-function handleMouseMove(event: MouseEvent) {
-  isHovering.value = true;
-  hoverPosition.value = getPositionFromEvent(event);
-}
-
-function handleMouseLeave() {
-  if (!isDragging.value) {
-    isHovering.value = false;
-    hoverPosition.value = null;
+  interface Emits {
+    (e: 'seek', position: number): void;
+    (e: 'go-live'): void;
   }
-}
 
-function handleGlobalMouseMove(event: MouseEvent) {
-  if (isDragging.value) {
+  const props = defineProps<Props>();
+  const emit = defineEmits<Emits>();
+
+  // Refs
+  const trackRef = ref<HTMLDivElement | null>(null);
+  const isDragging = ref(false);
+  const dragPosition = ref<number | null>(null);
+  const isHovering = ref(false);
+  const hoverPosition = ref<number | null>(null);
+
+  // Computed
+  const segments = computed(() => props.availableSegments);
+
+  const timelineRange = computed(() => {
+    // liveEdgeTime can be 0 briefly when starting; fall back to recorded duration.
+    return Math.max(props.liveEdgeTime, props.totalRecordedDuration, 1);
+  });
+
+  const effectivePlaybackPosition = computed(() => {
+    return isDragging.value && dragPosition.value !== null ? dragPosition.value : props.playbackPosition;
+  });
+
+  const playbackPercent = computed(() => {
+    return Math.min(100, (effectivePlaybackPosition.value / timelineRange.value) * 100);
+  });
+
+  // Recorded content percentage of timeline
+  const recordedPercent = computed(() => {
+    return Math.min(100, (props.totalRecordedDuration / timelineRange.value) * 100);
+  });
+
+  const hoverPositionPercent = computed(() => {
+    if (hoverPosition.value === null) return 0;
+    return Math.min(100, (hoverPosition.value / timelineRange.value) * 100);
+  });
+
+  const behindLiveFormatted = computed(() => {
+    const seconds = Math.max(0, props.liveEdgeTime - effectivePlaybackPosition.value);
+    if (seconds < 60) return `${Math.floor(seconds)}s behind`;
+    const minutes = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    if (minutes < 60) return `${minutes}m ${secs}s behind`;
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return `${hours}h ${mins}m behind`;
+  });
+
+  // Helper functions
+  function formatTime(seconds: number): string {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+
+    if (hrs > 0) {
+      return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  function getSegmentPosition(endTime: number): number {
+    return Math.min(100, (endTime / timelineRange.value) * 100);
+  }
+
+  function getPositionFromEvent(event: MouseEvent): number {
+    if (!trackRef.value) return 0;
+
+    const rect = trackRef.value.getBoundingClientRect();
+    const x = Math.max(0, Math.min(event.clientX - rect.left, rect.width));
+    const percent = x / rect.width;
+    return percent * timelineRange.value;
+  }
+
+  // Event handlers
+  function handleMouseDown(event: MouseEvent) {
+    event.preventDefault();
+    isDragging.value = true;
+
     const position = getPositionFromEvent(event);
-    emit('seek', position);
+    dragPosition.value = position;
+
+    // Add global mouse event listeners for dragging
+    document.addEventListener('mousemove', handleGlobalMouseMove);
+    document.addEventListener('mouseup', handleGlobalMouseUp);
   }
-}
 
-function handleGlobalMouseUp() {
-  isDragging.value = false;
-  document.removeEventListener('mousemove', handleGlobalMouseMove);
-  document.removeEventListener('mouseup', handleGlobalMouseUp);
-}
+  function handleMouseMove(event: MouseEvent) {
+    isHovering.value = true;
+    hoverPosition.value = getPositionFromEvent(event);
+  }
 
-// Cleanup
-onUnmounted(() => {
-  document.removeEventListener('mousemove', handleGlobalMouseMove);
-  document.removeEventListener('mouseup', handleGlobalMouseUp);
-});
+  function handleMouseLeave() {
+    if (!isDragging.value) {
+      isHovering.value = false;
+      hoverPosition.value = null;
+    }
+  }
+
+  function handleGlobalMouseMove(event: MouseEvent) {
+    if (isDragging.value) {
+      const position = getPositionFromEvent(event);
+      dragPosition.value = position;
+    }
+  }
+
+  function handleGlobalMouseUp(event: MouseEvent) {
+    const position = getPositionFromEvent(event);
+    dragPosition.value = position;
+    emit('seek', position);
+
+    isDragging.value = false;
+    dragPosition.value = null;
+    document.removeEventListener('mousemove', handleGlobalMouseMove);
+    document.removeEventListener('mouseup', handleGlobalMouseUp);
+  }
+
+  // Cleanup
+  onUnmounted(() => {
+    document.removeEventListener('mousemove', handleGlobalMouseMove);
+    document.removeEventListener('mouseup', handleGlobalMouseUp);
+  });
 </script>
 
 <style scoped>
-.livestream-timeline {
-  width: 100%;
-  user-select: none;
-}
+  .livestream-timeline {
+    width: 100%;
+    user-select: none;
+  }
 
-/* Custom animation for smooth pulsing */
-@keyframes pulse-subtle {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
+  /* Custom animation for smooth pulsing */
+  @keyframes pulse-subtle {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.6;
+      transform: scale(1.1);
+    }
   }
-  50% {
-    opacity: 0.6;
-    transform: scale(1.1);
-  }
-}
 </style>
-

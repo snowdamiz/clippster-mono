@@ -131,8 +131,20 @@
               <video
                 ref="dvrVideoRef"
                 :class="[
-                  'w-full h-full object-contain transition-opacity duration-200',
-                  viewer.state.value.playbackMode === 'dvr' ? 'opacity-100' : 'opacity-0 absolute inset-0',
+                  'w-full h-full object-contain transition-opacity duration-200 absolute inset-0',
+                  viewer.state.value.playbackMode === 'dvr' && viewer.activeDvrElement.value === 'primary'
+                    ? 'opacity-100 z-10'
+                    : 'opacity-0 z-0',
+                ]"
+                playsinline
+              />
+              <video
+                ref="dvrVideoRef2"
+                :class="[
+                  'w-full h-full object-contain transition-opacity duration-200 absolute inset-0',
+                  viewer.state.value.playbackMode === 'dvr' && viewer.activeDvrElement.value === 'secondary'
+                    ? 'opacity-100 z-10'
+                    : 'opacity-0 z-0',
                 ]"
                 playsinline
               />
@@ -185,7 +197,9 @@
               >
                 <div class="flex flex-col items-center gap-3">
                   <AlertCircle class="w-12 h-12 text-red-500" />
-                  <span class="text-white text-sm text-center max-w-xs">{{ viewer.state.value.connectionError || 'Connection failed' }}</span>
+                  <span class="text-white text-sm text-center max-w-xs">
+                    {{ viewer.state.value.connectionError || 'Connection failed' }}
+                  </span>
                   <button
                     @click="reconnect"
                     class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors"
@@ -233,7 +247,10 @@
                           @click="viewer.toggleMute"
                           class="p-2 rounded-lg text-white hover:bg-white/20 transition-colors"
                         >
-                          <VolumeX v-if="viewer.state.value.isMuted || viewer.state.value.volume === 0" class="w-5 h-5" />
+                          <VolumeX
+                            v-if="viewer.state.value.isMuted || viewer.state.value.volume === 0"
+                            class="w-5 h-5"
+                          />
                           <Volume1 v-else-if="viewer.state.value.volume < 0.5" class="w-5 h-5" />
                           <Volume2 v-else class="w-5 h-5" />
                         </button>
@@ -301,7 +318,11 @@
                         @click="openClipModal"
                         class="px-3 py-2 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2"
                         :disabled="viewer.state.value.totalRecordedDuration < 5"
-                        :title="viewer.state.value.totalRecordedDuration < 5 ? 'Wait for more content to be recorded' : 'Create clip (C)'"
+                        :title="
+                          viewer.state.value.totalRecordedDuration < 5
+                            ? 'Wait for more content to be recorded'
+                            : 'Create clip (C)'
+                        "
                       >
                         <Scissors class="w-4 h-4" />
                         Clip
@@ -357,502 +378,508 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import {
-  X,
-  Users,
-  Signal,
-  Loader2,
-  WifiOff,
-  AlertCircle,
-  Play,
-  Pause,
-  Volume2,
-  Volume1,
-  VolumeX,
-  Radio,
-  Scissors,
-  PictureInPicture2,
-  Maximize,
-  Minimize,
-} from 'lucide-vue-next';
-import { invoke } from '@tauri-apps/api/core';
-import { useLivestreamViewer } from '@/composables/useLivestreamViewer';
-import LivestreamTimeline from './LivestreamTimeline.vue';
-import ClipDurationModal from './ClipDurationModal.vue';
-import { getWatermarkImage, resolveWatermarkById } from '@/services/database';
+  import { ref, computed, watch, onMounted, onUnmounted, nextTick, type CSSProperties } from 'vue';
+  import {
+    X,
+    Users,
+    Signal,
+    Loader2,
+    WifiOff,
+    AlertCircle,
+    Play,
+    Pause,
+    Volume2,
+    Volume1,
+    VolumeX,
+    Radio,
+    Scissors,
+    PictureInPicture2,
+    Maximize,
+    Minimize,
+  } from 'lucide-vue-next';
+  import { invoke } from '@tauri-apps/api/core';
+  import { useLivestreamViewer } from '@/composables/useLivestreamViewer';
+  import LivestreamTimeline from './LivestreamTimeline.vue';
+  import ClipDurationModal from './ClipDurationModal.vue';
+  import { getWatermarkImage, resolveWatermarkById } from '@/services/database';
 
-interface Props {
-  modelValue: boolean;
-  mintId: string;
-  streamerId: string;
-  displayName: string;
-  profileImageUrl?: string;
-}
+  interface Props {
+    modelValue: boolean;
+    mintId: string;
+    streamerId: string;
+    displayName: string;
+    profileImageUrl?: string;
+  }
 
-interface Emits {
-  (e: 'update:modelValue', value: boolean): void;
-  (e: 'clip-created', clipPath: string): void;
-}
+  interface Emits {
+    (e: 'update:modelValue', value: boolean): void;
+    (e: 'clip-created', clipPath: string): void;
+  }
 
-const props = defineProps<Props>();
-const emit = defineEmits<Emits>();
+  const props = defineProps<Props>();
+  const emit = defineEmits<Emits>();
 
-// Refs
-const dialogRef = ref<HTMLDivElement | null>(null);
-const containerRef = ref<HTMLDivElement | null>(null);
-const videoContainerRef = ref<HTMLDivElement | null>(null);
-const liveVideoRef = ref<HTMLVideoElement | null>(null);
-const dvrVideoRef = ref<HTMLVideoElement | null>(null);
+  // Refs
+  const dialogRef = ref<HTMLDivElement | null>(null);
+  const containerRef = ref<HTMLDivElement | null>(null);
+  const videoContainerRef = ref<HTMLDivElement | null>(null);
+  const liveVideoRef = ref<HTMLVideoElement | null>(null);
+  const dvrVideoRef = ref<HTMLVideoElement | null>(null);
+  const dvrVideoRef2 = ref<HTMLVideoElement | null>(null);
 
-// Composable
-const viewer = useLivestreamViewer();
+  // Composable
+  const viewer = useLivestreamViewer();
 
-// UI State
-const isFullscreen = ref(false);
-const showControls = ref(true);
-const showStatsPopup = ref(false);
-const showSpeedMenu = ref(false);
-const showClipModal = ref(false);
-const watermarkUrl = ref<string | null>(null);
-let controlsTimeout: number | null = null;
+  // UI State
+  const isFullscreen = ref(false);
+  const showControls = ref(true);
+  const showStatsPopup = ref(false);
+  const showSpeedMenu = ref(false);
+  const showClipModal = ref(false);
+  const watermarkUrl = ref<string | null>(null);
+  let controlsTimeout: number | null = null;
 
-// Computed
-const streamerInfo = computed(() => ({
-  displayName: props.displayName,
-  profileImageUrl: props.profileImageUrl,
-}));
+  // Computed
+  const streamerInfo = computed(() => ({
+    displayName: props.displayName,
+    profileImageUrl: props.profileImageUrl,
+  }));
 
-const connectionStatusText = computed(() => {
-  const state = viewer.state.value.connectionState;
-  return state === 'connected'
-    ? 'Connected'
-    : state === 'connecting'
-      ? 'Connecting...'
+  const connectionStatusText = computed(() => {
+    const state = viewer.state.value.connectionState;
+    return state === 'connected'
+      ? 'Connected'
+      : state === 'connecting'
+        ? 'Connecting...'
+        : state === 'reconnecting'
+          ? 'Reconnecting...'
+          : state === 'failed'
+            ? 'Failed'
+            : 'Disconnected';
+  });
+
+  const connectionStatusTextColor = computed(() => {
+    const state = viewer.state.value.connectionState;
+    return state === 'connected'
+      ? 'text-green-400'
       : state === 'reconnecting'
-        ? 'Reconnecting...'
+        ? 'text-yellow-400'
         : state === 'failed'
-          ? 'Failed'
-          : 'Disconnected';
-});
+          ? 'text-red-400'
+          : 'text-zinc-400';
+  });
 
-const connectionStatusTextColor = computed(() => {
-  const state = viewer.state.value.connectionState;
-  return state === 'connected'
-    ? 'text-green-400'
-    : state === 'reconnecting'
-      ? 'text-yellow-400'
-      : state === 'failed'
-        ? 'text-red-400'
-        : 'text-zinc-400';
-});
+  const connectionQualityColor = computed(() => {
+    const latency = viewer.state.value.latencyMs;
+    if (!latency) return 'text-zinc-400';
+    if (latency < 1000) return 'text-green-400';
+    if (latency < 2000) return 'text-yellow-400';
+    return 'text-red-400';
+  });
 
-const connectionQualityColor = computed(() => {
-  const latency = viewer.state.value.latencyMs;
-  if (!latency) return 'text-zinc-400';
-  if (latency < 1000) return 'text-green-400';
-  if (latency < 2000) return 'text-yellow-400';
-  return 'text-red-400';
-});
+  const showWatermark = computed(() => {
+    return viewer.state.value.watermarkId && viewer.state.value.watermarkSettings;
+  });
 
-const showWatermark = computed(() => {
-  return viewer.state.value.watermarkId && viewer.state.value.watermarkSettings;
-});
+  const watermarkStyle = computed<CSSProperties>(() => {
+    const settings = viewer.state.value.watermarkSettings;
+    if (!settings) return {};
 
-const watermarkStyle = computed(() => {
-  const settings = viewer.state.value.watermarkSettings;
-  if (!settings) return {};
+    // Use settings to position watermark
+    const position = settings.position || { x: 50, y: 50 };
+    const scale = settings.scale || 100;
+    const opacity = settings.opacity ?? 100;
 
-  // Use settings to position watermark
-  const position = settings.position || { x: 50, y: 50 };
-  const scale = settings.scale || 100;
-  const opacity = settings.opacity ?? 100;
+    return {
+      position: 'absolute',
+      left: `${position.x}%`,
+      top: `${position.y}%`,
+      transform: 'translate(-50%, -50%)',
+      width: `${scale}%`,
+      maxWidth: '100%',
+      opacity: opacity / 100,
+    };
+  });
 
-  return {
-    position: 'absolute',
-    left: `${position.x}%`,
-    top: `${position.y}%`,
-    transform: 'translate(-50%, -50%)',
-    width: `${scale}%`,
-    maxWidth: '100%',
-    opacity: opacity / 100,
-  };
-});
+  const isPipSupported = computed(() => {
+    return document.pictureInPictureEnabled;
+  });
 
-const isPipSupported = computed(() => {
-  return document.pictureInPictureEnabled;
-});
-
-// Load watermark image
-async function loadWatermark() {
-  const watermarkId = viewer.state.value.watermarkId;
-  if (!watermarkId) {
-    watermarkUrl.value = null;
-    return;
-  }
-
-  try {
-    // Check if this is an org-asset watermark
-    if (watermarkId.startsWith('org-asset-')) {
-      const resolved = await resolveWatermarkById(watermarkId);
-      if (resolved?.filePath) {
-        watermarkUrl.value = await invoke<string>('read_file_as_data_url', { filePath: resolved.filePath });
-      }
-    } else {
-      // Regular watermark lookup by ID
-      const watermark = await getWatermarkImage(watermarkId);
-      if (watermark) {
-        watermarkUrl.value = await invoke<string>('read_file_as_data_url', { filePath: watermark.file_path });
-      }
+  // Load watermark image
+  async function loadWatermark() {
+    const watermarkId = viewer.state.value.watermarkId;
+    if (!watermarkId) {
+      watermarkUrl.value = null;
+      return;
     }
-  } catch (error) {
-    console.warn('[WatchDialog] Failed to load watermark:', error);
-    watermarkUrl.value = null;
-  }
-}
 
-// Format time helper
-function formatTime(seconds: number): string {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-
-  if (hrs > 0) {
-    return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    try {
+      // Check if this is an org-asset watermark
+      if (watermarkId.startsWith('org-asset-')) {
+        const resolved = await resolveWatermarkById(watermarkId);
+        if (resolved?.filePath) {
+          watermarkUrl.value = await invoke<string>('read_file_as_data_url', { filePath: resolved.filePath });
+        }
+      } else {
+        // Regular watermark lookup by ID
+        const watermark = await getWatermarkImage(watermarkId);
+        if (watermark) {
+          watermarkUrl.value = await invoke<string>('read_file_as_data_url', { filePath: watermark.file_path });
+        }
+      }
+    } catch (error) {
+      console.warn('[WatchDialog] Failed to load watermark:', error);
+      watermarkUrl.value = null;
+    }
   }
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
 
-// Event handlers
-function handleMouseMove() {
-  showControls.value = true;
-  if (controlsTimeout) {
-    clearTimeout(controlsTimeout);
+  // Format time helper
+  function formatTime(seconds: number): string {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+
+    if (hrs > 0) {
+      return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
-  if (viewer.state.value.isPlaying) {
-    controlsTimeout = window.setTimeout(() => {
+
+  // Event handlers
+  function handleMouseMove() {
+    showControls.value = true;
+    if (controlsTimeout) {
+      clearTimeout(controlsTimeout);
+    }
+    if (viewer.state.value.isPlaying) {
+      controlsTimeout = window.setTimeout(() => {
+        showControls.value = false;
+      }, 3000);
+    }
+  }
+
+  function handleMouseLeave() {
+    if (viewer.state.value.isPlaying) {
       showControls.value = false;
-    }, 3000);
-  }
-}
-
-function handleMouseLeave() {
-  if (viewer.state.value.isPlaying) {
-    showControls.value = false;
-  }
-}
-
-function handleVolumeChange(event: Event) {
-  const target = event.target as HTMLInputElement;
-  viewer.setVolume(parseFloat(target.value));
-}
-
-function handleSeek(position: number) {
-  viewer.seek(position);
-}
-
-function handleGoLive() {
-  viewer.goToLive();
-}
-
-function setPlaybackSpeed(speed: number) {
-  viewer.setPlaybackSpeed(speed);
-  showSpeedMenu.value = false;
-}
-
-function openClipModal() {
-  showClipModal.value = true;
-}
-
-function handleClipCreated(clipPath: string) {
-  showClipModal.value = false;
-  emit('clip-created', clipPath);
-}
-
-function handleClose() {
-  viewer.disconnect();
-  emit('update:modelValue', false);
-}
-
-async function reconnect() {
-  await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl);
-}
-
-async function toggleFullscreen() {
-  if (!containerRef.value) return;
-
-  if (isFullscreen.value) {
-    await document.exitFullscreen();
-    isFullscreen.value = false;
-  } else {
-    await containerRef.value.requestFullscreen();
-    isFullscreen.value = true;
-  }
-}
-
-async function togglePip() {
-  const video = viewer.state.value.playbackMode === 'live' ? liveVideoRef.value : dvrVideoRef.value;
-  if (!video) return;
-
-  try {
-    if (document.pictureInPictureElement) {
-      await document.exitPictureInPicture();
-    } else {
-      await video.requestPictureInPicture();
     }
-  } catch (error) {
-    console.warn('[WatchDialog] PiP error:', error);
   }
-}
 
-// Keyboard handling
-function handleKeydown(event: KeyboardEvent) {
-  // Don't handle if user is typing in an input
-  if ((event.target as HTMLElement).tagName === 'INPUT') return;
-
-  switch (event.key.toLowerCase()) {
-    case ' ':
-      event.preventDefault();
-      viewer.togglePlayPause();
-      break;
-    case 'arrowleft':
-      event.preventDefault();
-      viewer.seekRelative(-10);
-      break;
-    case 'arrowright':
-      event.preventDefault();
-      viewer.seekRelative(10);
-      break;
-    case 'j':
-      event.preventDefault();
-      viewer.seekRelative(-30);
-      break;
-    case 'l':
-      event.preventDefault();
-      viewer.seekRelative(30);
-      break;
-    case 'm':
-      event.preventDefault();
-      viewer.toggleMute();
-      break;
-    case 'f':
-      event.preventDefault();
-      toggleFullscreen();
-      break;
-    case 'p':
-      event.preventDefault();
-      if (isPipSupported.value) togglePip();
-      break;
-    case 'c':
-      event.preventDefault();
-      if (event.shiftKey) {
-        // Shift+C opens full modal
-        openClipModal();
-      } else {
-        // Quick 30s clip
-        quickClip();
-      }
-      break;
-    case 'home':
-      event.preventDefault();
-      viewer.seek(0);
-      break;
-    case 'end':
-      event.preventDefault();
-      handleGoLive();
-      break;
-    case 'escape':
-      event.preventDefault();
-      if (isFullscreen.value) {
-        toggleFullscreen();
-      } else {
-        handleClose();
-      }
-      break;
-    case '<':
-    case ',':
-      event.preventDefault();
-      decreaseSpeed();
-      break;
-    case '>':
-    case '.':
-      event.preventDefault();
-      increaseSpeed();
-      break;
+  function handleVolumeChange(event: Event) {
+    const target = event.target as HTMLInputElement;
+    viewer.setVolume(parseFloat(target.value));
   }
-}
 
-function quickClip() {
-  // Create a 30-second clip immediately
-  if (viewer.state.value.totalRecordedDuration >= 30) {
-    // Emit event or call clip creation directly
-    // For now, just open modal with 30s preset
+  function handleSeek(position: number) {
+    viewer.seek(position);
+  }
+
+  function handleGoLive() {
+    viewer.goToLive();
+  }
+
+  function setPlaybackSpeed(speed: number) {
+    viewer.setPlaybackSpeed(speed);
+    showSpeedMenu.value = false;
+  }
+
+  function openClipModal() {
     showClipModal.value = true;
   }
-}
 
-function decreaseSpeed() {
-  const speeds = [1, 1.25, 1.5, 2];
-  const current = viewer.state.value.playbackSpeed;
-  const index = speeds.indexOf(current);
-  if (index > 0) {
-    setPlaybackSpeed(speeds[index - 1]);
+  function handleClipCreated(clipPath: string) {
+    showClipModal.value = false;
+    emit('clip-created', clipPath);
   }
-}
 
-function increaseSpeed() {
-  const speeds = [1, 1.25, 1.5, 2];
-  const current = viewer.state.value.playbackSpeed;
-  const index = speeds.indexOf(current);
-  if (index < speeds.length - 1) {
-    setPlaybackSpeed(speeds[index + 1]);
+  function handleClose() {
+    viewer.disconnect();
+    emit('update:modelValue', false);
   }
-}
 
-// Handle fullscreen change events
-function handleFullscreenChange() {
-  isFullscreen.value = !!document.fullscreenElement;
-}
+  async function reconnect() {
+    await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl);
+  }
 
-// Watch for dialog open/close
-watch(
-  () => props.modelValue,
-  async (isOpen) => {
-    console.log('[WatchDialog] modelValue changed:', isOpen, 'mintId:', props.mintId);
-    if (isOpen) {
-      // Connect when dialog opens
-      await nextTick();
-      
-      console.log('[WatchDialog] Setting video elements...');
-      console.log('[WatchDialog] liveVideoRef:', !!liveVideoRef.value);
-      console.log('[WatchDialog] dvrVideoRef:', !!dvrVideoRef.value);
-      
-      // Set video elements first
-      if (liveVideoRef.value) {
-        viewer.setVideoElement(liveVideoRef.value);
-      }
-      if (dvrVideoRef.value) {
-        viewer.setDvrVideoElement(dvrVideoRef.value);
-      }
-      
-      // Connect to livestream
-      console.log('[WatchDialog] Calling viewer.connect...');
-      try {
-        await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl);
-        console.log('[WatchDialog] Connect completed, state:', viewer.state.value.connectionState);
-      } catch (error) {
-        console.error('[WatchDialog] Connect failed:', error);
-      }
+  async function toggleFullscreen() {
+    if (!containerRef.value) return;
 
-      // After connection, re-attach video element in case tracks arrived during connect
-      await nextTick();
-      if (liveVideoRef.value) {
-        viewer.setVideoElement(liveVideoRef.value);
-        // Try to unmute and play
-        liveVideoRef.value.muted = viewer.state.value.isMuted;
-        liveVideoRef.value.volume = viewer.state.value.volume;
-        liveVideoRef.value.play().catch(() => {
-          // Autoplay blocked - user will need to click play
-          console.log('[WatchDialog] Autoplay blocked, user needs to click play');
-        });
-      }
-
-      // Focus dialog for keyboard events
-      dialogRef.value?.focus();
+    if (isFullscreen.value) {
+      await document.exitFullscreen();
+      isFullscreen.value = false;
     } else {
-      // Disconnect when dialog closes
-      viewer.disconnect();
+      await containerRef.value.requestFullscreen();
+      isFullscreen.value = true;
     }
-  },
-  { immediate: true }
-);
-
-// Watch for watermark changes
-watch(
-  () => viewer.state.value.watermarkId,
-  () => {
-    loadWatermark();
   }
-);
 
-// Lifecycle
-onMounted(() => {
-  document.addEventListener('fullscreenchange', handleFullscreenChange);
-});
+  async function togglePip() {
+    const video = viewer.state.value.playbackMode === 'live' ? liveVideoRef.value : dvrVideoRef.value;
+    if (!video) return;
 
-onUnmounted(() => {
-  document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  if (controlsTimeout) {
-    clearTimeout(controlsTimeout);
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else {
+        await video.requestPictureInPicture();
+      }
+    } catch (error) {
+      console.warn('[WatchDialog] PiP error:', error);
+    }
   }
-  // Ensure we disconnect when component unmounts
-  viewer.disconnect();
-});
+
+  // Keyboard handling
+  function handleKeydown(event: KeyboardEvent) {
+    // Don't handle if user is typing in an input
+    if ((event.target as HTMLElement).tagName === 'INPUT') return;
+
+    switch (event.key.toLowerCase()) {
+      case ' ':
+        event.preventDefault();
+        viewer.togglePlayPause();
+        break;
+      case 'arrowleft':
+        event.preventDefault();
+        viewer.seekRelative(-10);
+        break;
+      case 'arrowright':
+        event.preventDefault();
+        viewer.seekRelative(10);
+        break;
+      case 'j':
+        event.preventDefault();
+        viewer.seekRelative(-30);
+        break;
+      case 'l':
+        event.preventDefault();
+        viewer.seekRelative(30);
+        break;
+      case 'm':
+        event.preventDefault();
+        viewer.toggleMute();
+        break;
+      case 'f':
+        event.preventDefault();
+        toggleFullscreen();
+        break;
+      case 'p':
+        event.preventDefault();
+        if (isPipSupported.value) togglePip();
+        break;
+      case 'c':
+        event.preventDefault();
+        if (event.shiftKey) {
+          // Shift+C opens full modal
+          openClipModal();
+        } else {
+          // Quick 30s clip
+          quickClip();
+        }
+        break;
+      case 'home':
+        event.preventDefault();
+        viewer.seek(0);
+        break;
+      case 'end':
+        event.preventDefault();
+        handleGoLive();
+        break;
+      case 'escape':
+        event.preventDefault();
+        if (isFullscreen.value) {
+          toggleFullscreen();
+        } else {
+          handleClose();
+        }
+        break;
+      case '<':
+      case ',':
+        event.preventDefault();
+        decreaseSpeed();
+        break;
+      case '>':
+      case '.':
+        event.preventDefault();
+        increaseSpeed();
+        break;
+    }
+  }
+
+  function quickClip() {
+    // Create a 30-second clip immediately
+    if (viewer.state.value.totalRecordedDuration >= 30) {
+      // Emit event or call clip creation directly
+      // For now, just open modal with 30s preset
+      showClipModal.value = true;
+    }
+  }
+
+  function decreaseSpeed() {
+    const speeds = [1, 1.25, 1.5, 2];
+    const current = viewer.state.value.playbackSpeed;
+    const index = speeds.indexOf(current);
+    if (index > 0) {
+      setPlaybackSpeed(speeds[index - 1]);
+    }
+  }
+
+  function increaseSpeed() {
+    const speeds = [1, 1.25, 1.5, 2];
+    const current = viewer.state.value.playbackSpeed;
+    const index = speeds.indexOf(current);
+    if (index < speeds.length - 1) {
+      setPlaybackSpeed(speeds[index + 1]);
+    }
+  }
+
+  // Handle fullscreen change events
+  function handleFullscreenChange() {
+    isFullscreen.value = !!document.fullscreenElement;
+  }
+
+  // Watch for dialog open/close
+  watch(
+    () => props.modelValue,
+    async (isOpen) => {
+      console.log('[WatchDialog] modelValue changed:', isOpen, 'mintId:', props.mintId);
+      if (isOpen) {
+        // Connect when dialog opens
+        await nextTick();
+
+        console.log('[WatchDialog] Setting video elements...');
+        console.log('[WatchDialog] liveVideoRef:', !!liveVideoRef.value);
+        console.log('[WatchDialog] dvrVideoRef:', !!dvrVideoRef.value);
+
+        // Set video elements first
+        if (liveVideoRef.value) {
+          viewer.setVideoElement(liveVideoRef.value);
+        }
+        if (dvrVideoRef.value && dvrVideoRef2.value) {
+          viewer.setDvrVideoElement(dvrVideoRef.value, dvrVideoRef2.value);
+        }
+
+        // Connect to livestream
+        console.log('[WatchDialog] Calling viewer.connect...');
+        try {
+          await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl);
+          console.log('[WatchDialog] Connect completed, state:', viewer.state.value.connectionState);
+        } catch (error) {
+          console.error('[WatchDialog] Connect failed:', error);
+        }
+
+        // After connection, re-attach video element in case tracks arrived during connect
+        await nextTick();
+        if (liveVideoRef.value) {
+          viewer.setVideoElement(liveVideoRef.value);
+          // Try to unmute and play
+          liveVideoRef.value.muted = viewer.state.value.isMuted;
+          liveVideoRef.value.volume = viewer.state.value.volume;
+          liveVideoRef.value.play().catch(() => {
+            // Autoplay blocked - user will need to click play
+            console.log('[WatchDialog] Autoplay blocked, user needs to click play');
+          });
+        }
+
+        // Focus dialog for keyboard events
+        dialogRef.value?.focus();
+      } else {
+        // Disconnect when dialog closes
+        viewer.disconnect();
+      }
+    },
+    { immediate: true }
+  );
+
+  // Watch for watermark changes
+  watch(
+    () => viewer.state.value.watermarkId,
+    () => {
+      loadWatermark();
+    }
+  );
+
+  // Lifecycle
+  onMounted(() => {
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+  });
+
+  onUnmounted(() => {
+    document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    if (controlsTimeout) {
+      clearTimeout(controlsTimeout);
+    }
+    // Ensure we disconnect when component unmounts
+    viewer.disconnect();
+  });
 </script>
 
 <style scoped>
-/* Transitions */
-.modal-enter-active,
-.modal-leave-active {
-  transition:
-    opacity 0.2s ease,
-    backdrop-filter 0.2s ease;
-}
-.modal-enter-from,
-.modal-leave-to {
-  opacity: 0;
-}
+  /* Transitions */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition:
+      opacity 0.2s ease,
+      backdrop-filter 0.2s ease;
+  }
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
 
-.dialog-enter-active,
-.dialog-leave-active {
-  transition:
-    transform 0.3s ease,
-    opacity 0.2s ease;
-}
-.dialog-enter-from {
-  transform: scale(0.95);
-  opacity: 0;
-}
-.dialog-leave-to {
-  transform: scale(0.95);
-  opacity: 0;
-}
+  .dialog-enter-active,
+  .dialog-leave-active {
+    transition:
+      transform 0.3s ease,
+      opacity 0.2s ease;
+  }
+  .dialog-enter-from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  .dialog-leave-to {
+    transform: scale(0.95);
+    opacity: 0;
+  }
 
-/* Volume slider styling */
-input[type='range'] {
-  -webkit-appearance: none;
-  background: transparent;
-}
+  /* Volume slider styling */
+  input[type='range'] {
+    -webkit-appearance: none;
+    background: transparent;
+  }
 
-input[type='range']::-webkit-slider-runnable-track {
-  height: 4px;
-  background: linear-gradient(to right, #8b5cf6 0%, #8b5cf6 var(--value, 50%), #52525b var(--value, 50%), #52525b 100%);
-  border-radius: 2px;
-}
+  input[type='range']::-webkit-slider-runnable-track {
+    height: 4px;
+    background: linear-gradient(
+      to right,
+      #8b5cf6 0%,
+      #8b5cf6 var(--value, 50%),
+      #52525b var(--value, 50%),
+      #52525b 100%
+    );
+    border-radius: 2px;
+  }
 
-input[type='range']::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 12px;
-  height: 12px;
-  background: white;
-  border-radius: 50%;
-  margin-top: -4px;
-  cursor: pointer;
-}
+  input[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    background: white;
+    border-radius: 50%;
+    margin-top: -4px;
+    cursor: pointer;
+  }
 
-input[type='range']::-moz-range-track {
-  height: 4px;
-  background: #52525b;
-  border-radius: 2px;
-}
+  input[type='range']::-moz-range-track {
+    height: 4px;
+    background: #52525b;
+    border-radius: 2px;
+  }
 
-input[type='range']::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  background: white;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
-}
+  input[type='range']::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    background: white;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+  }
 </style>
-
