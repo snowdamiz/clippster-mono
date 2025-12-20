@@ -49,7 +49,7 @@ pub fn run() {
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations(
-                    "sqlite:clippster_v22.db",
+                    "sqlite:clippster_v25.db",
                     vec![
                         tauri_plugin_sql::Migration {
                             version: 1,
@@ -403,6 +403,12 @@ pub fn run() {
                             version: 64,
                             description: "add_preview_url_to_clip_watermarks",
                             sql: include_str!("../migrations/064_add_preview_url_to_clip_watermarks.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 65,
+                            description: "add_auto_dvr_to_monitored_streamers",
+                            sql: include_str!("../migrations/065_add_auto_dvr_to_monitored_streamers.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                     ],
