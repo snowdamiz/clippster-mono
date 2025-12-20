@@ -141,11 +141,11 @@ defmodule ClippsterServerWeb.PaymentController do
     with {:ok, _user_id} <- get_user_id_from_token(conn),
          {:ok, pack_info} <- validate_pack_type(pack_type),
          {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
-      
+
       # Server calculates exact SOL amount
       sol_amount = pack_info.usd / sol_usd_rate
       company_wallet = Credits.get_company_wallet_address()
-      
+
       # Generate quote with 5 minute expiry
       quote = %{
         pack_type: pack_type,
@@ -183,7 +183,7 @@ defmodule ClippsterServerWeb.PaymentController do
   @doc """
   Confirm payment - verifies on-chain transaction and credits user
   SERVER validates all pricing - frontend values are ignored
-  
+
   Note: from_address is provided by the client (the wallet that signed the transaction).
   This allows users who signed up with email to still make payments with any Phantom wallet.
   """
@@ -196,16 +196,16 @@ defmodule ClippsterServerWeb.PaymentController do
          {:ok, _user} <- get_user(user_id),
          {:ok, pack_info} <- validate_pack_type(pack_type),
          {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
-      
+
       # SERVER calculates expected SOL amount - cannot be manipulated by frontend
       expected_sol_amount = pack_info.usd / sol_usd_rate
-      
+
       # Verify the on-chain transaction using the wallet address provided by the client
       # This is the wallet that actually signed and sent the transaction via Phantom
       case verify_transaction(tx_signature, from_address, expected_sol_amount) do
         {:ok, :verified} ->
           process_confirmed_payment(conn, tx_signature, pack_type, pack_info, expected_sol_amount, sol_usd_rate, user_id)
-        
+
         {:error, reason} ->
           conn
           |> put_status(400)
@@ -233,7 +233,7 @@ defmodule ClippsterServerWeb.PaymentController do
         |> json(%{success: false, error: "Price service unavailable"})
     end
   end
-  
+
   # Fallback for requests without from_address (backward compatibility)
   def confirm_payment(conn, %{"tx_signature" => _tx_signature, "pack_type" => _pack_type} = _params) do
     conn
@@ -257,11 +257,11 @@ defmodule ClippsterServerWeb.PaymentController do
          true <- Organizations.is_admin?(org.id, user_id),
          {:ok, pack_info} <- validate_pack_type(pack_type),
          {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
-      
+
       # Server calculates exact SOL amount
       sol_amount = pack_info.usd / sol_usd_rate
       company_wallet = Credits.get_company_wallet_address()
-      
+
       # Generate quote with 5 minute expiry
       quote = %{
         pack_type: pack_type,
@@ -325,15 +325,15 @@ defmodule ClippsterServerWeb.PaymentController do
          true <- Organizations.is_admin?(org.id, user_id),
          {:ok, pack_info} <- validate_pack_type(pack_type),
          {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
-      
+
       # SERVER calculates expected SOL amount - cannot be manipulated by frontend
       expected_sol_amount = pack_info.usd / sol_usd_rate
-      
+
       # Verify the on-chain transaction
       case verify_transaction(tx_signature, from_address, expected_sol_amount) do
         {:ok, :verified} ->
           process_confirmed_org_payment(conn, org, pack_type, pack_info, tx_signature, expected_sol_amount, sol_usd_rate, user_id)
-        
+
         {:error, reason} ->
           conn
           |> put_status(400)
@@ -563,6 +563,8 @@ defmodule ClippsterServerWeb.PaymentController do
         rpc_url: System.get_env("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
       })
 
+    alias ClippsterServer.JsScripts
+
     IO.puts("\n=== Verifying Solana payment transaction ===")
     IO.puts("TX Signature: #{tx_signature}")
     IO.puts("From: #{from_address}")
@@ -574,8 +576,8 @@ defmodule ClippsterServerWeb.PaymentController do
     File.write!(temp_file, payload)
 
     # Call the Node.js verification script
-    script_path = Path.join([Path.dirname(__ENV__.file), "../../payment_verify.js"]) |> Path.expand()
-    node_path = find_node_executable()
+    script_path = JsScripts.script_path("payment_verify.js")
+    node_path = JsScripts.find_node_executable()
 
     IO.puts("Node path: #{node_path}")
     IO.puts("Script path: #{script_path}")
@@ -605,56 +607,6 @@ defmodule ClippsterServerWeb.PaymentController do
     # Clean up temp file
     File.rm(temp_file)
     result
-  end
-
-  # Find the actual node executable, avoiding wrapper scripts (same as auth_controller)
-  defp find_node_executable do
-    case :os.type() do
-      {:win32, _} ->
-        case System.cmd("where", ["node"], stderr_to_stdout: true) do
-          {output, 0} ->
-            output
-            |> String.split("\n", trim: true)
-            |> Enum.map(&String.trim/1)
-            |> Enum.reject(&String.contains?(&1, "yarn--"))
-            |> Enum.reject(&String.contains?(&1, "Temp"))
-            |> Enum.find(&String.ends_with?(&1, "node.exe"))
-            |> case do
-              nil -> "node"
-              path -> path
-            end
-
-          _ ->
-            [
-              System.get_env("ProgramFiles") <> "\\nodejs\\node.exe",
-              System.get_env("ProgramFiles(x86)") <> "\\nodejs\\node.exe",
-              "C:\\Program Files\\nodejs\\node.exe",
-              "C:\\Program Files (x86)\\nodejs\\node.exe"
-            ]
-            |> Enum.find(&File.exists?/1)
-            |> case do
-              nil -> "node"
-              path -> path
-            end
-        end
-
-      {:unix, _} ->
-        case System.cmd("which", ["node"], stderr_to_stdout: true) do
-          {output, 0} ->
-            output
-            |> String.split("\n", trim: true)
-            |> List.first()
-            |> String.trim()
-
-          _ ->
-            ["/usr/bin/node", "/usr/local/bin/node", "/opt/homebrew/bin/node"]
-            |> Enum.find(&File.exists?/1)
-            |> case do
-              nil -> "node"
-              path -> path
-            end
-        end
-    end
   end
 
   defp format_changeset_errors(changeset) do

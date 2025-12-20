@@ -1,6 +1,6 @@
 defmodule ClippsterServerWeb.AuthController do
   use ClippsterServerWeb, :controller
-  
+
   alias ClippsterServer.Auth.{ChallengeStore, TokenGenerator}
   alias ClippsterServer.Accounts
 
@@ -44,15 +44,15 @@ defmodule ClippsterServerWeb.AuthController do
         "nonce" => nonce
       }) do
     IO.puts("\nStarting signature verification...")
-    
+
     with {:ok, challenge} <- ChallengeStore.consume_challenge(nonce),
          :ok <- validate_message(message, challenge, public_key),
          :ok <- verify_ed25519_signature(message, signature, public_key) do
       IO.puts("Signature verification successful!")
-      
+
       # Create or get user
       {:ok, user} = Accounts.get_or_create_user(public_key)
-      
+
       # Generate JWT token
       token_claims = %{
         "sub" => public_key,
@@ -137,6 +137,8 @@ defmodule ClippsterServerWeb.AuthController do
   end
 
   defp verify_ed25519_signature(message, signature_b64, public_key_b58) do
+    alias ClippsterServer.JsScripts
+
     # Use Node.js script for proper Solana signature verification
     payload = Jason.encode!(%{
       message: message,
@@ -154,92 +156,38 @@ defmodule ClippsterServerWeb.AuthController do
     File.write!(temp_file, payload)
 
     # Call the Node.js verification script
-    script_path = Path.join([Path.dirname(__ENV__.file), "../../../sig_verify.js"]) |> Path.expand()
-    node_path = find_node_executable()
-    
+    script_path = JsScripts.script_path("sig_verify.js")
+    node_path = JsScripts.find_node_executable()
+
     IO.puts("Node path: #{node_path}")
     IO.puts("Script path: #{script_path}")
     IO.puts("Temp file: #{temp_file}")
-    
-    result = case System.cmd(node_path, [script_path, temp_file], 
-      stderr_to_stdout: true
-    ) do
-      {output, 0} ->
-        case Jason.decode(output) do
-          {:ok, %{"valid" => true}} ->
-            IO.puts("✓ Signature valid!")
-            :ok
-          {:ok, %{"valid" => false}} ->
-            IO.puts("✗ Signature invalid!")
-            {:error, :invalid_signature}
-          {:error, _} ->
-            IO.puts("Error parsing verification result")
-            {:error, :invalid_signature}
-        end
 
-      {output, _exit_code} ->
-        IO.puts("Node.js verification failed: #{output}")
-        {:error, :invalid_signature}
-    end
+    result =
+      case System.cmd(node_path, [script_path, temp_file], stderr_to_stdout: true) do
+        {output, 0} ->
+          case Jason.decode(output) do
+            {:ok, %{"valid" => true}} ->
+              IO.puts("✓ Signature valid!")
+              :ok
+
+            {:ok, %{"valid" => false}} ->
+              IO.puts("✗ Signature invalid!")
+              {:error, :invalid_signature}
+
+            {:error, _} ->
+              IO.puts("Error parsing verification result")
+              {:error, :invalid_signature}
+          end
+
+        {output, _exit_code} ->
+          IO.puts("Node.js verification failed: #{output}")
+          {:error, :invalid_signature}
+      end
 
     # Clean up temp file
     File.rm(temp_file)
     result
-  end
-
-  # Find the actual node executable, avoiding wrapper scripts
-  defp find_node_executable do
-    case :os.type() do
-      {:win32, _} ->
-        # On Windows, use 'where' to find all node executables
-        case System.cmd("where", ["node"], stderr_to_stdout: true) do
-          {output, 0} ->
-            # Parse output and find first real node.exe (not in temp/yarn directory)
-            output
-            |> String.split("\n", trim: true)
-            |> Enum.map(&String.trim/1)
-            |> Enum.reject(&String.contains?(&1, "yarn--"))
-            |> Enum.reject(&String.contains?(&1, "Temp"))
-            |> Enum.find(&String.ends_with?(&1, "node.exe"))
-            |> case do
-              nil -> "node"  # Fallback
-              path -> path
-            end
-
-          _ ->
-            # Fallback: try common Windows installation paths
-            [
-              System.get_env("ProgramFiles") <> "\\nodejs\\node.exe",
-              System.get_env("ProgramFiles(x86)") <> "\\nodejs\\node.exe",
-              "C:\\Program Files\\nodejs\\node.exe",
-              "C:\\Program Files (x86)\\nodejs\\node.exe"
-            ]
-            |> Enum.find(&File.exists?/1)
-            |> case do
-              nil -> "node"
-              path -> path
-            end
-        end
-
-      {:unix, _} ->
-        # On Unix/Linux/Mac, use 'which' to find node
-        case System.cmd("which", ["node"], stderr_to_stdout: true) do
-          {output, 0} ->
-            output
-            |> String.split("\n", trim: true)
-            |> List.first()
-            |> String.trim()
-
-          _ ->
-            # Try common Unix paths
-            ["/usr/bin/node", "/usr/local/bin/node", "/opt/homebrew/bin/node"]
-            |> Enum.find(&File.exists?/1)
-            |> case do
-              nil -> "node"
-              path -> path
-            end
-        end
-    end
   end
 
   # ============================================
@@ -253,7 +201,7 @@ defmodule ClippsterServerWeb.AuthController do
     # Get Google OAuth configuration - try config first, then env vars directly
     config = Application.get_env(:ueberauth, Ueberauth.Strategy.Google.OAuth, [])
     client_id = Keyword.get(config, :client_id) || System.get_env("GOOGLE_CLIENT_ID")
-    
+
     if is_nil(client_id) or client_id == "" do
       conn
       |> put_status(500)
@@ -261,11 +209,11 @@ defmodule ClippsterServerWeb.AuthController do
     else
       # Build the callback URL
       callback_url = "#{ClippsterServerWeb.Endpoint.url()}/api/auth/google/callback"
-      
+
       # Build Google OAuth authorization URL
       scope = "email profile"
       state = :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
-      
+
       google_auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" <> URI.encode_query(%{
         "client_id" => client_id,
         "redirect_uri" => callback_url,
@@ -275,11 +223,11 @@ defmodule ClippsterServerWeb.AuthController do
         "access_type" => "offline",
         "prompt" => "consent"
       })
-      
+
       IO.puts("\n=== Redirecting to Google OAuth ===")
       IO.puts("Callback URL: #{callback_url}")
       IO.puts("Google Auth URL: #{google_auth_url}")
-      
+
       redirect(conn, external: google_auth_url)
     end
   end
@@ -290,7 +238,7 @@ defmodule ClippsterServerWeb.AuthController do
   def google_callback(conn, %{"code" => code} = params) do
     IO.puts("\n=== Google OAuth Callback ===")
     IO.puts("Received code: #{String.slice(code, 0, 20)}...")
-    
+
     # Check for error from Google
     if Map.has_key?(params, "error") do
       IO.puts("Google OAuth Error: #{params["error"]}")
@@ -300,12 +248,12 @@ defmodule ClippsterServerWeb.AuthController do
       case exchange_google_code(code) do
         {:ok, tokens} ->
           IO.puts("Token exchange successful")
-          
+
           # Get user info from Google
           case get_google_user_info(tokens["access_token"]) do
             {:ok, google_user} ->
               IO.puts("Got user info - Email: #{google_user["email"]}, ID: #{google_user["id"]}")
-              
+
               oauth_info = %{
                 email: google_user["email"],
                 name: google_user["name"],
@@ -315,7 +263,7 @@ defmodule ClippsterServerWeb.AuthController do
               case Accounts.get_or_create_oauth_user("google", google_user["id"], oauth_info) do
                 {:ok, user} ->
                   IO.puts("User created/retrieved: #{user.id}")
-                  
+
                   # Generate JWT token
                   token_claims = %{
                     "sub" => "google:#{google_user["id"]}",
@@ -357,7 +305,7 @@ defmodule ClippsterServerWeb.AuthController do
   def google_callback(conn, params) do
     IO.puts("\n=== Google OAuth Callback - No Code ===")
     IO.puts("Params: #{inspect(params)}")
-    
+
     error_msg = params["error_description"] || params["error"] || "Authentication failed"
     send_auth_error_html(conn, error_msg)
   end
@@ -505,7 +453,7 @@ defmodule ClippsterServerWeb.AuthController do
     escaped_name = (user.name || "") |> String.replace("\"", "\\\"")
     escaped_avatar = (user.avatar_url || "") |> String.replace("\"", "\\\"")
     ai_allowed = check_ai_allowed_for_user(user)
-    
+
     html_response = """
     <!DOCTYPE html>
     <html lang="en" class="dark">
@@ -552,20 +500,20 @@ defmodule ClippsterServerWeb.AuthController do
             ai_allowed: #{ai_allowed}
           }
         };
-        
+
         // Post to local Tauri callback server
         fetch('http://localhost:54321/google-callback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(authData)
         }).catch(console.error);
-        
+
         // Also try parent window postMessage for popup flow
         if (window.opener) {
           window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', ...authData }, '*');
           setTimeout(() => window.close(), 1500);
         }
-        
+
         // Try to close window after delay
         setTimeout(() => {
           window.close();
@@ -574,7 +522,7 @@ defmodule ClippsterServerWeb.AuthController do
     </body>
     </html>
     """
-    
+
     conn
     |> put_resp_content_type("text/html")
     |> send_resp(200, html_response)
@@ -582,7 +530,7 @@ defmodule ClippsterServerWeb.AuthController do
 
   defp send_auth_error_html(conn, error_message) do
     escaped_error = error_message |> String.replace("\"", "\\\"")
-    
+
     html_response = """
     <!DOCTYPE html>
     <html lang="en" class="dark">
@@ -624,7 +572,7 @@ defmodule ClippsterServerWeb.AuthController do
     </body>
     </html>
     """
-    
+
     conn
     |> put_resp_content_type("text/html")
     |> send_resp(200, html_response)
