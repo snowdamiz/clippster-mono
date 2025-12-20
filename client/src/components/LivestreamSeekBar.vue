@@ -1,10 +1,10 @@
 <template>
-  <div class="livestream-seek-bar w-full">
+  <div class="livestream-seek-bar w-full" @click.stop>
     <!-- Timeline Container -->
     <div
       ref="timelineRef"
       class="relative h-2 bg-zinc-800 rounded-full cursor-pointer group"
-      @mousedown="handleMouseDown"
+      @mousedown.stop="handleMouseDown"
       @mouseenter="isHovering = true"
       @mouseleave="handleMouseLeave"
       @mousemove="handleMouseMove"
@@ -68,7 +68,7 @@
         <!-- Go Live Button -->
         <button
           v-if="!isAtLiveEdge && duration > 0"
-          @click="$emit('seek-to-live')"
+          @click.stop="$emit('seek-to-live')"
           class="flex items-center gap-1 px-2 py-0.5 bg-red-600/80 hover:bg-red-500 text-white text-xs font-medium rounded transition-colors"
         >
           <div class="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />

@@ -24,6 +24,7 @@
                 'absolute top-0 left-0 right-0 z-30 transition-opacity duration-300',
                 isFullscreen && !showControls ? 'opacity-0 pointer-events-none' : 'opacity-100',
               ]"
+              @click.stop
             >
               <div class="bg-gradient-to-b from-black/80 to-transparent p-4">
                 <div class="flex items-center justify-between">
@@ -206,7 +207,7 @@
                   !viewer.state.value.isBuffering
                 "
                 class="absolute inset-0 flex items-center justify-center bg-black/40 z-15 cursor-pointer"
-                @click="viewer.play"
+                @click.stop="viewer.play"
               >
                 <div class="w-20 h-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
                   <Play class="w-10 h-10 text-white ml-1" />
@@ -219,6 +220,7 @@
                   'absolute bottom-0 left-0 right-0 z-30 transition-opacity duration-300',
                   showControls || !viewer.state.value.isPlaying ? 'opacity-100' : 'opacity-0 pointer-events-none',
                 ]"
+                @click.stop
               >
                 <div class="bg-gradient-to-t from-black/90 via-black/60 to-transparent pt-16 pb-4 px-4">
                   <!-- Seek Bar -->
