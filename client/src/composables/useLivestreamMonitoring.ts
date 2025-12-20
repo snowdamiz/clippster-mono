@@ -21,6 +21,7 @@ import type {
 } from '@/types/livestream';
 import { useLivestreamSegmentProcessing } from './useLivestreamSegmentProcessing';
 import { useCreditBalance } from './useCreditBalance';
+import { useTempLivestreamRecording } from './useTempLivestreamRecording';
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -33,6 +34,13 @@ const monitoredStreamers = ref<
 const pollingHandle = ref<number | null>(null);
 // isMonitoring is true if we are actively polling any streamers
 const isMonitoring = computed(() => monitoredStreamers.value.size > 0);
+
+// Track temp recordings for watched (but not recorded) streamers
+// Key: streamerId, Value: { mintId, tempSessionId }
+const tempRecordingSessions = ref<Map<string, { mintId: string; tempSessionId: string }>>(new Map());
+
+// Get the temp recording composable instance (shared)
+const tempRecordingComposable = useTempLivestreamRecording();
 
 const activityLogs = ref<ActivityLog[]>([]);
 // Key format: `${streamerId}-${segmentNumber}` to avoid collisions between streamers
@@ -198,6 +206,57 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
   const newMap = new Map(activeSessions.value);
   newMap.delete(streamer.id);
   activeSessions.value = newMap;
+}
+
+// Handle temp recording cleanup when stream ends (for watch-only temp recordings)
+async function handleTempStreamEnd(streamerId: string, mintId: string) {
+  const tempSession = tempRecordingSessions.value.get(streamerId);
+  if (!tempSession) return;
+
+  console.log('[LiveMonitor] Cleaning up temp recording for', mintId);
+  
+  try {
+    // Cleanup temp recording files
+    await tempRecordingComposable.cleanupTempRecording(mintId);
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to cleanup temp recording', error);
+  }
+
+  // Remove from temp sessions tracking
+  const newMap = new Map(tempRecordingSessions.value);
+  newMap.delete(streamerId);
+  tempRecordingSessions.value = newMap;
+}
+
+// Start temp recording for a streamer (for watch-only DVR)
+async function startTempRecordingForStreamer(streamer: MonitoredStreamer): Promise<string | null> {
+  // Don't start temp recording if already has a persistent recording
+  if (activeSessions.value.has(streamer.id)) {
+    console.log('[LiveMonitor] Streamer has persistent recording, skipping temp recording:', streamer.id);
+    return null;
+  }
+
+  // Don't start if already has temp recording
+  if (tempRecordingSessions.value.has(streamer.id)) {
+    const existing = tempRecordingSessions.value.get(streamer.id)!;
+    console.log('[LiveMonitor] Streamer already has temp recording:', existing.tempSessionId);
+    return existing.tempSessionId;
+  }
+
+  try {
+    const tempSessionId = await tempRecordingComposable.startTempRecording(streamer.mintId, 3);
+    
+    // Track the temp recording
+    const newMap = new Map(tempRecordingSessions.value);
+    newMap.set(streamer.id, { mintId: streamer.mintId, tempSessionId });
+    tempRecordingSessions.value = newMap;
+
+    console.log('[LiveMonitor] Started temp recording for', streamer.mintId, 'session:', tempSessionId);
+    return tempSessionId;
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to start temp recording for', streamer.mintId, error);
+    return null;
+  }
 }
 
 // Shared function to finalize a recording session (cleanup empty projects)
@@ -450,11 +509,29 @@ async function initializeListeners() {
     }
   });
 
+  // Listen for temp stream ended events (for watch-only temp recordings)
+  const tempStreamEndedUnlisten = await listen<{ mintId: string; tempSessionId: string }>(
+    'temp-stream-ended',
+    async (event) => {
+      const { mintId } = event.payload;
+      
+      // Find the streamer by mintId
+      for (const [streamerId, tempSession] of tempRecordingSessions.value.entries()) {
+        if (tempSession.mintId === mintId) {
+          console.log('[LiveMonitor] Temp stream ended for', mintId);
+          await handleTempStreamEnd(streamerId, mintId);
+          break;
+        }
+      }
+    }
+  );
+
   unlistenFunctions.push(
     segmentUnlisten,
     streamEndedUnlisten,
     recorderLogUnlisten,
-    processExitUnlisten
+    processExitUnlisten,
+    tempStreamEndedUnlisten
   );
   listenersInitialized = true;
 }
@@ -569,6 +646,7 @@ export function useLivestreamMonitoring() {
       });
 
       const sessionActive = activeSessions.value.has(streamer.id);
+      const hasTempRecording = tempRecordingSessions.value.has(streamer.id);
 
       // Check if failed recently
       const failedAt = failedSessions.value.get(streamer.id);
@@ -581,6 +659,17 @@ export function useLivestreamMonitoring() {
         await handleStreamStart(streamer, status, config.options);
       } else if (!status.isLive && sessionActive) {
         await handleStreamEnd(streamer);
+      }
+
+      // Auto-start temp recording for live streamers that don't have persistent recording
+      // This enables DVR for users who just want to watch (not record)
+      if (status.isLive && !sessionActive && !hasTempRecording) {
+        await startTempRecordingForStreamer(streamer);
+      }
+
+      // Cleanup temp recording when stream ends (and no persistent session)
+      if (!status.isLive && !sessionActive && hasTempRecording) {
+        await handleTempStreamEnd(streamer.id, streamer.mintId);
       }
     }
   }
@@ -673,5 +762,10 @@ export function useLivestreamMonitoring() {
     activityLogs,
     addActivityLog,
     clearLogs,
+    // Temp recording exports
+    tempRecordingSessions,
+    startTempRecordingForStreamer,
+    getTempRecordingState: (streamerId: string) => tempRecordingSessions.value.get(streamerId),
+    hasTempRecording: (streamerId: string) => tempRecordingSessions.value.has(streamerId),
   };
 }

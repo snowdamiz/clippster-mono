@@ -412,3 +412,27 @@ export async function updateSegmentStatus(
     error_message: errorMessage ?? null,
   });
 }
+
+/**
+ * Create a project specifically for clips from watch mode (temp recording).
+ * This is called when a user creates their first clip while watching without recording.
+ * Project name format: "{displayName} - {YYYY-MM-DD}"
+ */
+export async function createLivestreamClipProject(
+  displayName: string,
+  mintId: string
+): Promise<string> {
+  // Format date as YYYY-MM-DD
+  const date = new Date();
+  const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
+  
+  const projectName = `${displayName} - ${dateStr}`;
+  const projectDescription = `Clips from PumpFun livestream ${displayName} (${mintId})`;
+  
+  // Use the existing createProject function
+  const projectId = await createProject(projectName, projectDescription, undefined, 'PumpFun');
+  
+  console.log('[LiveMonitor] Created clip project for watch mode:', projectId, projectName);
+  
+  return projectId;
+}

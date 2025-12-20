@@ -135,6 +135,14 @@
                           <span v-if="streamer.viewerCount" class="text-muted-foreground font-normal">
                             ({{ formatViewerCount(streamer.viewerCount) }} viewers)
                           </span>
+                          <!-- DVR Ready indicator -->
+                          <span
+                            v-if="streamer.hasTempRecording"
+                            class="text-[10px] bg-green-500/20 text-green-400 px-1 py-0.5 rounded border border-green-500/30 font-normal"
+                            title="DVR recording active - rewind available"
+                          >
+                            DVR
+                          </span>
                         </span>
                         <span v-else class="text-muted-foreground/60 flex items-center gap-1.5 text-sm">
                           <span class="w-2 h-2 rounded-full bg-muted-foreground/40"></span>
@@ -200,6 +208,23 @@
                           title="Refresh live status"
                         >
                           <RefreshCw class="w-4 h-4" />
+                        </button>
+                        <!-- Watch Button (only when live) -->
+                        <button
+                          v-if="streamer.isLive"
+                          @click="openWatchDialog(streamer)"
+                          class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30"
+                          :title="streamer.hasTempRecording ? 'Watch Live (DVR Ready)' : 'Watch Live'"
+                        >
+                          <Eye class="w-4 h-4" />
+                          Watch
+                          <!-- DVR Ready indicator -->
+                          <span
+                            v-if="streamer.hasTempRecording"
+                            class="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded-full border border-green-500/30"
+                          >
+                            DVR
+                          </span>
                         </button>
                         <button
                           @click="startStreamer(streamer, false)"
@@ -349,6 +374,17 @@
         @close="showCreditWarningDialog = false"
         @confirm="confirmCreditWarning"
       />
+
+      <!-- Livestream Watch Dialog -->
+      <LivestreamWatchDialog
+        v-if="watchingStreamer"
+        v-model="showWatchDialog"
+        :mint-id="watchingStreamer.mintId"
+        :streamer-id="watchingStreamer.id"
+        :display-name="watchingStreamer.displayName"
+        :profile-image-url="watchingStreamer.profileImageUrl"
+        @clip-created="handleClipCreated"
+      />
     </div>
   </PageLayout>
 </template>
@@ -368,6 +404,7 @@
     Sparkles,
     RefreshCw,
     Clock,
+    Eye,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
@@ -376,6 +413,7 @@
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
   import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
+  import LivestreamWatchDialog from '@/components/LivestreamWatchDialog.vue';
   // import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
   import {
@@ -405,6 +443,8 @@
     isCheckingLive?: boolean;
     // Per-streamer segment duration
     segmentDurationMinutes: number;
+    // Temp recording status (for watch-only DVR)
+    hasTempRecording?: boolean;
   };
 
   const streamers = ref<ExtendedStreamer[]>([]);
@@ -417,6 +457,10 @@
   const showSearchDialog = ref(false);
   const isSearching = ref(false);
 
+  // Watch dialog state
+  const showWatchDialog = ref(false);
+  const watchingStreamer = ref<ExtendedStreamer | null>(null);
+
   const {
     activeSessions,
     monitoredStreamers,
@@ -425,6 +469,8 @@
     activityLogs,
     addActivityLog,
     clearLogs,
+    tempRecordingSessions,
+    hasTempRecording,
   } = useLivestreamMonitoring();
 
   const { hoursRemaining, fetchBalance } = useCreditBalance();
@@ -592,12 +638,13 @@
     }
   });
 
-  watch([activeSessions, monitoredStreamers], () => syncDetectionState(), { deep: true });
+  watch([activeSessions, monitoredStreamers, tempRecordingSessions], () => syncDetectionState(), { deep: true });
 
   function syncDetectionState() {
     streamers.value = streamers.value.map((streamer) => {
       const monitored = monitoredStreamers.value.get(streamer.id);
       const session = activeSessions.value.get(streamer.id);
+      const tempSession = tempRecordingSessions.value.get(streamer.id);
 
       return {
         ...streamer,
@@ -606,6 +653,8 @@
         status: session ? (session.isStopping ? 'STOPPING' : 'LIVE') : monitored ? 'WAITING' : 'IDLE',
         // When actively monitoring, derive live status from session state
         isLive: monitored ? (session ? true : streamer.isLive) : streamer.isLive,
+        // Track temp recording status for DVR availability
+        hasTempRecording: !!tempSession,
       };
     });
   }
@@ -615,6 +664,26 @@
     if (!streamer.isDetecting) return 'IDLE';
     if (streamer.status === 'LIVE') return `LIVE (${streamer.mode === 'Auto-Detect' ? 'AUTO' : 'REC'})`;
     return `WAITING (${streamer.mode === 'Auto-Detect' ? 'AUTO' : 'REC'})`;
+  }
+
+  // Open watch dialog for a live streamer
+  function openWatchDialog(streamer: ExtendedStreamer) {
+    if (!streamer.isLive) return;
+    watchingStreamer.value = streamer;
+    showWatchDialog.value = true;
+  }
+
+  // Handle clip created from watch dialog
+  function handleClipCreated(clipPath: string) {
+    addActivityLog({
+      streamerId: watchingStreamer.value?.id || 'system',
+      streamerName: watchingStreamer.value?.displayName || 'System',
+      platform: 'PumpFun',
+      message: `Clip created: ${clipPath.split(/[\\/]/).pop()}`,
+      status: 'success',
+      mintId: watchingStreamer.value?.mintId,
+      profileImageUrl: watchingStreamer.value?.profileImageUrl,
+    });
   }
 
   async function loadStreamers() {

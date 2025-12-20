@@ -1,11 +1,12 @@
 // Module declarations
 mod types;
-mod encoder;
+pub mod encoder;
 mod font_manager;
-mod video_info;
+pub mod video_info;
 mod subtitle;
-mod video_processor;
+pub mod video_processor;
 mod orchestrator;
+pub mod livestream_clip;
 
 // Re-export public types
 pub use types::*;

@@ -48,20 +48,22 @@ const DIAGNOSTIC_LOG_INTERVAL_FRAMES = 30; // Log every N frames (30 = ~1/sec at
 const SYNC_HEALTH_INTERVAL_MS = 30000; // Log sync health every 30 seconds
 
 const args = process.argv.slice(2);
-const [mintId, sessionId, outputDirArg, segmentMinutesArg] = args;
+const [mintId, sessionId, outputDirArg, segmentSecondsArg, outputFormatArg] = args;
 
 if (!mintId || !sessionId || !outputDirArg) {
   console.error(
     JSON.stringify({
       type: 'error',
-      message: 'Usage: record-livestream.mjs <mintId> <sessionId> <outputDir> [segmentMinutes]',
+      message: 'Usage: record-livestream.mjs <mintId> <sessionId> <outputDir> [segmentSeconds] [outputFormat]',
     })
   );
   process.exit(1);
 }
 
-const segmentMinutes = Math.max(parseInt(segmentMinutesArg || '5', 10), 1);
-const segmentDurationSeconds = segmentMinutes * 60;
+// Parse segment duration in seconds (default 300 = 5 minutes for MP4, 4 for HLS)
+const outputFormat = (outputFormatArg || 'mp4').toLowerCase(); // 'mp4' or 'hls'
+const defaultSegmentSeconds = outputFormat === 'hls' ? 4 : 300;
+const segmentDurationSeconds = Math.max(parseInt(segmentSecondsArg || String(defaultSegmentSeconds), 10), 1);
 const outputDir = path.resolve(outputDirArg);
 
 const __filename = fileURLToPath(import.meta.url);
@@ -258,11 +260,12 @@ class AudioMixer {
 }
 
 class PumpfunRecorder {
-  constructor({ mintId, sessionId, outputDir, segmentDuration }) {
+  constructor({ mintId, sessionId, outputDir, segmentDuration, outputFormat = 'mp4' }) {
     this.mintId = mintId;
     this.sessionId = sessionId;
     this.outputDir = outputDir;
     this.segmentDurationSeconds = segmentDuration;
+    this.outputFormat = outputFormat; // 'mp4' or 'hls'
     this.audioAdvanceMs = getAudioAdvanceMs(mintId);
     if (DIAGNOSTIC_MODE && this.audioAdvanceMs !== AUDIO_ADVANCE_MS) {
         log('DIAG: Audio advance override applied', {
@@ -273,7 +276,10 @@ class PumpfunRecorder {
     }
     this.ffmpegPath = resolveFfmpegBinary();
     this.segmentPrefix = `${this.mintId}_${this.sessionId}_segment_`;
-    this.playlistPath = path.join(this.outputDir, 'playlist.csv');
+    // Playlist path depends on format
+    this.playlistPath = outputFormat === 'hls' 
+      ? path.join(this.outputDir, 'playlist.m3u8')
+      : path.join(this.outputDir, 'playlist.csv');
     this.processedSegments = new Set();
     this.running = false;
     this.restarting = false;
@@ -1255,12 +1261,12 @@ class PumpfunRecorder {
   }
 
   async startEncoder() {
-    const outputPattern = path.join(this.outputDir, `${this.segmentPrefix}%05d.mp4`);
     const { width, height } = this.videoInfo || { width: 1280, height: 720 };
     const startNumber = this.lastSegmentNumber + 1;
     const encoderArgs = await this.getVideoEncoderArgs();
 
-    const args = [
+    // Build common input args
+    const inputArgs = [
       '-loglevel',
       'warning',
       '-y',
@@ -1279,15 +1285,43 @@ class PumpfunRecorder {
       ...encoderArgs,
       '-c:a', 'aac',
       '-b:a', '160k',
-      '-movflags', '+faststart',
-      '-f', 'segment',
-      '-segment_time', String(this.segmentDurationSeconds),
-      '-reset_timestamps', '1',
-      '-segment_list', this.playlistPath,
-      '-segment_list_type', 'csv',
-      '-segment_start_number', String(startNumber),
-      outputPattern,
     ];
+
+    let outputArgs;
+    if (this.outputFormat === 'hls') {
+      // HLS output for DVR - short segments, instant availability
+      const segmentPattern = path.join(this.outputDir, `${this.segmentPrefix}%05d.ts`);
+      outputArgs = [
+        '-f', 'hls',
+        '-hls_time', String(this.segmentDurationSeconds),
+        '-hls_list_size', '0', // Keep all segments in playlist
+        '-hls_flags', 'append_list+independent_segments',
+        '-hls_segment_type', 'mpegts',
+        '-hls_segment_filename', segmentPattern,
+        '-hls_start_number_source', 'generic',
+        '-start_number', String(startNumber),
+        this.playlistPath,
+      ];
+      log('Starting HLS encoder', { 
+        segmentDuration: this.segmentDurationSeconds, 
+        playlistPath: this.playlistPath 
+      });
+    } else {
+      // MP4 segment output (original behavior)
+      const outputPattern = path.join(this.outputDir, `${this.segmentPrefix}%05d.mp4`);
+      outputArgs = [
+        '-movflags', '+faststart',
+        '-f', 'segment',
+        '-segment_time', String(this.segmentDurationSeconds),
+        '-reset_timestamps', '1',
+        '-segment_list', this.playlistPath,
+        '-segment_list_type', 'csv',
+        '-segment_start_number', String(startNumber),
+        outputPattern,
+      ];
+    }
+
+    const args = [...inputArgs, ...outputArgs];
 
     this.ffmpeg = spawn(this.ffmpegPath, args, {
       stdio: ['pipe', 'pipe', 'pipe', 'pipe', 'ignore'],
@@ -1656,13 +1690,20 @@ class PumpfunRecorder {
   }
   
   startSegmentWatcher() {
+    const playlistFilename = this.outputFormat === 'hls' ? 'playlist.m3u8' : 'playlist.csv';
     this.segmentWatcher = fs.watch(this.outputDir, (event, filename) => {
-      if (!filename || filename === 'playlist.csv') {
+      if (!filename || filename === playlistFilename) {
+        this.checkPlaylist();
+      }
+      // For HLS, also trigger on .ts file creation for faster detection
+      if (this.outputFormat === 'hls' && filename && filename.endsWith('.ts')) {
         this.checkPlaylist();
       }
     });
     if (this.playlistPoller) clearInterval(this.playlistPoller);
-    this.playlistPoller = setInterval(() => this.checkPlaylist(), 10000);
+    // Poll more frequently for HLS (every 2 seconds) for responsive DVR
+    const pollInterval = this.outputFormat === 'hls' ? 2000 : 10000;
+    this.playlistPoller = setInterval(() => this.checkPlaylist(), pollInterval);
   }
 
   async checkPlaylist() {
@@ -1676,31 +1717,93 @@ class PumpfunRecorder {
       const content = await fs.promises.readFile(this.playlistPath, 'utf8');
       const lines = content.split('\n').filter((line) => line.trim() !== '');
 
-      for (const line of lines) {
-        const parts = line.split(',');
-        if (parts.length < 1) continue;
-        const filename = parts[0];
-        const fullPath = path.join(this.outputDir, filename);
-        if (this.processedSegments.has(fullPath)) continue;
-        const segmentIndex = this.extractSegmentNumber(filename);
-        if (segmentIndex === null) continue;
-        if (segmentIndex > this.lastSegmentNumber) this.lastSegmentNumber = segmentIndex;
+      if (this.outputFormat === 'hls') {
+        // Parse HLS .m3u8 playlist
+        // Format: #EXTM3U, #EXT-X-VERSION, #EXTINF:duration, segment.ts
+        let currentDuration = this.segmentDurationSeconds;
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          
+          // Parse duration from #EXTINF tag
+          if (line.startsWith('#EXTINF:')) {
+            const match = line.match(/#EXTINF:([\d.]+)/);
+            if (match) {
+              currentDuration = parseFloat(match[1]);
+            }
+            continue;
+          }
+          
+          // Skip other HLS tags
+          if (line.startsWith('#')) continue;
+          
+          // This is a segment filename
+          const filename = line.trim();
+          if (!filename.endsWith('.ts')) continue;
+          
+          const fullPath = path.join(this.outputDir, filename);
+          if (this.processedSegments.has(fullPath)) continue;
+          
+          const segmentIndex = this.extractSegmentNumber(filename);
+          if (segmentIndex === null) continue;
+          if (segmentIndex > this.lastSegmentNumber) this.lastSegmentNumber = segmentIndex;
 
-        try {
-          if (!fs.existsSync(fullPath)) continue;
-          const stats = await fs.promises.stat(fullPath);
-          if (stats.size < 5 * 1024) continue;
-        } catch (e) { continue; }
+          try {
+            if (!fs.existsSync(fullPath)) continue;
+            const stats = await fs.promises.stat(fullPath);
+            // HLS segments can be smaller, use 1KB minimum
+            if (stats.size < 1024) continue;
+          } catch (e) { continue; }
 
-        this.processedSegments.add(fullPath);
-        this.emitEvent({
-          type: 'segment_complete',
-          mintId: this.mintId,
-          sessionId: this.sessionId,
-          segment: segmentIndex + 1,
-          path: fullPath,
-          duration: this.segmentDurationSeconds,
-        });
+          this.processedSegments.add(fullPath);
+          this.emitEvent({
+            type: 'segment_complete',
+            mintId: this.mintId,
+            sessionId: this.sessionId,
+            segment: segmentIndex + 1,
+            path: fullPath,
+            duration: currentDuration,
+          });
+          
+          // Also emit HLS-specific event with playlist info
+          this.emitEvent({
+            type: 'hls_segment',
+            mintId: this.mintId,
+            sessionId: this.sessionId,
+            segment: segmentIndex + 1,
+            path: fullPath,
+            duration: currentDuration,
+            playlistPath: this.playlistPath,
+            totalSegments: this.processedSegments.size,
+          });
+        }
+      } else {
+        // Parse CSV playlist (original MP4 format)
+        for (const line of lines) {
+          const parts = line.split(',');
+          if (parts.length < 1) continue;
+          const filename = parts[0];
+          const fullPath = path.join(this.outputDir, filename);
+          if (this.processedSegments.has(fullPath)) continue;
+          const segmentIndex = this.extractSegmentNumber(filename);
+          if (segmentIndex === null) continue;
+          if (segmentIndex > this.lastSegmentNumber) this.lastSegmentNumber = segmentIndex;
+
+          try {
+            if (!fs.existsSync(fullPath)) continue;
+            const stats = await fs.promises.stat(fullPath);
+            if (stats.size < 5 * 1024) continue;
+          } catch (e) { continue; }
+
+          this.processedSegments.add(fullPath);
+          this.emitEvent({
+            type: 'segment_complete',
+            mintId: this.mintId,
+            sessionId: this.sessionId,
+            segment: segmentIndex + 1,
+            path: fullPath,
+            duration: this.segmentDurationSeconds,
+          });
+        }
       }
       if (!this.running || this.restarting) await this.checkPotentialLastSegment();
     } catch (error) {
@@ -1712,13 +1815,15 @@ class PumpfunRecorder {
   
   async checkPotentialLastSegment() {
       const potentialLastSegmentIndex = this.lastSegmentNumber + 1;
-      const potentialLastSegmentName = `${this.segmentPrefix}${String(potentialLastSegmentIndex).padStart(5, '0')}.mp4`;
+      const ext = this.outputFormat === 'hls' ? '.ts' : '.mp4';
+      const minSize = this.outputFormat === 'hls' ? 1024 : 5 * 1024;
+      const potentialLastSegmentName = `${this.segmentPrefix}${String(potentialLastSegmentIndex).padStart(5, '0')}${ext}`;
       const potentialLastSegmentPath = path.join(this.outputDir, potentialLastSegmentName);
       
       if (!this.processedSegments.has(potentialLastSegmentPath) && fs.existsSync(potentialLastSegmentPath)) {
          try {
            const stats = await fs.promises.stat(potentialLastSegmentPath);
-           if (stats.size > 5 * 1024) {
+           if (stats.size > minSize) {
                this.processedSegments.add(potentialLastSegmentPath);
                this.emitEvent({
                   type: 'segment_complete',
@@ -1728,13 +1833,28 @@ class PumpfunRecorder {
                   path: potentialLastSegmentPath,
                   duration: this.segmentDurationSeconds,
                 });
+               
+               // For HLS, also emit the hls_segment event
+               if (this.outputFormat === 'hls') {
+                 this.emitEvent({
+                   type: 'hls_segment',
+                   mintId: this.mintId,
+                   sessionId: this.sessionId,
+                   segment: potentialLastSegmentIndex + 1,
+                   path: potentialLastSegmentPath,
+                   duration: this.segmentDurationSeconds,
+                   playlistPath: this.playlistPath,
+                   totalSegments: this.processedSegments.size,
+                 });
+               }
            }
          } catch(e) {}
       }
   }
 
   extractSegmentNumber(filename) {
-    const match = filename.match(/segment_(\d+)\.mp4$/);
+    // Support both .mp4 and .ts extensions
+    const match = filename.match(/segment_(\d+)\.(mp4|ts)$/);
     if (!match) return null;
     return parseInt(match[1], 10);
   }
@@ -1927,11 +2047,20 @@ class PumpfunRecorder {
 }
 
 async function main() {
+  log('Recorder starting', { 
+    mintId, 
+    sessionId, 
+    outputDir, 
+    segmentDuration: segmentDurationSeconds, 
+    outputFormat 
+  });
+  
   const recorder = new PumpfunRecorder({
     mintId,
     sessionId,
     outputDir,
     segmentDuration: segmentDurationSeconds,
+    outputFormat,
   });
 
   let isStarting = true; // Track if we're still in the start() phase

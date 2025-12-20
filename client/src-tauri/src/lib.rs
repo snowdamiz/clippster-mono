@@ -506,9 +506,18 @@ pub fn run() {
             // PumpFun commands
             pumpfun::get_pumpfun_clips,
             pumpfun::check_pumpfun_livestream,
+            pumpfun::join_pumpfun_livestream,
+            pumpfun::get_livekit_regions,
             pumpfun::start_livestream_recording,
             pumpfun::stop_livestream_recording,
             pumpfun::stop_all_livestream_recordings,
+            // Temp recording commands (for watch-only DVR)
+            pumpfun::start_temp_livestream_recording,
+            pumpfun::stop_temp_livestream_recording,
+            pumpfun::is_temp_recording_active,
+            pumpfun::get_temp_recording_path,
+            pumpfun::get_temp_recording_info,
+            pumpfun::cleanup_temp_recording,
 
             // Download commands
             downloads::download_pumpfun_vod,
@@ -559,6 +568,7 @@ pub fn run() {
             clips::build_clip_from_segments,
             clips::cancel_clip_build,
             clips::is_clip_build_active,
+            clips::livestream_clip::extract_livestream_clip,
 
             // Focal detection commands
             detect_focal_points,
