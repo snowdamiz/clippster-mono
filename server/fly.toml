@@ -1,0 +1,46 @@
+# fly.toml - Fly.io configuration for Clippster Server
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+
+app = "clippster-server"
+primary_region = "iad"
+
+# Build configuration
+[build]
+
+# Environment variables (non-sensitive, set in fly.toml)
+# Sensitive variables should be set via `fly secrets set`
+[env]
+  PHX_SERVER = "true"
+  PORT = "4000"
+  ECTO_IPV6 = "true"
+  ERL_AFLAGS = "-proto_dist inet6_tcp"
+
+# HTTP service configuration
+[http_service]
+  internal_port = 4000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  # Health check configuration
+  [http_service.http_options]
+    h2_backend = false
+
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "30s"
+    method = "GET"
+    path = "/api/health"
+    timeout = "10s"
+
+# Machine configuration
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
+
+# Release command - run migrations before starting
+[deploy]
+  release_command = "/app/bin/clippster_server eval 'ClippsterServer.Release.migrate()'"

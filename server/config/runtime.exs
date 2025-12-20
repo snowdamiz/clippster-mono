@@ -7,14 +7,18 @@ import Config
 # any compile-time configuration in here, as it won't be applied.
 # The block below contains prod specific runtime configuration.
 
-# Load .env file if it exists (for local development)
-env_file = Path.join(File.cwd!(), ".env")
-if File.exists?(env_file) do
-  try do
-    env_vars = Dotenvy.source!(env_file)
-    Enum.each(env_vars, fn {key, value} -> System.put_env(key, value) end)
-  rescue
-    _ -> :ok
+# Load .env file if it exists (for local development only)
+# In production, env vars come from fly secrets
+if config_env() != :prod do
+  env_file = Path.join(File.cwd!(), ".env")
+
+  if File.exists?(env_file) do
+    try do
+      env_vars = Dotenvy.source!(env_file)
+      Enum.each(env_vars, fn {key, value} -> System.put_env(key, value) end)
+    rescue
+      _ -> :ok
+    end
   end
 end
 
@@ -59,10 +63,19 @@ config :clippster_server, :email_auth,
   verification_url_base: System.get_env("APP_URL") || "http://localhost:4000"
 
 # Instagram API configuration (Instagram Business Login)
+# redirect_uri should point to the server's callback endpoint
+instagram_redirect_uri =
+  System.get_env("INSTAGRAM_REDIRECT_URI") ||
+    if config_env() == :prod do
+      "https://#{System.get_env("PHX_HOST") || "api.clippster.app"}/api/auth/instagram/callback"
+    else
+      "http://localhost:4000/api/auth/instagram/callback"
+    end
+
 config :clippster_server, :instagram,
   app_id: System.get_env("INSTAGRAM_APP_ID"),
   app_secret: System.get_env("INSTAGRAM_APP_SECRET"),
-  redirect_uri: System.get_env("INSTAGRAM_REDIRECT_URI") || "http://localhost:5173/auth/instagram/callback"
+  redirect_uri: instagram_redirect_uri
 
 # Social token encryption key
 config :clippster_server, :social,

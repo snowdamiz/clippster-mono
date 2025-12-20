@@ -88,3 +88,9 @@ config :swoosh, :api_client, Swoosh.ApiClient.Req
 config :clippster_server,
   domain: "localhost",
   jwt_secret: System.get_env("JWT_SECRET") || "dev_secret_key_change_in_production"
+
+# Development-only settings
+# Load .env file and run migrations automatically on startup
+config :clippster_server,
+  load_dotenv: true,
+  auto_migrate: true
