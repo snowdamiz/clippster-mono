@@ -349,3 +349,86 @@ pub async fn read_dvr_chunk(
     Ok(result)
 }
 
+/// Read only the init segment for MSE playback
+/// The init segment contains EBML header, Segment, and Track info - needed once at start
+#[tauri::command]
+pub async fn read_dvr_init_segment(
+    app: AppHandle,
+    mint_id: String,
+) -> Result<Vec<u8>, String> {
+    let dvr_dir = get_dvr_dir(&app, &mint_id)?;
+    let init_path = get_init_segment_path(&dvr_dir);
+    
+    // Try to read existing init segment
+    if init_path.exists() {
+        let init_segment = fs::read(&init_path)
+            .map_err(|e| format!("Failed to read init segment: {}", e))?;
+        println!("[DVR] Read init segment ({} bytes)", init_segment.len());
+        return Ok(init_segment);
+    }
+    
+    // No init segment file, try to extract from chunk 0
+    let chunk0_path = dvr_dir.join("chunk_00000.webm");
+    if !chunk0_path.exists() {
+        return Err(format!("No init segment or chunk 0 found for {}", mint_id));
+    }
+    
+    let chunk0_data = fs::read(&chunk0_path)
+        .map_err(|e| format!("Failed to read chunk 0: {}", e))?;
+    
+    if let Some(init_segment) = extract_init_segment(&chunk0_data) {
+        // Save for future use
+        fs::write(&init_path, &init_segment)
+            .map_err(|e| format!("Failed to write init segment: {}", e))?;
+        println!("[DVR] Extracted and saved init segment from chunk 0 ({} bytes)", init_segment.len());
+        Ok(init_segment)
+    } else {
+        Err("Could not extract init segment from chunk 0".to_string())
+    }
+}
+
+/// Read only the cluster data from a DVR chunk (no init segment)
+/// For MSE playback, init segment is appended once, then only cluster data is needed
+#[tauri::command]
+pub async fn read_dvr_cluster(
+    app: AppHandle,
+    mint_id: String,
+    chunk_index: u32,
+) -> Result<Vec<u8>, String> {
+    let dvr_dir = get_dvr_dir(&app, &mint_id)?;
+    let chunk_filename = format!("chunk_{:05}.webm", chunk_index);
+    let chunk_path = dvr_dir.join(&chunk_filename);
+    
+    if !chunk_path.exists() {
+        return Err(format!("DVR chunk {} not found for {}", chunk_index, mint_id));
+    }
+    
+    let chunk_data = fs::read(&chunk_path)
+        .map_err(|e| format!("Failed to read DVR chunk: {}", e))?;
+    
+    // For chunk 0, we need to strip the init segment and return only the cluster data
+    if chunk_index == 0 {
+        // Find where the first Cluster starts
+        for i in 0..chunk_data.len().saturating_sub(3) {
+            if chunk_data[i] == 0x1F 
+                && chunk_data[i + 1] == 0x43 
+                && chunk_data[i + 2] == 0xB6 
+                && chunk_data[i + 3] == 0x75 
+            {
+                // Return only the cluster data (from Cluster element onwards)
+                let cluster_data = chunk_data[i..].to_vec();
+                println!("[DVR] Reading chunk 0 cluster data only ({} bytes, stripped {} bytes init)", 
+                         cluster_data.len(), i);
+                return Ok(cluster_data);
+            }
+        }
+        // No Cluster found, return as-is (shouldn't happen for valid WebM)
+        println!("[DVR] Warning: No Cluster found in chunk 0, returning full data");
+        return Ok(chunk_data);
+    }
+    
+    // For chunks > 0, the file already contains only cluster data
+    println!("[DVR] Reading chunk {} cluster data ({} bytes)", chunk_index, chunk_data.len());
+    Ok(chunk_data)
+}
+

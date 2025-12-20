@@ -127,24 +127,12 @@
                 muted
               />
 
-              <!-- DVR Video (Segment Playback) -->
+              <!-- DVR Video (MSE Playback - single element) -->
               <video
                 ref="dvrVideoRef"
                 :class="[
                   'w-full h-full object-contain transition-opacity duration-200 absolute inset-0',
-                  viewer.state.value.playbackMode === 'dvr' && viewer.activeDvrElement.value === 'primary'
-                    ? 'opacity-100 z-10'
-                    : 'opacity-0 z-0',
-                ]"
-                playsinline
-              />
-              <video
-                ref="dvrVideoRef2"
-                :class="[
-                  'w-full h-full object-contain transition-opacity duration-200 absolute inset-0',
-                  viewer.state.value.playbackMode === 'dvr' && viewer.activeDvrElement.value === 'secondary'
-                    ? 'opacity-100 z-10'
-                    : 'opacity-0 z-0',
+                  viewer.state.value.playbackMode === 'dvr' ? 'opacity-100 z-10' : 'opacity-0 z-0',
                 ]"
                 playsinline
               />
@@ -425,7 +413,6 @@
   const videoContainerRef = ref<HTMLDivElement | null>(null);
   const liveVideoRef = ref<HTMLVideoElement | null>(null);
   const dvrVideoRef = ref<HTMLVideoElement | null>(null);
-  const dvrVideoRef2 = ref<HTMLVideoElement | null>(null);
 
   // Composable
   const viewer = useLivestreamViewer();
@@ -753,8 +740,8 @@
         if (liveVideoRef.value) {
           viewer.setVideoElement(liveVideoRef.value);
         }
-        if (dvrVideoRef.value && dvrVideoRef2.value) {
-          viewer.setDvrVideoElement(dvrVideoRef.value, dvrVideoRef2.value);
+        if (dvrVideoRef.value) {
+          viewer.setDvrVideoElement(dvrVideoRef.value);
         }
 
         // Connect to livestream

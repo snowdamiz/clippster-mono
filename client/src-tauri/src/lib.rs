@@ -589,7 +589,9 @@ pub fn run() {
             dvr::get_dvr_directory,
             dvr::has_dvr_chunks,
             dvr::read_dvr_chunk,
-            dvr::read_all_dvr_chunks
+            dvr::read_all_dvr_chunks,
+            dvr::read_dvr_init_segment,
+            dvr::read_dvr_cluster
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
