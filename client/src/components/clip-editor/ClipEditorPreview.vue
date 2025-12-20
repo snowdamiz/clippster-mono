@@ -251,7 +251,7 @@
           :style="getCreatorWatermarkOverlayStyle"
         >
           <img
-            :src="creatorWatermarkDataUrl"
+            :src="creatorWatermarkDataUrl ?? undefined"
             alt="Creator Watermark"
             class="max-w-full max-h-full object-contain"
             :style="{ opacity: getCreatorWatermarkOpacity }"
@@ -1259,7 +1259,9 @@
               const { ensureAssetDownloaded } = await import('@/services/orgAssetSync');
               const serverResponse = await getUserOrganizationAssets();
               if (serverResponse.success && serverResponse.assets) {
-                const serverAsset = serverResponse.assets.find((a) => a.id === serverId && a.asset_type === 'watermark');
+                const serverAsset = serverResponse.assets.find(
+                  (a) => a.id === serverId && a.asset_type === 'watermark'
+                );
                 if (serverAsset && serverAsset.url) {
                   console.log('[ClipEditorPreview] Downloading org watermark:', serverAsset.name);
                   // Download and cache the asset locally (bypasses CORS)
@@ -1712,22 +1714,23 @@
   // Get watermark config for current aspect ratio
   function getWatermarkConfigForRatio(watermark: ClipWatermark): ClipWatermarkRatioConfig {
     const ratio = props.previewAspectRatio;
-    
+
     // FIRST: Try to use creator profile settings if watermark matches
     // This ensures we always use the source-of-truth positioning for creator watermarks
     const creatorSettings = props.creatorProfileWatermarkSettings;
     if (creatorSettings?.perRatioSettings && watermark.watermarkId) {
       const creatorWmId = creatorSettings.watermarkId;
       const wmId = watermark.watermarkId;
-      
+
       // Check if IDs match (handle both raw and org-asset-X formats)
-      const idsMatch = (creatorWmId === wmId) || 
-                       (creatorWmId && wmId && (
-                         creatorWmId === `org-asset-${wmId}` ||
-                         wmId === `org-asset-${creatorWmId}` ||
-                         creatorWmId.replace('org-asset-', '') === wmId.replace('org-asset-', '')
-                       ));
-      
+      const idsMatch =
+        creatorWmId === wmId ||
+        (creatorWmId &&
+          wmId &&
+          (creatorWmId === `org-asset-${wmId}` ||
+            wmId === `org-asset-${creatorWmId}` ||
+            creatorWmId.replace('org-asset-', '') === wmId.replace('org-asset-', '')));
+
       if (idsMatch) {
         const ratioSettings = creatorSettings.perRatioSettings[ratio];
         if (ratioSettings?.position) {
@@ -1744,7 +1747,7 @@
         }
       }
     }
-    
+
     // SECOND: Fall back to stored perRatioConfigs (for non-creator watermarks)
     const perRatioConfig = watermark.perRatioConfigs?.[ratio];
     if (perRatioConfig) {
@@ -1778,15 +1781,17 @@
   function isCreatorProfileWatermark(watermark: ClipWatermark): boolean {
     const creatorSettings = props.creatorProfileWatermarkSettings;
     if (!creatorSettings?.watermarkId || !watermark.watermarkId) return false;
-    
+
     const creatorWmId = String(creatorSettings.watermarkId);
     const wmId = String(watermark.watermarkId);
-    
+
     // Check for direct match or org-asset format variations
-    return (creatorWmId === wmId) || 
-           (creatorWmId === `org-asset-${wmId}`) ||
-           (wmId === `org-asset-${creatorWmId}`) ||
-           (creatorWmId.replace('org-asset-', '') === wmId.replace('org-asset-', ''));
+    return (
+      creatorWmId === wmId ||
+      creatorWmId === `org-asset-${wmId}` ||
+      wmId === `org-asset-${creatorWmId}` ||
+      creatorWmId.replace('org-asset-', '') === wmId.replace('org-asset-', '')
+    );
   }
 
   function getWatermarkWrapperStyle(watermark: ClipWatermark): Record<string, string> {
@@ -1827,7 +1832,7 @@
         top: `${config.position.y}%`,
         transform: 'translate(-50%, -50%)',
         opacity: String(config.opacity / 100),
-        width: `${config.scale}%`,  // Percentage-based sizing like creator watermark
+        width: `${config.scale}%`, // Percentage-based sizing like creator watermark
       };
     }
 

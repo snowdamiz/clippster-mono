@@ -2122,7 +2122,7 @@
           thumbnail_url: settings.intro.thumbnail_path || undefined,
           inserted_at: settings.intro.created_at,
           updated_at: settings.intro.updated_at,
-        } as ServerOrganizationAsset);
+        } as unknown as ServerOrganizationAsset);
 
         if (introResult.success && introResult.filePath) {
           introPath = introResult.filePath;
@@ -2146,7 +2146,7 @@
           thumbnail_url: settings.outro.thumbnail_path || undefined,
           inserted_at: settings.outro.created_at,
           updated_at: settings.outro.updated_at,
-        } as ServerOrganizationAsset);
+        } as unknown as ServerOrganizationAsset);
 
         if (outroResult.success && outroResult.filePath) {
           outroPath = outroResult.filePath;

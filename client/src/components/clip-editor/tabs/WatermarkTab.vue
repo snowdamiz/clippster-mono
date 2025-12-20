@@ -397,13 +397,13 @@
   import { invoke } from '@tauri-apps/api/core';
 
   // Extended WatermarkImage type that includes org asset properties
-  interface WatermarkItem extends Omit<WatermarkImage, 'id'> {
+  interface WatermarkItem extends Omit<WatermarkImage, 'id' | 'organization_id' | 'organization_name'> {
     id: string;
     isOrgAsset?: boolean;
     serverId?: number;
     serverUrl?: string;
-    organization_id?: string;
-    organization_name?: string;
+    organization_id?: string | null;
+    organization_name?: string | null;
     thumbnail_path?: string | null;
   }
 
@@ -593,8 +593,9 @@
                 organization_name: a.organization_name,
                 width: a.width,
                 height: a.height,
-                created_at: a.inserted_at,
-                updated_at: a.updated_at,
+                file_size: null,
+                created_at: new Date(a.inserted_at).getTime(),
+                updated_at: new Date(a.updated_at).getTime(),
                 isOrgAsset: true,
                 serverId: a.id,
                 serverUrl: a.url,

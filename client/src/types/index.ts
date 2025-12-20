@@ -543,6 +543,11 @@ export interface IntroOutro {
   thumbnail_generation_status: 'pending' | 'processing' | 'completed' | 'failed' | null;
   created_at: number;
   updated_at: number;
+  // Organization asset fields (optional for local assets)
+  organization_id?: string | null;
+  organization_name?: string | null;
+  server_id?: number | null;
+  sync_status?: 'synced' | 'downloading' | 'error' | null;
 }
 
 export type VideoLike = RawVideo | IntroOutro;

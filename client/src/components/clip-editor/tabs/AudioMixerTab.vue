@@ -303,13 +303,13 @@
   import { useAuthStore } from '@/stores/auth';
 
   // Extended AudioAsset type that includes org asset properties
-  interface AudioItem extends Omit<AudioAsset, 'id'> {
+  interface AudioItem extends Omit<AudioAsset, 'id' | 'organization_id' | 'organization_name'> {
     id: string;
     isOrgAsset?: boolean;
     serverId?: number;
     serverUrl?: string;
-    organization_id?: string;
-    organization_name?: string;
+    organization_id?: string | null;
+    organization_name?: string | null;
   }
 
   // Auth store for checking org memberships
@@ -402,10 +402,13 @@
                 name: a.name,
                 file_path: a.url,
                 duration: a.duration || null,
+                file_size: null,
+                sample_rate: null,
+                channels: null,
+                created_at: new Date(a.inserted_at).getTime(),
+                updated_at: new Date(a.updated_at).getTime(),
                 organization_id: String(a.organization_id),
                 organization_name: a.organization_name,
-                created_at: a.inserted_at,
-                updated_at: a.updated_at,
                 isOrgAsset: true,
                 serverId: a.id,
                 serverUrl: a.url,

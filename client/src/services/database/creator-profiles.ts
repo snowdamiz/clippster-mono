@@ -369,13 +369,13 @@ export async function getCreatorProfileByPlatformId(
 
   // Get the full creator profile
   const profile = await getCreatorProfile(links[0].creator_profile_id);
-  
+
   if (!profile) {
     return null;
   }
 
   // Check if the user has access to this profile (either owned by them or shared)
-  if (profile.user_id !== null && profile.user_id !== userId) {
+  if (profile.user_id !== null && profile.user_id !== String(userId)) {
     // Profile is owned by someone else - check if user is in the same organization
     // For now, just return null if user doesn't own it and it's not a null user_id (shared) profile
     return null;

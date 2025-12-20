@@ -1,7 +1,7 @@
 defmodule ClippsterServer.Social.AnalyticsSyncWorker do
   @moduledoc """
   GenServer worker that periodically syncs analytics for published posts.
-  
+
   Features:
   - Runs hourly to fetch updated metrics from social platforms
   - Implements rate limiting to respect API limits
@@ -56,7 +56,7 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
   @impl true
   def init(opts) do
     interval = Keyword.get(opts, :interval, @default_interval)
-    
+
     # Schedule first sync after a short delay to let the app start up
     if Keyword.get(opts, :start_immediately, true) do
       Process.send_after(self(), :sync, :timer.seconds(30))
@@ -116,7 +116,7 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
   @impl true
   def handle_info(:sync, state) do
     Logger.info("[AnalyticsSyncWorker] Starting analytics sync")
-    
+
     new_state = %{state | syncing: true, last_sync: DateTime.utc_now()}
 
     # Run sync in a task to not block the GenServer
@@ -155,7 +155,7 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
 
   defp run_sync do
     posts = Social.get_posts_needing_sync(limit: @batch_size)
-    
+
     Logger.info("[AnalyticsSyncWorker] Found #{length(posts)} posts to sync")
 
     results = Enum.reduce(posts, %{synced: 0, errors: 0}, fn post, acc ->
@@ -178,7 +178,7 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
          {:ok, platform_module} <- Platform.get_platform_module(post.platform),
          access_token <- SocialAccount.get_access_token(account),
          {:ok, insights} <- fetch_insights_with_retry(platform_module, access_token, post.post_id) do
-      
+
       case Social.sync_post_analytics(post, insights) do
         {:ok, _updated} ->
           Logger.debug("[AnalyticsSyncWorker] Synced post #{post.id}")
@@ -191,11 +191,11 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
       {:error, :no_account} ->
         Logger.warning("[AnalyticsSyncWorker] No account found for post #{post.id}")
         {:error, :no_account}
-      
+
       {:error, :not_implemented} ->
         Logger.debug("[AnalyticsSyncWorker] Platform not implemented for post #{post.id}")
         {:error, :not_implemented}
-      
+
       {:error, reason} ->
         Logger.warning("[AnalyticsSyncWorker] Failed to sync post #{post.id}: #{inspect(reason)}")
         {:error, reason}
@@ -215,14 +215,14 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
     case platform_module.get_insights(access_token, post_id) do
       {:ok, insights} ->
         {:ok, insights}
-      
-      {:error, reason} when attempt < @max_retries ->
+
+      {:error, _reason} when attempt < @max_retries ->
         # Exponential backoff
         delay = :math.pow(2, attempt) |> round() |> Kernel.*(@rate_limit_delay)
         Logger.debug("[AnalyticsSyncWorker] Retry #{attempt} after #{delay}ms for post #{post_id}")
         Process.sleep(delay)
         fetch_insights_with_retry(platform_module, access_token, post_id, attempt + 1)
-      
+
       {:error, reason} ->
         {:error, reason}
     end
