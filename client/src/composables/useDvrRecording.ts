@@ -35,7 +35,8 @@ export interface DvrSession {
   room: Room;
   mediaRecorder: MediaRecorder | null;
   mediaStream: MediaStream | null;
-  hiddenVideoElement: HTMLVideoElement | null; // Hidden element to keep tracks active
+  hiddenVideoElement: HTMLVideoElement | null; // Hidden element to keep video track active
+  hiddenAudioElement: HTMLAudioElement | null; // Hidden element to keep audio track active (muted)
   canvasElement: HTMLCanvasElement | null; // Canvas for capturing frames
   canvasAnimationId: number | null; // Animation frame ID for canvas drawing
   audioContext: AudioContext | null; // For capturing audio
@@ -137,6 +138,7 @@ async function joinLivestream(mintId: string): Promise<{ token: string; serverUr
 interface CaptureSetup {
   mediaStream: MediaStream;
   videoElement: HTMLVideoElement;
+  audioElement: HTMLAudioElement | null; // Separate audio element for track consumption
   canvasElement: HTMLCanvasElement | null; // null when using direct capture
   animationId: number;
   audioContext: AudioContext | null;
@@ -240,16 +242,39 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
           videoTrackRef.attach(liveKitVideoElement);
           console.log('[DvrRecording] Attached video track via LiveKit attach()');
 
-          // Also attach audio track (even though video element is muted)
-          audioTrackRef.attach(liveKitVideoElement);
-          console.log('[DvrRecording] Attached audio track via LiveKit attach()');
+          // Create a SEPARATE hidden audio element for the audio track
+          // This is needed because LiveKit requires tracks to be "consumed" for MediaRecorder to work
+          // We use volume=0 to ensure no audio plays (muted alone may not work with LiveKit attach)
+          const hiddenAudioElement = document.createElement('audio');
+          hiddenAudioElement.id = 'dvr-audio-consumer-' + Math.random().toString(36).substr(2, 9);
+          hiddenAudioElement.muted = true;
+          hiddenAudioElement.volume = 0; // Double ensure no audio output
+          hiddenAudioElement.style.position = 'fixed';
+          hiddenAudioElement.style.width = '0';
+          hiddenAudioElement.style.height = '0';
+          hiddenAudioElement.style.opacity = '0';
+          hiddenAudioElement.style.pointerEvents = 'none';
+          document.body.appendChild(hiddenAudioElement);
 
-          // Start playing the LiveKit element
+          // Attach audio track to the separate audio element
+          audioTrackRef.attach(hiddenAudioElement);
+          console.log(
+            '[DvrRecording] Attached audio track to separate hidden audio element (volume=0)'
+          );
+
+          // Start playing both elements
           try {
             await liveKitVideoElement.play();
             console.log('[DvrRecording] LiveKit video element playing');
           } catch (e) {
             console.log('[DvrRecording] LiveKit video play failed (may still work):', e);
+          }
+
+          try {
+            await hiddenAudioElement.play();
+            console.log('[DvrRecording] Hidden audio element playing (muted, volume=0)');
+          } catch (e) {
+            console.log('[DvrRecording] Hidden audio play failed (may still work):', e);
           }
 
           // Now create our recording stream from the original tracks
@@ -316,6 +341,7 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
           resolveOnce({
             mediaStream: recordingStream,
             videoElement: liveKitVideoElement,
+            audioElement: hiddenAudioElement,
             canvasElement: null,
             animationId: 0,
             audioContext: null,
@@ -503,6 +529,7 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
         resolveCapture({
           mediaStream: combinedStream,
           videoElement,
+          audioElement: null, // Canvas capture doesn't need separate audio element
           canvasElement: canvas,
           animationId,
           audioContext,
@@ -512,6 +539,7 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
         resolveCapture({
           mediaStream: canvasStream,
           videoElement,
+          audioElement: null,
           canvasElement: canvas,
           animationId,
           audioContext: null,
@@ -691,6 +719,7 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
                 resolveOnce({
                   mediaStream: canvasStream,
                   videoElement,
+                  audioElement: null,
                   canvasElement: canvas,
                   animationId,
                   audioContext: null,
@@ -866,6 +895,7 @@ export function useDvrRecording() {
         mediaRecorder: null,
         mediaStream: null,
         hiddenVideoElement: null,
+        hiddenAudioElement: null,
         canvasElement: null,
         canvasAnimationId: null,
         audioContext: null,
@@ -887,6 +917,7 @@ export function useDvrRecording() {
         const captureSetup = await waitForTracks(room);
         session.mediaStream = captureSetup.mediaStream;
         session.hiddenVideoElement = captureSetup.videoElement;
+        session.hiddenAudioElement = captureSetup.audioElement;
         session.canvasElement = captureSetup.canvasElement;
         session.canvasAnimationId = captureSetup.animationId;
         session.audioContext = captureSetup.audioContext;
@@ -1186,6 +1217,13 @@ export function useDvrRecording() {
         session.hiddenVideoElement.pause();
         session.hiddenVideoElement.srcObject = null;
         session.hiddenVideoElement.remove();
+      }
+
+      // Clean up hidden audio element
+      if (session.hiddenAudioElement) {
+        session.hiddenAudioElement.pause();
+        session.hiddenAudioElement.srcObject = null;
+        session.hiddenAudioElement.remove();
       }
 
       // Disconnect from room

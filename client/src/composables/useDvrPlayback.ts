@@ -29,8 +29,8 @@ export interface DvrPlaybackState {
 
 // Configuration
 const CHUNK_DURATION = 4; // seconds per chunk
-const LIVE_EDGE_THRESHOLD = 8; // seconds behind live to consider "at live edge"
-const BUFFER_AHEAD_CHUNKS = 2; // number of chunks to buffer ahead
+const LIVE_EDGE_THRESHOLD = 12; // seconds behind live to consider "at live edge"
+const BUFFER_AHEAD_CHUNKS = 4; // number of chunks to buffer ahead (16 seconds)
 const MAX_BUFFER_SECONDS = 120; // maximum seconds to keep buffered
 
 // Supported WebM codecs for MSE
@@ -84,7 +84,8 @@ export function useDvrPlayback() {
 
   // Chunk tracking
   const loadedChunks = new Set<number>();
-  const pendingChunks: number[] = [];
+  const loadingChunks = new Set<number>(); // Chunks currently being loaded (prevents duplicate loads)
+  const appendQueue: Array<{ data: Uint8Array; chunkIndex: number }> = []; // Queue of chunks waiting to be appended
   let isAppending = false;
   let lastAppendedChunkIndex = -1;
 
@@ -111,8 +112,20 @@ export function useDvrPlayback() {
   ): Promise<boolean> {
     console.log('[DvrPlayback] Initializing for mint:', mint, 'with', chunks.length, 'chunks');
 
-    // Clean up any existing state
-    await cleanup();
+    // Skip if already initialized for this mint
+    if (mintId === mint && videoElement === video && state.value.isInitialized) {
+      console.log('[DvrPlayback] Already initialized for this mint, skipping');
+      // Just update chunks if we have new ones
+      if (chunks.length > availableChunks.value.length) {
+        await updateChunks(chunks);
+      }
+      return true;
+    }
+
+    // Clean up any existing state only if switching to a different mint
+    if (mintId && mintId !== mint) {
+      await cleanup();
+    }
 
     videoElement = video;
     mintId = mint;
@@ -131,6 +144,9 @@ export function useDvrPlayback() {
       state.value.error = 'No supported WebM codec found';
       return false;
     }
+
+    // ALWAYS set up video event handlers immediately so play/pause works
+    setupVideoEventHandlers();
 
     // Wait for at least one chunk - MediaSource will be created when chunks arrive
     if (chunks.length === 0) {
@@ -252,10 +268,13 @@ export function useDvrPlayback() {
    * Load a specific chunk by index
    */
   async function loadChunk(chunkIndex: number): Promise<void> {
-    if (!mintId || !sourceBuffer || loadedChunks.has(chunkIndex)) {
+    // Skip if already loaded or currently loading
+    if (!mintId || !sourceBuffer || loadedChunks.has(chunkIndex) || loadingChunks.has(chunkIndex)) {
       return;
     }
 
+    // Mark as loading to prevent duplicate loads
+    loadingChunks.add(chunkIndex);
     console.log('[DvrPlayback] Loading chunk:', chunkIndex);
 
     try {
@@ -268,38 +287,56 @@ export function useDvrPlayback() {
 
       console.log('[DvrPlayback] Chunk', chunkIndex, 'loaded:', clusterBuffer.length, 'bytes');
 
-      // Queue for appending
-      pendingChunks.push(chunkIndex);
-      await processAppendQueue(clusterBuffer, chunkIndex);
+      // Add to append queue
+      appendQueue.push({ data: clusterBuffer, chunkIndex });
+
+      // Process the queue
+      await processAppendQueue();
     } catch (error) {
       console.error('[DvrPlayback] Failed to load chunk', chunkIndex, ':', error);
+      // Remove from loading set on error so it can be retried
+      loadingChunks.delete(chunkIndex);
     }
   }
 
   /**
-   * Process the append queue
+   * Process the append queue - appends chunks one at a time
    */
-  async function processAppendQueue(data: Uint8Array, chunkIndex: number): Promise<void> {
-    if (isAppending || !sourceBuffer) {
-      // Queue will be processed when current append completes
+  async function processAppendQueue(): Promise<void> {
+    // If already appending or no sourceBuffer, the queue will be processed later
+    if (isAppending || !sourceBuffer || appendQueue.length === 0) {
       return;
     }
 
     isAppending = true;
 
     try {
-      await appendToBuffer(data);
-      loadedChunks.add(chunkIndex);
-      lastAppendedChunkIndex = Math.max(lastAppendedChunkIndex, chunkIndex);
+      // Process all queued chunks in order
+      while (appendQueue.length > 0 && sourceBuffer && !sourceBuffer.updating) {
+        const item = appendQueue.shift();
+        if (!item) break;
 
-      // Update duration
-      updateDuration();
+        const { data, chunkIndex } = item;
 
-      // Remove from pending
-      const idx = pendingChunks.indexOf(chunkIndex);
-      if (idx >= 0) pendingChunks.splice(idx, 1);
+        try {
+          await appendToBuffer(data);
+          loadedChunks.add(chunkIndex);
+          loadingChunks.delete(chunkIndex); // No longer loading
+          lastAppendedChunkIndex = Math.max(lastAppendedChunkIndex, chunkIndex);
+          console.log('[DvrPlayback] Chunk', chunkIndex, 'appended successfully');
+
+          // Update duration
+          updateDuration();
+        } catch (appendError) {
+          console.error('[DvrPlayback] Failed to append chunk', chunkIndex, ':', appendError);
+          // Remove from loading so it can be retried
+          loadingChunks.delete(chunkIndex);
+          // Don't continue processing on error - might need to recover
+          break;
+        }
+      }
     } catch (error) {
-      console.error('[DvrPlayback] Append failed:', error);
+      console.error('[DvrPlayback] Queue processing error:', error);
     } finally {
       isAppending = false;
     }
@@ -402,27 +439,40 @@ export function useDvrPlayback() {
     state.value.error = 'MediaSource error';
   }
 
+  // Track if video event handlers are already set up
+  let videoEventHandlersAttached = false;
+
   /**
    * Set up video element event handlers
    */
   function setupVideoEventHandlers() {
-    if (!videoElement) return;
+    if (!videoElement || videoEventHandlersAttached) return;
+    videoEventHandlersAttached = true;
+
+    console.log('[DvrPlayback] Setting up video event handlers');
 
     videoElement.addEventListener('playing', () => {
+      console.log('[DvrPlayback] Video playing event');
       state.value.isPlaying = true;
       state.value.isPaused = false;
+      state.value.isBuffering = false;
     });
 
     videoElement.addEventListener('pause', () => {
+      console.log('[DvrPlayback] Video pause event');
       state.value.isPlaying = false;
       state.value.isPaused = true;
     });
 
     videoElement.addEventListener('waiting', () => {
+      console.log('[DvrPlayback] Video waiting event - triggering chunk load');
       state.value.isBuffering = true;
+      // Immediately try to load more chunks when buffering
+      checkAndLoadChunks();
     });
 
     videoElement.addEventListener('canplay', () => {
+      console.log('[DvrPlayback] Video canplay event');
       state.value.isBuffering = false;
     });
 
@@ -457,9 +507,10 @@ export function useDvrPlayback() {
   function startBufferManagement() {
     if (bufferCheckInterval) clearInterval(bufferCheckInterval);
 
+    // Check every 500ms to be more responsive to playback needs
     bufferCheckInterval = window.setInterval(async () => {
       await checkAndLoadChunks();
-    }, 1000);
+    }, 500);
   }
 
   /**
@@ -473,13 +524,28 @@ export function useDvrPlayback() {
     // Find which chunk we're currently in
     const currentChunkIndex = Math.floor(currentTime / CHUNK_DURATION);
 
-    // Load ahead chunks
+    // Load ahead chunks - load all available chunks from current position to buffer ahead
     for (let i = 0; i <= BUFFER_AHEAD_CHUNKS; i++) {
       const chunkIndex = currentChunkIndex + i;
       const chunk = availableChunks.value.find((c) => c.index === chunkIndex);
 
-      if (chunk && !loadedChunks.has(chunkIndex)) {
+      // Skip if already loaded or currently loading
+      if (chunk && !loadedChunks.has(chunkIndex) && !loadingChunks.has(chunkIndex)) {
         await loadChunk(chunkIndex);
+      }
+    }
+
+    // Also proactively load any NEW chunks that arrived (even beyond buffer ahead)
+    // This ensures we don't miss chunks when at live edge
+    const lastLoadedOrLoading = Math.max(lastAppendedChunkIndex, ...Array.from(loadingChunks));
+    for (const chunk of availableChunks.value) {
+      if (
+        chunk.index > lastLoadedOrLoading &&
+        !loadedChunks.has(chunk.index) &&
+        !loadingChunks.has(chunk.index)
+      ) {
+        console.log('[DvrPlayback] Proactively loading new chunk:', chunk.index);
+        await loadChunk(chunk.index);
       }
     }
 
@@ -539,11 +605,13 @@ export function useDvrPlayback() {
       return; // createMediaSourceAndStart will load initial chunks
     }
 
-    // If new chunks arrived and we're at live edge, load them
-    if (chunks.length > prevLength && state.value.isAtLiveEdge && state.value.isInitialized) {
+    // ALWAYS load new chunks when they arrive (don't require isAtLiveEdge)
+    // This ensures playback doesn't fall behind
+    if (chunks.length > prevLength && state.value.isInitialized) {
+      console.log('[DvrPlayback] New chunks available:', chunks.length - prevLength, 'chunks');
       for (let i = prevLength; i < chunks.length; i++) {
         const chunk = chunks[i];
-        if (!loadedChunks.has(chunk.index)) {
+        if (!loadedChunks.has(chunk.index) && !loadingChunks.has(chunk.index)) {
           await loadChunk(chunk.index);
         }
       }
@@ -631,12 +699,15 @@ export function useDvrPlayback() {
    * Play
    */
   async function play() {
-    if (!videoElement) return;
+    console.log('[DvrPlayback] play() called, videoElement:', !!videoElement);
+    if (!videoElement) {
+      console.warn('[DvrPlayback] Cannot play - no video element');
+      return;
+    }
 
     try {
       await videoElement.play();
-      state.value.isPlaying = true;
-      state.value.isPaused = false;
+      // State will be updated by video 'playing' event handler
     } catch (error) {
       console.error('[DvrPlayback] Play failed:', error);
     }
@@ -646,16 +717,25 @@ export function useDvrPlayback() {
    * Pause
    */
   function pause() {
-    if (!videoElement) return;
+    console.log('[DvrPlayback] pause() called, videoElement:', !!videoElement);
+    if (!videoElement) {
+      console.warn('[DvrPlayback] Cannot pause - no video element');
+      return;
+    }
     videoElement.pause();
-    state.value.isPlaying = false;
-    state.value.isPaused = true;
+    // State will be updated by video 'pause' event handler
   }
 
   /**
    * Toggle play/pause
    */
   async function togglePlayPause() {
+    console.log(
+      '[DvrPlayback] togglePlayPause() called, isPlaying:',
+      state.value.isPlaying,
+      'videoElement:',
+      !!videoElement
+    );
     if (state.value.isPlaying) {
       pause();
     } else {
@@ -738,12 +818,14 @@ export function useDvrPlayback() {
 
     // Reset state
     loadedChunks.clear();
-    pendingChunks.length = 0;
+    loadingChunks.clear();
+    appendQueue.length = 0;
     isAppending = false;
     lastAppendedChunkIndex = -1;
     mintId = null;
     codec = null;
     availableChunks.value = [];
+    videoEventHandlersAttached = false;
 
     state.value = {
       isPlaying: false,
