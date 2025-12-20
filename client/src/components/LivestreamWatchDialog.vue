@@ -62,6 +62,15 @@
 
                   <!-- Right side actions -->
                   <div class="flex items-center gap-2">
+                    <!-- DVR Delay Badge -->
+                    <div
+                      v-if="viewer.state.value.connectionState === 'connected'"
+                      class="px-2 py-1 rounded bg-zinc-800/80 text-xs text-zinc-300 flex items-center gap-1"
+                    >
+                      <Clock class="w-3 h-3" />
+                      ~{{ estimatedDelay }}s delay
+                    </div>
+
                     <!-- Quality Badge -->
                     <button
                       v-if="viewer.state.value.streamQuality"
@@ -93,8 +102,8 @@
                   <span class="text-white">{{ viewer.state.value.streamQuality || 'Unknown' }}</span>
                 </div>
                 <div class="flex justify-between">
-                  <span class="text-zinc-400">Latency</span>
-                  <span class="text-white">~{{ viewer.state.value.latencyMs || '?' }}ms</span>
+                  <span class="text-zinc-400">Playback Mode</span>
+                  <span class="text-white">DVR</span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-zinc-400">Connection</span>
@@ -103,6 +112,12 @@
                 <div class="flex justify-between">
                   <span class="text-zinc-400">Recorded</span>
                   <span class="text-white">{{ formatTime(viewer.state.value.totalRecordedDuration) }}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-zinc-400">At Live Edge</span>
+                  <span :class="viewer.state.value.isAtLiveEdge ? 'text-green-400' : 'text-yellow-400'">
+                    {{ viewer.state.value.isAtLiveEdge ? 'Yes' : 'No' }}
+                  </span>
                 </div>
               </div>
             </div>
@@ -113,9 +128,15 @@
               class="relative bg-black aspect-video w-full"
               @mousemove="handleMouseMove"
               @mouseleave="handleMouseLeave"
+              @click="handleVideoClick"
             >
-              <!-- Live Video (LiveKit) -->
-              <video ref="liveVideoRef" class="w-full h-full object-contain" autoplay playsinline muted />
+              <!-- DVR Video (MSE Playback) -->
+              <video
+                ref="liveVideoRef"
+                class="w-full h-full object-contain"
+                playsinline
+                :muted="viewer.state.value.isMuted"
+              />
 
               <!-- Watermark Overlay -->
               <div
@@ -128,12 +149,12 @@
 
               <!-- Buffering Indicator -->
               <div
-                v-if="viewer.state.value.isBuffering"
+                v-if="viewer.state.value.isBuffering && viewer.state.value.connectionState === 'connected'"
                 class="absolute inset-0 flex items-center justify-center bg-black/40 z-20"
               >
                 <div class="flex flex-col items-center gap-3">
                   <Loader2 class="w-12 h-12 text-white animate-spin" />
-                  <span class="text-white text-sm">Loading...</span>
+                  <span class="text-white text-sm">Buffering...</span>
                 </div>
               </div>
 
@@ -177,6 +198,21 @@
                 </div>
               </div>
 
+              <!-- Play overlay when paused -->
+              <div
+                v-if="
+                  !viewer.state.value.isPlaying &&
+                  viewer.state.value.connectionState === 'connected' &&
+                  !viewer.state.value.isBuffering
+                "
+                class="absolute inset-0 flex items-center justify-center bg-black/40 z-15 cursor-pointer"
+                @click="viewer.play"
+              >
+                <div class="w-20 h-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                  <Play class="w-10 h-10 text-white ml-1" />
+                </div>
+              </div>
+
               <!-- Controls Overlay -->
               <div
                 :class="[
@@ -185,10 +221,15 @@
                 ]"
               >
                 <div class="bg-gradient-to-t from-black/90 via-black/60 to-transparent pt-16 pb-4 px-4">
-                  <!-- Recording Progress Indicator -->
-                  <LivestreamRecordingBar
-                    :total-recorded-duration="viewer.state.value.totalRecordedDuration"
+                  <!-- Seek Bar -->
+                  <LivestreamSeekBar
+                    :current-time="viewer.state.value.playbackPosition"
+                    :duration="viewer.state.value.totalRecordedDuration"
                     :live-edge-time="viewer.state.value.liveEdgeTime"
+                    :buffered-ranges="viewer.state.value.bufferedRanges"
+                    :is-at-live-edge="viewer.state.value.isAtLiveEdge"
+                    @seek="handleSeek"
+                    @seek-to-live="handleSeekToLive"
                   />
 
                   <!-- Control Bar -->
@@ -230,16 +271,25 @@
                         </div>
                       </div>
 
-                      <!-- Live Indicator -->
-                      <div
-                        class="flex items-center gap-2 px-3 py-1 bg-red-600/90 text-white text-xs font-medium rounded-full"
+                      <!-- Live Indicator / Go Live Button -->
+                      <button
+                        v-if="viewer.state.value.isAtLiveEdge"
+                        class="flex items-center gap-2 px-3 py-1 bg-red-600/90 text-white text-xs font-medium rounded-full cursor-default"
                       >
                         <div class="relative w-2 h-2">
                           <div class="absolute inset-0 bg-white rounded-full" />
                           <div class="absolute inset-0 bg-white rounded-full animate-ping opacity-75" />
                         </div>
                         <span>LIVE</span>
-                      </div>
+                      </button>
+                      <button
+                        v-else
+                        @click="handleSeekToLive"
+                        class="flex items-center gap-2 px-3 py-1 bg-zinc-700 hover:bg-red-600/90 text-white text-xs font-medium rounded-full transition-colors"
+                      >
+                        <Radio class="w-3 h-3" />
+                        <span>Go Live</span>
+                      </button>
                     </div>
 
                     <!-- Right Controls -->
@@ -326,10 +376,12 @@
     PictureInPicture2,
     Maximize,
     Minimize,
+    Clock,
+    Radio,
   } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import { useLivestreamViewer } from '@/composables/useLivestreamViewer';
-  import LivestreamRecordingBar from './LivestreamRecordingBar.vue';
+  import LivestreamSeekBar from './LivestreamSeekBar.vue';
   import ClipDurationModal from './ClipDurationModal.vue';
   import { getWatermarkImage, resolveWatermarkById } from '@/services/database';
 
@@ -432,6 +484,14 @@
     return document.pictureInPictureEnabled;
   });
 
+  // Estimated delay (DVR chunks are ~4 seconds)
+  const estimatedDelay = computed(() => {
+    // DVR playback has ~4-8 second delay due to chunk size
+    return viewer.state.value.isAtLiveEdge
+      ? '4-8'
+      : Math.round(viewer.state.value.liveEdgeTime - viewer.state.value.playbackPosition);
+  });
+
   // Load watermark image
   async function loadWatermark() {
     const watermarkId = viewer.state.value.watermarkId;
@@ -491,9 +551,26 @@
     }
   }
 
+  function handleVideoClick() {
+    // Toggle play/pause when clicking on video
+    if (viewer.state.value.connectionState === 'connected') {
+      viewer.togglePlayPause();
+    }
+  }
+
   function handleVolumeChange(event: Event) {
     const target = event.target as HTMLInputElement;
     viewer.setVolume(parseFloat(target.value));
+  }
+
+  function handleSeek(time: number) {
+    console.log('[WatchDialog] Seeking to:', time);
+    viewer.seek(time);
+  }
+
+  function handleSeekToLive() {
+    console.log('[WatchDialog] Seeking to live edge');
+    viewer.seekToLive();
   }
 
   function openClipModal() {
@@ -567,6 +644,18 @@
         event.preventDefault();
         openClipModal();
         break;
+      case 'l':
+        event.preventDefault();
+        handleSeekToLive();
+        break;
+      case 'arrowleft':
+        event.preventDefault();
+        viewer.seek(Math.max(0, viewer.state.value.playbackPosition - 10));
+        break;
+      case 'arrowright':
+        event.preventDefault();
+        viewer.seek(Math.min(viewer.state.value.totalRecordedDuration, viewer.state.value.playbackPosition + 10));
+        break;
       case 'escape':
         event.preventDefault();
         if (isFullscreen.value) {
@@ -600,7 +689,7 @@
           viewer.setVideoElement(liveVideoRef.value);
         }
 
-        // Connect to livestream
+        // Connect to livestream (this will start DVR recording and MSE playback)
         console.log('[WatchDialog] Calling viewer.connect...');
         try {
           await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl);
@@ -609,17 +698,10 @@
           console.error('[WatchDialog] Connect failed:', error);
         }
 
-        // After connection, re-attach video element in case tracks arrived during connect
+        // After connection, ensure video element is set
         await nextTick();
         if (liveVideoRef.value) {
           viewer.setVideoElement(liveVideoRef.value);
-          // Try to unmute and play
-          liveVideoRef.value.muted = viewer.state.value.isMuted;
-          liveVideoRef.value.volume = viewer.state.value.volume;
-          liveVideoRef.value.play().catch(() => {
-            // Autoplay blocked - user will need to click play
-            console.log('[WatchDialog] Autoplay blocked, user needs to click play');
-          });
         }
 
         // Focus dialog for keyboard events

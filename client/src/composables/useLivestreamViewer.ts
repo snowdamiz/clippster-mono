@@ -21,6 +21,7 @@ import {
 import type { LiveStatus, LiveSession, SegmentEventPayload } from '@/types/livestream';
 import { useLivestreamMonitoring } from './useLivestreamMonitoring';
 import { useDvrRecording, type DvrChunk } from './useDvrRecording';
+import { useDvrPlayback } from './useDvrPlayback';
 
 // PumpFun LiveKit API endpoints
 const PUMPFUN_LIVESTREAM_API = 'https://livestream-api.pump.fun';
@@ -43,7 +44,7 @@ export interface SegmentInfo {
   endTime: number;
 }
 
-// Viewer state interface (simplified - live only)
+// Viewer state interface
 export interface LivestreamViewerState {
   // Connection
   connectionState: ViewerConnectionState;
@@ -62,15 +63,19 @@ export interface LivestreamViewerState {
   recordingStartTime: number | null; // Unix timestamp when stream originally started
   dvrStartTime: number | null; // Unix timestamp when DVR recording started
   liveEdgeTime: number; // Current live edge in seconds from DVR start
-  playbackPosition: number; // Current position (always at live edge)
+  playbackPosition: number; // Current playback position in seconds
   availableSegments: SegmentInfo[];
   totalRecordedDuration: number; // Total seconds of recorded content
 
-  // Playback (live only)
+  // Playback state
   isPlaying: boolean;
   isBuffering: boolean;
   isMuted: boolean;
   volume: number;
+  isAtLiveEdge: boolean; // Whether playback is at the live edge
+
+  // Buffered ranges for seek bar
+  bufferedRanges: Array<{ start: number; end: number }>;
 
   // Session (for persistent recording)
   sessionId: string | null;
@@ -109,6 +114,9 @@ export function useLivestreamViewer() {
     dvrRecording,
   } = useLivestreamMonitoring();
 
+  // DVR Playback composable for MSE-based playback
+  const dvrPlayback = useDvrPlayback();
+
   // Core state
   const state = ref<LivestreamViewerState>({
     connectionState: 'disconnected',
@@ -127,9 +135,11 @@ export function useLivestreamViewer() {
     availableSegments: [],
     totalRecordedDuration: 0,
     isPlaying: false,
-    isBuffering: false,
+    isBuffering: true,
     isMuted: loadMutedPreference(),
     volume: loadVolumePreference(),
+    isAtLiveEdge: true,
+    bufferedRanges: [],
     sessionId: null,
     projectId: null,
     isTempRecording: false,
@@ -139,13 +149,11 @@ export function useLivestreamViewer() {
     watermarkSettings: null,
   });
 
-  // LiveKit room instance
+  // LiveKit room instance (kept for viewer count and stream status only)
   let room: Room | null = null;
 
-  // Video/Audio elements
+  // Video element reference
   const videoElement = ref<HTMLVideoElement | null>(null);
-  const liveVideoTrack = ref<RemoteVideoTrack | null>(null);
-  const liveAudioTrack = ref<RemoteAudioTrack | null>(null);
 
   // Reconnection state
   let reconnectAttempts = 0;
@@ -155,6 +163,7 @@ export function useLivestreamViewer() {
   // Update timers
   let liveEdgeUpdateInterval: number | null = null;
   let segmentPollInterval: number | null = null;
+  let playbackSyncInterval: number | null = null;
 
   // Event listeners
   const unlistenFunctions: UnlistenFn[] = [];
@@ -165,6 +174,9 @@ export function useLivestreamViewer() {
 
   // How much recorded DVR content is available for clipping
   const availableClipDuration = computed(() => state.value.totalRecordedDuration);
+
+  // Is playback at the live edge
+  const isAtLiveEdge = computed(() => state.value.isAtLiveEdge);
 
   // Helper functions
   function loadVolumePreference(): number {
@@ -308,6 +320,7 @@ export function useLivestreamViewer() {
     state.value.streamerId = streamerId;
     state.value.displayName = displayName;
     state.value.profileImageUrl = profileImageUrl || null;
+    state.value.isBuffering = true;
 
     try {
       // Check if stream is live
@@ -329,7 +342,7 @@ export function useLivestreamViewer() {
       // Load creator profile for watermark
       await loadCreatorProfile(mintId);
 
-      // Get join token
+      // Get join token for LiveKit (for viewer count tracking)
       console.log('[LiveViewer] Joining livestream...');
       const joinData = await joinLivestream(mintId);
       console.log('[LiveViewer] Join response:', joinData);
@@ -361,64 +374,25 @@ export function useLivestreamViewer() {
         console.log('[LiveViewer] Added wss:// protocol:', livekitUrl);
       }
 
-      // Create and connect to LiveKit room
-      console.log('[LiveViewer] Creating LiveKit room...');
+      // Create and connect to LiveKit room (for viewer count only, NOT for video playback)
+      console.log('[LiveViewer] Creating LiveKit room for viewer tracking...');
       room = new Room({
         adaptiveStream: true,
         dynacast: true,
       });
 
-      // Set up room event handlers
+      // Set up room event handlers (for viewer count and connection status)
       setupRoomEventHandlers(room);
 
       // Connect to room
       console.log('[LiveViewer] Connecting to LiveKit room at:', livekitUrl);
-      await room.connect(livekitUrl, token, { autoSubscribe: true });
+      await room.connect(livekitUrl, token, { autoSubscribe: false }); // Don't subscribe to tracks
       console.log('[LiveViewer] Connected! Room state:', room.state);
 
       state.value.connectionState = 'connected';
       reconnectAttempts = 0;
 
-      // Log room participants info
-      console.log('[LiveViewer] Remote participants count:', room.remoteParticipants.size);
-
-      // Handle existing participants' tracks (they may already be publishing)
-      room.remoteParticipants.forEach((participant) => {
-        console.log(
-          '[LiveViewer] Participant:',
-          participant.identity,
-          'tracks:',
-          participant.trackPublications.size
-        );
-        participant.trackPublications.forEach((publication) => {
-          console.log(
-            '[LiveViewer] Track publication:',
-            publication.trackSid,
-            'kind:',
-            publication.kind,
-            'subscribed:',
-            publication.isSubscribed,
-            'track:',
-            !!publication.track
-          );
-          if (publication.track && publication.isSubscribed) {
-            handleTrackSubscribed(
-              publication.track as RemoteTrack,
-              publication as RemoteTrackPublication,
-              participant
-            );
-          } else if (!publication.isSubscribed && publication.kind === 'video') {
-            // Try to subscribe manually if not auto-subscribed
-            console.log(
-              '[LiveViewer] Attempting to subscribe to video track:',
-              publication.trackSid
-            );
-            publication.setSubscribed(true);
-          }
-        });
-      });
-
-      // Start DVR recording for clipping capability
+      // Start DVR recording for playback and clipping
       if (autoStartRecording) {
         await ensureDvrAvailable(streamerId, mintId, displayName, profileImageUrl);
       }
@@ -426,11 +400,17 @@ export function useLivestreamViewer() {
       // Start live edge update timer
       startLiveEdgeUpdates();
 
-      // Start segment polling for DVR (for clipping)
+      // Start segment polling for DVR
       startSegmentPolling();
 
       // Listen for segment events
       await setupSegmentEventListeners();
+
+      // Start playback sync interval
+      startPlaybackSync();
+
+      // Initialize DVR playback if we have chunks
+      await initializeDvrPlayback();
     } catch (error) {
       console.error('[LiveViewer] Connection failed:', error);
       state.value.connectionState = 'failed';
@@ -465,18 +445,7 @@ export function useLivestreamViewer() {
   }
 
   function setupRoomEventHandlers(room: Room) {
-    room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed);
-    room.on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
-    room.on(RoomEvent.TrackPublished, (publication, participant) => {
-      console.log(
-        '[LiveViewer] Track published:',
-        publication.trackSid,
-        'kind:',
-        publication.kind,
-        'by:',
-        participant.identity
-      );
-    });
+    // Only track viewer count and connection status, NOT video/audio tracks
     room.on(RoomEvent.Disconnected, handleDisconnected);
     room.on(RoomEvent.Reconnecting, handleReconnecting);
     room.on(RoomEvent.Reconnected, handleReconnected);
@@ -490,89 +459,6 @@ export function useLivestreamViewer() {
     });
     room.on(RoomEvent.ConnectionStateChanged, handleConnectionStateChanged);
     room.on(RoomEvent.ConnectionQualityChanged, handleConnectionQualityChanged);
-    room.on(RoomEvent.MediaDevicesError, (error) => {
-      console.error('[LiveViewer] Media devices error:', error);
-    });
-    room.on(RoomEvent.SignalConnected, () => {
-      console.log('[LiveViewer] Signal connected');
-    });
-  }
-
-  function handleTrackSubscribed(
-    track: RemoteTrack,
-    publication: RemoteTrackPublication,
-    participant: RemoteParticipant
-  ) {
-    console.log(
-      '[LiveViewer] Track subscribed:',
-      track.kind,
-      'from participant:',
-      participant.identity
-    );
-
-    if (track.kind === Track.Kind.Video) {
-      liveVideoTrack.value = track as RemoteVideoTrack;
-
-      // Attach to video element if available
-      if (videoElement.value) {
-        console.log('[LiveViewer] Attaching video track to element');
-        track.attach(videoElement.value);
-        state.value.isPlaying = true;
-        state.value.isBuffering = false;
-
-        // Get video quality info
-        const settings = (track as RemoteVideoTrack).mediaStreamTrack?.getSettings?.();
-        const height = settings?.height;
-        const width = settings?.width;
-        if (typeof height === 'number') {
-          state.value.streamQuality =
-            height >= 1080 ? '1080p' : height >= 720 ? '720p' : height >= 480 ? '480p' : '360p';
-          console.log('[LiveViewer] Video settings:', width, 'x', height);
-        }
-
-        // Try to play the video
-        videoElement.value.play().catch((err) => {
-          console.log('[LiveViewer] Video autoplay blocked:', err);
-        });
-      }
-    } else if (track.kind === Track.Kind.Audio) {
-      liveAudioTrack.value = track as RemoteAudioTrack;
-
-      // Attach audio
-      if (videoElement.value) {
-        console.log('[LiveViewer] Attaching audio track to element');
-        track.attach(videoElement.value);
-        applyAudioSettings();
-      }
-    }
-  }
-
-  function handleTrackUnsubscribed(
-    track: RemoteTrack,
-    publication: RemoteTrackPublication,
-    participant: RemoteParticipant
-  ) {
-    console.log('[LiveViewer] Track unsubscribed:', track.kind);
-
-    if (track.kind === Track.Kind.Video) {
-      if (liveVideoTrack.value) {
-        try {
-          liveVideoTrack.value.detach();
-        } catch (e) {
-          console.warn('[LiveViewer] Error detaching video track:', e);
-        }
-      }
-      liveVideoTrack.value = null;
-    } else if (track.kind === Track.Kind.Audio) {
-      if (liveAudioTrack.value) {
-        try {
-          liveAudioTrack.value.detach();
-        } catch (e) {
-          console.warn('[LiveViewer] Error detaching audio track:', e);
-        }
-      }
-      liveAudioTrack.value = null;
-    }
   }
 
   function handleDisconnected() {
@@ -653,7 +539,7 @@ export function useLivestreamViewer() {
     }, delay);
   }
 
-  // Ensure DVR is available for clipping capability
+  // Ensure DVR is available for playback and clipping
   async function ensureDvrAvailable(
     streamerId: string,
     mintId: string,
@@ -682,7 +568,7 @@ export function useLivestreamViewer() {
       return;
     }
 
-    // Start DVR recording for watch-only mode (for clipping)
+    // Start DVR recording for playback and clipping
     try {
       await dvrRecording.startDvrSession(mintId, streamerId, displayName);
       state.value.isTempRecording = true;
@@ -690,11 +576,45 @@ export function useLivestreamViewer() {
       console.log('[LiveViewer] Started DVR session for:', mintId);
     } catch (error) {
       console.warn('[LiveViewer] Failed to start DVR session:', error);
-      // Even if DVR fails, we can still watch live (just no clipping capability)
+      state.value.connectionError = 'Failed to start DVR recording';
     }
   }
 
-  // Update available segments from DVR session (for clipping)
+  // Initialize DVR playback with MSE
+  async function initializeDvrPlayback() {
+    if (!videoElement.value || !state.value.mintId) {
+      console.log('[LiveViewer] Cannot initialize DVR playback - missing video element or mintId');
+      return;
+    }
+
+    const chunks = getDvrChunks();
+    console.log('[LiveViewer] Initializing DVR playback with', chunks.length, 'chunks');
+
+    // Apply audio settings before initializing
+    dvrPlayback.setVolume(state.value.volume);
+    dvrPlayback.setMuted(state.value.isMuted);
+
+    const success = await dvrPlayback.initialize(videoElement.value, state.value.mintId, chunks);
+
+    if (success) {
+      console.log('[LiveViewer] DVR playback initialized successfully');
+    } else {
+      console.error(
+        '[LiveViewer] DVR playback initialization failed:',
+        dvrPlayback.state.value.error
+      );
+      state.value.connectionError =
+        dvrPlayback.state.value.error || 'Failed to initialize playback';
+    }
+  }
+
+  // Get DVR chunks in the format needed for playback
+  function getDvrChunks(): DvrChunk[] {
+    if (!state.value.mintId) return [];
+    return dvrRecording.getChunks(state.value.mintId);
+  }
+
+  // Update available segments from DVR session
   function updateDvrChunksFromSession(mintId: string) {
     const dvrSession = dvrRecording.getDvrSession(mintId);
     const chunks = dvrRecording.getChunks(mintId);
@@ -716,6 +636,9 @@ export function useLivestreamViewer() {
       }));
 
       state.value.totalRecordedDuration = dvrRecording.getTotalDuration(mintId);
+
+      // Update DVR playback with new chunks
+      dvrPlayback.updateChunks(chunks);
     }
   }
 
@@ -733,13 +656,34 @@ export function useLivestreamViewer() {
       if (referenceTime) {
         const now = Date.now();
         state.value.liveEdgeTime = Math.floor((now - referenceTime) / 1000);
-        // Always at live edge in live-only mode
-        state.value.playbackPosition = state.value.liveEdgeTime;
       }
     }, 1000);
   }
 
-  // Segment polling for DVR (for clipping)
+  // Sync playback state from DVR playback composable
+  function startPlaybackSync() {
+    if (playbackSyncInterval) {
+      clearInterval(playbackSyncInterval);
+    }
+
+    playbackSyncInterval = window.setInterval(() => {
+      // Sync state from DVR playback
+      const ps = dvrPlayback.state.value;
+      state.value.isPlaying = ps.isPlaying;
+      state.value.isBuffering = ps.isBuffering;
+      state.value.playbackPosition = ps.currentTime;
+      state.value.isAtLiveEdge = ps.isAtLiveEdge;
+      state.value.bufferedRanges = ps.bufferedRanges;
+      state.value.totalRecordedDuration = ps.duration;
+
+      // Sync error state
+      if (ps.error && !state.value.connectionError) {
+        state.value.connectionError = ps.error;
+      }
+    }, 100);
+  }
+
+  // Segment polling for DVR
   function startSegmentPolling() {
     if (segmentPollInterval) {
       clearInterval(segmentPollInterval);
@@ -747,7 +691,7 @@ export function useLivestreamViewer() {
 
     segmentPollInterval = window.setInterval(async () => {
       await updateAvailableSegments();
-    }, 5000);
+    }, 2000); // Poll every 2 seconds to catch new chunks quickly
 
     // Initial poll
     updateAvailableSegments();
@@ -859,6 +803,11 @@ export function useLivestreamViewer() {
       segmentPollInterval = null;
     }
 
+    if (playbackSyncInterval) {
+      clearInterval(playbackSyncInterval);
+      playbackSyncInterval = null;
+    }
+
     if (reconnectTimeout) {
       clearTimeout(reconnectTimeout);
       reconnectTimeout = null;
@@ -870,32 +819,8 @@ export function useLivestreamViewer() {
     }
     unlistenFunctions.length = 0;
 
-    // Stop and clear video elements
-    if (videoElement.value) {
-      videoElement.value.pause();
-      videoElement.value.srcObject = null;
-      videoElement.value.src = '';
-      videoElement.value.load();
-    }
-
-    // Detach tracks
-    if (liveVideoTrack.value) {
-      try {
-        liveVideoTrack.value.detach();
-      } catch (e) {
-        console.warn('[LiveViewer] Error detaching video track:', e);
-      }
-      liveVideoTrack.value = null;
-    }
-
-    if (liveAudioTrack.value) {
-      try {
-        liveAudioTrack.value.detach();
-      } catch (e) {
-        console.warn('[LiveViewer] Error detaching audio track:', e);
-      }
-      liveAudioTrack.value = null;
-    }
+    // Clean up DVR playback
+    await dvrPlayback.cleanup();
 
     // Disconnect room
     if (room) {
@@ -925,6 +850,8 @@ export function useLivestreamViewer() {
     state.value.dvrStartTime = null;
     state.value.liveEdgeTime = 0;
     state.value.playbackPosition = 0;
+    state.value.bufferedRanges = [];
+    state.value.isAtLiveEdge = true;
 
     console.log('[LiveViewer] Disconnect complete');
   }
@@ -933,69 +860,38 @@ export function useLivestreamViewer() {
   function setVideoElement(element: HTMLVideoElement | null) {
     videoElement.value = element;
 
-    if (element && liveVideoTrack.value) {
-      console.log('[LiveViewer] Attaching existing video track to video element');
-      liveVideoTrack.value.attach(element);
-      state.value.isPlaying = true;
-      state.value.isBuffering = false;
-
-      // Get video quality info
-      const settings = liveVideoTrack.value.mediaStreamTrack?.getSettings?.();
-      const height = settings?.height;
-      if (typeof height === 'number') {
-        state.value.streamQuality =
-          height >= 1080 ? '1080p' : height >= 720 ? '720p' : height >= 480 ? '480p' : '360p';
-      }
-
-      if (liveAudioTrack.value) {
-        liveAudioTrack.value.attach(element);
-      }
-      applyAudioSettings();
+    // If we're already connected and have chunks, initialize playback
+    if (element && state.value.connectionState === 'connected' && state.value.mintId) {
+      initializeDvrPlayback();
     }
   }
 
-  // Playback controls (live only)
-  function play() {
+  // Playback controls
+  async function play() {
     console.log('[LiveViewer] play() called');
-    if (videoElement.value) {
-      state.value.isBuffering = true;
-
-      // For live streams, seek to the latest buffered content to catch up to live
-      if (videoElement.value.buffered.length > 0) {
-        const bufferedEnd = videoElement.value.buffered.end(videoElement.value.buffered.length - 1);
-        videoElement.value.currentTime = bufferedEnd;
-        console.log('[LiveViewer] Seeking to live edge:', bufferedEnd);
-      }
-
-      videoElement.value
-        .play()
-        .then(() => {
-          console.log('[LiveViewer] Video playing');
-          state.value.isPlaying = true;
-          state.value.isBuffering = false;
-        })
-        .catch((err) => {
-          console.error('[LiveViewer] Play failed:', err);
-          state.value.isBuffering = false;
-        });
-    }
+    await dvrPlayback.play();
   }
 
   function pause() {
     console.log('[LiveViewer] pause() called');
-    if (videoElement.value) {
-      videoElement.value.pause();
-      state.value.isPlaying = false;
-    }
+    dvrPlayback.pause();
   }
 
   function togglePlayPause() {
     console.log('[LiveViewer] togglePlayPause() called, isPlaying:', state.value.isPlaying);
-    if (state.value.isPlaying) {
-      pause();
-    } else {
-      play();
-    }
+    dvrPlayback.togglePlayPause();
+  }
+
+  // Seek to a specific time
+  async function seek(time: number) {
+    console.log('[LiveViewer] seek() called:', time);
+    await dvrPlayback.seek(time);
+  }
+
+  // Seek to live edge
+  async function seekToLive() {
+    console.log('[LiveViewer] seekToLive() called');
+    await dvrPlayback.seekToLive();
   }
 
   // Volume controls
@@ -1003,29 +899,19 @@ export function useLivestreamViewer() {
     console.log('[LiveViewer] setVolume called:', volume);
     state.value.volume = Math.max(0, Math.min(1, volume));
     saveVolumePreference(state.value.volume);
-    applyAudioSettings();
+    dvrPlayback.setVolume(state.value.volume);
   }
 
   function setMuted(muted: boolean) {
     console.log('[LiveViewer] setMuted called:', muted);
     state.value.isMuted = muted;
     saveMutedPreference(muted);
-    applyAudioSettings();
+    dvrPlayback.setMuted(muted);
   }
 
   function toggleMute() {
     console.log('[LiveViewer] toggleMute called, current:', state.value.isMuted);
     setMuted(!state.value.isMuted);
-  }
-
-  function applyAudioSettings() {
-    if (videoElement.value) {
-      if (!state.value.isMuted) {
-        videoElement.value.removeAttribute('muted');
-      }
-      videoElement.value.volume = state.value.volume;
-      videoElement.value.muted = state.value.isMuted;
-    }
   }
 
   // Cleanup on unmount
@@ -1052,6 +938,7 @@ export function useLivestreamViewer() {
     isConnected,
     isLive,
     availableClipDuration,
+    isAtLiveEdge,
 
     // Video elements
     videoElement,
@@ -1067,6 +954,8 @@ export function useLivestreamViewer() {
     play,
     pause,
     togglePlayPause,
+    seek,
+    seekToLive,
     setVolume,
     setMuted,
     toggleMute,
