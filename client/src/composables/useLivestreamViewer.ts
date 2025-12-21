@@ -697,9 +697,10 @@ export function useLivestreamViewer() {
       clearInterval(segmentPollInterval);
     }
 
+    // Poll frequently (1 second) to catch new chunks as soon as they're ready
     segmentPollInterval = window.setInterval(async () => {
       await updateAvailableSegments();
-    }, 2000); // Poll every 2 seconds to catch new chunks quickly
+    }, 1000);
 
     // Initial poll
     updateAvailableSegments();
@@ -782,11 +783,12 @@ export function useLivestreamViewer() {
     });
 
     // For DVR mode, poll the DVR session for new chunks
+    // Poll frequently (1 second) to ensure playback gets chunks as soon as they're ready
     const dvrUpdateInterval = window.setInterval(() => {
       if (state.value.isTempRecording && state.value.mintId) {
         updateDvrChunksFromSession(state.value.mintId);
       }
-    }, 2000);
+    }, 1000);
 
     // Store cleanup function
     const cleanupDvrInterval = () => {
@@ -946,6 +948,32 @@ export function useLivestreamViewer() {
       if (session) {
         state.value.sessionId = session.sessionId;
         state.value.projectId = session.projectId;
+      }
+    }
+  );
+
+  // Watch for DVR chunk updates - react immediately when new chunks are available
+  // This provides faster chunk availability than polling alone
+  watch(
+    () => {
+      const mintId = state.value.mintId;
+      if (!mintId) return null;
+      // Get chunks directly from the DVR recording composable
+      const chunks = dvrRecording.getChunks(mintId);
+      return chunks.length;
+    },
+    (newChunkCount, oldChunkCount) => {
+      if (
+        state.value.mintId &&
+        state.value.isTempRecording &&
+        newChunkCount &&
+        oldChunkCount !== undefined &&
+        oldChunkCount !== null &&
+        newChunkCount > oldChunkCount
+      ) {
+        // New chunks arrived - update immediately instead of waiting for poll
+        console.log('[LiveViewer] DVR chunks updated reactively:', newChunkCount);
+        updateDvrChunksFromSession(state.value.mintId);
       }
     }
   );

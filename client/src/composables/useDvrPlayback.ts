@@ -32,11 +32,14 @@ const CHUNK_DURATION = 4; // seconds per chunk
 const LIVE_EDGE_THRESHOLD = 12; // seconds behind live to consider "at live edge"
 const BUFFER_AHEAD_CHUNKS = 6; // number of chunks to buffer ahead (24 seconds) - increased for reliability
 const MAX_BUFFER_SECONDS = 120; // maximum seconds to keep buffered
-const BUFFER_LOW_THRESHOLD = 4; // seconds of buffer before we consider it "low"
+const BUFFER_LOW_THRESHOLD = 6; // seconds of buffer before we consider it "low" (increased for reliability)
 const CATCHUP_THRESHOLD = 8; // seconds behind live edge to start catching up
 const CATCHUP_PLAYBACK_RATE = 1.05; // playback rate when catching up (5% faster)
 const NORMAL_PLAYBACK_RATE = 1.0;
 const AUTO_SEEK_THRESHOLD = 30; // seconds behind live edge to auto-seek to live
+const MIN_CHUNKS_BEFORE_PLAY = 3; // minimum chunks (12 seconds) before starting playback
+const LIVE_EDGE_SAFETY_MARGIN = 12; // stay this many seconds behind live edge when seeking to live
+const STALL_RECOVERY_DELAY_MS = 500; // wait this long before retrying after a stall
 
 // Supported WebM codecs for MSE
 // Prefer VP8 to match recording codec order
@@ -107,6 +110,11 @@ export function useDvrPlayback() {
 
   // Cleanup tracking to prevent events during cleanup
   let isCleaningUp = false;
+
+  // Stall recovery tracking
+  let lastStallRecoveryAttempt = 0;
+  let isWaitingForChunks = false; // Flag to indicate we're waiting for new chunks to be produced
+  let hasStartedInitialPlayback = false; // Flag to track if we've successfully started playback
 
   // Computed
   const isAtLiveEdge = computed(() => {
@@ -243,10 +251,35 @@ export function useDvrPlayback() {
    * Load initial chunks to start playback
    */
   async function loadInitialChunks() {
+    // Skip if we've already started playback
+    if (hasStartedInitialPlayback) {
+      console.log('[DvrPlayback] Initial playback already started, skipping');
+      return;
+    }
+
     if (availableChunks.value.length === 0) {
       console.log('[DvrPlayback] No chunks available for initial load');
       return;
     }
+
+    // Wait for minimum chunks before starting playback to prevent buffer starvation
+    if (availableChunks.value.length < MIN_CHUNKS_BEFORE_PLAY) {
+      console.log(
+        '[DvrPlayback] Waiting for more chunks:',
+        availableChunks.value.length,
+        '/',
+        MIN_CHUNKS_BEFORE_PLAY
+      );
+      state.value.isBuffering = true;
+      // Will be called again when more chunks arrive via updateChunks
+      return;
+    }
+
+    console.log(
+      '[DvrPlayback] Have enough chunks, starting initial playback:',
+      availableChunks.value.length
+    );
+    hasStartedInitialPlayback = true;
 
     // Load the first few chunks to start playback
     const chunksToLoad = Math.min(BUFFER_AHEAD_CHUNKS + 1, availableChunks.value.length);
@@ -258,12 +291,19 @@ export function useDvrPlayback() {
       }
     }
 
-    // Start playback at beginning or live edge
+    // Start playback at beginning or live edge (with safety margin)
     if (videoElement) {
       state.value.isBuffering = false;
 
-      // Seek to live edge (near the end of available content)
-      const livePosition = Math.max(0, state.value.duration - CHUNK_DURATION);
+      // Seek to live edge but stay safely behind to prevent buffer starvation
+      // Use a safety margin to ensure we always have chunks ahead
+      const livePosition = Math.max(0, state.value.duration - LIVE_EDGE_SAFETY_MARGIN);
+      console.log(
+        '[DvrPlayback] Starting playback at position:',
+        livePosition,
+        'duration:',
+        state.value.duration
+      );
       if (livePosition > 0) {
         videoElement.currentTime = livePosition;
       }
@@ -488,6 +528,14 @@ export function useDvrPlayback() {
 
     videoElement.addEventListener('waiting', () => {
       if (isCleaningUp) return;
+      const now = Date.now();
+      // Debounce stall recovery attempts to prevent spinning
+      if (now - lastStallRecoveryAttempt < STALL_RECOVERY_DELAY_MS) {
+        console.log('[DvrPlayback] Video waiting - debounced, skipping');
+        return;
+      }
+      lastStallRecoveryAttempt = now;
+
       console.log('[DvrPlayback] Video waiting event - triggering aggressive chunk load');
       state.value.isBuffering = true;
       // Immediately try to load more chunks when buffering - be aggressive
@@ -504,9 +552,17 @@ export function useDvrPlayback() {
 
     videoElement.addEventListener('stalled', () => {
       if (isCleaningUp) return;
+      const now = Date.now();
+      // Debounce stall recovery attempts to prevent spinning
+      if (now - lastStallRecoveryAttempt < STALL_RECOVERY_DELAY_MS) {
+        console.log('[DvrPlayback] Video stalled - debounced, skipping');
+        return;
+      }
+      lastStallRecoveryAttempt = now;
+
       console.log('[DvrPlayback] Video stalled event - triggering aggressive chunk load');
       state.value.isBuffering = true;
-      // Stalled means network is slow - be aggressive
+      // Stalled means data is not arriving - be aggressive but smart
       loadChunksAggressively();
     });
 
@@ -560,7 +616,8 @@ export function useDvrPlayback() {
     const behindLive = state.value.liveEdgeTime - currentTime;
 
     // Preemptive loading when buffer is low
-    if (bufferedAhead < BUFFER_LOW_THRESHOLD && state.value.isPlaying) {
+    // But don't spam if we're already waiting for chunks
+    if (bufferedAhead < BUFFER_LOW_THRESHOLD && state.value.isPlaying && !isWaitingForChunks) {
       console.log('[DvrPlayback] Buffer low:', bufferedAhead.toFixed(1), 's - loading more chunks');
       checkAndLoadChunks();
     }
@@ -582,7 +639,13 @@ export function useDvrPlayback() {
     }
 
     // Catch-up mechanism: speed up playback when behind live edge
-    if (behindLive > CATCHUP_THRESHOLD && state.value.isPlaying && !state.value.isBuffering) {
+    // Only catch up if we have enough buffer to do so safely
+    if (
+      behindLive > CATCHUP_THRESHOLD &&
+      state.value.isPlaying &&
+      !state.value.isBuffering &&
+      bufferedAhead >= BUFFER_LOW_THRESHOLD
+    ) {
       if (!isCatchingUp) {
         isCatchingUp = true;
         videoElement.playbackRate = CATCHUP_PLAYBACK_RATE;
@@ -594,11 +657,16 @@ export function useDvrPlayback() {
           'x'
         );
       }
-    } else if (isCatchingUp && (behindLive <= CHUNK_DURATION || !state.value.isPlaying)) {
-      // Back to normal speed when caught up or paused
+    } else if (
+      isCatchingUp &&
+      (behindLive <= LIVE_EDGE_SAFETY_MARGIN ||
+        !state.value.isPlaying ||
+        bufferedAhead < BUFFER_LOW_THRESHOLD)
+    ) {
+      // Back to normal speed when caught up, paused, or buffer is low
       isCatchingUp = false;
       videoElement.playbackRate = NORMAL_PLAYBACK_RATE;
-      console.log('[DvrPlayback] Caught up - returning to normal playback rate');
+      console.log('[DvrPlayback] Caught up or buffer low - returning to normal playback rate');
     }
   }
 
@@ -645,20 +713,32 @@ export function useDvrPlayback() {
     // Find which chunk we're currently in
     const currentChunkIndex = Math.floor(currentTime / CHUNK_DURATION);
 
+    // Track how many chunks we actually have ahead
+    let chunksLoadedAhead = 0;
+    let chunksNeeded: number[] = [];
+
     // Load ahead chunks - load all available chunks from current position to buffer ahead
     for (let i = 0; i <= BUFFER_AHEAD_CHUNKS; i++) {
       const chunkIndex = currentChunkIndex + i;
       const chunk = availableChunks.value.find((c) => c.index === chunkIndex);
 
-      // Skip if already loaded or currently loading
-      if (chunk && !loadedChunks.has(chunkIndex) && !loadingChunks.has(chunkIndex)) {
-        await loadChunk(chunkIndex);
+      if (chunk) {
+        if (loadedChunks.has(chunkIndex)) {
+          chunksLoadedAhead++;
+        } else if (!loadingChunks.has(chunkIndex)) {
+          chunksNeeded.push(chunkIndex);
+        }
       }
+    }
+
+    // Load needed chunks
+    for (const chunkIndex of chunksNeeded) {
+      await loadChunk(chunkIndex);
     }
 
     // Also proactively load any NEW chunks that arrived (even beyond buffer ahead)
     // This ensures we don't miss chunks when at live edge
-    const lastLoadedOrLoading = Math.max(lastAppendedChunkIndex, ...Array.from(loadingChunks));
+    const lastLoadedOrLoading = Math.max(lastAppendedChunkIndex, ...Array.from(loadingChunks), 0);
     for (const chunk of availableChunks.value) {
       if (
         chunk.index > lastLoadedOrLoading &&
@@ -718,10 +798,24 @@ export function useDvrPlayback() {
     chunksToLoad.sort((a, b) => a - b);
 
     if (chunksToLoad.length === 0) {
-      console.log('[DvrPlayback] No chunks to load - all loaded or loading');
+      // No chunks to load - we're at the live edge waiting for recording to produce more
+      console.log('[DvrPlayback] No chunks to load - waiting for recording to produce more');
+      isWaitingForChunks = true;
+
+      // Check if we're too close to live edge - if so, seek back to give more buffer
+      const bufferedAhead = getBufferedAheadSeconds(currentTime);
+      if (bufferedAhead < CHUNK_DURATION && state.value.liveEdgeTime > LIVE_EDGE_SAFETY_MARGIN) {
+        const safePosition = Math.max(0, state.value.liveEdgeTime - LIVE_EDGE_SAFETY_MARGIN);
+        if (safePosition < currentTime - CHUNK_DURATION) {
+          console.log('[DvrPlayback] Too close to live edge, seeking back to:', safePosition);
+          videoElement.currentTime = safePosition;
+          state.value.currentTime = safePosition;
+        }
+      }
       return;
     }
 
+    isWaitingForChunks = false;
     console.log('[DvrPlayback] Aggressively loading chunks:', chunksToLoad);
 
     // Load all chunks (the loadChunk function handles queuing and sequential appending)
@@ -774,6 +868,13 @@ export function useDvrPlayback() {
     const prevLength = availableChunks.value.length;
     availableChunks.value = chunks;
 
+    console.log('[DvrPlayback] updateChunks called:', {
+      prevLength,
+      newLength: chunks.length,
+      isInitialized: state.value.isInitialized,
+      hasStartedPlayback: hasStartedInitialPlayback,
+    });
+
     // Update duration
     updateDuration();
 
@@ -784,14 +885,41 @@ export function useDvrPlayback() {
       return; // createMediaSourceAndStart will load initial chunks
     }
 
+    // Check if we have enough chunks now for initial playback
+    // This handles the case where MediaSource was initialized but we didn't have enough chunks yet
+    if (
+      state.value.isInitialized &&
+      !hasStartedInitialPlayback &&
+      chunks.length >= MIN_CHUNKS_BEFORE_PLAY
+    ) {
+      console.log('[DvrPlayback] Now have enough chunks for playback:', chunks.length);
+      await loadInitialChunks();
+      return;
+    }
+
     // ALWAYS load new chunks when they arrive (don't require isAtLiveEdge)
     // This ensures playback doesn't fall behind
-    if (chunks.length > prevLength && state.value.isInitialized) {
+    if (chunks.length > prevLength && state.value.isInitialized && hasStartedInitialPlayback) {
       console.log('[DvrPlayback] New chunks available:', chunks.length - prevLength, 'chunks');
+
+      // If we were waiting for chunks (stalled at live edge), resume loading
+      if (isWaitingForChunks) {
+        console.log('[DvrPlayback] Was waiting for chunks - resuming loading');
+        isWaitingForChunks = false;
+      }
+
       for (let i = prevLength; i < chunks.length; i++) {
         const chunk = chunks[i];
         if (!loadedChunks.has(chunk.index) && !loadingChunks.has(chunk.index)) {
           await loadChunk(chunk.index);
+        }
+      }
+
+      // If we're buffering and just loaded new chunks, try to resume playback
+      if (state.value.isBuffering && videoElement && !videoElement.paused) {
+        const bufferedAhead = getBufferedAheadSeconds(videoElement.currentTime);
+        if (bufferedAhead >= BUFFER_LOW_THRESHOLD) {
+          console.log('[DvrPlayback] Buffer recovered:', bufferedAhead, 's - should resume');
         }
       }
     }
@@ -866,10 +994,17 @@ export function useDvrPlayback() {
   }
 
   /**
-   * Seek to live edge
+   * Seek to live edge (with safety margin)
    */
   async function seekToLive() {
-    const livePosition = Math.max(0, state.value.liveEdgeTime - CHUNK_DURATION);
+    // Stay behind live edge by safety margin to ensure we have buffer ahead
+    const livePosition = Math.max(0, state.value.liveEdgeTime - LIVE_EDGE_SAFETY_MARGIN);
+    console.log(
+      '[DvrPlayback] Seeking to live:',
+      livePosition,
+      'liveEdge:',
+      state.value.liveEdgeTime
+    );
     await seek(livePosition);
     state.value.isAtLiveEdge = true;
 
@@ -1035,6 +1170,9 @@ export function useDvrPlayback() {
     videoEventHandlersAttached = false;
     isCatchingUp = false;
     lastBufferHealthCheck = 0;
+    lastStallRecoveryAttempt = 0;
+    isWaitingForChunks = false;
+    hasStartedInitialPlayback = false;
 
     // NOTE: Do NOT reset isCleaningUp here - the video error event fires asynchronously
     // after cleanup completes. We reset it in initialize() instead.
