@@ -30,8 +30,13 @@ export interface DvrPlaybackState {
 // Configuration
 const CHUNK_DURATION = 4; // seconds per chunk
 const LIVE_EDGE_THRESHOLD = 12; // seconds behind live to consider "at live edge"
-const BUFFER_AHEAD_CHUNKS = 4; // number of chunks to buffer ahead (16 seconds)
+const BUFFER_AHEAD_CHUNKS = 6; // number of chunks to buffer ahead (24 seconds) - increased for reliability
 const MAX_BUFFER_SECONDS = 120; // maximum seconds to keep buffered
+const BUFFER_LOW_THRESHOLD = 4; // seconds of buffer before we consider it "low"
+const CATCHUP_THRESHOLD = 8; // seconds behind live edge to start catching up
+const CATCHUP_PLAYBACK_RATE = 1.05; // playback rate when catching up (5% faster)
+const NORMAL_PLAYBACK_RATE = 1.0;
+const AUTO_SEEK_THRESHOLD = 30; // seconds behind live edge to auto-seek to live
 
 // Supported WebM codecs for MSE
 // Prefer VP8 to match recording codec order
@@ -96,6 +101,13 @@ export function useDvrPlayback() {
   let timeUpdateInterval: number | null = null;
   let bufferCheckInterval: number | null = null;
 
+  // Catch-up tracking
+  let isCatchingUp = false;
+  let lastBufferHealthCheck = 0;
+
+  // Cleanup tracking to prevent events during cleanup
+  let isCleaningUp = false;
+
   // Computed
   const isAtLiveEdge = computed(() => {
     if (!state.value.isInitialized) return true;
@@ -111,6 +123,9 @@ export function useDvrPlayback() {
     chunks: DvrChunk[]
   ): Promise<boolean> {
     console.log('[DvrPlayback] Initializing for mint:', mint, 'with', chunks.length, 'chunks');
+
+    // Reset cleanup flag when starting new initialization
+    isCleaningUp = false;
 
     // Skip if already initialized for this mint
     if (mintId === mint && videoElement === video && state.value.isInitialized) {
@@ -452,6 +467,7 @@ export function useDvrPlayback() {
     console.log('[DvrPlayback] Setting up video event handlers');
 
     videoElement.addEventListener('playing', () => {
+      if (isCleaningUp) return;
       console.log('[DvrPlayback] Video playing event');
       state.value.isPlaying = true;
       state.value.isPaused = false;
@@ -459,29 +475,53 @@ export function useDvrPlayback() {
     });
 
     videoElement.addEventListener('pause', () => {
+      if (isCleaningUp) return;
       console.log('[DvrPlayback] Video pause event');
       state.value.isPlaying = false;
       state.value.isPaused = true;
+      // Reset playback rate when paused
+      if (isCatchingUp && videoElement) {
+        isCatchingUp = false;
+        videoElement.playbackRate = NORMAL_PLAYBACK_RATE;
+      }
     });
 
     videoElement.addEventListener('waiting', () => {
-      console.log('[DvrPlayback] Video waiting event - triggering chunk load');
+      if (isCleaningUp) return;
+      console.log('[DvrPlayback] Video waiting event - triggering aggressive chunk load');
       state.value.isBuffering = true;
-      // Immediately try to load more chunks when buffering
-      checkAndLoadChunks();
+      // Immediately try to load more chunks when buffering - be aggressive
+      loadChunksAggressively();
     });
 
     videoElement.addEventListener('canplay', () => {
+      if (isCleaningUp) return;
       console.log('[DvrPlayback] Video canplay event');
       state.value.isBuffering = false;
+      // Check if we need to catch up after buffering
+      checkBufferHealthAndCatchup();
+    });
+
+    videoElement.addEventListener('stalled', () => {
+      if (isCleaningUp) return;
+      console.log('[DvrPlayback] Video stalled event - triggering aggressive chunk load');
+      state.value.isBuffering = true;
+      // Stalled means network is slow - be aggressive
+      loadChunksAggressively();
     });
 
     videoElement.addEventListener('error', (event) => {
+      // Ignore errors during cleanup - they're expected when we clear the source
+      if (isCleaningUp) {
+        console.log('[DvrPlayback] Ignoring video error during cleanup');
+        return;
+      }
       console.error('[DvrPlayback] Video error:', event);
       state.value.error = 'Video playback error';
     });
 
     videoElement.addEventListener('timeupdate', () => {
+      if (isCleaningUp) return;
       state.value.currentTime = videoElement?.currentTime || 0;
       state.value.isAtLiveEdge = isAtLiveEdge.value;
     });
@@ -496,9 +536,87 @@ export function useDvrPlayback() {
     timeUpdateInterval = window.setInterval(() => {
       if (videoElement) {
         state.value.currentTime = videoElement.currentTime;
+
+        // Check buffer health and manage catch-up
+        checkBufferHealthAndCatchup();
       }
       updateBufferedRanges();
     }, 250);
+  }
+
+  /**
+   * Check buffer health and manage playback rate for catch-up
+   */
+  function checkBufferHealthAndCatchup() {
+    if (!videoElement || !state.value.isInitialized) return;
+
+    const now = Date.now();
+    // Don't check too frequently
+    if (now - lastBufferHealthCheck < 500) return;
+    lastBufferHealthCheck = now;
+
+    const currentTime = videoElement.currentTime;
+    const bufferedAhead = getBufferedAheadSeconds(currentTime);
+    const behindLive = state.value.liveEdgeTime - currentTime;
+
+    // Preemptive loading when buffer is low
+    if (bufferedAhead < BUFFER_LOW_THRESHOLD && state.value.isPlaying) {
+      console.log('[DvrPlayback] Buffer low:', bufferedAhead.toFixed(1), 's - loading more chunks');
+      checkAndLoadChunks();
+    }
+
+    // Auto-seek to live if way too far behind (recovery mechanism)
+    // Only do this if we have enough recorded content and are playing
+    if (
+      behindLive > AUTO_SEEK_THRESHOLD &&
+      state.value.isPlaying &&
+      state.value.liveEdgeTime > AUTO_SEEK_THRESHOLD
+    ) {
+      console.log(
+        '[DvrPlayback] Way behind live by',
+        behindLive.toFixed(1),
+        's - auto-seeking to live edge'
+      );
+      seekToLive();
+      return; // Skip catch-up logic since we're seeking
+    }
+
+    // Catch-up mechanism: speed up playback when behind live edge
+    if (behindLive > CATCHUP_THRESHOLD && state.value.isPlaying && !state.value.isBuffering) {
+      if (!isCatchingUp) {
+        isCatchingUp = true;
+        videoElement.playbackRate = CATCHUP_PLAYBACK_RATE;
+        console.log(
+          '[DvrPlayback] Behind live by',
+          behindLive.toFixed(1),
+          's - catching up at',
+          CATCHUP_PLAYBACK_RATE,
+          'x'
+        );
+      }
+    } else if (isCatchingUp && (behindLive <= CHUNK_DURATION || !state.value.isPlaying)) {
+      // Back to normal speed when caught up or paused
+      isCatchingUp = false;
+      videoElement.playbackRate = NORMAL_PLAYBACK_RATE;
+      console.log('[DvrPlayback] Caught up - returning to normal playback rate');
+    }
+  }
+
+  /**
+   * Get how many seconds of buffer we have ahead of current position
+   */
+  function getBufferedAheadSeconds(currentTime: number): number {
+    if (!videoElement) return 0;
+
+    const buffered = videoElement.buffered;
+    for (let i = 0; i < buffered.length; i++) {
+      const start = buffered.start(i);
+      const end = buffered.end(i);
+      if (currentTime >= start && currentTime <= end) {
+        return end - currentTime;
+      }
+    }
+    return 0;
   }
 
   /**
@@ -507,10 +625,13 @@ export function useDvrPlayback() {
   function startBufferManagement() {
     if (bufferCheckInterval) clearInterval(bufferCheckInterval);
 
-    // Check every 500ms to be more responsive to playback needs
+    // Check every 250ms when playing to be more responsive to playback needs
+    // This helps prevent buffer underruns
     bufferCheckInterval = window.setInterval(async () => {
-      await checkAndLoadChunks();
-    }, 500);
+      if (state.value.isPlaying) {
+        await checkAndLoadChunks();
+      }
+    }, 250);
   }
 
   /**
@@ -553,6 +674,64 @@ export function useDvrPlayback() {
     if (currentTime > MAX_BUFFER_SECONDS) {
       await removeOldBufferedData();
     }
+  }
+
+  /**
+   * Aggressively load chunks when buffering - loads multiple chunks in parallel
+   */
+  async function loadChunksAggressively() {
+    if (!state.value.isInitialized || !videoElement) return;
+
+    const currentTime = videoElement.currentTime;
+    const currentChunkIndex = Math.floor(currentTime / CHUNK_DURATION);
+
+    console.log('[DvrPlayback] Aggressive loading from chunk', currentChunkIndex);
+
+    // Collect all chunks that need to be loaded
+    const chunksToLoad: number[] = [];
+
+    // First priority: chunks around current position
+    for (let i = -1; i <= BUFFER_AHEAD_CHUNKS + 2; i++) {
+      const chunkIndex = currentChunkIndex + i;
+      if (chunkIndex >= 0) {
+        const chunk = availableChunks.value.find((c) => c.index === chunkIndex);
+        if (chunk && !loadedChunks.has(chunkIndex) && !loadingChunks.has(chunkIndex)) {
+          chunksToLoad.push(chunkIndex);
+        }
+      }
+    }
+
+    // Also add any new chunks beyond what we've loaded
+    const lastLoadedOrLoading = Math.max(lastAppendedChunkIndex, ...Array.from(loadingChunks), 0);
+    for (const chunk of availableChunks.value) {
+      if (
+        chunk.index > lastLoadedOrLoading &&
+        !loadedChunks.has(chunk.index) &&
+        !loadingChunks.has(chunk.index) &&
+        !chunksToLoad.includes(chunk.index)
+      ) {
+        chunksToLoad.push(chunk.index);
+      }
+    }
+
+    // Sort by index to maintain order
+    chunksToLoad.sort((a, b) => a - b);
+
+    if (chunksToLoad.length === 0) {
+      console.log('[DvrPlayback] No chunks to load - all loaded or loading');
+      return;
+    }
+
+    console.log('[DvrPlayback] Aggressively loading chunks:', chunksToLoad);
+
+    // Load all chunks (the loadChunk function handles queuing and sequential appending)
+    // We fire off all loads but they will be appended in order via the queue
+    const loadPromises = chunksToLoad.map((chunkIndex) => loadChunk(chunkIndex));
+
+    // Wait for at least the first few chunks to be loaded
+    await Promise.all(loadPromises.slice(0, 3)).catch((err) => {
+      console.warn('[DvrPlayback] Some chunks failed to load:', err);
+    });
   }
 
   /**
@@ -693,6 +872,13 @@ export function useDvrPlayback() {
     const livePosition = Math.max(0, state.value.liveEdgeTime - CHUNK_DURATION);
     await seek(livePosition);
     state.value.isAtLiveEdge = true;
+
+    // Reset catch-up since we're at live edge now
+    if (isCatchingUp && videoElement) {
+      isCatchingUp = false;
+      videoElement.playbackRate = NORMAL_PLAYBACK_RATE;
+      console.log('[DvrPlayback] Seeked to live - reset playback rate');
+    }
   }
 
   /**
@@ -774,9 +960,18 @@ export function useDvrPlayback() {
    * Clean up resources
    */
   async function cleanup() {
+    // Prevent double cleanup
+    if (isCleaningUp) {
+      console.log('[DvrPlayback] Already cleaning up, skipping...');
+      return;
+    }
+
     console.log('[DvrPlayback] Cleaning up...');
 
-    // Clear intervals
+    // Set cleanup flag first to prevent event handlers from firing errors
+    isCleaningUp = true;
+
+    // Clear intervals first
     if (timeUpdateInterval) {
       clearInterval(timeUpdateInterval);
       timeUpdateInterval = null;
@@ -784,6 +979,15 @@ export function useDvrPlayback() {
     if (bufferCheckInterval) {
       clearInterval(bufferCheckInterval);
       bufferCheckInterval = null;
+    }
+
+    // Pause video before any cleanup to prevent events
+    if (videoElement) {
+      try {
+        videoElement.pause();
+      } catch (e) {
+        // Ignore
+      }
     }
 
     // Clean up MediaSource
@@ -808,11 +1012,14 @@ export function useDvrPlayback() {
       sourceBuffer = null;
     }
 
-    // Clean up video element
+    // Clean up video element (after MediaSource cleanup)
     if (videoElement) {
-      videoElement.pause();
-      videoElement.src = '';
-      videoElement.load();
+      try {
+        videoElement.src = '';
+        videoElement.load();
+      } catch (e) {
+        // Ignore errors during cleanup
+      }
       videoElement = null;
     }
 
@@ -826,6 +1033,11 @@ export function useDvrPlayback() {
     codec = null;
     availableChunks.value = [];
     videoEventHandlersAttached = false;
+    isCatchingUp = false;
+    lastBufferHealthCheck = 0;
+
+    // NOTE: Do NOT reset isCleaningUp here - the video error event fires asynchronously
+    // after cleanup completes. We reset it in initialize() instead.
 
     state.value = {
       isPlaying: false,

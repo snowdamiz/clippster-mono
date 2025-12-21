@@ -159,6 +159,7 @@ export function useLivestreamViewer() {
   let reconnectAttempts = 0;
   const MAX_RECONNECT_ATTEMPTS = 5;
   let reconnectTimeout: number | null = null;
+  let isIntentionalDisconnect = false; // Flag to prevent reconnects on intentional disconnect
 
   // Update timers
   let liveEdgeUpdateInterval: number | null = null;
@@ -313,6 +314,9 @@ export function useLivestreamViewer() {
       return;
     }
 
+    // Reset intentional disconnect flag when starting a new connection
+    isIntentionalDisconnect = false;
+
     console.log('[LiveViewer] Setting state to connecting...');
     state.value.connectionState = 'connecting';
     state.value.connectionError = null;
@@ -465,8 +469,12 @@ export function useLivestreamViewer() {
     console.log('[LiveViewer] Disconnected from room');
     state.value.connectionState = 'disconnected';
 
-    // Attempt reconnect if it wasn't intentional
-    if (state.value.mintId && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+    // Attempt reconnect only if it wasn't intentional
+    if (
+      !isIntentionalDisconnect &&
+      state.value.mintId &&
+      reconnectAttempts < MAX_RECONNECT_ATTEMPTS
+    ) {
       scheduleReconnect(
         state.value.mintId,
         state.value.streamerId || '',
@@ -790,9 +798,18 @@ export function useLivestreamViewer() {
 
   // Disconnect from livestream
   async function disconnect() {
+    // Prevent multiple disconnects
+    if (isIntentionalDisconnect) {
+      console.log('[LiveViewer] Already disconnecting, skipping...');
+      return;
+    }
+
     console.log('[LiveViewer] Disconnecting...');
 
-    // Clear timers
+    // Mark as intentional disconnect to prevent reconnect attempts
+    isIntentionalDisconnect = true;
+
+    // Clear timers first
     if (liveEdgeUpdateInterval) {
       clearInterval(liveEdgeUpdateInterval);
       liveEdgeUpdateInterval = null;
@@ -819,8 +836,11 @@ export function useLivestreamViewer() {
     }
     unlistenFunctions.length = 0;
 
-    // Clean up DVR playback
+    // Clean up DVR playback first (this handles video element cleanup)
     await dvrPlayback.cleanup();
+
+    // Clear video element ref before room disconnect
+    videoElement.value = null;
 
     // Disconnect room
     if (room) {
@@ -832,9 +852,6 @@ export function useLivestreamViewer() {
       }
       room = null;
     }
-
-    // Clear video element refs
-    videoElement.value = null;
 
     // Reset state
     state.value.connectionState = 'disconnected';
@@ -852,6 +869,9 @@ export function useLivestreamViewer() {
     state.value.playbackPosition = 0;
     state.value.bufferedRanges = [];
     state.value.isAtLiveEdge = true;
+
+    // NOTE: Do NOT reset isIntentionalDisconnect here - async events may still fire
+    // after disconnect completes. We reset it in connect() instead.
 
     console.log('[LiveViewer] Disconnect complete');
   }
