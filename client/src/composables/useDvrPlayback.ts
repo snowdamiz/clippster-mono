@@ -1,3 +1,11 @@
+/**
+ * @deprecated This composable is deprecated in favor of useHlsPlayback.ts
+ * The browser-based MSE/DVR approach has been replaced with HLS streaming
+ * for better reliability and compatibility.
+ *
+ * This file is kept for reference and potential fallback scenarios.
+ */
+
 import { ref, computed, watch, onUnmounted, type Ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type { DvrChunk } from './useDvrRecording';
@@ -40,6 +48,9 @@ const AUTO_SEEK_THRESHOLD = 30; // seconds behind live edge to auto-seek to live
 const MIN_CHUNKS_BEFORE_PLAY = 3; // minimum chunks (12 seconds) before starting playback
 const LIVE_EDGE_SAFETY_MARGIN = 12; // stay this many seconds behind live edge when seeking to live
 const STALL_RECOVERY_DELAY_MS = 500; // wait this long before retrying after a stall
+const STALL_RECOVERY_MAX_ATTEMPTS = 3; // max recovery attempts before seeking forward
+const STALL_SEEK_FORWARD_SECONDS = 8; // seconds to seek forward on unrecoverable stall
+const MIN_VALID_CHUNK_SIZE = 50000; // minimum bytes for a valid chunk (50KB)
 
 // Supported WebM codecs for MSE
 // Prefer VP8 to match recording codec order
@@ -113,8 +124,14 @@ export function useDvrPlayback() {
 
   // Stall recovery tracking
   let lastStallRecoveryAttempt = 0;
+  let stallRecoveryAttempts = 0; // Track consecutive recovery attempts at same position
+  let lastStallPosition = -1; // Track where we last stalled
   let isWaitingForChunks = false; // Flag to indicate we're waiting for new chunks to be produced
   let hasStartedInitialPlayback = false; // Flag to track if we've successfully started playback
+
+  // Gap tracking - chunks that failed to load or were marked as corrupt
+  const failedChunks = new Set<number>();
+  const suspectChunks = new Set<number>(); // Chunks marked as potentially corrupt by recording
 
   // Computed
   const isAtLiveEdge = computed(() => {
@@ -323,9 +340,26 @@ export function useDvrPlayback() {
    * Load a specific chunk by index
    */
   async function loadChunk(chunkIndex: number): Promise<void> {
-    // Skip if already loaded or currently loading
+    // Skip if already loaded, currently loading, or known to be failed
     if (!mintId || !sourceBuffer || loadedChunks.has(chunkIndex) || loadingChunks.has(chunkIndex)) {
       return;
+    }
+
+    // Skip if this chunk previously failed
+    if (failedChunks.has(chunkIndex)) {
+      console.log('[DvrPlayback] Skipping previously failed chunk:', chunkIndex);
+      return;
+    }
+
+    // Check if this chunk is marked as suspect by the recording system
+    const chunkMeta = availableChunks.value.find((c) => c.index === chunkIndex);
+    if (chunkMeta?.suspect) {
+      suspectChunks.add(chunkIndex);
+      console.log(
+        '[DvrPlayback] Loading suspect chunk:',
+        chunkIndex,
+        '(may cause playback issues)'
+      );
     }
 
     // Mark as loading to prevent duplicate loads
@@ -342,6 +376,16 @@ export function useDvrPlayback() {
 
       console.log('[DvrPlayback] Chunk', chunkIndex, 'loaded:', clusterBuffer.length, 'bytes');
 
+      // Validate chunk size - very small chunks are likely corrupt
+      if (clusterBuffer.length < MIN_VALID_CHUNK_SIZE && clusterBuffer.length > 0) {
+        console.warn(
+          `[DvrPlayback] Chunk ${chunkIndex} is too small (${clusterBuffer.length} bytes), likely corrupt - skipping`
+        );
+        loadingChunks.delete(chunkIndex);
+        failedChunks.add(chunkIndex);
+        return;
+      }
+
       // Add to append queue
       appendQueue.push({ data: clusterBuffer, chunkIndex });
 
@@ -349,8 +393,9 @@ export function useDvrPlayback() {
       await processAppendQueue();
     } catch (error) {
       console.error('[DvrPlayback] Failed to load chunk', chunkIndex, ':', error);
-      // Remove from loading set on error so it can be retried
+      // Remove from loading set and mark as failed
       loadingChunks.delete(chunkIndex);
+      failedChunks.add(chunkIndex);
     }
   }
 
@@ -384,10 +429,19 @@ export function useDvrPlayback() {
           updateDuration();
         } catch (appendError) {
           console.error('[DvrPlayback] Failed to append chunk', chunkIndex, ':', appendError);
-          // Remove from loading so it can be retried
+          // Remove from loading and mark as failed so we don't retry
           loadingChunks.delete(chunkIndex);
-          // Don't continue processing on error - might need to recover
-          break;
+          failedChunks.add(chunkIndex);
+          console.log(`[DvrPlayback] Marking chunk ${chunkIndex} as failed due to append error`);
+
+          // If this was a suspect chunk, that's expected - continue processing
+          if (suspectChunks.has(chunkIndex)) {
+            console.log('[DvrPlayback] Suspect chunk failed as expected, continuing...');
+            continue;
+          }
+
+          // For non-suspect chunks, continue processing - the gap will be handled by seek logic
+          continue;
         }
       }
     } catch (error) {
@@ -529,6 +583,8 @@ export function useDvrPlayback() {
     videoElement.addEventListener('waiting', () => {
       if (isCleaningUp) return;
       const now = Date.now();
+      const currentTime = videoElement?.currentTime || 0;
+
       // Debounce stall recovery attempts to prevent spinning
       if (now - lastStallRecoveryAttempt < STALL_RECOVERY_DELAY_MS) {
         console.log('[DvrPlayback] Video waiting - debounced, skipping');
@@ -536,8 +592,31 @@ export function useDvrPlayback() {
       }
       lastStallRecoveryAttempt = now;
 
-      console.log('[DvrPlayback] Video waiting event - triggering aggressive chunk load');
+      // Track recovery attempts at the same position
+      if (Math.abs(currentTime - lastStallPosition) < 1) {
+        stallRecoveryAttempts++;
+        console.log(
+          `[DvrPlayback] Video waiting at same position (${currentTime.toFixed(1)}s), attempt ${stallRecoveryAttempts}`
+        );
+      } else {
+        stallRecoveryAttempts = 1;
+        lastStallPosition = currentTime;
+        console.log(`[DvrPlayback] Video waiting at new position: ${currentTime.toFixed(1)}s`);
+      }
+
       state.value.isBuffering = true;
+
+      // If we've tried recovery too many times at the same position, seek forward
+      if (stallRecoveryAttempts >= STALL_RECOVERY_MAX_ATTEMPTS) {
+        console.warn(
+          `[DvrPlayback] Stall recovery failed after ${stallRecoveryAttempts} attempts - seeking forward to skip corrupt section`
+        );
+        seekPastCorruptSection(currentTime);
+        stallRecoveryAttempts = 0;
+        lastStallPosition = -1;
+        return;
+      }
+
       // Immediately try to load more chunks when buffering - be aggressive
       loadChunksAggressively();
     });
@@ -546,6 +625,9 @@ export function useDvrPlayback() {
       if (isCleaningUp) return;
       console.log('[DvrPlayback] Video canplay event');
       state.value.isBuffering = false;
+      // Reset stall tracking on successful resume
+      stallRecoveryAttempts = 0;
+      lastStallPosition = -1;
       // Check if we need to catch up after buffering
       checkBufferHealthAndCatchup();
     });
@@ -553,6 +635,8 @@ export function useDvrPlayback() {
     videoElement.addEventListener('stalled', () => {
       if (isCleaningUp) return;
       const now = Date.now();
+      const currentTime = videoElement?.currentTime || 0;
+
       // Debounce stall recovery attempts to prevent spinning
       if (now - lastStallRecoveryAttempt < STALL_RECOVERY_DELAY_MS) {
         console.log('[DvrPlayback] Video stalled - debounced, skipping');
@@ -560,8 +644,31 @@ export function useDvrPlayback() {
       }
       lastStallRecoveryAttempt = now;
 
-      console.log('[DvrPlayback] Video stalled event - triggering aggressive chunk load');
+      // Track recovery attempts at the same position
+      if (Math.abs(currentTime - lastStallPosition) < 1) {
+        stallRecoveryAttempts++;
+        console.log(
+          `[DvrPlayback] Video stalled at same position (${currentTime.toFixed(1)}s), attempt ${stallRecoveryAttempts}`
+        );
+      } else {
+        stallRecoveryAttempts = 1;
+        lastStallPosition = currentTime;
+        console.log(`[DvrPlayback] Video stalled at new position: ${currentTime.toFixed(1)}s`);
+      }
+
       state.value.isBuffering = true;
+
+      // If we've tried recovery too many times, seek forward
+      if (stallRecoveryAttempts >= STALL_RECOVERY_MAX_ATTEMPTS) {
+        console.warn(
+          `[DvrPlayback] Stall recovery failed after ${stallRecoveryAttempts} attempts - seeking forward`
+        );
+        seekPastCorruptSection(currentTime);
+        stallRecoveryAttempts = 0;
+        lastStallPosition = -1;
+        return;
+      }
+
       // Stalled means data is not arriving - be aggressive but smart
       loadChunksAggressively();
     });
@@ -572,7 +679,42 @@ export function useDvrPlayback() {
         console.log('[DvrPlayback] Ignoring video error during cleanup');
         return;
       }
-      console.error('[DvrPlayback] Video error:', event);
+
+      const currentTime = videoElement?.currentTime || 0;
+      const error = videoElement?.error;
+
+      console.error(
+        '[DvrPlayback] Video error:',
+        event,
+        'error code:',
+        error?.code,
+        'message:',
+        error?.message
+      );
+
+      // Handle decode errors by seeking past the corrupt section
+      if (error?.code === MediaError.MEDIA_ERR_DECODE) {
+        console.warn('[DvrPlayback] Decode error detected, attempting to skip corrupt section');
+
+        // Mark current chunk as failed
+        const currentChunkIndex = Math.floor(currentTime / CHUNK_DURATION);
+        failedChunks.add(currentChunkIndex);
+
+        // Seek past the corrupt section
+        seekPastCorruptSection(currentTime);
+        return;
+      }
+
+      // For other errors, still try to recover by seeking
+      if (
+        error?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED ||
+        error?.code === MediaError.MEDIA_ERR_NETWORK
+      ) {
+        console.warn('[DvrPlayback] Media error, attempting recovery by seeking forward');
+        seekPastCorruptSection(currentTime);
+        return;
+      }
+
       state.value.error = 'Video playback error';
     });
 
@@ -688,6 +830,101 @@ export function useDvrPlayback() {
   }
 
   /**
+   * Find the next buffered range after current position (for gap handling)
+   */
+  function findNextBufferedRange(currentTime: number): { start: number; end: number } | null {
+    if (!videoElement) return null;
+
+    const buffered = videoElement.buffered;
+    let nextRange: { start: number; end: number } | null = null;
+
+    for (let i = 0; i < buffered.length; i++) {
+      const start = buffered.start(i);
+      const end = buffered.end(i);
+
+      // Find the first range that starts after current time
+      if (start > currentTime) {
+        if (!nextRange || start < nextRange.start) {
+          nextRange = { start, end };
+        }
+      }
+    }
+
+    return nextRange;
+  }
+
+  /**
+   * Seek past a corrupt section when stall recovery fails
+   */
+  async function seekPastCorruptSection(stallPosition: number) {
+    if (!videoElement) return;
+
+    // Mark the current chunk as failed
+    const stallChunkIndex = Math.floor(stallPosition / CHUNK_DURATION);
+    failedChunks.add(stallChunkIndex);
+    console.log(`[DvrPlayback] Marking chunk ${stallChunkIndex} as failed`);
+
+    // First, check if there's a buffered range we can jump to
+    const nextRange = findNextBufferedRange(stallPosition);
+    if (nextRange && nextRange.start - stallPosition < STALL_SEEK_FORWARD_SECONDS * 2) {
+      // Jump to the start of the next buffered range
+      console.log(`[DvrPlayback] Seeking to next buffered range at ${nextRange.start.toFixed(1)}s`);
+      videoElement.currentTime = nextRange.start + 0.1; // Small offset to ensure we're in the range
+      state.value.currentTime = videoElement.currentTime;
+      state.value.isBuffering = false;
+
+      // Try to resume playback
+      try {
+        await videoElement.play();
+      } catch (e) {
+        console.log('[DvrPlayback] Could not auto-play after seeking:', e);
+      }
+      return;
+    }
+
+    // Otherwise, seek forward by a fixed amount
+    const targetPosition = Math.min(
+      stallPosition + STALL_SEEK_FORWARD_SECONDS,
+      state.value.liveEdgeTime - LIVE_EDGE_SAFETY_MARGIN
+    );
+
+    // Make sure we're not seeking backwards
+    if (targetPosition <= stallPosition) {
+      console.log(
+        '[DvrPlayback] Cannot seek forward - too close to live edge, waiting for more data'
+      );
+      // Just wait for more chunks
+      state.value.isBuffering = true;
+      return;
+    }
+
+    console.log(
+      `[DvrPlayback] Seeking forward from ${stallPosition.toFixed(1)}s to ${targetPosition.toFixed(1)}s to skip corrupt section`
+    );
+
+    // Load chunks around the target position
+    const targetChunkIndex = Math.floor(targetPosition / CHUNK_DURATION);
+    for (let i = targetChunkIndex; i <= targetChunkIndex + BUFFER_AHEAD_CHUNKS; i++) {
+      const chunk = availableChunks.value.find((c) => c.index === i);
+      if (chunk && !loadedChunks.has(i) && !failedChunks.has(i)) {
+        await loadChunk(i);
+      }
+    }
+
+    // Perform the seek
+    videoElement.currentTime = targetPosition;
+    state.value.currentTime = targetPosition;
+    state.value.isBuffering = false;
+
+    // Try to resume playback
+    try {
+      await videoElement.play();
+    } catch (e) {
+      console.log('[DvrPlayback] Could not auto-play after seeking:', e);
+    }
+  }
+
+  /**
    * Start buffer management interval
    */
   function startBufferManagement() {
@@ -725,7 +962,7 @@ export function useDvrPlayback() {
       if (chunk) {
         if (loadedChunks.has(chunkIndex)) {
           chunksLoadedAhead++;
-        } else if (!loadingChunks.has(chunkIndex)) {
+        } else if (!loadingChunks.has(chunkIndex) && !failedChunks.has(chunkIndex)) {
           chunksNeeded.push(chunkIndex);
         }
       }
@@ -743,7 +980,8 @@ export function useDvrPlayback() {
       if (
         chunk.index > lastLoadedOrLoading &&
         !loadedChunks.has(chunk.index) &&
-        !loadingChunks.has(chunk.index)
+        !loadingChunks.has(chunk.index) &&
+        !failedChunks.has(chunk.index)
       ) {
         console.log('[DvrPlayback] Proactively loading new chunk:', chunk.index);
         await loadChunk(chunk.index);
@@ -775,7 +1013,13 @@ export function useDvrPlayback() {
       const chunkIndex = currentChunkIndex + i;
       if (chunkIndex >= 0) {
         const chunk = availableChunks.value.find((c) => c.index === chunkIndex);
-        if (chunk && !loadedChunks.has(chunkIndex) && !loadingChunks.has(chunkIndex)) {
+        // Skip failed chunks
+        if (
+          chunk &&
+          !loadedChunks.has(chunkIndex) &&
+          !loadingChunks.has(chunkIndex) &&
+          !failedChunks.has(chunkIndex)
+        ) {
           chunksToLoad.push(chunkIndex);
         }
       }
@@ -788,6 +1032,7 @@ export function useDvrPlayback() {
         chunk.index > lastLoadedOrLoading &&
         !loadedChunks.has(chunk.index) &&
         !loadingChunks.has(chunk.index) &&
+        !failedChunks.has(chunk.index) &&
         !chunksToLoad.includes(chunk.index)
       ) {
         chunksToLoad.push(chunk.index);
@@ -798,6 +1043,14 @@ export function useDvrPlayback() {
     chunksToLoad.sort((a, b) => a - b);
 
     if (chunksToLoad.length === 0) {
+      // No chunks to load - check if there's a gap we can skip
+      const hasGaps = detectGapsNearPosition(currentTime);
+      if (hasGaps) {
+        console.log('[DvrPlayback] Gap detected near current position, attempting to skip...');
+        seekPastCorruptSection(currentTime);
+        return;
+      }
+
       // No chunks to load - we're at the live edge waiting for recording to produce more
       console.log('[DvrPlayback] No chunks to load - waiting for recording to produce more');
       isWaitingForChunks = true;
@@ -826,6 +1079,52 @@ export function useDvrPlayback() {
     await Promise.all(loadPromises.slice(0, 3)).catch((err) => {
       console.warn('[DvrPlayback] Some chunks failed to load:', err);
     });
+  }
+
+  /**
+   * Detect if there are gaps (failed/missing chunks) near the current playback position
+   */
+  function detectGapsNearPosition(currentTime: number): boolean {
+    const currentChunkIndex = Math.floor(currentTime / CHUNK_DURATION);
+
+    // Check chunks around current position for gaps
+    for (let i = 0; i <= 3; i++) {
+      const chunkIndex = currentChunkIndex + i;
+
+      // Check if this chunk exists in available chunks
+      const chunkExists = availableChunks.value.some((c) => c.index === chunkIndex);
+
+      // If chunk exists but is in failed set, that's a gap
+      if (chunkExists && failedChunks.has(chunkIndex)) {
+        console.log(
+          `[DvrPlayback] Gap detected: chunk ${chunkIndex} exists but is marked as failed`
+        );
+        return true;
+      }
+
+      // Check for missing chunks in sequence (gaps in chunk indices)
+      if (chunkIndex > 0 && i > 0) {
+        const prevChunkIndex = currentChunkIndex + i - 1;
+        const prevExists = availableChunks.value.some((c) => c.index === prevChunkIndex);
+        const currExists = availableChunks.value.some((c) => c.index === chunkIndex);
+
+        // If there's a gap in chunk indices, that's a missing chunk
+        if (prevExists && currExists) {
+          // Check if any chunks between prev and curr are missing
+          for (let j = prevChunkIndex + 1; j < chunkIndex; j++) {
+            const midExists = availableChunks.value.some((c) => c.index === j);
+            if (!midExists) {
+              console.log(
+                `[DvrPlayback] Gap detected: missing chunk ${j} between ${prevChunkIndex} and ${chunkIndex}`
+              );
+              return true;
+            }
+          }
+        }
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -1161,6 +1460,8 @@ export function useDvrPlayback() {
     // Reset state
     loadedChunks.clear();
     loadingChunks.clear();
+    failedChunks.clear();
+    suspectChunks.clear();
     appendQueue.length = 0;
     isAppending = false;
     lastAppendedChunkIndex = -1;
@@ -1171,6 +1472,8 @@ export function useDvrPlayback() {
     isCatchingUp = false;
     lastBufferHealthCheck = 0;
     lastStallRecoveryAttempt = 0;
+    stallRecoveryAttempts = 0;
+    lastStallPosition = -1;
     isWaitingForChunks = false;
     hasStartedInitialPlayback = false;
 

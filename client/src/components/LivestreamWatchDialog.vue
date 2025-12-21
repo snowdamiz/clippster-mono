@@ -63,7 +63,7 @@
 
                   <!-- Right side actions -->
                   <div class="flex items-center gap-2">
-                    <!-- DVR Delay Badge -->
+                    <!-- HLS Latency Badge -->
                     <div
                       v-if="viewer.state.value.connectionState === 'connected'"
                       class="px-2 py-1 rounded bg-zinc-800/80 text-xs text-zinc-300 flex items-center gap-1"
@@ -104,7 +104,9 @@
                 </div>
                 <div class="flex justify-between">
                   <span class="text-zinc-400">Playback Mode</span>
-                  <span class="text-white">DVR</span>
+                  <span :class="viewer.state.value.playbackMode === 'webrtc' ? 'text-green-400' : 'text-white'">
+                    {{ playbackModeDisplay }}
+                  </span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-zinc-400">Connection</span>
@@ -131,10 +133,21 @@
               @mouseleave="handleMouseLeave"
               @click="handleVideoClick"
             >
-              <!-- DVR Video (MSE Playback) -->
+              <!-- WebRTC Video Playback (Live) -->
               <video
                 ref="liveVideoRef"
                 class="w-full h-full object-contain"
+                :class="{ hidden: viewer.state.value.playbackMode === 'hls' }"
+                playsinline
+                autoplay
+                :muted="viewer.state.value.isMuted"
+              />
+
+              <!-- HLS Video Playback (DVR) -->
+              <video
+                ref="hlsVideoRef"
+                class="w-full h-full object-contain"
+                :class="{ hidden: viewer.state.value.playbackMode === 'webrtc' }"
                 playsinline
                 :muted="viewer.state.value.isMuted"
               />
@@ -148,9 +161,13 @@
                 <img :src="watermarkUrl" alt="Watermark" class="w-full h-full object-contain" />
               </div>
 
-              <!-- Buffering Indicator -->
+              <!-- Buffering Indicator (only show in HLS mode or when WebRTC is actually buffering) -->
               <div
-                v-if="viewer.state.value.isBuffering && viewer.state.value.connectionState === 'connected'"
+                v-if="
+                  viewer.state.value.isBuffering &&
+                  viewer.state.value.connectionState === 'connected' &&
+                  viewer.state.value.playbackMode === 'hls'
+                "
                 class="absolute inset-0 flex items-center justify-center bg-black/40 z-20"
               >
                 <div class="flex flex-col items-center gap-3">
@@ -275,7 +292,7 @@
 
                       <!-- Live Indicator / Go Live Button -->
                       <button
-                        v-if="viewer.state.value.isAtLiveEdge"
+                        v-if="viewer.state.value.playbackMode === 'webrtc'"
                         class="flex items-center gap-2 px-3 py-1 bg-red-600/90 text-white text-xs font-medium rounded-full cursor-default"
                       >
                         <div class="relative w-2 h-2">
@@ -288,6 +305,7 @@
                         v-else
                         @click="handleSeekToLive"
                         class="flex items-center gap-2 px-3 py-1 bg-zinc-700 hover:bg-red-600/90 text-white text-xs font-medium rounded-full transition-colors"
+                        title="Switch to real-time WebRTC playback"
                       >
                         <Radio class="w-3 h-3" />
                         <span>Go Live</span>
@@ -340,7 +358,7 @@
             <ClipDurationModal
               v-if="showClipModal"
               :available-duration="viewer.availableClipDuration.value"
-              :project-id="viewer.state.value.projectId"
+              :project-id="sessionProjectId || viewer.state.value.projectId"
               :session-id="viewer.state.value.sessionId"
               :temp-session-id="viewer.state.value.tempSessionId"
               :playback-position="viewer.state.value.playbackPosition"
@@ -397,7 +415,7 @@
 
   interface Emits {
     (e: 'update:modelValue', value: boolean): void;
-    (e: 'clip-created', clipPath: string): void;
+    (e: 'clip-created', clipPath: string, projectId: string): void;
   }
 
   const props = defineProps<Props>();
@@ -407,7 +425,8 @@
   const dialogRef = ref<HTMLDivElement | null>(null);
   const containerRef = ref<HTMLDivElement | null>(null);
   const videoContainerRef = ref<HTMLDivElement | null>(null);
-  const liveVideoRef = ref<HTMLVideoElement | null>(null);
+  const liveVideoRef = ref<HTMLVideoElement | null>(null); // WebRTC video element
+  const hlsVideoRef = ref<HTMLVideoElement | null>(null); // HLS video element for DVR
 
   // Composable
   const viewer = useLivestreamViewer();
@@ -419,6 +438,10 @@
   const showClipModal = ref(false);
   const watermarkUrl = ref<string | null>(null);
   let controlsTimeout: number | null = null;
+
+  // Track clips created during this session
+  const sessionProjectId = ref<string | null>(null);
+  const clipsCreatedCount = ref(0);
 
   // Computed
   const streamerInfo = computed(() => ({
@@ -486,12 +509,25 @@
     return document.pictureInPictureEnabled;
   });
 
-  // Estimated delay (DVR chunks are ~4 seconds)
+  // Estimated delay based on playback mode
   const estimatedDelay = computed(() => {
-    // DVR playback has ~4-8 second delay due to chunk size
-    return viewer.state.value.isAtLiveEdge
-      ? '4-8'
-      : Math.round(viewer.state.value.liveEdgeTime - viewer.state.value.playbackPosition);
+    if (viewer.state.value.playbackMode === 'webrtc') {
+      // WebRTC has very low latency (~200ms)
+      return '<1';
+    }
+
+    // HLS playback has ~12-18 second latency with 4-second segments (3 segments behind live)
+    if (!viewer.state.value.latencyMs) {
+      return viewer.state.value.isAtLiveEdge
+        ? '12-18'
+        : Math.round(viewer.state.value.liveEdgeTime - viewer.state.value.playbackPosition);
+    }
+    return Math.round(viewer.state.value.latencyMs / 1000);
+  });
+
+  // Playback mode display
+  const playbackModeDisplay = computed(() => {
+    return viewer.state.value.playbackMode === 'webrtc' ? 'Live' : 'DVR';
   });
 
   // Load watermark image
@@ -579,12 +615,33 @@
     showClipModal.value = true;
   }
 
-  function handleClipCreated(clipPath: string) {
+  function handleClipCreated(clipPath: string, projectId: string) {
     showClipModal.value = false;
-    emit('clip-created', clipPath);
+
+    // Track the project and clip count for this session
+    if (projectId) {
+      sessionProjectId.value = projectId;
+      clipsCreatedCount.value++;
+      console.log('[WatchDialog] Clip created, project:', projectId, 'total clips:', clipsCreatedCount.value);
+    }
+
+    emit('clip-created', clipPath, projectId);
   }
 
-  function handleClose() {
+  async function handleClose() {
+    // Stop HLS recording when closing
+    if (viewer.state.value.isTempRecording && props.mintId) {
+      try {
+        await invoke('stop_hls_recording', { mintId: props.mintId });
+      } catch (e) {
+        console.warn('[WatchDialog] Failed to stop HLS recording:', e);
+      }
+    }
+
+    // Reset session tracking state
+    sessionProjectId.value = null;
+    clipsCreatedCount.value = 0;
+
     viewer.disconnect();
     emit('update:modelValue', false);
   }
@@ -680,30 +737,45 @@
     async (isOpen) => {
       console.log('[WatchDialog] modelValue changed:', isOpen, 'mintId:', props.mintId);
       if (isOpen) {
+        // Reset session tracking state when opening dialog
+        sessionProjectId.value = null;
+        clipsCreatedCount.value = 0;
+
         // Connect when dialog opens
         await nextTick();
 
-        console.log('[WatchDialog] Setting video element...');
-        console.log('[WatchDialog] liveVideoRef:', !!liveVideoRef.value);
+        console.log('[WatchDialog] Setting video elements...');
+        console.log('[WatchDialog] liveVideoRef:', !!liveVideoRef.value, 'hlsVideoRef:', !!hlsVideoRef.value);
 
-        // Set video element first
+        // Set video elements first
         if (liveVideoRef.value) {
           viewer.setVideoElement(liveVideoRef.value);
         }
+        if (hlsVideoRef.value) {
+          viewer.setHlsVideoElement(hlsVideoRef.value);
+        }
 
-        // Connect to livestream (this will start DVR recording and MSE playback)
+        // Connect to livestream (this will start WebRTC playback and HLS recording in background)
         console.log('[WatchDialog] Calling viewer.connect...');
         try {
           await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl);
-          console.log('[WatchDialog] Connect completed, state:', viewer.state.value.connectionState);
+          console.log(
+            '[WatchDialog] Connect completed, state:',
+            viewer.state.value.connectionState,
+            'mode:',
+            viewer.state.value.playbackMode
+          );
         } catch (error) {
           console.error('[WatchDialog] Connect failed:', error);
         }
 
-        // After connection, ensure video element is set
+        // After connection, ensure video elements are set
         await nextTick();
         if (liveVideoRef.value) {
           viewer.setVideoElement(liveVideoRef.value);
+        }
+        if (hlsVideoRef.value) {
+          viewer.setHlsVideoElement(hlsVideoRef.value);
         }
 
         // Focus dialog for keyboard events

@@ -7,7 +7,9 @@
         @click.self="handleClose"
       >
         <Transition name="dialog" appear>
-          <div class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-4 border border-white/10 overflow-hidden">
+          <div
+            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-4 border border-white/10 overflow-hidden"
+          >
             <!-- Decorative top accent -->
             <div class="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-500" />
 
@@ -15,7 +17,9 @@
               <!-- Header -->
               <div class="flex items-center justify-between mb-6">
                 <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 flex items-center justify-center">
+                  <div
+                    class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 flex items-center justify-center"
+                  >
                     <Scissors class="w-5 h-5 text-violet-400" />
                   </div>
                   <div>
@@ -36,14 +40,7 @@
               <div v-if="isCreating" class="text-center py-8">
                 <div class="relative w-16 h-16 mx-auto mb-4">
                   <svg class="w-full h-full -rotate-90">
-                    <circle
-                      cx="32"
-                      cy="32"
-                      r="28"
-                      stroke-width="6"
-                      stroke="rgb(39 39 42)"
-                      fill="none"
-                    />
+                    <circle cx="32" cy="32" r="28" stroke-width="6" stroke="rgb(39 39 42)" fill="none" />
                     <circle
                       cx="32"
                       cy="32"
@@ -129,7 +126,9 @@
                             ? 'bg-zinc-800/50 text-zinc-600 cursor-not-allowed'
                             : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white',
                       ]"
-                      :title="duration > availableDuration ? `Only ${Math.floor(availableDuration)}s available` : undefined"
+                      :title="
+                        duration > availableDuration ? `Only ${Math.floor(availableDuration)}s available` : undefined
+                      "
                     >
                       {{ duration }}s
                       <span
@@ -163,7 +162,9 @@
                     <div>
                       <template v-if="isTempRecording && !projectId">
                         <p class="text-sm text-zinc-300">A new project folder will be created</p>
-                        <p class="text-xs text-zinc-500 mt-0.5">{{ displayName }} - {{ new Date().toISOString().split('T')[0] }}</p>
+                        <p class="text-xs text-zinc-500 mt-0.5">
+                          {{ displayName }} - {{ new Date().toISOString().split('T')[0] }}
+                        </p>
                       </template>
                       <template v-else>
                         <p class="text-sm text-zinc-300">Clip will be saved to livestream project</p>
@@ -200,228 +201,265 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { Scissors, X, Lock, FolderOpen, Check, AlertCircle, ExternalLink } from 'lucide-vue-next';
-import { useRouter } from 'vue-router';
-import { createLivestreamClipProject } from '@/services/database';
+  import { ref, computed, watch } from 'vue';
+  import { invoke } from '@tauri-apps/api/core';
+  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+  import { Scissors, X, Lock, FolderOpen, Check, AlertCircle, ExternalLink } from 'lucide-vue-next';
+  import { useRouter } from 'vue-router';
+  import { createLivestreamClipProject, createClip } from '@/services/database';
 
-interface SegmentInfo {
-  segmentNumber: number;
-  filePath: string;
-  startTime: number;
-  duration: number;
-  endTime: number;
-}
+  interface SegmentInfo {
+    segmentNumber: number;
+    filePath: string;
+    startTime: number;
+    duration: number;
+    endTime: number;
+  }
 
-interface Props {
-  availableDuration: number;
-  projectId: string | null;
-  sessionId: string | null;
-  tempSessionId?: string | null; // For temp recording mode
-  playbackPosition: number;
-  watermarkSettings?: Record<string, any> | null;
-  watermarkId?: string | null;
-  segments: SegmentInfo[];
-  // For creating project on first clip (temp recording mode)
-  displayName?: string;
-  mintId?: string;
-  isTempRecording?: boolean;
-}
+  interface Props {
+    availableDuration: number;
+    projectId: string | null;
+    sessionId: string | null;
+    tempSessionId?: string | null; // For temp recording mode
+    playbackPosition: number;
+    watermarkSettings?: Record<string, any> | null;
+    watermarkId?: string | null;
+    segments: SegmentInfo[];
+    // For creating project on first clip (temp recording mode)
+    displayName?: string;
+    mintId?: string; // Also used as session identifier for DVR mode
+    isTempRecording?: boolean;
+  }
 
-interface Emits {
-  (e: 'close'): void;
-  (e: 'clip-created', clipPath: string): void;
-}
+  interface Emits {
+    (e: 'close'): void;
+    (e: 'clip-created', clipPath: string, projectId: string): void;
+  }
 
-const props = defineProps<Props>();
-const emit = defineEmits<Emits>();
+  const props = defineProps<Props>();
+  const emit = defineEmits<Emits>();
 
-const router = useRouter();
+  const router = useRouter();
 
-// State
-const hidden = ref(false);
-const selectedDuration = ref(30);
-const clipName = ref('');
-const isCreating = ref(false);
-const progress = ref(0);
-const progressMessage = ref('Preparing...');
-const clipCreated = ref(false);
-const createdClipPath = ref<string | null>(null);
-const error = ref<string | null>(null);
+  // State
+  const hidden = ref(false);
+  const selectedDuration = ref(30);
+  const clipName = ref('');
+  const isCreating = ref(false);
+  const progress = ref(0);
+  const progressMessage = ref('Preparing...');
+  const clipCreated = ref(false);
+  const createdClipPath = ref<string | null>(null);
+  const error = ref<string | null>(null);
 
-// Duration options
-const durationOptions = [10, 20, 30, 60, 90];
+  // Duration options
+  const durationOptions = [10, 20, 30, 60, 90];
 
-// Computed
-const defaultClipName = computed(() => {
-  const date = new Date();
-  const timestamp = date.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).replace(/:/g, '-');
-  return `Clip - ${timestamp}`;
-});
-
-// Select appropriate default duration based on available
-watch(
-  () => props.availableDuration,
-  (available) => {
-    if (selectedDuration.value > available) {
-      // Find the largest available duration option
-      const validOptions = durationOptions.filter((d) => d <= available);
-      selectedDuration.value = validOptions.length > 0 ? validOptions[validOptions.length - 1] : 10;
-    }
-  },
-  { immediate: true }
-);
-
-// Progress event listener
-let progressUnlisten: UnlistenFn | null = null;
-
-async function setupProgressListener() {
-  progressUnlisten = await listen<{ progress: number; message: string }>('clip-extraction-progress', (event) => {
-    progress.value = event.payload.progress;
-    progressMessage.value = event.payload.message;
+  // Computed
+  const defaultClipName = computed(() => {
+    const date = new Date();
+    const timestamp = date
+      .toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      })
+      .replace(/:/g, '-');
+    return `Clip - ${timestamp}`;
   });
-}
 
-function cleanupProgressListener() {
-  if (progressUnlisten) {
-    progressUnlisten();
-    progressUnlisten = null;
+  // Select appropriate default duration based on available
+  watch(
+    () => props.availableDuration,
+    (available) => {
+      if (selectedDuration.value > available) {
+        // Find the largest available duration option
+        const validOptions = durationOptions.filter((d) => d <= available);
+        selectedDuration.value = validOptions.length > 0 ? validOptions[validOptions.length - 1] : 10;
+      }
+    },
+    { immediate: true }
+  );
+
+  // Progress event listener
+  let progressUnlisten: UnlistenFn | null = null;
+
+  async function setupProgressListener() {
+    progressUnlisten = await listen<{ progress: number; message: string }>('clip-extraction-progress', (event) => {
+      progress.value = event.payload.progress;
+      progressMessage.value = event.payload.message;
+    });
   }
-}
 
-// State for dynamically created project
-const createdProjectId = ref<string | null>(null);
-
-// Create clip
-async function createClip() {
-  // Determine which session ID to use (persistent or temp)
-  const effectiveSessionId = props.sessionId || props.tempSessionId;
-  
-  if (!effectiveSessionId) {
-    error.value = 'Session not available. Please try again.';
-    return;
+  function cleanupProgressListener() {
+    if (progressUnlisten) {
+      progressUnlisten();
+      progressUnlisten = null;
+    }
   }
-  
-  // Determine project ID - create one if needed (for temp recording)
-  let effectiveProjectId = props.projectId;
-  
-  if (!effectiveProjectId && props.isTempRecording && props.displayName && props.mintId) {
-    // Create a new project for this clip (first clip from temp recording)
-    try {
-      progressMessage.value = 'Creating project folder...';
-      effectiveProjectId = await createLivestreamClipProject(props.displayName, props.mintId);
-      createdProjectId.value = effectiveProjectId;
-      console.log('[ClipModal] Created project for temp recording clip:', effectiveProjectId);
-    } catch (err) {
-      console.error('[ClipModal] Failed to create project:', err);
-      error.value = 'Failed to create project folder. Please try again.';
+
+  // State for dynamically created project
+  const createdProjectId = ref<string | null>(null);
+
+  // Create clip
+  async function createClip() {
+    // Determine which session ID to use:
+    // 1. Persistent recording session ID (from monitoring)
+    // 2. Temp session ID (for temp recording mode)
+    // 3. Mint ID (for DVR mode - used as session identifier)
+    const effectiveSessionId = props.sessionId || props.tempSessionId || props.mintId;
+
+    if (!effectiveSessionId) {
+      error.value = 'Session not available. Please try again.';
       return;
     }
+
+    // Validate we have segments to extract from
+    if (!props.segments || props.segments.length === 0) {
+      error.value = 'No recorded segments available. Please wait for more content.';
+      return;
+    }
+
+    // Determine project ID - create one if needed (for temp/DVR recording)
+    let effectiveProjectId = props.projectId;
+
+    if (!effectiveProjectId && (props.isTempRecording || !props.sessionId) && props.displayName && props.mintId) {
+      // Create a new project for this clip (first clip from temp/DVR recording)
+      try {
+        progressMessage.value = 'Creating project folder...';
+        effectiveProjectId = await createLivestreamClipProject(props.displayName, props.mintId);
+        createdProjectId.value = effectiveProjectId;
+        console.log('[ClipModal] Created project for DVR/temp recording clip:', effectiveProjectId);
+      } catch (err) {
+        console.error('[ClipModal] Failed to create project:', err);
+        error.value = 'Failed to create project folder. Please try again.';
+        return;
+      }
+    }
+
+    if (!effectiveProjectId) {
+      error.value = 'Unable to determine project for clip. Please try again.';
+      return;
+    }
+
+    isCreating.value = true;
+    progress.value = 0;
+    progressMessage.value = 'Preparing clip extraction...';
+    error.value = null;
+
+    try {
+      await setupProgressListener();
+
+      const finalClipName = clipName.value || defaultClipName.value;
+      const clipStartTime = props.playbackPosition - selectedDuration.value;
+      const clipEndTime = props.playbackPosition;
+
+      console.log('[ClipModal] Extracting clip:', {
+        sessionId: effectiveSessionId,
+        clipStartTime,
+        clipEndTime,
+        duration: selectedDuration.value,
+        segmentsCount: props.segments.length,
+        projectId: effectiveProjectId,
+      });
+
+      // Call Tauri command to extract clip
+      // Use effective values (which may have been created for temp/DVR recording)
+      const result = await invoke<string>('extract_livestream_clip', {
+        sessionId: effectiveSessionId,
+        clipEndTime: props.playbackPosition,
+        clipDuration: selectedDuration.value,
+        clipName: finalClipName,
+        segments: props.segments,
+        projectId: effectiveProjectId,
+        watermarkId: props.watermarkId || null,
+        watermarkSettings: props.watermarkSettings ? JSON.stringify(props.watermarkSettings) : null,
+      });
+
+      console.log('[ClipModal] Clip extracted successfully:', result);
+
+      // Save clip to database
+      try {
+        await createClip(effectiveProjectId, result, {
+          name: finalClipName,
+          duration: selectedDuration.value,
+          startTime: clipStartTime,
+          endTime: clipEndTime,
+        });
+        console.log('[ClipModal] Clip saved to database');
+      } catch (dbErr) {
+        console.warn('[ClipModal] Failed to save clip to database (clip file still created):', dbErr);
+        // Don't fail the whole operation if DB save fails - clip file was created
+      }
+
+      createdClipPath.value = result;
+      clipCreated.value = true;
+      clipName.value = finalClipName;
+
+      emit('clip-created', result, effectiveProjectId);
+    } catch (err) {
+      console.error('[ClipModal] Failed to create clip:', err);
+      error.value = err instanceof Error ? err.message : 'Failed to create clip';
+    } finally {
+      isCreating.value = false;
+      cleanupProgressListener();
+    }
   }
-  
-  if (!effectiveProjectId) {
-    error.value = 'Unable to determine project for clip. Please try again.';
-    return;
+
+  // Navigate to clip in projects
+  function handleViewClip() {
+    // Use created project ID if available (for temp recording), otherwise use props
+    const projectId = createdProjectId.value || props.projectId;
+    if (projectId) {
+      router.push({ name: 'projects', query: { projectId } });
+      handleClose();
+    }
   }
 
-  isCreating.value = true;
-  progress.value = 0;
-  progressMessage.value = 'Preparing clip extraction...';
-  error.value = null;
-
-  try {
-    await setupProgressListener();
-
-    const finalClipName = clipName.value || defaultClipName.value;
-
-    // Call Tauri command to extract clip
-    // Use effective values (which may have been created for temp recording)
-    const result = await invoke<string>('extract_livestream_clip', {
-      sessionId: effectiveSessionId,
-      clipEndTime: props.playbackPosition,
-      clipDuration: selectedDuration.value,
-      clipName: finalClipName,
-      segments: props.segments,
-      projectId: effectiveProjectId,
-      watermarkId: props.watermarkId || null,
-      watermarkSettings: props.watermarkSettings ? JSON.stringify(props.watermarkSettings) : null,
-    });
-
-    createdClipPath.value = result;
-    clipCreated.value = true;
-    clipName.value = finalClipName;
-
-    emit('clip-created', result);
-  } catch (err) {
-    console.error('[ClipModal] Failed to create clip:', err);
-    error.value = err instanceof Error ? err.message : 'Failed to create clip';
-  } finally {
+  // Reset state for retry
+  function resetState() {
     isCreating.value = false;
+    progress.value = 0;
+    progressMessage.value = '';
+    clipCreated.value = false;
+    createdClipPath.value = null;
+    error.value = null;
+  }
+
+  // Close modal
+  function handleClose() {
+    if (isCreating.value) return;
     cleanupProgressListener();
+    emit('close');
   }
-}
-
-// Navigate to clip in projects
-function handleViewClip() {
-  // Use created project ID if available (for temp recording), otherwise use props
-  const projectId = createdProjectId.value || props.projectId;
-  if (projectId) {
-    router.push({ name: 'projects', query: { projectId } });
-    handleClose();
-  }
-}
-
-// Reset state for retry
-function resetState() {
-  isCreating.value = false;
-  progress.value = 0;
-  progressMessage.value = '';
-  clipCreated.value = false;
-  createdClipPath.value = null;
-  error.value = null;
-}
-
-// Close modal
-function handleClose() {
-  if (isCreating.value) return;
-  cleanupProgressListener();
-  emit('close');
-}
 </script>
 
 <style scoped>
-/* Transitions */
-.modal-enter-active,
-.modal-leave-active {
-  transition:
-    opacity 0.2s ease,
-    backdrop-filter 0.2s ease;
-}
-.modal-enter-from,
-.modal-leave-to {
-  opacity: 0;
-}
+  /* Transitions */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition:
+      opacity 0.2s ease,
+      backdrop-filter 0.2s ease;
+  }
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
 
-.dialog-enter-active,
-.dialog-leave-active {
-  transition:
-    transform 0.3s ease,
-    opacity 0.2s ease;
-}
-.dialog-enter-from {
-  transform: scale(0.95) translateY(10px);
-  opacity: 0;
-}
-.dialog-leave-to {
-  transform: scale(0.95) translateY(10px);
-  opacity: 0;
-}
+  .dialog-enter-active,
+  .dialog-leave-active {
+    transition:
+      transform 0.3s ease,
+      opacity 0.2s ease;
+  }
+  .dialog-enter-from {
+    transform: scale(0.95) translateY(10px);
+    opacity: 0;
+  }
+  .dialog-leave-to {
+    transform: scale(0.95) translateY(10px);
+    opacity: 0;
+  }
 </style>
-

@@ -245,12 +245,236 @@ pub async fn start_video_server_impl() {
             }
         });
 
+    // HLS playlist HEAD route for existence check: /hls/{base64_dir_path}/playlist.m3u8
+    let hls_playlist_head_route = warp::path!("hls" / String / "playlist.m3u8")
+        .and(warp::head())
+        .and_then(|encoded_dir: String| async move {
+            use base64::{Engine as _, engine::general_purpose};
+            
+            let decoded = match general_purpose::STANDARD.decode(&encoded_dir) {
+                Ok(d) => d,
+                Err(_) => {
+                    return Ok::<_, warp::Rejection>(warp::reply::with_status(
+                        warp::reply::with_header(
+                            warp::reply::with_header(
+                                "",
+                                "Access-Control-Allow-Origin",
+                                "*"
+                            ),
+                            "Access-Control-Allow-Methods",
+                            "GET, HEAD, OPTIONS"
+                        ),
+                        warp::http::StatusCode::BAD_REQUEST
+                    ).into_response());
+                }
+            };
+
+            let dir_str = match String::from_utf8(decoded) {
+                Ok(s) => s,
+                Err(_) => {
+                    return Ok(warp::reply::with_status(
+                        warp::reply::with_header(
+                            warp::reply::with_header(
+                                "",
+                                "Access-Control-Allow-Origin",
+                                "*"
+                            ),
+                            "Access-Control-Allow-Methods",
+                            "GET, HEAD, OPTIONS"
+                        ),
+                        warp::http::StatusCode::BAD_REQUEST
+                    ).into_response());
+                }
+            };
+
+            let playlist_path = PathBuf::from(&dir_str).join("playlist.m3u8");
+
+            if !playlist_path.exists() {
+                return Ok(warp::reply::with_status(
+                    warp::reply::with_header(
+                        warp::reply::with_header(
+                            "",
+                            "Access-Control-Allow-Origin",
+                            "*"
+                        ),
+                        "Access-Control-Allow-Methods",
+                        "GET, HEAD, OPTIONS"
+                    ),
+                    warp::http::StatusCode::NOT_FOUND
+                ).into_response());
+            }
+
+            // File exists - return 200 OK with CORS headers
+            let response = warp::reply::with_header(
+                warp::reply::with_header(
+                    warp::reply::with_header(
+                        "",
+                        "Content-Type",
+                        "application/vnd.apple.mpegurl"
+                    ),
+                    "Access-Control-Allow-Origin",
+                    "*"
+                ),
+                "Access-Control-Allow-Methods",
+                "GET, HEAD, OPTIONS"
+            );
+            Ok(response.into_response())
+        });
+
+    // HLS playlist GET route: /hls/{base64_dir_path}/playlist.m3u8
+    let hls_playlist_route = warp::path!("hls" / String / "playlist.m3u8")
+        .and(warp::get())
+        .and_then(|encoded_dir: String| async move {
+            use base64::{Engine as _, engine::general_purpose};
+            
+            let decoded = match general_purpose::STANDARD.decode(&encoded_dir) {
+                Ok(d) => d,
+                Err(_) => {
+                    return Ok::<_, warp::Rejection>(warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"error": "Invalid directory encoding"})),
+                        warp::http::StatusCode::BAD_REQUEST
+                    ).into_response());
+                }
+            };
+
+            let dir_str = match String::from_utf8(decoded) {
+                Ok(s) => s,
+                Err(_) => {
+                    return Ok(warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"error": "Invalid directory encoding"})),
+                        warp::http::StatusCode::BAD_REQUEST
+                    ).into_response());
+                }
+            };
+
+            let playlist_path = PathBuf::from(&dir_str).join("playlist.m3u8");
+
+            if !playlist_path.exists() {
+                return Ok(warp::reply::with_status(
+                    warp::reply::json(&serde_json::json!({"error": "Playlist not found"})),
+                    warp::http::StatusCode::NOT_FOUND
+                ).into_response());
+            }
+
+            match tokio::fs::read(&playlist_path).await {
+                Ok(content) => {
+                    let response = warp::reply::with_header(
+                        content,
+                        "Content-Type",
+                        "application/vnd.apple.mpegurl"
+                    );
+                    let response = warp::reply::with_header(
+                        response,
+                        "Access-Control-Allow-Origin",
+                        "*"
+                    );
+                    // Prevent caching for live playlist
+                    let response = warp::reply::with_header(
+                        response,
+                        "Cache-Control",
+                        "no-cache, no-store, must-revalidate"
+                    );
+                    Ok(response.into_response())
+                }
+                Err(e) => {
+                    eprintln!("Failed to read HLS playlist: {}", e);
+                    Ok(warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"error": "Cannot read playlist"})),
+                        warp::http::StatusCode::INTERNAL_SERVER_ERROR
+                    ).into_response())
+                }
+            }
+        });
+
+    // HLS segment route: /hls/{base64_dir_path}/{segment_filename}
+    let hls_segment_route = warp::path!("hls" / String / String)
+        .and(warp::get())
+        .and_then(|encoded_dir: String, segment_filename: String| async move {
+            use base64::{Engine as _, engine::general_purpose};
+            
+            // Only allow .ts files
+            if !segment_filename.ends_with(".ts") {
+                return Ok::<_, warp::Rejection>(warp::reply::with_status(
+                    warp::reply::json(&serde_json::json!({"error": "Invalid segment file type"})),
+                    warp::http::StatusCode::BAD_REQUEST
+                ).into_response());
+            }
+
+            let decoded = match general_purpose::STANDARD.decode(&encoded_dir) {
+                Ok(d) => d,
+                Err(_) => {
+                    return Ok(warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"error": "Invalid directory encoding"})),
+                        warp::http::StatusCode::BAD_REQUEST
+                    ).into_response());
+                }
+            };
+
+            let dir_str = match String::from_utf8(decoded) {
+                Ok(s) => s,
+                Err(_) => {
+                    return Ok(warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"error": "Invalid directory encoding"})),
+                        warp::http::StatusCode::BAD_REQUEST
+                    ).into_response());
+                }
+            };
+
+            let segment_path = PathBuf::from(&dir_str).join(&segment_filename);
+
+            if !segment_path.exists() {
+                return Ok(warp::reply::with_status(
+                    warp::reply::json(&serde_json::json!({"error": "Segment not found"})),
+                    warp::http::StatusCode::NOT_FOUND
+                ).into_response());
+            }
+
+            match tokio::fs::read(&segment_path).await {
+                Ok(content) => {
+                    let file_size = content.len();
+                    let response = warp::reply::with_header(
+                        content,
+                        "Content-Type",
+                        "video/mp2t"
+                    );
+                    let response = warp::reply::with_header(
+                        response,
+                        "Content-Length",
+                        file_size.to_string()
+                    );
+                    let response = warp::reply::with_header(
+                        response,
+                        "Access-Control-Allow-Origin",
+                        "*"
+                    );
+                    // Segments can be cached since they're immutable
+                    let response = warp::reply::with_header(
+                        response,
+                        "Cache-Control",
+                        "max-age=3600"
+                    );
+                    Ok(response.into_response())
+                }
+                Err(e) => {
+                    eprintln!("Failed to read HLS segment {}: {}", segment_filename, e);
+                    Ok(warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"error": "Cannot read segment"})),
+                        warp::http::StatusCode::INTERNAL_SERVER_ERROR
+                    ).into_response())
+                }
+            }
+        });
+
     let cors = warp::cors()
         .allow_any_origin()
-        .allow_methods(vec!["GET", "OPTIONS"])
+        .allow_methods(vec!["GET", "HEAD", "OPTIONS"])
         .allow_headers(vec!["Content-Type", "Range"]);
 
-    let routes = video_route.with(cors);
+    let routes = video_route
+        .or(hls_playlist_head_route)
+        .or(hls_playlist_route)
+        .or(hls_segment_route)
+        .with(cors);
 
     println!("Starting local video server on port {}", VIDEO_SERVER_PORT);
     warp::serve(routes).run(([127, 0, 0, 1], VIDEO_SERVER_PORT)).await;

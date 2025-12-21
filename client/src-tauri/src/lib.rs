@@ -15,6 +15,7 @@ mod waveform;
 mod focal_detection;
 mod commands;
 mod dvr;
+mod hls;
 
 // Import items from modules
 use downloads::ACTIVE_DOWNLOADS;
@@ -591,7 +592,14 @@ pub fn run() {
             dvr::read_dvr_chunk,
             dvr::read_all_dvr_chunks,
             dvr::read_dvr_init_segment,
-            dvr::read_dvr_cluster
+            dvr::read_dvr_cluster,
+            dvr::build_vod_from_dvr,
+            
+            // HLS commands
+            hls::start_hls_recording,
+            hls::stop_hls_recording,
+            hls::get_recording_output_dir,
+            hls::get_hls_segments
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

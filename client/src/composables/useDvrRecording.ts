@@ -1,3 +1,11 @@
+/**
+ * @deprecated This composable is deprecated in favor of HLS-based recording.
+ * The browser-based MediaRecorder approach has been replaced with server-side
+ * Node.js recording that outputs HLS format for better reliability.
+ *
+ * This file is kept for reference and potential fallback scenarios.
+ */
+
 import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import {
@@ -25,6 +33,7 @@ export interface DvrChunk {
   duration: number;
   startTime: number;
   endTime: number;
+  suspect?: boolean; // Chunk was recorded during track mute - may be corrupt
 }
 
 // DVR session state
@@ -197,7 +206,23 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
         const audioMST = audioTrackRef.mediaStreamTrack;
 
         if (videoMST && audioMST) {
-          console.log('[DvrRecording] Using LiveKit attach() method for reliable capture');
+          // ============================================================================
+          // CANVAS-BASED CAPTURE (Production-ready, resilient to SFU track muting)
+          // ============================================================================
+          //
+          // WHY CANVAS CAPTURE:
+          // LiveKit's SFU can mute the raw video track at any time (server-side decision).
+          // When this happens, MediaRecorder receives no frames = corrupt chunks.
+          //
+          // Canvas capture creates a LOCAL MediaStream by:
+          // 1. Rendering video frames to a canvas at 30fps
+          // 2. Capturing the canvas as a new stream
+          // 3. Even if source track briefly mutes, we have the last rendered frame
+          //
+          // This is more resilient because we control the stream, not the SFU.
+          // ============================================================================
+
+          console.log('[DvrRecording] Using CANVAS-BASED capture for reliable recording');
           console.log(
             `[DvrRecording] Video track: enabled=${videoMST.enabled}, readyState=${videoMST.readyState}, muted=${videoMST.muted}`
           );
@@ -205,145 +230,227 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
             `[DvrRecording] Audio track: enabled=${audioMST.enabled}, readyState=${audioMST.readyState}, muted=${audioMST.muted}`
           );
 
-          // CRITICAL: Use LiveKit's attach() method which properly signals to the
-          // SFU that we're consuming the track, preventing adaptive streaming from muting it
-          // Create a visible video element for the LiveKit track to attach to
+          // Create a VISIBLE video element - browsers throttle hidden videos
+          // and LiveKit's SFU may reduce quality/pause for "invisible" consumers
           const liveKitVideoElement = document.createElement('video');
           liveKitVideoElement.id =
             'dvr-livekit-consumer-' + Math.random().toString(36).substr(2, 9);
           liveKitVideoElement.muted = true;
           liveKitVideoElement.playsInline = true;
           liveKitVideoElement.autoplay = true;
-          // IMPORTANT: Position within viewport but nearly invisible
-          // Being completely off-screen or display:none can cause browser throttling
+          liveKitVideoElement.crossOrigin = 'anonymous';
+          // Make it VISIBLE but small - this is crucial for reliable capture
+          // Completely hidden elements get throttled by browser AND SFU thinks nobody is watching
           liveKitVideoElement.style.position = 'fixed';
-          liveKitVideoElement.style.width = '320px';
-          liveKitVideoElement.style.height = '180px';
-          liveKitVideoElement.style.bottom = '10px';
-          liveKitVideoElement.style.right = '10px';
-          liveKitVideoElement.style.opacity = '0.01'; // Nearly invisible but still renders
+          liveKitVideoElement.style.width = '160px';
+          liveKitVideoElement.style.height = '90px';
+          liveKitVideoElement.style.bottom = '0px';
+          liveKitVideoElement.style.right = '0px';
+          liveKitVideoElement.style.opacity = '0.01';
           liveKitVideoElement.style.pointerEvents = 'none';
-          liveKitVideoElement.style.zIndex = '-9999';
+          liveKitVideoElement.style.zIndex = '1'; // Keep it in the rendering flow
           document.body.appendChild(liveKitVideoElement);
 
-          // Listen to LiveKit track events to understand server-side muting
-          videoTrackRef.on(TrackEvent.Muted, () => {
-            console.warn('[DvrRecording] LiveKit video track received Muted event from server');
-          });
-          videoTrackRef.on(TrackEvent.Unmuted, () => {
-            console.log('[DvrRecording] LiveKit video track received Unmuted event');
-          });
-          videoTrackRef.on(TrackEvent.Ended, () => {
-            console.warn('[DvrRecording] LiveKit video track ended');
-          });
-
-          // Use LiveKit's attach() method - this is the proper way to consume tracks
-          // and signals to the SFU that we're actively using this track
+          // Attach video track via LiveKit's attach() - signals consumption to SFU
           videoTrackRef.attach(liveKitVideoElement);
-          console.log('[DvrRecording] Attached video track via LiveKit attach()');
+          console.log('[DvrRecording] Attached video track to consumer element');
 
-          // Create a SEPARATE hidden audio element for the audio track
-          // This is needed because LiveKit requires tracks to be "consumed" for MediaRecorder to work
-          // We use volume=0 to ensure no audio plays (muted alone may not work with LiveKit attach)
+          // Continuously request HIGH quality to prevent SFU from downgrading
+          const publication = videoTrackRef.publication;
+          let qualityRequestInterval: number | null = null;
+          if (publication && 'setVideoQuality' in publication) {
+            // Request high quality immediately
+            try {
+              (publication as RemoteTrackPublication).setVideoQuality(VideoQuality.HIGH);
+              console.log('[DvrRecording] Requested HIGH video quality');
+            } catch (e) {
+              console.log('[DvrRecording] Could not set initial video quality:', e);
+            }
+
+            // Keep requesting high quality every 5 seconds to prevent SFU from downgrading
+            qualityRequestInterval = window.setInterval(() => {
+              try {
+                (publication as RemoteTrackPublication).setVideoQuality(VideoQuality.HIGH);
+              } catch (e) {
+                // Ignore errors
+              }
+            }, 5000);
+          }
+
+          // Hidden audio element for audio track consumption
           const hiddenAudioElement = document.createElement('audio');
           hiddenAudioElement.id = 'dvr-audio-consumer-' + Math.random().toString(36).substr(2, 9);
           hiddenAudioElement.muted = true;
-          hiddenAudioElement.volume = 0; // Double ensure no audio output
+          hiddenAudioElement.volume = 0;
           hiddenAudioElement.style.position = 'fixed';
           hiddenAudioElement.style.width = '0';
           hiddenAudioElement.style.height = '0';
           hiddenAudioElement.style.opacity = '0';
-          hiddenAudioElement.style.pointerEvents = 'none';
           document.body.appendChild(hiddenAudioElement);
-
-          // Attach audio track to the separate audio element
           audioTrackRef.attach(hiddenAudioElement);
-          console.log(
-            '[DvrRecording] Attached audio track to separate hidden audio element (volume=0)'
-          );
 
           // Start playing both elements
           try {
             await liveKitVideoElement.play();
-            console.log('[DvrRecording] LiveKit video element playing');
+            console.log('[DvrRecording] Video element playing');
           } catch (e) {
-            console.log('[DvrRecording] LiveKit video play failed (may still work):', e);
+            console.log('[DvrRecording] Video play failed:', e);
           }
 
           try {
             await hiddenAudioElement.play();
-            console.log('[DvrRecording] Hidden audio element playing (muted, volume=0)');
+            console.log('[DvrRecording] Audio element playing');
           } catch (e) {
-            console.log('[DvrRecording] Hidden audio play failed (may still work):', e);
+            console.log('[DvrRecording] Audio play failed:', e);
           }
 
-          // Now create our recording stream from the original tracks
-          // Since we've attached them properly, they should stay active
-          const recordingStream = new MediaStream([videoMST, audioMST]);
+          // Wait for video to have dimensions
+          let waitAttempts = 0;
+          const maxWaitAttempts = 40; // 4 seconds max
+          while (liveKitVideoElement.videoWidth === 0 && waitAttempts < maxWaitAttempts) {
+            await new Promise((r) => setTimeout(r, 100));
+            waitAttempts++;
+          }
+
+          const width = liveKitVideoElement.videoWidth || 1280;
+          const height = liveKitVideoElement.videoHeight || 720;
+          console.log(`[DvrRecording] Video dimensions: ${width}x${height}`);
+
+          // Create canvas for capture
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          canvas.style.position = 'fixed';
+          canvas.style.width = '1px';
+          canvas.style.height = '1px';
+          canvas.style.bottom = '0';
+          canvas.style.right = '0';
+          canvas.style.opacity = '0.01';
+          canvas.style.pointerEvents = 'none';
+          canvas.style.zIndex = '1';
+          document.body.appendChild(canvas);
+
+          const ctx = canvas.getContext('2d', {
+            willReadFrequently: false,
+            alpha: false, // Opaque canvas is faster
+          })!;
+
+          // Create canvas capture stream at 30fps
+          const canvasStream = canvas.captureStream(30);
+          const capturedVideoTrack = canvasStream.getVideoTracks()[0] as
+            | CanvasCaptureMediaStreamTrack
+            | undefined;
+
+          // Draw loop - runs at display refresh rate but throttles actual draws to 30fps
+          let animationId = 0;
+          let frameCount = 0;
+          let lastDrawTime = 0;
+          let lastLogTime = Date.now();
+          let consecutiveMutedFrames = 0;
+          let lastGoodFrame: ImageData | null = null;
+          const targetFrameMs = 1000 / 30;
+          const MUTED_FRAME_THRESHOLD = 15; // ~0.5s of muted frames before using last good frame
+
+          const drawFrame = () => {
+            const now = performance.now();
+
+            if (now - lastDrawTime >= targetFrameMs) {
+              lastDrawTime = now;
+              const videoReady = liveKitVideoElement.readyState >= 2;
+              const videoMuted = videoMST.muted;
+
+              if (videoReady && !videoMuted) {
+                // Normal case: video is playing, draw it
+                ctx.drawImage(liveKitVideoElement, 0, 0, width, height);
+                frameCount++;
+                consecutiveMutedFrames = 0;
+
+                // Save this as the last good frame (every ~1 second to reduce overhead)
+                if (frameCount % 30 === 0) {
+                  try {
+                    lastGoodFrame = ctx.getImageData(0, 0, width, height);
+                  } catch (e) {
+                    // Ignore - cross-origin issues possible
+                  }
+                }
+
+                // Request frame capture
+                if (capturedVideoTrack && 'requestFrame' in capturedVideoTrack) {
+                  try {
+                    capturedVideoTrack.requestFrame();
+                  } catch (e) {}
+                }
+              } else if (videoMuted) {
+                // Track is muted by SFU - use last good frame to maintain stream continuity
+                consecutiveMutedFrames++;
+
+                if (consecutiveMutedFrames === 1) {
+                  console.warn('[DvrRecording] Video track muted by SFU, holding last frame');
+                }
+
+                // If we have a last good frame, redraw it to keep the stream alive
+                if (lastGoodFrame && consecutiveMutedFrames <= MUTED_FRAME_THRESHOLD * 30) {
+                  ctx.putImageData(lastGoodFrame, 0, 0);
+                  if (capturedVideoTrack && 'requestFrame' in capturedVideoTrack) {
+                    try {
+                      capturedVideoTrack.requestFrame();
+                    } catch (e) {}
+                  }
+                }
+
+                // Log extended muting
+                if (consecutiveMutedFrames === MUTED_FRAME_THRESHOLD) {
+                  console.error(
+                    '[DvrRecording] Video track muted for extended period - frames may be stale'
+                  );
+                }
+              }
+            }
+
+            // Periodic logging
+            const nowMs = Date.now();
+            if (nowMs - lastLogTime >= 10000) {
+              const fps = frameCount / 10;
+              console.log(
+                `[DvrRecording] Canvas capture: ${frameCount} frames in 10s (${fps.toFixed(1)} fps), ` +
+                  `video ready: ${liveKitVideoElement.readyState >= 2}, muted: ${videoMST.muted}, ` +
+                  `dimensions: ${liveKitVideoElement.videoWidth}x${liveKitVideoElement.videoHeight}`
+              );
+              frameCount = 0;
+              lastLogTime = nowMs;
+            }
+
+            animationId = requestAnimationFrame(drawFrame);
+          };
+          animationId = requestAnimationFrame(drawFrame);
+
+          // Create combined stream: canvas video + LiveKit audio
+          const recordingStream = new MediaStream();
+          canvasStream.getVideoTracks().forEach((track) => {
+            recordingStream.addTrack(track);
+            console.log(`[DvrRecording] Added canvas video track: ${track.label}`);
+          });
+          recordingStream.addTrack(audioMST);
+          console.log('[DvrRecording] Added LiveKit audio track');
 
           console.log(
-            '[DvrRecording] Recording stream created with',
+            '[DvrRecording] Recording stream ready:',
             recordingStream.getTracks().length,
             'tracks'
           );
-          recordingStream.getTracks().forEach((t) => {
-            console.log(
-              `[DvrRecording] Recording stream track: ${t.kind}, enabled=${t.enabled}, readyState=${t.readyState}, muted=${t.muted}`
-            );
-          });
 
-          // Monitor track mute state and try to recover
-          videoMST.onmute = () => {
-            console.warn('[DvrRecording] Video track became muted, attempting recovery...');
-            // Try to recover by re-attaching
-            try {
-              // Detach and re-attach to signal we're still consuming
-              videoTrackRef.detach(liveKitVideoElement);
-              videoTrackRef.attach(liveKitVideoElement);
-              console.log('[DvrRecording] Re-attached video track for recovery');
-              // Force play again
-              liveKitVideoElement.play().catch(() => {});
-            } catch (e) {
-              console.error('[DvrRecording] Recovery failed:', e);
-            }
-          };
-          videoMST.onunmute = () => {
-            console.log('[DvrRecording] Video track unmuted - recovery successful');
-          };
-
-          // Periodically check during stabilization to catch when muting happens
-          const checkInterval = setInterval(() => {
-            console.log(
-              `[DvrRecording] Stabilizing check - video muted: ${videoMST.muted}, video readyState: ${videoMST.readyState}, element videoWidth: ${liveKitVideoElement.videoWidth}`
-            );
-          }, 250);
-
-          // Wait a moment for everything to stabilize
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-
-          clearInterval(checkInterval);
-
-          // Check track state again
-          console.log(
-            `[DvrRecording] After stabilization - video track muted: ${videoMST.muted}, audio track muted: ${audioMST.muted}`
-          );
-          console.log(
-            `[DvrRecording] LiveKit element readyState: ${liveKitVideoElement.readyState}, videoWidth: ${liveKitVideoElement.videoWidth}`
-          );
-
-          // If video is still muted after stabilization, something is wrong
-          if (videoMST.muted) {
-            console.error(
-              '[DvrRecording] Video track is still muted after attach! This indicates LiveKit is not sending video data.'
-            );
+          // Clean up quality interval when done
+          if (qualityRequestInterval) {
+            // Store for cleanup - will be cleared when session stops
+            (liveKitVideoElement as any).__qualityInterval = qualityRequestInterval;
           }
 
           resolveOnce({
             mediaStream: recordingStream,
             videoElement: liveKitVideoElement,
             audioElement: hiddenAudioElement,
-            canvasElement: null,
-            animationId: 0,
+            canvasElement: canvas,
+            animationId,
             audioContext: null,
           });
           return;
@@ -965,6 +1072,40 @@ export function useDvrRecording() {
   ): Promise<void> {
     const mimeType = getSupportedMimeType();
 
+    // Minimum chunk size to consider valid (very small chunks likely indicate corrupt/empty data)
+    // A 4-second chunk with video should be at least 50KB even at low quality
+    const MIN_VALID_CHUNK_SIZE = 50000; // 50KB minimum
+
+    // Track mute state to mark chunks as potentially corrupt
+    let videoTrackMuted = false;
+    let lastMuteTime = 0;
+    let mutedDuringChunk = false;
+
+    // Get the video track from the stream to monitor its mute state
+    const videoTrack = mediaStream.getVideoTracks()[0];
+    if (videoTrack) {
+      videoTrackMuted = videoTrack.muted;
+
+      // Monitor mute events
+      videoTrack.onmute = () => {
+        console.warn('[DvrRecording] Video track muted during recording - chunks may be corrupt');
+        videoTrackMuted = true;
+        mutedDuringChunk = true;
+        lastMuteTime = Date.now();
+      };
+
+      videoTrack.onunmute = () => {
+        console.log('[DvrRecording] Video track unmuted');
+        videoTrackMuted = false;
+        // If we were muted for a long time, the current chunk is likely corrupt
+        if (Date.now() - lastMuteTime > 1000) {
+          console.log(
+            '[DvrRecording] Was muted for >1s, marking current chunk as potentially corrupt'
+          );
+        }
+      };
+    }
+
     const recorder = new MediaRecorder(mediaStream, {
       mimeType,
       videoBitsPerSecond: 4000000, // 4 Mbps
@@ -979,66 +1120,69 @@ export function useDvrRecording() {
     let localChunkIndex = session.chunkIndex;
     // Track when we last received a valid chunk (for smart force flush)
     let lastValidChunkAt = Date.now();
-    // Track consecutive empty chunks for recovery
-    let consecutiveEmptyChunks = 0;
-    const MAX_CONSECUTIVE_EMPTY_CHUNKS = 5;
+    // Track consecutive bad chunks for recovery
+    let consecutiveBadChunks = 0;
+    const MAX_CONSECUTIVE_BAD_CHUNKS = 3;
 
     recorder.ondataavailable = (event) => {
-      console.log(`[DvrRecording] ondataavailable fired, size: ${event.data.size} bytes`);
+      const chunkSize = event.data.size;
+      const wasMutedDuringChunk = mutedDuringChunk;
+      mutedDuringChunk = false; // Reset for next chunk
 
-      if (event.data.size === 0) {
-        consecutiveEmptyChunks++;
-        console.log(
-          `[DvrRecording] Empty chunk received (${consecutiveEmptyChunks} consecutive), skipping`
+      console.log(
+        `[DvrRecording] ondataavailable fired, size: ${chunkSize} bytes, mutedDuringChunk: ${wasMutedDuringChunk}, currentlyMuted: ${videoTrackMuted}`
+      );
+
+      // Determine if this chunk is likely corrupt
+      const isEmpty = chunkSize === 0;
+      const isTooSmall = chunkSize > 0 && chunkSize < MIN_VALID_CHUNK_SIZE;
+      const isLikelyCorrupt = isEmpty || isTooSmall || wasMutedDuringChunk;
+
+      if (isEmpty) {
+        console.log('[DvrRecording] Empty chunk received, skipping');
+        consecutiveBadChunks++;
+      } else if (isTooSmall) {
+        console.warn(
+          `[DvrRecording] Chunk too small (${chunkSize} bytes < ${MIN_VALID_CHUNK_SIZE}), likely corrupt - skipping`
         );
+        consecutiveBadChunks++;
+      } else if (wasMutedDuringChunk) {
+        console.warn(
+          `[DvrRecording] Chunk recorded during muted period (${chunkSize} bytes), marking as suspect`
+        );
+        // We'll still save it but mark it as potentially corrupt
+      }
 
-        // If we get too many empty chunks, try to recover by stopping and restarting
-        if (consecutiveEmptyChunks >= MAX_CONSECUTIVE_EMPTY_CHUNKS) {
-          console.warn('[DvrRecording] Too many empty chunks, attempting recovery...');
-          consecutiveEmptyChunks = 0;
+      // If we get too many consecutive bad chunks, attempt recovery
+      if (consecutiveBadChunks >= MAX_CONSECUTIVE_BAD_CHUNKS) {
+        console.warn('[DvrRecording] Too many bad chunks, attempting recorder restart...');
+        consecutiveBadChunks = 0;
 
-          // Stop and restart the MediaRecorder to try to recover
-          const currentSession = activeDvrSessions.value.get(mintId);
-          if (currentSession && currentSession.mediaRecorder?.state === 'recording') {
-            try {
-              // Stop current recording - this will trigger onstop
-              currentSession.mediaRecorder.stop();
-
-              // Restart after a brief delay
-              setTimeout(() => {
-                const session = activeDvrSessions.value.get(mintId);
-                if (session && session.mediaStream?.active && !session.isRecording) {
-                  console.log('[DvrRecording] Restarting MediaRecorder after recovery...');
-                  // Create new MediaRecorder with the same stream
-                  const newRecorder = new MediaRecorder(session.mediaStream, {
-                    mimeType,
-                    videoBitsPerSecond: 4000000,
-                    audioBitsPerSecond: 128000,
-                  });
-
-                  // Re-attach handlers
-                  newRecorder.ondataavailable = recorder.ondataavailable;
-                  newRecorder.onerror = recorder.onerror;
-                  newRecorder.onstop = recorder.onstop;
-
-                  session.mediaRecorder = newRecorder;
-                  newRecorder.start(DVR_CHUNK_DURATION_SECONDS * 1000);
-                  session.isRecording = true;
-                  lastValidChunkAt = Date.now();
-
-                  console.log('[DvrRecording] MediaRecorder restarted successfully');
-                }
-              }, 500);
-            } catch (e) {
-              console.error('[DvrRecording] Failed to recover MediaRecorder:', e);
-            }
-          }
+        const currentSession = activeDvrSessions.value.get(mintId);
+        if (currentSession && currentSession.mediaRecorder?.state === 'recording') {
+          // Stop and restart to try to recover
+          restartMediaRecorder(mintId, currentSession, mimeType);
         }
         return;
       }
 
-      // Reset empty chunk counter and track valid chunk time
-      consecutiveEmptyChunks = 0;
+      // Skip empty chunks entirely
+      if (isEmpty) {
+        return;
+      }
+
+      // Skip very small (corrupt) chunks - they will cause playback issues
+      if (isTooSmall) {
+        // Advance chunk index to maintain timeline
+        localChunkIndex++;
+        console.log(`[DvrRecording] Skipped corrupt chunk, advancing index to ${localChunkIndex}`);
+        return;
+      }
+
+      // Reset bad chunk counter for valid chunks
+      if (!isLikelyCorrupt) {
+        consecutiveBadChunks = 0;
+      }
       lastValidChunkAt = Date.now();
 
       saveChain = saveChain
@@ -1060,7 +1204,9 @@ export function useDvrRecording() {
           const arrayBuffer = await event.data.arrayBuffer();
           const data = Array.from(new Uint8Array(arrayBuffer));
 
-          console.log(`[DvrRecording] Saving chunk ${chunkIndex} (${data.length} bytes)...`);
+          console.log(
+            `[DvrRecording] Saving chunk ${chunkIndex} (${data.length} bytes)${wasMutedDuringChunk ? ' [SUSPECT]' : ''}...`
+          );
 
           // Save chunk via Tauri
           const chunkPath = await invoke<string>('save_dvr_chunk', {
@@ -1070,9 +1216,6 @@ export function useDvrRecording() {
           });
 
           // Calculate timing deterministically from index
-          // NOTE: If chunks vary in size/duration (like the 19MB one), this timestamp logic desyncs from reality.
-          // Ideally we should use wall-clock time difference, but for now fixed duration is expected.
-          // We can at least clamp the duration if the file size is tiny, but duration is time-based.
           const duration = DVR_CHUNK_DURATION_SECONDS;
           const startTime = chunkIndex * duration;
 
@@ -1082,6 +1225,8 @@ export function useDvrRecording() {
             duration,
             startTime,
             endTime: startTime + duration,
+            // Mark suspect chunks so playback can handle them
+            suspect: wasMutedDuringChunk,
           };
 
           currentSession.chunks.push(chunk);
@@ -1094,7 +1239,7 @@ export function useDvrRecording() {
           activeDvrSessions.value = newMap;
 
           console.log(
-            `[DvrRecording] Chunk ${chunk.index} saved for ${mintId}, total duration: ${currentSession.totalDuration}s, path: ${chunkPath}`
+            `[DvrRecording] Chunk ${chunk.index} saved for ${mintId}, total duration: ${currentSession.totalDuration}s, path: ${chunkPath}${chunk.suspect ? ' [SUSPECT]' : ''}`
           );
         })
         .catch((error) => {
@@ -1124,8 +1269,6 @@ export function useDvrRecording() {
     console.log('[DvrRecording] MediaStream active:', mediaStream.active);
 
     // Smart force flush - only flush if we haven't received a valid chunk in too long
-    // This prevents interfering with natural chunk emission while still recovering
-    // from browser throttling scenarios
     const FORCE_FLUSH_THRESHOLD_MS = DVR_CHUNK_DURATION_SECONDS * 1000 * 2.5; // 2.5x chunk duration (10 seconds)
     const forceFlushInterval = setInterval(() => {
       const currentSession = activeDvrSessions.value.get(mintId);
@@ -1150,7 +1293,7 @@ export function useDvrRecording() {
           }
         }
       }
-    }, DVR_CHUNK_DURATION_SECONDS * 1000); // Check every chunk duration
+    }, DVR_CHUNK_DURATION_SECONDS * 1000);
 
     // Debug: log MediaRecorder status periodically
     const statusInterval = setInterval(() => {
@@ -1162,7 +1305,7 @@ export function useDvrRecording() {
       }
 
       console.log(
-        `[DvrRecording] Status for ${mintId}: recorder=${recorder.state}, stream.active=${mediaStream.active}, chunks=${currentSession.chunks.length}, duration=${currentSession.totalDuration}s`
+        `[DvrRecording] Status for ${mintId}: recorder=${recorder.state}, stream.active=${mediaStream.active}, chunks=${currentSession.chunks.length}, duration=${currentSession.totalDuration}s, videoMuted=${videoTrackMuted}`
       );
 
       // Log track states
@@ -1171,7 +1314,45 @@ export function useDvrRecording() {
           `[DvrRecording] Track ${track.kind}: enabled=${track.enabled}, readyState=${track.readyState}, muted=${track.muted}`
         );
       });
-    }, 10000); // Log every 10 seconds
+    }, 10000);
+  }
+
+  /**
+   * Restart MediaRecorder to recover from bad state
+   */
+  function restartMediaRecorder(mintId: string, session: DvrSession, mimeType: string): void {
+    if (!session.mediaStream?.active) {
+      console.log('[DvrRecording] Cannot restart - stream not active');
+      return;
+    }
+
+    try {
+      // Stop current recorder if recording
+      if (session.mediaRecorder?.state === 'recording') {
+        session.mediaRecorder.stop();
+      }
+
+      // Create new recorder after a brief delay
+      setTimeout(() => {
+        const currentSession = activeDvrSessions.value.get(mintId);
+        if (!currentSession || !currentSession.mediaStream?.active) {
+          return;
+        }
+
+        console.log('[DvrRecording] Creating new MediaRecorder...');
+
+        // Start a fresh MediaRecorder
+        startMediaRecorder(mintId, currentSession, currentSession.mediaStream)
+          .then(() => {
+            console.log('[DvrRecording] MediaRecorder restarted successfully');
+          })
+          .catch((err) => {
+            console.error('[DvrRecording] Failed to restart MediaRecorder:', err);
+          });
+      }, 500);
+    } catch (e) {
+      console.error('[DvrRecording] Error during recorder restart:', e);
+    }
   }
 
   /**
@@ -1214,6 +1395,11 @@ export function useDvrRecording() {
 
       // Clean up hidden video element
       if (session.hiddenVideoElement) {
+        // Clear quality request interval if it exists
+        const qualityInterval = (session.hiddenVideoElement as any).__qualityInterval;
+        if (qualityInterval) {
+          clearInterval(qualityInterval);
+        }
         session.hiddenVideoElement.pause();
         session.hiddenVideoElement.srcObject = null;
         session.hiddenVideoElement.remove();

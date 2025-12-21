@@ -15,6 +15,12 @@ import {
 } from '@livekit/rtc-node';
 
 const VIDEO_QUALITY_HIGH = 2;
+
+// Fixed output resolution - all incoming video is scaled to this resolution
+// This prevents encoder restarts when source resolution changes
+const FIXED_OUTPUT_WIDTH = 1280;
+const FIXED_OUTPUT_HEIGHT = 720;
+
 // Audio-Video Sync Configuration
 // The sync is now PTS-based (presentation timestamp) for both audio and video.
 //
@@ -60,9 +66,20 @@ if (!mintId || !sessionId || !outputDirArg) {
   process.exit(1);
 }
 
-const segmentMinutes = Math.max(parseInt(segmentMinutesArg || '5', 10), 1);
-const segmentDurationSeconds = segmentMinutes * 60;
+// Parse segment duration - "0" means HLS mode with 4-second segments for stable live playback
+const segmentMinutesInput = parseInt(segmentMinutesArg || '5', 10);
+const isHlsMode = segmentMinutesInput === 0;
+const segmentMinutes = isHlsMode ? 1 : Math.max(segmentMinutesInput, 1);
+const segmentDurationSeconds = isHlsMode ? 4 : segmentMinutes * 60; // 4 seconds for HLS (stable playback), minutes * 60 for regular
 const outputDir = path.resolve(outputDirArg);
+
+// GOP size (keyframe interval) in frames - must match segment duration for clean HLS segments
+// 30fps * segment duration = keyframes at segment boundaries
+const gopSizeFrames = 30 * segmentDurationSeconds;
+
+if (isHlsMode) {
+  console.log(JSON.stringify({ type: 'info', message: `HLS mode enabled - using ${segmentDurationSeconds}s segments, GOP=${gopSizeFrames} frames` }));
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -157,16 +174,75 @@ function log(message, context = {}) {
   );
 }
 
+/**
+ * Scale YUV420 frame to fixed output resolution using nearest-neighbor interpolation
+ * This prevents encoder restarts by normalizing all input resolutions to a single output
+ */
+function scaleYUV420ToFixed(yBuffer, uBuffer, vBuffer, srcWidth, srcHeight) {
+  const dstWidth = FIXED_OUTPUT_WIDTH;
+  const dstHeight = FIXED_OUTPUT_HEIGHT;
+  
+  // If already at target resolution, just concat and return
+  if (srcWidth === dstWidth && srcHeight === dstHeight) {
+    return Buffer.concat([yBuffer, uBuffer, vBuffer]);
+  }
+  
+  // Allocate output buffers
+  const dstY = Buffer.allocUnsafe(dstWidth * dstHeight);
+  const dstU = Buffer.allocUnsafe((dstWidth >> 1) * (dstHeight >> 1));
+  const dstV = Buffer.allocUnsafe((dstWidth >> 1) * (dstHeight >> 1));
+  
+  // Calculate scaling ratios (fixed point for performance)
+  const xRatio = (srcWidth << 16) / dstWidth;
+  const yRatio = (srcHeight << 16) / dstHeight;
+  
+  // Scale Y plane (full resolution)
+  for (let y = 0; y < dstHeight; y++) {
+    const srcY = (y * yRatio) >> 16;
+    const srcRowOffset = srcY * srcWidth;
+    const dstRowOffset = y * dstWidth;
+    
+    for (let x = 0; x < dstWidth; x++) {
+      const srcX = (x * xRatio) >> 16;
+      dstY[dstRowOffset + x] = yBuffer[srcRowOffset + srcX];
+    }
+  }
+  
+  // Scale U and V planes (half resolution)
+  const halfDstW = dstWidth >> 1;
+  const halfDstH = dstHeight >> 1;
+  const halfSrcW = srcWidth >> 1;
+  const halfXRatio = (halfSrcW << 16) / halfDstW;
+  const halfYRatio = ((srcHeight >> 1) << 16) / halfDstH;
+  
+  for (let y = 0; y < halfDstH; y++) {
+    const srcY = (y * halfYRatio) >> 16;
+    const srcRowOffset = srcY * halfSrcW;
+    const dstRowOffset = y * halfDstW;
+    
+    for (let x = 0; x < halfDstW; x++) {
+      const srcX = (x * halfXRatio) >> 16;
+      const srcIdx = srcRowOffset + srcX;
+      const dstIdx = dstRowOffset + x;
+      dstU[dstIdx] = uBuffer[srcIdx];
+      dstV[dstIdx] = vBuffer[srcIdx];
+    }
+  }
+  
+  return Buffer.concat([dstY, dstU, dstV]);
+}
+
 // Software audio mixer with multi-track support
 // Handles OBS streams that may have multiple audio tracks (mic + desktop, etc.)
 class AudioMixer {
-    constructor(frameSize = 3840) {
+    constructor(frameSize = 3840, latencyFrames = 50) {
         this.frameSize = frameSize;
         this.numSamples = frameSize / 2; // 16-bit samples
         this.chunks = new Map(); // timeIndex -> { samples: Float64Array, contributors: number, trackIds: Set }
         this.lastFlushedIndex = -1;
-        // Buffer latency in frames (20ms each). 50 frames = 1000ms jitter buffer
-        this.latencyBuffer = 50; 
+        // Buffer latency in frames (20ms each). Default 50 frames = 1000ms jitter buffer
+        // For HLS live mode, use 25 frames = 500ms for lower latency
+        this.latencyBuffer = latencyFrames; 
     }
 
     mixChunk(timeIndex, buffer, trackId = null) {
@@ -272,15 +348,18 @@ class PumpfunRecorder {
         });
     }
     this.ffmpegPath = resolveFfmpegBinary();
-    this.segmentPrefix = `${this.mintId}_${this.sessionId}_segment_`;
-    this.playlistPath = path.join(this.outputDir, 'playlist.csv');
+    this.segmentPrefix = `segment_`;
+    // HLS playlist path (m3u8 format for hls.js compatibility)
+    this.playlistPath = path.join(this.outputDir, 'playlist.m3u8');
     this.processedSegments = new Set();
     this.running = false;
     this.restarting = false;
     this.stopRequested = false; // Flag to signal stop during waiting phase
     this.room = null;
     this.ffmpeg = null;
-    this.audioMixer = new AudioMixer();
+    // Reduced latency buffer for HLS mode - 25 frames = 500ms (was 50 = 1000ms)
+    // This reduces encoder delay while still handling network jitter
+    this.audioMixer = new AudioMixer(3840, isHlsMode ? 25 : 50);
     this.audioTracks = new Set(); // Set of active track SIDs
     this.videoReader = null;
     this.audioReady = false;
@@ -325,6 +404,8 @@ class PumpfunRecorder {
     this.mixerInterval = null;
     this._loggedResolutionSkip = false; // Track if we've logged resolution skip
     this._resChangeConsecutiveFrames = 0; // Track consecutive frames at new resolution
+    this._lastSourceWidth = undefined; // Track source resolution for logging changes
+    this._lastSourceHeight = undefined;
     
     // Encoder epoch - incremented on restart so audio loops can reset their counters
     this._encoderEpoch = 0;
@@ -350,22 +431,49 @@ class PumpfunRecorder {
         p.on('error', () => resolve({ stdout: '' }));
       });
 
-      if (stdout.includes('h264_nvenc')) return ['-c:v', 'h264_nvenc', '-preset', 'p4', '-rc', 'vbr', '-cq', '19'];
-      if (stdout.includes('h264_amf')) return ['-c:v', 'h264_amf', '-usage', 'transcoding'];
-      if (stdout.includes('h264_qsv')) return ['-c:v', 'h264_qsv', '-global_quality', '20'];
+      // NVENC (NVIDIA) - strict_gop ensures GOP boundaries are respected
+      if (stdout.includes('h264_nvenc')) return [
+        '-c:v', 'h264_nvenc', 
+        '-preset', 'p4', 
+        '-rc', 'vbr', 
+        '-cq', '19',
+        '-strict_gop', '1'  // Enforce GOP boundaries for clean HLS segments
+      ];
+      
+      // AMF (AMD)
+      if (stdout.includes('h264_amf')) return [
+        '-c:v', 'h264_amf', 
+        '-usage', 'transcoding'
+      ];
+      
+      // QSV (Intel)
+      if (stdout.includes('h264_qsv')) return [
+        '-c:v', 'h264_qsv', 
+        '-global_quality', '20'
+      ];
+      
+      // VideoToolbox (macOS)
       if (process.platform === 'darwin' && stdout.includes('h264_videotoolbox')) {
-         const width = this.videoInfo?.width || 1280;
-         let bitrate = '4000k';
-         if (width >= 1920) bitrate = '6000k';
-         else if (width < 1280) bitrate = '2500k';
-         return ['-c:v', 'h264_videotoolbox', '-b:v', bitrate, '-realtime', 'true', '-allow_sw', '1'];
+         // Use fixed output resolution for bitrate calculation
+         let bitrate = '4000k'; // Good for 1280x720
+         if (FIXED_OUTPUT_WIDTH >= 1920) bitrate = '6000k';
+         else if (FIXED_OUTPUT_WIDTH < 1280) bitrate = '2500k';
+         return [
+           '-c:v', 'h264_videotoolbox', 
+           '-b:v', bitrate, 
+           '-realtime', 'true', 
+           '-allow_sw', '1'
+         ];
       }
+      
+      // VAAPI (Linux)
       if (stdout.includes('h264_vaapi')) return ['-c:v', 'h264_vaapi'];
 
     } catch (e) {
       console.error('[Recorder] Failed to detect hardware encoder', e);
     }
 
+    // Software fallback with low-latency settings
     return [
       '-c:v', 'libx264',
       '-preset', 'veryfast',
@@ -814,9 +922,14 @@ class PumpfunRecorder {
                 const last = arrivalTime;
                 const duration = last - first;
                 
-                if (duration >= 1000) {
+                // Speed up FPS detection - 500ms is enough to determine FPS
+                // These streams are always 30fps, so we use that as default
+                if (duration >= 500) {
                     this.videoFps = 30; // Force 30fps for consistency
                     this.fpsDetected = true;
+                    if (DIAGNOSTIC_MODE) {
+                        log('DIAG: FPS detected', { videoFps: this.videoFps, detectionDurationMs: duration });
+                    }
                     this.checkSyncAndStart();
                 }
             }
@@ -1051,17 +1164,20 @@ class PumpfunRecorder {
         const uBuffer = extractPlane(uPlane, effectiveWidth >> 1, effectiveHeight >> 1, 'U');
         const vBuffer = extractPlane(vPlane, effectiveWidth >> 1, effectiveHeight >> 1, 'V');
 
-        const buffer = Buffer.concat([yBuffer, uBuffer, vBuffer]);
+        // CRITICAL FIX: Scale all frames to fixed output resolution
+        // This prevents encoder restarts when source resolution changes
+        const buffer = scaleYUV420ToFixed(yBuffer, uBuffer, vBuffer, effectiveWidth, effectiveHeight);
 
         // Store in queue with RELATIVE timestamp (relative to first frame)
         // This ensures all timestamp comparisons use consistent relative values
+        // NOTE: All frames now have the same dimensions (FIXED_OUTPUT_WIDTH x FIXED_OUTPUT_HEIGHT)
         if (this.firstVideoTimestampUs !== null && timestampUs !== undefined) {
             const relativeTimestampUs = timestampUs - this.firstVideoTimestampUs;
             this.videoQueue.push({ 
                 buffer, 
                 timestampUs: relativeTimestampUs, // Now relative, not absolute
-                width: effectiveWidth, 
-                height: effectiveHeight 
+                width: FIXED_OUTPUT_WIDTH, 
+                height: FIXED_OUTPUT_HEIGHT 
             });
             
             // Limit queue size to prevent memory issues (keep last 5 seconds approx)
@@ -1091,92 +1207,39 @@ class PumpfunRecorder {
             }
         }
         
-        // Handle resolution changes
+        // Initialize video info with FIXED output resolution (only once)
+        // No encoder restarts needed since all frames are scaled to this resolution
         if (!this.videoInfo) {
-             this.currentWidth = effectiveWidth;
-             this.currentHeight = effectiveHeight;
-             this.videoInfo = { width: effectiveWidth, height: effectiveHeight };
+             // Log original source resolution for diagnostics
+             if (DIAGNOSTIC_MODE) {
+                 log('DIAG: First video frame received', {
+                     sourceResolution: `${effectiveWidth}x${effectiveHeight}`,
+                     outputResolution: `${FIXED_OUTPUT_WIDTH}x${FIXED_OUTPUT_HEIGHT}`,
+                     note: 'All frames will be scaled to fixed output resolution'
+                 });
+             }
+             
+             this.currentWidth = FIXED_OUTPUT_WIDTH;
+             this.currentHeight = FIXED_OUTPUT_HEIGHT;
+             this.videoInfo = { width: FIXED_OUTPUT_WIDTH, height: FIXED_OUTPUT_HEIGHT };
              this._resChangeConsecutiveFrames = 0;
              if (this.fpsDetected) {
                this.checkSyncAndStart();
              }
-        } else if (this.currentWidth !== effectiveWidth || this.currentHeight !== effectiveHeight) {
-            // Resolution mismatch detected
-            
-            // If encoder is running, skip this frame (wrong resolution would corrupt output)
-            if (this.encoderStarted) {
-                if (DIAGNOSTIC_MODE && !this._loggedResolutionSkip) {
-                    this._loggedResolutionSkip = true;
-                    log('DIAG: Resolution change starting - skipping mismatched frames', {
-                        expected: `${this.currentWidth}x${this.currentHeight}`,
-                        received: `${effectiveWidth}x${effectiveHeight}`,
-                        note: 'Waiting for 30 consecutive frames at new resolution'
-                    });
-                }
+        }
+        
+        // Log resolution changes for diagnostics, but don't restart encoder
+        if (effectiveWidth !== this._lastSourceWidth || effectiveHeight !== this._lastSourceHeight) {
+            if (this._lastSourceWidth !== undefined && DIAGNOSTIC_MODE) {
+                log('DIAG: Source resolution changed (scaling applied)', {
+                    oldSource: `${this._lastSourceWidth}x${this._lastSourceHeight}`,
+                    newSource: `${effectiveWidth}x${effectiveHeight}`,
+                    outputResolution: `${FIXED_OUTPUT_WIDTH}x${FIXED_OUTPUT_HEIGHT}`,
+                    note: 'No encoder restart needed - frame scaled to fixed output'
+                });
             }
-            
-            // Track consecutive frames at new resolution
-            if (!this.pendingResChange || 
-                this.pendingResChange.width !== effectiveWidth || 
-                this.pendingResChange.height !== effectiveHeight) {
-                // New resolution detected, reset counter
-                this.pendingResChange = {
-                    width: effectiveWidth,
-                    height: effectiveHeight,
-                    consecutiveFrames: 1,
-                    start: Date.now()
-                };
-            } else {
-                // Same new resolution, increment counter
-                this.pendingResChange.consecutiveFrames++;
-                
-                // Wait for 30 consecutive frames at new resolution before restarting
-                if (this.pendingResChange.consecutiveFrames >= 30) {
-                    if (DIAGNOSTIC_MODE) {
-                        log('DIAG: Resolution change confirmed after 30 frames', {
-                            old: `${this.currentWidth}x${this.currentHeight}`,
-                            new: `${effectiveWidth}x${effectiveHeight}`,
-                            consecutiveFrames: this.pendingResChange.consecutiveFrames,
-                            elapsedMs: Date.now() - this.pendingResChange.start
-                        });
-                    }
-                    
-                    log('Resolution change detected', { 
-                        old: `${this.currentWidth}x${this.currentHeight}`, 
-                        new: `${effectiveWidth}x${effectiveHeight}` 
-                    });
-                    
-                    // Clear video queue of wrong-resolution frames before restart
-                    const queueSizeBefore = this.videoQueue.length;
-                    this.videoQueue = this.videoQueue.filter(
-                        item => item.width === effectiveWidth && item.height === effectiveHeight
-                    );
-                    
-                    if (DIAGNOSTIC_MODE && queueSizeBefore !== this.videoQueue.length) {
-                        log('DIAG: Cleared wrong-resolution frames from queue', {
-                            before: queueSizeBefore,
-                            after: this.videoQueue.length,
-                            removed: queueSizeBefore - this.videoQueue.length
-                        });
-                    }
-                    
-                    await this.restartEncoder(effectiveWidth, effectiveHeight);
-                    this.pendingResChange = null;
-                    this._loggedResolutionSkip = false;
-                }
-            }
-            
-            // Skip adding this frame to queue if resolution doesn't match current encoder
-            // (It will be added after encoder restarts with new resolution)
-            if (this.encoderStarted) {
-                continue;
-            }
-        } else {
-            // Resolution matches - reset pending change if any
-            if (this.pendingResChange) {
-                this.pendingResChange = null;
-                this._loggedResolutionSkip = false;
-            }
+            this._lastSourceWidth = effectiveWidth;
+            this._lastSourceHeight = effectiveHeight;
         }
       }
     } catch (error) {
@@ -1187,8 +1250,20 @@ class PumpfunRecorder {
   async checkSyncAndStart() {
     if (this.encoderStarted) return;
     if (!this.firstAudioTime || !this.firstVideoTime || !this.fpsDetected || !this.videoInfo) {
+        // Log what's missing to help diagnose
+        if (DIAGNOSTIC_MODE && !this._loggedSyncBlocking) {
+            log('DIAG: checkSyncAndStart blocked', {
+                hasFirstAudioTime: !!this.firstAudioTime,
+                hasFirstVideoTime: !!this.firstVideoTime,
+                fpsDetected: this.fpsDetected,
+                hasVideoInfo: !!this.videoInfo,
+                videoInfo: this.videoInfo,
+            });
+            this._loggedSyncBlocking = true;
+        }
         return;
     }
+    this._loggedSyncBlocking = false;
     
     if (!this.referenceTime) {
         // SIMPLE SYNC STRATEGY:
@@ -1255,17 +1330,35 @@ class PumpfunRecorder {
   }
 
   async startEncoder() {
-    const outputPattern = path.join(this.outputDir, `${this.segmentPrefix}%05d.mp4`);
-    const { width, height } = this.videoInfo || { width: 1280, height: 720 };
+    // Always use fixed output resolution - all frames are scaled to this
+    const width = FIXED_OUTPUT_WIDTH;
+    const height = FIXED_OUTPUT_HEIGHT;
     const startNumber = this.lastSegmentNumber + 1;
     const encoderArgs = await this.getVideoEncoderArgs();
-
+    
+    // HLS segment pattern - segments are named segment_00000.ts, segment_00001.ts, etc.
+    const segmentPattern = path.join(this.outputDir, `${this.segmentPrefix}%05d.ts`);
+    
+    // GOP size must be set for hardware encoders to respect keyframe intervals
+    // GOP = fps * segment_duration ensures keyframes align with segment boundaries
+    const gopSize = 30 * this.segmentDurationSeconds;
+    
+    log('STARTING FFMPEG ENCODER', {
+      resolution: `${width}x${height}`,
+      note: 'Fixed output resolution - no encoder restarts on source resolution changes',
+      segmentDuration: this.segmentDurationSeconds,
+      gopSize: gopSize,
+      outputDir: this.outputDir,
+      playlistPath: this.playlistPath,
+      segmentPattern,
+    });
+    
     const args = [
       '-loglevel',
       'warning',
       '-y',
-      '-probesize', '100M',
-      '-analyzeduration', '100M',
+      '-probesize', '32K',  // Reduced for faster startup
+      '-analyzeduration', '500000',  // 500ms - faster startup
       '-f', 's16le',
       '-ac', '2',
       '-ar', '48000',
@@ -1275,18 +1368,23 @@ class PumpfunRecorder {
       '-s', `${width}x${height}`,
       '-framerate', '30',
       '-i', 'pipe:3',
-      '-force_key_frames', 'expr:gte(t,n_forced*2)',
+      // CRITICAL: Set GOP size BEFORE encoder args so all encoders (including HW) respect it
+      '-g', String(gopSize),  // Keyframe every N frames (e.g., 60 for 2s at 30fps)
+      '-keyint_min', String(gopSize),  // Minimum GOP size to prevent extra keyframes
+      // Force keyframes at segment boundaries (backup for software encoders)
+      '-force_key_frames', `expr:gte(t,n_forced*${this.segmentDurationSeconds})`,
       ...encoderArgs,
       '-c:a', 'aac',
       '-b:a', '160k',
-      '-movflags', '+faststart',
-      '-f', 'segment',
-      '-segment_time', String(this.segmentDurationSeconds),
-      '-reset_timestamps', '1',
-      '-segment_list', this.playlistPath,
-      '-segment_list_type', 'csv',
-      '-segment_start_number', String(startNumber),
-      outputPattern,
+      // HLS output format for DVR playback
+      '-f', 'hls',
+      '-hls_time', String(this.segmentDurationSeconds),
+      '-hls_list_size', '0',  // Keep all segments in playlist (DVR mode)
+      '-hls_flags', 'append_list+omit_endlist+program_date_time',
+      '-hls_segment_type', 'mpegts',
+      '-hls_segment_filename', segmentPattern,
+      '-start_number', String(startNumber),
+      this.playlistPath,
     ];
 
     this.ffmpeg = spawn(this.ffmpegPath, args, {
@@ -1311,6 +1409,9 @@ class PumpfunRecorder {
     });
   }
 
+  // NOTE: With fixed output resolution, this method should rarely be called
+  // All frames are now scaled to FIXED_OUTPUT_WIDTH x FIXED_OUTPUT_HEIGHT
+  // This method is kept for compatibility but uses fixed resolution
   async restartEncoder(width, height) {
     if (this.restarting) return;
     if (!this.running) return; 
@@ -1331,8 +1432,22 @@ class PumpfunRecorder {
         this.videoOffsetFromRef = 0;
         this.syncMethod = 'unknown';
         this._audioTimestampSource = 'none';
-        this.fpsDetected = false;
-        this.fpsSamples = []; // CRITICAL: Reset FPS samples to avoid stale timestamps
+        // IMPORTANT: Preserve FPS detection across resolution changes
+        // Once we've detected FPS (always 30fps for these streams), keep it
+        // This prevents delays from re-detection when resolution changes rapidly
+        if (!this.fpsDetected) {
+            this.fpsDetected = false;
+            this.fpsSamples = [];
+        } else {
+            // Keep fpsDetected = true, videoFps preserved
+            // Just reset the samples array since timestamps will be stale
+            this.fpsSamples = [];
+            if (DIAGNOSTIC_MODE) {
+                log('DIAG: Preserving FPS detection across restart', {
+                    videoFps: this.videoFps,
+                });
+            }
+        }
         this.videoQueue = [];
         this._loggedAudioFrame = false;
         this._loggedVideoFrame = false;
@@ -1345,7 +1460,7 @@ class PumpfunRecorder {
                 previousVideoFramesReceived: this._diagnosticVideoFrameCount,
                 previousAudioFramesReceived: this._diagnosticAudioFrameCount,
                 previousSkipped: this._diagnosticVideoQueueSkipped,
-                reason: 'resolution_change'
+                reason: 'manual_restart'
             });
         }
         this._diagnosticVideoFrameCount = 0;
@@ -1361,10 +1476,11 @@ class PumpfunRecorder {
         
         if (!this.running) return;
         
-        this.currentWidth = width;
-        this.currentHeight = height;
-        this.videoInfo = { width, height };
-        log('Resolution changed', { width, height });
+        // Always use fixed output resolution
+        this.currentWidth = FIXED_OUTPUT_WIDTH;
+        this.currentHeight = FIXED_OUTPUT_HEIGHT;
+        this.videoInfo = { width: FIXED_OUTPUT_WIDTH, height: FIXED_OUTPUT_HEIGHT };
+        log('Encoder restarted', { width: FIXED_OUTPUT_WIDTH, height: FIXED_OUTPUT_HEIGHT });
     } catch (e) {
         console.error('Failed to restart encoder', e);
     } finally {
@@ -1631,7 +1747,8 @@ class PumpfunRecorder {
               }
           }
           
-          const bufferToWrite = this.lastVideoFrame || Buffer.alloc(this.videoInfo.width * this.videoInfo.height * 1.5); // Grey/Black
+          // Use fixed output resolution for blank frame allocation
+          const bufferToWrite = this.lastVideoFrame || Buffer.alloc(FIXED_OUTPUT_WIDTH * FIXED_OUTPUT_HEIGHT * 1.5); // Grey/Black
           
           if (this.videoPipe && !this.videoPipe.destroyed) {
                if (!this.videoPipe.write(bufferToWrite)) {
@@ -1657,7 +1774,7 @@ class PumpfunRecorder {
   
   startSegmentWatcher() {
     this.segmentWatcher = fs.watch(this.outputDir, (event, filename) => {
-      if (!filename || filename === 'playlist.csv') {
+      if (!filename || filename === 'playlist.m3u8' || filename.endsWith('.ts')) {
         this.checkPlaylist();
       }
     });
@@ -1676,12 +1793,37 @@ class PumpfunRecorder {
       const content = await fs.promises.readFile(this.playlistPath, 'utf8');
       const lines = content.split('\n').filter((line) => line.trim() !== '');
 
+      // Parse HLS m3u8 playlist format
+      // Lines starting with # are tags, segment files are .ts filenames
+      let lastDuration = this.segmentDurationSeconds;
+      
       for (const line of lines) {
-        const parts = line.split(',');
-        if (parts.length < 1) continue;
-        const filename = parts[0];
+        // Skip empty lines and header
+        if (!line.trim() || line.startsWith('#EXTM3U') || line.startsWith('#EXT-X-VERSION')) {
+          continue;
+        }
+        
+        // Extract duration from EXTINF tag
+        if (line.startsWith('#EXTINF:')) {
+          const durationMatch = line.match(/#EXTINF:([\d.]+)/);
+          if (durationMatch) {
+            lastDuration = parseFloat(durationMatch[1]);
+          }
+          continue;
+        }
+        
+        // Skip other tags
+        if (line.startsWith('#')) {
+          continue;
+        }
+        
+        // This should be a segment filename (.ts file)
+        const filename = line.trim();
+        if (!filename.endsWith('.ts')) continue;
+        
         const fullPath = path.join(this.outputDir, filename);
         if (this.processedSegments.has(fullPath)) continue;
+        
         const segmentIndex = this.extractSegmentNumber(filename);
         if (segmentIndex === null) continue;
         if (segmentIndex > this.lastSegmentNumber) this.lastSegmentNumber = segmentIndex;
@@ -1699,7 +1841,7 @@ class PumpfunRecorder {
           sessionId: this.sessionId,
           segment: segmentIndex + 1,
           path: fullPath,
-          duration: this.segmentDurationSeconds,
+          duration: lastDuration,
         });
       }
       if (!this.running || this.restarting) await this.checkPotentialLastSegment();
@@ -1712,7 +1854,7 @@ class PumpfunRecorder {
   
   async checkPotentialLastSegment() {
       const potentialLastSegmentIndex = this.lastSegmentNumber + 1;
-      const potentialLastSegmentName = `${this.segmentPrefix}${String(potentialLastSegmentIndex).padStart(5, '0')}.mp4`;
+      const potentialLastSegmentName = `${this.segmentPrefix}${String(potentialLastSegmentIndex).padStart(5, '0')}.ts`;
       const potentialLastSegmentPath = path.join(this.outputDir, potentialLastSegmentName);
       
       if (!this.processedSegments.has(potentialLastSegmentPath) && fs.existsSync(potentialLastSegmentPath)) {
@@ -1734,7 +1876,8 @@ class PumpfunRecorder {
   }
 
   extractSegmentNumber(filename) {
-    const match = filename.match(/segment_(\d+)\.mp4$/);
+    // Match HLS .ts segment files: segment_00000.ts
+    const match = filename.match(/segment_(\d+)\.ts$/);
     if (!match) return null;
     return parseInt(match[1], 10);
   }
