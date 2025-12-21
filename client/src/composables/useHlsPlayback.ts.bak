@@ -4,8 +4,6 @@ import Hls from 'hls.js';
 // Constants for playlist polling
 const PLAYLIST_POLL_INTERVAL = 1000; // 1 second between checks
 const PLAYLIST_POLL_MAX_ATTEMPTS = 60; // Max 60 seconds waiting for playlist
-const PLAYLIST_SEGMENT_POLL_INTERVAL = 1000; // Wait for first segment after playlist exists
-const PLAYLIST_SEGMENT_POLL_MAX_ATTEMPTS = 20; // Up to ~20s after playlist appears
 const VIDEO_SERVER_PORT = 48276;
 
 // Buffer recovery constants - optimized for 4-second segments
@@ -43,7 +41,6 @@ export interface HlsPlaybackState {
 
 // Configuration - optimized for 4-second segments
 const LIVE_EDGE_THRESHOLD = 12; // seconds behind live to consider "at live edge" (3 segments)
-const SAFE_SEEK_PADDING = 0.25; // Avoid seeking exactly to the start of first fragment
 
 /**
  * Composable for HLS-based livestream playback with DVR support
@@ -74,15 +71,11 @@ export function useHlsPlayback() {
   let hlsUrl: string | null = null;
   let updateInterval: number | null = null;
   let isCleaningUp = false;
-  let availableStartTime = 0; // Earliest known playable time from playlist/segments
 
   // Buffer stall recovery state
   let bufferStallStart: number | null = null;
   let bufferStallRetries = 0;
   let bufferStallRecoveryTimeout: number | null = null;
-
-  // Verbose trace helper
-  const trace = (...args: unknown[]) => console.log('[HlsPlayback][Trace]', ...args);
 
   // Computed
   const isAtLiveEdge = computed(() => {
@@ -96,10 +89,9 @@ export function useHlsPlayback() {
   function getHlsUrl(outputDir: string): string {
     // Base64 encode the output directory path
     const encodedDir = btoa(outputDir);
-    // Use the .tmp playlist which is always fully written by ffmpeg
-    const url = `http://127.0.0.1:${VIDEO_SERVER_PORT}/hls/${encodedDir}/playlist.m3u8.tmp`;
-    trace('getHlsUrl', { outputDir, encodedDir, url });
-    return url;
+    // Use the temp playlist directly; ffmpeg keeps playlist.m3u8.tmp fully up to date
+    // while the primary playlist.m3u8 may lag on Windows when using omit_endlist.
+    return `http://127.0.0.1:${VIDEO_SERVER_PORT}/hls/${encodedDir}/playlist.m3u8.tmp`;
   }
 
   /**
@@ -109,7 +101,7 @@ export function useHlsPlayback() {
    */
   async function waitForPlaylist(url: string): Promise<boolean> {
     // Only log once at start - 404s are expected during initial wait
-    console.log('[HlsPlayback] Waiting for playlist (FFmpeg needs ~5s to create first segment)...', url);
+    console.log('[HlsPlayback] Waiting for playlist (FFmpeg needs ~5s to create first segment)...');
 
     for (let attempt = 0; attempt < PLAYLIST_POLL_MAX_ATTEMPTS; attempt++) {
       if (isCleaningUp) {
@@ -118,16 +110,16 @@ export function useHlsPlayback() {
       }
 
       try {
-        // Use GET (HEAD can return 405 on some hosts); CORS is enabled on the local server
-        const response = await fetch(url, { method: 'GET', mode: 'cors' });
-        trace('waitForPlaylist attempt', attempt + 1, 'status', response.status);
+        // Use fetch with no-cors to avoid console 404 spam
+        // We only care about success/failure, not the response body
+        const response = await fetch(url, { method: 'HEAD' });
         if (response.ok) {
           console.log(`[HlsPlayback] Playlist available after ${attempt + 1}s`);
           return true;
         }
         // 404 is expected while FFmpeg is starting - don't log it
       } catch (e) {
-        trace('waitForPlaylist network error', attempt + 1, e);
+        // Network errors are expected if server isn't ready - keep polling silently
       }
 
       // Wait before next attempt
@@ -145,44 +137,10 @@ export function useHlsPlayback() {
   }
 
   /**
-   * Wait for the first segment to appear in the playlist so we don't start before media exists.
-   */
-  async function waitForFirstSegment(url: string): Promise<boolean> {
-    for (let attempt = 0; attempt < PLAYLIST_SEGMENT_POLL_MAX_ATTEMPTS; attempt++) {
-      if (isCleaningUp) {
-        return false;
-      }
-
-      try {
-        const response = await fetch(url, { method: 'GET', cache: 'no-store', mode: 'cors' });
-        if (response.ok) {
-          const text = await response.text();
-          // Count EXTINF lines to infer segments
-          const segmentCount = (text.match(/#EXTINF:/g) || []).length;
-          if (segmentCount > 0) {
-            console.log(
-              `[HlsPlayback] First segment available after playlist in ${attempt + 1}s (segments: ${segmentCount})`
-            );
-            return true;
-          }
-        }
-      } catch (e) {
-        trace('waitForFirstSegment error', attempt + 1, e);
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, PLAYLIST_SEGMENT_POLL_INTERVAL));
-    }
-
-    console.warn('[HlsPlayback] No segments available after waiting - early seeks may stall');
-    return false;
-  }
-
-  /**
    * Initialize HLS playback
    */
   async function initialize(video: HTMLVideoElement, outputDir: string): Promise<boolean> {
     console.log('[HlsPlayback] Initializing for directory:', outputDir);
-    trace('initialize params', { hasVideo: !!video, outputDir });
 
     // Reset cleanup flag when starting new initialization
     isCleaningUp = false;
@@ -191,7 +149,6 @@ export function useHlsPlayback() {
     const newUrl = getHlsUrl(outputDir);
     if (hlsUrl === newUrl && videoElement === video && state.value.isInitialized) {
       console.log('[HlsPlayback] Already initialized for this stream, skipping');
-      trace('initialize skip existing', { hlsUrl, videoElementMatch: videoElement === video });
       return true;
     }
 
@@ -208,7 +165,6 @@ export function useHlsPlayback() {
       // Try native HLS support (Safari)
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
         console.log('[HlsPlayback] Using native HLS support');
-        trace('initialize using native HLS');
         return initializeNative(video, hlsUrl);
       }
 
@@ -223,12 +179,8 @@ export function useHlsPlayback() {
       if (!isCleaningUp) {
         state.value.error = 'Playlist not available - recording may not have started';
       }
-      trace('initialize playlist not ready', { hlsUrl });
       return false;
     }
-
-    // Ensure at least one segment exists before wiring up HLS.js to avoid early stalls/snaps
-    await waitForFirstSegment(hlsUrl);
 
     try {
       // Create HLS instance with live streaming config optimized for DVR playback
@@ -236,8 +188,7 @@ export function useHlsPlayback() {
         // Live streaming optimizations for 4-second segments
         // We use a larger buffer to ensure smooth playback and avoid stalling
         liveSyncDurationCount: 5, // Stay 5 segments (20s) behind live edge for safety
-        // Do NOT auto-jump forward when far behind (e.g., paused DVR). Large value disables catch-up seeks.
-        liveMaxLatencyDurationCount: Number.POSITIVE_INFINITY,
+        liveMaxLatencyDurationCount: 10, // Allow falling back up to 10 segments (40s)
         liveDurationInfinity: true, // Enable DVR mode (infinite duration)
         liveBackBufferLength: 300, // Keep 5 minutes of back buffer for seeking
 
@@ -289,7 +240,6 @@ export function useHlsPlayback() {
       return true;
     } catch (error) {
       console.error('[HlsPlayback] Failed to initialize:', error);
-      trace('initialize error', error);
       state.value.error = `Failed to initialize HLS: ${error}`;
       return false;
     }
@@ -319,11 +269,6 @@ export function useHlsPlayback() {
   function setupHlsEventHandlers(hlsInstance: Hls) {
     hlsInstance.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
       console.log('[HlsPlayback] Manifest parsed, levels:', data.levels.length);
-      trace('MANIFEST_PARSED', {
-        levels: data.levels.length,
-        audio: data.audioTracks?.length,
-        subtitle: data.subtitleTracks?.length,
-      });
       state.value.isInitialized = true;
       state.value.isBuffering = false;
 
@@ -336,12 +281,6 @@ export function useHlsPlayback() {
     });
 
     hlsInstance.on(Hls.Events.LEVEL_LOADED, (event, data) => {
-      trace('LEVEL_LOADED', {
-        level: data.level,
-        live: data.details?.live,
-        totalduration: data.details?.totalduration,
-        fragments: data.details?.fragments?.length,
-      });
       const levelDetails = data.details;
       if (levelDetails) {
         // Update duration and live edge
@@ -355,22 +294,10 @@ export function useHlsPlayback() {
           state.value.duration = levelDetails.totalduration;
           state.value.liveEdgeTime = levelDetails.totalduration;
         }
-
-        // Track earliest fragment start to avoid seeking into missing media
-        const firstFragment = levelDetails.fragments?.[0];
-        if (firstFragment && typeof firstFragment.start === 'number') {
-          availableStartTime = Math.max(0, firstFragment.start);
-        }
       }
     });
 
     hlsInstance.on(Hls.Events.FRAG_LOADED, (event, data) => {
-      trace('FRAG_LOADED', {
-        sn: data.frag?.sn,
-        level: data.frag?.level,
-        start: data.frag?.start,
-        duration: data.frag?.duration,
-      });
       // Update buffered state when fragment loads
       updateBufferedRanges();
 
@@ -381,10 +308,6 @@ export function useHlsPlayback() {
     });
 
     hlsInstance.on(Hls.Events.FRAG_BUFFERED, (event, data) => {
-      trace('FRAG_BUFFERED', {
-        sn: data.frag?.sn,
-        buffered: videoElement?.buffered ? videoElement.buffered.length : 0,
-      });
       updateBufferedRanges();
       state.value.isBuffering = false;
     });
@@ -393,12 +316,6 @@ export function useHlsPlayback() {
       if (isCleaningUp) return;
 
       console.warn('[HlsPlayback] HLS error:', data.type, data.details);
-      trace('ERROR', {
-        type: data.type,
-        details: data.details,
-        fatal: data.fatal,
-        reason: data.reason,
-      });
 
       // Handle specific error types
       if (data.details === 'bufferStalledError') {
@@ -480,15 +397,9 @@ export function useHlsPlayback() {
     );
 
     if (bufferStallRetries >= MAX_BUFFER_STALL_RETRIES) {
-      // Max retries reached - try to recover without jumping to live
-      console.log('[HlsPlayback] Max stall retries reached, restarting load without jumping to live');
-      const resumeTime = videoElement.currentTime;
-      hls.stopLoad();
-      hls.startLoad();
-      // Re-seek to the same position to avoid snapping forward
-      if (!Number.isNaN(resumeTime)) {
-        videoElement.currentTime = resumeTime;
-      }
+      // Max retries reached, seek to live edge
+      console.log('[HlsPlayback] Max stall retries reached, seeking to live edge');
+      seekToLive();
       clearBufferStallRecovery();
       return;
     }
@@ -548,19 +459,9 @@ export function useHlsPlayback() {
    * Set up video element event handlers
    */
   function setupVideoEventHandlers(video: HTMLVideoElement) {
-    const logEvent = (name: string, extra?: Record<string, unknown>) =>
-      trace(`VIDEO ${name}`, {
-        currentTime: video.currentTime,
-        duration: video.duration,
-        readyState: video.readyState,
-        paused: video.paused,
-        ...extra,
-      });
-
     video.addEventListener('playing', () => {
       if (isCleaningUp) return;
       console.log('[HlsPlayback] Video playing');
-      logEvent('playing');
       state.value.isPlaying = true;
       state.value.isPaused = false;
       state.value.isBuffering = false;
@@ -571,7 +472,6 @@ export function useHlsPlayback() {
     video.addEventListener('pause', () => {
       if (isCleaningUp) return;
       console.log('[HlsPlayback] Video paused');
-      logEvent('pause');
       state.value.isPlaying = false;
       state.value.isPaused = true;
     });
@@ -579,7 +479,6 @@ export function useHlsPlayback() {
     video.addEventListener('waiting', () => {
       if (isCleaningUp) return;
       console.log('[HlsPlayback] Video waiting (buffering)');
-      logEvent('waiting');
       state.value.isBuffering = true;
       // Start stall tracking when video enters waiting state
       handleBufferStall();
@@ -588,7 +487,6 @@ export function useHlsPlayback() {
     video.addEventListener('canplay', () => {
       if (isCleaningUp) return;
       console.log('[HlsPlayback] Video can play');
-      logEvent('canplay');
       state.value.isBuffering = false;
       // Clear stall recovery state when video can play
       clearBufferStallRecovery();
@@ -596,7 +494,6 @@ export function useHlsPlayback() {
 
     video.addEventListener('timeupdate', () => {
       if (isCleaningUp) return;
-      logEvent('timeupdate');
       state.value.currentTime = video.currentTime;
       state.value.isAtLiveEdge = isAtLiveEdge.value;
 
@@ -604,69 +501,6 @@ export function useHlsPlayback() {
       if (state.value.isLive && hls?.liveSyncPosition) {
         state.value.latency = hls.liveSyncPosition - video.currentTime;
       }
-    });
-
-    video.addEventListener('progress', () => {
-      if (isCleaningUp) return;
-      const ranges: Array<{ start: number; end: number }> = [];
-      for (let i = 0; i < video.buffered.length; i++) {
-        ranges.push({ start: video.buffered.start(i), end: video.buffered.end(i) });
-      }
-      trace('VIDEO progress buffered ranges', ranges);
-    });
-
-    video.addEventListener('seeking', () => {
-      if (isCleaningUp) return;
-      console.log('[HlsPlayback] Video seeking to:', video.currentTime);
-      logEvent('seeking');
-    });
-
-    video.addEventListener('seeked', () => {
-      if (isCleaningUp) return;
-      console.log('[HlsPlayback] Video seeked to:', video.currentTime);
-      logEvent('seeked');
-      state.value.currentTime = video.currentTime;
-      clearBufferStallRecovery();
-    });
-
-    video.addEventListener('stalled', () => {
-      if (isCleaningUp) return;
-      logEvent('stalled');
-    });
-
-    video.addEventListener('ended', () => {
-      if (isCleaningUp) return;
-      logEvent('ended');
-    });
-
-    video.addEventListener('loadedmetadata', () => {
-      if (isCleaningUp) return;
-      logEvent('loadedmetadata');
-    });
-
-    video.addEventListener('loadeddata', () => {
-      if (isCleaningUp) return;
-      logEvent('loadeddata');
-    });
-
-    video.addEventListener('canplaythrough', () => {
-      if (isCleaningUp) return;
-      logEvent('canplaythrough');
-    });
-
-    video.addEventListener('ratechange', () => {
-      if (isCleaningUp) return;
-      logEvent('ratechange', { playbackRate: video.playbackRate });
-    });
-
-    video.addEventListener('volumechange', () => {
-      if (isCleaningUp) return;
-      logEvent('volumechange', { volume: video.volume, muted: video.muted });
-    });
-
-    video.addEventListener('durationchange', () => {
-      if (isCleaningUp) return;
-      logEvent('durationchange');
     });
 
     video.addEventListener('error', (event) => {
@@ -734,15 +568,8 @@ export function useHlsPlayback() {
 
     console.log('[HlsPlayback] Seeking to:', time);
 
-    // Clamp time to valid range and avoid the very start of the first fragment (reduces stalls/snaps)
-    const bufferedStart = state.value.bufferedRanges.length
-      ? state.value.bufferedRanges[0].start
-      : 0;
-    const minAvailable = Math.max(availableStartTime, bufferedStart);
-    const safeFloor = minAvailable > 0 ? minAvailable + SAFE_SEEK_PADDING : 0;
-    const liveEdge = state.value.liveEdgeTime || state.value.duration || 0;
-    const clampedTime = Math.max(safeFloor, Math.min(time, liveEdge));
-    trace('seek analysis', { requested: time, minAvailable, safeFloor, liveEdge });
+    // Clamp time to valid range
+    const clampedTime = Math.max(0, Math.min(time, state.value.liveEdgeTime));
 
     // Just set currentTime - hls.js will handle loading the correct segments
     // Don't call startLoad() as it resets the buffer and causes choppy playback
@@ -783,16 +610,17 @@ export function useHlsPlayback() {
   function refreshPlaylist(seekPosition?: number) {
     if (!hls || !state.value.isInitialized) return;
     
-    // Default to current position to avoid snapping to live
-    const target = typeof seekPosition === 'number' ? seekPosition : videoElement?.currentTime ?? 0;
-    console.log('[HlsPlayback] Forcing playlist refresh, seekPosition:', target);
+    console.log('[HlsPlayback] Forcing playlist refresh, seekPosition:', seekPosition);
     
     // Stop current loading and restart
     // This forces hls.js to reload the playlist immediately
     hls.stopLoad();
     
-    // Restart loading from the target position (keeps DVR position stable)
-    hls.startLoad(Math.max(target, 0));
+    if (seekPosition !== undefined && seekPosition >= 0) {
+      hls.startLoad(seekPosition);
+    } else {
+      hls.startLoad();
+    }
   }
 
   /**
@@ -897,7 +725,6 @@ export function useHlsPlayback() {
 
     // Reset state
     hlsUrl = null;
-    availableStartTime = 0;
 
     state.value = {
       isPlaying: false,

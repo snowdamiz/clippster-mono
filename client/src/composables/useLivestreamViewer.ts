@@ -62,8 +62,8 @@ export interface LivestreamViewerState {
   latencyMs: number | null;
 
   // Recording timeline (for clipping - all times relative to DVR start)
-  recordingStartTime: number | null; // Unix timestamp when stream originally started
-  dvrStartTime: number | null; // Unix timestamp when DVR recording started
+  recordingStartTime: number | null; // Unix timestamp in ms when stream originally started
+  dvrStartTime: number | null; // Unix timestamp in ms when DVR recording started
   liveEdgeTime: number; // Current live edge in seconds from DVR start
   playbackPosition: number; // Current playback position in seconds
   availableSegments: SegmentInfo[];
@@ -107,6 +107,7 @@ const VOLUME_STORAGE_KEY = 'livestream-viewer-volume';
 const MUTED_STORAGE_KEY = 'livestream-viewer-muted';
 
 export function useLivestreamViewer() {
+  const trace = (...args: unknown[]) => console.log('[LiveViewer][Trace]', ...args);
   // Get the monitoring composable to access active sessions
   const { activeSessions, monitoredStreamers, startMonitoring, stopMonitoring, dvrSessions } =
     useLivestreamMonitoring();
@@ -139,7 +140,7 @@ export function useLivestreamViewer() {
     isMuted: loadMutedPreference(),
     volume: loadVolumePreference(),
     isAtLiveEdge: true,
-    playbackMode: 'webrtc', // Start with live WebRTC playback
+    playbackMode: 'hls', // Always use HLS for consistent timeline/seek behavior
     bufferedRanges: [],
     sessionId: null,
     projectId: null,
@@ -149,6 +150,11 @@ export function useLivestreamViewer() {
     watermarkId: null,
     watermarkSettings: null,
   });
+
+  // Track if HLS is ready for playback (has at least one segment)
+  const isHlsReady = ref(false);
+  let lastDurationUpdate = 0;
+  let lastDurationValue = 0;
 
   // LiveKit room instance (for WebRTC playback and viewer tracking)
   let room: Room | null = null;
@@ -162,6 +168,8 @@ export function useLivestreamViewer() {
   let remoteAudioTrack: RemoteAudioTrack | null = null;
   let videoAttachCleanup: (() => void) | null = null;
   let audioAttachCleanup: (() => void) | null = null;
+  let standaloneAudioElement: HTMLAudioElement | null = null; // For audio-only streams
+  let audioAlreadyAttached = false; // Prevent multiple audio attachments
 
   // Reconnection state
   let reconnectAttempts = 0;
@@ -347,9 +355,8 @@ export function useLivestreamViewer() {
       }
 
       state.value.viewerCount = liveStatus.numParticipants || 0;
-      state.value.recordingStartTime = liveStatus.streamStartTimestamp
-        ? Math.floor(liveStatus.streamStartTimestamp / 1000)
-        : Math.floor(Date.now() / 1000);
+      // Store recording start time in milliseconds for consistency with Date.now()
+      state.value.recordingStartTime = liveStatus.streamStartTimestamp || Date.now();
 
       // Load creator profile for watermark
       await loadCreatorProfile(mintId);
@@ -404,11 +411,48 @@ export function useLivestreamViewer() {
       await room.connect(livekitUrl, token, { autoSubscribe: true }); // Subscribe to tracks for live playback
       console.log('[LiveViewer] Connected! Room state:', room.state);
 
+      // Log all participants and their tracks immediately after connection
+      console.log('[LiveViewer] Remote participants:', room.remoteParticipants.size);
+      room.remoteParticipants.forEach((participant, sid) => {
+        console.log(`[LiveViewer] Participant ${participant.identity} (${sid}):`);
+        console.log(`  - Track publications: ${participant.trackPublications.size}`);
+        participant.trackPublications.forEach((pub, trackSid) => {
+          console.log(
+            `    - Track ${trackSid}: kind=${pub.kind}, source=${pub.source}, subscribed=${pub.isSubscribed}, track=${!!pub.track}, simulcasted=${pub.simulcasted}`
+          );
+        });
+      });
+
       // Attach any existing tracks (streamer may already be publishing)
       attachExistingTracks();
 
       state.value.connectionState = 'connected';
       reconnectAttempts = 0;
+
+      // Video tracks sometimes arrive after initial connection - retry check after delay
+      // This handles cases where video track publishes slightly after audio
+      if (!remoteVideoTrack) {
+        console.log('[LiveViewer] No video track yet, will retry in 2 seconds...');
+        setTimeout(() => {
+          if (!remoteVideoTrack && room?.state === 'connected') {
+            console.log('[LiveViewer] Retrying video track attachment...');
+            attachExistingTracks();
+
+            // If still no video, log detailed participant info for debugging
+            if (!remoteVideoTrack) {
+              console.log('[LiveViewer] Still no video track. Checking all participants:');
+              room?.remoteParticipants.forEach((participant) => {
+                console.log(`[LiveViewer] Participant ${participant.identity}:`);
+                participant.trackPublications.forEach((pub) => {
+                  console.log(
+                    `  - Track ${pub.trackSid}: kind=${pub.kind}, source=${pub.source}, subscribed=${pub.isSubscribed}, hasTrack=${!!pub.track}`
+                  );
+                });
+              });
+            }
+          }
+        }, 2000);
+      }
 
       // Start HLS recording for playback and clipping
       if (autoStartRecording) {
@@ -427,8 +471,8 @@ export function useLivestreamViewer() {
       // Start playback sync interval
       startPlaybackSync();
 
-      // Initialize HLS playback when output dir is ready
-      await initializeHlsPlayback();
+      // Note: HLS playback initialization is handled by the hlsOutputDir watcher
+      // This ensures proper sequencing after the recording output dir is set
     } catch (error) {
       console.error('[LiveViewer] Connection failed:', error);
       state.value.connectionState = 'failed';
@@ -467,6 +511,27 @@ export function useLivestreamViewer() {
     room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed);
     room.on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
 
+    // Track published - video might arrive after audio, need to handle this
+    room.on(RoomEvent.TrackPublished, (publication, participant) => {
+      console.log(
+        '[LiveViewer] Track published:',
+        publication.kind,
+        'source:',
+        publication.source,
+        'from:',
+        participant.identity,
+        'subscribed:',
+        publication.isSubscribed
+      );
+
+      // If track isn't subscribed yet and we need it, subscribe manually
+      // This handles cases where auto-subscribe didn't work
+      if (!publication.isSubscribed && publication.kind === Track.Kind.Video && !remoteVideoTrack) {
+        console.log('[LiveViewer] Video track published but not subscribed, subscribing manually...');
+        publication.setSubscribed(true);
+      }
+    });
+
     // Connection events
     room.on(RoomEvent.Disconnected, handleDisconnected);
     room.on(RoomEvent.Reconnecting, handleReconnecting);
@@ -474,6 +539,20 @@ export function useLivestreamViewer() {
     room.on(RoomEvent.ParticipantConnected, (participant) => {
       console.log('[LiveViewer] Participant connected:', participant.identity);
       updateViewerCount();
+
+      // Check if the participant has tracks we need
+      participant.trackPublications.forEach((publication) => {
+        console.log(
+          '[LiveViewer] Participant track:',
+          publication.kind,
+          'subscribed:',
+          publication.isSubscribed
+        );
+        if (publication.kind === Track.Kind.Video && !publication.isSubscribed && !remoteVideoTrack) {
+          console.log('[LiveViewer] Found unsubscribed video track, subscribing...');
+          publication.setSubscribed(true);
+        }
+      });
     });
     room.on(RoomEvent.ParticipantDisconnected, (participant) => {
       console.log('[LiveViewer] Participant disconnected:', participant.identity);
@@ -520,90 +599,82 @@ export function useLivestreamViewer() {
   function attachExistingTracks() {
     if (!room) return;
 
+    console.log('[LiveViewer] Checking existing tracks, participants:', room.remoteParticipants.size);
+
     room.remoteParticipants.forEach((participant) => {
+      console.log(
+        '[LiveViewer] Participant:',
+        participant.identity,
+        'tracks:',
+        participant.trackPublications.size
+      );
+
       participant.trackPublications.forEach((publication) => {
+        console.log(
+          '[LiveViewer] Track publication:',
+          publication.kind,
+          'source:',
+          publication.source,
+          'subscribed:',
+          publication.isSubscribed,
+          'hasTrack:',
+          !!publication.track
+        );
+
         if (publication.track && publication.isSubscribed) {
           if (publication.track.kind === Track.Kind.Video) {
+            console.log('[LiveViewer] Found subscribed video track, attaching...');
             remoteVideoTrack = publication.track as RemoteVideoTrack;
             attachVideoTrack();
           } else if (publication.track.kind === Track.Kind.Audio) {
+            console.log('[LiveViewer] Found subscribed audio track, attaching...');
             remoteAudioTrack = publication.track as RemoteAudioTrack;
             attachAudioTrack();
           }
+        } else if (publication.kind === Track.Kind.Video && !publication.isSubscribed) {
+          // Video track exists but not subscribed - subscribe to it
+          console.log('[LiveViewer] Found unsubscribed video track, subscribing...');
+          publication.setSubscribed(true);
         }
       });
     });
   }
 
-  // Attach WebRTC video track to video element
+  // NOTE: WebRTC video track is received but NOT displayed to user
+  // We use HLS-only playback for consistent timeline/seek behavior
+  // This function just stores the track reference for the recorder
   function attachVideoTrack() {
-    if (!remoteVideoTrack || !videoElement.value) {
-      console.log('[LiveViewer] Cannot attach video - track or element missing');
+    if (!remoteVideoTrack) {
+      console.log('[LiveViewer] No video track received');
       return;
     }
 
-    // Only attach if in WebRTC mode
-    if (state.value.playbackMode !== 'webrtc') {
-      console.log('[LiveViewer] Not in WebRTC mode, skipping video attach');
-      return;
-    }
+    console.log('[LiveViewer] WebRTC video track received (HLS-only mode - not displaying WebRTC)');
 
-    console.log('[LiveViewer] Attaching WebRTC video track');
-
-    // Detach any existing attachment
-    detachVideoTrack();
-
-    // Attach the track to the video element
-    remoteVideoTrack.attach(videoElement.value);
-    videoAttachCleanup = () => {
-      if (remoteVideoTrack && videoElement.value) {
-        remoteVideoTrack.detach(videoElement.value);
-      }
-    };
-
-    // Update state
-    state.value.isBuffering = false;
-    state.value.isPlaying = true;
-    state.value.isAtLiveEdge = true;
-
-    // Get video quality info
+    // Get video quality info from track settings
     const settings = remoteVideoTrack.mediaStreamTrack?.getSettings();
-    if (settings) {
+    if (settings?.width && settings?.height) {
       state.value.streamQuality = `${settings.width}x${settings.height}`;
     }
-
-    // Apply volume settings
-    if (videoElement.value) {
-      videoElement.value.volume = state.value.volume;
-      videoElement.value.muted = state.value.isMuted;
-    }
+    
+    // NOTE: We intentionally do NOT attach the track to the video element
+    // User will see the HLS playback instead, which provides consistent DVR experience
   }
 
-  // Attach WebRTC audio track
+  // NOTE: WebRTC audio track is received but NOT played directly to user
+  // Audio comes through HLS playback for consistent DVR experience
+  // This function just stores the track reference for the recorder
   function attachAudioTrack() {
-    if (!remoteAudioTrack || !videoElement.value) {
-      console.log('[LiveViewer] Cannot attach audio - track or element missing');
+    if (!remoteAudioTrack) {
+      console.log('[LiveViewer] No audio track received');
       return;
     }
 
-    // Only attach if in WebRTC mode
-    if (state.value.playbackMode !== 'webrtc') {
-      console.log('[LiveViewer] Not in WebRTC mode, skipping audio attach');
-      return;
-    }
-
-    console.log('[LiveViewer] Attaching WebRTC audio track');
-
-    // Detach any existing attachment
-    detachAudioTrack();
-
-    // Attach the track - audio is usually attached to the same element as video
-    remoteAudioTrack.attach(videoElement.value);
-    audioAttachCleanup = () => {
-      if (remoteAudioTrack && videoElement.value) {
-        remoteAudioTrack.detach(videoElement.value);
-      }
-    };
+    console.log('[LiveViewer] WebRTC audio track received (HLS-only mode - audio via HLS)');
+    
+    // NOTE: We intentionally do NOT attach the audio track
+    // Audio will come through HLS playback for consistent DVR experience
+    audioAlreadyAttached = true;
   }
 
   // Detach WebRTC video track
@@ -620,42 +691,61 @@ export function useLivestreamViewer() {
       audioAttachCleanup();
       audioAttachCleanup = null;
     }
+    standaloneAudioElement = null;
+    audioAlreadyAttached = false;
   }
 
-  // Switch to WebRTC playback mode (live)
+  // NOTE: switchToWebRTC is deprecated - we always use HLS for playback
+  // This function now just seeks to the live edge of HLS
   async function switchToWebRTC() {
-    if (state.value.playbackMode === 'webrtc') return;
-
-    console.log('[LiveViewer] Switching to WebRTC playback (live)');
-    state.value.playbackMode = 'webrtc';
-    state.value.isAtLiveEdge = true;
-
-    // Pause HLS playback
-    hlsPlayback.pause();
-
-    // Attach WebRTC tracks to video element
-    attachVideoTrack();
-    attachAudioTrack();
+    console.log('[LiveViewer] switchToWebRTC() called - seeking to HLS live edge instead');
+    await seekToLiveEdgeHls();
   }
 
-  // Switch to HLS playback mode (DVR)
-  async function switchToHLS() {
-    if (state.value.playbackMode === 'hls') return;
-
-    console.log('[LiveViewer] Switching to HLS playback (DVR)');
-    state.value.playbackMode = 'hls';
-
-    // Detach WebRTC tracks
-    detachVideoTrack();
-    detachAudioTrack();
-
+  // Ensure HLS is initialized and playing
+  async function ensureHlsPlaying(seekPosition?: number) {
     // Initialize HLS if not already done
     if (hlsVideoElement.value && hlsOutputDir.value && !hlsPlayback.state.value.isInitialized) {
+      console.log('[LiveViewer] Initializing HLS playback...');
       await hlsPlayback.initialize(hlsVideoElement.value, hlsOutputDir.value);
+    }
+
+    // Refresh playlist and seek if position provided
+    if (seekPosition !== undefined) {
+      console.log('[LiveViewer] Seeking HLS to position:', seekPosition);
+      hlsPlayback.refreshPlaylist(seekPosition);
     }
 
     // Play HLS
     await hlsPlayback.play();
+  }
+
+  // Seek to the live edge of HLS (end of recorded content)
+  async function seekToLiveEdgeHls() {
+    if (!hlsPlayback.state.value.isInitialized) {
+      console.log('[LiveViewer] HLS not ready yet for live edge seek');
+      return;
+    }
+
+    const duration = hlsPlayback.state.value.duration;
+    if (duration > 0) {
+      // Seek to near the end (leave 1 second buffer)
+      const liveEdgePosition = Math.max(0, duration - 1);
+      console.log('[LiveViewer] Seeking to HLS live edge:', liveEdgePosition);
+      
+      hlsPlayback.refreshPlaylist(liveEdgePosition);
+      await hlsPlayback.seek(liveEdgePosition);
+      
+      state.value.isAtLiveEdge = true;
+    }
+  }
+
+  // Switch to HLS playback mode (this is now the only mode)
+  async function switchToHLS(seekPosition?: number) {
+    console.log('[LiveViewer] switchToHLS() called, seekPosition:', seekPosition);
+    state.value.playbackMode = 'hls';
+    
+    await ensureHlsPlaying(seekPosition);
   }
 
   function handleDisconnected() {
@@ -818,10 +908,7 @@ export function useLivestreamViewer() {
     }
 
     isHlsInitializing = true;
-    console.log(
-      '[LiveViewer] Initializing HLS playback (DVR) with output dir:',
-      hlsOutputDir.value
-    );
+    console.log('[LiveViewer] Initializing HLS playback (DVR)...');
 
     // Apply audio settings before initializing
     hlsPlayback.setVolume(state.value.volume);
@@ -831,21 +918,20 @@ export function useLivestreamViewer() {
       const success = await hlsPlayback.initialize(hlsElement, hlsOutputDir.value);
 
       if (success) {
-        console.log('[LiveViewer] HLS playback initialized successfully (ready for DVR)');
+        console.log('[LiveViewer] HLS/DVR playback ready');
         // Don't start playing - we're in WebRTC mode by default
         // HLS will start when user seeks backwards
         if (state.value.playbackMode === 'webrtc') {
           hlsPlayback.pause(); // Ensure HLS is paused while WebRTC is active
         }
       } else {
-        console.error(
-          '[LiveViewer] HLS playback initialization failed:',
-          hlsPlayback.state.value.error
-        );
-        // Don't set error if we're in WebRTC mode - HLS is just backup
-        if (state.value.playbackMode === 'hls') {
+        // HLS is a backup feature - only warn, don't set error state
+        // WebRTC provides live playback, HLS provides DVR/seeking
+        console.warn('[LiveViewer] HLS/DVR not available - live playback still works via WebRTC');
+        // Only set error if explicitly in HLS mode AND WebRTC isn't working
+        if (state.value.playbackMode === 'hls' && !remoteVideoTrack) {
           state.value.connectionError =
-            hlsPlayback.state.value.error || 'Failed to initialize DVR playback';
+            hlsPlayback.state.value.error || 'DVR playback not available';
         }
       }
     } finally {
@@ -880,59 +966,120 @@ export function useLivestreamViewer() {
     }
 
     liveEdgeUpdateInterval = window.setInterval(() => {
-      const referenceTime =
-        state.value.dvrStartTime ||
-        (state.value.recordingStartTime ? state.value.recordingStartTime * 1000 : null);
+      // Use dvrStartTime (when HLS recording started) for timeline
+      // This represents what the user can actually seek within
+      const referenceTime = state.value.dvrStartTime;
 
-      if (referenceTime) {
+      // NOTE: In HLS-only mode, the actual timeline comes from HLS duration
+      // This interval now only serves as a fallback while HLS is loading
+      if (!isHlsReady.value && referenceTime) {
         const now = Date.now();
-        state.value.liveEdgeTime = Math.floor((now - referenceTime) / 1000);
+        const estimatedDuration = Math.floor((now - referenceTime) / 1000);
+        // Show estimated loading time in console for debugging
+        if (estimatedDuration > 0 && estimatedDuration % 5 === 0) {
+          console.log('[LiveViewer] Waiting for HLS... estimated time:', estimatedDuration, 's');
+        }
+        trace('liveEdgeUpdate', { referenceTime, estimatedDuration });
       }
     }, 1000);
   }
 
-  // Sync playback state based on current mode
+  // Sync playback state from HLS (always HLS-only mode now)
   function startPlaybackSync() {
     if (playbackSyncInterval) {
       clearInterval(playbackSyncInterval);
     }
 
     playbackSyncInterval = window.setInterval(() => {
-      if (state.value.playbackMode === 'hls') {
-        // Sync state from HLS playback
-        const ps = hlsPlayback.state.value;
-        state.value.isPlaying = ps.isPlaying;
-        state.value.isBuffering = ps.isBuffering;
-        state.value.playbackPosition = ps.currentTime;
-        state.value.isAtLiveEdge = ps.isAtLiveEdge;
-        state.value.bufferedRanges = ps.bufferedRanges;
-        state.value.totalRecordedDuration = ps.duration;
-        state.value.liveEdgeTime = ps.liveEdgeTime;
-        state.value.latencyMs = ps.latency * 1000; // Convert to ms
+      // Always sync from HLS playback
+      const ps = hlsPlayback.state.value;
+      state.value.isPlaying = ps.isPlaying;
+      state.value.isBuffering = ps.isBuffering || !isHlsReady.value;
+      state.value.playbackPosition = ps.currentTime;
+      state.value.bufferedRanges = ps.bufferedRanges;
+      
+      // Latency is the delay from real-time (HLS segments are ~5s behind WebRTC)
+      // Show as ~5 seconds plus any hls.js buffering latency
+      state.value.latencyMs = 5000 + (ps.latency * 1000);
 
-        // Sync error state
-        if (ps.error && !state.value.connectionError) {
-          state.value.connectionError = ps.error;
+      // Timeline always reflects actual HLS content duration
+      const actualHlsDuration = ps.duration > 0 ? ps.duration : 0;
+      
+      // Start playback as soon as we have at least 2 segments (8s)
+      // This prevents the "deadlock" where we wait for more duration, 
+      // but hls.js stops polling because it's paused.
+      const MIN_BUFFER_DURATION = 8; 
+      
+      if (actualHlsDuration >= MIN_BUFFER_DURATION) {
+        // HLS has enough content for smooth playback
+        state.value.liveEdgeTime = actualHlsDuration;
+        state.value.totalRecordedDuration = actualHlsDuration;
+        
+        // Mark HLS as ready once we have enough buffer
+        if (!isHlsReady.value) {
+          isHlsReady.value = true;
+          console.log('[LiveViewer] HLS is ready with duration:', actualHlsDuration);
+          
+          // Start playback
+          hlsPlayback.play();
         }
-      } else {
-        // WebRTC mode - update state from video element
-        if (videoElement.value) {
-          state.value.isPlaying = !videoElement.value.paused;
-          state.value.isBuffering = videoElement.value.readyState < 3;
+        
+        // Check if at live edge (within 2 seconds of end)
+        state.value.isAtLiveEdge = ps.isAtLiveEdge || (ps.currentTime >= ps.duration - 2);
+      } else if (actualHlsDuration > 0) {
+        // HLS has some content but not enough for smooth playback
+        // We still consider this "buffering" state for UI, but we SHOULD ensure hls.js is active
+        state.value.liveEdgeTime = actualHlsDuration;
+        state.value.totalRecordedDuration = actualHlsDuration;
+        state.value.isBuffering = true;
+        console.log(`[LiveViewer] Buffering... ${actualHlsDuration.toFixed(1)}s / ${MIN_BUFFER_DURATION}s`);
+        
+        // CRITICAL FIX: If we have ANY content, start playing (muted/hidden) to force hls.js to poll playlist
+        // otherwise it might stop polling and we get stuck at 4s duration forever
+        if (!isHlsReady.value && !state.value.isPlaying) {
+           console.log('[LiveViewer] Force starting playback to keep playlist polling active');
+           hlsPlayback.play();
         }
 
-        // Always at live edge in WebRTC mode
+        // Check for stuck buffering (if duration doesn't increase for > 10s)
+        const now = Date.now();
+        if (!lastDurationUpdate) {
+          lastDurationUpdate = now;
+          lastDurationValue = actualHlsDuration;
+        } else if (actualHlsDuration > lastDurationValue) {
+          // Duration increased, reset stuck timer
+          lastDurationUpdate = now;
+          lastDurationValue = actualHlsDuration;
+        } else if (now - lastDurationUpdate > 10000) {
+          // Stuck at same duration for > 10s while buffering
+          console.warn('[LiveViewer] Buffering stuck, forcing playlist refresh...');
+          hlsPlayback.refreshPlaylist(state.value.playbackPosition);
+          lastDurationUpdate = now; // Reset timer to avoid spamming refresh
+        }
+      } else if (state.value.dvrStartTime) {
+        // HLS not ready yet - show buffering state
+        state.value.liveEdgeTime = 0;
+        state.value.totalRecordedDuration = 0;
         state.value.isAtLiveEdge = true;
-
-        // Estimate latency for WebRTC (typically very low)
-        state.value.latencyMs = 200; // ~200ms typical WebRTC latency
-
-        // Still update total recorded duration from HLS (for DVR info)
-        if (hlsPlayback.state.value.duration > 0) {
-          state.value.totalRecordedDuration = hlsPlayback.state.value.duration;
-          state.value.liveEdgeTime = hlsPlayback.state.value.liveEdgeTime;
-        }
+        state.value.isBuffering = true;
       }
+
+      // Sync error state
+      if (ps.error && !state.value.connectionError) {
+        state.value.connectionError = ps.error;
+      }
+
+      trace('playbackSync', {
+        position: ps.currentTime,
+        duration: ps.duration,
+        liveEdge: state.value.liveEdgeTime,
+        totalRecorded: state.value.totalRecordedDuration,
+        isPlaying: state.value.isPlaying,
+        isBuffering: state.value.isBuffering,
+        isAtLiveEdge: state.value.isAtLiveEdge,
+        latencyMs: state.value.latencyMs,
+        bufferedRanges: ps.bufferedRanges,
+      });
     }, 100);
   }
 
@@ -944,6 +1091,7 @@ export function useLivestreamViewer() {
 
     // Poll to update available segments info (for clipping)
     segmentPollInterval = window.setInterval(async () => {
+      trace('segmentPoll tick');
       await updateAvailableSegments();
     }, 2000); // HLS handles its own playlist updates, poll less frequently
 
@@ -954,7 +1102,12 @@ export function useLivestreamViewer() {
   async function updateAvailableSegments() {
     // For HLS recordings, update from the recording directory
     if (hlsOutputDir.value) {
+      trace('updateAvailableSegments (temp recording) start', { hlsOutputDir: hlsOutputDir.value });
       await updateHlsSegments();
+      trace('updateAvailableSegments (temp recording) done', {
+        segments: state.value.availableSegments.length,
+        totalRecordedDuration: state.value.totalRecordedDuration,
+      });
       return;
     }
 
@@ -1112,7 +1265,7 @@ export function useLivestreamViewer() {
     // Reset state
     state.value.connectionState = 'disconnected';
     state.value.isPlaying = false;
-    state.value.playbackMode = 'webrtc'; // Reset to default
+    state.value.playbackMode = 'hls'; // Always HLS mode
     state.value.mintId = null;
     state.value.streamerId = null;
     state.value.isTempRecording = false;
@@ -1126,6 +1279,9 @@ export function useLivestreamViewer() {
     state.value.playbackPosition = 0;
     state.value.bufferedRanges = [];
     state.value.isAtLiveEdge = true;
+    
+    // Reset HLS ready state
+    isHlsReady.value = false;
 
     // NOTE: Do NOT reset isIntentionalDisconnect here - async events may still fire
     // after disconnect completes. We reset it in connect() instead.
@@ -1133,19 +1289,12 @@ export function useLivestreamViewer() {
     console.log('[LiveViewer] Disconnect complete');
   }
 
-  // Set video element reference (for WebRTC playback)
+  // Set video element reference (legacy - not used in HLS-only mode)
   function setVideoElement(element: HTMLVideoElement | null) {
+    console.log('[LiveViewer] setVideoElement called, element:', !!element);
     videoElement.value = element;
-
-    // If we're already connected and in WebRTC mode, attach tracks
-    if (
-      element &&
-      state.value.connectionState === 'connected' &&
-      state.value.playbackMode === 'webrtc'
-    ) {
-      attachVideoTrack();
-      attachAudioTrack();
-    }
+    // NOTE: In HLS-only mode, we don't attach WebRTC tracks to video element
+    // Video comes from HLS playback via hlsVideoElement
   }
 
   // Set HLS video element reference (for DVR playback)
@@ -1164,15 +1313,27 @@ export function useLivestreamViewer() {
     console.log('[LiveViewer] play() called, mode:', state.value.playbackMode);
 
     if (state.value.playbackMode === 'webrtc') {
-      // WebRTC is always "playing" when connected - just unmute if needed
+      // WebRTC is always "playing" when connected
+      // Try to play both video element and standalone audio element
       if (videoElement.value) {
         try {
           await videoElement.value.play();
-          state.value.isPlaying = true;
         } catch (e) {
-          console.warn('[LiveViewer] WebRTC play failed:', e);
+          console.warn('[LiveViewer] WebRTC video play failed:', e);
         }
       }
+
+      // Also try standalone audio element for audio-only streams
+      if (standaloneAudioElement && standaloneAudioElement.paused) {
+        try {
+          await standaloneAudioElement.play();
+          console.log('[LiveViewer] Standalone audio playback started');
+        } catch (e) {
+          console.warn('[LiveViewer] Standalone audio play failed:', e);
+        }
+      }
+
+      state.value.isPlaying = true;
     } else {
       await hlsPlayback.play();
     }
@@ -1185,8 +1346,14 @@ export function useLivestreamViewer() {
       // Pause WebRTC video element
       if (videoElement.value) {
         videoElement.value.pause();
-        state.value.isPlaying = false;
       }
+
+      // Also pause standalone audio element
+      if (standaloneAudioElement) {
+        standaloneAudioElement.pause();
+      }
+
+      state.value.isPlaying = false;
     } else {
       hlsPlayback.pause();
     }
@@ -1202,43 +1369,70 @@ export function useLivestreamViewer() {
     }
   }
 
-  // Seek to a specific time
+  // Seek to a specific time (always uses HLS)
   async function seek(time: number) {
-    console.log('[LiveViewer] seek() called:', time);
+    const hlsDuration = hlsPlayback.state.value.duration;
+    console.log('[LiveViewer] seek() called:', time, 'hlsDuration:', hlsDuration);
+    trace('seek called', { requested: time, hlsDuration, isInitialized: hlsPlayback.state.value.isInitialized });
 
-    // Calculate if seeking to near live edge
-    const liveEdge = state.value.liveEdgeTime;
-    const isNearLiveEdge = liveEdge > 0 && liveEdge - time < 5; // Within 5 seconds of live
+    if (!hlsPlayback.state.value.isInitialized) {
+      console.log('[LiveViewer] HLS not ready, cannot seek');
+      return;
+    }
 
-    if (isNearLiveEdge) {
-      // Seeking to live edge - use WebRTC for real-time
+    // Check if seeking to near the live edge (within 2 seconds of end)
+    const isSeekingToLiveEdge = hlsDuration > 0 && time >= hlsDuration - 2;
+    
+    console.log('[LiveViewer] seek analysis:', { isSeekingToLiveEdge, hlsDuration, seekTime: time });
+    trace('seek analysis', { isSeekingToLiveEdge, hlsDuration, seekTime: time });
+
+    if (isSeekingToLiveEdge) {
+      // Seeking to live edge - go to end of HLS
+      console.log('[LiveViewer] Seeking to HLS live edge');
       await seekToLive();
     } else {
-      // Seeking backwards - use HLS for DVR
-      if (state.value.playbackMode !== 'hls') {
-        await switchToHLS();
-      }
-      await hlsPlayback.seek(time);
+      // Seeking within available content
+      // Clamp to valid range
+      const clampedTime = Math.max(0, Math.min(time, hlsDuration > 0 ? hlsDuration - 0.5 : time));
+      
+      console.log('[LiveViewer] Seeking to position:', clampedTime);
+      trace('seek clamped', { clampedTime });
+      
+      // Ensure HLS is playing
+      await ensureHlsPlaying();
+      trace('seek ensureHlsPlaying done');
+      
+      // Seek to position
+      await hlsPlayback.seek(clampedTime);
+      trace('seek completed', { target: clampedTime, current: hlsPlayback.state.value.currentTime, duration: hlsPlayback.state.value.duration });
       state.value.isAtLiveEdge = false;
     }
   }
 
-  // Seek to live edge - switch to WebRTC for real-time playback
+  // Seek to live edge - position a few segments behind the actual end for buffer
   async function seekToLive() {
     console.log('[LiveViewer] seekToLive() called');
+    trace('seekToLive start', { initialized: hlsPlayback.state.value.isInitialized });
 
-    // Switch to WebRTC mode for real-time playback
-    if (remoteVideoTrack) {
-      await switchToWebRTC();
-    } else {
-      // Fallback to HLS live edge if WebRTC not available
-      await hlsPlayback.seekToLive();
+    if (!hlsPlayback.state.value.isInitialized) {
+      console.log('[LiveViewer] HLS not ready, cannot seek to live');
+      return;
     }
 
+    // For live streaming, "live edge" means a few segments behind the actual end
+    // This ensures we have buffer ahead for smooth playback
+    // Position at 2 segments (8s) from end for optimal live viewing
+    const duration = hlsPlayback.state.value.duration;
+    const livePosition = Math.max(0, duration - 8); // 2 segments behind
+    
+    console.log('[LiveViewer] Seeking to live position:', livePosition, 'duration:', duration);
+    trace('seekToLive target', { livePosition, duration });
+    await hlsPlayback.seek(livePosition);
+    trace('seekToLive done', { current: hlsPlayback.state.value.currentTime, duration: hlsPlayback.state.value.duration });
     state.value.isAtLiveEdge = true;
   }
 
-  // Volume controls
+  // Volume controls (HLS-only mode - audio comes from HLS)
   function setVolume(volume: number) {
     console.log('[LiveViewer] setVolume called:', volume);
     state.value.volume = Math.max(0, Math.min(1, volume));
@@ -1251,6 +1445,7 @@ export function useLivestreamViewer() {
     state.value.isMuted = muted;
     saveMutedPreference(muted);
     hlsPlayback.setMuted(muted);
+    // HLS-only mode - audio controlled via HLS playback
   }
 
   function toggleMute() {
@@ -1288,11 +1483,20 @@ export function useLivestreamViewer() {
   );
 
   // Watch for HLS output directory to be ready
+  // Note: initializeHlsPlayback() has guards against duplicate initialization
   watch(
     () => hlsOutputDir.value,
-    async (outputDir) => {
-      if (outputDir && videoElement.value && state.value.connectionState === 'connected') {
-        console.log('[LiveViewer] HLS output dir ready, initializing playback');
+    async (outputDir, oldOutputDir) => {
+      // Only initialize if this is a new output dir (not just reconnecting to same stream)
+      if (
+        outputDir &&
+        outputDir !== oldOutputDir &&
+        videoElement.value &&
+        state.value.connectionState === 'connected' &&
+        !hlsPlayback.state.value.isInitialized
+      ) {
+        // Small delay to let FFmpeg start creating files
+        await new Promise((r) => setTimeout(r, 500));
         await initializeHlsPlayback();
       }
     }

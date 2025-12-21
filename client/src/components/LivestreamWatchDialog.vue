@@ -133,23 +133,21 @@
               @mouseleave="handleMouseLeave"
               @click="handleVideoClick"
             >
-              <!-- WebRTC Video Playback (Live) -->
-              <video
-                ref="liveVideoRef"
-                class="w-full h-full object-contain"
-                :class="{ hidden: viewer.state.value.playbackMode === 'hls' }"
-                playsinline
-                autoplay
-                :muted="viewer.state.value.isMuted"
-              />
-
-              <!-- HLS Video Playback (DVR) -->
+              <!-- HLS Video Playback (always visible - HLS-only mode) -->
               <video
                 ref="hlsVideoRef"
                 class="w-full h-full object-contain"
-                :class="{ hidden: viewer.state.value.playbackMode === 'webrtc' }"
                 playsinline
                 :muted="viewer.state.value.isMuted"
+              />
+              
+              <!-- Hidden WebRTC video element (needed for track reception, not displayed) -->
+              <video
+                ref="liveVideoRef"
+                class="hidden"
+                playsinline
+                autoplay
+                muted
               />
 
               <!-- Watermark Overlay -->
@@ -161,18 +159,19 @@
                 <img :src="watermarkUrl" alt="Watermark" class="w-full h-full object-contain" />
               </div>
 
-              <!-- Buffering Indicator (only show in HLS mode or when WebRTC is actually buffering) -->
+              <!-- Buffering Indicator (HLS loading or buffering) -->
               <div
-                v-if="
-                  viewer.state.value.isBuffering &&
-                  viewer.state.value.connectionState === 'connected' &&
-                  viewer.state.value.playbackMode === 'hls'
-                "
-                class="absolute inset-0 flex items-center justify-center bg-black/40 z-20"
+                v-if="viewer.state.value.isBuffering && viewer.state.value.connectionState === 'connected'"
+                class="absolute inset-0 flex items-center justify-center bg-black/60 z-20"
               >
                 <div class="flex flex-col items-center gap-3">
-                  <Loader2 class="w-12 h-12 text-white animate-spin" />
-                  <span class="text-white text-sm">Buffering...</span>
+                  <Loader2 class="w-12 h-12 text-violet-500 animate-spin" />
+                  <span class="text-white text-sm font-medium">
+                    {{ viewer.state.value.totalRecordedDuration < 12 ? 'Building buffer...' : 'Buffering...' }}
+                  </span>
+                  <span v-if="viewer.state.value.totalRecordedDuration < 12" class="text-zinc-400 text-xs">
+                    {{ Math.round(viewer.state.value.totalRecordedDuration) }}s / 12s for smooth playback
+                  </span>
                 </div>
               </div>
 
@@ -509,25 +508,21 @@
     return document.pictureInPictureEnabled;
   });
 
-  // Estimated delay based on playback mode
+  // Estimated delay from real-time (HLS-only mode has ~5-10 second latency)
   const estimatedDelay = computed(() => {
-    if (viewer.state.value.playbackMode === 'webrtc') {
-      // WebRTC has very low latency (~200ms)
-      return '<1';
+    // HLS playback with 4-second segments is typically ~5-10 seconds behind real-time
+    if (viewer.state.value.isAtLiveEdge) {
+      return '5-10';
     }
-
-    // HLS playback has ~12-18 second latency with 4-second segments (3 segments behind live)
-    if (!viewer.state.value.latencyMs) {
-      return viewer.state.value.isAtLiveEdge
-        ? '12-18'
-        : Math.round(viewer.state.value.liveEdgeTime - viewer.state.value.playbackPosition);
-    }
-    return Math.round(viewer.state.value.latencyMs / 1000);
+    
+    // If seeking back, show how far behind we are
+    const behindLive = Math.round(viewer.state.value.liveEdgeTime - viewer.state.value.playbackPosition);
+    return behindLive > 0 ? behindLive : '5-10';
   });
 
-  // Playback mode display
+  // Playback mode display (always HLS now, but show "Live" when at live edge)
   const playbackModeDisplay = computed(() => {
-    return viewer.state.value.playbackMode === 'webrtc' ? 'Live' : 'DVR';
+    return viewer.state.value.isAtLiveEdge ? 'Live' : 'DVR';
   });
 
   // Load watermark image
@@ -663,7 +658,8 @@
   }
 
   async function togglePip() {
-    const video = liveVideoRef.value;
+    // Use HLS video element for PiP (HLS-only mode)
+    const video = hlsVideoRef.value;
     if (!video) return;
 
     try {

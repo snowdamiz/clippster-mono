@@ -410,6 +410,11 @@ class PumpfunRecorder {
     // Encoder epoch - incremented on restart so audio loops can reset their counters
     this._encoderEpoch = 0;
     
+    // Audio-only stream detection
+    this._audioOnlyMode = false; // True if we detect no video track
+    this._audioOnlyCheckTimeout = null; // Timeout to check for video arrival
+    this._syntheticVideoInterval = null; // Interval for generating synthetic video frames
+    
     // Diagnostic counters for troubleshooting
     this._diagnosticVideoFrameCount = 0; // Total video frames received
     this._diagnosticAudioFrameCount = 0; // Total audio frames received
@@ -653,6 +658,14 @@ class PumpfunRecorder {
               track.setVideoQuality(VIDEO_QUALITY_HIGH);
           }
       } catch(e) {}
+      
+      // If we were in audio-only mode, stop synthetic video generation
+      if (this._audioOnlyMode) {
+        log('Real video track arrived, switching from audio-only mode');
+        this.stopSyntheticVideo();
+        this._audioOnlyMode = false;
+      }
+      
       this.bindVideoStream(track);
     } else if (track.kind === TrackKind.KIND_VIDEO && this.videoReader) {
       // Video track received but we already have a reader - log this case
@@ -691,6 +704,16 @@ class PumpfunRecorder {
       // Just ensure we flag audio as ready so encoder can start
       this.audioReady = true;
       if (!this.encoderStarted) await this.startEncoderIfReady();
+      
+      // Audio-only detection: if no video arrives within 5 seconds, assume audio-only stream
+      if (!this._audioOnlyCheckTimeout && !this.firstVideoTime) {
+        this._audioOnlyCheckTimeout = setTimeout(() => {
+          if (!this.firstVideoTime && !this._audioOnlyMode && this.running) {
+            log('Audio-only stream detected (no video after 5s), starting synthetic video');
+            this.startAudioOnlyMode();
+          }
+        }, 5000);
+      }
 
       let lastAudioIndex = -1;
       
@@ -703,7 +726,16 @@ class PumpfunRecorder {
 
       while (this.running) {
         const { value, done } = await reader.read();
-        if (done || !value) break;
+        if (done || !value) {
+          log('DIAG: Audio stream ended', {
+            trackId,
+            done,
+            hasValue: !!value,
+            audioFramesReceived: this._diagnosticAudioFrameCount,
+            running: this.running
+          });
+          break;
+        }
         
         // Check if encoder restarted (resolution change) - reset per-track counters
         if (trackEncoderEpoch !== this._encoderEpoch) {
@@ -867,7 +899,17 @@ class PumpfunRecorder {
             lastAudioIndex = timeIndex;
         }
       }
+      
+      // Log when audio loop exits normally
+      log('DIAG: Audio stream loop exited', {
+        trackId,
+        running: this.running,
+        audioFramesReceived: this._diagnosticAudioFrameCount,
+        audioSamplesWritten: this.audioSamplesWritten,
+        encoderStarted: this.encoderStarted
+      });
     } catch (error) {
+      log('ERROR: Audio stream error', { trackId, error: error.message, stack: error.stack });
       console.error('[Recorder] Audio stream error', error);
     } finally {
         this.audioTracks.delete(trackId);
@@ -881,7 +923,15 @@ class PumpfunRecorder {
 
       while (this.running) {
         const { value, done } = await this.videoReader.read();
-        if (done || !value) break;
+        if (done || !value) {
+          log('DIAG: Video stream ended', {
+            done,
+            hasValue: !!value,
+            videoFramesReceived: this._diagnosticVideoFrameCount,
+            running: this.running
+          });
+          break;
+        }
         
         let arrivalTime = Date.now();
         const frame = value.frame;
@@ -1242,7 +1292,16 @@ class PumpfunRecorder {
             this._lastSourceHeight = effectiveHeight;
         }
       }
+      
+      // Log when video loop exits normally
+      log('DIAG: Video stream loop exited', {
+        running: this.running,
+        videoFramesReceived: this._diagnosticVideoFrameCount,
+        videoFramesWritten: this.videoFramesWritten,
+        encoderStarted: this.encoderStarted
+      });
     } catch (error) {
+      log('ERROR: Video stream error', { error: error.message, stack: error.stack });
       console.error('[Recorder] Video stream error', error);
     }
   }
@@ -1318,6 +1377,73 @@ class PumpfunRecorder {
     await this.startEncoderIfReady();
   }
   
+  // Start audio-only mode: generate synthetic black video frames
+  startAudioOnlyMode() {
+    if (this._audioOnlyMode) return;
+    this._audioOnlyMode = true;
+    
+    log('Starting audio-only mode with synthetic video', {
+      width: FIXED_OUTPUT_WIDTH,
+      height: FIXED_OUTPUT_HEIGHT,
+      fps: 30
+    });
+    
+    // Create video info for synthetic frames
+    this.videoInfo = {
+      width: FIXED_OUTPUT_WIDTH,
+      height: FIXED_OUTPUT_HEIGHT,
+      synthetic: true
+    };
+    
+    // Set first video time to first audio time (sync them)
+    this.firstVideoTime = this.firstAudioTime || Date.now();
+    this.firstVideoTimestampUs = BigInt(0);
+    
+    // Generate synthetic black frames at 30fps
+    // YUV420p black: Y=16 (luma), U=128, V=128 (chroma)
+    const ySize = FIXED_OUTPUT_WIDTH * FIXED_OUTPUT_HEIGHT;
+    const uvSize = (FIXED_OUTPUT_WIDTH / 2) * (FIXED_OUTPUT_HEIGHT / 2);
+    const syntheticFrame = Buffer.alloc(ySize + uvSize * 2);
+    syntheticFrame.fill(16, 0, ySize); // Y plane (black luma)
+    syntheticFrame.fill(128, ySize, ySize + uvSize * 2); // U and V planes (neutral chroma)
+    
+    let frameCount = 0;
+    const frameIntervalMs = 1000 / 30; // 30 fps = ~33.33ms per frame
+    
+    this._syntheticVideoInterval = setInterval(() => {
+      if (!this.running || !this.videoPipe || this.videoPipe.destroyed) {
+        this.stopSyntheticVideo();
+        return;
+      }
+      
+      // Queue synthetic frame with computed timestamp
+      const timestampUs = BigInt(Math.floor(frameCount * frameIntervalMs * 1000));
+      this.videoQueue.push({ buffer: syntheticFrame, timestampUs });
+      
+      // Keep queue size reasonable
+      if (this.videoQueue.length > 150) {
+        this.videoQueue.shift();
+      }
+      
+      frameCount++;
+    }, frameIntervalMs);
+    
+    // Mark video as ready and start encoder
+    this.videoReady = true;
+    this.startEncoderIfReady();
+  }
+  
+  stopSyntheticVideo() {
+    if (this._syntheticVideoInterval) {
+      clearInterval(this._syntheticVideoInterval);
+      this._syntheticVideoInterval = null;
+    }
+    if (this._audioOnlyCheckTimeout) {
+      clearTimeout(this._audioOnlyCheckTimeout);
+      this._audioOnlyCheckTimeout = null;
+    }
+  }
+  
   async startEncoderIfReady() {
     if (!this.running) return;
     if (this.encoderStarted) return;
@@ -1379,8 +1505,11 @@ class PumpfunRecorder {
       // HLS output format for DVR playback
       '-f', 'hls',
       '-hls_time', String(this.segmentDurationSeconds),
-      '-hls_list_size', '0',  // Keep all segments in playlist (DVR mode)
-      '-hls_flags', 'append_list+omit_endlist+program_date_time',
+      '-hls_list_size', '0',  // Keep all segments (DVR)
+      // Event-style playlist that only grows (no sliding window)
+      '-hls_playlist_type', 'event',
+      // Write timestamps, keep live (no ENDLIST), independent segments for robustness
+      '-hls_flags', 'program_date_time+omit_endlist+independent_segments',
       '-hls_segment_type', 'mpegts',
       '-hls_segment_filename', segmentPattern,
       '-start_number', String(startNumber),
@@ -1400,9 +1529,29 @@ class PumpfunRecorder {
 
     this.audioPipe = this.ffmpeg.stdin;
     this.videoPipe = this.ffmpeg.stdio[3];
+    
+    // Add error handlers for pipes
+    if (this.audioPipe) {
+      this.audioPipe.on('error', (err) => {
+        log('ERROR: Audio pipe error', { error: err.message });
+      });
+    }
+    if (this.videoPipe) {
+      this.videoPipe.on('error', (err) => {
+        log('ERROR: Video pipe error', { error: err.message });
+      });
+    }
 
     this.ffmpeg.on('exit', (code) => {
       this.encoderStarted = false;
+      log('DIAG: FFmpeg process exited', {
+        exitCode: code,
+        running: this.running,
+        restarting: this.restarting,
+        videoFramesWritten: this.videoFramesWritten,
+        audioSamplesWritten: this.audioSamplesWritten,
+        wasUnexpected: this.running && !this.restarting
+      });
       if (this.running && !this.restarting) {
         console.error('[Recorder] ffmpeg exited unexpectedly', code);
       }
@@ -1756,6 +1905,16 @@ class PumpfunRecorder {
                }
                this.videoFramesWritten++;
           } else {
+              // Log when video pipe is unavailable
+              if (DIAGNOSTIC_MODE && !this._loggedVideoPipeUnavailable) {
+                  this._loggedVideoPipeUnavailable = true;
+                  log('DIAG: Video pipe unavailable during write', {
+                      hasVideoPipe: !!this.videoPipe,
+                      destroyed: this.videoPipe ? this.videoPipe.destroyed : 'N/A',
+                      videoFramesWritten: this.videoFramesWritten,
+                      targetVideoFrames
+                  });
+              }
               break;
           }
       }
@@ -1988,6 +2147,9 @@ class PumpfunRecorder {
     this.running = false;
     if (this.playlistPoller) clearInterval(this.playlistPoller);
     if (this.mixerInterval) clearInterval(this.mixerInterval);
+    
+    // Stop synthetic video generation if in audio-only mode
+    this.stopSyntheticVideo();
 
     // DIAGNOSTIC: Log final session summary
     if (DIAGNOSTIC_MODE) {
@@ -2001,6 +2163,7 @@ class PumpfunRecorder {
             durationSec: durationSec.toFixed(1),
             syncMethod: this.syncMethod,
             audioTimestampSource: this._audioTimestampSource,
+            audioOnlyMode: this._audioOnlyMode,
             // Frame counts
             totalVideoFramesReceived: this._diagnosticVideoFrameCount,
             totalAudioFramesReceived: this._diagnosticAudioFrameCount,
