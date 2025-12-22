@@ -253,30 +253,49 @@ pub fn get_recording_output_dir(session_id: String) -> Result<String, String> {
 /// Get HLS segment info from the playlist
 #[tauri::command]
 pub async fn get_hls_segments(output_dir: String) -> Result<Vec<HlsSegmentInfo>, String> {
+    // Prefer finalized playlist, but fall back to the temp file while ffmpeg is writing
     let playlist_path = PathBuf::from(&output_dir).join("playlist.m3u8");
+    let playlist_tmp_path = PathBuf::from(&output_dir).join("playlist.m3u8.tmp");
     
-    if !playlist_path.exists() {
+    let playlist_to_use = if playlist_path.exists() {
+        playlist_path
+    } else if playlist_tmp_path.exists() {
+        playlist_tmp_path
+    } else {
         return Ok(Vec::new());
-    }
+    };
 
-    let content = tokio::fs::read_to_string(&playlist_path)
+    let content = tokio::fs::read_to_string(&playlist_to_use)
         .await
         .map_err(|e| format!("Failed to read playlist: {}", e))?;
 
     let mut segments = Vec::new();
     let mut current_duration: f64 = 0.0;
+    let mut first_duration: f64 = 0.0;
     let mut cumulative_time: f64 = 0.0;
     let mut segment_number: u32 = 0;
+    let mut media_sequence: u32 = 0;
 
     for line in content.lines() {
         let line = line.trim();
         
+        // Handle sliding window playlists by tracking media sequence
+        if line.starts_with("#EXT-X-MEDIA-SEQUENCE:") {
+            if let Some(seq_str) = line.strip_prefix("#EXT-X-MEDIA-SEQUENCE:") {
+                media_sequence = seq_str.parse().unwrap_or(0);
+            }
+            continue;
+        }
+
         // Parse duration from EXTINF tag
         if line.starts_with("#EXTINF:") {
             if let Some(duration_str) = line.strip_prefix("#EXTINF:") {
                 // Remove trailing comma and any title
                 let duration_str = duration_str.split(',').next().unwrap_or("0");
                 current_duration = duration_str.parse().unwrap_or(4.0);
+                if first_duration == 0.0 {
+                    first_duration = current_duration;
+                }
             }
             continue;
         }
@@ -290,8 +309,14 @@ pub async fn get_hls_segments(output_dir: String) -> Result<Vec<HlsSegmentInfo>,
         if line.ends_with(".ts") {
             let segment_path = PathBuf::from(&output_dir).join(line);
             
+            // Seed cumulative_time using media_sequence for sliding playlists
+            if segment_number == 0 && media_sequence > 0 && cumulative_time == 0.0 {
+                let dur = if first_duration > 0.0 { first_duration } else { current_duration.max(0.001) };
+                cumulative_time = dur * media_sequence as f64;
+            }
+
             segments.push(HlsSegmentInfo {
-                segment_number,
+                segment_number: media_sequence + segment_number,
                 file_path: segment_path.to_string_lossy().to_string(),
                 start_time: cumulative_time,
                 duration: current_duration,
@@ -300,6 +325,53 @@ pub async fn get_hls_segments(output_dir: String) -> Result<Vec<HlsSegmentInfo>,
             
             cumulative_time += current_duration;
             segment_number += 1;
+        }
+    }
+
+    // Fallback: if the parsed playlist yields <= 1 segment but the directory
+    // contains multiple TS files (e.g., tmp playlist not finalized or short sliding window),
+    // synthesize a contiguous timeline from the files on disk.
+    if segments.len() <= 1 {
+        let mut entries: Vec<_> = std::fs::read_dir(&output_dir)
+            .map_err(|e| format!("Failed to read HLS output dir: {}", e))?
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                if let Ok(name) = e.file_name().into_string() {
+                    name.starts_with("segment_") && name.ends_with(".ts")
+                } else {
+                    false
+                }
+            })
+            .collect();
+
+        entries.sort_by_key(|e| e.file_name());
+
+        if entries.len() > 1 {
+            let assumed_duration = if first_duration > 0.0 {
+                first_duration
+            } else if current_duration > 0.0 {
+                current_duration
+            } else {
+                4.0
+            };
+
+            let mut fallback_segments = Vec::with_capacity(entries.len());
+            let mut start = 0.0;
+            for (idx, entry) in entries.iter().enumerate() {
+                let path = entry.path();
+                fallback_segments.push(HlsSegmentInfo {
+                    segment_number: idx as u32,
+                    file_path: path.to_string_lossy().to_string(),
+                    start_time: start,
+                    duration: assumed_duration,
+                    end_time: start + assumed_duration,
+                });
+                start += assumed_duration;
+            }
+
+            if fallback_segments.len() > segments.len() {
+                segments = fallback_segments;
+            }
         }
     }
 

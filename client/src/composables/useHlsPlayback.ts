@@ -534,17 +534,21 @@ export function useHlsPlayback() {
   async function seek(time: number) {
     if (!videoElement || !state.value.isInitialized) return;
 
-    const bufferedStart = state.value.bufferedRanges.length
-      ? state.value.bufferedRanges[0].start
-      : 0;
     const offset = timelineOffset ?? 0;
-    const minAvailableOffset = Math.max(0, Math.max(availableStartTime - offset, bufferedStart));
+    // Only limit seeking to what's available in the playlist (availableStartTime),
+    // NOT what's currently buffered. HLS.js will load necessary segments when seeking.
+    const minAvailableOffset = Math.max(0, availableStartTime - offset);
     const safeFloor = minAvailableOffset > 0 ? minAvailableOffset + SAFE_SEEK_PADDING : 0;
     const liveEdge = state.value.liveEdgeTime || state.value.duration || 0;
     const clampedTime = Math.max(safeFloor, Math.min(time, liveEdge));
 
     // Map back to absolute player time
     const targetAbsolute = clampedTime + offset;
+
+    // Tell HLS.js to load from the seek position (handles unbuffered seeks)
+    if (hls) {
+      hls.startLoad(targetAbsolute);
+    }
 
     videoElement.currentTime = targetAbsolute;
     state.value.currentTime = clampedTime;

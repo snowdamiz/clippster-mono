@@ -605,6 +605,9 @@ export function useLivestreamViewer() {
       // Start segment polling for HLS
       startSegmentPolling();
 
+      // Immediately fetch segments (don't wait for poll interval)
+      await updateHlsSegments();
+
       // Listen for segment events
       await setupSegmentEventListeners();
 
@@ -959,7 +962,10 @@ export function useLivestreamViewer() {
 
   // Update available segments from HLS recording
   async function updateHlsSegments() {
-    if (!hlsOutputDir.value) return;
+    if (!hlsOutputDir.value) {
+      console.debug('[LiveViewer] updateHlsSegments: No hlsOutputDir set');
+      return;
+    }
 
     try {
       // Get segment info from the HLS playlist
@@ -970,6 +976,14 @@ export function useLivestreamViewer() {
       if (segments && segments.length > 0) {
         state.value.availableSegments = segments;
         state.value.totalRecordedDuration = segments[segments.length - 1].endTime;
+        
+        // Log segment update only when count changes
+        if (segments.length !== state.value.availableSegments.length) {
+          console.log('[LiveViewer] Segments updated:', segments.length, 
+            'Duration:', segments[segments.length - 1].endTime.toFixed(1) + 's');
+        }
+      } else {
+        console.debug('[LiveViewer] No segments returned from get_hls_segments');
       }
     } catch (error) {
       // Silently fail - segments may not be ready yet
@@ -1000,10 +1014,15 @@ export function useLivestreamViewer() {
       const ps = hlsPlayback.state.value;
       state.value.isPlaying = ps.isPlaying;
       state.value.isBuffering = ps.isBuffering || !isHlsReady.value;
+      
       // Clamp UI playback position to displayed duration to avoid end-jumps when new segments append
       const safeDuration = Math.max(displayDuration, 0.001);
-      const clampedPosition = Math.min(ps.currentTime, Math.max(0, safeDuration - 0.25));
-      state.value.playbackPosition = clampedPosition;
+      
+      // Don't overwrite playback position while actively seeking - let the seek target stick
+      if (!isSeekingActive) {
+        const clampedPosition = Math.min(ps.currentTime, Math.max(0, safeDuration - 0.25));
+        state.value.playbackPosition = clampedPosition;
+      }
 
       // Clamp buffered ranges to displayed duration to keep the bar stable
       state.value.bufferedRanges = ps.bufferedRanges.map((r) => ({
@@ -1021,7 +1040,13 @@ export function useLivestreamViewer() {
       lastDisplayUpdate = nowTs;
       
       // Smoothly advance displayed duration to avoid playhead jump when new segments are appended
-      if (actualHlsDuration >= displayDuration) {
+      // BUT if we're far behind actual (e.g., reconnecting), snap immediately to avoid slow catch-up
+      const durationGap = actualHlsDuration - displayDuration;
+      if (durationGap > 10) {
+        // We're more than 10 seconds behind - snap to actual (reconnecting scenario)
+        displayDuration = actualHlsDuration;
+      } else if (actualHlsDuration >= displayDuration) {
+        // Normal case - grow smoothly to avoid jumps when new segments append
         const growth = dtSeconds * DURATION_SMOOTH_RATE;
         displayDuration = Math.min(actualHlsDuration, displayDuration + growth);
       } else {
@@ -1044,8 +1069,11 @@ export function useLivestreamViewer() {
           hlsPlayback.play();
         }
         
-        // Check if at live edge (within 2 seconds of end)
-        state.value.isAtLiveEdge = ps.isAtLiveEdge || (ps.currentTime >= ps.duration - 2);
+        // Don't override isAtLiveEdge while actively seeking
+        if (!isSeekingActive) {
+          // Check if at live edge (within 2 seconds of end)
+          state.value.isAtLiveEdge = ps.isAtLiveEdge || (ps.currentTime >= ps.duration - 2);
+        }
       } else if (actualHlsDuration > 0) {
         // HLS has some content but not enough for smooth playback
         state.value.liveEdgeTime = displayDuration;
@@ -1270,8 +1298,9 @@ export function useLivestreamViewer() {
     state.value.bufferedRanges = [];
     state.value.isAtLiveEdge = true;
     
-    // Reset HLS ready state
+    // Reset HLS ready state and seeking flag
     isHlsReady.value = false;
+    isSeekingActive = false;
   }
 
   // Set video element reference (legacy - not used in HLS-only mode)
@@ -1339,6 +1368,9 @@ export function useLivestreamViewer() {
     }
   }
 
+  // Track when we're actively seeking to prevent sync interval from overwriting position
+  let isSeekingActive = false;
+
   // Seek to a specific time (always uses HLS)
   async function seek(time: number) {
     const hlsDuration = hlsPlayback.state.value.duration;
@@ -1354,9 +1386,20 @@ export function useLivestreamViewer() {
       // Clamp to valid range
       const clampedTime = Math.max(0, Math.min(time, hlsDuration > 0 ? hlsDuration - 0.5 : time));
       
+      // Set seeking flag to prevent sync interval from overwriting position
+      isSeekingActive = true;
+      
+      // Immediately update UI state to reflect seek target
+      state.value.playbackPosition = clampedTime;
+      state.value.isAtLiveEdge = false;
+      
       await ensureHlsPlaying();
       await hlsPlayback.seek(clampedTime);
-      state.value.isAtLiveEdge = false;
+      
+      // Keep the seek flag active briefly to let the video element catch up
+      setTimeout(() => {
+        isSeekingActive = false;
+      }, 500);
     }
   }
 
@@ -1368,8 +1411,19 @@ export function useLivestreamViewer() {
     const duration = hlsPlayback.state.value.duration;
     const livePosition = Math.max(0, duration - 8);
     
-    await hlsPlayback.seek(livePosition);
+    // Set seeking flag to prevent sync interval from overwriting position
+    isSeekingActive = true;
+    
+    // Immediately update UI state
+    state.value.playbackPosition = livePosition;
     state.value.isAtLiveEdge = true;
+    
+    await hlsPlayback.seek(livePosition);
+    
+    // Keep the seek flag active briefly to let the video element catch up
+    setTimeout(() => {
+      isSeekingActive = false;
+    }, 500);
   }
 
   // Volume controls (HLS-only mode - audio comes from HLS)

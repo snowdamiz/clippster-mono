@@ -5,16 +5,28 @@
   import TitleBar from '@/components/TitleBar.vue';
   import LoadingScreen from '@/components/LoadingScreen.vue';
   import AuthModal from '@/components/AuthModal.vue';
+  import LivestreamWatchDialog from '@/components/LivestreamWatchDialog.vue';
   import { initDatabase, seedDefaultPrompt, ensureOrganizationAssetColumns } from '@/services/database';
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
+  import { useLivestreamStore } from '@/stores/livestream';
   import { invoke } from '@tauri-apps/api/core';
 
   const { initializeWindowCloseHandler } = useWindowClose();
   const authStore = useAuthStore();
+  const livestreamStore = useLivestreamStore();
   const isLoading = ref(true);
   const titleBarPlatformOverride = ref('auto');
   const showAuthModal = ref(false);
+
+  // Handle clip created from global livestream dialog
+  function handleClipCreated(clipPath: string, projectId: string) {
+    console.log('[App] Clip created:', { clipPath, projectId });
+    // Dispatch event so LiveClip page can react if open
+    window.dispatchEvent(new CustomEvent('livestream-clip-created', { 
+      detail: { clipPath, projectId } 
+    }));
+  }
 
   // Key for router-view to force re-render on auth changes
   const routerKey = ref(0);
@@ -135,6 +147,20 @@
       <AppCloseDialog />
       <!-- Authentication Modal -->
       <AuthModal v-model="showAuthModal" />
+      
+      <!-- Global Livestream Watch Dialog (persists across navigation for PIP mode) -->
+      <LivestreamWatchDialog
+        v-if="livestreamStore.currentStreamer.mintId"
+        v-model="livestreamStore.watchState.isOpen"
+        :mint-id="livestreamStore.currentStreamer.mintId"
+        :streamer-id="livestreamStore.currentStreamer.streamerId"
+        :display-name="livestreamStore.currentStreamer.displayName"
+        :profile-image-url="livestreamStore.currentStreamer.profileImageUrl"
+        :is-pip-mode-external="livestreamStore.isInPipMode"
+        @clip-created="handleClipCreated"
+        @pip-mode-changed="(isPip: boolean) => isPip ? livestreamStore.enterPipMode() : livestreamStore.exitPipMode()"
+        @closed="livestreamStore.reset()"
+      />
     </div>
   </div>
 </template>

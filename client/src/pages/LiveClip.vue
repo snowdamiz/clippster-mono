@@ -394,16 +394,6 @@
         @confirm="confirmCreditWarning"
       />
 
-      <!-- Livestream Watch Dialog -->
-      <LivestreamWatchDialog
-        v-if="watchingStreamer"
-        v-model="showWatchDialog"
-        :mint-id="watchingStreamer.mintId"
-        :streamer-id="watchingStreamer.id"
-        :display-name="watchingStreamer.displayName"
-        :profile-image-url="watchingStreamer.profileImageUrl"
-        @clip-created="handleClipCreated"
-      />
     </div>
   </PageLayout>
 </template>
@@ -433,9 +423,9 @@
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
   import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
-  import LivestreamWatchDialog from '@/components/LivestreamWatchDialog.vue';
   // import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
+  import { useLivestreamStore } from '@/stores/livestream';
   import {
     getAllMonitoredStreamers,
     createMonitoredStreamer,
@@ -479,9 +469,8 @@
   const showSearchDialog = ref(false);
   const isSearching = ref(false);
 
-  // Watch dialog state
-  const showWatchDialog = ref(false);
-  const watchingStreamer = ref<ExtendedStreamer | null>(null);
+  // Global livestream store for watch dialog
+  const livestreamStore = useLivestreamStore();
 
   const {
     activeSessions,
@@ -539,6 +528,9 @@
     liveStatusInterval.value = window.setInterval(() => {
       checkAllLiveStatuses();
     }, 60_000);
+    
+    // Listen for clip created events from global livestream dialog
+    window.addEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
   });
 
   async function checkAllLiveStatuses() {
@@ -658,6 +650,9 @@
       clearInterval(liveStatusInterval.value);
       liveStatusInterval.value = null;
     }
+    
+    // Remove global clip created listener
+    window.removeEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
   });
 
   watch([activeSessions, monitoredStreamers, dvrSessions], () => syncDetectionState(), { deep: true });
@@ -688,23 +683,29 @@
     return `WAITING (${streamer.mode === 'Auto-Detect' ? 'AUTO' : 'REC'})`;
   }
 
-  // Open watch dialog for a live streamer
+  // Open watch dialog for a live streamer (uses global store for PIP persistence)
   function openWatchDialog(streamer: ExtendedStreamer) {
     if (!streamer.isLive) return;
-    watchingStreamer.value = streamer;
-    showWatchDialog.value = true;
+    livestreamStore.openWatchDialog(
+      streamer.mintId,
+      streamer.id,
+      streamer.displayName,
+      streamer.profileImageUrl
+    );
   }
 
-  // Handle clip created from watch dialog
-  function handleClipCreated(clipPath: string) {
+  // Handle clip created from watch dialog (called via global event from App.vue)
+  function handleGlobalClipCreated(event: CustomEvent<{ clipPath: string; projectId: string }>) {
+    const { clipPath } = event.detail;
+    const currentStreamer = livestreamStore.currentStreamer;
     addActivityLog({
-      streamerId: watchingStreamer.value?.id || 'system',
-      streamerName: watchingStreamer.value?.displayName || 'System',
+      streamerId: currentStreamer.streamerId || 'system',
+      streamerName: currentStreamer.displayName || 'System',
       platform: 'PumpFun',
       message: `Clip created: ${clipPath.split(/[\\/]/).pop()}`,
       status: 'success',
-      mintId: watchingStreamer.value?.mintId,
-      profileImageUrl: watchingStreamer.value?.profileImageUrl,
+      mintId: currentStreamer.mintId,
+      profileImageUrl: currentStreamer.profileImageUrl,
     });
   }
 

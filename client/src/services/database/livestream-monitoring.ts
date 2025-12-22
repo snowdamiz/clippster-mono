@@ -445,6 +445,22 @@ export async function createLivestreamClipProject(
   
   const projectName = `${displayName} - ${dateStr}`;
   const projectDescription = `Clips from PumpFun livestream ${displayName} (${mintId})`;
+
+  // Reuse an existing project for this stream/day if it already exists
+  const db = await getDatabase();
+  const userId = getCurrentUserId();
+
+  const existing = await db.select<{ id: string }[]>(
+    userId === null
+      ? 'SELECT id FROM projects WHERE name = ? AND platform = ? AND user_id IS NULL LIMIT 1'
+      : 'SELECT id FROM projects WHERE name = ? AND platform = ? AND (user_id = ? OR user_id IS NULL) LIMIT 1',
+    userId === null ? [projectName, 'PumpFun'] : [projectName, 'PumpFun', userId]
+  );
+
+  if (existing[0]?.id) {
+    console.log('[LiveMonitor] Reusing existing clip project for watch mode:', existing[0].id, projectName);
+    return existing[0].id;
+  }
   
   // Use the existing createProject function
   const projectId = await createProject(projectName, projectDescription, undefined, 'PumpFun');

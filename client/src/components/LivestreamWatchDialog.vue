@@ -1,9 +1,14 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
+      <!-- Keep component alive during PiP mode to maintain video element -->
       <div
-        v-if="modelValue"
-        class="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50"
+        v-if="modelValue || isInPipMode || props.isPipModeExternal"
+        :class="[
+          'fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50',
+          // Hide dialog visually when in PiP mode but keep video element alive
+          (isInPipMode || props.isPipModeExternal) && !modelValue ? 'opacity-0 pointer-events-none' : ''
+        ]"
         @keydown="handleKeydown"
         tabindex="0"
         ref="dialogRef"
@@ -318,11 +323,13 @@
                       <button
                         @click="openClipModal"
                         class="px-3 py-2 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2"
-                        :disabled="viewer.state.value.totalRecordedDuration < 5"
+                        :disabled="viewer.state.value.totalRecordedDuration < 5 || viewer.state.value.availableSegments.length === 0"
                         :title="
-                          viewer.state.value.totalRecordedDuration < 5
-                            ? 'Wait for more content to be recorded'
-                            : 'Create clip (C)'
+                          viewer.state.value.availableSegments.length === 0
+                            ? 'Waiting for segments to load...'
+                            : viewer.state.value.totalRecordedDuration < 5
+                              ? 'Wait for more content to be recorded'
+                              : 'Create clip (C)'
                         "
                       >
                         <Scissors class="w-4 h-4" />
@@ -400,10 +407,12 @@
     Radio,
   } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
+  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { useLivestreamViewer } from '@/composables/useLivestreamViewer';
+  import { useToast } from '@/composables/useToast';
   import LivestreamSeekBar from './LivestreamSeekBar.vue';
   import ClipDurationModal from './ClipDurationModal.vue';
-  import { getWatermarkImage, resolveWatermarkById } from '@/services/database';
+  import { getWatermarkImage, resolveWatermarkById, createLivestreamClipProject, createClip as createClipRecord } from '@/services/database';
 
   interface Props {
     modelValue: boolean;
@@ -411,14 +420,20 @@
     streamerId: string;
     displayName: string;
     profileImageUrl?: string;
+    /** External PIP mode state from global store */
+    isPipModeExternal?: boolean;
   }
 
   interface Emits {
     (e: 'update:modelValue', value: boolean): void;
     (e: 'clip-created', clipPath: string, projectId: string): void;
+    (e: 'pip-mode-changed', isPip: boolean): void;
+    (e: 'closed'): void; // Emitted when user explicitly closes (not PIP)
   }
 
-  const props = defineProps<Props>();
+  const props = withDefaults(defineProps<Props>(), {
+    isPipModeExternal: false,
+  });
   const emit = defineEmits<Emits>();
 
   // Refs
@@ -440,9 +455,19 @@
   const watermarkDimensions = ref<{ width: number; height: number } | null>(null);
   let controlsTimeout: number | null = null;
 
+  // PiP state tracking - keep stream alive when dialog closes for PiP
+  const isInPipMode = ref(false);
+  const closingForPip = ref(false);
+  const pipListenersSetup = ref(false);
+  const globalKeyListenerSetup = ref(false);
+
   // Track clips created during this session
   const sessionProjectId = ref<string | null>(null);
   const clipsCreatedCount = ref(0);
+
+  // Quick clip state
+  const isCreatingQuickClip = ref(false);
+  const { success: showSuccess, error: showError } = useToast();
 
   // Computed
   const streamerInfo = computed(() => ({
@@ -661,7 +686,152 @@
   }
 
   function openClipModal() {
+    // Prevent opening if already open
+    if (showClipModal.value) return;
     showClipModal.value = true;
+  }
+
+  // Quick clip: Create a 30-second clip without any dialog
+  async function performQuickClip() {
+    const QUICK_CLIP_DURATION = 30;
+    
+    // Prevent multiple quick clips at once
+    if (isCreatingQuickClip.value) {
+      console.log('[WatchDialog] Quick clip already in progress');
+      return;
+    }
+
+    // Check if we have enough recorded duration
+    if (viewer.state.value.totalRecordedDuration < QUICK_CLIP_DURATION) {
+      showError('Not Enough Content', `Need at least ${QUICK_CLIP_DURATION}s recorded. Currently: ${Math.floor(viewer.state.value.totalRecordedDuration)}s`);
+      return;
+    }
+
+    // Check if we have segments
+    if (!viewer.state.value.availableSegments || viewer.state.value.availableSegments.length === 0) {
+      showError('No Segments', 'No recorded segments available yet. Please wait a moment.');
+      return;
+    }
+
+    // Determine effective session ID
+    const effectiveSessionId = viewer.state.value.sessionId || viewer.state.value.tempSessionId || props.mintId;
+    if (!effectiveSessionId) {
+      showError('Session Error', 'No active session. Please try again.');
+      return;
+    }
+
+    isCreatingQuickClip.value = true;
+    console.log('[WatchDialog] Starting quick clip (30s)');
+
+    let progressUnlisten: UnlistenFn | null = null;
+
+    try {
+      // Setup progress listener (optional - for logging)
+      progressUnlisten = await listen<{ progress: number; message: string }>('clip-extraction-progress', (event) => {
+        console.log(`[QuickClip] ${event.payload.progress}% - ${event.payload.message}`);
+      });
+
+      // Determine project ID - use existing or create new
+      let effectiveProjectId = sessionProjectId.value || viewer.state.value.projectId;
+
+      if (!effectiveProjectId && props.displayName && props.mintId) {
+        // Create a new project for this clip
+        try {
+          effectiveProjectId = await createLivestreamClipProject(props.displayName, props.mintId);
+          sessionProjectId.value = effectiveProjectId;
+          console.log('[WatchDialog] Created project for quick clip:', effectiveProjectId);
+        } catch (err) {
+          console.error('[WatchDialog] Failed to create project:', err);
+          showError('Project Error', 'Failed to create project folder.');
+          return;
+        }
+      }
+
+      if (!effectiveProjectId) {
+        showError('Project Error', 'Unable to determine project for clip.');
+        return;
+      }
+
+      // Generate clip name
+      const timestamp = new Date()
+        .toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+        })
+        .replace(/:/g, '-');
+      const clipName = `Quick Clip - ${timestamp}`;
+      const clipEndTime = viewer.state.value.playbackPosition;
+      const clipStartTime = clipEndTime - QUICK_CLIP_DURATION;
+
+      console.log('[WatchDialog] Extracting quick clip:', {
+        sessionId: effectiveSessionId,
+        clipStartTime,
+        clipEndTime,
+        duration: QUICK_CLIP_DURATION,
+        segmentsCount: viewer.state.value.availableSegments.length,
+        projectId: effectiveProjectId,
+      });
+
+      // Extract the clip
+      const result = await invoke<string>('extract_livestream_clip', {
+        sessionId: effectiveSessionId,
+        clipEndTime: clipEndTime,
+        clipDuration: QUICK_CLIP_DURATION,
+        clipName: clipName,
+        segments: viewer.state.value.availableSegments,
+        projectId: effectiveProjectId,
+        watermarkId: null,
+        watermarkSettings: null,
+      });
+
+      console.log('[WatchDialog] Quick clip extracted:', result);
+
+      // Save clip to database
+      try {
+        const clipId = await createClipRecord(effectiveProjectId, result, {
+          name: clipName,
+          duration: QUICK_CLIP_DURATION,
+          startTime: clipStartTime,
+          endTime: clipEndTime,
+        });
+        const { createClipVersion } = await import('@/services/database/clip-versions');
+        const { updateClip } = await import('@/services/database/clips');
+        const { getOrCreateManualSession } = await import('@/services/database/clip-detection-sessions');
+        
+        const manualSessionId = await getOrCreateManualSession(effectiveProjectId);
+        const versionId = await createClipVersion(
+          clipId,
+          manualSessionId,
+          1,
+          {
+            name: clipName,
+            startTime: clipStartTime,
+            endTime: clipEndTime,
+          },
+          'detected'
+        );
+        await updateClip(clipId, { current_version_id: versionId });
+        console.log('[WatchDialog] Quick clip saved to database');
+      } catch (dbErr) {
+        console.warn('[WatchDialog] Failed to save clip to database:', dbErr);
+      }
+
+      clipsCreatedCount.value++;
+      showSuccess('Quick Clip Created', `${QUICK_CLIP_DURATION}s clip saved!`);
+      emit('clip-created', result, effectiveProjectId);
+
+    } catch (err) {
+      console.error('[WatchDialog] Quick clip failed:', err);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      showError('Clip Failed', errorMessage);
+    } finally {
+      isCreatingQuickClip.value = false;
+      if (progressUnlisten) {
+        progressUnlisten();
+      }
+    }
   }
 
   function handleClipCreated(clipPath: string, projectId: string) {
@@ -680,6 +850,20 @@
     // Do NOT stop temp HLS recording on close; keep it running so users can return and rewind.
     // Recording will be cleaned up when streamer goes offline or by backend retention.
 
+    // If in PiP mode, exit PiP first, then close properly
+    if (document.pictureInPictureElement) {
+      try {
+        await document.exitPictureInPicture();
+      } catch (error) {
+        console.warn('[WatchDialog] Error exiting PiP:', error);
+      }
+      isInPipMode.value = false;
+      emit('pip-mode-changed', false);
+    }
+    
+    // Clean up global key listener
+    cleanupGlobalKeyListener();
+
     // Stop playback locally to avoid lingering audio when switching streams
     viewer.pause();
 
@@ -689,6 +873,7 @@
 
     await viewer.disconnect();
     emit('update:modelValue', false);
+    emit('closed'); // Signal that dialog was explicitly closed (not for PIP)
   }
 
   async function reconnect() {
@@ -716,11 +901,98 @@
       if (document.pictureInPictureElement) {
         await document.exitPictureInPicture();
       } else {
+        // Ensure video is playing before entering PiP
+        if (video.paused) {
+          await video.play().catch(() => {});
+        }
+        
         await video.requestPictureInPicture();
+        // PiP entered successfully - close dialog but keep stream running
+        isInPipMode.value = true;
+        closingForPip.value = true;
+        emit('pip-mode-changed', true);
+        emit('update:modelValue', false);
+        // Reset flag after emit is processed
+        await nextTick();
+        closingForPip.value = false;
+        
+        // Setup global keyboard listener for quick clip
+        setupGlobalKeyListener();
+        
+        // Ensure video continues playing in PiP
+        if (video.paused) {
+          await video.play().catch(() => {});
+        }
       }
     } catch (error) {
       console.warn('[WatchDialog] PiP error:', error);
     }
+  }
+
+  // PiP event handlers
+  function handlePipEnter() {
+    isInPipMode.value = true;
+    emit('pip-mode-changed', true);
+    setupGlobalKeyListener();
+  }
+
+  function handlePipLeave() {
+    // Reopen dialog when user exits PiP
+    isInPipMode.value = false;
+    emit('pip-mode-changed', false);
+    cleanupGlobalKeyListener();
+    // The watch on modelValue will handle resetting isInPipMode and resuming video
+    emit('update:modelValue', true);
+  }
+
+  // Global keyboard listener for quick clip when in PiP mode
+  function handleGlobalKeydown(event: KeyboardEvent) {
+    // Only handle if in PiP mode and dialog is not open
+    if (!isInPipMode.value && !props.isPipModeExternal) return;
+    if (props.modelValue) return; // Dialog is open, it handles its own keys
+    
+    // Don't handle if user is typing in an input anywhere in the app
+    const target = event.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+      return;
+    }
+
+    // Handle 'C' for quick clip (30 seconds, no dialog)
+    if (event.key.toLowerCase() === 'c' && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      console.log('[WatchDialog] Global C key pressed - creating quick clip');
+      // Perform quick clip without showing dialog
+      performQuickClip();
+    }
+  }
+
+  function setupGlobalKeyListener() {
+    if (globalKeyListenerSetup.value) return;
+    window.addEventListener('keydown', handleGlobalKeydown, true);
+    globalKeyListenerSetup.value = true;
+    console.log('[WatchDialog] Global key listener setup for PiP mode');
+  }
+
+  function cleanupGlobalKeyListener() {
+    if (!globalKeyListenerSetup.value) return;
+    window.removeEventListener('keydown', handleGlobalKeydown, true);
+    globalKeyListenerSetup.value = false;
+    console.log('[WatchDialog] Global key listener cleaned up');
+  }
+
+  // Setup PiP event listeners on video element
+  function setupPipListeners(video: HTMLVideoElement) {
+    if (pipListenersSetup.value) return; // Prevent duplicate listeners
+    video.addEventListener('enterpictureinpicture', handlePipEnter);
+    video.addEventListener('leavepictureinpicture', handlePipLeave);
+    pipListenersSetup.value = true;
+  }
+
+  function cleanupPipListeners(video: HTMLVideoElement) {
+    video.removeEventListener('enterpictureinpicture', handlePipEnter);
+    video.removeEventListener('leavepictureinpicture', handlePipLeave);
+    pipListenersSetup.value = false;
   }
 
   // Keyboard handling
@@ -747,7 +1019,8 @@
         break;
       case 'c':
         event.preventDefault();
-        openClipModal();
+        // Quick clip (30s) without dialog
+        performQuickClip();
         break;
       case 'l':
         event.preventDefault();
@@ -782,11 +1055,13 @@
     () => props.modelValue,
     async (isOpen) => {
       if (isOpen) {
-        // Reset session tracking state when opening dialog
-        sessionProjectId.value = null;
-        clipsCreatedCount.value = 0;
+        // Reset session tracking state when opening dialog (but not if returning from PiP)
+        if (!isInPipMode.value) {
+          sessionProjectId.value = null;
+          clipsCreatedCount.value = 0;
+        }
 
-        // Connect when dialog opens
+        // Connect when dialog opens (skip if already connected from PiP mode)
         await nextTick();
 
         // Set video elements first
@@ -795,32 +1070,50 @@
         }
         if (hlsVideoRef.value) {
           viewer.setHlsVideoElement(hlsVideoRef.value);
+          // Setup PiP listeners
+          setupPipListeners(hlsVideoRef.value);
         }
 
-        // Connect to livestream
-        try {
-          await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl);
-          
-          // Load watermark from creator profile after connection
-          await loadWatermark();
-        } catch (error) {
-          console.error('[WatchDialog] Connect failed:', error);
-        }
+        // Only connect if not already connected (e.g., returning from PiP)
+        if (viewer.state.value.connectionState !== 'connected') {
+          // Connect to livestream
+          try {
+            await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl);
+            
+            // Load watermark from creator profile after connection
+            await loadWatermark();
+          } catch (error) {
+            console.error('[WatchDialog] Connect failed:', error);
+          }
 
-        // After connection, ensure video elements are set
-        await nextTick();
-        if (liveVideoRef.value) {
-          viewer.setVideoElement(liveVideoRef.value);
-        }
-        if (hlsVideoRef.value) {
-          viewer.setHlsVideoElement(hlsVideoRef.value);
+          // After connection, ensure video elements are set
+          await nextTick();
+          if (liveVideoRef.value) {
+            viewer.setVideoElement(liveVideoRef.value);
+          }
+          if (hlsVideoRef.value) {
+            viewer.setHlsVideoElement(hlsVideoRef.value);
+          }
         }
 
         // Focus dialog for keyboard events
         dialogRef.value?.focus();
+        
+        // If returning from PiP, ensure video continues playing
+        if (isInPipMode.value) {
+          const video = hlsVideoRef.value;
+          if (video && video.paused) {
+            video.play().catch(() => {});
+          }
+        }
+        
+        // Reset PiP mode flag after dialog reopens
+        isInPipMode.value = false;
       } else {
-        // Disconnect when dialog closes
-        viewer.disconnect();
+        // Don't disconnect if closing for PiP mode - keep stream running
+        if (!closingForPip.value && !isInPipMode.value) {
+          viewer.disconnect();
+        }
       }
     },
     { immediate: true }
@@ -860,9 +1153,35 @@
     if (controlsTimeout) {
       clearTimeout(controlsTimeout);
     }
+    // Clean up PiP listeners
+    if (hlsVideoRef.value) {
+      cleanupPipListeners(hlsVideoRef.value);
+    }
+    // Clean up global key listener
+    cleanupGlobalKeyListener();
+    // Exit PiP if active when component unmounts
+    if (document.pictureInPictureElement) {
+      document.exitPictureInPicture().catch(() => {});
+    }
     // Ensure we disconnect when component unmounts
     viewer.disconnect();
   });
+
+  // Watch for external PiP mode changes (from global store)
+  watch(
+    () => props.isPipModeExternal,
+    (isPip) => {
+      if (isPip && !isInPipMode.value) {
+        // External state says we're in PiP but local state doesn't - sync it
+        isInPipMode.value = true;
+        setupGlobalKeyListener();
+      } else if (!isPip && isInPipMode.value) {
+        // External state says we're not in PiP - sync and cleanup
+        isInPipMode.value = false;
+        cleanupGlobalKeyListener();
+      }
+    }
+  );
 </script>
 
 <style scoped>
