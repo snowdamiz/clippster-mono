@@ -531,6 +531,8 @@
     
     // Listen for clip created events from global livestream dialog
     window.addEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
+    // Refresh monitored streamers when changes occur elsewhere in the app
+    window.addEventListener('monitored-streamers-updated', handleMonitoredStreamersUpdated);
   });
 
   async function checkAllLiveStatuses() {
@@ -653,6 +655,7 @@
     
     // Remove global clip created listener
     window.removeEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
+    window.removeEventListener('monitored-streamers-updated', handleMonitoredStreamersUpdated);
   });
 
   watch([activeSessions, monitoredStreamers, dvrSessions], () => syncDetectionState(), { deep: true });
@@ -674,6 +677,12 @@
         hasTempRecording: !!dvrSession,
       };
     });
+  }
+
+  async function handleMonitoredStreamersUpdated() {
+    await loadStreamers();
+    await refreshStreamerMetadata();
+    await checkAllLiveStatuses();
   }
 
   function getStatusLabel(streamer: ExtendedStreamer) {

@@ -76,6 +76,14 @@ export async function createMonitoredStreamer(
     ]
   );
 
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('monitored-streamers-updated', {
+        detail: { action: 'created', streamerId: id, mintId },
+      })
+    );
+  }
+
   return id;
 }
 
@@ -150,6 +158,14 @@ export async function updateMonitoredStreamer(
 export async function deleteMonitoredStreamer(id: string): Promise<void> {
   const db = await getDatabase();
   await db.execute('DELETE FROM monitored_streamers WHERE id = ?', [id]);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('monitored-streamers-updated', {
+        detail: { action: 'deleted', streamerId: id },
+      })
+    );
+  }
 }
 
 export async function createLivestreamSession(
