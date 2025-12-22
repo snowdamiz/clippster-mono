@@ -153,7 +153,7 @@
               <!-- Watermark Overlay -->
               <div
                 v-if="showWatermark && watermarkUrl"
-                class="absolute inset-0 pointer-events-none z-10"
+                class="absolute inset-0 pointer-events-none z-30"
                 :style="watermarkStyle"
               >
                 <img :src="watermarkUrl" alt="Watermark" class="w-full h-full object-contain" />
@@ -436,6 +436,7 @@
   const showStatsPopup = ref(false);
   const showClipModal = ref(false);
   const watermarkUrl = ref<string | null>(null);
+  const watermarkDimensions = ref<{ width: number; height: number } | null>(null);
   let controlsTimeout: number | null = null;
 
   // Track clips created during this session
@@ -488,15 +489,44 @@
     const settings = viewer.state.value.watermarkSettings;
     if (!settings) return {};
 
-    // Use settings to position watermark
+    const opacityRaw = settings.opacity ?? 100;
+    const opacity = Math.max(0, Math.min(100, opacityRaw));
+
+    const dims = watermarkDimensions.value;
+    const is16x9 =
+      !!dims && dims.height > 0 ? Math.abs(dims.width / dims.height - 16 / 9) < 0.02 : false;
+    const isHd = !!dims && dims.width >= 1600 && dims.height >= 900;
+    const isAutoFullFrame = is16x9 && isHd;
+
+    // Full-frame overlay (corner to corner), either explicit flag or auto-detected HD 16:9
+    if (settings.isFullFrameOverlay || isAutoFullFrame) {
+      return {
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        transform: 'none',
+        opacity: opacity / 100,
+      };
+    }
+
     const position = settings.position || { x: 50, y: 50 };
-    const scale = settings.scale || 100;
-    const opacity = settings.opacity ?? 100;
+    const clamp01 = (val: number | undefined, fallback: number) => {
+      const n = Number.isFinite(val) ? (val as number) : fallback;
+      return Math.min(100, Math.max(0, n));
+    };
+
+    const x = clamp01(position.x, 50);
+    const y = clamp01(position.y, 50);
+
+    // Ensure scale/opacity are sane for visibility
+    const scaleRaw = settings.scale ?? 100;
+    const scale = Math.max(5, Math.min(200, scaleRaw));
 
     return {
       position: 'absolute',
-      left: `${position.x}%`,
-      top: `${position.y}%`,
+      left: `${x}%`,
+      top: `${y}%`,
       transform: 'translate(-50%, -50%)',
       width: `${scale}%`,
       maxWidth: '100%',
@@ -528,7 +558,12 @@
   // Load watermark image
   async function loadWatermark() {
     const watermarkId = viewer.state.value.watermarkId;
+    const watermarkSettings = viewer.state.value.watermarkSettings;
+    
+    console.log('[WatchDialog] loadWatermark called:', { watermarkId, watermarkSettings });
+    
     if (!watermarkId) {
+      console.log('[WatchDialog] No watermarkId, skipping watermark load');
       watermarkUrl.value = null;
       return;
     }
@@ -536,15 +571,27 @@
     try {
       // Check if this is an org-asset watermark
       if (watermarkId.startsWith('org-asset-')) {
+        console.log('[WatchDialog] Loading org-asset watermark:', watermarkId);
         const resolved = await resolveWatermarkById(watermarkId);
         if (resolved?.filePath) {
-          watermarkUrl.value = await invoke<string>('read_file_as_data_url', { filePath: resolved.filePath });
+          const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: resolved.filePath });
+          watermarkUrl.value = dataUrl;
+          await loadWatermarkDimensions(dataUrl);
+          console.log('[WatchDialog] Org-asset watermark loaded successfully');
+        } else {
+          console.warn('[WatchDialog] Failed to resolve org-asset watermark');
         }
       } else {
         // Regular watermark lookup by ID
+        console.log('[WatchDialog] Loading regular watermark:', watermarkId);
         const watermark = await getWatermarkImage(watermarkId);
         if (watermark) {
-          watermarkUrl.value = await invoke<string>('read_file_as_data_url', { filePath: watermark.file_path });
+          const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: watermark.file_path });
+          watermarkUrl.value = dataUrl;
+          await loadWatermarkDimensions(dataUrl);
+          console.log('[WatchDialog] Regular watermark loaded successfully');
+        } else {
+          console.warn('[WatchDialog] Watermark not found in database:', watermarkId);
         }
       }
     } catch (error) {
@@ -597,12 +644,10 @@
   }
 
   function handleSeek(time: number) {
-    console.log('[WatchDialog] Seeking to:', time);
     viewer.seek(time);
   }
 
   function handleSeekToLive() {
-    console.log('[WatchDialog] Seeking to live edge');
     viewer.seekToLive();
   }
 
@@ -617,7 +662,6 @@
     if (projectId) {
       sessionProjectId.value = projectId;
       clipsCreatedCount.value++;
-      console.log('[WatchDialog] Clip created, project:', projectId, 'total clips:', clipsCreatedCount.value);
     }
 
     emit('clip-created', clipPath, projectId);
@@ -731,7 +775,6 @@
   watch(
     () => props.modelValue,
     async (isOpen) => {
-      console.log('[WatchDialog] modelValue changed:', isOpen, 'mintId:', props.mintId);
       if (isOpen) {
         // Reset session tracking state when opening dialog
         sessionProjectId.value = null;
@@ -739,9 +782,6 @@
 
         // Connect when dialog opens
         await nextTick();
-
-        console.log('[WatchDialog] Setting video elements...');
-        console.log('[WatchDialog] liveVideoRef:', !!liveVideoRef.value, 'hlsVideoRef:', !!hlsVideoRef.value);
 
         // Set video elements first
         if (liveVideoRef.value) {
@@ -751,16 +791,12 @@
           viewer.setHlsVideoElement(hlsVideoRef.value);
         }
 
-        // Connect to livestream (this will start WebRTC playback and HLS recording in background)
-        console.log('[WatchDialog] Calling viewer.connect...');
+        // Connect to livestream
         try {
           await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl);
-          console.log(
-            '[WatchDialog] Connect completed, state:',
-            viewer.state.value.connectionState,
-            'mode:',
-            viewer.state.value.playbackMode
-          );
+          
+          // Load watermark from creator profile after connection
+          await loadWatermark();
         } catch (error) {
           console.error('[WatchDialog] Connect failed:', error);
         }
@@ -789,13 +825,29 @@
     () => viewer.state.value.watermarkId,
     () => {
       loadWatermark();
-    }
+    },
+    { immediate: true }
   );
 
   // Lifecycle
   onMounted(() => {
     document.addEventListener('fullscreenchange', handleFullscreenChange);
   });
+
+  async function loadWatermarkDimensions(dataUrl: string) {
+    return new Promise<void>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        watermarkDimensions.value = { width: img.naturalWidth, height: img.naturalHeight };
+        resolve();
+      };
+      img.onerror = () => {
+        watermarkDimensions.value = null;
+        resolve();
+      };
+      img.src = dataUrl;
+    });
+  }
 
   onUnmounted(() => {
     document.removeEventListener('fullscreenchange', handleFullscreenChange);

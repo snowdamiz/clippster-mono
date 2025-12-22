@@ -18,6 +18,7 @@ import {
   getRawVideo,
   type CreatorProfileWithLinks,
 } from '@/services/database';
+import { getUserAssignedCreatorProfiles } from '@/services/organizationProfilesApi';
 import type { LiveStatus, LiveSession, SegmentEventPayload } from '@/types/livestream';
 import { useLivestreamMonitoring } from './useLivestreamMonitoring';
 import { useHlsPlayback } from './useHlsPlayback';
@@ -107,7 +108,6 @@ const VOLUME_STORAGE_KEY = 'livestream-viewer-volume';
 const MUTED_STORAGE_KEY = 'livestream-viewer-muted';
 
 export function useLivestreamViewer() {
-  const trace = (...args: unknown[]) => console.log('[LiveViewer][Trace]', ...args);
   // Get the monitoring composable to access active sessions
   const { activeSessions, monitoredStreamers, startMonitoring, stopMonitoring, dvrSessions } =
     useLivestreamMonitoring();
@@ -277,7 +277,6 @@ export function useLivestreamViewer() {
           );
           const regionUrl = sorted[0]?.url;
           if (regionUrl) {
-            console.log('[LiveViewer] Got preferred region:', regionUrl);
             return regionUrl;
           }
         }
@@ -290,18 +289,199 @@ export function useLivestreamViewer() {
 
   // Load creator profile and watermark settings
   async function loadCreatorProfile(mintId: string) {
+    console.log('[LiveViewer] loadCreatorProfile called for mintId:', mintId);
     try {
-      const profile = await getCreatorProfileByPlatformId('pumpfun', mintId);
+      let profile = await getCreatorProfileByPlatformId('pumpfun', mintId);
+      console.log('[LiveViewer] Profile lookup result:', profile ? `Found: ${profile.name}` : 'Not found');
+
+      // Fallback: some stream IDs include a trailing "pump" suffix; try without it
+      if (!profile && mintId.toLowerCase().endsWith('pump')) {
+        const trimmedMint = mintId.slice(0, -4);
+        console.log('[LiveViewer] Retry profile lookup without pump suffix:', trimmedMint);
+        profile = await getCreatorProfileByPlatformId('pumpfun', trimmedMint);
+        console.log('[LiveViewer] Fallback lookup result:', profile ? `Found: ${profile.name}` : 'Not found');
+      }
+
+      // Last-resort: check org-assigned creator profiles (server-side) for the current user
+      if (!profile) {
+        try {
+          const assigned = await getUserAssignedCreatorProfiles();
+          if (assigned.success && assigned.profiles?.length) {
+            const normalize = (val: string | null | undefined) => val?.trim().toLowerCase() || '';
+            const stripPump = (val: string) =>
+              val.toLowerCase().endsWith('pump') ? val.slice(0, -4) : val;
+            const candidates = Array.from(
+              new Set([normalize(mintId), normalize(stripPump(mintId))])
+            ).filter(Boolean);
+
+            const orgMatch = assigned.profiles.find((p) =>
+              p.platform_links?.some((link) => {
+                const linkNorm = normalize(link.platform_id);
+                const linkNormStripped = normalize(stripPump(link.platform_id));
+                return (
+                  candidates.includes(linkNorm) ||
+                  candidates.includes(linkNormStripped) ||
+                  linkNorm === candidates[0] ||
+                  linkNormStripped === candidates[0]
+                );
+              })
+            );
+
+            if (orgMatch) {
+              console.log('[LiveViewer] Found org-assigned creator profile:', orgMatch.name);
+
+              // Adapt org profile shape to local expectations and prefix org watermark IDs
+              const settingsObj = orgMatch.watermark_settings || null;
+              const perRatioRaw =
+                settingsObj && typeof settingsObj === 'object'
+                  ? (settingsObj as Record<string, any>)
+                  : null;
+
+              // Prefix all per-ratio watermarkIds with org-asset-
+              let perRatio: Record<string, any> | null = null;
+              if (perRatioRaw) {
+                perRatio = {};
+                for (const [ratio, cfg] of Object.entries(perRatioRaw)) {
+                  if (cfg && typeof cfg === 'object') {
+                    const ratioCfg = cfg as { watermarkId?: number | string; position?: any };
+                    perRatio[ratio] = {
+                      ...ratioCfg,
+                      watermarkId:
+                        ratioCfg.watermarkId != null
+                          ? `org-asset-${ratioCfg.watermarkId}`
+                          : null,
+                    };
+                  } else {
+                    perRatio[ratio] = cfg;
+                  }
+                }
+              }
+
+              const ratio16 = perRatio?.['16:9'];
+              const ratioWatermarkId =
+                ratio16?.watermarkId != null ? String(ratio16.watermarkId) : null;
+
+              profile = {
+                // Minimal fields needed downstream
+                id: String(orgMatch.id),
+                name: orgMatch.name,
+                description: orgMatch.description || null,
+                profile_image_path: null,
+                intro_id: null,
+                outro_id: null,
+                watermark_id:
+                  ratioWatermarkId ||
+                  (orgMatch.watermark_id != null ? `org-asset-${orgMatch.watermark_id}` : null),
+                watermark_settings: perRatio ? JSON.stringify(perRatio) : null,
+                user_id: null,
+                created_at: Date.now(),
+                updated_at: Date.now(),
+                platform_links:
+                  orgMatch.platform_links?.map((l) => ({
+                    ...l,
+                    id: String(l.id ?? l.platform_id ?? Math.random()),
+                    creator_profile_id: String(orgMatch.id),
+                    platform_id: l.platform_id,
+                    platform: l.platform as any,
+                    display_name: l.display_name || null,
+                    profile_image_url: l.profile_image_url || null,
+                    is_primary: l.is_primary ?? false,
+                    created_at: Date.now(),
+                    updated_at: Date.now(),
+                  })) || [],
+              } as unknown as CreatorProfileWithLinks;
+            }
+          }
+        } catch (err) {
+          console.warn('[LiveViewer] Failed to query org-assigned profiles', err);
+        }
+      }
+      
       if (profile) {
         state.value.creatorProfile = profile;
-        state.value.watermarkId = profile.watermark_id;
+        
+        console.log('[LiveViewer] Profile watermark data:', {
+          watermark_id: profile.watermark_id,
+          watermark_settings: profile.watermark_settings,
+        });
+        
+        // Parse watermark settings - stored per-aspect-ratio
         if (profile.watermark_settings) {
           try {
-            state.value.watermarkSettings = JSON.parse(profile.watermark_settings);
-          } catch {
-            state.value.watermarkSettings = null;
+            const perRatioSettings = JSON.parse(profile.watermark_settings);
+            console.log('[LiveViewer] Parsed per-ratio settings:', perRatioSettings);
+
+            // Get 16:9 settings for livestream display
+            const settings16x9 = perRatioSettings?.['16:9'];
+            console.log('[LiveViewer] 16:9 settings:', settings16x9);
+
+            if (settings16x9) {
+              // Use the watermarkId from the 16:9 settings, falling back to top-level watermark_id
+              state.value.watermarkId = settings16x9.watermarkId || profile.watermark_id;
+
+              // Flatten the position settings for the viewer component
+              // The viewer expects { position: { x, y }, scale, opacity }
+              // Support isFullFrameOverlay either at the ratio level or nested in position
+              const isFullFrameOverlay =
+                settings16x9.isFullFrameOverlay ??
+                settings16x9.position?.isFullFrameOverlay ??
+                false;
+
+              if (settings16x9.position) {
+                state.value.watermarkSettings = {
+                  position: {
+                    x: settings16x9.position.x ?? 50,
+                    y: settings16x9.position.y ?? 50,
+                  },
+                  scale: settings16x9.position.scale ?? 20,
+                  opacity: settings16x9.position.opacity ?? 80,
+                  isFullFrameOverlay,
+                };
+              } else {
+                // No position settings, use defaults
+                state.value.watermarkSettings = {
+                  position: { x: 12, y: 92 },
+                  scale: 20,
+                  opacity: 80,
+                  isFullFrameOverlay: false,
+                };
+              }
+            } else {
+              // No 16:9 settings - watermark disabled for this aspect ratio
+              console.log('[LiveViewer] No 16:9 settings found, watermark disabled');
+              state.value.watermarkId = null;
+              state.value.watermarkSettings = null;
+            }
+          } catch (parseError) {
+            console.warn('[LiveViewer] Failed to parse watermark_settings:', parseError);
+            state.value.watermarkId = profile.watermark_id;
+            state.value.watermarkSettings = profile.watermark_id
+              ? {
+                  position: { x: 12, y: 92 },
+                  scale: 20,
+                  opacity: 80,
+                }
+              : null;
           }
+        } else {
+          // No watermark_settings at all, use top-level watermark_id
+          console.log('[LiveViewer] No watermark_settings, using top-level watermark_id:', profile.watermark_id);
+          state.value.watermarkId = profile.watermark_id;
+          state.value.watermarkSettings = profile.watermark_id
+            ? {
+                position: { x: 12, y: 92 },
+                scale: 20,
+                opacity: 80,
+              }
+            : null;
         }
+        
+        console.log('[LiveViewer] Final watermark state:', {
+          watermarkId: state.value.watermarkId,
+          watermarkSettings: state.value.watermarkSettings,
+        });
+      } else {
+        console.log('[LiveViewer] No creator profile found for this stream');
       }
     } catch (error) {
       console.warn('[LiveViewer] Failed to load creator profile', error);
@@ -316,8 +496,6 @@ export function useLivestreamViewer() {
     profileImageUrl?: string,
     autoStartRecording: boolean = true
   ) {
-    console.log('[LiveViewer] connect() called with:', { mintId, streamerId, displayName });
-
     if (!mintId) {
       console.error('[LiveViewer] No mintId provided!');
       state.value.connectionState = 'failed';
@@ -326,14 +504,12 @@ export function useLivestreamViewer() {
     }
 
     if (state.value.connectionState === 'connecting') {
-      console.log('[LiveViewer] Already connecting, skipping...');
       return;
     }
 
     // Reset intentional disconnect flag when starting a new connection
     isIntentionalDisconnect = false;
 
-    console.log('[LiveViewer] Setting state to connecting...');
     state.value.connectionState = 'connecting';
     state.value.connectionError = null;
     state.value.mintId = mintId;
@@ -344,9 +520,7 @@ export function useLivestreamViewer() {
 
     try {
       // Check if stream is live
-      console.log('[LiveViewer] Checking live status for mint:', mintId);
       const liveStatus = await fetchLiveStatus(mintId);
-      console.log('[LiveViewer] Live status:', liveStatus);
 
       if (!liveStatus.isLive) {
         state.value.connectionState = 'failed';
@@ -362,9 +536,7 @@ export function useLivestreamViewer() {
       await loadCreatorProfile(mintId);
 
       // Get join token for LiveKit (for viewer count tracking)
-      console.log('[LiveViewer] Joining livestream...');
       const joinData = await joinLivestream(mintId);
-      console.log('[LiveViewer] Join response:', joinData);
       const token = joinData.token;
 
       if (!token) {
@@ -373,28 +545,23 @@ export function useLivestreamViewer() {
 
       // Get preferred region
       let livekitUrl = joinData.serverUrl || joinData.url || joinData.wsUrl;
-      console.log('[LiveViewer] Server URL from join:', livekitUrl);
 
       if (!livekitUrl) {
         livekitUrl = await getPreferredRegion(token);
-        console.log('[LiveViewer] Using preferred region URL:', livekitUrl);
       }
 
       // Ensure we're using wss:// protocol for WebSocket connection
       if (livekitUrl && livekitUrl.startsWith('https://')) {
         livekitUrl = livekitUrl.replace('https://', 'wss://');
-        console.log('[LiveViewer] Converted to WebSocket URL:', livekitUrl);
       } else if (
         livekitUrl &&
         !livekitUrl.startsWith('wss://') &&
         !livekitUrl.startsWith('ws://')
       ) {
         livekitUrl = 'wss://' + livekitUrl;
-        console.log('[LiveViewer] Added wss:// protocol:', livekitUrl);
       }
 
       // Create and connect to LiveKit room (for WebRTC playback AND viewer tracking)
-      console.log('[LiveViewer] Creating LiveKit room for WebRTC playback...');
       room = new Room({
         adaptiveStream: true,
         dynacast: true,
@@ -407,21 +574,7 @@ export function useLivestreamViewer() {
       setupRoomEventHandlers(room);
 
       // Connect to room with auto-subscribe for WebRTC playback
-      console.log('[LiveViewer] Connecting to LiveKit room at:', livekitUrl);
-      await room.connect(livekitUrl, token, { autoSubscribe: true }); // Subscribe to tracks for live playback
-      console.log('[LiveViewer] Connected! Room state:', room.state);
-
-      // Log all participants and their tracks immediately after connection
-      console.log('[LiveViewer] Remote participants:', room.remoteParticipants.size);
-      room.remoteParticipants.forEach((participant, sid) => {
-        console.log(`[LiveViewer] Participant ${participant.identity} (${sid}):`);
-        console.log(`  - Track publications: ${participant.trackPublications.size}`);
-        participant.trackPublications.forEach((pub, trackSid) => {
-          console.log(
-            `    - Track ${trackSid}: kind=${pub.kind}, source=${pub.source}, subscribed=${pub.isSubscribed}, track=${!!pub.track}, simulcasted=${pub.simulcasted}`
-          );
-        });
-      });
+      await room.connect(livekitUrl, token, { autoSubscribe: true });
 
       // Attach any existing tracks (streamer may already be publishing)
       attachExistingTracks();
@@ -430,26 +583,10 @@ export function useLivestreamViewer() {
       reconnectAttempts = 0;
 
       // Video tracks sometimes arrive after initial connection - retry check after delay
-      // This handles cases where video track publishes slightly after audio
       if (!remoteVideoTrack) {
-        console.log('[LiveViewer] No video track yet, will retry in 2 seconds...');
         setTimeout(() => {
           if (!remoteVideoTrack && room?.state === 'connected') {
-            console.log('[LiveViewer] Retrying video track attachment...');
             attachExistingTracks();
-
-            // If still no video, log detailed participant info for debugging
-            if (!remoteVideoTrack) {
-              console.log('[LiveViewer] Still no video track. Checking all participants:');
-              room?.remoteParticipants.forEach((participant) => {
-                console.log(`[LiveViewer] Participant ${participant.identity}:`);
-                participant.trackPublications.forEach((pub) => {
-                  console.log(
-                    `  - Track ${pub.trackSid}: kind=${pub.kind}, source=${pub.source}, subscribed=${pub.isSubscribed}, hasTrack=${!!pub.track}`
-                  );
-                });
-              });
-            }
           }
         }, 2000);
       }
@@ -472,7 +609,6 @@ export function useLivestreamViewer() {
       startPlaybackSync();
 
       // Note: HLS playback initialization is handled by the hlsOutputDir watcher
-      // This ensures proper sequencing after the recording output dir is set
     } catch (error) {
       console.error('[LiveViewer] Connection failed:', error);
       state.value.connectionState = 'failed';
@@ -482,7 +618,6 @@ export function useLivestreamViewer() {
       let errorMessage = 'Connection failed';
       if (error instanceof Error) {
         errorMessage = error.message;
-        // Check for common errors
         if (error.message.includes('CORS') || error.message.includes('cors')) {
           errorMessage = 'Connection blocked by browser security (CORS)';
         } else if (error.message.includes('network') || error.message.includes('Network')) {
@@ -492,12 +627,6 @@ export function useLivestreamViewer() {
         }
       }
       state.value.connectionError = errorMessage;
-
-      console.error('[LiveViewer] Error details:', {
-        message: errorMessage,
-        originalError: error,
-        mintId,
-      });
 
       // Attempt reconnect (but not for auth errors)
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && !errorMessage.includes('Authentication')) {
@@ -512,22 +641,9 @@ export function useLivestreamViewer() {
     room.on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
 
     // Track published - video might arrive after audio, need to handle this
-    room.on(RoomEvent.TrackPublished, (publication, participant) => {
-      console.log(
-        '[LiveViewer] Track published:',
-        publication.kind,
-        'source:',
-        publication.source,
-        'from:',
-        participant.identity,
-        'subscribed:',
-        publication.isSubscribed
-      );
-
+    room.on(RoomEvent.TrackPublished, (publication) => {
       // If track isn't subscribed yet and we need it, subscribe manually
-      // This handles cases where auto-subscribe didn't work
       if (!publication.isSubscribed && publication.kind === Track.Kind.Video && !remoteVideoTrack) {
-        console.log('[LiveViewer] Video track published but not subscribed, subscribing manually...');
         publication.setSubscribed(true);
       }
     });
@@ -537,25 +653,16 @@ export function useLivestreamViewer() {
     room.on(RoomEvent.Reconnecting, handleReconnecting);
     room.on(RoomEvent.Reconnected, handleReconnected);
     room.on(RoomEvent.ParticipantConnected, (participant) => {
-      console.log('[LiveViewer] Participant connected:', participant.identity);
       updateViewerCount();
 
       // Check if the participant has tracks we need
       participant.trackPublications.forEach((publication) => {
-        console.log(
-          '[LiveViewer] Participant track:',
-          publication.kind,
-          'subscribed:',
-          publication.isSubscribed
-        );
         if (publication.kind === Track.Kind.Video && !publication.isSubscribed && !remoteVideoTrack) {
-          console.log('[LiveViewer] Found unsubscribed video track, subscribing...');
           publication.setSubscribed(true);
         }
       });
     });
-    room.on(RoomEvent.ParticipantDisconnected, (participant) => {
-      console.log('[LiveViewer] Participant disconnected:', participant.identity);
+    room.on(RoomEvent.ParticipantDisconnected, () => {
       updateViewerCount();
     });
     room.on(RoomEvent.ConnectionStateChanged, handleConnectionStateChanged);
@@ -565,11 +672,9 @@ export function useLivestreamViewer() {
   // Handle track subscription for WebRTC playback
   function handleTrackSubscribed(
     track: RemoteTrack,
-    publication: RemoteTrackPublication,
-    participant: RemoteParticipant
+    _publication: RemoteTrackPublication,
+    _participant: RemoteParticipant
   ) {
-    console.log('[LiveViewer] Track subscribed:', track.kind, 'from:', participant.identity);
-
     if (track.kind === Track.Kind.Video) {
       remoteVideoTrack = track as RemoteVideoTrack;
       attachVideoTrack();
@@ -581,11 +686,9 @@ export function useLivestreamViewer() {
 
   function handleTrackUnsubscribed(
     track: RemoteTrack,
-    publication: RemoteTrackPublication,
-    participant: RemoteParticipant
+    _publication: RemoteTrackPublication,
+    _participant: RemoteParticipant
   ) {
-    console.log('[LiveViewer] Track unsubscribed:', track.kind, 'from:', participant.identity);
-
     if (track.kind === Track.Kind.Video) {
       detachVideoTrack();
       remoteVideoTrack = null;
@@ -599,41 +702,17 @@ export function useLivestreamViewer() {
   function attachExistingTracks() {
     if (!room) return;
 
-    console.log('[LiveViewer] Checking existing tracks, participants:', room.remoteParticipants.size);
-
     room.remoteParticipants.forEach((participant) => {
-      console.log(
-        '[LiveViewer] Participant:',
-        participant.identity,
-        'tracks:',
-        participant.trackPublications.size
-      );
-
       participant.trackPublications.forEach((publication) => {
-        console.log(
-          '[LiveViewer] Track publication:',
-          publication.kind,
-          'source:',
-          publication.source,
-          'subscribed:',
-          publication.isSubscribed,
-          'hasTrack:',
-          !!publication.track
-        );
-
         if (publication.track && publication.isSubscribed) {
           if (publication.track.kind === Track.Kind.Video) {
-            console.log('[LiveViewer] Found subscribed video track, attaching...');
             remoteVideoTrack = publication.track as RemoteVideoTrack;
             attachVideoTrack();
           } else if (publication.track.kind === Track.Kind.Audio) {
-            console.log('[LiveViewer] Found subscribed audio track, attaching...');
             remoteAudioTrack = publication.track as RemoteAudioTrack;
             attachAudioTrack();
           }
         } else if (publication.kind === Track.Kind.Video && !publication.isSubscribed) {
-          // Video track exists but not subscribed - subscribe to it
-          console.log('[LiveViewer] Found unsubscribed video track, subscribing...');
           publication.setSubscribed(true);
         }
       });
@@ -642,38 +721,20 @@ export function useLivestreamViewer() {
 
   // NOTE: WebRTC video track is received but NOT displayed to user
   // We use HLS-only playback for consistent timeline/seek behavior
-  // This function just stores the track reference for the recorder
   function attachVideoTrack() {
-    if (!remoteVideoTrack) {
-      console.log('[LiveViewer] No video track received');
-      return;
-    }
-
-    console.log('[LiveViewer] WebRTC video track received (HLS-only mode - not displaying WebRTC)');
+    if (!remoteVideoTrack) return;
 
     // Get video quality info from track settings
     const settings = remoteVideoTrack.mediaStreamTrack?.getSettings();
     if (settings?.width && settings?.height) {
       state.value.streamQuality = `${settings.width}x${settings.height}`;
     }
-    
-    // NOTE: We intentionally do NOT attach the track to the video element
-    // User will see the HLS playback instead, which provides consistent DVR experience
   }
 
   // NOTE: WebRTC audio track is received but NOT played directly to user
   // Audio comes through HLS playback for consistent DVR experience
-  // This function just stores the track reference for the recorder
   function attachAudioTrack() {
-    if (!remoteAudioTrack) {
-      console.log('[LiveViewer] No audio track received');
-      return;
-    }
-
-    console.log('[LiveViewer] WebRTC audio track received (HLS-only mode - audio via HLS)');
-    
-    // NOTE: We intentionally do NOT attach the audio track
-    // Audio will come through HLS playback for consistent DVR experience
+    if (!remoteAudioTrack) return;
     audioAlreadyAttached = true;
   }
 
@@ -696,9 +757,7 @@ export function useLivestreamViewer() {
   }
 
   // NOTE: switchToWebRTC is deprecated - we always use HLS for playback
-  // This function now just seeks to the live edge of HLS
   async function switchToWebRTC() {
-    console.log('[LiveViewer] switchToWebRTC() called - seeking to HLS live edge instead');
     await seekToLiveEdgeHls();
   }
 
@@ -706,13 +765,11 @@ export function useLivestreamViewer() {
   async function ensureHlsPlaying(seekPosition?: number) {
     // Initialize HLS if not already done
     if (hlsVideoElement.value && hlsOutputDir.value && !hlsPlayback.state.value.isInitialized) {
-      console.log('[LiveViewer] Initializing HLS playback...');
       await hlsPlayback.initialize(hlsVideoElement.value, hlsOutputDir.value);
     }
 
     // Refresh playlist and seek if position provided
     if (seekPosition !== undefined) {
-      console.log('[LiveViewer] Seeking HLS to position:', seekPosition);
       hlsPlayback.refreshPlaylist(seekPosition);
     }
 
@@ -722,34 +779,24 @@ export function useLivestreamViewer() {
 
   // Seek to the live edge of HLS (end of recorded content)
   async function seekToLiveEdgeHls() {
-    if (!hlsPlayback.state.value.isInitialized) {
-      console.log('[LiveViewer] HLS not ready yet for live edge seek');
-      return;
-    }
+    if (!hlsPlayback.state.value.isInitialized) return;
 
     const duration = hlsPlayback.state.value.duration;
     if (duration > 0) {
-      // Seek to near the end (leave 1 second buffer)
       const liveEdgePosition = Math.max(0, duration - 1);
-      console.log('[LiveViewer] Seeking to HLS live edge:', liveEdgePosition);
-      
       hlsPlayback.refreshPlaylist(liveEdgePosition);
       await hlsPlayback.seek(liveEdgePosition);
-      
       state.value.isAtLiveEdge = true;
     }
   }
 
   // Switch to HLS playback mode (this is now the only mode)
   async function switchToHLS(seekPosition?: number) {
-    console.log('[LiveViewer] switchToHLS() called, seekPosition:', seekPosition);
     state.value.playbackMode = 'hls';
-    
     await ensureHlsPlaying(seekPosition);
   }
 
   function handleDisconnected() {
-    console.log('[LiveViewer] Disconnected from room');
     state.value.connectionState = 'disconnected';
 
     // Attempt reconnect only if it wasn't intentional
@@ -768,19 +815,15 @@ export function useLivestreamViewer() {
   }
 
   function handleReconnecting() {
-    console.log('[LiveViewer] Reconnecting...');
     state.value.connectionState = 'reconnecting';
   }
 
   function handleReconnected() {
-    console.log('[LiveViewer] Reconnected');
     state.value.connectionState = 'connected';
     reconnectAttempts = 0;
   }
 
   function handleConnectionStateChanged(connectionState: ConnectionState) {
-    console.log('[LiveViewer] Connection state changed:', connectionState);
-
     if (connectionState === ConnectionState.Connected) {
       state.value.connectionState = 'connected';
     } else if (connectionState === ConnectionState.Reconnecting) {
@@ -823,8 +866,6 @@ export function useLivestreamViewer() {
     reconnectAttempts++;
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000); // Exponential backoff, max 30s
 
-    console.log(`[LiveViewer] Scheduling reconnect attempt ${reconnectAttempts} in ${delay}ms`);
-
     reconnectTimeout = window.setTimeout(() => {
       connect(mintId, streamerId, displayName, profileImageUrl, false);
     }, delay);
@@ -835,7 +876,7 @@ export function useLivestreamViewer() {
     streamerId: string,
     mintId: string,
     displayName: string,
-    profileImageUrl?: string
+    _profileImageUrl?: string
   ) {
     // Check if already has a persistent recording session
     const session = activeSessions.value.get(streamerId);
@@ -843,7 +884,6 @@ export function useLivestreamViewer() {
       state.value.sessionId = session.sessionId;
       state.value.projectId = session.projectId;
       state.value.isTempRecording = false;
-      console.log('[LiveViewer] Using existing persistent recording session:', session.sessionId);
 
       // Get the output directory for HLS playback
       try {
@@ -851,7 +891,6 @@ export function useLivestreamViewer() {
           sessionId: session.sessionId,
         });
         hlsOutputDir.value = outputDir;
-        console.log('[LiveViewer] HLS output directory:', outputDir);
       } catch (e) {
         console.warn('[LiveViewer] Could not get recording output dir:', e);
       }
@@ -860,7 +899,6 @@ export function useLivestreamViewer() {
 
     // Start HLS recording via Tauri (Node.js recorder)
     try {
-      console.log('[LiveViewer] Starting HLS recording for:', mintId);
       const result = await invoke<{ sessionId: string; outputDir: string }>('start_hls_recording', {
         mintId,
         streamerId,
@@ -872,8 +910,6 @@ export function useLivestreamViewer() {
       state.value.projectId = null;
       hlsOutputDir.value = result.outputDir;
       state.value.dvrStartTime = Date.now();
-
-      console.log('[LiveViewer] HLS recording started:', result);
     } catch (error) {
       console.warn('[LiveViewer] Failed to start HLS recording:', error);
       state.value.connectionError = 'Failed to start recording';
@@ -888,27 +924,12 @@ export function useLivestreamViewer() {
     // Use hlsVideoElement if available, otherwise fall back to main videoElement
     const hlsElement = hlsVideoElement.value || videoElement.value;
 
-    if (!hlsElement || !hlsOutputDir.value) {
-      console.log(
-        '[LiveViewer] Cannot initialize HLS playback - missing video element or output dir'
-      );
-      return;
-    }
+    if (!hlsElement || !hlsOutputDir.value) return;
 
     // Prevent duplicate initialization
-    if (isHlsInitializing) {
-      console.log('[LiveViewer] HLS playback already initializing, skipping...');
-      return;
-    }
-
-    // Skip if already initialized
-    if (hlsPlayback.state.value.isInitialized) {
-      console.log('[LiveViewer] HLS playback already initialized');
-      return;
-    }
+    if (isHlsInitializing || hlsPlayback.state.value.isInitialized) return;
 
     isHlsInitializing = true;
-    console.log('[LiveViewer] Initializing HLS playback (DVR)...');
 
     // Apply audio settings before initializing
     hlsPlayback.setVolume(state.value.volume);
@@ -918,16 +939,10 @@ export function useLivestreamViewer() {
       const success = await hlsPlayback.initialize(hlsElement, hlsOutputDir.value);
 
       if (success) {
-        console.log('[LiveViewer] HLS/DVR playback ready');
-        // Don't start playing - we're in WebRTC mode by default
-        // HLS will start when user seeks backwards
         if (state.value.playbackMode === 'webrtc') {
-          hlsPlayback.pause(); // Ensure HLS is paused while WebRTC is active
+          hlsPlayback.pause();
         }
       } else {
-        // HLS is a backup feature - only warn, don't set error state
-        // WebRTC provides live playback, HLS provides DVR/seeking
-        console.warn('[LiveViewer] HLS/DVR not available - live playback still works via WebRTC');
         // Only set error if explicitly in HLS mode AND WebRTC isn't working
         if (state.value.playbackMode === 'hls' && !remoteVideoTrack) {
           state.value.connectionError =
@@ -966,21 +981,8 @@ export function useLivestreamViewer() {
     }
 
     liveEdgeUpdateInterval = window.setInterval(() => {
-      // Use dvrStartTime (when HLS recording started) for timeline
-      // This represents what the user can actually seek within
-      const referenceTime = state.value.dvrStartTime;
-
       // NOTE: In HLS-only mode, the actual timeline comes from HLS duration
       // This interval now only serves as a fallback while HLS is loading
-      if (!isHlsReady.value && referenceTime) {
-        const now = Date.now();
-        const estimatedDuration = Math.floor((now - referenceTime) / 1000);
-        // Show estimated loading time in console for debugging
-        if (estimatedDuration > 0 && estimatedDuration % 5 === 0) {
-          console.log('[LiveViewer] Waiting for HLS... estimated time:', estimatedDuration, 's');
-        }
-        trace('liveEdgeUpdate', { referenceTime, estimatedDuration });
-      }
     }, 1000);
   }
 
@@ -999,15 +1001,12 @@ export function useLivestreamViewer() {
       state.value.bufferedRanges = ps.bufferedRanges;
       
       // Latency is the delay from real-time (HLS segments are ~5s behind WebRTC)
-      // Show as ~5 seconds plus any hls.js buffering latency
       state.value.latencyMs = 5000 + (ps.latency * 1000);
 
       // Timeline always reflects actual HLS content duration
       const actualHlsDuration = ps.duration > 0 ? ps.duration : 0;
       
       // Start playback as soon as we have at least 2 segments (8s)
-      // This prevents the "deadlock" where we wait for more duration, 
-      // but hls.js stops polling because it's paused.
       const MIN_BUFFER_DURATION = 8; 
       
       if (actualHlsDuration >= MIN_BUFFER_DURATION) {
@@ -1018,9 +1017,6 @@ export function useLivestreamViewer() {
         // Mark HLS as ready once we have enough buffer
         if (!isHlsReady.value) {
           isHlsReady.value = true;
-          console.log('[LiveViewer] HLS is ready with duration:', actualHlsDuration);
-          
-          // Start playback
           hlsPlayback.play();
         }
         
@@ -1028,16 +1024,12 @@ export function useLivestreamViewer() {
         state.value.isAtLiveEdge = ps.isAtLiveEdge || (ps.currentTime >= ps.duration - 2);
       } else if (actualHlsDuration > 0) {
         // HLS has some content but not enough for smooth playback
-        // We still consider this "buffering" state for UI, but we SHOULD ensure hls.js is active
         state.value.liveEdgeTime = actualHlsDuration;
         state.value.totalRecordedDuration = actualHlsDuration;
         state.value.isBuffering = true;
-        console.log(`[LiveViewer] Buffering... ${actualHlsDuration.toFixed(1)}s / ${MIN_BUFFER_DURATION}s`);
         
-        // CRITICAL FIX: If we have ANY content, start playing (muted/hidden) to force hls.js to poll playlist
-        // otherwise it might stop polling and we get stuck at 4s duration forever
+        // Force hls.js to poll playlist by starting playback
         if (!isHlsReady.value && !state.value.isPlaying) {
-           console.log('[LiveViewer] Force starting playback to keep playlist polling active');
            hlsPlayback.play();
         }
 
@@ -1047,14 +1039,11 @@ export function useLivestreamViewer() {
           lastDurationUpdate = now;
           lastDurationValue = actualHlsDuration;
         } else if (actualHlsDuration > lastDurationValue) {
-          // Duration increased, reset stuck timer
           lastDurationUpdate = now;
           lastDurationValue = actualHlsDuration;
         } else if (now - lastDurationUpdate > 10000) {
-          // Stuck at same duration for > 10s while buffering
-          console.warn('[LiveViewer] Buffering stuck, forcing playlist refresh...');
           hlsPlayback.refreshPlaylist(state.value.playbackPosition);
-          lastDurationUpdate = now; // Reset timer to avoid spamming refresh
+          lastDurationUpdate = now;
         }
       } else if (state.value.dvrStartTime) {
         // HLS not ready yet - show buffering state
@@ -1068,18 +1057,6 @@ export function useLivestreamViewer() {
       if (ps.error && !state.value.connectionError) {
         state.value.connectionError = ps.error;
       }
-
-      trace('playbackSync', {
-        position: ps.currentTime,
-        duration: ps.duration,
-        liveEdge: state.value.liveEdgeTime,
-        totalRecorded: state.value.totalRecordedDuration,
-        isPlaying: state.value.isPlaying,
-        isBuffering: state.value.isBuffering,
-        isAtLiveEdge: state.value.isAtLiveEdge,
-        latencyMs: state.value.latencyMs,
-        bufferedRanges: ps.bufferedRanges,
-      });
     }, 100);
   }
 
@@ -1091,9 +1068,8 @@ export function useLivestreamViewer() {
 
     // Poll to update available segments info (for clipping)
     segmentPollInterval = window.setInterval(async () => {
-      trace('segmentPoll tick');
       await updateAvailableSegments();
-    }, 2000); // HLS handles its own playlist updates, poll less frequently
+    }, 2000);
 
     // Initial poll
     updateAvailableSegments();
@@ -1102,12 +1078,7 @@ export function useLivestreamViewer() {
   async function updateAvailableSegments() {
     // For HLS recordings, update from the recording directory
     if (hlsOutputDir.value) {
-      trace('updateAvailableSegments (temp recording) start', { hlsOutputDir: hlsOutputDir.value });
       await updateHlsSegments();
-      trace('updateAvailableSegments (temp recording) done', {
-        segments: state.value.availableSegments.length,
-        totalRecordedDuration: state.value.totalRecordedDuration,
-      });
       return;
     }
 
@@ -1198,12 +1169,7 @@ export function useLivestreamViewer() {
   // Disconnect from livestream
   async function disconnect() {
     // Prevent multiple disconnects
-    if (isIntentionalDisconnect) {
-      console.log('[LiveViewer] Already disconnecting, skipping...');
-      return;
-    }
-
-    console.log('[LiveViewer] Disconnecting...');
+    if (isIntentionalDisconnect) return;
 
     // Mark as intentional disconnect to prevent reconnect attempts
     isIntentionalDisconnect = true;
@@ -1241,7 +1207,7 @@ export function useLivestreamViewer() {
     remoteVideoTrack = null;
     remoteAudioTrack = null;
 
-    // Clean up HLS playback (this handles HLS video element cleanup)
+    // Clean up HLS playback
     await hlsPlayback.cleanup();
 
     // Reset HLS output directory
@@ -1255,7 +1221,6 @@ export function useLivestreamViewer() {
     if (room) {
       try {
         await room.disconnect(true);
-        console.log('[LiveViewer] Room disconnected');
       } catch (e) {
         console.warn('[LiveViewer] Error disconnecting room:', e);
       }
@@ -1265,7 +1230,7 @@ export function useLivestreamViewer() {
     // Reset state
     state.value.connectionState = 'disconnected';
     state.value.isPlaying = false;
-    state.value.playbackMode = 'hls'; // Always HLS mode
+    state.value.playbackMode = 'hls';
     state.value.mintId = null;
     state.value.streamerId = null;
     state.value.isTempRecording = false;
@@ -1282,19 +1247,11 @@ export function useLivestreamViewer() {
     
     // Reset HLS ready state
     isHlsReady.value = false;
-
-    // NOTE: Do NOT reset isIntentionalDisconnect here - async events may still fire
-    // after disconnect completes. We reset it in connect() instead.
-
-    console.log('[LiveViewer] Disconnect complete');
   }
 
   // Set video element reference (legacy - not used in HLS-only mode)
   function setVideoElement(element: HTMLVideoElement | null) {
-    console.log('[LiveViewer] setVideoElement called, element:', !!element);
     videoElement.value = element;
-    // NOTE: In HLS-only mode, we don't attach WebRTC tracks to video element
-    // Video comes from HLS playback via hlsVideoElement
   }
 
   // Set HLS video element reference (for DVR playback)
@@ -1310,26 +1267,20 @@ export function useLivestreamViewer() {
 
   // Playback controls
   async function play() {
-    console.log('[LiveViewer] play() called, mode:', state.value.playbackMode);
-
     if (state.value.playbackMode === 'webrtc') {
-      // WebRTC is always "playing" when connected
-      // Try to play both video element and standalone audio element
       if (videoElement.value) {
         try {
           await videoElement.value.play();
         } catch (e) {
-          console.warn('[LiveViewer] WebRTC video play failed:', e);
+          // Ignore play errors
         }
       }
 
-      // Also try standalone audio element for audio-only streams
       if (standaloneAudioElement && standaloneAudioElement.paused) {
         try {
           await standaloneAudioElement.play();
-          console.log('[LiveViewer] Standalone audio playback started');
         } catch (e) {
-          console.warn('[LiveViewer] Standalone audio play failed:', e);
+          // Ignore play errors
         }
       }
 
@@ -1340,15 +1291,11 @@ export function useLivestreamViewer() {
   }
 
   function pause() {
-    console.log('[LiveViewer] pause() called, mode:', state.value.playbackMode);
-
     if (state.value.playbackMode === 'webrtc') {
-      // Pause WebRTC video element
       if (videoElement.value) {
         videoElement.value.pause();
       }
 
-      // Also pause standalone audio element
       if (standaloneAudioElement) {
         standaloneAudioElement.pause();
       }
@@ -1360,8 +1307,6 @@ export function useLivestreamViewer() {
   }
 
   function togglePlayPause() {
-    console.log('[LiveViewer] togglePlayPause() called, isPlaying:', state.value.isPlaying);
-
     if (state.value.isPlaying) {
       pause();
     } else {
@@ -1372,84 +1317,50 @@ export function useLivestreamViewer() {
   // Seek to a specific time (always uses HLS)
   async function seek(time: number) {
     const hlsDuration = hlsPlayback.state.value.duration;
-    console.log('[LiveViewer] seek() called:', time, 'hlsDuration:', hlsDuration);
-    trace('seek called', { requested: time, hlsDuration, isInitialized: hlsPlayback.state.value.isInitialized });
 
-    if (!hlsPlayback.state.value.isInitialized) {
-      console.log('[LiveViewer] HLS not ready, cannot seek');
-      return;
-    }
+    if (!hlsPlayback.state.value.isInitialized) return;
 
     // Check if seeking to near the live edge (within 2 seconds of end)
     const isSeekingToLiveEdge = hlsDuration > 0 && time >= hlsDuration - 2;
-    
-    console.log('[LiveViewer] seek analysis:', { isSeekingToLiveEdge, hlsDuration, seekTime: time });
-    trace('seek analysis', { isSeekingToLiveEdge, hlsDuration, seekTime: time });
 
     if (isSeekingToLiveEdge) {
-      // Seeking to live edge - go to end of HLS
-      console.log('[LiveViewer] Seeking to HLS live edge');
       await seekToLive();
     } else {
-      // Seeking within available content
       // Clamp to valid range
       const clampedTime = Math.max(0, Math.min(time, hlsDuration > 0 ? hlsDuration - 0.5 : time));
       
-      console.log('[LiveViewer] Seeking to position:', clampedTime);
-      trace('seek clamped', { clampedTime });
-      
-      // Ensure HLS is playing
       await ensureHlsPlaying();
-      trace('seek ensureHlsPlaying done');
-      
-      // Seek to position
       await hlsPlayback.seek(clampedTime);
-      trace('seek completed', { target: clampedTime, current: hlsPlayback.state.value.currentTime, duration: hlsPlayback.state.value.duration });
       state.value.isAtLiveEdge = false;
     }
   }
 
   // Seek to live edge - position a few segments behind the actual end for buffer
   async function seekToLive() {
-    console.log('[LiveViewer] seekToLive() called');
-    trace('seekToLive start', { initialized: hlsPlayback.state.value.isInitialized });
+    if (!hlsPlayback.state.value.isInitialized) return;
 
-    if (!hlsPlayback.state.value.isInitialized) {
-      console.log('[LiveViewer] HLS not ready, cannot seek to live');
-      return;
-    }
-
-    // For live streaming, "live edge" means a few segments behind the actual end
-    // This ensures we have buffer ahead for smooth playback
     // Position at 2 segments (8s) from end for optimal live viewing
     const duration = hlsPlayback.state.value.duration;
-    const livePosition = Math.max(0, duration - 8); // 2 segments behind
+    const livePosition = Math.max(0, duration - 8);
     
-    console.log('[LiveViewer] Seeking to live position:', livePosition, 'duration:', duration);
-    trace('seekToLive target', { livePosition, duration });
     await hlsPlayback.seek(livePosition);
-    trace('seekToLive done', { current: hlsPlayback.state.value.currentTime, duration: hlsPlayback.state.value.duration });
     state.value.isAtLiveEdge = true;
   }
 
   // Volume controls (HLS-only mode - audio comes from HLS)
   function setVolume(volume: number) {
-    console.log('[LiveViewer] setVolume called:', volume);
     state.value.volume = Math.max(0, Math.min(1, volume));
     saveVolumePreference(state.value.volume);
     hlsPlayback.setVolume(state.value.volume);
   }
 
   function setMuted(muted: boolean) {
-    console.log('[LiveViewer] setMuted called:', muted);
     state.value.isMuted = muted;
     saveMutedPreference(muted);
     hlsPlayback.setMuted(muted);
-    // HLS-only mode - audio controlled via HLS playback
   }
 
   function toggleMute() {
-    console.log('[LiveViewer] toggleMute called, current:', state.value.isMuted);
     setMuted(!state.value.isMuted);
   }
 
@@ -1473,7 +1384,6 @@ export function useLivestreamViewer() {
           });
           if (outputDir && !hlsOutputDir.value) {
             hlsOutputDir.value = outputDir;
-            console.log('[LiveViewer] HLS output directory from session:', outputDir);
           }
         } catch (e) {
           // Ignore - may not have this command yet

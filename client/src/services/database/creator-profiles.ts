@@ -357,31 +357,51 @@ export async function getCreatorProfileByPlatformId(
   const db = await getDatabase();
   const userId = getCurrentUserId();
 
-  // Find the platform link by platform + platform_id (case-insensitive for flexibility)
-  const links = await db.select<CreatorPlatformLink[]>(
-    'SELECT * FROM creator_platform_links WHERE platform = ? AND LOWER(platform_id) = LOWER(?)',
-    [platform, platformId]
+  const normalize = (val: string | null | undefined) => val?.trim().toLowerCase() || '';
+  const stripPump = (val: string) => (val.toLowerCase().endsWith('pump') ? val.slice(0, -4) : val);
+
+  const candidates = Array.from(
+    new Set([
+      normalize(platformId),
+      normalize(stripPump(platformId)),
+    ])
+  ).filter(Boolean);
+
+  // Try exact normalized matches first
+  for (const candidate of candidates) {
+    const links = await db.select<CreatorPlatformLink[]>(
+      'SELECT * FROM creator_platform_links WHERE platform = ? AND LOWER(TRIM(platform_id)) = ?',
+      [platform, candidate]
+    );
+    if (links.length > 0) {
+      const profile = await getCreatorProfile(links[0].creator_profile_id);
+      if (profile) return profile;
+    }
+  }
+
+  // Fallback: fetch all links for this platform and match by prefix/strip rules
+  const allLinks = await db.select<CreatorPlatformLink[]>(
+    'SELECT * FROM creator_platform_links WHERE platform = ?',
+    [platform]
   );
 
-  if (links.length === 0) {
-    return null;
+  for (const link of allLinks) {
+    const linkNorm = normalize(link.platform_id);
+    const linkNormStripped = normalize(stripPump(link.platform_id));
+
+    const hasMatch =
+      candidates.includes(linkNorm) ||
+      candidates.includes(linkNormStripped) ||
+      linkNorm.startsWith(candidates[0]) ||
+      candidates[0].startsWith(linkNorm);
+
+    if (hasMatch) {
+      const profile = await getCreatorProfile(link.creator_profile_id);
+      if (profile) return profile;
+    }
   }
 
-  // Get the full creator profile
-  const profile = await getCreatorProfile(links[0].creator_profile_id);
-
-  if (!profile) {
-    return null;
-  }
-
-  // Check if the user has access to this profile (either owned by them or shared)
-  if (profile.user_id !== null && profile.user_id !== String(userId)) {
-    // Profile is owned by someone else - check if user is in the same organization
-    // For now, just return null if user doesn't own it and it's not a null user_id (shared) profile
-    return null;
-  }
-
-  return profile;
+  return null;
 }
 
 export async function getCreatorProfileByProjectId(
