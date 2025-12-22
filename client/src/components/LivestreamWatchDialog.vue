@@ -50,7 +50,7 @@
                       </div>
                       <!-- Live indicator -->
                       <div
-                        v-if="viewer.isLive.value"
+                        v-if="activeState.isLive"
                         class="absolute -bottom-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-zinc-950 animate-pulse"
                       />
                     </div>
@@ -59,9 +59,9 @@
                       <div class="flex items-center gap-2 text-xs text-zinc-400">
                         <span class="flex items-center gap-1">
                           <Users class="w-3 h-3" />
-                          {{ viewer.state.value.viewerCount }}
+                          {{ activeState.viewerCount }}
                         </span>
-                        <span v-if="viewer.isLive.value" class="text-red-400 font-medium">LIVE</span>
+                        <span v-if="activeState.isLive" class="text-red-400 font-medium">LIVE</span>
                       </div>
                     </div>
                   </div>
@@ -70,7 +70,7 @@
                   <div class="flex items-center gap-2">
                     <!-- HLS Latency Badge -->
                     <div
-                      v-if="viewer.state.value.connectionState === 'connected'"
+                      v-if="activeState.connectionState === 'connected'"
                       class="px-2 py-1 rounded bg-zinc-800/80 text-xs text-zinc-300 flex items-center gap-1"
                     >
                       <Clock class="w-3 h-3" />
@@ -79,12 +79,12 @@
 
                     <!-- Quality Badge -->
                     <button
-                      v-if="viewer.state.value.streamQuality"
+                      v-if="activeState.streamQuality"
                       @click="showStatsPopup = !showStatsPopup"
                       class="px-2 py-1 rounded bg-zinc-800/80 text-xs text-zinc-300 hover:bg-zinc-700 transition-colors flex items-center gap-1"
                     >
                       <Signal class="w-3 h-3" :class="connectionQualityColor" />
-                      {{ viewer.state.value.streamQuality }}
+                      {{ activeState.streamQuality }}
                     </button>
 
                     <!-- Close button -->
@@ -105,11 +105,11 @@
               >
                 <div class="flex justify-between">
                   <span class="text-zinc-400">Resolution</span>
-                  <span class="text-white">{{ viewer.state.value.streamQuality || 'Unknown' }}</span>
+                  <span class="text-white">{{ activeState.streamQuality || 'Unknown' }}</span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-zinc-400">Playback Mode</span>
-                  <span :class="viewer.state.value.playbackMode === 'webrtc' ? 'text-green-400' : 'text-white'">
+                  <span :class="activeState.playbackMode === 'webrtc' ? 'text-green-400' : 'text-white'">
                     {{ playbackModeDisplay }}
                   </span>
                 </div>
@@ -119,12 +119,12 @@
                 </div>
                 <div class="flex justify-between">
                   <span class="text-zinc-400">Recorded</span>
-                  <span class="text-white">{{ formatTime(viewer.state.value.totalRecordedDuration) }}</span>
+                  <span class="text-white">{{ formatTime(activeState.totalRecordedDuration) }}</span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-zinc-400">At Live Edge</span>
-                  <span :class="viewer.state.value.isAtLiveEdge ? 'text-green-400' : 'text-yellow-400'">
-                    {{ viewer.state.value.isAtLiveEdge ? 'Yes' : 'No' }}
+                  <span :class="activeState.isAtLiveEdge ? 'text-green-400' : 'text-yellow-400'">
+                    {{ activeState.isAtLiveEdge ? 'Yes' : 'No' }}
                   </span>
                 </div>
               </div>
@@ -140,19 +140,29 @@
             >
               <!-- HLS Video Playback (always visible - HLS-only mode) -->
               <video
+                v-if="!isKickStream"
                 ref="hlsVideoRef"
                 class="w-full h-full object-contain"
                 playsinline
-                :muted="viewer.state.value.isMuted"
+                :muted="activeState.isMuted"
               />
-              
+
               <!-- Hidden WebRTC video element (needed for track reception, not displayed) -->
               <video
+                v-if="!isKickStream"
                 ref="liveVideoRef"
                 class="hidden"
                 playsinline
                 autoplay
                 muted
+              />
+
+              <video
+                v-else
+                ref="kickVideoRef"
+                class="w-full h-full object-contain"
+                playsinline
+                :muted="activeState.isMuted"
               />
 
               <!-- Watermark Overlay -->
@@ -166,23 +176,27 @@
 
               <!-- Buffering Indicator (HLS loading or buffering) -->
               <div
-                v-if="viewer.state.value.isBuffering && viewer.state.value.connectionState === 'connected'"
+                v-if="activeState.isBuffering && activeState.connectionState === 'connected'"
                 class="absolute inset-0 flex items-center justify-center bg-black/60 z-20"
               >
                 <div class="flex flex-col items-center gap-3">
                   <Loader2 class="w-12 h-12 text-violet-500 animate-spin" />
                   <span class="text-white text-sm font-medium">
-                    {{ viewer.state.value.totalRecordedDuration < 12 ? 'Building buffer...' : 'Buffering...' }}
+                    {{
+                      activeState.totalRecordedDuration < 12 || Number.isNaN(activeState.totalRecordedDuration)
+                        ? 'Building buffer...'
+                        : 'Buffering...'
+                    }}
                   </span>
-                  <span v-if="viewer.state.value.totalRecordedDuration < 12" class="text-zinc-400 text-xs">
-                    {{ Math.round(viewer.state.value.totalRecordedDuration) }}s / 12s for smooth playback
+                  <span v-if="activeState.totalRecordedDuration < 12" class="text-zinc-400 text-xs">
+                    {{ Math.round(activeState.totalRecordedDuration) }}s / 12s for smooth playback
                   </span>
                 </div>
               </div>
 
               <!-- Connection Status Overlays -->
               <div
-                v-if="viewer.state.value.connectionState === 'connecting'"
+                v-if="activeState.connectionState === 'connecting'"
                 class="absolute inset-0 flex items-center justify-center bg-black/80 z-20"
               >
                 <div class="flex flex-col items-center gap-3">
@@ -193,7 +207,7 @@
               </div>
 
               <div
-                v-if="viewer.state.value.connectionState === 'reconnecting'"
+                v-if="activeState.connectionState === 'reconnecting'"
                 class="absolute inset-0 flex items-center justify-center bg-black/60 z-20"
               >
                 <div class="flex flex-col items-center gap-3">
@@ -203,13 +217,13 @@
               </div>
 
               <div
-                v-if="viewer.state.value.connectionState === 'failed'"
+                v-if="activeState.connectionState === 'failed'"
                 class="absolute inset-0 flex items-center justify-center bg-black/60 z-20"
               >
                 <div class="flex flex-col items-center gap-3">
                   <AlertCircle class="w-12 h-12 text-red-500" />
                   <span class="text-white text-sm text-center max-w-xs">
-                    {{ viewer.state.value.connectionError || 'Connection failed' }}
+                    {{ activeState.connectionError || 'Connection failed' }}
                   </span>
                   <button
                     @click="reconnect"
@@ -222,13 +236,9 @@
 
               <!-- Play overlay when paused -->
               <div
-                v-if="
-                  !viewer.state.value.isPlaying &&
-                  viewer.state.value.connectionState === 'connected' &&
-                  !viewer.state.value.isBuffering
-                "
+                v-if="!activeState.isPlaying && activeState.connectionState === 'connected' && !activeState.isBuffering"
                 class="absolute inset-0 flex items-center justify-center bg-black/40 z-15 cursor-pointer"
-                @click.stop="viewer.play"
+                @click.stop="activeViewer.play"
               >
                 <div class="w-20 h-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
                   <Play class="w-10 h-10 text-white ml-1" />
@@ -239,18 +249,18 @@
               <div
                 :class="[
                   'absolute bottom-0 left-0 right-0 z-30 transition-opacity duration-300',
-                  showControls || !viewer.state.value.isPlaying ? 'opacity-100' : 'opacity-0 pointer-events-none',
+                  showControls || !activeState.isPlaying ? 'opacity-100' : 'opacity-0 pointer-events-none',
                 ]"
                 @click.stop
               >
                 <div class="bg-gradient-to-t from-black/90 via-black/60 to-transparent pt-16 pb-4 px-4">
                   <!-- Seek Bar -->
                   <LivestreamSeekBar
-                    :current-time="viewer.state.value.playbackPosition"
-                    :duration="viewer.state.value.totalRecordedDuration"
-                    :live-edge-time="viewer.state.value.liveEdgeTime"
-                    :buffered-ranges="viewer.state.value.bufferedRanges"
-                    :is-at-live-edge="viewer.state.value.isAtLiveEdge"
+                    :current-time="activeState.playbackPosition"
+                    :duration="activeState.totalRecordedDuration"
+                    :live-edge-time="activeState.liveEdgeTime"
+                    :buffered-ranges="activeState.bufferedRanges"
+                    :is-at-live-edge="activeState.isAtLiveEdge"
                     @seek="handleSeek"
                     @seek-to-live="handleSeekToLive"
                   />
@@ -261,24 +271,24 @@
                     <div class="flex items-center gap-3">
                       <!-- Play/Pause -->
                       <button
-                        @click="viewer.togglePlayPause"
+                        @click="activeViewer.togglePlayPause"
                         class="p-2 rounded-lg text-white hover:bg-white/20 transition-colors"
                       >
-                        <Pause v-if="viewer.state.value.isPlaying" class="w-6 h-6" />
+                        <Pause v-if="activeState.isPlaying" class="w-6 h-6" />
                         <Play v-else class="w-6 h-6" />
                       </button>
 
                       <!-- Volume -->
                       <div class="flex items-center gap-2 group">
                         <button
-                          @click="viewer.toggleMute"
+                          @click="activeViewer.toggleMute"
                           class="p-2 rounded-lg text-white hover:bg-white/20 transition-colors"
                         >
                           <VolumeX
-                            v-if="viewer.state.value.isMuted || viewer.state.value.volume === 0"
+                            v-if="activeState.isMuted || activeState.volume === 0"
                             class="w-5 h-5"
                           />
-                          <Volume1 v-else-if="viewer.state.value.volume < 0.5" class="w-5 h-5" />
+                          <Volume1 v-else-if="activeState.volume < 0.5" class="w-5 h-5" />
                           <Volume2 v-else class="w-5 h-5" />
                         </button>
                         <div class="w-0 overflow-hidden group-hover:w-24 transition-all duration-200">
@@ -287,7 +297,7 @@
                             min="0"
                             max="1"
                             step="0.01"
-                            :value="viewer.state.value.volume"
+                            :value="activeState.volume"
                             @input="handleVolumeChange"
                             :style="volumeGradient"
                             class="w-24 h-1 bg-zinc-600 rounded-full appearance-none cursor-pointer accent-transparent [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full"
@@ -297,7 +307,7 @@
 
                       <!-- Live Indicator / Go Live Button -->
                       <button
-                        v-if="viewer.state.value.playbackMode === 'webrtc'"
+                        v-if="activeState.playbackMode === 'webrtc'"
                         class="flex items-center gap-2 px-3 py-1 bg-red-600/90 text-white text-xs font-medium rounded-full cursor-default"
                       >
                         <div class="relative w-2 h-2">
@@ -319,8 +329,29 @@
 
                     <!-- Right Controls -->
                     <div class="flex items-center gap-2">
+                      <!-- Kick quality selection -->
+                      <div v-if="isKickStream" class="flex items-center gap-2">
+                        <Select :model-value="kickQualityValue" @update:model-value="handleKickQualityChange">
+                          <SelectTrigger class="w-28 bg-white/10 border-white/20 text-white text-xs">
+                            <SelectValue placeholder="Quality" />
+                          </SelectTrigger>
+                          <SelectContent class="bg-zinc-900 text-white border border-white/10">
+                            <SelectItem value="auto">Auto</SelectItem>
+                            <SelectItem
+                              v-for="quality in kickQualities"
+                              :key="quality.id"
+                              :value="quality.id.toString()"
+                            >
+                              {{ quality.label }}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <span class="text-xs text-zinc-400">Quality</span>
+                      </div>
+
                       <!-- Clip Button -->
                       <button
+                        v-if="!isKickStream"
                         @click="openClipModal"
                         class="px-3 py-2 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2"
                         :disabled="viewer.state.value.totalRecordedDuration < 5 || viewer.state.value.availableSegments.length === 0"
@@ -414,7 +445,6 @@
   import LivestreamSeekBar from './LivestreamSeekBar.vue';
   import ClipDurationModal from './ClipDurationModal.vue';
   import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
   import {
     getWatermarkImage,
     resolveWatermarkById,
@@ -462,6 +492,74 @@
   const viewer = pumpfunViewer;
   const kickViewer = useKickLivestreamViewer();
   const isKickStream = computed(() => props.platform === 'Kick');
+  const activeViewer = computed(() => (isKickStream.value ? kickViewer : viewer));
+
+  type ConnectionDisplayState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
+
+  const activeState = computed(() => {
+    if (isKickStream.value) {
+      const kickState = kickViewer.state.value;
+      const totalDuration = kickState.duration || kickState.dvrWindowSeconds || 0;
+      const liveEdgeTime = totalDuration > 0 ? totalDuration : kickState.currentTime;
+
+      const mapConnectionState = (state: string): ConnectionDisplayState => {
+        switch (state) {
+          case 'ready':
+            return 'connected';
+          case 'connecting':
+            return 'connecting';
+          case 'error':
+            return 'failed';
+          case 'idle':
+          default:
+            return 'disconnected';
+        }
+      };
+
+      return {
+        connectionState: mapConnectionState(kickState.connectionState),
+        connectionError: kickState.error,
+        viewerCount: kickState.viewerCount ?? 0,
+        streamQuality: kickViewer.qualityLabel.value,
+        isAtLiveEdge: kickState.isAtLiveEdge,
+        totalRecordedDuration: totalDuration,
+        playbackPosition: kickState.currentTime,
+        liveEdgeTime,
+        bufferedRanges: kickState.bufferedRanges,
+        isMuted: kickState.isMuted,
+        volume: kickState.volume,
+        isPlaying: kickState.isPlaying,
+        isBuffering: kickState.isBuffering,
+        latencyMs: kickState.latencyMs ?? null,
+        playbackMode: 'hls',
+        isLive: kickState.isLive,
+      };
+    }
+
+    const pumpState = viewer.state.value;
+    return {
+      connectionState: pumpState.connectionState as ConnectionDisplayState,
+      connectionError: pumpState.connectionError,
+      viewerCount: pumpState.viewerCount,
+      streamQuality: pumpState.streamQuality,
+      isAtLiveEdge: pumpState.isAtLiveEdge,
+      totalRecordedDuration: pumpState.totalRecordedDuration,
+      playbackPosition: pumpState.playbackPosition,
+      liveEdgeTime: pumpState.liveEdgeTime,
+      bufferedRanges: pumpState.bufferedRanges,
+      isMuted: pumpState.isMuted,
+      volume: pumpState.volume,
+      isPlaying: pumpState.isPlaying,
+      isBuffering: pumpState.isBuffering,
+      latencyMs: pumpState.latencyMs,
+      playbackMode: pumpState.playbackMode,
+      isLive: viewer.isLive.value,
+    };
+  });
+
+  const kickQualities = computed(() => kickViewer.qualities.value);
+  const kickSelectedQuality = computed(() => kickViewer.selectedQuality.value);
+  const kickQualityLabel = computed(() => kickViewer.qualityLabel.value);
 
   // UI State
   const isFullscreen = ref(false);
