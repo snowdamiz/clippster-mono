@@ -92,6 +92,7 @@ export function useHlsPlayback() {
    */
   function getHlsUrl(outputDir: string): string {
     const encodedDir = btoa(outputDir);
+    // Use the temp playlist for latest updates; server falls back to the stable file if tmp is missing
     return `http://127.0.0.1:${VIDEO_SERVER_PORT}/hls/${encodedDir}/playlist.m3u8.tmp`;
   }
 

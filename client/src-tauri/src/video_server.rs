@@ -363,9 +363,11 @@ pub async fn start_video_server_impl() {
                 }
             };
 
-            let playlist_path = PathBuf::from(&dir_str).join("playlist.m3u8.tmp");
+            let playlist_tmp = PathBuf::from(&dir_str).join("playlist.m3u8.tmp");
+            let playlist_final = PathBuf::from(&dir_str).join("playlist.m3u8");
 
-            if !playlist_path.exists() {
+            // Accept either the tmp (preferred) or the stable playlist
+            if !playlist_tmp.exists() && !playlist_final.exists() {
                 return Ok(warp::reply::with_status(
                     warp::reply::with_header(
                         warp::reply::with_header(
@@ -488,14 +490,20 @@ pub async fn start_video_server_impl() {
                 }
             };
 
-            let playlist_path = PathBuf::from(&dir_str).join("playlist.m3u8.tmp");
+            let playlist_tmp = PathBuf::from(&dir_str).join("playlist.m3u8.tmp");
+            let playlist_final = PathBuf::from(&dir_str).join("playlist.m3u8");
 
-            if !playlist_path.exists() {
+            // Prefer tmp (newest), fall back to stable playlist if tmp not present
+            let playlist_path = if playlist_tmp.exists() {
+                playlist_tmp
+            } else if playlist_final.exists() {
+                playlist_final
+            } else {
                 return Ok(warp::reply::with_status(
                     warp::reply::json(&serde_json::json!({"error": "Playlist not found"})),
                     warp::http::StatusCode::NOT_FOUND
                 ).into_response());
-            }
+            };
 
             match tokio::fs::read(&playlist_path).await {
                 Ok(content) => {

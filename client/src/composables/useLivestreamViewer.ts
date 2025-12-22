@@ -1006,8 +1006,8 @@ export function useLivestreamViewer() {
       // Timeline always reflects actual HLS content duration
       const actualHlsDuration = ps.duration > 0 ? ps.duration : 0;
       
-      // Start playback as soon as we have at least 2 segments (8s)
-      const MIN_BUFFER_DURATION = 8; 
+      // Start playback only after we have a safer initial buffer (>= 12s)
+      const MIN_BUFFER_DURATION = 12;
       
       if (actualHlsDuration >= MIN_BUFFER_DURATION) {
         // HLS has enough content for smooth playback
@@ -1017,6 +1017,7 @@ export function useLivestreamViewer() {
         // Mark HLS as ready once we have enough buffer
         if (!isHlsReady.value) {
           isHlsReady.value = true;
+          state.value.isBuffering = false;
           hlsPlayback.play();
         }
         
@@ -1028,9 +1029,10 @@ export function useLivestreamViewer() {
         state.value.totalRecordedDuration = actualHlsDuration;
         state.value.isBuffering = true;
         
-        // Force hls.js to poll playlist by starting playback
-        if (!isHlsReady.value && !state.value.isPlaying) {
-           hlsPlayback.play();
+        // Keep paused while buffering up the initial window to avoid start-stop
+        if (!isHlsReady.value && state.value.isPlaying) {
+          hlsPlayback.pause();
+          state.value.isPlaying = false;
         }
 
         // Check for stuck buffering (if duration doesn't increase for > 10s)
