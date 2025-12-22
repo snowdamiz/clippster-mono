@@ -13,6 +13,7 @@ export interface MonitoredStreamer {
   profileImageUrl?: string;
   streamThumbnailUrl?: string;
   segmentDurationMinutes?: number;
+  autoDvr?: boolean; // When enabled, temp recording starts automatically when streamer goes live
 }
 
 export interface LiveStatus {

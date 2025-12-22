@@ -159,6 +159,56 @@ pub async fn check_pumpfun_livestream(mint_id: String) -> Result<String, String>
 }
 
 #[tauri::command]
+pub async fn join_pumpfun_livestream(mint_id: String) -> Result<String, String> {
+    let url = "https://livestream-api.pump.fun/livestream/join";
+
+    let response = HTTP_CLIENT
+        .post(url)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({
+            "mintId": mint_id,
+            "viewer": true
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Join failed with status: {}", response.status()));
+    }
+
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+
+    Ok(body)
+}
+
+#[tauri::command]
+pub async fn get_livekit_regions(token: String) -> Result<String, String> {
+    let url = "https://pump-prod-tg2x8veh.livekit.cloud/settings/regions";
+
+    let response = HTTP_CLIENT
+        .get(url)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Failed to get regions: {}", response.status()));
+    }
+
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+
+    Ok(body)
+}
+
+#[tauri::command]
 pub async fn start_livestream_recording(
     app: tauri::AppHandle,
     mint_id: String,

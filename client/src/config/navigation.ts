@@ -34,7 +34,7 @@ export const navigationItems: NavigationItem[] = [
     icon: Users,
   },
   {
-    name: 'Clip Projects',
+    name: 'Projects',
     path: '/projects',
     icon: Folder,
   },
@@ -49,7 +49,7 @@ export const navigationItems: NavigationItem[] = [
     icon: Clapperboard,
   },
   {
-    name: 'Clip Live',
+    name: 'Live',
     path: '/live-clip',
     icon: Radio,
   },
