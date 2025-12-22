@@ -1,23 +1,37 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
+import type { SupportedLivestreamPlatform } from '@/types/livestream';
 
 export interface LivestreamWatchState {
   isOpen: boolean;
+  platform: SupportedLivestreamPlatform | null;
   mintId: string;
   streamerId: string;
   displayName: string;
   profileImageUrl?: string;
+  kickChannelSlug?: string | null;
   isInPipMode: boolean;
+}
+
+export interface OpenWatchDialogParams {
+  platform: SupportedLivestreamPlatform;
+  displayName: string;
+  mintId?: string;
+  streamerId?: string;
+  profileImageUrl?: string;
+  kickChannelSlug?: string | null;
 }
 
 export const useLivestreamStore = defineStore('livestream', () => {
   // Watch dialog state
   const watchState = ref<LivestreamWatchState>({
     isOpen: false,
+    platform: null,
     mintId: '',
     streamerId: '',
     displayName: '',
     profileImageUrl: undefined,
+    kickChannelSlug: null,
     isInPipMode: false,
   });
 
@@ -25,25 +39,24 @@ export const useLivestreamStore = defineStore('livestream', () => {
   const isWatching = computed(() => watchState.value.isOpen || watchState.value.isInPipMode);
   const isInPipMode = computed(() => watchState.value.isInPipMode);
   const currentStreamer = computed(() => ({
+    platform: watchState.value.platform,
     mintId: watchState.value.mintId,
     streamerId: watchState.value.streamerId,
     displayName: watchState.value.displayName,
     profileImageUrl: watchState.value.profileImageUrl,
+    kickChannelSlug: watchState.value.kickChannelSlug,
   }));
 
   // Actions
-  function openWatchDialog(
-    mintId: string,
-    streamerId: string,
-    displayName: string,
-    profileImageUrl?: string
-  ) {
+  function openWatchDialog(params: OpenWatchDialogParams) {
     watchState.value = {
       isOpen: true,
-      mintId,
-      streamerId,
-      displayName,
-      profileImageUrl,
+      platform: params.platform,
+      mintId: params.mintId ?? '',
+      streamerId: params.streamerId ?? '',
+      displayName: params.displayName,
+      profileImageUrl: params.profileImageUrl,
+      kickChannelSlug: params.kickChannelSlug ?? null,
       isInPipMode: false,
     };
   }
@@ -81,10 +94,12 @@ export const useLivestreamStore = defineStore('livestream', () => {
   function reset() {
     watchState.value = {
       isOpen: false,
+      platform: null,
       mintId: '',
       streamerId: '',
       displayName: '',
       profileImageUrl: undefined,
+      kickChannelSlug: null,
       isInPipMode: false,
     };
   }

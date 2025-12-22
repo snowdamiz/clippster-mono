@@ -516,7 +516,13 @@
     const displayName = entry?.displayName || pumpfunLink.display_name || creator.name;
     const profileImage = entry?.profileImageUrl || pumpfunLink.profile_image_url || getCreatorProfileImage(creator);
 
-    livestreamStore.openWatchDialog(pumpfunLink.platform_id, streamerId, displayName, profileImage);
+    livestreamStore.openWatchDialog({
+      platform: 'PumpFun',
+      mintId: pumpfunLink.platform_id,
+      streamerId,
+      displayName,
+      profileImageUrl: profileImage,
+    });
   }
 
   async function toggleCreatorAutoDvr(creator: DisplayCreatorProfile) {

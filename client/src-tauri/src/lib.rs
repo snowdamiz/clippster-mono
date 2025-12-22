@@ -11,6 +11,7 @@ mod video_server;
 mod assets;
 mod ui_utils;
 mod pumpfun;
+mod kick;
 mod waveform;
 mod focal_detection;
 mod commands;
@@ -519,6 +520,8 @@ pub fn run() {
             pumpfun::start_livestream_recording,
             pumpfun::stop_livestream_recording,
             pumpfun::stop_all_livestream_recordings,
+            kick::check_kick_livestream,
+            kick::get_kick_stream_url,
 
             // Download commands
             downloads::download_pumpfun_vod,

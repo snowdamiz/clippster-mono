@@ -150,15 +150,17 @@
       
       <!-- Global Livestream Watch Dialog (persists across navigation for PIP mode) -->
       <LivestreamWatchDialog
-        v-if="livestreamStore.currentStreamer.mintId"
+        v-if="livestreamStore.watchState.isOpen || livestreamStore.isInPipMode"
         v-model="livestreamStore.watchState.isOpen"
+        :platform="livestreamStore.currentStreamer.platform || 'PumpFun'"
         :mint-id="livestreamStore.currentStreamer.mintId"
         :streamer-id="livestreamStore.currentStreamer.streamerId"
         :display-name="livestreamStore.currentStreamer.displayName"
         :profile-image-url="livestreamStore.currentStreamer.profileImageUrl"
+        :kick-channel-slug="livestreamStore.currentStreamer.kickChannelSlug || ''"
         :is-pip-mode-external="livestreamStore.isInPipMode"
         @clip-created="handleClipCreated"
-        @pip-mode-changed="(isPip: boolean) => isPip ? livestreamStore.enterPipMode() : livestreamStore.exitPipMode()"
+        @pip-mode-changed="(isPip: boolean) => (isPip ? livestreamStore.enterPipMode() : livestreamStore.exitPipMode())"
         @closed="livestreamStore.reset()"
       />
     </div>

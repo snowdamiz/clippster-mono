@@ -409,10 +409,19 @@
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { useLivestreamViewer } from '@/composables/useLivestreamViewer';
+  import { useKickLivestreamViewer } from '@/composables/useKickLivestreamViewer';
   import { useToast } from '@/composables/useToast';
   import LivestreamSeekBar from './LivestreamSeekBar.vue';
   import ClipDurationModal from './ClipDurationModal.vue';
-  import { getWatermarkImage, resolveWatermarkById, createLivestreamClipProject, createClip as createClipRecord } from '@/services/database';
+  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+  import {
+    getWatermarkImage,
+    resolveWatermarkById,
+    createLivestreamClipProject,
+    createClip as createClipRecord,
+  } from '@/services/database';
+  import type { SupportedLivestreamPlatform } from '@/types/livestream';
 
   interface Props {
     modelValue: boolean;
@@ -420,6 +429,8 @@
     streamerId: string;
     displayName: string;
     profileImageUrl?: string;
+    platform: SupportedLivestreamPlatform;
+    kickChannelSlug?: string;
     /** External PIP mode state from global store */
     isPipModeExternal?: boolean;
   }
@@ -432,6 +443,8 @@
   }
 
   const props = withDefaults(defineProps<Props>(), {
+    platform: 'PumpFun',
+    kickChannelSlug: '',
     isPipModeExternal: false,
   });
   const emit = defineEmits<Emits>();
@@ -442,9 +455,13 @@
   const videoContainerRef = ref<HTMLDivElement | null>(null);
   const liveVideoRef = ref<HTMLVideoElement | null>(null); // WebRTC video element
   const hlsVideoRef = ref<HTMLVideoElement | null>(null); // HLS video element for DVR
+  const kickVideoRef = ref<HTMLVideoElement | null>(null); // Kick HLS element
 
   // Composable
-  const viewer = useLivestreamViewer();
+  const pumpfunViewer = useLivestreamViewer();
+  const viewer = pumpfunViewer;
+  const kickViewer = useKickLivestreamViewer();
+  const isKickStream = computed(() => props.platform === 'Kick');
 
   // UI State
   const isFullscreen = ref(false);
@@ -476,7 +493,7 @@
   }));
 
   const connectionStatusText = computed(() => {
-    const state = viewer.state.value.connectionState;
+    const state = activeViewer.value.state.value.connectionState;
     return state === 'connected'
       ? 'Connected'
       : state === 'connecting'
@@ -489,7 +506,7 @@
   });
 
   const connectionStatusTextColor = computed(() => {
-    const state = viewer.state.value.connectionState;
+    const state = activeViewer.value.state.value.connectionState;
     return state === 'connected'
       ? 'text-green-400'
       : state === 'reconnecting'
@@ -500,7 +517,7 @@
   });
 
   const connectionQualityColor = computed(() => {
-    const latency = viewer.state.value.latencyMs;
+    const latency = activeViewer.value.state.value.latencyMs;
     if (!latency) return 'text-zinc-400';
     if (latency < 1000) return 'text-green-400';
     if (latency < 2000) return 'text-yellow-400';
@@ -508,11 +525,11 @@
   });
 
   const showWatermark = computed(() => {
-    return viewer.state.value.watermarkId && viewer.state.value.watermarkSettings;
+    return activeViewer.value.state.value.watermarkId && activeViewer.value.state.value.watermarkSettings;
   });
 
   const watermarkStyle = computed<CSSProperties>(() => {
-    const settings = viewer.state.value.watermarkSettings;
+    const settings = activeViewer.value.state.value.watermarkSettings;
     if (!settings) return {};
 
     const opacityRaw = settings.opacity ?? 100;

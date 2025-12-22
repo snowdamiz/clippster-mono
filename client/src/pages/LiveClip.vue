@@ -60,6 +60,41 @@
       </div>
     </template>
 
+    <!-- Kick Quick Watch -->
+    <div class="mt-6">
+      <div class="bg-card border border-border/50 rounded-xl p-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between shadow-sm">
+        <div class="flex-1">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-[#53FC18]/15 border border-[#53FC18]/40 flex items-center justify-center">
+              <img src="/kick.svg" class="w-5 h-5" />
+            </div>
+            <div>
+              <h3 class="text-base font-semibold text-foreground">Watch a Kick livestream</h3>
+              <p class="text-sm text-muted-foreground">Paste any kick.com channel URL or slug to open the HLS viewer instantly.</p>
+            </div>
+          </div>
+          <div class="mt-3 space-y-2">
+            <Input
+              v-model="kickChannelInput"
+              placeholder="kick.com/trainwreckstv"
+              class="h-11 bg-background border-border/60 focus-visible:ring-primary/30"
+              @keyup.enter="watchKickChannel"
+            />
+            <p v-if="kickChannelError" class="text-sm text-red-400">{{ kickChannelError }}</p>
+          </div>
+        </div>
+        <div class="flex gap-2 w-full md:w-auto">
+          <Button
+            class="h-11 px-6 rounded-lg font-semibold bg-[#53FC18]/90 hover:bg-[#53FC18] text-black transition-colors w-full md:w-auto"
+            :disabled="!kickChannelInput"
+            @click="watchKickChannel"
+          >
+            Watch Kick Live
+          </Button>
+        </div>
+      </div>
+    </div>
+
     <div
       class="mx-auto pt-2 relative transition-all duration-500 ease-in-out"
       :class="[isDetectingAny && activityLogs.length > 0 ? 'max-w-7xl' : 'max-w-full', 'pb-12']"
@@ -440,6 +475,7 @@
   } from '@/services/pumpfun';
   import type { MonitoredStreamer } from '@/types/livestream';
   import { useCreditBalance } from '@/composables/useCreditBalance';
+  import { extractChannelSlug } from '@/services/kick';
 
   type Platform = 'Youtube' | 'Twitch' | 'Kick' | 'PumpFun';
 
@@ -462,6 +498,8 @@
   const streamers = ref<ExtendedStreamer[]>([]);
   const inputValue = ref('');
   const detectedPlatform = ref<Platform | null>(null);
+  const kickChannelInput = ref('');
+  const kickChannelError = ref<string | null>(null);
   const logsContainer = ref<HTMLElement | null>(null);
 
   // Search state
@@ -695,12 +733,13 @@
   // Open watch dialog for a live streamer (uses global store for PIP persistence)
   function openWatchDialog(streamer: ExtendedStreamer) {
     if (!streamer.isLive) return;
-    livestreamStore.openWatchDialog(
-      streamer.mintId,
-      streamer.id,
-      streamer.displayName,
-      streamer.profileImageUrl
-    );
+    livestreamStore.openWatchDialog({
+      platform: streamer.platform,
+      mintId: streamer.mintId,
+      streamerId: streamer.id,
+      displayName: streamer.displayName,
+      profileImageUrl: streamer.profileImageUrl,
+    });
   }
 
   // Handle clip created from watch dialog (called via global event from App.vue)
@@ -998,6 +1037,29 @@
 
   function selectSearchResult(token: TokenSearchResult) {
     confirmAddStreamer(token.mint, token.symbol, token.image);
+  }
+
+  function watchKickChannel() {
+    kickChannelError.value = null;
+    const raw = kickChannelInput.value.trim();
+    if (!raw) {
+      kickChannelError.value = 'Enter a Kick channel URL or slug.';
+      return;
+    }
+
+    const slug = extractChannelSlug(raw);
+    if (!slug) {
+      kickChannelError.value = 'Unable to read Kick channel slug from that input.';
+      return;
+    }
+
+    livestreamStore.openWatchDialog({
+      platform: 'Kick',
+      displayName: slug,
+      kickChannelSlug: slug,
+    });
+
+    kickChannelInput.value = '';
   }
 
   async function removeStreamer(id: string) {

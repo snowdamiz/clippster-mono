@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import api from './api';
 
 export interface KickClip {
@@ -21,6 +22,21 @@ export interface KickClipsResponse {
   hasMore: boolean;
   total: number;
   error?: string;
+}
+
+export interface KickLivestreamStatus {
+  isLive: boolean;
+  channelSlug: string;
+  channelId?: number | null;
+  channelName?: string | null;
+  streamId?: string | null;
+  title?: string | null;
+  viewerCount?: number | null;
+  startedAt?: string | null;
+  language?: string | null;
+  playbackUrl?: string | null;
+  thumbnailUrl?: string | null;
+  raw?: Record<string, any>;
 }
 
 /**
@@ -84,6 +100,30 @@ export async function getKickClips(
       error: error.response?.data?.error || error.message || 'Failed to fetch clips',
     };
   }
+}
+
+export async function checkKickLivestream(channelOrSlug: string): Promise<KickLivestreamStatus> {
+  const slug = extractChannelSlug(channelOrSlug);
+  if (!slug) {
+    throw new Error('Invalid Kick channel URL or slug');
+  }
+
+  const response = await invoke<string>('check_kick_livestream', { channelSlug: slug });
+  if (!response) {
+    throw new Error('Empty response from Kick live status check');
+  }
+
+  const parsed = JSON.parse(response) as KickLivestreamStatus;
+  return parsed;
+}
+
+export async function getKickStreamUrl(channelOrSlug: string): Promise<string> {
+  const slug = extractChannelSlug(channelOrSlug);
+  if (!slug) {
+    throw new Error('Invalid Kick channel URL or slug');
+  }
+
+  return invoke<string>('get_kick_stream_url', { channelSlug: slug });
 }
 
 export function formatDuration(seconds: number): string {
