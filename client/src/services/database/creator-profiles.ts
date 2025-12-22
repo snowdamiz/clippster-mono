@@ -1,10 +1,19 @@
 import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { CreatorProfile, CreatorPlatformLink, CreatorProfileWithLinks } from './types';
 
+async function ensureAutoDvrColumn(db: any) {
+  const columns = await db.select<{ name: string }[]>('PRAGMA table_info(creator_profiles)');
+  const hasAutoDvr = columns.some((c) => c.name === 'auto_dvr_enabled');
+  if (!hasAutoDvr) {
+    await db.execute('ALTER TABLE creator_profiles ADD COLUMN auto_dvr_enabled INTEGER DEFAULT 0');
+  }
+}
+
 // ==================== Creator Profiles ====================
 
 export async function getAllCreatorProfiles(): Promise<CreatorProfileWithLinks[]> {
   const db = await getDatabase();
+  await ensureAutoDvrColumn(db);
   const userId = getCurrentUserId();
 
   // Get all profiles for current user
@@ -45,12 +54,14 @@ export async function getAllCreatorProfiles(): Promise<CreatorProfileWithLinks[]
   // Combine profiles with their links
   return profiles.map((profile) => ({
     ...profile,
+    auto_dvr_enabled: profile.auto_dvr_enabled ?? 0,
     platform_links: linksByProfile.get(profile.id) || [],
   }));
 }
 
 export async function getCreatorProfile(id: string): Promise<CreatorProfileWithLinks | null> {
   const db = await getDatabase();
+  await ensureAutoDvrColumn(db);
 
   const profiles = await db.select<CreatorProfile[]>(
     'SELECT * FROM creator_profiles WHERE id = ?',
@@ -68,6 +79,7 @@ export async function getCreatorProfile(id: string): Promise<CreatorProfileWithL
 
   return {
     ...profiles[0],
+    auto_dvr_enabled: profiles[0].auto_dvr_enabled ?? 0,
     platform_links: links,
   };
 }
@@ -90,16 +102,18 @@ export async function createCreatorProfile(
   introId?: string | null,
   outroId?: string | null,
   watermarkId?: string | null,
-  watermarkSettings?: string | null
+  watermarkSettings?: string | null,
+  autoDvrEnabled: boolean = false
 ): Promise<string> {
   const db = await getDatabase();
+  await ensureAutoDvrColumn(db);
   const id = generateId();
   const now = timestamp();
   const userId = getCurrentUserId();
 
   await db.execute(
-    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, user_id, created_at, updated_at) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, auto_dvr_enabled, user_id, created_at, updated_at) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       name,
@@ -109,6 +123,7 @@ export async function createCreatorProfile(
       outroId || null,
       watermarkId || null,
       watermarkSettings || DEFAULT_WATERMARK_SETTINGS,
+      autoDvrEnabled ? 1 : 0,
       userId,
       now,
       now,
@@ -128,9 +143,11 @@ export async function updateCreatorProfile(
     outro_id: string | null;
     watermark_id: string | null;
     watermark_settings: string | null;
+    auto_dvr_enabled: number | boolean;
   }>
 ): Promise<void> {
   const db = await getDatabase();
+  await ensureAutoDvrColumn(db);
   const fields: string[] = [];
   const values: any[] = [];
 
@@ -167,6 +184,11 @@ export async function updateCreatorProfile(
   if (updates.watermark_settings !== undefined) {
     fields.push('watermark_settings = ?');
     values.push(updates.watermark_settings);
+  }
+
+  if (updates.auto_dvr_enabled !== undefined) {
+    fields.push('auto_dvr_enabled = ?');
+    values.push(updates.auto_dvr_enabled ? 1 : 0);
   }
 
   if (fields.length === 0) {

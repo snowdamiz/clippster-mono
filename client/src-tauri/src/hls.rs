@@ -201,6 +201,40 @@ pub async fn stop_hls_recording(mint_id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Cleanup all HLS recordings for a streamer (stop recording + delete files)
+#[tauri::command]
+pub async fn cleanup_hls_recordings(mint_id: String) -> Result<(), String> {
+    // First stop any active recording
+    let entry = {
+        let mut recordings = HLS_RECORDINGS.lock().unwrap();
+        recordings.remove(&mint_id)
+    };
+
+    if let Some(entry) = entry {
+        if let Some(tx) = entry.stop_tx {
+            let _ = tx.send(());
+        }
+        // Wait briefly for process to clean up
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    }
+
+    // Delete all HLS files for this mint
+    let storage_paths = storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to initialize storage: {}", e))?;
+    
+    let hls_dir = storage_paths.videos.join("hls_live").join(&mint_id);
+    
+    if hls_dir.exists() {
+        tokio::fs::remove_dir_all(&hls_dir)
+            .await
+            .map_err(|e| format!("Failed to delete HLS recordings: {}", e))?;
+        
+        println!("[HLS] Cleaned up recordings for mint: {}", mint_id);
+    }
+
+    Ok(())
+}
+
 /// Get the output directory for a recording session
 #[tauri::command]
 pub fn get_recording_output_dir(session_id: String) -> Result<String, String> {

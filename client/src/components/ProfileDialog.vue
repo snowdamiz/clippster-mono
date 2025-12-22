@@ -89,6 +89,26 @@
                 </div>
               </div>
 
+            <!-- Auto DVR -->
+            <div class="flex items-start gap-3 bg-zinc-900/60 border border-zinc-800 rounded-lg p-4">
+              <div
+                class="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500/15 to-emerald-400/5 border border-emerald-500/20 flex items-center justify-center flex-shrink-0"
+              >
+                <Sparkles class="w-4 h-4 text-emerald-400" />
+              </div>
+              <div class="flex-1 space-y-1">
+                <div class="flex items-center justify-between gap-3">
+                  <div>
+                    <p class="text-sm font-medium text-white">Auto DVR</p>
+                    <p class="text-xs text-zinc-400">
+                      Automatically start DVR when this creator goes live (uses REC if enabled).
+                    </p>
+                  </div>
+                  <Switch v-model:checked="formData.auto_dvr_enabled" />
+                </div>
+              </div>
+            </div>
+
               <!-- Platform Links Section -->
               <div class="space-y-4">
                 <div class="flex items-center justify-between">
@@ -714,6 +734,7 @@
     watermark_id: number | string | null;
     watermark_settings: CreatorWatermarkSettings | null;
     platformLinks: PlatformLinkInput[];
+    auto_dvr_enabled: boolean;
   }>({
     name: '',
     description: '',
@@ -722,6 +743,7 @@
     watermark_id: null,
     watermark_settings: null,
     platformLinks: [],
+    auto_dvr_enabled: false,
   });
 
   // Watermark position picker state
@@ -832,6 +854,7 @@
             outro_id: props.profile.outro_id,
             watermark_id: props.profile.watermark_id,
             watermark_settings: (props.profile.watermark_settings as unknown as CreatorWatermarkSettings) || null,
+            auto_dvr_enabled: Boolean((props.profile as any).auto_dvr_enabled),
             platformLinks: props.profile.platform_links.map((link) => ({
               id: link.id,
               platform: link.platform as PlatformId,
@@ -850,6 +873,7 @@
             outro_id: props.creator.outro_id,
             watermark_id: props.creator.watermark_id,
             watermark_settings: props.creator.watermark_settings ? JSON.parse(props.creator.watermark_settings) : null,
+            auto_dvr_enabled: Boolean((props.creator as any).auto_dvr_enabled),
             platformLinks: props.creator.platform_links.map((link) => ({
               id: link.id,
               platform: link.platform as PlatformId,
@@ -869,6 +893,7 @@
             watermark_id: null,
             watermark_settings: null,
             platformLinks: [],
+            auto_dvr_enabled: false,
           };
         }
       }
@@ -1505,6 +1530,7 @@
         watermark_settings: formData.value.watermark_settings
           ? JSON.stringify(formData.value.watermark_settings)
           : null,
+        auto_dvr_enabled: formData.value.auto_dvr_enabled ? 1 : 0,
       });
 
       // Handle platform links
@@ -1542,7 +1568,8 @@
         formData.value.intro_id as string | null,
         formData.value.outro_id as string | null,
         formData.value.watermark_id as string | null,
-        formData.value.watermark_settings ? JSON.stringify(formData.value.watermark_settings) : null
+        formData.value.watermark_settings ? JSON.stringify(formData.value.watermark_settings) : null,
+        formData.value.auto_dvr_enabled
       );
 
       // Add platform links

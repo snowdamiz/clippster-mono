@@ -284,7 +284,8 @@
                             step="0.01"
                             :value="viewer.state.value.volume"
                             @input="handleVolumeChange"
-                            class="w-24 h-1 bg-zinc-600 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full"
+                            :style="volumeGradient"
+                            class="w-24 h-1 bg-zinc-600 rounded-full appearance-none cursor-pointer accent-transparent [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full"
                           />
                         </div>
                       </div>
@@ -555,6 +556,14 @@
     return viewer.state.value.isAtLiveEdge ? 'Live' : 'DVR';
   });
 
+  const volumeGradient = computed(() => {
+    const pct = Math.min(100, Math.max(0, viewer.state.value.volume * 100));
+    // Violet fill to current value, neutral gray beyond
+    return {
+      background: `linear-gradient(to right, #a855f7 0%, #a855f7 ${pct}%, #3f3f46 ${pct}%, #3f3f46 100%)`,
+    };
+  });
+
   // Load watermark image
   async function loadWatermark() {
     const watermarkId = viewer.state.value.watermarkId;
@@ -668,20 +677,17 @@
   }
 
   async function handleClose() {
-    // Stop HLS recording when closing
-    if (viewer.state.value.isTempRecording && props.mintId) {
-      try {
-        await invoke('stop_hls_recording', { mintId: props.mintId });
-      } catch (e) {
-        console.warn('[WatchDialog] Failed to stop HLS recording:', e);
-      }
-    }
+    // Do NOT stop temp HLS recording on close; keep it running so users can return and rewind.
+    // Recording will be cleaned up when streamer goes offline or by backend retention.
+
+    // Stop playback locally to avoid lingering audio when switching streams
+    viewer.pause();
 
     // Reset session tracking state
     sessionProjectId.value = null;
     clipsCreatedCount.value = 0;
 
-    viewer.disconnect();
+    await viewer.disconnect();
     emit('update:modelValue', false);
   }
 

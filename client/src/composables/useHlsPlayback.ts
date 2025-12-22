@@ -75,6 +75,7 @@ export function useHlsPlayback() {
   let updateInterval: number | null = null;
   let isCleaningUp = false;
   let availableStartTime = 0; // Earliest known playable time from playlist/segments
+  let timelineOffset: number | null = null; // Normalize timeline so 0 = first playable second; set once
 
   // Buffer stall recovery state
   let bufferStallStart: number | null = null;
@@ -282,21 +283,28 @@ export function useHlsPlayback() {
       const levelDetails = data.details;
       if (levelDetails) {
         state.value.isLive = levelDetails.live;
-        state.value.duration = levelDetails.totalduration;
-        state.value.liveEdgeTime = levelDetails.totalduration;
-
-        // Track earliest fragment start to avoid seeking into missing media
+        // Normalize timeline so 0 is the earliest playable second; set offset once to avoid UI jumps
         const firstFragment = levelDetails.fragments?.[0];
+        if (timelineOffset === null && firstFragment && typeof firstFragment.start === 'number') {
+          timelineOffset = Math.max(0, firstFragment.start);
+        }
+
+        // Track earliest fragment start to avoid seeking into missing media (can advance as window slides)
         if (firstFragment && typeof firstFragment.start === 'number') {
           availableStartTime = Math.max(0, firstFragment.start);
         }
+
+        const offset = timelineOffset ?? 0;
+        state.value.duration = Math.max(0, levelDetails.totalduration - offset);
+        state.value.liveEdgeTime = state.value.duration;
       }
     });
 
     hlsInstance.on(Hls.Events.FRAG_LOADED, () => {
       updateBufferedRanges();
       if (hls?.liveSyncPosition) {
-        state.value.liveEdgeTime = hls.liveSyncPosition;
+        const offset = timelineOffset ?? 0;
+        state.value.liveEdgeTime = Math.max(0, hls.liveSyncPosition - offset);
       }
     });
 
@@ -448,7 +456,8 @@ export function useHlsPlayback() {
 
     video.addEventListener('timeupdate', () => {
       if (isCleaningUp) return;
-      state.value.currentTime = video.currentTime;
+      const offset = timelineOffset ?? 0;
+      state.value.currentTime = Math.max(0, video.currentTime - offset);
       state.value.isAtLiveEdge = isAtLiveEdge.value;
 
       if (state.value.isLive && hls?.liveSyncPosition) {
@@ -458,7 +467,8 @@ export function useHlsPlayback() {
 
     video.addEventListener('seeked', () => {
       if (isCleaningUp) return;
-      state.value.currentTime = video.currentTime;
+      const offset = timelineOffset ?? 0;
+      state.value.currentTime = Math.max(0, video.currentTime - offset);
       clearBufferStallRecovery();
     });
 
@@ -484,12 +494,13 @@ export function useHlsPlayback() {
 
     updateInterval = window.setInterval(() => {
       if (videoElement) {
-        state.value.currentTime = videoElement.currentTime;
+        const offset = timelineOffset ?? 0;
+        state.value.currentTime = Math.max(0, videoElement.currentTime - offset);
         updateBufferedRanges();
 
         // Update live edge from HLS
         if (hls?.liveSyncPosition) {
-          state.value.liveEdgeTime = hls.liveSyncPosition;
+          state.value.liveEdgeTime = Math.max(0, hls.liveSyncPosition - offset);
         }
 
         state.value.isAtLiveEdge = isAtLiveEdge.value;
@@ -507,9 +518,10 @@ export function useHlsPlayback() {
     const buffered = videoElement.buffered;
 
     for (let i = 0; i < buffered.length; i++) {
+      const offset = timelineOffset ?? 0;
       ranges.push({
-        start: buffered.start(i),
-        end: buffered.end(i),
+        start: Math.max(0, buffered.start(i) - offset),
+        end: Math.max(0, buffered.end(i) - offset),
       });
     }
 
@@ -525,12 +537,16 @@ export function useHlsPlayback() {
     const bufferedStart = state.value.bufferedRanges.length
       ? state.value.bufferedRanges[0].start
       : 0;
-    const minAvailable = Math.max(availableStartTime, bufferedStart);
-    const safeFloor = minAvailable > 0 ? minAvailable + SAFE_SEEK_PADDING : 0;
+    const offset = timelineOffset ?? 0;
+    const minAvailableOffset = Math.max(0, Math.max(availableStartTime - offset, bufferedStart));
+    const safeFloor = minAvailableOffset > 0 ? minAvailableOffset + SAFE_SEEK_PADDING : 0;
     const liveEdge = state.value.liveEdgeTime || state.value.duration || 0;
     const clampedTime = Math.max(safeFloor, Math.min(time, liveEdge));
 
-    videoElement.currentTime = clampedTime;
+    // Map back to absolute player time
+    const targetAbsolute = clampedTime + offset;
+
+    videoElement.currentTime = targetAbsolute;
     state.value.currentTime = clampedTime;
     state.value.isAtLiveEdge = clampedTime >= state.value.liveEdgeTime - LIVE_EDGE_THRESHOLD;
   }
@@ -544,7 +560,8 @@ export function useHlsPlayback() {
     if (hls?.liveSyncPosition && hls.liveSyncPosition > 0) {
       videoElement.currentTime = hls.liveSyncPosition;
     } else if (state.value.duration > 0) {
-      videoElement.currentTime = Math.max(0, state.value.duration - 2);
+      const offset = timelineOffset ?? 0;
+      videoElement.currentTime = Math.max(0, state.value.duration - 2 + offset);
     }
 
     state.value.isAtLiveEdge = true;
@@ -671,6 +688,7 @@ export function useHlsPlayback() {
       isLive: true,
       latency: 0,
     };
+    timelineOffset = null;
   }
 
   // Cleanup on unmount

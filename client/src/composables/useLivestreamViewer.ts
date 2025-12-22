@@ -155,6 +155,9 @@ export function useLivestreamViewer() {
   const isHlsReady = ref(false);
   let lastDurationUpdate = 0;
   let lastDurationValue = 0;
+  let displayDuration = 0; // Smoothed duration to avoid UI jumps when new segments arrive
+  let lastDisplayUpdate = Date.now();
+  const DURATION_SMOOTH_RATE = 1.0; // seconds of display growth per real second
 
   // LiveKit room instance (for WebRTC playback and viewer tracking)
   let room: Room | null = null;
@@ -997,22 +1000,42 @@ export function useLivestreamViewer() {
       const ps = hlsPlayback.state.value;
       state.value.isPlaying = ps.isPlaying;
       state.value.isBuffering = ps.isBuffering || !isHlsReady.value;
-      state.value.playbackPosition = ps.currentTime;
-      state.value.bufferedRanges = ps.bufferedRanges;
+      // Clamp UI playback position to displayed duration to avoid end-jumps when new segments append
+      const safeDuration = Math.max(displayDuration, 0.001);
+      const clampedPosition = Math.min(ps.currentTime, Math.max(0, safeDuration - 0.25));
+      state.value.playbackPosition = clampedPosition;
+
+      // Clamp buffered ranges to displayed duration to keep the bar stable
+      state.value.bufferedRanges = ps.bufferedRanges.map((r) => ({
+        start: Math.max(0, Math.min(r.start, safeDuration)),
+        end: Math.max(0, Math.min(r.end, safeDuration)),
+      }));
       
       // Latency is the delay from real-time (HLS segments are ~5s behind WebRTC)
       state.value.latencyMs = 5000 + (ps.latency * 1000);
 
       // Timeline always reflects actual HLS content duration
       const actualHlsDuration = ps.duration > 0 ? ps.duration : 0;
+      const nowTs = Date.now();
+      const dtSeconds = Math.max(0, (nowTs - lastDisplayUpdate) / 1000);
+      lastDisplayUpdate = nowTs;
+      
+      // Smoothly advance displayed duration to avoid playhead jump when new segments are appended
+      if (actualHlsDuration >= displayDuration) {
+        const growth = dtSeconds * DURATION_SMOOTH_RATE;
+        displayDuration = Math.min(actualHlsDuration, displayDuration + growth);
+      } else {
+        // If actual shrinks (shouldn't), snap down
+        displayDuration = actualHlsDuration;
+      }
       
       // Start playback only after we have a safer initial buffer (>= 12s)
       const MIN_BUFFER_DURATION = 12;
       
       if (actualHlsDuration >= MIN_BUFFER_DURATION) {
         // HLS has enough content for smooth playback
-        state.value.liveEdgeTime = actualHlsDuration;
-        state.value.totalRecordedDuration = actualHlsDuration;
+        state.value.liveEdgeTime = displayDuration;
+        state.value.totalRecordedDuration = displayDuration;
         
         // Mark HLS as ready once we have enough buffer
         if (!isHlsReady.value) {
@@ -1025,8 +1048,8 @@ export function useLivestreamViewer() {
         state.value.isAtLiveEdge = ps.isAtLiveEdge || (ps.currentTime >= ps.duration - 2);
       } else if (actualHlsDuration > 0) {
         // HLS has some content but not enough for smooth playback
-        state.value.liveEdgeTime = actualHlsDuration;
-        state.value.totalRecordedDuration = actualHlsDuration;
+        state.value.liveEdgeTime = displayDuration;
+        state.value.totalRecordedDuration = displayDuration;
         state.value.isBuffering = true;
         
         // Keep paused while buffering up the initial window to avoid start-stop
@@ -1049,8 +1072,8 @@ export function useLivestreamViewer() {
         }
       } else if (state.value.dvrStartTime) {
         // HLS not ready yet - show buffering state
-        state.value.liveEdgeTime = 0;
-        state.value.totalRecordedDuration = 0;
+        state.value.liveEdgeTime = displayDuration;
+        state.value.totalRecordedDuration = displayDuration;
         state.value.isAtLiveEdge = true;
         state.value.isBuffering = true;
       }

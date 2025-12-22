@@ -53,7 +53,8 @@ export async function createMonitoredStreamer(
   mintId: string,
   displayName: string,
   profileImageUrl?: string,
-  segmentDurationMinutes: number = 5
+  segmentDurationMinutes: number = 5,
+  autoDvr: boolean = false
 ): Promise<string> {
   const db = await getDatabase();
   const id = generateId();
@@ -61,8 +62,18 @@ export async function createMonitoredStreamer(
   const userId = getCurrentUserId();
 
   await db.execute(
-    'INSERT INTO monitored_streamers (id, mint_id, display_name, last_check_timestamp, is_currently_live, current_session_id, profile_image_url, stream_thumbnail_url, segment_duration_minutes, user_id, created_at, updated_at) VALUES (?, ?, ?, NULL, 0, NULL, ?, NULL, ?, ?, ?, ?)',
-    [id, mintId, displayName, profileImageUrl || null, segmentDurationMinutes, userId, now, now]
+    'INSERT INTO monitored_streamers (id, mint_id, display_name, last_check_timestamp, is_currently_live, current_session_id, profile_image_url, stream_thumbnail_url, segment_duration_minutes, auto_dvr, user_id, created_at, updated_at) VALUES (?, ?, ?, NULL, 0, NULL, ?, NULL, ?, ?, ?, ?, ?)',
+    [
+      id,
+      mintId,
+      displayName,
+      profileImageUrl || null,
+      segmentDurationMinutes,
+      autoDvr ? 1 : 0,
+      userId,
+      now,
+      now,
+    ]
   );
 
   return id;
@@ -78,6 +89,7 @@ export async function updateMonitoredStreamer(
     profile_image_url: string | null;
     stream_thumbnail_url: string | null;
     segment_duration_minutes: number;
+    auto_dvr: number | boolean;
   }>
 ): Promise<void> {
   const db = await getDatabase();
@@ -117,6 +129,11 @@ export async function updateMonitoredStreamer(
   if (updates.segment_duration_minutes !== undefined) {
     fields.push('segment_duration_minutes = ?');
     values.push(updates.segment_duration_minutes);
+  }
+
+  if (updates.auto_dvr !== undefined) {
+    fields.push('auto_dvr = ?');
+    values.push(toSqlBool(updates.auto_dvr));
   }
 
   if (fields.length === 0) {

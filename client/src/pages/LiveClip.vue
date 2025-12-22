@@ -165,28 +165,47 @@
 
                 <!-- Row 2: Actions -->
                 <div class="flex items-center justify-between gap-3 px-4 py-2.5 bg-muted/20 border-t border-border/30">
-                  <!-- Left: Segment Duration -->
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs text-muted-foreground">Segment:</span>
-                    <Select
-                      :model-value="String(streamer.segmentDurationMinutes)"
-                      @update:model-value="updateSegmentDuration(streamer, Number($event))"
-                      :disabled="streamer.isDetecting"
-                    >
-                      <SelectTrigger
-                        class="h-8 w-[90px] bg-background border-border/50 text-sm"
-                        :class="{ 'opacity-50': streamer.isDetecting }"
+                  <!-- Left: Segment Duration & Auto DVR -->
+                  <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-muted-foreground">Segment:</span>
+                      <Select
+                        :model-value="String(streamer.segmentDurationMinutes)"
+                        @update:model-value="updateSegmentDuration(streamer, Number($event))"
+                        :disabled="streamer.isDetecting"
                       >
-                        <SelectValue :placeholder="`${streamer.segmentDurationMinutes} min`" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="3">3 min</SelectItem>
-                        <SelectItem value="5">5 min</SelectItem>
-                        <SelectItem value="10">10 min</SelectItem>
-                        <SelectItem value="15">15 min</SelectItem>
-                        <SelectItem value="30">30 min</SelectItem>
-                      </SelectContent>
-                    </Select>
+                        <SelectTrigger
+                          class="h-8 w-[90px] bg-background border-border/50 text-sm"
+                          :class="{ 'opacity-50': streamer.isDetecting }"
+                        >
+                          <SelectValue :placeholder="`${streamer.segmentDurationMinutes} min`" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="3">3 min</SelectItem>
+                          <SelectItem value="5">5 min</SelectItem>
+                          <SelectItem value="10">10 min</SelectItem>
+                          <SelectItem value="15">15 min</SelectItem>
+                          <SelectItem value="30">30 min</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-muted-foreground">Auto DVR:</span>
+                      <button
+                        @click="updateAutoDvr(streamer, !streamer.autoDvr)"
+                        :disabled="streamer.isDetecting && streamer.status === 'STOPPING'"
+                        class="h-8 px-3 rounded-md text-xs font-medium transition-all border"
+                        :class="[
+                          streamer.autoDvr
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                            : 'bg-background text-muted-foreground border-border/50 hover:bg-muted/50',
+                          streamer.isDetecting && streamer.status === 'STOPPING' ? 'opacity-50 cursor-not-allowed' : ''
+                        ]"
+                        title="Automatically start persistent recording when streamer goes live"
+                      >
+                        {{ streamer.autoDvr ? 'On' : 'Off' }}
+                      </button>
+                    </div>
                   </div>
 
                   <!-- Right: Action Buttons -->
@@ -391,6 +410,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+  import { invoke } from '@tauri-apps/api/core';
   import {
     Radio,
     Plus,
@@ -445,6 +465,8 @@
     segmentDurationMinutes: number;
     // Temp recording status (for watch-only DVR)
     hasTempRecording?: boolean;
+    // Auto DVR toggle
+    autoDvr?: boolean;
   };
 
   const streamers = ref<ExtendedStreamer[]>([]);
@@ -709,6 +731,7 @@
           mode: monitored ? (monitored.options.detectClips ? 'Auto-Detect' : 'Record Only') : null,
           status: session ? 'LIVE' : monitored ? 'WAITING' : 'IDLE',
           selected: false,
+          autoDvr: Boolean(record.auto_dvr),
         };
       });
     } catch (error) {
@@ -969,6 +992,20 @@
 
   async function removeStreamer(id: string) {
     try {
+      // Find the streamer to get the mintId for HLS cleanup
+      const streamer = streamers.value.find((s) => s.id === id);
+      
+      if (streamer) {
+        // Stop and cleanup any HLS recordings for this streamer
+        try {
+          await invoke('cleanup_hls_recordings', { mintId: streamer.mintId });
+          console.log('[LiveClip] Cleaned up HLS recordings for', streamer.mintId);
+        } catch (hlsError) {
+          // Log but don't fail if HLS cleanup fails (recordings may not exist)
+          console.warn('[LiveClip] HLS cleanup warning:', hlsError);
+        }
+      }
+      
       await deleteMonitoredStreamer(id);
       streamers.value = streamers.value.filter((s) => s.id !== id);
     } catch (error) {
@@ -1061,6 +1098,18 @@
       }
     } catch (error) {
       console.error('[LiveClip] Failed to update segment duration', error);
+    }
+  }
+
+  async function updateAutoDvr(streamer: ExtendedStreamer, enabled: boolean) {
+    try {
+      await updateMonitoredStreamer(streamer.id, { auto_dvr: enabled ? 1 : 0 });
+      const index = streamers.value.findIndex((s) => s.id === streamer.id);
+      if (index !== -1) {
+        streamers.value[index] = { ...streamers.value[index], autoDvr: enabled };
+      }
+    } catch (error) {
+      console.error('[LiveClip] Failed to update auto DVR', error);
     }
   }
 </script>
