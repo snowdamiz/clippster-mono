@@ -408,6 +408,7 @@
   } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+  import { register, unregister, isRegistered } from '@tauri-apps/plugin-global-shortcut';
   import { useLivestreamViewer } from '@/composables/useLivestreamViewer';
   import { useToast } from '@/composables/useToast';
   import LivestreamSeekBar from './LivestreamSeekBar.vue';
@@ -460,6 +461,8 @@
   const closingForPip = ref(false);
   const pipListenersSetup = ref(false);
   const globalKeyListenerSetup = ref(false);
+  const globalShortcutRegistered = ref(false);
+  const GLOBAL_SHORTCUT = 'Alt+C';
 
   // Track clips created during this session
   const sessionProjectId = ref<string | null>(null);
@@ -1157,8 +1160,9 @@
     if (hlsVideoRef.value) {
       cleanupPipListeners(hlsVideoRef.value);
     }
-    // Clean up global key listener
+    // Clean up global key listener and shortcut
     cleanupGlobalKeyListener();
+    
     // Exit PiP if active when component unmounts
     if (document.pictureInPictureElement) {
       document.exitPictureInPicture().catch(() => {});
