@@ -721,8 +721,11 @@ export interface TextOverlay {
   animation: TextAnimation;
   // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
   perRatioConfigs?: Record<string, TextOverlayRatioConfig>;
-  // Height of preview container when overlay was configured (for proper font scaling on export)
+  previewWidth?: number;
   previewHeight?: number;
+  // UI-only motion preset for editor preview (does not affect export)
+  motionPreset?: 'none' | 'fade' | 'slide-up' | 'pop';
+  motionDuration?: number; // seconds
 }
 
 export interface TextOverlayStyle {
@@ -806,6 +809,9 @@ export interface Sticker {
   scale: number; // 0.1-3 - default/fallback scale
   rotation: number; // Degrees - default/fallback rotation
   animation: StickerAnimation;
+  // UI-only motion preset for editor preview (does not affect export)
+  motionPreset?: 'none' | 'fade' | 'slide-up' | 'pop';
+  motionDuration?: number; // seconds
   // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
   perRatioConfigs?: Record<string, StickerRatioConfig>;
 }

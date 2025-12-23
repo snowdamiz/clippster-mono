@@ -170,8 +170,8 @@
 
     const { width, height, peaks, duration, currentTime, barWidth, barSpacing, amplitude } = options;
     const totalBarWidth = barWidth + barSpacing;
-    const centerY = height / 2;
     const maxBarHeight = height * amplitude;
+    const baselineY = height;
 
     // Calculate playhead position (0-1 ratio)
     const playheadRatio = Math.max(0, Math.min(1, currentTime / duration));
@@ -188,7 +188,7 @@
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1.0;
 
-    // Render each peak with appropriate color
+    // Render each peak with appropriate color (single bar rising from baseline)
     peaks.forEach((peak, index) => {
       const x = index * totalBarWidth;
 
@@ -198,27 +198,22 @@
       // Determine color based on position relative to playhead
       const barCenter = x + barWidth / 2;
       const isBeforePlayhead = barCenter < playheadPixel;
-      const color = isBeforePlayhead ? '#e4e4e7' : '#a78bfa'; // soft gray-white before, muted violet after
+      const color = '#e5e7eb';
 
       // Set color with full opacity
       ctx.fillStyle = color;
       ctx.globalAlpha = 1.0;
 
-      // Calculate bar heights from peak values
-      const positiveHeight = Math.abs(peak.max) * maxBarHeight;
-      const negativeHeight = Math.abs(peak.min) * maxBarHeight;
+      // Calculate bar height from peak magnitude
+      const magnitude = Math.max(Math.abs(peak.max), Math.abs(peak.min));
+      const barHeight = Math.max(1, magnitude * maxBarHeight);
 
       // Calculate actual bar width to stay within canvas bounds
       const actualBarWidth = Math.min(barWidth, width - x);
 
-      // Draw upper bar (positive values)
-      if (positiveHeight > 0 && actualBarWidth > 0) {
-        ctx.fillRect(x, centerY - positiveHeight, actualBarWidth, positiveHeight);
-      }
-
-      // Draw lower bar (negative values)
-      if (negativeHeight > 0 && actualBarWidth > 0) {
-        ctx.fillRect(x, centerY, actualBarWidth, negativeHeight);
+      // Draw single bar from baseline up
+      if (barHeight > 0 && actualBarWidth > 0) {
+        ctx.fillRect(x, baselineY - barHeight, actualBarWidth, barHeight);
       }
     });
 

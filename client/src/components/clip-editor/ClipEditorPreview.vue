@@ -488,9 +488,9 @@
       <button
         v-if="!isPlaying"
         @click.stop="emit('togglePlay')"
-        class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm flex items-center justify-center transition-colors pointer-events-auto z-10"
+        class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm flex items-center justify-center transition-colors pointer-events-auto z-10"
       >
-        <Play class="w-8 h-8 text-white ml-1" />
+        <Play class="w-6 h-6 text-white ml-0.5" />
       </button>
     </div>
 
@@ -499,29 +499,29 @@
       class="bg-black/40 backdrop-blur-sm rounded-lg border border-white/[0.04]"
       :class="isFullscreen ? 'absolute bottom-4 left-4 right-4 mt-0 z-50' : 'mt-2'"
     >
-      <div class="flex items-center justify-between px-1.5 py-1.5">
+      <div class="flex items-center justify-between px-1 py-1">
         <!-- Left Controls -->
         <div class="flex items-center gap-1">
           <!-- Go to Beginning Button -->
           <button
             @click="goToBeginning"
-            class="p-2.5 hover:bg-white/[0.08] rounded-lg transition-all duration-200 group"
+            class="p-2 hover:bg-white/[0.08] rounded-lg transition-all duration-200 group text-[12px]"
             title="Go to Beginning"
           >
-            <SkipBack class="h-4 w-4 text-white/60 group-hover:text-white transition-colors" />
+            <SkipBack class="h-3.5 w-3.5 text-white/60 group-hover:text-white transition-colors" />
           </button>
           <!-- Play/Pause Button -->
           <button
             @click="emit('togglePlay')"
-            class="p-2.5 hover:bg-white/[0.08] rounded-lg transition-all duration-200 group"
+            class="p-2 hover:bg-white/[0.08] rounded-lg transition-all duration-200 group text-[12px]"
             title="Play/Pause (Space)"
           >
-            <Play v-if="!isPlaying" class="h-4 w-4 text-white/60 group-hover:text-white transition-colors" />
-            <Pause v-else class="h-4 w-4 text-white/60 group-hover:text-white transition-colors" />
+            <Play v-if="!isPlaying" class="h-3.5 w-3.5 text-white/60 group-hover:text-white transition-colors" />
+            <Pause v-else class="h-3.5 w-3.5 text-white/60 group-hover:text-white transition-colors" />
           </button>
           <!-- Time Display -->
           <div
-            class="text-white/80 text-xs font-mono bg-white/[0.04] px-3 py-2 rounded-lg ml-1 tabular-nums tracking-tight"
+            class="text-white/80 text-[11px] font-mono bg-white/[0.04] px-2.5 py-1.5 rounded-lg ml-1 tabular-nums tracking-tight"
           >
             <span class="text-white/90">{{ formatDuration(displayCurrentTime) }}</span>
             <span class="text-white/40 mx-1">/</span>
@@ -531,7 +531,7 @@
         <!-- Right Controls -->
         <div class="flex items-center gap-2 pr-1">
           <!-- Volume Control -->
-          <div class="flex items-center gap-2 px-2 py-1.5">
+          <div class="flex items-center gap-2 px-1.5 py-1">
             <button
               @click="toggleMute"
               class="p-1.5 rounded-md hover:bg-white/[0.08] transition-all duration-200 group"
@@ -539,11 +539,11 @@
             >
               <VolumeX
                 v-if="isMuted || volume === 0"
-                class="h-4 w-4 text-white/50 group-hover:text-white/80 transition-colors"
+                class="h-3.5 w-3.5 text-white/50 group-hover:text-white/80 transition-colors"
               />
-              <Volume2 v-else class="h-4 w-4 text-white/60 group-hover:text-white/90 transition-colors" />
+              <Volume2 v-else class="h-3.5 w-3.5 text-white/60 group-hover:text-white/90 transition-colors" />
             </button>
-            <div class="relative w-24 h-1 bg-white/10 rounded-full">
+            <div class="relative w-20 h-1 bg-white/10 rounded-full">
               <div
                 class="absolute left-0 top-0 h-full bg-white/40 rounded-full transition-all duration-150"
                 :style="{ width: `${volume * 100}%` }"
@@ -562,11 +562,11 @@
           <!-- Fullscreen Button -->
           <button
             @click="toggleFullscreen"
-            class="p-1.5 rounded-md hover:bg-white/[0.08] transition-all duration-200 group ml-1"
-            :title="isFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen (F)'"
+            class="p-1.5 rounded-md hover:bg-white/[0.08] transition-all duration-200 group"
+            title="Toggle Fullscreen"
           >
-            <Minimize2 v-if="isFullscreen" class="h-4 w-4 text-white/60 group-hover:text-white/90 transition-colors" />
-            <Maximize2 v-else class="h-4 w-4 text-white/60 group-hover:text-white/90 transition-colors" />
+            <Minimize2 v-if="isFullscreen" class="h-3.5 w-3.5 text-white/60 group-hover:text-white/90 transition-colors" />
+            <Maximize2 v-else class="h-3.5 w-3.5 text-white/60 group-hover:text-white/90 transition-colors" />
           </button>
         </div>
       </div>
@@ -3336,10 +3336,12 @@
     const scaledShadowBlur = (overlayStyle?.shadowBlur || 4) * scale;
     const scaledStrokeWidth = (overlayStyle?.strokeWidth || 1) * scale;
 
+    const baseTransform = 'translate(-50%, -50%)';
     const style: Record<string, string> = {
       left: `${config.position.x}%`,
       top: `${config.position.y}%`,
-      transform: 'translate(-50%, -50%)',
+      transform: 'var(--motion-base-transform)',
+      '--motion-base-transform': baseTransform,
       fontFamily: overlayStyle?.fontFamily || 'sans-serif',
       fontSize: `${scaledFontSize}px`,
       fontWeight: String(overlayStyle?.fontWeight || 600),
@@ -3386,6 +3388,11 @@
       style.paintOrder = 'stroke fill';
     }
 
+    if (overlay.motionDuration) {
+      style.animationDuration = `${overlay.motionDuration}s`;
+      style['--motion-duration'] = `${overlay.motionDuration}s`;
+    }
+
     return style;
   }
 
@@ -3393,6 +3400,9 @@
     const classes: string[] = [];
     if (overlay.animation && overlay.animation !== 'none') {
       classes.push(`animate-${overlay.animation}`);
+    }
+    if (overlay.motionPreset && overlay.motionPreset !== 'none') {
+      classes.push(`motion-${overlay.motionPreset}`);
     }
     return classes;
   }
@@ -3491,10 +3501,18 @@
     // Base size for emojis
     const baseSize = EMOJI_BASE_SIZE * containerScale;
 
-    return {
-      transform: `scale(${stickerScale}) rotate(${stickerRotation}deg)`,
+    const baseTransform = `scale(${stickerScale}) rotate(${stickerRotation}deg)`;
+    const style: Record<string, string> = {
+      transform: 'var(--motion-base-transform)',
+      '--motion-base-transform': baseTransform,
       fontSize: `${baseSize}px`,
     };
+    if (sticker.motionDuration) {
+      style.animationDuration = `${sticker.motionDuration}s`;
+      style['--motion-duration'] = `${sticker.motionDuration}s`;
+    }
+
+    return style;
   }
 
   // Calculate the bounding box size in pixels for a sticker
@@ -3606,6 +3624,9 @@
     const classes: string[] = [];
     if (sticker.animation && sticker.animation !== 'none') {
       classes.push(`animate-${sticker.animation}`);
+    }
+    if (sticker.motionPreset && sticker.motionPreset !== 'none') {
+      classes.push(`motion-${sticker.motionPreset}`);
     }
     return classes;
   }
@@ -4061,6 +4082,56 @@
 
   .sticker-overlay:hover {
     z-index: 20;
+  }
+
+  /* Motion presets (preview-only) */
+  .motion-fade {
+    animation: motion-fade var(--motion-duration, 0.4s) ease-out both;
+  }
+
+  .motion-slide-up {
+    animation: motion-slide-up var(--motion-duration, 0.5s) ease-out both;
+  }
+
+  .motion-pop {
+    animation: motion-pop var(--motion-duration, 0.35s) cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+  }
+
+  @keyframes motion-fade {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: var(--motion-base-transform, translate(-50%, -50%));
+    }
+  }
+
+  @keyframes motion-slide-up {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -50%) translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: var(--motion-base-transform, translate(-50%, -50%));
+    }
+  }
+
+  @keyframes motion-pop {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(0.4);
+    }
+    70% {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1.08);
+    }
+    100% {
+      opacity: 1;
+      transform: var(--motion-base-transform, translate(-50%, -50%));
+    }
   }
 
   /* Watermark overlay styling */

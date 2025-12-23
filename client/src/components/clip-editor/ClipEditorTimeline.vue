@@ -1,43 +1,36 @@
 <template>
-  <div class="bg-gradient-to-t from-[#0a0a0a]/50 to-[#0a0a0a]/20 transition-all duration-300 ease-in-out">
-    <div class="pt-6 px-6 pb-6 flex flex-col max-h-[55vh]">
-      <!-- Timeline Header -->
-      <div class="flex items-center justify-between mb-4 pr-2 flex-shrink-0">
-        <div class="flex items-center gap-4">
+  <div class="bg-[#0c0c0c] transition-all duration-300 ease-in-out">
+    <div class="pt-2 px-3 pb-2 flex flex-col max-h-[55vh] gap-2">
+      <!-- Timeline Header (compact, CapCut-like) -->
+      <div class="flex items-center justify-between pr-2 flex-shrink-0 text-white/70 text-[12px]">
+        <div class="flex items-center gap-1.5">
           <!-- Timeline Toolbar -->
-          <!-- Cut/Split Tool -->
-          <div class="flex items-center gap-1 bg-black/40 backdrop-blur-sm rounded-lg p-1.5 border border-white/[0.04]">
-            <!-- Cut Button -->
+          <div class="flex items-center gap-1 bg-[#121212] rounded-md px-2 py-1 border border-white/[0.02]">
             <button
               @click="performCutAtPlayhead"
-              class="p-2 rounded-md transition-all duration-150 text-white/50 hover:text-orange-400 hover:bg-orange-500/10"
+              class="p-1.5 rounded-md transition-colors duration-150 text-white/60 hover:text-orange-300 hover:bg-orange-500/10"
               title="Split at playhead (X key)"
             >
-              <Scissors :size="16" />
+              <Scissors :size="14" />
             </button>
-            <!-- Separator -->
-            <div class="w-px h-6 bg-white/10 mx-1"></div>
-            <!-- Undo Button -->
+            <div class="w-px h-5 bg-white/10 mx-1"></div>
             <button
               @click="emit('undo')"
               :disabled="!canUndo"
-              class="p-2 rounded-md transition-all duration-150 text-white/50 hover:text-blue-400 hover:bg-blue-500/10 disabled:text-white/20 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              class="p-1.5 rounded-md transition-colors duration-150 text-white/60 hover:text-blue-300 hover:bg-blue-500/10 disabled:text-white/20 disabled:cursor-not-allowed disabled:hover:bg-transparent"
               title="Undo (Ctrl+Z)"
             >
-              <Undo2 :size="16" />
+              <Undo2 :size="14" />
             </button>
-            <!-- Redo Button -->
             <button
               @click="emit('redo')"
               :disabled="!canRedo"
-              class="p-2 rounded-md transition-all duration-150 text-white/50 hover:text-blue-400 hover:bg-blue-500/10 disabled:text-white/20 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              class="p-1.5 rounded-md transition-colors duration-150 text-white/60 hover:text-blue-300 hover:bg-blue-500/10 disabled:text-white/20 disabled:cursor-not-allowed disabled:hover:bg-transparent"
               title="Redo (Ctrl+Y)"
             >
-              <Redo2 :size="16" />
+              <Redo2 :size="14" />
             </button>
-            <!-- Separator -->
-            <div class="w-px h-6 bg-white/10 mx-1"></div>
-            <!-- Reverse Button -->
+            <div class="w-px h-5 bg-white/10 mx-1"></div>
             <button
               @mousedown="startContinuousSeeking('reverse')"
               @mouseup="stopContinuousSeeking"
@@ -45,16 +38,15 @@
               @touchstart="startContinuousSeeking('reverse')"
               @touchend="stopContinuousSeeking"
               :class="[
-                'p-2 rounded-md transition-colors duration-150',
+                'p-1.5 rounded-md transition-colors duration-150',
                 isSeeking && seekDirection === 'reverse'
-                  ? 'text-amber-400 bg-amber-500/20'
-                  : 'text-white/50 hover:text-amber-400 hover:bg-amber-500/10',
+                  ? 'text-amber-300 bg-amber-500/20'
+                  : 'text-white/60 hover:text-amber-300 hover:bg-amber-500/10',
               ]"
               :title="'Seek backward (← arrow key)'"
             >
-              <Rewind :size="16" />
+              <Rewind :size="14" />
             </button>
-            <!-- Fast Forward Button -->
             <button
               @mousedown="startContinuousSeeking('forward')"
               @mouseup="stopContinuousSeeking"
@@ -62,49 +54,50 @@
               @touchstart="startContinuousSeeking('forward')"
               @touchend="stopContinuousSeeking"
               :class="[
-                'p-2 rounded-md transition-colors duration-150',
+                'p-1.5 rounded-md transition-colors duration-150',
                 isSeeking && seekDirection === 'forward'
-                  ? 'text-amber-400 bg-amber-500/20'
-                  : 'text-white/50 hover:text-amber-400 hover:bg-amber-500/10',
+                  ? 'text-amber-300 bg-amber-500/20'
+                  : 'text-white/60 hover:text-amber-300 hover:bg-amber-500/10',
               ]"
               :title="'Seek forward (→ arrow key)'"
             >
-              <FastForward :size="16" />
+              <FastForward :size="14" />
             </button>
           </div>
           <!-- Zoom Controls -->
-          <div
-            class="flex items-center gap-1.5 bg-black/40 backdrop-blur-sm rounded-lg px-2 py-1.5 border border-white/[0.04]"
-          >
+          <div class="flex items-center gap-1 bg-[#121212] rounded-md px-2 py-1 border border-white/[0.02]">
             <button
               @click="zoomOut"
               :disabled="zoomLevel <= MIN_ZOOM"
-              class="p-1 rounded-md transition-colors duration-150 text-white/50 hover:text-white hover:bg-white/10 disabled:text-white/20 disabled:cursor-not-allowed"
+              class="p-1 rounded-md transition-colors duration-150 text-white/60 hover:text-white hover:bg-white/10 disabled:text-white/20 disabled:cursor-not-allowed"
               title="Zoom out"
             >
-              <Minus :size="16" />
+              <Minus :size="13" />
             </button>
-            <span class="text-sm text-white/60 font-mono tabular-nums min-w-[50px] text-center select-none px-1">
+            <span class="text-[11px] text-white/60 font-mono tabular-nums min-w-[46px] text-center select-none px-1">
               {{ Math.round(zoomLevel * 100) }}%
             </span>
             <button
               @click="zoomIn"
-              class="p-1.5 rounded-md transition-colors duration-150 text-white/50 hover:text-white hover:bg-white/10"
+              class="p-1 rounded-md transition-colors duration-150 text-white/60 hover:text-white hover:bg-white/10"
               title="Zoom in"
             >
-              <Plus :size="16" />
+              <Plus :size="13" />
             </button>
           </div>
         </div>
-        <div class="flex items-center gap-2">
-          <!-- Show segment count if multiple segments -->
+        <div class="flex items-center gap-1.5">
+          <label class="flex items-center gap-1.5 text-[11px] text-white/60 bg-white/[0.04] px-2 py-1 rounded-md border border-white/10">
+            <input type="checkbox" v-model="snapEnabled" class="accent-violet-500 h-3 w-3" />
+            <span>Snap</span>
+          </label>
           <span
             v-if="sortedTrimSegments.length > 1"
-            class="text-xs text-violet-400/70 bg-violet-500/10 px-3 py-1.5 rounded-md"
+            class="text-[11px] text-violet-300/80 bg-violet-500/10 px-2.5 py-1 rounded-md"
           >
             {{ sortedTrimSegments.length }} segments
           </span>
-          <span class="text-xs text-white/40 bg-white/[0.04] px-3 py-1.5 rounded-md">
+          <span class="text-[11px] text-white/50 bg-white/[0.04] px-2 py-1 rounded-md">
             {{ formatTime(totalDuration) }}
           </span>
         </div>
@@ -113,20 +106,22 @@
       <!-- Timeline Tracks Container -->
       <div
         ref="timelineScrollContainer"
-        class="pr-1 bg-[#101010] border border-white/[0.04] rounded-lg relative overflow-x-auto overflow-y-auto flex-1 min-h-0 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800 backdrop-blur-sm"
+        class="pr-1 bg-[#111] border border-white/[0.03] rounded-lg relative overflow-y-auto overflow-x-hidden flex-1 min-h-0 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-gray-900"
         @mousemove="onTimelineMouseMove"
         @mouseleave="onTimelineMouseLeave"
       >
-        <!-- Timeline Content Wrapper - handles zoom width -->
-        <div
-          ref="contentWrapperRef"
-          class="timeline-content-wrapper relative"
-          :class="{ dragging: isDragging || isResizing }"
-          :style="{ width: `${100 * zoomLevel}%`, minHeight: '100%' }"
-        >
-          <!-- Segmented Timestamp Ruler -->
+        <!-- Horizontal scroller for ruler + tracks -->
+        <div class="overflow-x-auto pb-2">
+          <!-- Timeline Content Wrapper - handles zoom width -->
           <div
-            class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 sticky top-0 z-50 backdrop-blur-sm timeline-ruler"
+            ref="contentWrapperRef"
+            class="timeline-content-wrapper relative"
+            :class="{ dragging: isDragging || isResizing }"
+            :style="{ width: `${Math.max(1, zoomLevel) * 100}%`, minHeight: '100%' }"
+          >
+          <!-- Full-width Timestamp Ruler -->
+          <div
+            class="h-8 border-b border-white/[0.06] flex items-center bg-[#0f0f0f] sticky top-0 z-50 timeline-ruler"
             @wheel="onRulerWheel"
             title="Scroll to zoom"
           >
@@ -136,62 +131,28 @@
             >
               <span class="text-xs text-muted-foreground/50 font-medium">Time</span>
             </div>
-            <!-- Segmented timestamp ruler -->
+            <!-- Continuous ruler ticks across full duration -->
             <div
               ref="rulerContentRef"
               class="flex-1 relative h-full flex items-center cursor-pointer"
               @click="onRulerClick"
             >
-              <!-- Render each segment region in the ruler -->
-              <template v-for="(segmentLayout, index) in segmentLayouts" :key="segmentLayout.segment.id">
-                <!-- Segment region with ticks -->
+              <div class="absolute inset-0">
                 <div
-                  class="absolute h-full"
-                  :style="{
-                    left: `${segmentLayout.startPercent}%`,
-                    width: `${segmentLayout.widthPercent}%`,
-                  }"
+                  v-for="tick in rulerTicks"
+                  :key="tick.key"
+                  class="absolute flex flex-col items-center"
+                  :style="{ left: `${tick.percent}%`, transform: 'translateX(-50%)', bottom: '0' }"
                 >
-                  <!-- Segment start time (always shown) -->
-                  <div
-                    class="absolute flex flex-col items-center"
-                    :style="{ left: '0%', transform: 'translateX(-50%)', bottom: '0' }"
+                  <div class="w-px bg-foreground/20 timeline-tick" :class="tick.isMajor ? 'h-4' : 'h-2'"></div>
+                  <span
+                    v-if="tick.isMajor"
+                    class="text-[10px] text-foreground/40 whitespace-nowrap font-normal mt-0.5"
                   >
-                    <div class="w-px bg-violet-400/60 h-4"></div>
-                    <span class="text-[10px] text-violet-400/80 whitespace-nowrap font-medium mt-0.5 ml-4">
-                      {{ formatTime(segmentLayout.effectiveStartTime) }}
-                    </span>
-                  </div>
-
-                  <!-- Intermediate tick marks within segment -->
-                  <div
-                    v-for="tick in segmentLayout.ticks"
-                    :key="tick.time"
-                    class="absolute flex flex-col items-center"
-                    :style="{ left: `${tick.positionInSegment}%`, transform: 'translateX(-50%)', bottom: '0' }"
-                  >
-                    <div class="w-px bg-foreground/20 timeline-tick" :class="tick.isMajor ? 'h-4' : 'h-2'"></div>
-                    <span
-                      v-if="tick.isMajor"
-                      class="text-[10px] text-foreground/40 whitespace-nowrap font-normal mt-0.5"
-                    >
-                      {{ formatTime(tick.time) }}
-                    </span>
-                  </div>
-
-                  <!-- Segment end time (only shown for last segment to avoid duplicate labels) -->
-                  <div
-                    v-if="index === segmentLayouts.length - 1"
-                    class="absolute flex flex-col items-center"
-                    :style="{ left: '100%', transform: 'translateX(-50%)', bottom: '0' }"
-                  >
-                    <div class="w-px bg-violet-400/60 h-4"></div>
-                    <span class="text-[10px] text-violet-400/80 whitespace-nowrap font-medium mt-0.5 -ml-6">
-                      {{ formatTime(segmentLayout.effectiveEndTime) }}
-                    </span>
-                  </div>
+                    {{ formatTime(tick.time) }}
+                  </span>
                 </div>
-              </template>
+              </div>
 
               <!-- Timeline Markers -->
               <div
@@ -240,14 +201,198 @@
             </div>
           </div>
 
-          <!-- Video Track -->
-          <div class="flex items-center h-24 border-b border-border/20 relative">
+          <!-- Placeholder tracks above primary video (CapCut-like empty lanes) -->
+          <div
+            v-for="n in PLACEHOLDER_TOP_COUNT"
+            :key="'placeholder-top-'+n"
+            class="flex items-center h-12 relative"
+          >
+            <div class="track-label w-20 h-12 sticky left-0 z-[70] bg-[#111] flex-shrink-0"></div>
+            <div class="flex-1 h-12 relative">
+              <div class="absolute inset-0 bg-[#0d0d0d] rounded-md"></div>
+            </div>
+          </div>
+
+          <!-- Upper content tracks (stickers/text/effects/filters) -->
+          <div v-if="stickers.length > 0" class="flex items-center h-12 relative">
             <div
-              class="track-label w-20 h-20 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
+              class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
+            >
+              <div class="font-medium flex items-center gap-1">
+                <Smile :size="12" />
+                Stickers
+              </div>
+            </div>
+            <div class="flex-1 h-8 relative" @click="onTrackContentClick">
+              <div class="absolute inset-0 bg-[#1a1a1a]/30 rounded-md cursor-pointer"></div>
+              <div
+                v-for="sticker in stickers"
+                :key="sticker.id"
+                :ref="(el) => setSegmentRef(el, 'sticker', sticker.id)"
+                class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center justify-center group"
+                :class="getSegmentClasses('sticker', sticker.id)"
+                :style="getSegmentStyle(sticker.startTime, sticker.endTime, 'pink', 'sticker', sticker.id)"
+                @mousedown="(e) => onSegmentMouseDown(e, 'sticker', sticker.id, sticker)"
+                @click.stop="selectItem('sticker', sticker.id)"
+              >
+                <span v-if="sticker.stickerType === 'emoji'" class="text-sm pointer-events-none">
+                  {{ sticker.stickerPath }}
+                </span>
+                <span v-else class="text-xs text-white/90 font-medium truncate px-1 drop-shadow-sm pointer-events-none">
+                  Sticker
+                </span>
+                <!-- Left resize handle -->
+                <div
+                  class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
+                  @mousedown.stop="(e) => onResizeMouseDown(e, 'sticker', sticker.id, 'left', sticker)"
+                >
+                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                </div>
+                <!-- Right resize handle -->
+                <div
+                  class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
+                  @mousedown.stop="(e) => onResizeMouseDown(e, 'sticker', sticker.id, 'right', sticker)"
+                >
+                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="textOverlays.length > 0" class="flex items-center h-12 relative">
+            <div
+              class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
+            >
+              <div class="font-medium flex items-center gap-1">
+                <Type :size="12" />
+                Text
+              </div>
+            </div>
+            <div class="flex-1 h-8 relative" @click="onTrackContentClick">
+              <div class="absolute inset-0 bg-[#1a1a1a]/30 rounded-md cursor-pointer"></div>
+              <div
+                v-for="overlay in textOverlays"
+                :key="overlay.id"
+                :ref="(el) => setSegmentRef(el, 'text', overlay.id)"
+                class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
+                :class="getSegmentClasses('text', overlay.id)"
+                :style="getSegmentStyle(overlay.startTime, overlay.endTime, 'amber', 'text', overlay.id)"
+                @mousedown="(e) => onSegmentMouseDown(e, 'text', overlay.id, overlay)"
+                @click.stop="selectItem('text', overlay.id)"
+              >
+                <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm pointer-events-none">
+                  {{ overlay.text }}
+                </span>
+                <!-- Left resize handle -->
+                <div
+                  class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
+                  @mousedown.stop="(e) => onResizeMouseDown(e, 'text', overlay.id, 'left', overlay)"
+                >
+                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                </div>
+                <!-- Right resize handle -->
+                <div
+                  class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
+                  @mousedown.stop="(e) => onResizeMouseDown(e, 'text', overlay.id, 'right', overlay)"
+                >
+                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="effects.length > 0" class="flex items-center h-12 relative">
+            <div
+              class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
+            >
+              <div class="font-medium flex items-center gap-1">
+                <Sparkles :size="12" />
+                Effects
+              </div>
+            </div>
+            <div class="flex-1 h-8 relative" @click="onTrackContentClick">
+              <div class="absolute inset-0 bg-[#1a1a1a]/30 rounded-md cursor-pointer"></div>
+              <div
+                v-for="effect in effects"
+                :key="effect.id"
+                :ref="(el) => setSegmentRef(el, 'effect', effect.id)"
+                class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
+                :class="getSegmentClasses('effect', effect.id)"
+                :style="getSegmentStyle(effect.startTime, effect.endTime, 'cyan', 'effect', effect.id)"
+                @mousedown="(e) => onSegmentMouseDown(e, 'effect', effect.id, effect)"
+                @click.stop="selectItem('effect', effect.id)"
+              >
+                <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm capitalize pointer-events-none">
+                  {{ effect.type }}
+                </span>
+                <!-- Left resize handle -->
+                <div
+                  class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
+                  @mousedown.stop="(e) => onResizeMouseDown(e, 'effect', effect.id, 'left', effect)"
+                >
+                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                </div>
+                <!-- Right resize handle -->
+                <div
+                  class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
+                  @mousedown.stop="(e) => onResizeMouseDown(e, 'effect', effect.id, 'right', effect)"
+                >
+                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="filterSegments.length > 0" class="flex items-center h-12 relative">
+            <div
+              class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
+            >
+              <div class="font-medium flex items-center gap-1">
+                <Palette :size="12" />
+                Filters
+              </div>
+            </div>
+            <div class="flex-1 h-8 relative" @click="onTrackContentClick">
+              <div class="absolute inset-0 bg-[#1a1a1a]/30 rounded-md cursor-pointer"></div>
+              <div
+                v-for="filterSeg in filterSegments"
+                :key="filterSeg.id"
+                :ref="(el) => setSegmentRef(el, 'filter', filterSeg.id)"
+                class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
+                :class="getSegmentClasses('filter', filterSeg.id)"
+                :style="getFilterSegmentStyle(filterSeg)"
+                @mousedown="(e) => onSegmentMouseDown(e, 'filter', filterSeg.id, filterSeg)"
+                @click.stop="selectItem('filter', filterSeg.id)"
+              >
+                <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm capitalize pointer-events-none">
+                  {{ getFilterPresetName(filterSeg.settings.preset) }}
+                </span>
+                <!-- Left resize handle -->
+                <div
+                  class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
+                  @mousedown.stop="(e) => onResizeMouseDown(e, 'filter', filterSeg.id, 'left', filterSeg)"
+                >
+                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                </div>
+                <!-- Right resize handle -->
+                <div
+                  class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
+                  @mousedown.stop="(e) => onResizeMouseDown(e, 'filter', filterSeg.id, 'right', filterSeg)"
+                >
+                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Video Track -->
+          <div class="flex items-center h-20 relative">
+            <div
+              class="track-label w-20 h-20 pl-2 flex items-center justify-start text-[11px] text-muted-foreground/60 sticky left-0 z-[70] bg-[#111] flex-shrink-0 transition-colors duration-150"
             >
               <div class="font-medium flex items-center gap-1.5">
-                <Film :size="14" />
-                <span class="text-sm">Video</span>
+                <Film :size="13" />
+                <span class="text-xs">Video</span>
               </div>
             </div>
             <div
@@ -258,7 +403,7 @@
               @drop.prevent="onTimelineDrop"
             >
               <!-- Background -->
-              <div class="absolute inset-0 bg-[#0a0a0a]/50 rounded-md cursor-pointer"></div>
+              <div class="absolute inset-0 bg-[#0b0b0b]/70 rounded-md cursor-pointer"></div>
 
               <!-- Editor Mode: Video Sources -->
               <template v-if="editorMode">
@@ -297,9 +442,7 @@
                     <!-- Thumbnails will be tiled here -->
                     <div class="absolute inset-0 bg-gradient-to-r from-violet-900/20 to-indigo-900/10"></div>
                     <!-- TODO: Add actual video thumbnails here -->
-                    <div class="absolute inset-0 bg-[#1a1a1a] flex items-center justify-center">
-                      <span class="text-xs text-white/30">{{ source.source_name || 'Video' }}</span>
-                    </div>
+                    <div class="absolute inset-0 bg-[#1a1a1a]"></div>
                   </div>
 
                   <!-- Waveform canvas overlay (semi-transparent over thumbnails) -->
@@ -309,10 +452,12 @@
                     style="mix-blend-mode: screen; z-index: 5"
                   ></canvas>
 
-                  <!-- Source label -->
-                  <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                  <!-- Source label (CapCut-style: pinned to top of segment) -->
+                  <div
+                    class="absolute top-0 left-0 right-0 z-10 flex items-start justify-start pointer-events-none px-1 py-1"
+                  >
                     <span
-                      class="text-xs text-white font-medium drop-shadow-md bg-black/60 px-1.5 py-0.5 rounded truncate max-w-full"
+                      class="text-[11px] text-white font-medium bg-black/70 px-2 py-0.5 rounded-md truncate max-w-[90%] shadow-sm shadow-black/40"
                     >
                       {{ source.source_name || 'Untitled' }}
                     </span>
@@ -427,9 +572,7 @@
                       <!-- Thumbnails will be tiled here -->
                       <div class="absolute inset-0 bg-gradient-to-r from-violet-900/20 to-indigo-900/10"></div>
                       <!-- TODO: Add actual video thumbnails here -->
-                      <div class="absolute inset-0 bg-[#1a1a1a] flex items-center justify-center">
-                        <span class="text-xs text-white/30">Video Segment</span>
-                      </div>
+                      <div class="absolute inset-0 bg-[#1a1a1a]"></div>
                     </div>
 
                     <!-- Waveform canvas overlay (semi-transparent over thumbnails) -->
@@ -438,14 +581,6 @@
                       class="absolute inset-0 w-full h-full pointer-events-none opacity-60"
                       style="mix-blend-mode: screen; z-index: 5"
                     ></canvas>
-
-                    <!-- Segment label (shows effective timeline times) -->
-                    <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                      <span class="text-xs text-white font-medium drop-shadow-md bg-black/60 px-1.5 py-0.5 rounded">
-                        {{ formatTime(segmentLayout.effectiveStartTime) }} -
-                        {{ formatTime(segmentLayout.effectiveEndTime) }}
-                      </span>
-                    </div>
 
                     <!-- Cut preview indicator -->
                     <div
@@ -483,7 +618,7 @@
           <div
             v-for="track in audioTracks"
             :key="track.id"
-            class="flex items-center h-16 border-b border-border/20 relative"
+            class="flex items-center h-16 relative"
           >
             <div
               class="track-label w-20 h-12 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
@@ -553,97 +688,8 @@
             </div>
           </div>
 
-          <!-- Text Overlays Track -->
-          <div v-if="textOverlays.length > 0" class="flex items-center h-12 border-b border-border/20 relative">
-            <div
-              class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
-            >
-              <div class="font-medium flex items-center gap-1">
-                <Type :size="12" />
-                Text
-              </div>
-            </div>
-            <div class="flex-1 h-8 relative" @click="onTrackContentClick">
-              <div class="absolute inset-0 bg-[#1a1a1a]/30 rounded-md cursor-pointer"></div>
-              <div
-                v-for="overlay in textOverlays"
-                :key="overlay.id"
-                :ref="(el) => setSegmentRef(el, 'text', overlay.id)"
-                class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
-                :class="getSegmentClasses('text', overlay.id)"
-                :style="getSegmentStyle(overlay.startTime, overlay.endTime, 'amber', 'text', overlay.id)"
-                @mousedown="(e) => onSegmentMouseDown(e, 'text', overlay.id, overlay)"
-                @click.stop="selectItem('text', overlay.id)"
-              >
-                <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm pointer-events-none">
-                  {{ overlay.text }}
-                </span>
-                <!-- Left resize handle -->
-                <div
-                  class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
-                  @mousedown.stop="(e) => onResizeMouseDown(e, 'text', overlay.id, 'left', overlay)"
-                >
-                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                </div>
-                <!-- Right resize handle -->
-                <div
-                  class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
-                  @mousedown.stop="(e) => onResizeMouseDown(e, 'text', overlay.id, 'right', overlay)"
-                >
-                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Stickers Track -->
-          <div v-if="stickers.length > 0" class="flex items-center h-12 border-b border-border/20 relative">
-            <div
-              class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
-            >
-              <div class="font-medium flex items-center gap-1">
-                <Smile :size="12" />
-                Stickers
-              </div>
-            </div>
-            <div class="flex-1 h-8 relative" @click="onTrackContentClick">
-              <div class="absolute inset-0 bg-[#1a1a1a]/30 rounded-md cursor-pointer"></div>
-              <div
-                v-for="sticker in stickers"
-                :key="sticker.id"
-                :ref="(el) => setSegmentRef(el, 'sticker', sticker.id)"
-                class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center justify-center group"
-                :class="getSegmentClasses('sticker', sticker.id)"
-                :style="getSegmentStyle(sticker.startTime, sticker.endTime, 'pink', 'sticker', sticker.id)"
-                @mousedown="(e) => onSegmentMouseDown(e, 'sticker', sticker.id, sticker)"
-                @click.stop="selectItem('sticker', sticker.id)"
-              >
-                <span v-if="sticker.stickerType === 'emoji'" class="text-sm pointer-events-none">
-                  {{ sticker.stickerPath }}
-                </span>
-                <span v-else class="text-xs text-white/90 font-medium truncate px-1 drop-shadow-sm pointer-events-none">
-                  Sticker
-                </span>
-                <!-- Left resize handle -->
-                <div
-                  class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
-                  @mousedown.stop="(e) => onResizeMouseDown(e, 'sticker', sticker.id, 'left', sticker)"
-                >
-                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                </div>
-                <!-- Right resize handle -->
-                <div
-                  class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
-                  @mousedown.stop="(e) => onResizeMouseDown(e, 'sticker', sticker.id, 'right', sticker)"
-                >
-                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <!-- Watermarks Track -->
-          <div v-if="watermarks.length > 0" class="flex items-center h-12 border-b border-border/20 relative">
+          <div v-if="watermarks.length > 0" class="flex items-center h-12 relative">
             <div
               class="track-label w-20 h-8 pl-2 flex items-center justify-start text-xs text-muted-foreground/60 sticky left-0 z-[70] bg-[#101010] flex-shrink-0 transition-colors duration-150"
             >
@@ -728,6 +774,25 @@
             </div>
           </div>
 
+          <!-- Placeholder blank tracks for spacing (CapCut-like empty lanes) -->
+          <div
+            v-for="n in placeholderTrackCount"
+            :key="'placeholder-'+n"
+            class="flex items-center h-12 border-b border-white/[0.04] relative"
+          >
+            <div
+              class="track-label w-20 h-12 pl-2 flex items-center justify-start text-[11px] text-muted-foreground/40 sticky left-0 z-[70] bg-[#111] flex-shrink-0"
+            >
+              <div class="flex items-center gap-1.5 text-[11px] text-white/30">
+                <span class="w-2 h-2 rounded-sm border border-white/30 inline-block"></span>
+                Track {{ n + (1 + audioTracks.length + (textOverlays.length>0?1:0) + (stickers.length>0?1:0) + (watermarks.length>0?1:0) + (effects.length>0?1:0) + (filterSegments.length>0?1:0)) }}
+              </div>
+            </div>
+            <div class="flex-1 h-12 relative">
+              <div class="absolute inset-0 bg-[#0b0b0b]/50 rounded-md border border-dashed border-white/8"></div>
+            </div>
+          </div>
+
           <!-- Filters Track -->
           <div v-if="filterSegments.length > 0" class="flex items-center h-12 border-b border-border/20 relative">
             <div
@@ -768,6 +833,18 @@
                   <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <!-- Placeholder tracks below (for future audio/overlays) -->
+          <div
+            v-for="n in PLACEHOLDER_BOTTOM_COUNT"
+            :key="'placeholder-bottom-'+n"
+            class="flex items-center h-12 relative"
+          >
+            <div class="track-label w-20 h-12 sticky left-0 z-[70] bg-[#111] flex-shrink-0"></div>
+            <div class="flex-1 h-12 relative">
+              <div class="absolute inset-0 bg-[#0d0d0d] rounded-md"></div>
             </div>
           </div>
 
@@ -814,22 +891,23 @@
           >
             <div class="absolute inset-0 w-0.5 bg-blue-400 shadow-lg shadow-blue-400/50"></div>
           </div>
-        </div>
-      </div>
-    </div>
-  </div>
+          </div> <!-- end contentWrapper -->
+        </div> <!-- end horizontal scroller -->
+      </div> <!-- end scroll container -->
+    </div> <!-- end inner container -->
 
-  <!-- Timeline Hover Line -->
-  <TimelineHoverLine
-    :showLine="showHoverLine"
-    :position="hoverLinePosition"
-    :timelineBoundsTop="timelineBounds.top"
-    :timelineBoundsBottom="timelineBounds.bottom"
-    :timelineBoundsLeft="timelineBounds.left"
-    :isPanning="false"
-    :isDragging="isDragging || isResizing || isDraggingPlayhead"
-    :isCutToolActive="isCutToolActive"
-  />
+    <!-- Timeline Hover Line -->
+    <TimelineHoverLine
+      :showLine="showHoverLine"
+      :position="hoverLinePosition"
+      :timelineBoundsTop="timelineBounds.top"
+      :timelineBoundsBottom="timelineBounds.bottom"
+      :timelineBoundsLeft="timelineBounds.left"
+      :isPanning="false"
+      :isDragging="isDragging || isResizing || isDraggingPlayhead"
+      :isCutToolActive="isCutToolActive"
+    />
+  </div> <!-- end outer bg container -->
 </template>
 
 <script setup lang="ts">
@@ -882,6 +960,7 @@
     trackContentWidth: number;
   }
 
+
   interface ResizeInfo {
     type: ItemType;
     id: string;
@@ -919,6 +998,9 @@
 
   // Gap percentage between segments (0 = segments are butted up against each other)
   const GAP_PERCENT = 0;
+  // Balance placeholder lanes above/below primary video track
+  const PLACEHOLDER_TOP_COUNT = 2;
+  const PLACEHOLDER_BOTTOM_COUNT = 2;
 
   const props = withDefaults(
     defineProps<{
@@ -1118,7 +1200,7 @@
 
   // Snap configuration
   const SNAP_THRESHOLD_PX = 8; // Pixels distance to trigger snapping
-  const SNAP_ENABLED = true;
+  const snapEnabled = ref(true);
 
   // Snap state for visual indicator
   const activeSnapTime = ref<number | null>(null); // Time position where snap is occurring
@@ -1217,13 +1299,14 @@
       });
   });
 
-  // Calculate total duration including audio tracks (use the longest)
+  // Calculate total duration including audio tracks (use the longest + full clip span)
   const totalDuration = computed(() => {
     // Editor mode: use props.duration directly (it's the editorDuration from parent)
     if (props.editorMode) {
       return props.duration || 300;
     }
 
+    const clipSpan = (props.clipEnd ?? 0) - (props.clipStart ?? 0);
     const segmentDuration = videoSegmentDuration.value;
 
     // Find the longest audio track
@@ -1232,8 +1315,9 @@
       return Math.max(max, trackDuration);
     }, 0);
 
-    // Use the max of video segment duration and longest audio track
-    const maxDuration = Math.max(segmentDuration, maxAudioDuration);
+    // Use the max of video segment duration, audio, clip span, and provided timeline duration
+    const requestedDuration = props.duration || 0;
+    const maxDuration = Math.max(segmentDuration, maxAudioDuration, clipSpan, requestedDuration);
 
     // Fallback to prop duration if nothing else
     return maxDuration > 0 ? maxDuration : props.duration;
@@ -1265,6 +1349,71 @@
     },
     { immediate: true }
   );
+
+  // Ruler ticks spanning full timeline
+  const rulerTicks = computed(() => {
+    const timelineDuration = totalDuration.value;
+    if (timelineDuration <= 0) return [];
+
+    // Determine optimal intervals based on visible duration (duration / zoom)
+    const visibleDuration = timelineDuration / zoomLevel.value;
+    let majorInterval: number;
+    let minorInterval: number;
+
+    if (visibleDuration < 0.5) {
+      majorInterval = 0.1;
+      minorInterval = 0.02;
+    } else if (visibleDuration < 1) {
+      majorInterval = 0.25;
+      minorInterval = 0.05;
+    } else if (visibleDuration < 2) {
+      majorInterval = 0.5;
+      minorInterval = 0.1;
+    } else if (visibleDuration < 5) {
+      majorInterval = 1;
+      minorInterval = 0.2;
+    } else if (visibleDuration < 10) {
+      majorInterval = 2;
+      minorInterval = 0.5;
+    } else if (visibleDuration < 20) {
+      majorInterval = 5;
+      minorInterval = 1;
+    } else if (visibleDuration < 45) {
+      majorInterval = 10;
+      minorInterval = 2;
+    } else if (visibleDuration < 90) {
+      majorInterval = 15;
+      minorInterval = 5;
+    } else if (visibleDuration < 180) {
+      majorInterval = 30;
+      minorInterval = 10;
+    } else if (visibleDuration < 600) {
+      majorInterval = 60;
+      minorInterval = 15;
+    } else if (visibleDuration < 1800) {
+      majorInterval = 120;
+      minorInterval = 30;
+    } else {
+      majorInterval = 300;
+      minorInterval = 60;
+    }
+
+    const ticks: { key: string; time: number; percent: number; isMajor: boolean }[] = [];
+    for (let t = 0; t <= timelineDuration + 0.0001; t += minorInterval) {
+      const percent = (t / timelineDuration) * 100;
+      if (percent < -0.1 || percent > 100.1) continue;
+      const isMajor =
+        Math.abs(t % majorInterval) < 0.001 || Math.abs((t % majorInterval) - majorInterval) < 0.001;
+      ticks.push({
+        key: `${t.toFixed(3)}`,
+        time: t,
+        percent,
+        isMajor,
+      });
+    }
+
+    return ticks;
+  });
 
   // Calculate segment layouts (segments are butted up against each other)
   const segmentLayouts = computed((): SegmentLayout[] => {
@@ -2029,7 +2178,7 @@
    * Check if a time should snap to any target and return the snapped time
    */
   function applySnapToTime(targetTime: number, excludeId?: string): SnapResult {
-    if (!SNAP_ENABLED) {
+    if (!snapEnabled.value) {
       return { time: targetTime, didSnap: false };
     }
 
@@ -2069,7 +2218,7 @@
     endTime: number,
     excludeId?: string
   ): { startTime: number; endTime: number; didSnap: boolean; snapTime: number | null } {
-    if (!SNAP_ENABLED) {
+    if (!snapEnabled.value) {
       return { startTime, endTime, didSnap: false, snapTime: null };
     }
 
@@ -3192,7 +3341,7 @@
         segmentEndTime: segment.endTime,
         barWidth,
         barSpacing,
-        amplitude: 0.8,
+        amplitude: 0.7,
       });
     } catch (error) {
       console.error('[ClipEditorTimeline] Error rendering waveform:', error);
@@ -3219,9 +3368,11 @@
 
     const { width, height, peaks, currentTime, segmentStartTime, segmentEndTime, barWidth, barSpacing, amplitude } =
       options;
-    const totalBarWidth = barWidth + barSpacing;
-    const centerY = height / 2;
-    const maxBarHeight = height * amplitude;
+    const barW = Math.max(1, barWidth * 0.7); // thinner bars
+    const barS = Math.max(0.5, barSpacing * 0.6); // tighter spacing
+    const totalBarWidth = barW + barS;
+    const maxBarHeight = height * (amplitude * 0.9); // slightly shorter to avoid touching top
+    const baselineY = height - 1; // keep a small gap at bottom
 
     // Calculate playhead position within segment
     const isWithinSegment = currentTime >= segmentStartTime && currentTime <= segmentEndTime;
@@ -3243,22 +3394,19 @@
       const x = index * totalBarWidth;
       if (x >= width) return;
 
-      const barCenter = x + barWidth / 2;
+      const barCenter = x + barW / 2;
       const isBeforePlayhead = barCenter < playheadPixel;
-      const color = isBeforePlayhead ? '#e4e4e7' : '#a78bfa';
+      const color = '#e5e7eb';
 
       ctx.fillStyle = color;
       ctx.globalAlpha = 1.0;
 
-      const positiveHeight = Math.abs(peak.max) * maxBarHeight;
-      const negativeHeight = Math.abs(peak.min) * maxBarHeight;
-      const actualBarWidth = Math.min(barWidth, width - x);
+      const magnitude = Math.max(Math.abs(peak.max), Math.abs(peak.min));
+      const barHeight = Math.max(1, magnitude * maxBarHeight);
+      const actualBarWidth = Math.max(1, Math.min(barW, width - x));
 
-      if (positiveHeight > 0 && actualBarWidth > 0) {
-        ctx.fillRect(x, centerY - positiveHeight, actualBarWidth, positiveHeight);
-      }
-      if (negativeHeight > 0 && actualBarWidth > 0) {
-        ctx.fillRect(x, centerY, actualBarWidth, negativeHeight);
+      if (barHeight > 0 && actualBarWidth > 0) {
+        ctx.fillRect(x, baselineY - barHeight, actualBarWidth, barHeight);
       }
     });
 
@@ -3486,10 +3634,12 @@
       // Render directly (same as renderSegmentWaveform but without resetting canvas)
       const width = rect.width;
       const height = rect.height;
-      const amplitude = 0.8;
-      const totalBarWidth = barWidth + barSpacing;
-      const centerY = height / 2;
+      const amplitude = 0.7;
+      const barW = Math.max(1, barWidth * 0.9);
+      const barS = Math.max(0.5, barSpacing * 0.9);
+      const totalBarWidth = barW + barS;
       const maxBarHeight = height * amplitude;
+      const baselineY = height;
 
       // Calculate playhead position within segment
       const segmentStartTime = source.start_time;
@@ -3518,22 +3668,19 @@
         const x = index * totalBarWidth;
         if (x >= width) return;
 
-        const barCenter = x + barWidth / 2;
+        const barCenter = x + barW / 2;
         const isBeforePlayhead = barCenter < playheadPixel;
-        const color = isBeforePlayhead ? '#e4e4e7' : '#a78bfa';
+        const color = '#e5e7eb';
 
         ctx.fillStyle = color;
         ctx.globalAlpha = 1.0;
 
-        const positiveHeight = Math.abs(peak.max) * maxBarHeight;
-        const negativeHeight = Math.abs(peak.min) * maxBarHeight;
-        const actualBarWidth = Math.min(barWidth, width - x);
+        const magnitude = Math.max(Math.abs(peak.max), Math.abs(peak.min));
+        const barHeight = Math.max(1, magnitude * maxBarHeight);
+        const actualBarWidth = Math.max(1, Math.min(barW, width - x));
 
-        if (positiveHeight > 0 && actualBarWidth > 0) {
-          ctx.fillRect(x, centerY - positiveHeight, actualBarWidth, positiveHeight);
-        }
-        if (negativeHeight > 0 && actualBarWidth > 0) {
-          ctx.fillRect(x, centerY, actualBarWidth, negativeHeight);
+        if (barHeight > 0 && actualBarWidth > 0) {
+          ctx.fillRect(x, baselineY - barHeight, actualBarWidth, barHeight);
         }
       });
 

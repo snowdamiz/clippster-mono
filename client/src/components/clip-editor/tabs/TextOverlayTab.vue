@@ -49,6 +49,11 @@
           <span>{{ formatTime(overlay.startTime) }} - {{ formatTime(overlay.endTime) }}</span>
           <span>{{ getStyleForRatio(overlay).fontSize }}px</span>
           <span>{{ getStyleForRatio(overlay).fontFamily }}</span>
+          <span class="flex items-center gap-1" v-if="overlay.motionPreset && overlay.motionPreset !== 'none'">
+            <Sparkles :size="12" class="text-amber-300" />
+            <span>{{ motionPresetLabel(overlay.motionPreset) }}</span>
+            <span class="text-white/30">({{ (overlay.motionDuration || 0.4).toFixed(1) }}s)</span>
+          </span>
         </div>
 
         <!-- Aspect Ratio Configuration Buttons -->
@@ -482,7 +487,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-  import { Plus, Type, ChevronDown, Trash2, Pencil, X } from 'lucide-vue-next';
+  import { Plus, Type, ChevronDown, Trash2, Pencil, X, Sparkles } from 'lucide-vue-next';
   import type { TextOverlay, TextOverlayStyle } from '@/types';
   import type { CustomSubtitlePreset } from '@/services/database';
   import {
@@ -564,6 +569,13 @@
     { value: 'typewriter', label: 'Typewriter' },
     { value: 'bounce', label: 'Bounce' },
   ] as const;
+
+  const motionPresets = [
+    { value: 'none' as const, label: 'None', description: 'Static text' },
+    { value: 'fade' as const, label: 'Fade', description: 'Soft fade in/out', duration: 0.4 },
+    { value: 'slide-up' as const, label: 'Slide Up', description: 'Slide from bottom', duration: 0.5 },
+    { value: 'pop' as const, label: 'Pop', description: 'Pop & scale', duration: 0.35 },
+  ];
 
   const _quickPositions = [
     { id: 'top-left', label: 'TL', x: 15, y: 15 },
@@ -701,6 +713,25 @@
   function updateOverlay(key: keyof TextOverlay, value: any) {
     if (!selectedOverlayId.value) return;
     emit('updateText', selectedOverlayId.value, { [key]: value });
+  }
+
+  function motionPresetLabel(preset: TextOverlay['motionPreset']): string {
+    const found = motionPresets.find((p) => p.value === preset);
+    return found?.label || 'None';
+  }
+
+  function applyMotionPreset(preset: TextOverlay['motionPreset']) {
+    if (!selectedOverlayId.value) return;
+    const defaultDuration = motionPresets.find((p) => p.value === preset)?.duration ?? 0.4;
+    emit('updateText', selectedOverlayId.value, {
+      motionPreset: preset,
+      motionDuration: defaultDuration,
+    });
+  }
+
+  function updateMotionDuration(duration: number) {
+    if (!selectedOverlayId.value || Number.isNaN(duration) || duration <= 0) return;
+    emit('updateText', selectedOverlayId.value, { motionDuration: duration });
   }
 
   function updateStyle(key: keyof TextOverlayStyle, value: any) {

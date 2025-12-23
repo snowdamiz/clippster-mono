@@ -49,10 +49,10 @@
         <!-- Main Content Area -->
         <div class="flex flex-col flex-1 min-h-0">
           <!-- Top Row: Preview and Controls -->
-          <div class="flex min-h-0 border-b border-border flex-1" style="overflow: hidden">
+          <div class="flex min-h-0 border-b border-border flex-[0.55] min-h-[340px]" style="overflow: hidden">
             <!-- Left: Video Preview Section -->
             <div
-              class="w-3/5 min-w-0 border-r border-border flex flex-col bg-gradient-to-br from-black/20 to-transparent"
+              class="w-2/3 min-w-0 border-r border-border flex flex-col bg-gradient-to-br from-black/20 to-transparent"
             >
               <!-- Aspect Ratio Selector (above video) -->
               <AspectRatioSelector
@@ -118,7 +118,7 @@
             </div>
 
             <!-- Right: Controls Section -->
-            <div class="w-2/5 min-w-0 flex flex-col flex-1 bg-gradient-to-b from-transparent to-black/10">
+            <div class="w-1/3 min-w-0 flex flex-col flex-1 bg-gradient-to-b from-transparent to-black/10">
               <!-- Toolbar -->
               <ClipEditorToolbar
                 :active-tab="editorMode ? activeEditorTab : activeTab"
@@ -296,53 +296,58 @@
             </div>
           </div>
 
-          <!-- Bottom Row: Timeline -->
-          <ClipEditorTimeline
-            :duration="editorMode ? editorDuration : clipDuration"
-            :current-time="editorMode ? previewTime : relativePreviewTime"
-            :clip-start="clipStartTime"
-            :clip-end="clipEndTime"
-            :trim-segments="trimSegments"
-            :audio-tracks="audioTracksWithStreamingUrls"
-            :text-overlays="textOverlays"
-            :stickers="stickers"
-            :watermarks="watermarks"
-            :effects="effects"
-            :filter-segments="filterSegments"
-            :video-src="videoSrc ?? undefined"
-            :audio-gain-db="effectiveAudioGainDb"
-            :track-db-values="trackDbValues"
-            :is-playing="isPlaying"
-            :editor-mode="editorMode"
-            :video-sources="videoSources"
-            :can-undo="canUndo"
-            :can-redo="canRedo"
-            :selected-segment-ids="selectedSegmentIds"
-            :markers="markers"
-            :selected-marker-id="selectedMarkerId"
-            @seek="seekTo"
-            @undo="performUndo"
-            @redo="performRedo"
-            @segment-select="handleSegmentSelect"
-            @marker-click="jumpToMarker"
-            @split-trim-segment="splitTrimSegment"
-            @delete-trim-segment="deleteTrimSegment"
-            @update-audio-track="updateAudioTrackLocal"
-            @delete-audio-track="deleteAudioTrackLocal"
-            @update-text-overlay="updateTextOverlayLocal"
-            @delete-text-overlay="deleteTextOverlayLocal"
-            @update-sticker="updateStickerLocal"
-            @delete-sticker="deleteStickerLocal"
-            @update-watermark="updateWatermarkLocal"
-            @delete-watermark="deleteWatermarkLocal"
-            @update-effect="updateEffectLocal"
-            @update-filter-segment="updateFilterSegment"
-            @update-source="updateVideoSource"
-            @delete-source="deleteVideoSource"
-            @drop-source="onDropSource"
-            @transitions-detected="onTransitionsDetected"
-            @split-source="splitVideoSource"
-          />
+          <!-- Bottom Row: Timeline (balanced real estate, keeps room for multiple tracks) -->
+          <div
+            class="flex-[0.45] min-h-[320px] sm:min-h-[340px] max-h-[60vh] border-t border-border bg-gradient-to-t from-black/25 to-transparent px-2 pb-3 pt-2 overflow-hidden"
+          >
+            <ClipEditorTimeline
+              class="h-full"
+              :duration="editorMode ? editorDuration : clipDuration"
+              :current-time="editorMode ? previewTime : relativePreviewTime"
+              :clip-start="clipStartTime"
+              :clip-end="clipEndTime"
+              :trim-segments="trimSegments"
+              :audio-tracks="audioTracksWithStreamingUrls"
+              :text-overlays="textOverlays"
+              :stickers="stickers"
+              :watermarks="watermarks"
+              :effects="effects"
+              :filter-segments="filterSegments"
+              :video-src="videoSrc ?? undefined"
+              :audio-gain-db="effectiveAudioGainDb"
+              :track-db-values="trackDbValues"
+              :is-playing="isPlaying"
+              :editor-mode="editorMode"
+              :video-sources="videoSources"
+              :can-undo="canUndo"
+              :can-redo="canRedo"
+              :selected-segment-ids="selectedSegmentIds"
+              :markers="markers"
+              :selected-marker-id="selectedMarkerId"
+              @seek="seekTo"
+              @undo="performUndo"
+              @redo="performRedo"
+              @segment-select="handleSegmentSelect"
+              @marker-click="jumpToMarker"
+              @split-trim-segment="splitTrimSegment"
+              @delete-trim-segment="deleteTrimSegment"
+              @update-audio-track="updateAudioTrackLocal"
+              @delete-audio-track="deleteAudioTrackLocal"
+              @update-text-overlay="updateTextOverlayLocal"
+              @delete-text-overlay="deleteTextOverlayLocal"
+              @update-sticker="updateStickerLocal"
+              @delete-sticker="deleteStickerLocal"
+              @update-watermark="updateWatermarkLocal"
+              @delete-watermark="deleteWatermarkLocal"
+              @update-effect="updateEffectLocal"
+              @update-filter-segment="updateFilterSegment"
+              @update-source="updateVideoSource"
+              @delete-source="deleteVideoSource"
+              @drop-source="onDropSource"
+              @transitions-detected="onTransitionsDetected"
+              @split-source="splitVideoSource"
+            />
+          </div>
         </div>
       </div>
 

@@ -621,7 +621,9 @@
     Trash2,
     Users,
     Settings2,
+    Sparkles,
   } from 'lucide-vue-next';
+  import Switch from '@/components/ui/switch/Switch.vue';
   import {
     createOrganizationCreatorProfile,
     updateOrganizationCreatorProfile,
