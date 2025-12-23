@@ -3303,12 +3303,39 @@
       if (result.length === 0) return null;
 
       const cached = result[0];
-      const resolutions = JSON.parse(cached.resolutions);
+      const parsed = JSON.parse(cached.resolutions);
+
+      // Handle both old multi-resolution format and new single-array format
+      let peaks: { min: number; max: number }[] = [];
+
+      if (Array.isArray(parsed)) {
+        // New format: direct peaks array
+        peaks = parsed;
+      } else if (parsed.peaks && Array.isArray(parsed.peaks)) {
+        // New format with wrapper object
+        peaks = parsed.peaks;
+      } else {
+        // Old multi-resolution format - extract highest resolution available
+        const resolutionOrder = ['maximum', 'extreme', 'ultra', 'high', 'medium', 'low'];
+        for (const level of resolutionOrder) {
+          if (parsed[level]?.peaks) {
+            peaks = parsed[level].peaks.map((p: any) => ({ min: p.min, max: p.max }));
+            break;
+          }
+        }
+        if (peaks.length === 0) {
+          const firstKey = Object.keys(parsed)[0];
+          if (firstKey && parsed[firstKey]?.peaks) {
+            peaks = parsed[firstKey].peaks.map((p: any) => ({ min: p.min, max: p.max }));
+          }
+        }
+      }
 
       return {
         sampleRate: cached.sample_rate,
         duration: cached.duration,
-        resolutions,
+        peaks,
+        peakCount: peaks.length,
       };
     } catch (err) {
       console.error('[ClipEditorTimeline] Error loading cached waveform:', err);
@@ -3343,32 +3370,17 @@
       // Call Rust function to extract real audio waveform from the source file
       const rustWaveform = await invoke<any>('extract_audio_waveform', {
         videoPath: sourcePath,
-        targetSamples: 2000, // Optimal for timeline visualization
       });
 
-      // Convert Rust multi-resolution data structure to our TypeScript interface
-      const resolutions: Record<
-        string,
-        { peaks: { min: number; max: number }[]; peakCount: number; samplesPerPeak: number }
-      > = {};
-
-      if (rustWaveform.resolutions) {
-        for (const [level, rustResolution] of Object.entries(rustWaveform.resolutions)) {
-          resolutions[level] = {
-            peaks: (rustResolution as any).peaks.map((peak: any) => ({
-              min: peak.min,
-              max: peak.max,
-            })),
-            peakCount: (rustResolution as any).peak_count,
-            samplesPerPeak: (rustResolution as any).samples_per_peak,
-          };
-        }
-      }
-
+      // Convert Rust data structure to our TypeScript interface (simplified single-resolution)
       const data: WaveformData = {
         sampleRate: rustWaveform.sample_rate,
         duration: rustWaveform.duration,
-        resolutions,
+        peaks: rustWaveform.peaks.map((peak: any) => ({
+          min: peak.min,
+          max: peak.max,
+        })),
+        peakCount: rustWaveform.peak_count,
       };
 
       sourceWaveformData.value.set(sourceId, data);
@@ -3400,23 +3412,10 @@
       const trimStart = source.trim_start;
       const trimEnd = source.trim_end ?? trimStart + (source.end_time - source.start_time);
 
-      // Get the highest resolution waveform data available for maximum detail
-      const { duration, resolutions } = data;
+      // Get the waveform peaks (now using simplified single-resolution structure)
+      const { duration, peaks } = data;
 
-      if (duration <= 0) return;
-
-      // Try resolutions in order of detail (highest first)
-      const resolutionOrder = ['godlike', 'insane', 'maximum', 'extreme', 'ultra', 'high', 'medium', 'low'];
-      let peaks: any[] = [];
-
-      for (const res of resolutionOrder) {
-        if (resolutions[res]?.peaks?.length > 0) {
-          peaks = resolutions[res].peaks;
-          break;
-        }
-      }
-
-      if (peaks.length === 0) return;
+      if (duration <= 0 || peaks.length === 0) return;
 
       // Extract peaks for this segment's time range
       const startRatio = trimStart / duration;

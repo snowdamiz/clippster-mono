@@ -271,7 +271,8 @@ export function createThrottledRenderer(renderFn: () => void, _delay: number = 1
   };
 }
 
-// Utility to calculate optimal waveform parameters based on zoom level
+// Utility to calculate optimal waveform parameters
+// Now simplified since we have a single high-resolution source that gets downsampled
 export function calculateWaveformParameters(
   duration: number,
   width: number,
@@ -286,14 +287,14 @@ export function calculateWaveformParameters(
 } {
   const effectiveWidth = width * zoomLevel;
 
-  // Determine optimal resolution if not provided
-  const selectedResolution = resolution || determineOptimalResolution(duration, effectiveWidth);
+  // Use provided peak count or default to a reasonable amount for the canvas
+  const selectedPeakCount = peakCount || Math.min(16000, Math.floor(effectiveWidth));
 
-  // Use provided peak count or get default for resolution
-  const selectedPeakCount = peakCount || getDefaultPeakCountForResolution(selectedResolution);
+  // Use provided resolution label or determine from peak count
+  const selectedResolution = resolution || getResolutionLabel(selectedPeakCount);
 
   // Calculate bar dimensions to use the ENTIRE canvas width
-  const availableWidth = width; // Use 100% of canvas width
+  const availableWidth = width;
 
   // Calculate optimal bar width and spacing to use ALL available width
   const targetTotalWidth = availableWidth;
@@ -301,15 +302,16 @@ export function calculateWaveformParameters(
   const minBarWidth = 1; // Minimum 1px for visibility
 
   // Calculate ideal bar width that would use all available width
-  let idealBarWidth = Math.floor(targetTotalWidth / selectedPeakCount);
-  let barWidth = Math.min(maxBarWidth, Math.max(minBarWidth, idealBarWidth));
+  const idealBarWidth = Math.floor(targetTotalWidth / selectedPeakCount);
+  const barWidth = Math.min(maxBarWidth, Math.max(minBarWidth, idealBarWidth));
 
   // Calculate spacing to ensure we use the FULL available width
   const totalBarArea = barWidth * selectedPeakCount;
   const remainingWidth = targetTotalWidth - totalBarArea;
   const barSpacing = selectedPeakCount > 1 ? remainingWidth / (selectedPeakCount - 1) : 0;
 
-  const samplesPerPixel = (duration * 44100) / effectiveWidth; // Assuming 44.1kHz sample rate
+  // Use 16kHz as reference since that's what the new waveform generation uses
+  const samplesPerPixel = (duration * 16000) / effectiveWidth;
 
   return {
     barWidth,
@@ -319,48 +321,55 @@ export function calculateWaveformParameters(
   };
 }
 
-// Helper function to determine optimal resolution
-function determineOptimalResolution(duration: number, effectiveWidth: number): string {
-  const samplesPerPixel = (duration * 44100) / effectiveWidth;
-
-  // Select resolution based on zoom level (matching Rust logic)
-  if (samplesPerPixel > 5000) {
-    return 'low'; // 500 peaks - very zoomed out
-  } else if (samplesPerPixel > 2000) {
-    return 'medium'; // 1000 peaks - zoomed out
-  } else if (samplesPerPixel > 800) {
-    return 'high'; // 2000 peaks - normal
-  } else if (samplesPerPixel > 300) {
-    return 'ultra'; // 4000 peaks - zoomed in
+// Helper function to get a resolution label from peak count (for debugging/display)
+function getResolutionLabel(peakCount: number): string {
+  if (peakCount >= 16000) {
+    return 'maximum';
+  } else if (peakCount >= 8000) {
+    return 'extreme';
+  } else if (peakCount >= 4000) {
+    return 'ultra';
+  } else if (peakCount >= 2000) {
+    return 'high';
+  } else if (peakCount >= 1000) {
+    return 'medium';
   } else {
-    return 'extreme'; // 8000 peaks - very zoomed in
+    return 'low';
   }
 }
 
-// Helper function to get default peak count for resolution
-function getDefaultPeakCountForResolution(resolution: string): number {
-  switch (resolution) {
-    case 'low':
-      return 500;
-    case 'medium':
-      return 1000;
-    case 'high':
-      return 2000;
-    case 'ultra':
-      return 4000;
-    case 'extreme':
-      return 8000;
-    default:
-      return 2000;
+// Downsample peaks by aggregating (take min of mins, max of maxes)
+export function downsamplePeaks(sourcePeaks: WaveformPeak[], targetCount: number): WaveformPeak[] {
+  if (sourcePeaks.length <= targetCount || targetCount <= 0) {
+    return sourcePeaks;
   }
+
+  const ratio = sourcePeaks.length / targetCount;
+  const result: WaveformPeak[] = [];
+
+  for (let i = 0; i < targetCount; i++) {
+    const startIdx = Math.floor(i * ratio);
+    const endIdx = Math.floor((i + 1) * ratio);
+
+    // Aggregate peaks in range (take min of mins, max of maxes)
+    let min = 0;
+    let max = 0;
+    for (let j = startIdx; j < endIdx && j < sourcePeaks.length; j++) {
+      min = Math.min(min, sourcePeaks[j].min);
+      max = Math.max(max, sourcePeaks[j].max);
+    }
+    result.push({ min, max });
+  }
+
+  return result;
 }
 
-// Utility to interpolate waveform data for smooth zooming
+// Utility to interpolate waveform data for smooth zooming (upsampling)
 export function interpolateWaveform(
   sourcePeaks: WaveformPeak[],
   targetCount: number
 ): WaveformPeak[] {
-  if (sourcePeaks.length <= targetCount) {
+  if (sourcePeaks.length >= targetCount || targetCount <= 0) {
     return sourcePeaks;
   }
 
