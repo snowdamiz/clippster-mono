@@ -701,6 +701,8 @@ export interface AudioTrack {
   trackOrder: number;
   isMuted: boolean;
   isSolo: boolean;
+  isLocked?: boolean;
+  isHidden?: boolean;
 }
 
 // Per-aspect-ratio configuration for text overlays
@@ -1065,6 +1067,9 @@ export interface VideoEditorSource {
   trim_end: number | null; // Trim from source end (null = use full duration)
   order_index: number;
   created_at: number;
+  isMuted?: boolean;
+  isLocked?: boolean;
+  isHidden?: boolean;
 }
 
 // Project with all sources loaded
