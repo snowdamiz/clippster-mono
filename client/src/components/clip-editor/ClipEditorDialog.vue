@@ -333,14 +333,21 @@
               @delete-trim-segment="deleteTrimSegment"
               @update-audio-track="updateAudioTrackLocal"
               @delete-audio-track="deleteAudioTrackLocal"
+              @split-audio-track="splitAudioTrackLocal"
               @update-text-overlay="updateTextOverlayLocal"
               @delete-text-overlay="deleteTextOverlayLocal"
+              @split-text-overlay="splitTextOverlayLocal"
               @update-sticker="updateStickerLocal"
               @delete-sticker="deleteStickerLocal"
+              @split-sticker="splitStickerLocal"
               @update-watermark="updateWatermarkLocal"
               @delete-watermark="deleteWatermarkLocal"
+              @split-watermark="splitWatermarkLocal"
               @update-effect="updateEffectLocal"
+              @split-effect="splitEffectLocal"
               @update-filter-segment="updateFilterSegment"
+              @split-filter="splitFilterLocal"
+              @move-track="moveTrackWithUndo"
               @update-source="updateVideoSource"
               @delete-source="deleteVideoSource"
               @drop-source="onDropSource"
@@ -1732,6 +1739,7 @@
         trim_start: updates.trim_start,
         trim_end: updates.trim_end,
         order_index: updates.order_index,
+        track_index: updates.track_index,
       });
 
       Object.assign(source, updates);
@@ -1818,120 +1826,44 @@
       return;
     }
 
-    console.log('[splitVideoSource] Starting split:', {
+    console.log('[splitVideoSource] Starting split with command pattern:', {
       sourceId,
       cutTimelinePosition,
       cutSourceTime,
-      originalSource: {
-        start_time: source.start_time,
-        end_time: source.end_time,
-        trim_start: source.trim_start,
-        trim_end: source.trim_end,
-        order_index: source.order_index,
-      },
+      editorProjectId: editorProjectId.value,
     });
 
+    // Find the source index
+    const sourceIndex = videoSources.value.findIndex((s) => s.id === sourceId);
+    if (sourceIndex === -1) {
+      console.error('[splitVideoSource] Source not found in videoSources array');
+      return;
+    }
+
     try {
-      // Store original values before modifying
-      const originalEndTime = source.end_time;
-      const originalOrderIndex = source.order_index;
-      const originalTrimEnd = source.trim_end;
+      // Create reload callback
+      const reloadCallback = async () => {
+        console.log('[splitVideoSource] Reloading video sources from database...');
+        await loadEditorProject();
+      };
 
-      // Calculate the effective trim_end that was being used
-      // If trim_end is null, it means "play to end of source", but we need to know
-      // what the actual end point was based on the timeline duration
-      const originalTimelineDuration = source.end_time - source.start_time;
-      const effectiveTrimEnd = originalTrimEnd ?? source.trim_start + originalTimelineDuration;
-
-      console.log('[splitVideoSource] Calculated values:', {
-        originalEndTime,
-        originalOrderIndex,
-        originalTrimEnd,
-        effectiveTrimEnd,
+      // Create and execute split command
+      const splitCommand = new SplitCommand(true, {
+        editorProjectId: editorProjectId.value,
+        segmentIndex: sourceIndex,
+        cutTime: cutTimelinePosition,
+        onReload: reloadCallback,
       });
 
-      // First, increment order_index for all sources that come after the split source
-      // This makes room for the new right portion
-      const sourcesAfter = videoSources.value.filter((s) => s.order_index > originalOrderIndex);
-      console.log(
-        '[splitVideoSource] Sources to shift:',
-        sourcesAfter.map((s) => ({ id: s.id, order_index: s.order_index }))
-      );
-
-      for (const s of sourcesAfter) {
-        await updateVideoEditorSource(s.id, {
-          order_index: s.order_index + 1,
-        });
-      }
-
-      // Update the original source to end at the cut point (left portion)
-      await updateVideoEditorSource(sourceId, {
-        end_time: cutTimelinePosition,
-        trim_end: cutSourceTime,
-      });
-
-      console.log('[splitVideoSource] Updated left portion:', {
-        id: sourceId,
-        end_time: cutTimelinePosition,
-        trim_end: cutSourceTime,
-      });
-
-      // Create a new source for the right portion
-      // Use the effective trim_end (not the original null) to ensure correct duration
-      const newSource = await createVideoEditorSource(editorProjectId.value, {
-        sourceType: source.source_type,
-        sourceId: source.source_id,
-        sourcePath: source.source_path,
-        sourceName: source.source_name ? `${source.source_name} (split)` : null,
-        sourceThumbnail: source.source_thumbnail,
-        sourceDuration: source.source_duration,
-        startTime: cutTimelinePosition,
-        endTime: originalEndTime,
-        trimStart: cutSourceTime,
-        trimEnd: effectiveTrimEnd,
-        orderIndex: originalOrderIndex + 1,
-      });
-
-      console.log('[splitVideoSource] Created right portion:', {
-        id: newSource.id,
-        start_time: newSource.start_time,
-        end_time: newSource.end_time,
-        trim_start: newSource.trim_start,
-        trim_end: newSource.trim_end,
-        order_index: newSource.order_index,
-      });
-
-      // Reload sources to get the correct state
-      const updatedSources = await getVideoEditorSourcesByProjectId(editorProjectId.value);
-      videoSources.value = updatedSources;
-
-      // Repair order_index to ensure correct playback order
-      await repairSourceOrderIndex();
-
-      // Log the final state of all sources
-      console.log(
-        '[splitVideoSource] Final sources after reload:',
-        videoSources.value.map((s) => ({
-          id: s.id,
-          name: s.source_name,
-          start_time: s.start_time,
-          end_time: s.end_time,
-          trim_start: s.trim_start,
-          trim_end: s.trim_end,
-          order_index: s.order_index,
-        }))
-      );
-
-      if (editorProjectId.value) {
-        await recalculateProjectDuration(editorProjectId.value);
-      }
-      triggerAutoSave();
+      await commandHistory.executeCommand(splitCommand);
+      undoRedoTrigger.value++; // Trigger reactivity update
 
       console.log(
-        `[ClipEditorDialog] Split complete: ${sourceId} at timeline ${cutTimelinePosition.toFixed(2)}s, source time ${cutSourceTime.toFixed(2)}s`
+        `[splitVideoSource] Split complete (with undo support): ${sourceId} at timeline ${cutTimelinePosition.toFixed(2)}s`
       );
     } catch (error) {
-      console.error('[ClipEditorDialog] Failed to split source:', error);
+      console.error('[splitVideoSource] Failed to split source:', error);
+      alert(`Failed to split source: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -2381,6 +2313,7 @@
               position: { x: w.position_x, y: w.position_y },
               scale: w.scale,
               opacity: w.opacity,
+              layer: w.layer ?? 0, // Visual track layer
               perRatioConfigs: w.per_ratio_configs_data ? JSON.parse(w.per_ratio_configs_data) : undefined,
             };
           })
@@ -3251,11 +3184,16 @@
       return;
     }
 
-    // In clip mode, use command pattern for undo/redo support
-    if (!editorMode.value && props.clipId) {
-      try {
-        // Create reload callback
-        const reloadCallback = async () => {
+    console.log('[splitTrimSegment] editorMode.value:', editorMode.value);
+    console.log('[splitTrimSegment] props.clipId:', props.clipId);
+    console.log('[splitTrimSegment] editorProjectId:', editorProjectId.value);
+
+    // Use command pattern for undo/redo support in both modes
+    try {
+      // Create reload callback
+      const reloadCallback = async () => {
+        if (!editorMode.value && props.clipId) {
+          // Clip mode: reload from clip segments
           console.log('[splitTrimSegment] Reloading segments from database...');
           const dbSegments = await getClipSegmentsByClipId(props.clipId!);
           console.log(
@@ -3285,30 +3223,45 @@
           }
           // Emit save event to notify parent that clip was modified
           emit('save', props.clipId!);
-        };
+        } else if (editorMode.value && editorProjectId.value) {
+          // Editor mode: reload from video sources
+          console.log('[splitTrimSegment] Reloading video sources from database...');
+          await loadEditorProject();
+        }
+      };
 
-        // Create and execute split command
-        const splitCommand = new SplitCommand(false, {
-          clipId: props.clipId,
-          segmentIndex,
-          clipStartTime: props.clipStartTime,
-          cutTime,
-          onReload: reloadCallback,
-        });
+      // Create and execute split command
+      const splitCommand = new SplitCommand(editorMode.value, {
+        clipId: props.clipId || undefined,
+        editorProjectId: editorProjectId.value || undefined,
+        segmentIndex,
+        clipStartTime: props.clipStartTime,
+        cutTime,
+        onReload: reloadCallback,
+      });
 
-        await commandHistory.executeCommand(splitCommand);
-        undoRedoTrigger.value++; // Trigger reactivity update
+      await commandHistory.executeCommand(splitCommand);
+      undoRedoTrigger.value++; // Trigger reactivity update
 
-        console.log(
-          `[ClipEditorDialog] Split complete (with undo support), now have ${trimSegments.value.length} segments`
-        );
-      } catch (error) {
-        console.error('[ClipEditorDialog] Failed to split segment:', error);
-        alert(`Failed to split segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      }
-    } else {
-      // Editor mode or no clip ID - just update local state (for video editor projects)
-      // TODO: Convert to command pattern when we implement editor mode split command
+      console.log(
+        `[ClipEditorDialog] Split complete (with undo support), mode: ${editorMode.value ? 'editor' : 'clip'}`
+      );
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to split segment:', error);
+      alert(`Failed to split segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Legacy code path removed - all splits now use command pattern
+  async function splitTrimSegmentLegacy(segmentId: string, cutTime: number) {
+    const segmentIndex = trimSegments.value.findIndex((s) => s.id === segmentId);
+    if (segmentIndex === -1) return;
+
+    const segment = trimSegments.value[segmentIndex];
+
+    // This is the old editor mode path - kept for reference but should not be used
+    if (editorMode.value) {
+      // Editor mode - just update local state (for video editor projects)
       const leftSegment: TrimSegment = {
         id: `segment-${Date.now()}-left`,
         startTime: segment.startTime,
@@ -3818,7 +3771,7 @@
       currentPreviewHeight = previewRef.value?.getOverlayContainerHeight() ?? undefined;
     }
 
-    const updateData = {
+    const updateData: Record<string, any> = {
       text: updates.text,
       start_time: updates.startTime,
       end_time: updates.endTime,
@@ -3829,6 +3782,11 @@
       preview_height: currentPreviewHeight,
       animation: updates.animation,
     };
+    
+    // Handle layer property for multi-track support
+    if (updates.layer !== undefined) {
+      updateData.layer = updates.layer;
+    }
 
     // Use appropriate database function based on mode
     if (editorMode.value) {
@@ -3900,7 +3858,7 @@
   }
 
   async function updateStickerLocal(stickerId: string, updates: Partial<Sticker>) {
-    const updateData = {
+    const updateData: Record<string, any> = {
       sticker_path: updates.stickerPath,
       sticker_type: updates.stickerType,
       start_time: updates.startTime,
@@ -3912,6 +3870,11 @@
       animation: updates.animation,
       per_ratio_configs_data: updates.perRatioConfigs ? JSON.stringify(updates.perRatioConfigs) : undefined,
     };
+    
+    // Handle layer property for multi-track support
+    if (updates.layer !== undefined) {
+      updateData.layer = updates.layer;
+    }
 
     // Use appropriate database function based on mode
     if (editorMode.value) {
@@ -3976,7 +3939,7 @@
   }
 
   async function updateWatermarkLocal(watermarkId: string, updates: Partial<ClipWatermark>) {
-    const updateData = {
+    const updateData: Record<string, any> = {
       watermark_id: updates.watermarkId,
       watermark_path: updates.filePath,
       start_time: updates.startTime,
@@ -3987,6 +3950,11 @@
       opacity: updates.opacity,
       per_ratio_configs_data: updates.perRatioConfigs ? JSON.stringify(updates.perRatioConfigs) : undefined,
     };
+    
+    // Handle layer property for multi-track support
+    if (updates.layer !== undefined) {
+      updateData.layer = updates.layer;
+    }
 
     // Use appropriate database function based on mode
     if (editorMode.value) {
@@ -4009,6 +3977,235 @@
       await deleteWatermarkRecord(watermarkId);
     }
     watermarks.value = watermarks.value.filter((w) => w.id !== watermarkId);
+  }
+
+  async function splitWatermarkLocal(watermarkId: string, cutTime: number) {
+    if (!videoEditorEditId.value) return;
+    
+    const { splitVideoEditorWatermark } = await import('@/services/database/video-editor-edits');
+    const { left, right } = await splitVideoEditorWatermark(videoEditorEditId.value, watermarkId, cutTime);
+    
+    // Update local state
+    const index = watermarks.value.findIndex(w => w.id === watermarkId);
+    if (index !== -1) {
+      watermarks.value[index] = {
+        id: left.id,
+        watermarkId: left.watermark_id,
+        filePath: left.watermark_path,
+        previewUrl: left.preview_url || '',
+        startTime: left.start_time,
+        endTime: left.end_time,
+        position: { x: left.position_x, y: left.position_y },
+        scale: left.scale,
+        opacity: left.opacity,
+      };
+      watermarks.value.push({
+        id: right.id,
+        watermarkId: right.watermark_id,
+        filePath: right.watermark_path,
+        previewUrl: right.preview_url || '',
+        startTime: right.start_time,
+        endTime: right.end_time,
+        position: { x: right.position_x, y: right.position_y },
+        scale: right.scale,
+        opacity: right.opacity,
+      });
+    }
+  }
+
+  async function splitTextOverlayLocal(overlayId: string, cutTime: number) {
+    if (!videoEditorEditId.value) return;
+    
+    const { splitVideoEditorTextOverlay } = await import('@/services/database/video-editor-edits');
+    const { left, right } = await splitVideoEditorTextOverlay(videoEditorEditId.value, overlayId, cutTime);
+    
+    const index = textOverlays.value.findIndex(t => t.id === overlayId);
+    if (index !== -1) {
+      textOverlays.value[index] = {
+        id: left.id,
+        text: left.text,
+        startTime: left.start_time,
+        endTime: left.end_time,
+        position: { x: left.position_x, y: left.position_y },
+        style: JSON.parse(left.style_data || '{}'),
+        animation: left.animation as any,
+      };
+      textOverlays.value.push({
+        id: right.id,
+        text: right.text,
+        startTime: right.start_time,
+        endTime: right.end_time,
+        position: { x: right.position_x, y: right.position_y },
+        style: JSON.parse(right.style_data || '{}'),
+        animation: right.animation as any,
+      });
+    }
+  }
+
+  async function splitStickerLocal(stickerId: string, cutTime: number) {
+    if (!videoEditorEditId.value) return;
+    
+    const { splitVideoEditorSticker } = await import('@/services/database/video-editor-edits');
+    const { left, right } = await splitVideoEditorSticker(videoEditorEditId.value, stickerId, cutTime);
+    
+    const index = stickers.value.findIndex(s => s.id === stickerId);
+    if (index !== -1) {
+      stickers.value[index] = {
+        id: left.id,
+        stickerPath: left.sticker_path,
+        stickerType: left.sticker_type as any,
+        startTime: left.start_time,
+        endTime: left.end_time,
+        position: { x: left.position_x, y: left.position_y },
+        scale: left.scale,
+        rotation: left.rotation,
+        animation: left.animation as any,
+      };
+      stickers.value.push({
+        id: right.id,
+        stickerPath: right.sticker_path,
+        stickerType: right.sticker_type as any,
+        startTime: right.start_time,
+        endTime: right.end_time,
+        position: { x: right.position_x, y: right.position_y },
+        scale: right.scale,
+        rotation: right.rotation,
+        animation: right.animation as any,
+      });
+    }
+  }
+
+  async function splitEffectLocal(effectId: string, cutTime: number) {
+    if (!videoEditorEditId.value) return;
+    
+    const { splitVideoEditorEffect } = await import('@/services/database/video-editor-edits');
+    const { left, right } = await splitVideoEditorEffect(videoEditorEditId.value, effectId, cutTime);
+    
+    const index = effects.value.findIndex(e => e.id === effectId);
+    if (index !== -1) {
+      effects.value[index] = {
+        id: left.id,
+        type: left.effect_type as any,
+        startTime: left.start_time,
+        endTime: left.end_time,
+        settings: JSON.parse(left.settings || '{}'),
+      };
+      effects.value.push({
+        id: right.id,
+        type: right.effect_type as any,
+        startTime: right.start_time,
+        endTime: right.end_time,
+        settings: JSON.parse(right.settings || '{}'),
+      });
+    }
+  }
+
+  async function splitAudioTrackLocal(trackId: string, cutTime: number) {
+    if (!videoEditorEditId.value) return;
+    
+    const { splitVideoEditorAudioTrack } = await import('@/services/database/video-editor-edits');
+    const { left, right } = await splitVideoEditorAudioTrack(videoEditorEditId.value, trackId, cutTime);
+    
+    const index = audioTracks.value.findIndex(t => t.id === trackId);
+    if (index !== -1) {
+      audioTracks.value[index] = {
+        id: left.id,
+        filePath: left.file_path,
+        name: left.name,
+        startTime: left.start_time,
+        endTime: left.end_time,
+        volume: left.volume,
+        fadeIn: left.fade_in,
+        fadeOut: left.fade_out,
+        trackOrder: left.track_order,
+        isMuted: left.is_muted === 1,
+        isSolo: left.is_solo === 1,
+      };
+      audioTracks.value.push({
+        id: right.id,
+        filePath: right.file_path,
+        name: right.name,
+        startTime: right.start_time,
+        endTime: right.end_time,
+        volume: right.volume,
+        fadeIn: right.fade_in,
+        fadeOut: right.fade_out,
+        trackOrder: right.track_order,
+        isMuted: right.is_muted === 1,
+        isSolo: right.is_solo === 1,
+      });
+    }
+  }
+
+  async function splitFilterLocal(filterId: string, cutTime: number) {
+    const index = filterSegments.value.findIndex(f => f.id === filterId);
+    if (index === -1) return;
+    
+    const filter = filterSegments.value[index];
+    
+    // Validate cut time
+    if (cutTime <= filter.startTime || cutTime >= filter.endTime) {
+      console.warn('[splitFilterLocal] Cut time is outside filter bounds');
+      return;
+    }
+    
+    // Update the original filter to end at cut time (left portion)
+    filterSegments.value[index] = {
+      ...filter,
+      endTime: cutTime,
+    };
+    
+    // Create new filter for right portion
+    const newFilterId = `filter-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    filterSegments.value.push({
+      id: newFilterId,
+      startTime: cutTime,
+      endTime: filter.endTime,
+      settings: { ...filter.settings },
+    });
+    
+    // Persist to database if in editor mode
+    if (videoEditorEditId.value) {
+      const { updateVideoEditorEdit } = await import('@/services/database/video-editor-edits');
+      const editData = {
+        filterSegments: filterSegments.value,
+      };
+      await updateVideoEditorEdit(videoEditorEditId.value, { edit_data: JSON.stringify(editData) });
+    }
+  }
+
+  async function moveTrackWithUndo(data: {
+    type: string;
+    id: string;
+    originalStartTime: number;
+    originalEndTime: number;
+    newStartTime: number;
+    newEndTime: number;
+  }) {
+    if (!videoEditorEditId.value) return;
+
+    // Create reload callback
+    const reloadCallback = async () => {
+      await loadEditorProject();
+    };
+
+    // Create and execute move command
+    const { createMoveCommand } = await import('@/services/commands');
+    const moveCommand = createMoveCommand({
+      type: data.type as any,
+      itemId: data.id,
+      editId: videoEditorEditId.value,
+      originalStartTime: data.originalStartTime,
+      originalEndTime: data.originalEndTime,
+      newStartTime: data.newStartTime,
+      newEndTime: data.newEndTime,
+      onReload: reloadCallback,
+    });
+
+    await commandHistory.executeCommand(moveCommand);
+    undoRedoTrigger.value++;
+
+    console.log(`[moveTrackWithUndo] Move complete (with undo support): ${data.type} ${data.id}`);
   }
 
   // Auto-apply creator profile watermark settings when opening the clip editor
@@ -4992,6 +5189,7 @@
             position: { x: w.position_x, y: w.position_y },
             scale: w.scale,
             opacity: w.opacity,
+            layer: w.layer ?? 0, // Visual track layer
             perRatioConfigs: w.per_ratio_configs_data ? JSON.parse(w.per_ratio_configs_data) : undefined,
           };
         })
@@ -5182,9 +5380,14 @@
   // Undo/Redo operations
   async function performUndo() {
     try {
+      console.log('[ClipEditorDialog] Attempting undo...');
+      console.log('[ClipEditorDialog] Can undo?', commandHistory.canUndo());
+      console.log('[ClipEditorDialog] Undo stack size:', commandHistory.getUndoStackSize());
       await commandHistory.undo();
       undoRedoTrigger.value++; // Trigger reactivity update for button states
       console.log('[ClipEditorDialog] ✅ Undo successful');
+      console.log('[ClipEditorDialog] After undo - Can undo?', commandHistory.canUndo());
+      console.log('[ClipEditorDialog] After undo - Undo stack size:', commandHistory.getUndoStackSize());
     } catch (error) {
       console.error('[ClipEditorDialog] Undo failed:', error);
       alert('Could not undo the last operation');

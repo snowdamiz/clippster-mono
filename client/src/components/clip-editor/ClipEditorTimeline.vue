@@ -109,6 +109,7 @@
         class="bg-[#0c0c0c] rounded-md relative overflow-y-auto overflow-x-hidden flex-1 min-h-0 scrollbar-thin scrollbar-thumb-[#333] scrollbar-track-[#0c0c0c]"
         @mousemove="onTimelineMouseMove"
         @mouseleave="onTimelineMouseLeave"
+        @click="onTimelineContainerClick"
       >
         <!-- Horizontal scroller for ruler + tracks -->
         <div class="overflow-x-auto pb-2">
@@ -210,53 +211,137 @@
             <div class="flex-1 h-full relative bg-[#111]"></div>
           </div>
 
-          <!-- Upper content tracks (stickers/text/effects/filters) -->
-          <div v-if="stickers.length > 0" class="flex items-center h-10 relative">
+          <!-- Unified Layer tracks (can contain video sources, text, stickers, watermarks) -->
+          <div
+            v-for="layerGroup in visualLayers"
+            :key="`layer-${layerGroup.layer}`"
+            :data-layer-track="layerGroup.layer"
+            class="flex items-center h-10 relative"
+            :class="{
+              'bg-purple-500/10 ring-2 ring-purple-500/50': (isDragging && dragInfo?.type && ['text', 'sticker', 'watermark'].includes(dragInfo.type) && dragInfo?.targetLayer === layerGroup.layer) || (isDraggingSource && dragSourceInfo?.targetTrackIndex === layerGroup.layer)
+            }"
+          >
             <div
               class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
             >
-              <div class="font-medium flex items-center gap-1">
-                <Smile :size="12" />
-                Stickers
-              </div>
+              <div class="font-medium">Layer {{ layerGroup.layer }}</div>
             </div>
             <div class="flex-1 h-full relative" @click="onTrackContentClick">
               <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
-              <div
-                v-for="sticker in stickers"
-                :key="sticker.id"
-                :ref="(el) => setSegmentRef(el, 'sticker', sticker.id)"
-                class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center justify-center group"
-                :class="getSegmentClasses('sticker', sticker.id)"
-                :style="getSegmentStyle(sticker.startTime, sticker.endTime, 'pink', 'sticker', sticker.id)"
-                @mousedown="(e) => onSegmentMouseDown(e, 'sticker', sticker.id, sticker)"
-                @click.stop="selectItem('sticker', sticker.id)"
-              >
-                <span v-if="sticker.stickerType === 'emoji'" class="text-sm pointer-events-none">
-                  {{ sticker.stickerPath }}
-                </span>
-                <span v-else class="text-xs text-white/90 font-medium truncate px-1 drop-shadow-sm pointer-events-none">
-                  Sticker
-                </span>
-                <!-- Left resize handle -->
+              
+              <!-- Render all items in this layer -->
+              <template v-for="overlayItem in layerGroup.items" :key="`${overlayItem.type}-${overlayItem.item.id}`">
+                <!-- Video Source (in layer) -->
                 <div
-                  class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
-                  @mousedown.stop="(e) => onResizeMouseDown(e, 'sticker', sticker.id, 'left', sticker)"
+                  v-if="overlayItem.type === 'source'"
+                  :ref="(el) => setSegmentRef(el, 'source', overlayItem.item.id)"
+                  class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group border-2 border-cyan-500"
+                  :class="getSegmentClasses('source', overlayItem.item.id)"
+                  :style="getVideoSourceStyle(overlayItem.item, sourcePreview)"
+                  @mousedown="(e) => onSourceMouseDown(e, overlayItem.item)"
+                  @click.stop="selectItem('source', overlayItem.item.id)"
                 >
-                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                  <div class="absolute inset-0 bg-[#1a1a1a]"></div>
+                  <span class="relative z-10 text-xs text-cyan-400 font-medium truncate px-1 drop-shadow-sm pointer-events-none">
+                    {{ overlayItem.item.source_name || 'Video' }}
+                  </span>
                 </div>
-                <!-- Right resize handle -->
+                
+                <!-- Sticker -->
                 <div
-                  class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
-                  @mousedown.stop="(e) => onResizeMouseDown(e, 'sticker', sticker.id, 'right', sticker)"
+                  v-if="overlayItem.type === 'sticker'"
+                  :ref="(el) => setSegmentRef(el, 'sticker', overlayItem.item.id)"
+                  class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center justify-center group"
+                  :class="getSegmentClasses('sticker', overlayItem.item.id)"
+                  :style="getSegmentStyle(overlayItem.item.startTime, overlayItem.item.endTime, 'pink', 'sticker', overlayItem.item.id)"
+                  @mousedown="(e) => onSegmentMouseDown(e, 'sticker', overlayItem.item.id, overlayItem.item)"
+                  @click.stop="selectItem('sticker', overlayItem.item.id)"
                 >
-                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                  <span v-if="overlayItem.item.stickerType === 'emoji'" class="text-sm pointer-events-none">
+                    {{ overlayItem.item.stickerPath }}
+                  </span>
+                  <span v-else class="text-xs text-white/90 font-medium truncate px-1 drop-shadow-sm pointer-events-none">
+                    Sticker
+                  </span>
+                  <!-- Left resize handle -->
+                  <div
+                    class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                    @mousedown.stop="(e) => onResizeMouseDown(e, 'sticker', overlayItem.item.id, 'left', overlayItem.item)"
+                  >
+                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                  </div>
+                  <!-- Right resize handle -->
+                  <div
+                    class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                    @mousedown.stop="(e) => onResizeMouseDown(e, 'sticker', overlayItem.item.id, 'right', overlayItem.item)"
+                  >
+                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                  </div>
                 </div>
-              </div>
+                
+                <!-- Text Overlay -->
+                <div
+                  v-if="overlayItem.type === 'text'"
+                  :ref="(el) => setSegmentRef(el, 'text', overlayItem.item.id)"
+                  class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
+                  :class="getSegmentClasses('text', overlayItem.item.id)"
+                  :style="getSegmentStyle(overlayItem.item.startTime, overlayItem.item.endTime, 'amber', 'text', overlayItem.item.id)"
+                  @mousedown="(e) => onSegmentMouseDown(e, 'text', overlayItem.item.id, overlayItem.item)"
+                  @click.stop="selectItem('text', overlayItem.item.id)"
+                >
+                  <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm pointer-events-none">
+                    {{ overlayItem.item.text }}
+                  </span>
+                  <!-- Left resize handle -->
+                  <div
+                    class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                    @mousedown.stop="(e) => onResizeMouseDown(e, 'text', overlayItem.item.id, 'left', overlayItem.item)"
+                  >
+                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                  </div>
+                  <!-- Right resize handle -->
+                  <div
+                    class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                    @mousedown.stop="(e) => onResizeMouseDown(e, 'text', overlayItem.item.id, 'right', overlayItem.item)"
+                  >
+                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                  </div>
+                </div>
+                
+                <!-- Watermark -->
+                <div
+                  v-if="overlayItem.type === 'watermark'"
+                  :ref="(el) => setSegmentRef(el, 'watermark', overlayItem.item.id)"
+                  class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
+                  :class="getSegmentClasses('watermark', overlayItem.item.id)"
+                  :style="getSegmentStyle(overlayItem.item.startTime, overlayItem.item.endTime, 'cyan', 'watermark', overlayItem.item.id)"
+                  @mousedown="(e) => onSegmentMouseDown(e, 'watermark', overlayItem.item.id, overlayItem.item)"
+                  @click.stop="selectItem('watermark', overlayItem.item.id)"
+                >
+                  <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm pointer-events-none">
+                    Watermark
+                  </span>
+                  <!-- Left resize handle -->
+                  <div
+                    class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                    @mousedown.stop="(e) => onResizeMouseDown(e, 'watermark', overlayItem.item.id, 'left', overlayItem.item)"
+                  >
+                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                  </div>
+                  <!-- Right resize handle -->
+                  <div
+                    class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                    @mousedown.stop="(e) => onResizeMouseDown(e, 'watermark', overlayItem.item.id, 'right', overlayItem.item)"
+                  >
+                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                  </div>
+                </div>
+              </template>
             </div>
           </div>
 
-          <div v-if="textOverlays.length > 0" class="flex items-center h-12 relative">
+          <!-- Legacy single tracks (kept for backward compatibility if no layers defined) -->
+          <div v-if="textOverlays.length > 0 && visualOverlayLayers.length === 0" class="flex items-center h-12 relative">
             <div
               class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
             >
@@ -382,96 +467,52 @@
             </div>
           </div>
 
-          <!-- Watermarks Track (ABOVE primary video) -->
-          <div v-if="watermarks.length > 0" class="flex items-center h-12 relative">
-            <div
-              class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
-            >
-              <div class="font-medium flex items-center gap-1">
-                <Droplet :size="12" />
-                Watermark
-              </div>
-            </div>
-            <div class="flex-1 h-full relative" @click="onTrackContentClick">
-              <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+          <!-- Source Track (Primary Video - Editor Mode) -->
+          <template v-if="editorMode">
+            <div class="flex items-center h-[72px] relative">
               <div
-                v-for="watermark in watermarks"
-                :key="watermark.id"
-                :ref="(el) => setSegmentRef(el, 'watermark', watermark.id)"
-                class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
-                :class="getSegmentClasses('watermark', watermark.id)"
-                :style="getSegmentStyle(watermark.startTime, watermark.endTime, 'cyan', 'watermark', watermark.id)"
-                @mousedown="(e) => onSegmentMouseDown(e, 'watermark', watermark.id, watermark)"
-                @click.stop="selectItem('watermark', watermark.id)"
+                class="track-label w-[100px] h-full pl-2 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
               >
-                <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm pointer-events-none">
-                  Watermark
-                </span>
-                <!-- Left resize handle -->
-                <div
-                  class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
-                  @mousedown.stop="(e) => onResizeMouseDown(e, 'watermark', watermark.id, 'left', watermark)"
-                >
-                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                <!-- Track controls row (CapCut style: icons in a row) -->
+                <div class="flex items-center gap-1 text-white/50 mb-1">
+                  <button @click.stop="toggleVideoTrackState('isLocked')" class="p-0.5 hover:text-white" :title="videoTrackState.isLocked ? 'Unlock' : 'Lock'" :class="{ 'text-cyan-400': videoTrackState.isLocked }">
+                    <Lock v-if="videoTrackState.isLocked" :size="13" />
+                    <Unlock v-else :size="13" />
+                  </button>
+                  <button @click.stop="toggleVideoTrackState('isHidden')" class="p-0.5 hover:text-white" :title="videoTrackState.isHidden ? 'Show' : 'Hide'" :class="{ 'text-cyan-400': videoTrackState.isHidden }">
+                    <EyeOff v-if="videoTrackState.isHidden" :size="13" />
+                    <Eye v-else :size="13" />
+                  </button>
+                  <button @click.stop="toggleVideoTrackState('isMuted')" class="p-0.5 hover:text-white" :title="videoTrackState.isMuted ? 'Unmute' : 'Mute'" :class="{ 'text-cyan-400': videoTrackState.isMuted }">
+                    <VolumeX v-if="videoTrackState.isMuted" :size="13" />
+                    <Volume2 v-else :size="13" />
+                  </button>
                 </div>
-                <!-- Right resize handle -->
-                <div
-                  class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
-                  @mousedown.stop="(e) => onResizeMouseDown(e, 'watermark', watermark.id, 'right', watermark)"
-                >
-                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                </div>
+                <!-- Track label -->
+                <span class="text-[11px] text-white/60 truncate">Source</span>
               </div>
-            </div>
-          </div>
+              <div
+                ref="videoTrackContentRef"
+                class="flex-1 h-full relative"
+                @click="onTrackContentClick"
+                @dragover.prevent="onTimelineDragOver"
+                @drop.prevent="onTimelineDrop"
+              >
+                <!-- Background -->
+                <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
 
-          <!-- Video Track -->
-          <div class="flex items-center h-[72px] relative">
-            <div
-              class="track-label w-[100px] h-full pl-2 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
-            >
-              <!-- Track controls row (CapCut style: icons in a row) -->
-              <div class="flex items-center gap-1 text-white/50 mb-1">
-                <button @click.stop="toggleVideoTrackState('isLocked')" class="p-0.5 hover:text-white" :title="videoTrackState.isLocked ? 'Unlock' : 'Lock'" :class="{ 'text-cyan-400': videoTrackState.isLocked }">
-                  <Lock v-if="videoTrackState.isLocked" :size="13" />
-                  <Unlock v-else :size="13" />
-                </button>
-                <button @click.stop="toggleVideoTrackState('isHidden')" class="p-0.5 hover:text-white" :title="videoTrackState.isHidden ? 'Show' : 'Hide'" :class="{ 'text-cyan-400': videoTrackState.isHidden }">
-                  <EyeOff v-if="videoTrackState.isHidden" :size="13" />
-                  <Eye v-else :size="13" />
-                </button>
-                <button @click.stop="toggleVideoTrackState('isMuted')" class="p-0.5 hover:text-white" :title="videoTrackState.isMuted ? 'Unmute' : 'Mute'" :class="{ 'text-cyan-400': videoTrackState.isMuted }">
-                  <VolumeX v-if="videoTrackState.isMuted" :size="13" />
-                  <Volume2 v-else :size="13" />
-                </button>
-              </div>
-              <!-- Track label -->
-              <span class="text-[11px] text-white/60 truncate">Cover</span>
-            </div>
-            <div
-              ref="videoTrackContentRef"
-              class="flex-1 h-full relative"
-              @click="onTrackContentClick"
-              @dragover.prevent="onTimelineDragOver"
-              @drop.prevent="onTimelineDrop"
-            >
-              <!-- Background -->
-              <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
-
-              <!-- Editor Mode: Video Sources -->
-              <template v-if="editorMode">
                 <!-- Empty state drop zone -->
                 <div
-                  v-if="videoSources.length === 0"
+                  v-if="primaryVideoSources.length === 0"
                   class="absolute inset-0 flex items-center justify-center border-2 border-dashed border-white/12 rounded-md"
                   :class="{ 'border-violet-500/50 bg-violet-500/5': isDragOverTimeline }"
                 >
                   <span class="text-xs text-white/30">Drop sources here</span>
                 </div>
 
-                <!-- Video source segments (CapCut style) -->
+                <!-- Primary video source segments -->
                 <div
-                  v-for="source in videoSources"
+                  v-for="source in primaryVideoSources"
                   :key="source.id"
                   :ref="(el) => setSegmentRef(el, 'source', source.id)"
                   class="clip-segment absolute top-0 bottom-0 overflow-hidden group border-2"
@@ -483,7 +524,7 @@
                         ? 'cursor-crosshair z-62 border-cyan-500'
                         : 'cursor-pointer border-cyan-500',
                   ]"
-                  :style="getVideoSourceStyle(source)"
+                  :style="getVideoSourceStyle(source, sourcePreview)"
                   @mouseenter="isCutToolActive && onSourceHoverForCut($event, source)"
                   @mousemove="isCutToolActive && onSourceHoverForCut($event, source)"
                   @mouseleave="isCutToolActive && (cutHoverInfo = null)"
@@ -518,10 +559,43 @@
                     </span>
                   </div>
                 </div>
-              </template>
+              </div>
+            </div>
+          </template>
 
-              <!-- Clip Mode: Trim Segments -->
-              <template v-else>
+          <!-- Single Video Track (Clip Mode) -->
+          <template v-else>
+            <div class="flex items-center h-[72px] relative">
+              <div
+                class="track-label w-[100px] h-full pl-2 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+              >
+                <!-- Track controls row (CapCut style: icons in a row) -->
+                <div class="flex items-center gap-1 text-white/50 mb-1">
+                  <button @click.stop="toggleVideoTrackState('isLocked')" class="p-0.5 hover:text-white" :title="videoTrackState.isLocked ? 'Unlock' : 'Lock'" :class="{ 'text-cyan-400': videoTrackState.isLocked }">
+                    <Lock v-if="videoTrackState.isLocked" :size="13" />
+                    <Unlock v-else :size="13" />
+                  </button>
+                  <button @click.stop="toggleVideoTrackState('isHidden')" class="p-0.5 hover:text-white" :title="videoTrackState.isHidden ? 'Show' : 'Hide'" :class="{ 'text-cyan-400': videoTrackState.isHidden }">
+                    <EyeOff v-if="videoTrackState.isHidden" :size="13" />
+                    <Eye v-else :size="13" />
+                  </button>
+                  <button @click.stop="toggleVideoTrackState('isMuted')" class="p-0.5 hover:text-white" :title="videoTrackState.isMuted ? 'Unmute' : 'Mute'" :class="{ 'text-cyan-400': videoTrackState.isMuted }">
+                    <VolumeX v-if="videoTrackState.isMuted" :size="13" />
+                    <Volume2 v-else :size="13" />
+                  </button>
+                </div>
+                <!-- Track label -->
+                <span class="text-[11px] text-white/60 truncate">Cover</span>
+              </div>
+              <div
+                ref="videoTrackContentRef"
+                class="flex-1 h-full relative"
+                @click="onTrackContentClick"
+              >
+                <!-- Background -->
+                <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+
+                <!-- Clip Mode: Trim Segments -->
                 <template v-for="(segmentLayout, _index) in segmentLayouts" :key="segmentLayout.segment.id">
                   <div
                     :ref="(el) => setSegmentRef(el, 'trim', segmentLayout.segment.id)"
@@ -559,15 +633,18 @@
                     ></canvas>
                   </div>
                 </template>
-              </template>
+              </div>
             </div>
-          </div>
+          </template>
 
           <!-- Audio Tracks (BELOW primary video) -->
           <div
             v-for="track in audioTracks"
             :key="track.id"
             class="flex items-center h-12 relative"
+            :class="{
+              'bg-blue-500/10 ring-2 ring-blue-500/50': isDragging && dragInfo?.type === 'audio' && dragInfo?.targetTrackOrder === track.trackOrder
+            }"
           >
             <div
               class="track-label w-[100px] h-full pl-2 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
@@ -768,9 +845,16 @@
     id: string;
     item: any;
     startX: number;
+    startY: number;
     originalStartTime: number;
     originalEndTime: number;
+    originalTrackOrder?: number;
+    originalLayer?: number;
+    originalTrackIndex?: number;
     trackContentWidth: number;
+    targetTrackOrder?: number;
+    targetLayer?: number;
+    targetTrackIndex?: number;
   }
 
 
@@ -871,21 +955,27 @@
     (e: 'markerClick', markerId: string): void;
     (e: 'updateAudioTrack', trackId: string, updates: Partial<AudioTrack>): void;
     (e: 'deleteAudioTrack', trackId: string): void;
+    (e: 'splitAudioTrack', trackId: string, cutTime: number): void;
     (e: 'updateTextOverlay', overlayId: string, updates: Partial<TextOverlay>): void;
     (e: 'deleteTextOverlay', overlayId: string): void;
+    (e: 'splitTextOverlay', overlayId: string, cutTime: number): void;
     (e: 'updateSticker', stickerId: string, updates: Partial<Sticker>): void;
     (e: 'deleteSticker', stickerId: string): void;
+    (e: 'splitSticker', stickerId: string, cutTime: number): void;
     (e: 'updateFilterSegment', id: string, newValues: Partial<FilterSegment>): void;
+    (e: 'splitFilter', filterId: string, cutTime: number): void;
     (e: 'updateWatermark', id: string, newValues: Partial<ClipWatermark>): void;
+    (e: 'deleteWatermark', watermarkId: string): void;
+    (e: 'splitWatermark', watermarkId: string, cutTime: number): void;
+    (e: 'updateEffect', effectId: string, updates: Partial<Effect>): void;
+    (e: 'splitEffect', effectId: string, cutTime: number): void;
+    (e: 'moveTrack', data: { type: ItemType; id: string; originalStartTime: number; originalEndTime: number; newStartTime: number; newEndTime: number }): void;
     (e: 'toggleVideoMute', id: string): void;
     (e: 'toggleVideoLock', id: string): void;
     (e: 'toggleVideoHidden', id: string): void;
     (e: 'toggleAudioMute', id: string): void;
     (e: 'toggleAudioLock', id: string): void;
     (e: 'toggleAudioHidden', id: string): void;
-    (e: 'deleteWatermark', watermarkId: string): void;
-    (e: 'updateEffect', effectId: string, updates: Partial<Effect>): void;
-    (e: 'updateFilterSegment', segmentId: string, updates: Partial<FilterSegment>): void;
     // Video editor mode events
     (e: 'updateSource', sourceId: string, updates: Partial<VideoEditorSource>): void;
     (e: 'deleteSource', sourceId: string): void;
@@ -992,8 +1082,11 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
   const dragSourceInfo = ref<{
     sourceId: string;
     startX: number;
+    startY: number;
     originalStartTime: number;
     originalEndTime: number;
+    originalTrackIndex: number;
+    targetTrackIndex: number;
   } | null>(null);
 
   // Selection state
@@ -1128,6 +1221,84 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
     const maxDuration = Math.max(segmentDuration, maxAudioDuration, clipSpan, requestedDuration);
     return maxDuration > 0 ? maxDuration : props.duration;
   });
+
+  // Primary video sources (track_index = 0 or undefined) - shown in Source track
+  const primaryVideoSources = computed(() => {
+    if (!props.editorMode) return [];
+    return props.videoSources.filter(source => (source.track_index ?? 0) === 0);
+  });
+
+  // Group ALL visual content by layer for unified layer display above Source
+  // Layers can contain: video sources (track_index > 0), text, stickers, watermarks
+  interface LayerItem {
+    type: 'source' | 'text' | 'sticker' | 'watermark';
+    item: any;
+  }
+  
+  interface VisualLayer {
+    layer: number;
+    items: LayerItem[];
+  }
+
+  const visualLayers = computed<VisualLayer[]>(() => {
+    const layerMap = new Map<number, LayerItem[]>();
+    
+    // Add video sources with track_index > 0 (these go to layers above Source)
+    // Map track_index to layer: track_index 1 → layer 0, track_index 2 → layer 1, etc.
+    if (props.editorMode) {
+      props.videoSources.forEach(source => {
+        const trackIndex = source.track_index ?? 0;
+        if (trackIndex > 0) { // Only sources above the primary track
+          const layer = trackIndex - 1; // Map: track_index 1 → layer 0, 2 → layer 1, etc.
+          if (!layerMap.has(layer)) layerMap.set(layer, []);
+          layerMap.get(layer)!.push({ type: 'source', item: source });
+        }
+      });
+    }
+    
+    // Add text overlays
+    props.textOverlays.forEach(item => {
+      const layer = item.layer ?? 0;
+      if (!layerMap.has(layer)) layerMap.set(layer, []);
+      layerMap.get(layer)!.push({ type: 'text', item });
+    });
+    
+    // Add stickers
+    props.stickers.forEach(item => {
+      const layer = item.layer ?? 0;
+      if (!layerMap.has(layer)) layerMap.set(layer, []);
+      layerMap.get(layer)!.push({ type: 'sticker', item });
+    });
+    
+    // Add watermarks
+    props.watermarks.forEach(item => {
+      const layer = item.layer ?? 0;
+      if (!layerMap.has(layer)) layerMap.set(layer, []);
+      layerMap.get(layer)!.push({ type: 'watermark', item });
+    });
+    
+    // Also ensure target layer exists during drag (for visual feedback)
+    // Access the full dragSourceInfo to ensure Vue tracks it reactively
+    const sourceDragInfo = dragSourceInfo.value;
+    const overlayDragInfo = dragInfo.value;
+    const isDraggingToLayer = (isDragging.value && overlayDragInfo?.targetLayer !== undefined) ||
+                              (isDraggingSource.value && sourceDragInfo?.targetTrackIndex !== undefined && sourceDragInfo.targetTrackIndex > 0);
+    if (isDraggingToLayer) {
+      const targetLayer = isDraggingSource.value ? sourceDragInfo?.targetTrackIndex : overlayDragInfo?.targetLayer;
+      console.log('[visualLayers] Creating empty layer for drag target:', targetLayer);
+      if (targetLayer !== undefined && targetLayer > 0 && !layerMap.has(targetLayer)) {
+        layerMap.set(targetLayer, []);
+      }
+    }
+    
+    // Convert to array and sort by layer (higher layers on top, rendered first)
+    return Array.from(layerMap.entries())
+      .map(([layer, items]) => ({ layer, items }))
+      .sort((a, b) => b.layer - a.layer); // Higher layers first (render on top)
+  });
+
+  // Keep old visualOverlayLayers for backward compatibility (used in some places)
+  const visualOverlayLayers = visualLayers;
 
   // Calculate visible markers with correct positioning
   const visibleMarkers = computed(() => {
@@ -2050,9 +2221,9 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
 
   // Convert click position to source time
   function clickPositionToTime(percent: number): number {
-    // Editor mode: simple linear mapping
+    // Editor mode: simple linear mapping using totalDuration for consistency
     if (props.editorMode) {
-      const duration = props.duration || 300;
+      const duration = totalDuration.value;
       return percent * duration;
     }
 
@@ -2095,22 +2266,47 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
   function onTrackContentClick(e: MouseEvent) {
     selectedItemKey.value = null;
 
-    const trackContent = e.currentTarget as HTMLElement;
-    const rect = trackContent.getBoundingClientRect();
+    if (!contentWrapperRef.value) return;
 
-    const x = e.clientX - rect.left;
-    const percent = x / rect.width;
+    const contentRect = contentWrapperRef.value.getBoundingClientRect();
+    // Account for the track label width - timeline content starts after labels
+    const timelineLeft = contentRect.left + TRACK_LABEL_WIDTH;
+    const timelineWidth = contentRect.width - TRACK_LABEL_WIDTH;
+    const x = e.clientX - timelineLeft;
+    const percent = Math.max(0, Math.min(1, x / timelineWidth));
+    const time = clickPositionToTime(percent);
+
+    emit('seek', Math.max(0, time));
+  }
+
+  function onTimelineContainerClick(e: MouseEvent) {
+    // Only handle clicks that weren't already handled by child elements
+    if (!contentWrapperRef.value) return;
+
+    const contentRect = contentWrapperRef.value.getBoundingClientRect();
+    // Account for the track label width - timeline content starts after labels
+    const timelineLeft = contentRect.left + TRACK_LABEL_WIDTH;
+    const timelineWidth = contentRect.width - TRACK_LABEL_WIDTH;
+    
+    // If click is in the label area, ignore
+    if (e.clientX < timelineLeft) return;
+    
+    const x = e.clientX - timelineLeft;
+    const percent = Math.max(0, Math.min(1, x / timelineWidth));
     const time = clickPositionToTime(percent);
 
     emit('seek', Math.max(0, time));
   }
 
   function onRulerClick(e: MouseEvent) {
-    const ruler = e.currentTarget as HTMLElement;
-    const rect = ruler.getBoundingClientRect();
+    if (!contentWrapperRef.value) return;
 
-    const x = e.clientX - rect.left;
-    const percent = x / rect.width;
+    const contentRect = contentWrapperRef.value.getBoundingClientRect();
+    // Account for the track label width - timeline content starts after labels
+    const timelineLeft = contentRect.left + TRACK_LABEL_WIDTH;
+    const timelineWidth = contentRect.width - TRACK_LABEL_WIDTH;
+    const x = e.clientX - timelineLeft;
+    const percent = Math.max(0, Math.min(1, x / timelineWidth));
     const time = clickPositionToTime(percent);
 
     emit('seek', Math.max(0, time));
@@ -2169,16 +2365,60 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
   // Cut at playhead (CapCut style)
   function performCutAtPlayhead() {
     const currentTime = props.currentTime;
+    console.log('[Timeline] ========== SPLIT OPERATION STARTED ==========');
     console.log('[Timeline] performCutAtPlayhead called at time:', currentTime);
-    console.log('[Timeline] Editor mode:', props.editorMode);
-    console.log('[Timeline] Available segments:', sortedTrimSegments.value);
+    console.log('[Timeline] Selected item:', selectedItemKey.value);
+
+    // If a specific track is selected, split that track at the playhead
+    if (selectedItemKey.value) {
+      const [type, id] = selectedItemKey.value.split('_');
+      console.log('[Timeline] Splitting selected track:', { type, id, currentTime });
+
+      // Split based on track type
+      switch (type) {
+        case 'watermark':
+          emit('splitWatermark', id, currentTime);
+          return;
+        case 'text':
+          emit('splitTextOverlay', id, currentTime);
+          return;
+        case 'sticker':
+          emit('splitSticker', id, currentTime);
+          return;
+        case 'effect':
+          emit('splitEffect', id, currentTime);
+          return;
+        case 'filter':
+          emit('splitFilter', id, currentTime);
+          return;
+        case 'audio':
+          emit('splitAudioTrack', id, currentTime);
+          return;
+        case 'source':
+          // For video sources in editor mode
+          if (props.editorMode && props.videoSources) {
+            const source = props.videoSources.find(s => s.id === id);
+            if (source) {
+              const cutTime = currentTime - source.start_time;
+              emit('splitSource', source.id, currentTime, cutTime);
+            }
+          }
+          return;
+        case 'trim':
+          // For trim segments in clip mode
+          emit('splitTrimSegment', id, currentTime);
+          return;
+      }
+    }
+
+    // No selection - auto-detect what to split based on playhead position
+    console.log('[Timeline] No selection - auto-detecting track to split');
 
     // In editor mode, find which source contains the current time
     if (props.editorMode && props.videoSources) {
       console.log('[Timeline] Checking video sources:', props.videoSources);
       for (const source of props.videoSources) {
         if (currentTime >= source.start_time && currentTime < source.end_time) {
-          // Found the source containing the playhead
           const cutTime = currentTime - source.start_time;
           console.log('[Timeline] Found source to cut:', source.id, 'at time:', cutTime);
           emit('splitSource', source.id, currentTime, cutTime);
@@ -2192,16 +2432,8 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
     // In clip mode, find which segment contains the current time
     const segment = sortedTrimSegments.value.find((s) => currentTime >= s.startTime && currentTime < s.endTime);
 
-    console.log('[Timeline] Looking for segment at time:', currentTime, 'Found:', segment);
-
     if (!segment) {
       console.warn('[Timeline] No segment found at current playhead position');
-      console.warn(
-        '[Timeline] Current time:',
-        currentTime,
-        'Segments:',
-        sortedTrimSegments.value.map((s) => ({ id: s.id, start: s.startTime, end: s.endTime }))
-      );
       return;
     }
 
@@ -2212,8 +2444,9 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       return;
     }
 
-    // Perform the cut at the current time
+    console.log('[Timeline] Emitting splitTrimSegment event:', { segmentId: segment.id, cutTime: currentTime });
     emit('splitTrimSegment', segment.id, currentTime);
+    console.log('[Timeline] ========== SPLIT OPERATION EMITTED ==========');
   }
 
   function onSegmentHoverForCut(event: MouseEvent, segment: TrimSegment) {
@@ -2346,59 +2579,38 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
   function onPlayheadDragMove(e: MouseEvent) {
     if (!isDraggingPlayhead.value || totalDuration.value <= 0) return;
 
-    if (!videoTrackContentRef.value || !timelineScrollContainer.value) return;
+    if (!contentWrapperRef.value || !timelineScrollContainer.value) return;
 
     const scrollContainer = timelineScrollContainer.value;
     const containerRect = scrollContainer.getBoundingClientRect();
-    const trackRect = videoTrackContentRef.value.getBoundingClientRect();
+    const contentRect = contentWrapperRef.value.getBoundingClientRect();
 
-    // The label area width (sticky labels take up this space: w-20 = 80px)
-    const labelAreaWidth = TRACK_LABEL_WIDTH;
+    // Timeline content starts after the label area
+    const timelineLeft = contentRect.left + TRACK_LABEL_WIDTH;
+    const timelineWidth = contentRect.width - TRACK_LABEL_WIDTH;
 
     // Left edge of the visible track area (where content can appear, past the labels)
-    const visibleTrackLeft = containerRect.left + labelAreaWidth;
+    const visibleTrackLeft = containerRect.left + TRACK_LABEL_WIDTH;
     const visibleTrackRight = containerRect.right;
 
     // Cursor position in viewport coords
     const cursorX = e.clientX;
 
-    // Handle cursor in label area (left of track content)
+    // Handle cursor in label area (left of track content) - seek to 0
     if (cursorX < visibleTrackLeft) {
-      // Only auto-scroll if there's content to scroll to (we're zoomed and not at the start)
-      if (scrollContainer.scrollLeft > 0) {
-        const distance = visibleTrackLeft - cursorX;
-        const speed = Math.min(30, Math.max(5, distance * 0.3));
-        scrollContainer.scrollLeft = Math.max(0, scrollContainer.scrollLeft - speed);
-
-        // Set playhead to the time at the left edge of visible track
-        const leftEdgeX = visibleTrackLeft - trackRect.left;
-        const percent = Math.max(0, Math.min(1, leftEdgeX / trackRect.width));
-        const time = clickPositionToTime(percent);
-        emit('seek', Math.max(0, time));
-      }
-      // If at the start (scrollLeft = 0), don't seek - playhead stays where it is
-      // This prevents the playhead from appearing to be in the label area
+      emit('seek', 0);
       return;
     }
 
     if (cursorX > visibleTrackRight) {
-      // Cursor is past the right edge - auto-scroll right
-      const distance = cursorX - visibleTrackRight;
-      const speed = Math.min(30, Math.max(5, distance * 0.3));
-      const maxScroll = scrollContainer.scrollWidth - scrollContainer.clientWidth;
-      scrollContainer.scrollLeft = Math.min(maxScroll, scrollContainer.scrollLeft + speed);
-
-      // Set playhead to the time at the right edge of visible track
-      const rightEdgeX = visibleTrackRight - trackRect.left;
-      const percent = Math.max(0, Math.min(1, rightEdgeX / trackRect.width));
-      const time = clickPositionToTime(percent);
-      emit('seek', time);
+      // Cursor is past the right edge - seek to end
+      emit('seek', totalDuration.value);
       return;
     }
 
-    // Cursor is within the visible track area - normal behavior
-    const x = cursorX - trackRect.left;
-    const percent = Math.max(0, Math.min(1, x / trackRect.width));
+    // Cursor is within the visible track area - calculate position
+    const x = cursorX - timelineLeft;
+    const percent = Math.max(0, Math.min(1, x / timelineWidth));
     const time = clickPositionToTime(percent);
     emit('seek', Math.max(0, time));
   }
@@ -2411,12 +2623,13 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
   }
 
   // Video source functions (editor mode)
-  function getVideoSourceStyle(source: VideoEditorSource): Record<string, string> {
+  function getVideoSourceStyle(source: VideoEditorSource, _preview?: { sourceId: string; startTime: number; endTime: number } | null): Record<string, string> {
     const colors = colorMap.violet;
     const isSelected = selectedItemKey.value === `source_${source.id}`;
     const duration = totalDuration.value;
 
     // Use preview position during drag/resize for smooth updates
+    // Note: _preview param is passed to ensure Vue reactivity tracks sourcePreview changes
     const preview = sourcePreview.value;
     const startTime = preview && preview.sourceId === source.id ? preview.startTime : source.start_time;
     const endTime = preview && preview.sourceId === source.id ? preview.endTime : source.end_time;
@@ -2474,8 +2687,11 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
     dragSourceInfo.value = {
       sourceId: source.id,
       startX: e.clientX,
+      startY: e.clientY,
       originalStartTime: source.start_time,
       originalEndTime: source.end_time,
+      originalTrackIndex: source.track_index ?? 0,
+      targetTrackIndex: source.track_index ?? 0,
     };
 
     document.addEventListener('mousemove', onSourceDragMove);
@@ -2488,6 +2704,47 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
     const rect = videoTrackContentRef.value.getBoundingClientRect();
     const deltaX = e.clientX - dragSourceInfo.value.startX;
     const deltaTime = (deltaX / rect.width) * props.duration;
+
+    // Detect which layer the mouse is currently over by checking all layer elements
+    let targetTrackIndex = dragSourceInfo.value.originalTrackIndex;
+    let foundLayer = false;
+    
+    // Get all layer track elements
+    const layerElements = document.querySelectorAll('[data-layer-track]');
+    
+    for (const layerEl of layerElements) {
+      const layerRect = layerEl.getBoundingClientRect();
+      // Check if mouse Y position is within this layer's bounds
+      if (e.clientY >= layerRect.top && e.clientY <= layerRect.bottom) {
+        const layerIndex = parseInt(layerEl.getAttribute('data-layer-track') || '0');
+        // For video sources, layer 0 in the overlay system should map to track_index 1
+        // because track_index 0 is reserved for the Source track
+        targetTrackIndex = layerIndex === 0 ? 1 : layerIndex;
+        foundLayer = true;
+        break;
+      }
+    }
+    
+    // If not over any layer, check if over Source track
+    const sourceTrackRect = rect;
+    if (e.clientY >= sourceTrackRect.top && e.clientY <= sourceTrackRect.bottom) {
+      targetTrackIndex = 0; // Source track
+      foundLayer = true;
+    }
+    
+    // Fallback: If no existing layers found or not over any track, use pixel-based calculation
+    if (!foundLayer) {
+      const deltaY = e.clientY - dragSourceInfo.value.startY;
+      const LAYER_HEIGHT = 40;
+      const trackOffset = Math.round(-deltaY / LAYER_HEIGHT);
+      targetTrackIndex = Math.max(0, dragSourceInfo.value.originalTrackIndex + trackOffset);
+    }
+    
+    // Replace entire object to trigger Vue reactivity for computed properties
+    dragSourceInfo.value = {
+      ...dragSourceInfo.value,
+      targetTrackIndex,
+    };
 
     const duration = dragSourceInfo.value.originalEndTime - dragSourceInfo.value.originalStartTime;
     let newStartTime = dragSourceInfo.value.originalStartTime + deltaTime;
@@ -2504,22 +2761,63 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
     }
 
     // Apply snapping for video sources
-    const snapResult = applySnapToSegment(newStartTime, newEndTime, dragSourceInfo.value.sourceId);
-    if (snapResult.didSnap) {
-      // Re-apply bounds after snapping
-      if (snapResult.startTime < 0) {
-        newStartTime = 0;
-        newEndTime = duration;
-      } else if (snapResult.endTime > props.duration) {
-        newEndTime = props.duration;
-        newStartTime = props.duration - duration;
-      } else {
+    // Source track (track_index 0): ALWAYS snap to nearest segment edge, no free positioning
+    // Layers (track_index > 0): Optional snap within threshold
+    if (targetTrackIndex === 0) {
+      // Source track: Force snap to nearest segment edge
+      const snapResult = applySnapToSegment(newStartTime, newEndTime, dragSourceInfo.value.sourceId);
+      if (snapResult.didSnap) {
         newStartTime = snapResult.startTime;
         newEndTime = snapResult.endTime;
+        activeSnapTime.value = snapResult.snapTime;
+      } else {
+        // If no snap found, find the closest segment edge and snap to it
+        const targets = getSnapTargets(dragSourceInfo.value.sourceId);
+        let closestTarget: { time: number; distance: number } | null = null;
+        
+        // Check both start and end edges
+        for (const target of targets) {
+          if (target.type === 'segment-start' || target.type === 'segment-end') {
+            const distanceToStart = Math.abs(newStartTime - target.time);
+            const distanceToEnd = Math.abs(newEndTime - target.time);
+            
+            if (!closestTarget || distanceToStart < closestTarget.distance) {
+              closestTarget = { time: target.time, distance: distanceToStart };
+            }
+            if (distanceToEnd < closestTarget.distance) {
+              closestTarget = { time: target.time, distance: distanceToEnd };
+            }
+          }
+        }
+        
+        // Snap to closest edge
+        if (closestTarget) {
+          // Determine if we should snap start or end
+          const distanceToStart = Math.abs(newStartTime - closestTarget.time);
+          const distanceToEnd = Math.abs(newEndTime - closestTarget.time);
+          
+          if (distanceToStart < distanceToEnd) {
+            // Snap start edge
+            newStartTime = closestTarget.time;
+            newEndTime = newStartTime + duration;
+          } else {
+            // Snap end edge
+            newEndTime = closestTarget.time;
+            newStartTime = newEndTime - duration;
+          }
+          activeSnapTime.value = closestTarget.time;
+        }
       }
-      activeSnapTime.value = snapResult.snapTime;
     } else {
-      activeSnapTime.value = null;
+      // Layers: Optional snap within threshold (existing behavior)
+      const snapResult = applySnapToSegment(newStartTime, newEndTime, dragSourceInfo.value.sourceId);
+      if (snapResult.didSnap) {
+        newStartTime = snapResult.startTime;
+        newEndTime = snapResult.endTime;
+        activeSnapTime.value = snapResult.snapTime;
+      } else {
+        activeSnapTime.value = null;
+      }
     }
 
     // Update local preview state (no database call) for smooth dragging
@@ -2533,10 +2831,63 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
   function onSourceDragEnd() {
     // Commit the final position to database only on drag end
     if (sourcePreview.value && dragSourceInfo.value) {
-      emit('updateSource', dragSourceInfo.value.sourceId, {
-        start_time: sourcePreview.value.startTime,
-        end_time: sourcePreview.value.endTime,
-      });
+      let finalStartTime = sourcePreview.value.startTime;
+      let finalEndTime = sourcePreview.value.endTime;
+      
+      console.log('[onSourceDragEnd] Initial position:', finalStartTime, '-', finalEndTime, 'targetTrackIndex:', dragSourceInfo.value.targetTrackIndex);
+      
+      // Source track (track_index 0): Force final snap to nearest segment edge (ignore threshold)
+      if (dragSourceInfo.value.targetTrackIndex === 0) {
+        const duration = finalEndTime - finalStartTime;
+        const targets = getSnapTargets(dragSourceInfo.value.sourceId);
+        console.log('[onSourceDragEnd] Source track - finding closest from', targets.length, 'targets');
+        let closestTarget: { time: number; distance: number; edge: 'start' | 'end' } | null = null;
+        
+        // Find the absolute closest segment edge (no threshold)
+        for (const target of targets) {
+          if (target.type === 'segment-start' || target.type === 'segment-end') {
+            const distanceToStart = Math.abs(finalStartTime - target.time);
+            const distanceToEnd = Math.abs(finalEndTime - target.time);
+            
+            if (!closestTarget || distanceToStart < closestTarget.distance) {
+              closestTarget = { time: target.time, distance: distanceToStart, edge: 'start' };
+            }
+            if (distanceToEnd < closestTarget.distance) {
+              closestTarget = { time: target.time, distance: distanceToEnd, edge: 'end' };
+            }
+          }
+        }
+        
+        console.log('[onSourceDragEnd] Closest target:', closestTarget);
+        
+        if (closestTarget) {
+          if (closestTarget.edge === 'start') {
+            // Snap our start edge to the target
+            finalStartTime = closestTarget.time;
+            finalEndTime = finalStartTime + duration;
+            console.log('[onSourceDragEnd] Snapped START to', closestTarget.time, 'new position:', finalStartTime, '-', finalEndTime);
+          } else {
+            // Snap our end edge to the target
+            finalEndTime = closestTarget.time;
+            finalStartTime = finalEndTime - duration;
+            console.log('[onSourceDragEnd] Snapped END to', closestTarget.time, 'new position:', finalStartTime, '-', finalEndTime);
+          }
+        } else {
+          console.log('[onSourceDragEnd] NO TARGETS FOUND - keeping position:', finalStartTime, '-', finalEndTime);
+        }
+      }
+      
+      const updates: Partial<VideoEditorSource> = {
+        start_time: finalStartTime,
+        end_time: finalEndTime,
+      };
+      
+      // Include track_index if it changed
+      if (dragSourceInfo.value.targetTrackIndex !== dragSourceInfo.value.originalTrackIndex) {
+        updates.track_index = dragSourceInfo.value.targetTrackIndex;
+      }
+      
+      emit('updateSource', dragSourceInfo.value.sourceId, updates);
     }
 
     isDraggingSource.value = false;
@@ -2678,6 +3029,8 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
     e.stopPropagation();
 
     const trackContentWidth = getTrackContentWidth();
+    const originalLayer = ['text', 'sticker', 'watermark'].includes(type) ? (item.layer ?? 0) : undefined;
+    const originalTrackIndex = type === 'source' ? (item.track_index ?? 0) : undefined;
 
     isDragging.value = true;
     dragInfo.value = {
@@ -2685,8 +3038,12 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       id,
       item,
       startX: e.clientX,
+      startY: e.clientY,
       originalStartTime: item.startTime,
       originalEndTime: item.endTime,
+      originalTrackOrder: type === 'audio' ? item.trackOrder : undefined,
+      originalLayer,
+      originalTrackIndex,
       trackContentWidth,
     };
 
@@ -2699,7 +3056,42 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
 
     const itemDuration = dragInfo.value.originalEndTime - dragInfo.value.originalStartTime;
     const deltaX = e.clientX - dragInfo.value.startX;
+    const deltaY = e.clientY - dragInfo.value.startY;
     const deltaPercent = (deltaX / dragInfo.value.trackContentWidth) * 100;
+
+    // For audio tracks, detect which track row the mouse is over
+    if (dragInfo.value.type === 'audio' && dragInfo.value.originalTrackOrder !== undefined) {
+      // Calculate which audio track the mouse is currently over based on vertical position
+      const TRACK_HEIGHT = 48; // 12 * 4px (h-12 in Tailwind)
+      const trackOffset = Math.round(deltaY / TRACK_HEIGHT);
+      const targetTrackOrder = dragInfo.value.originalTrackOrder + trackOffset;
+      
+      // Clamp to valid track range
+      const maxTrackOrder = Math.max(...props.audioTracks.map(t => t.trackOrder));
+      const minTrackOrder = Math.min(...props.audioTracks.map(t => t.trackOrder));
+      dragInfo.value.targetTrackOrder = Math.max(minTrackOrder, Math.min(maxTrackOrder, targetTrackOrder));
+    }
+    
+    // For video sources, detect which video track the mouse is over
+    if (dragInfo.value.type === 'source' && dragInfo.value.originalTrackIndex !== undefined) {
+      const TRACK_HEIGHT = 72; // Video track height in pixels (h-[72px])
+      const trackOffset = Math.round(deltaY / TRACK_HEIGHT);
+      const targetTrackIndex = dragInfo.value.originalTrackIndex + trackOffset;
+      
+      // Allow creating new video tracks - minimum is 0
+      dragInfo.value.targetTrackIndex = Math.max(0, targetTrackIndex);
+    }
+    
+    // For visual overlays, detect which layer the mouse is over
+    if (['text', 'sticker', 'watermark'].includes(dragInfo.value.type) && dragInfo.value.originalLayer !== undefined) {
+      const TRACK_HEIGHT = 40; // 10 * 4px (h-10 in Tailwind)
+      const trackOffset = Math.round(deltaY / TRACK_HEIGHT);
+      const targetLayer = dragInfo.value.originalLayer - trackOffset; // Negative because layers are rendered top-to-bottom
+      
+      // Allow creating new layers - don't clamp to existing layers
+      // Minimum layer is 0, maximum can be any positive number
+      dragInfo.value.targetLayer = Math.max(0, targetLayer);
+    }
 
     let newStartTime: number;
     let newEndTime: number;
@@ -2802,9 +3194,55 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
   }
 
   function onDragEnd() {
-    // Commit the final position to database
-    if (dragPreview.value) {
-      emitUpdate(dragPreview.value.type, dragPreview.value.id, dragPreview.value.startTime, dragPreview.value.endTime);
+    // Commit the final position to database with undo/redo support
+    if (dragPreview.value && dragInfo.value) {
+      const type = dragPreview.value.type;
+      
+      // For video sources with cross-track dragging
+      if (type === 'source' && dragInfo.value.targetTrackIndex !== undefined && dragInfo.value.targetTrackIndex !== dragInfo.value.originalTrackIndex) {
+        // Video source was dragged to a different track
+        emit('updateSource', dragPreview.value.id, {
+          start_time: dragPreview.value.startTime,
+          end_time: dragPreview.value.endTime,
+          track_index: dragInfo.value.targetTrackIndex,
+        });
+      } else if (type === 'audio' && dragInfo.value.targetTrackOrder !== undefined && dragInfo.value.targetTrackOrder !== dragInfo.value.originalTrackOrder) {
+        // Audio was dragged to a different track
+        emit('updateAudioTrack', dragPreview.value.id, {
+          startTime: dragPreview.value.startTime,
+          endTime: dragPreview.value.endTime,
+          trackOrder: dragInfo.value.targetTrackOrder,
+        });
+      } else if (['text', 'sticker', 'watermark'].includes(type)) {
+        // Visual overlays always use direct update to preserve layer property
+        const currentLayer = dragInfo.value.targetLayer ?? dragInfo.value.originalLayer ?? 0;
+        const updateData: any = {
+          startTime: dragPreview.value.startTime,
+          endTime: dragPreview.value.endTime,
+          layer: currentLayer,
+        };
+        
+        if (type === 'text') {
+          emit('updateTextOverlay', dragPreview.value.id, updateData);
+        } else if (type === 'sticker') {
+          emit('updateSticker', dragPreview.value.id, updateData);
+        } else if (type === 'watermark') {
+          emit('updateWatermark', dragPreview.value.id, updateData);
+        }
+      } else if (['effect', 'audio', 'filter'].includes(type)) {
+        // For track types that support undo/redo, emit moveTrack event
+        emit('moveTrack', {
+          type,
+          id: dragPreview.value.id,
+          originalStartTime: dragInfo.value.originalStartTime,
+          originalEndTime: dragInfo.value.originalEndTime,
+          newStartTime: dragPreview.value.startTime,
+          newEndTime: dragPreview.value.endTime,
+        });
+      } else {
+        // For other types (trim, source), use direct update
+        emitUpdate(dragPreview.value.type, dragPreview.value.id, dragPreview.value.startTime, dragPreview.value.endTime);
+      }
     }
 
     isDragging.value = false;

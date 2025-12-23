@@ -40,6 +40,7 @@ export interface VideoEditorTextOverlayRecord {
   per_ratio_configs_data?: string; // JSON string for per-aspect-ratio configurations
   preview_height?: number; // Height of preview container for proper font scaling
   animation: string;
+  layer?: number; // Visual track layer (0 = bottom, higher = on top)
   created_at: number;
 }
 
@@ -56,6 +57,7 @@ export interface VideoEditorStickerRecord {
   rotation: number;
   animation: string;
   per_ratio_configs_data?: string; // JSON string for per-aspect-ratio configurations
+  layer?: number; // Visual track layer (0 = bottom, higher = on top)
   created_at: number;
 }
 
@@ -71,6 +73,7 @@ export interface VideoEditorWatermarkRecord {
   position_y: number;
   scale: number;
   opacity: number;
+  layer?: number; // Visual track layer (0 = bottom, higher = on top)
   per_ratio_configs_data?: string; // JSON string for per-aspect-ratio configurations
   created_at: number;
 }
@@ -267,6 +270,46 @@ export async function deleteVideoEditorAudioTrack(id: string): Promise<void> {
   await db.execute(`DELETE FROM video_editor_audio_tracks WHERE id = ?`, [id]);
 }
 
+/**
+ * Split an audio track at a specific time
+ */
+export async function splitVideoEditorAudioTrack(
+  editId: string,
+  trackId: string,
+  cutTime: number
+): Promise<{ left: VideoEditorAudioTrackRecord; right: VideoEditorAudioTrackRecord }> {
+  const db = await getDatabase();
+  const tracks = await getVideoEditorAudioTracksByEditId(editId);
+  const track = tracks.find(t => t.id === trackId);
+  
+  if (!track) throw new Error(`Audio track ${trackId} not found`);
+  if (cutTime <= track.start_time || cutTime >= track.end_time) {
+    throw new Error(`Cut time ${cutTime} is outside audio track bounds`);
+  }
+  
+  await updateVideoEditorAudioTrack(trackId, { end_time: cutTime });
+  
+  const rightTrack = await createVideoEditorAudioTrack(editId, {
+    file_path: track.file_path,
+    name: track.name,
+    start_time: cutTime,
+    end_time: track.end_time,
+    volume: track.volume,
+    fade_in: track.fade_in,
+    fade_out: track.fade_out,
+    track_order: track.track_order,
+    is_muted: track.is_muted,
+    is_solo: track.is_solo,
+  });
+  
+  const leftTrack = (await db.select<VideoEditorAudioTrackRecord[]>(
+    'SELECT * FROM video_editor_audio_tracks WHERE id = ?',
+    [trackId]
+  ))[0];
+  
+  return { left: leftTrack, right: rightTrack };
+}
+
 // ==========================================
 // Text Overlay Operations
 // ==========================================
@@ -379,6 +422,45 @@ export async function updateVideoEditorTextOverlay(
 export async function deleteVideoEditorTextOverlay(id: string): Promise<void> {
   const db = await getDatabase();
   await db.execute(`DELETE FROM video_editor_text_overlays WHERE id = ?`, [id]);
+}
+
+/**
+ * Split a text overlay at a specific time
+ */
+export async function splitVideoEditorTextOverlay(
+  editId: string,
+  overlayId: string,
+  cutTime: number
+): Promise<{ left: VideoEditorTextOverlayRecord; right: VideoEditorTextOverlayRecord }> {
+  const db = await getDatabase();
+  const overlays = await getVideoEditorTextOverlaysByEditId(editId);
+  const overlay = overlays.find(o => o.id === overlayId);
+  
+  if (!overlay) throw new Error(`Text overlay ${overlayId} not found`);
+  if (cutTime <= overlay.start_time || cutTime >= overlay.end_time) {
+    throw new Error(`Cut time ${cutTime} is outside overlay bounds`);
+  }
+  
+  await updateVideoEditorTextOverlay(overlayId, { end_time: cutTime });
+  
+  const rightOverlay = await createVideoEditorTextOverlay(editId, {
+    text: overlay.text,
+    start_time: cutTime,
+    end_time: overlay.end_time,
+    position_x: overlay.position_x,
+    position_y: overlay.position_y,
+    style_data: overlay.style_data,
+    per_ratio_configs_data: overlay.per_ratio_configs_data,
+    preview_height: overlay.preview_height,
+    animation: overlay.animation,
+  });
+  
+  const leftOverlay = (await db.select<VideoEditorTextOverlayRecord[]>(
+    'SELECT * FROM video_editor_text_overlays WHERE id = ?',
+    [overlayId]
+  ))[0];
+  
+  return { left: leftOverlay, right: rightOverlay };
 }
 
 // ==========================================
@@ -499,6 +581,46 @@ export async function updateVideoEditorSticker(
 export async function deleteVideoEditorSticker(id: string): Promise<void> {
   const db = await getDatabase();
   await db.execute(`DELETE FROM video_editor_stickers WHERE id = ?`, [id]);
+}
+
+/**
+ * Split a sticker at a specific time
+ */
+export async function splitVideoEditorSticker(
+  editId: string,
+  stickerId: string,
+  cutTime: number
+): Promise<{ left: VideoEditorStickerRecord; right: VideoEditorStickerRecord }> {
+  const db = await getDatabase();
+  const stickers = await getVideoEditorStickersByEditId(editId);
+  const sticker = stickers.find(s => s.id === stickerId);
+  
+  if (!sticker) throw new Error(`Sticker ${stickerId} not found`);
+  if (cutTime <= sticker.start_time || cutTime >= sticker.end_time) {
+    throw new Error(`Cut time ${cutTime} is outside sticker bounds`);
+  }
+  
+  await updateVideoEditorSticker(stickerId, { end_time: cutTime });
+  
+  const rightSticker = await createVideoEditorSticker(editId, {
+    sticker_path: sticker.sticker_path,
+    sticker_type: sticker.sticker_type,
+    start_time: cutTime,
+    end_time: sticker.end_time,
+    position_x: sticker.position_x,
+    position_y: sticker.position_y,
+    scale: sticker.scale,
+    rotation: sticker.rotation,
+    animation: sticker.animation,
+    per_ratio_configs_data: sticker.per_ratio_configs_data,
+  });
+  
+  const leftSticker = (await db.select<VideoEditorStickerRecord[]>(
+    'SELECT * FROM video_editor_stickers WHERE id = ?',
+    [stickerId]
+  ))[0];
+  
+  return { left: leftSticker, right: rightSticker };
 }
 
 // ==========================================
@@ -624,6 +746,57 @@ export async function deleteVideoEditorWatermark(id: string): Promise<void> {
   await db.execute(`DELETE FROM video_editor_watermarks WHERE id = ?`, [id]);
 }
 
+/**
+ * Split a watermark at a specific time
+ */
+export async function splitVideoEditorWatermark(
+  editId: string,
+  watermarkId: string,
+  cutTime: number
+): Promise<{ left: VideoEditorWatermarkRecord; right: VideoEditorWatermarkRecord }> {
+  const db = await getDatabase();
+  
+  // Get the watermark to split
+  const watermarks = await getVideoEditorWatermarksByEditId(editId);
+  const watermark = watermarks.find(w => w.id === watermarkId);
+  
+  if (!watermark) {
+    throw new Error(`Watermark ${watermarkId} not found`);
+  }
+  
+  // Validate cut time
+  if (cutTime <= watermark.start_time || cutTime >= watermark.end_time) {
+    throw new Error(`Cut time ${cutTime} is outside watermark bounds [${watermark.start_time}, ${watermark.end_time}]`);
+  }
+  
+  // Update the original watermark to end at cut time (left portion)
+  await updateVideoEditorWatermark(watermarkId, {
+    end_time: cutTime,
+  });
+  
+  // Create new watermark for right portion
+  const rightWatermark = await createVideoEditorWatermark(editId, {
+    watermark_id: watermark.watermark_id,
+    watermark_path: watermark.watermark_path,
+    preview_url: watermark.preview_url,
+    start_time: cutTime,
+    end_time: watermark.end_time,
+    position_x: watermark.position_x,
+    position_y: watermark.position_y,
+    scale: watermark.scale,
+    opacity: watermark.opacity,
+    per_ratio_configs_data: watermark.per_ratio_configs_data,
+  });
+  
+  // Get updated left watermark
+  const leftWatermark = (await db.select<VideoEditorWatermarkRecord[]>(
+    'SELECT * FROM video_editor_watermarks WHERE id = ?',
+    [watermarkId]
+  ))[0];
+  
+  return { left: leftWatermark, right: rightWatermark };
+}
+
 // ==========================================
 // Effect Operations
 // ==========================================
@@ -706,6 +879,40 @@ export async function updateVideoEditorEffect(
 export async function deleteVideoEditorEffect(id: string): Promise<void> {
   const db = await getDatabase();
   await db.execute(`DELETE FROM video_editor_effects WHERE id = ?`, [id]);
+}
+
+/**
+ * Split an effect at a specific time
+ */
+export async function splitVideoEditorEffect(
+  editId: string,
+  effectId: string,
+  cutTime: number
+): Promise<{ left: VideoEditorEffectRecord; right: VideoEditorEffectRecord }> {
+  const db = await getDatabase();
+  const effects = await getVideoEditorEffectsByEditId(editId);
+  const effect = effects.find(e => e.id === effectId);
+  
+  if (!effect) throw new Error(`Effect ${effectId} not found`);
+  if (cutTime <= effect.start_time || cutTime >= effect.end_time) {
+    throw new Error(`Cut time ${cutTime} is outside effect bounds`);
+  }
+  
+  await updateVideoEditorEffect(effectId, { end_time: cutTime });
+  
+  const rightEffect = await createVideoEditorEffect(editId, {
+    effect_type: effect.effect_type,
+    start_time: cutTime,
+    end_time: effect.end_time,
+    settings: effect.settings,
+  });
+  
+  const leftEffect = (await db.select<VideoEditorEffectRecord[]>(
+    'SELECT * FROM video_editor_effects WHERE id = ?',
+    [effectId]
+  ))[0];
+  
+  return { left: leftEffect, right: rightEffect };
 }
 
 // ==========================================

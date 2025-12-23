@@ -11,7 +11,9 @@ export {
   SplitCommand,
   DeleteCommand,
   PasteCommand,
+  MoveCommand,
   createSplitCommand,
   createDeleteCommand,
   createPasteCommand,
+  createMoveCommand,
 } from './ClipEditorCommands';

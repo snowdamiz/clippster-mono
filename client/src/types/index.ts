@@ -728,6 +728,7 @@ export interface TextOverlay {
   // UI-only motion preset for editor preview (does not affect export)
   motionPreset?: 'none' | 'fade' | 'slide-up' | 'pop';
   motionDuration?: number; // seconds
+  layer?: number; // Visual track layer (0 = bottom, higher = on top)
 }
 
 export interface TextOverlayStyle {
@@ -816,6 +817,7 @@ export interface Sticker {
   motionDuration?: number; // seconds
   // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
   perRatioConfigs?: Record<string, StickerRatioConfig>;
+  layer?: number; // Visual track layer (0 = bottom, higher = on top)
 }
 
 export type StickerAnimation = 'none' | 'bounce' | 'spin' | 'pulse' | 'shake' | 'float' | 'fade';
@@ -841,6 +843,7 @@ export interface ClipWatermark {
   opacity: number; // 0-100 - default/fallback opacity
   // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
   perRatioConfigs?: Record<string, ClipWatermarkRatioConfig>;
+  layer?: number; // Visual track layer (0 = bottom, higher = on top)
 }
 
 // Visual effects
@@ -1066,6 +1069,7 @@ export interface VideoEditorSource {
   trim_start: number; // Trim from source start
   trim_end: number | null; // Trim from source end (null = use full duration)
   order_index: number;
+  track_index?: number; // Video track index (0 = main track, 1+ = additional tracks)
   created_at: number;
   isMuted?: boolean;
   isLocked?: boolean;

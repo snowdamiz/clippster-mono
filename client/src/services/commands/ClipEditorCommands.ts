@@ -13,6 +13,21 @@ import {
   getClipSegmentsByClipId,
   type ClipSegment,
 } from '@/services/database';
+import {
+  getVideoEditorSourcesByProjectId,
+  updateVideoEditorSource,
+  deleteVideoEditorSource,
+  createVideoEditorSource,
+  type VideoEditorSource,
+} from '@/services/database';
+import { splitVideoEditorSource } from '@/services/database/video-editor-projects';
+import {
+  updateVideoEditorWatermark,
+  updateVideoEditorTextOverlay,
+  updateVideoEditorSticker,
+  updateVideoEditorEffect,
+  updateVideoEditorAudioTrack,
+} from '@/services/database/video-editor-edits';
 
 /**
  * Split Command Data Interface
@@ -35,6 +50,8 @@ export interface SplitCommandData {
   // State for undo (stored after execute)
   beforeSegments?: ClipSegment[];
   afterSegmentCount?: number;
+  beforeSources?: VideoEditorSource[];
+  afterSourceCount?: number;
 
   // Callback for reloading UI (passed from dialog)
   onReload?: () => Promise<void>;
@@ -59,11 +76,37 @@ export class SplitCommand extends BaseCommand {
   async execute(): Promise<void> {
     if (this.editorMode) {
       // Editor mode: Split video_editor_source
-      // NOTE: This will be implemented in next step when we integrate with splitVideoSource
+      if (!this.data.editorProjectId || this.data.segmentIndex === undefined) {
+        throw new Error('Editor mode split requires editorProjectId and segmentIndex');
+      }
+
+      // Store state before split for undo
+      this.data.beforeSources = await getVideoEditorSourcesByProjectId(this.data.editorProjectId);
+
       console.log(
-        '[SplitCommand] Editor mode split - will be implemented with splitVideoSource integration'
+        `[SplitCommand] Splitting video source ${this.data.segmentIndex} at time ${this.data.cutTime.toFixed(2)}s`
       );
-      throw new Error('Editor mode split not yet integrated - coming in next step');
+
+      // Perform the split in database
+      try {
+        await splitVideoEditorSource(this.data.editorProjectId, this.data.segmentIndex, this.data.cutTime);
+      } catch (splitError) {
+        console.error('[SplitCommand] Editor mode split failed:', splitError);
+        throw splitError;
+      }
+
+      // Store count after split for verification
+      const afterSources = await getVideoEditorSourcesByProjectId(this.data.editorProjectId);
+      this.data.afterSourceCount = afterSources.length;
+
+      // Call reload callback if provided
+      if (this.data.onReload) {
+        await this.data.onReload();
+      }
+
+      console.log(
+        `[SplitCommand] Editor mode split complete, sources: ${this.data.beforeSources.length} → ${this.data.afterSourceCount}`
+      );
     } else {
       // Clip mode: Split clip_segment
       if (!this.data.clipId || this.data.segmentIndex === undefined || !this.data.clipStartTime) {
@@ -116,11 +159,71 @@ export class SplitCommand extends BaseCommand {
 
   async undo(): Promise<void> {
     if (this.editorMode) {
-      // Editor mode undo
+      // Editor mode: Restore to before state
+      if (!this.data.editorProjectId || !this.data.beforeSources || this.data.segmentIndex === undefined) {
+        throw new Error('Cannot undo: missing editor data');
+      }
+
       console.log(
-        '[SplitCommand] Editor mode undo - will be implemented with splitVideoSource integration'
+        '[SplitCommand] Undoing editor mode split - restoring',
+        this.data.beforeSources.length,
+        'sources'
       );
-      throw new Error('Editor mode undo not yet integrated');
+
+      // Get the original source data before the split
+      const originalSource = this.data.beforeSources[this.data.segmentIndex];
+
+      console.log('[SplitCommand] Original source before split:', {
+        start_time: originalSource.start_time,
+        end_time: originalSource.end_time,
+        trim_start: originalSource.trim_start,
+        trim_end: originalSource.trim_end,
+      });
+
+      // Get current sources
+      const currentSources = await getVideoEditorSourcesByProjectId(this.data.editorProjectId);
+
+      // Delete ONLY the one source that was created by the split
+      // The split created exactly one new source at index segmentIndex + 1
+      const newSourceIndex = this.data.segmentIndex + 1;
+      if (newSourceIndex < currentSources.length) {
+        console.log('[SplitCommand] Deleting the split-created source at index', newSourceIndex);
+        await deleteVideoEditorSource(currentSources[newSourceIndex].id);
+      } else {
+        console.error('[SplitCommand] Cannot find split-created source to delete');
+      }
+
+      // Now restore the original source's times
+      console.log(
+        '[SplitCommand] Restoring original source times at index',
+        this.data.segmentIndex
+      );
+      console.log('[SplitCommand] Restoring to:', {
+        end_time: originalSource.end_time,
+        trim_end: originalSource.trim_end,
+      });
+
+      await updateVideoEditorSource(currentSources[this.data.segmentIndex].id, {
+        end_time: originalSource.end_time,
+        trim_end: originalSource.trim_end,
+      });
+
+      // Update order_index for remaining sources
+      const remainingSources = await getVideoEditorSourcesByProjectId(this.data.editorProjectId);
+      for (let i = 0; i < remainingSources.length; i++) {
+        if (remainingSources[i].order_index !== i) {
+          await updateVideoEditorSource(remainingSources[i].id, {
+            order_index: i,
+          });
+        }
+      }
+
+      console.log('[SplitCommand] Editor mode undo complete - source restored to original state');
+
+      // Call reload callback if provided
+      if (this.data.onReload) {
+        await this.data.onReload();
+      }
     } else {
       // Clip mode: Restore to before state
       if (!this.data.clipId || !this.data.beforeSegments || this.data.segmentIndex === undefined) {
@@ -502,7 +605,82 @@ export class PasteCommand extends BaseCommand {
   }
 }
 
-// Export a factory function for creating commands
+/**
+ * Move Command Data Interface - for drag operations
+ */
+export interface MoveCommandData {
+  type: 'watermark' | 'text' | 'sticker' | 'effect' | 'audio' | 'filter';
+  itemId: string;
+  editId: string;
+  
+  // Original position (for undo)
+  originalStartTime: number;
+  originalEndTime: number;
+  
+  // New position (for execute/redo)
+  newStartTime: number;
+  newEndTime: number;
+  
+  // Callback for reloading UI
+  onReload?: () => Promise<void>;
+}
+
+/**
+ * Move Command - Moves a track segment to a new position
+ * Supports undo/redo for drag operations
+ */
+export class MoveCommand extends BaseCommand {
+  private data: MoveCommandData;
+
+  constructor(data: MoveCommandData) {
+    super(true, `Move ${data.type} to ${data.newStartTime.toFixed(2)}s`);
+    this.data = data;
+  }
+
+  async execute(): Promise<void> {
+    // Update the item to the new position
+    await this.updateItemPosition(this.data.newStartTime, this.data.newEndTime);
+    
+    if (this.data.onReload) {
+      await this.data.onReload();
+    }
+  }
+
+  async undo(): Promise<void> {
+    // Restore the item to the original position
+    await this.updateItemPosition(this.data.originalStartTime, this.data.originalEndTime);
+    
+    if (this.data.onReload) {
+      await this.data.onReload();
+    }
+  }
+
+  private async updateItemPosition(startTime: number, endTime: number): Promise<void> {
+    switch (this.data.type) {
+      case 'watermark':
+        await updateVideoEditorWatermark(this.data.itemId, { start_time: startTime, end_time: endTime });
+        break;
+      case 'text':
+        await updateVideoEditorTextOverlay(this.data.itemId, { start_time: startTime, end_time: endTime });
+        break;
+      case 'sticker':
+        await updateVideoEditorSticker(this.data.itemId, { start_time: startTime, end_time: endTime });
+        break;
+      case 'effect':
+        await updateVideoEditorEffect(this.data.itemId, { start_time: startTime, end_time: endTime });
+        break;
+      case 'audio':
+        await updateVideoEditorAudioTrack(this.data.itemId, { start_time: startTime, end_time: endTime });
+        break;
+      case 'filter':
+        // Filters are stored differently - would need special handling
+        console.warn('[MoveCommand] Filter move not yet implemented');
+        break;
+    }
+  }
+}
+
+// Export factory functions for creating commands
 export function createSplitCommand(editorMode: boolean, data: SplitCommandData): SplitCommand {
   return new SplitCommand(editorMode, data);
 }
@@ -513,4 +691,8 @@ export function createDeleteCommand(editorMode: boolean, data: DeleteCommandData
 
 export function createPasteCommand(editorMode: boolean, data: PasteCommandData): PasteCommand {
   return new PasteCommand(editorMode, data);
+}
+
+export function createMoveCommand(data: MoveCommandData): MoveCommand {
+  return new MoveCommand(data);
 }

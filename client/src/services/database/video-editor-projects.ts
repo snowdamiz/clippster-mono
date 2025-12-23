@@ -218,6 +218,29 @@ export async function getVideoEditorSource(id: string): Promise<VideoEditorSourc
   return result[0] || null;
 }
 
+// Check if track_index column exists, if not add it
+let trackIndexColumnExists = false;
+async function ensureTrackIndexColumn() {
+  if (trackIndexColumnExists) return;
+  
+  const db = await getDatabase();
+  try {
+    // Try to query the column - if it fails, it doesn't exist
+    await db.execute('SELECT track_index FROM video_editor_sources LIMIT 1', []);
+    trackIndexColumnExists = true;
+  } catch (error) {
+    // Column doesn't exist, add it
+    console.log('[video-editor-projects] Adding track_index column to video_editor_sources');
+    try {
+      await db.execute('ALTER TABLE video_editor_sources ADD COLUMN track_index INTEGER DEFAULT 0', []);
+      trackIndexColumnExists = true;
+      console.log('[video-editor-projects] Successfully added track_index column');
+    } catch (alterError) {
+      console.error('[video-editor-projects] Failed to add track_index column:', alterError);
+    }
+  }
+}
+
 export async function updateVideoEditorSource(
   id: string,
   updates: Partial<{
@@ -230,9 +253,15 @@ export async function updateVideoEditorSource(
     trim_start: number;
     trim_end: number | null;
     order_index: number;
+    track_index: number;
   }>
 ): Promise<void> {
   const db = await getDatabase();
+
+  // Ensure track_index column exists before trying to update it
+  if (updates.track_index !== undefined) {
+    await ensureTrackIndexColumn();
+  }
 
   const updateFields: string[] = [];
   const values: any[] = [];
@@ -273,6 +302,10 @@ export async function updateVideoEditorSource(
     updateFields.push('order_index = ?');
     values.push(updates.order_index);
   }
+  if (updates.track_index !== undefined && trackIndexColumnExists) {
+    updateFields.push('track_index = ?');
+    values.push(updates.track_index);
+  }
 
   if (updateFields.length === 0) return;
 
@@ -291,6 +324,73 @@ export async function deleteVideoEditorSource(id: string): Promise<void> {
 export async function deleteAllVideoEditorSources(projectId: string): Promise<void> {
   const db = await getDatabase();
   await db.execute('DELETE FROM video_editor_sources WHERE project_id = ?', [projectId]);
+}
+
+/**
+ * Split a video editor source at a specific time
+ * Creates two new sources from one, similar to clip segment splitting
+ */
+export async function splitVideoEditorSource(
+  projectId: string,
+  sourceIndex: number,
+  cutTime: number
+): Promise<void> {
+  const db = await getDatabase();
+  
+  // Get all sources for this project, ordered by order_index
+  const sources = await getVideoEditorSourcesByProjectId(projectId);
+  
+  if (sourceIndex < 0 || sourceIndex >= sources.length) {
+    throw new Error(`Invalid source index: ${sourceIndex}`);
+  }
+  
+  const sourceToSplit = sources[sourceIndex];
+  
+  // Validate cut time is within source bounds
+  if (cutTime <= sourceToSplit.start_time || cutTime >= sourceToSplit.end_time) {
+    throw new Error(`Cut time ${cutTime} is outside source bounds [${sourceToSplit.start_time}, ${sourceToSplit.end_time}]`);
+  }
+  
+  // Calculate the trim offset for the cut
+  const sourceDuration = sourceToSplit.end_time - sourceToSplit.start_time;
+  const trimDuration = sourceToSplit.trim_end 
+    ? sourceToSplit.trim_end - sourceToSplit.trim_start 
+    : (sourceToSplit.source_duration || sourceDuration) - sourceToSplit.trim_start;
+  
+  // Calculate where in the source video the cut happens
+  const cutOffset = cutTime - sourceToSplit.start_time;
+  const cutPercentage = cutOffset / sourceDuration;
+  const trimCutPoint = sourceToSplit.trim_start + (trimDuration * cutPercentage);
+  
+  // Update the original source to end at cut time
+  await updateVideoEditorSource(sourceToSplit.id, {
+    end_time: cutTime,
+    trim_end: trimCutPoint,
+  });
+  
+  // Create new source for the right side of the split
+  const newSource = await createVideoEditorSource(projectId, {
+    sourceType: sourceToSplit.source_type,
+    sourceId: sourceToSplit.source_id,
+    sourcePath: sourceToSplit.source_path,
+    sourceName: sourceToSplit.source_name,
+    sourceThumbnail: sourceToSplit.source_thumbnail,
+    sourceDuration: sourceToSplit.source_duration,
+    startTime: cutTime,
+    endTime: sourceToSplit.end_time,
+    trimStart: trimCutPoint,
+    trimEnd: sourceToSplit.trim_end,
+    orderIndex: sourceToSplit.order_index + 1,
+  });
+  
+  // Update order_index for all sources after the split point
+  for (let i = sourceIndex + 1; i < sources.length; i++) {
+    await updateVideoEditorSource(sources[i].id, {
+      order_index: sources[i].order_index + 1,
+    });
+  }
+  
+  console.log(`[splitVideoEditorSource] Split source ${sourceToSplit.id} at ${cutTime}s, created ${newSource.id}`);
 }
 
 // ==========================================

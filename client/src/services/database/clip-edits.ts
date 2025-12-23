@@ -81,6 +81,7 @@ export interface ClipWatermarkRecord {
   position_y: number;
   scale: number;
   opacity: number;
+  layer?: number; // Visual track layer (0 = bottom, higher = on top)
   per_ratio_configs_data?: string; // JSON string for per-aspect-ratio configurations
   created_at: number;
 }
