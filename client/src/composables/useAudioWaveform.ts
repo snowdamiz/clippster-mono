@@ -7,16 +7,39 @@ export interface WaveformPeak {
   max: number;
 }
 
-export interface WaveformResolution {
-  peaks: WaveformPeak[];
-  peakCount: number;
-  samplesPerPeak: number;
-}
-
+// Simplified single-resolution waveform data structure
+// Frontend will downsample as needed for different zoom levels
 export interface WaveformData {
   sampleRate: number;
   duration: number;
-  resolutions: Record<string, WaveformResolution>;
+  peaks: WaveformPeak[];
+  peakCount: number;
+}
+
+// Downsample peaks for lower zoom levels
+// Aggregates peaks in range by taking min of mins and max of maxes
+function downsamplePeaks(peaks: WaveformPeak[], targetCount: number): WaveformPeak[] {
+  if (peaks.length <= targetCount || targetCount <= 0) {
+    return peaks;
+  }
+
+  const ratio = peaks.length / targetCount;
+  const result: WaveformPeak[] = [];
+
+  for (let i = 0; i < targetCount; i++) {
+    const startIdx = Math.floor(i * ratio);
+    const endIdx = Math.floor((i + 1) * ratio);
+
+    // Aggregate peaks in range (take min of mins, max of maxes)
+    let min = 0;
+    let max = 0;
+    for (let j = startIdx; j < endIdx && j < peaks.length; j++) {
+      min = Math.min(min, peaks[j].min);
+      max = Math.max(max, peaks[j].max);
+    }
+    result.push({ min, max });
+  }
+  return result;
 }
 
 export function useAudioWaveform() {
@@ -81,17 +104,62 @@ export function useAudioWaveform() {
         cached.duration
       );
 
-      // Parse resolutions JSON
-      const resolutions = JSON.parse(cached.resolutions);
+      // Parse peaks from JSON - handle both old multi-resolution and new single-array format
+      const parsed = JSON.parse(cached.resolutions);
 
-      const waveformData: WaveformData = {
-        sampleRate: cached.sample_rate,
-        duration: cached.duration,
-        resolutions,
-      };
+      let waveform: WaveformData;
 
-      console.log('[useAudioWaveform] Successfully loaded waveform from database cache');
-      return waveformData;
+      // Check if it's old format (has resolutions object) or new format (has peaks array)
+      if (Array.isArray(parsed)) {
+        // New format: direct peaks array
+        waveform = {
+          sampleRate: cached.sample_rate,
+          duration: cached.duration,
+          peaks: parsed,
+          peakCount: parsed.length,
+        };
+      } else if (parsed.peaks && Array.isArray(parsed.peaks)) {
+        // New format with wrapper object
+        waveform = {
+          sampleRate: cached.sample_rate,
+          duration: cached.duration,
+          peaks: parsed.peaks,
+          peakCount: parsed.peakCount || parsed.peaks.length,
+        };
+      } else {
+        // Old multi-resolution format - extract highest resolution available
+        const resolutionOrder = ['maximum', 'extreme', 'ultra', 'high', 'medium', 'low'];
+        let bestPeaks: WaveformPeak[] = [];
+
+        for (const level of resolutionOrder) {
+          if (parsed[level]?.peaks) {
+            bestPeaks = parsed[level].peaks.map((p: any) => ({ min: p.min, max: p.max }));
+            console.log(`[useAudioWaveform] Using ${level} resolution from old cache format`);
+            break;
+          }
+        }
+
+        if (bestPeaks.length === 0) {
+          // Fallback: use first available resolution
+          const firstKey = Object.keys(parsed)[0];
+          if (firstKey && parsed[firstKey]?.peaks) {
+            bestPeaks = parsed[firstKey].peaks.map((p: any) => ({ min: p.min, max: p.max }));
+          }
+        }
+
+        waveform = {
+          sampleRate: cached.sample_rate,
+          duration: cached.duration,
+          peaks: bestPeaks,
+          peakCount: bestPeaks.length,
+        };
+      }
+
+      console.log(
+        '[useAudioWaveform] Successfully loaded waveform from database cache, peaks:',
+        waveform.peakCount
+      );
+      return waveform;
     } catch (err) {
       console.error('[useAudioWaveform] Error loading from cache:', err);
       return null;
@@ -144,7 +212,7 @@ export function useAudioWaveform() {
         return; // Exit early to prevent NOT NULL constraint error
       }
 
-      // Save to database
+      // Save to database - store peaks directly as JSON
       await db.execute(
         `INSERT OR REPLACE INTO waveform_data (
           id, raw_video_id, video_path_hash, sample_rate, duration,
@@ -152,11 +220,11 @@ export function useAudioWaveform() {
         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
         [
           `waveform_${videoPathHash}`,
-          rawVideoId, // raw_video_id - can be null for fallback caching
+          rawVideoId,
           videoPathHash,
           data.sampleRate,
           data.duration,
-          JSON.stringify(data.resolutions),
+          JSON.stringify({ peaks: data.peaks, peakCount: data.peakCount }),
           0, // file_size - will be updated later
           now, // file_modified_time
           now,
@@ -221,36 +289,23 @@ export function useAudioWaveform() {
       // Call Rust function to extract real audio waveform
       const rustWaveform = await invoke<any>('extract_audio_waveform', {
         videoPath: videoSrc,
-        targetSamples: 2000, // Optimal for timeline visualization
       });
 
-      console.log('[useAudioWaveform] Received multi-resolution waveform data from Rust:', {
-        resolutionCount: Object.keys(rustWaveform.resolutions || {}).length,
+      console.log('[useAudioWaveform] Received waveform data from Rust:', {
+        peakCount: rustWaveform.peak_count,
         sampleRate: rustWaveform.sample_rate,
         duration: rustWaveform.duration,
-        availableResolutions: Object.keys(rustWaveform.resolutions || {}),
       });
 
-      // Convert Rust multi-resolution data structure to our TypeScript interface
-      const resolutions: Record<string, WaveformResolution> = {};
-
-      if (rustWaveform.resolutions) {
-        for (const [level, rustResolution] of Object.entries(rustWaveform.resolutions)) {
-          resolutions[level] = {
-            peaks: (rustResolution as any).peaks.map((peak: any) => ({
-              min: peak.min,
-              max: peak.max,
-            })),
-            peakCount: (rustResolution as any).peak_count,
-            samplesPerPeak: (rustResolution as any).samples_per_peak,
-          };
-        }
-      }
-
+      // Convert Rust data structure to our TypeScript interface
       const data: WaveformData = {
         sampleRate: rustWaveform.sample_rate,
         duration: rustWaveform.duration,
-        resolutions,
+        peaks: rustWaveform.peaks.map((peak: any) => ({
+          min: peak.min,
+          max: peak.max,
+        })),
+        peakCount: rustWaveform.peak_count,
       };
 
       // Cache the result to database
@@ -291,48 +346,29 @@ export function useAudioWaveform() {
           // Get audio duration
           const duration = audio.duration;
 
-          // For fallback, generate multi-resolution simulated waveforms
-          const resolutionLevels = [
-            { name: 'low', samples: 500 },
-            { name: 'medium', samples: 1000 },
-            { name: 'high', samples: 2000 },
-            { name: 'ultra', samples: 4000 },
-            { name: 'extreme', samples: 8000 },
-            { name: 'maximum', samples: 16000 },
-            { name: 'insane', samples: 32000 },
-            { name: 'godlike', samples: 64000 },
-          ];
+          // Generate 16k peaks for fallback
+          const targetPeaks = 16000;
+          const actualPeaks = Math.min(targetPeaks, Math.floor(duration * 60)); // 60 samples per second max
+          const peaks: WaveformPeak[] = [];
 
-          const resolutions: Record<string, WaveformResolution> = {};
+          // Generate simulated peaks for demonstration
+          for (let i = 0; i < actualPeaks; i++) {
+            // Create realistic-looking waveform pattern
+            const t = i / actualPeaks;
+            const baseAmplitude = 0.3 + Math.random() * 0.2;
+            const variation = Math.sin(t * Math.PI * 8) * 0.2 + Math.random() * 0.1;
 
-          for (const { name, samples } of resolutionLevels) {
-            const actualSamples = Math.min(samples, Math.floor(duration * 60)); // 60 samples per second max
-            const peaks: WaveformPeak[] = [];
-
-            // Generate simulated peaks for demonstration
-            for (let i = 0; i < actualSamples; i++) {
-              // Create realistic-looking waveform pattern
-              const t = i / actualSamples;
-              const baseAmplitude = 0.3 + Math.random() * 0.2;
-              const variation = Math.sin(t * Math.PI * 8) * 0.2 + Math.random() * 0.1;
-
-              peaks.push({
-                min: -(baseAmplitude + Math.abs(variation)),
-                max: baseAmplitude + Math.abs(variation),
-              });
-            }
-
-            resolutions[name] = {
-              peaks,
-              peakCount: peaks.length,
-              samplesPerPeak: Math.floor((duration * 44100) / actualSamples),
-            };
+            peaks.push({
+              min: -(baseAmplitude + Math.abs(variation)),
+              max: baseAmplitude + Math.abs(variation),
+            });
           }
 
           const data: WaveformData = {
-            sampleRate: 44100,
+            sampleRate: 16000,
             duration,
-            resolutions,
+            peaks,
+            peakCount: peaks.length,
           };
 
           // Cache the result
@@ -359,77 +395,41 @@ export function useAudioWaveform() {
     });
   }
 
-  // Get optimal resolution level based on zoom and width
-  function getOptimalResolution(zoomLevel: number, width: number): string {
-    if (!waveformData.value || !hasWaveform.value) {
-      return 'high'; // Default fallback
-    }
-
-    const effectiveWidth = width * zoomLevel;
-    const duration = waveformData.value.duration;
-
-    // Calculate samples per pixel at current zoom
-    const samplesPerPixel = (duration * 44100) / effectiveWidth;
-
-    // Select resolution based on zoom level (matching Rust logic)
-    if (samplesPerPixel > 5000) {
-      return 'low'; // 500 peaks - very zoomed out
-    } else if (samplesPerPixel > 2000) {
-      return 'medium'; // 1000 peaks - zoomed out
-    } else if (samplesPerPixel > 800) {
-      return 'high'; // 2000 peaks - normal
-    } else if (samplesPerPixel > 300) {
-      return 'ultra'; // 4000 peaks - zoomed in
-    } else if (samplesPerPixel > 120) {
-      return 'extreme'; // 8000 peaks - very zoomed in
-    } else if (samplesPerPixel > 50) {
-      return 'maximum'; // 16000 peaks - maximum zoom
-    } else if (samplesPerPixel > 20) {
-      return 'insane'; // 32000 peaks - extreme detail
-    } else {
-      return 'godlike'; // 64000 peaks - sample-level precision
-    }
-  }
-
-  // Get waveform peaks for rendering in a specific time range using optimal resolution
+  // Get waveform peaks for rendering in a specific time range
   function getWaveformForTimeRange(
     startTime: number,
     endTime: number,
     width: number,
-    zoomLevel: number = 1
+    _zoomLevel: number = 1
   ): WaveformPeak[] {
     if (!waveformData.value || !hasWaveform.value) {
       return [];
     }
 
-    const { duration, resolutions } = waveformData.value;
-    const resolution = getOptimalResolution(zoomLevel, width);
-    const resolutionData = resolutions[resolution];
+    const { duration, peaks } = waveformData.value;
 
-    if (!resolutionData || !resolutionData.peaks) {
-      // Fallback to any available resolution
-      const fallbackResolution = Object.values(resolutions)[0];
-      if (!fallbackResolution) return [];
-
-      const peaks = fallbackResolution.peaks;
-      const startRatio = startTime / duration;
-      const endRatio = endTime / duration;
-      const startIndex = Math.floor(startRatio * peaks.length);
-      const endIndex = Math.ceil(endRatio * peaks.length);
-      return peaks.slice(startIndex, endIndex);
+    if (peaks.length === 0) {
+      return [];
     }
 
-    const peaks = resolutionData.peaks;
     const startRatio = startTime / duration;
     const endRatio = endTime / duration;
 
     const startIndex = Math.floor(startRatio * peaks.length);
     const endIndex = Math.ceil(endRatio * peaks.length);
 
-    return peaks.slice(startIndex, endIndex);
+    const slicedPeaks = peaks.slice(startIndex, endIndex);
+
+    // Downsample if we have more peaks than pixels
+    if (slicedPeaks.length > width) {
+      return downsamplePeaks(slicedPeaks, Math.floor(width));
+    }
+
+    return slicedPeaks;
   }
 
-  // Get normalized waveform data for canvas rendering with optimal resolution
+  // Get normalized waveform data for canvas rendering
+  // Dynamically downsamples from the single high-resolution source
   function getNormalizedWaveform(
     width: number,
     _height: number,
@@ -439,59 +439,42 @@ export function useAudioWaveform() {
       return { peaks: [], barWidth: 1, resolution: 'high' };
     }
 
-    const { resolutions } = waveformData.value;
-    const resolution = getOptimalResolution(zoomLevel, width);
-    const resolutionData = resolutions[resolution];
+    const { peaks } = waveformData.value;
 
-    if (!resolutionData || !resolutionData.peaks) {
-      // Fallback to any available resolution
-      const fallbackResolution = Object.values(resolutions)[0];
-      if (!fallbackResolution) return { peaks: [], barWidth: 1, resolution: 'high' };
-
-      const peaks = fallbackResolution.peaks;
-      const targetPeakCount = Math.min(width, peaks.length);
-      const step = peaks.length / targetPeakCount;
-      const normalizedPeaks: WaveformPeak[] = [];
-
-      for (let i = 0; i < targetPeakCount; i++) {
-        const sourceIndex = Math.floor(i * step);
-        const peak = peaks[sourceIndex];
-        if (peak) normalizedPeaks.push(peak);
-      }
-
-      return {
-        peaks: normalizedPeaks,
-        barWidth: Math.max(1, width / normalizedPeaks.length),
-        resolution: Object.keys(resolutions)[0] || 'high',
-      };
+    if (peaks.length === 0) {
+      return { peaks: [], barWidth: 1, resolution: 'high' };
     }
 
-    let peaks = resolutionData.peaks;
+    // Calculate target peak count based on canvas width and zoom level
+    const effectiveWidth = width * zoomLevel;
+    const targetPeakCount = Math.min(Math.floor(effectiveWidth), peaks.length);
 
-    // For full timeline view, ensure we have enough peaks to cover the entire duration
-    // The peaks from Rust should already represent the full audio duration
-    // But we need to make sure we're using the right amount for the canvas width
+    // Downsample if necessary
+    const displayPeaks =
+      targetPeakCount < peaks.length ? downsamplePeaks(peaks, targetPeakCount) : peaks;
 
-    // Calculate how many peaks we can actually display on the canvas
-    const maxDisplayablePeaks = Math.floor(width / 1); // Minimum 1px per peak
-    if (peaks.length > maxDisplayablePeaks) {
-      // Downsample if we have too many peaks for the canvas width
-      const step = peaks.length / maxDisplayablePeaks;
-      const downsampledPeaks: WaveformPeak[] = [];
+    // Calculate bar width to fill the canvas
+    const barWidth = Math.max(1, width / displayPeaks.length);
 
-      for (let i = 0; i < maxDisplayablePeaks; i++) {
-        const sourceIndex = Math.floor(i * step);
-        if (sourceIndex < peaks.length) {
-          downsampledPeaks.push(peaks[sourceIndex]);
-        }
-      }
-
-      peaks = downsampledPeaks;
+    // Determine a resolution label for debugging/display
+    let resolution = 'high';
+    if (displayPeaks.length >= 16000) {
+      resolution = 'maximum';
+    } else if (displayPeaks.length >= 8000) {
+      resolution = 'extreme';
+    } else if (displayPeaks.length >= 4000) {
+      resolution = 'ultra';
+    } else if (displayPeaks.length >= 2000) {
+      resolution = 'high';
+    } else if (displayPeaks.length >= 1000) {
+      resolution = 'medium';
+    } else {
+      resolution = 'low';
     }
 
     return {
-      peaks,
-      barWidth: Math.max(1, width / peaks.length),
+      peaks: displayPeaks,
+      barWidth,
       resolution,
     };
   }
@@ -515,7 +498,6 @@ export function useAudioWaveform() {
     loadWaveformFromVideo,
     getWaveformForTimeRange,
     getNormalizedWaveform,
-    getOptimalResolution,
     reset,
   };
 }
