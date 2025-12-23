@@ -1,202 +1,186 @@
 # Complete Instagram Clip Flow - Clippster
 
-This document covers the complete flow from content capture to Instagram posting, with clear separation between **Organizations** and **Clippers**.
+This document covers the complete flow from content capture to Instagram posting within **Organizations**.
 
 ---
 
-## 🎯 The Two User Types
+## 🎯 How It Works (Simple Overview)
+
+```mermaid
+flowchart LR
+    A[📺 Record Stream] --> B[🔍 AI Finds Clips]
+    B --> C[✂️ Edit Clip]
+    C --> D[🎨 Add Branding]
+    D --> E[📱 Post to Instagram]
+    E --> F[📊 Track Analytics]
+```
+
+---
+
+## 🏢 Organization Structure
 
 ```mermaid
 flowchart TB
-    subgraph org_type [" 🏢 ORGANIZATION "]
+    ORG[🏢 Organization]
+    
+    ORG --> ADMINS[👑 Admins<br/>Full control]
+    ORG --> MEMBERS[👤 Members<br/>Can clip & post]
+    
+    ORG --> PROFILES[🎨 Creator Profiles<br/>Branding assets]
+    ORG --> ACCOUNTS[📱 Instagram Accounts<br/>Connected by admins]
+    
+    ADMINS --> |assign accounts to| MEMBERS
+    MEMBERS --> |use assigned accounts to post| ACCOUNTS
+    MEMBERS --> |use assigned profiles for branding| PROFILES
+```
+
+**Key point:** Team members do NOT need their own Instagram account. They post using the organization's connected Instagram accounts that are assigned to them.
+
+---
+
+## 📋 Complete Flow (Step by Step)
+
+```mermaid
+flowchart TB
+    subgraph setup [" 1️⃣  ORGANIZATION SETUP "]
         direction TB
-        O1[Owns the brand/creator]
-        O2[Creates campaigns]
-        O3[Connects THEIR Instagram accounts]
-        O4[Pays clippers for views]
+        A1[Admin creates organization] --> A2[Admin invites team members]
     end
 
-    subgraph clipper_type [" ✂️ CLIPPER "]
+    subgraph branding [" 2️⃣  BRAND SETUP "]
         direction TB
-        C1[Joins campaigns to clip for brands]
-        C2[Creates clips using org's branding]
-        C3[Posts to THEIR OWN Instagram]
-        C4[Gets paid based on views]
+        B1[Create Creator Profile] --> B2[Upload intro & outro videos]
+        B2 --> B3[Upload watermark/logo]
+        B3 --> B4[Link streaming platforms]
+    end
+
+    subgraph instagram [" 3️⃣  CONNECT INSTAGRAM "]
+        direction TB
+        C1[Admin connects org's Instagram] --> C2[Instagram account saved to org]
+        C2 --> C3[Admin assigns account to members]
+    end
+
+    subgraph content [" 4️⃣  CAPTURE CONTENT "]
+        direction TB
+        D1[Add streamer to watch list] --> D2[Record livestream]
+        D2 --> D3[Video saved locally]
+    end
+
+    subgraph clips [" 5️⃣  CREATE CLIPS "]
+        direction TB
+        E1[AI detects best moments] --> E2[Edit clip in app]
+        E2 --> E3[Add subtitles & effects]
+        E3 --> E4[Apply Creator Profile branding]
+        E4 --> E5[Export final video]
+    end
+
+    subgraph publish [" 6️⃣  PUBLISH TO INSTAGRAM "]
+        direction TB
+        F1[Click Publish in app] --> F2[Select assigned Instagram account]
+        F2 --> F3[Write caption]
+        F3 --> F4[App posts directly to Instagram]
+    end
+
+    subgraph track [" 7️⃣  TRACK PERFORMANCE "]
+        direction TB
+        G1[Post appears in dashboard] --> G2[Views, likes, comments tracked]
+        G2 --> G3[Analytics sync automatically]
+    end
+
+    setup --> branding --> instagram --> content --> clips --> publish --> track
+```
+
+---
+
+## 👑 What Admins Do
+
+```mermaid
+flowchart TB
+    subgraph admin_tasks [" ADMIN RESPONSIBILITIES "]
+        A1[Create & manage organization]
+        A2[Invite team members]
+        A3[Create Creator Profiles<br/>intro, outro, watermark]
+        A4[Connect Instagram accounts]
+        A5[Assign Instagram accounts to members]
+        A6[View all posts & analytics]
     end
 ```
 
 ---
 
-## 📋 Simple Overview: The Complete Journey
+## 👤 What Members Do
 
 ```mermaid
 flowchart TB
-    subgraph phase1 [" PHASE 1: Setup "]
-        direction TB
-        A1[🏢 Org creates account]
-        A2[🎨 Org sets up Creator Profile<br/>intro, outro, watermark, logo]
-        A3[📱 Org connects Instagram account]
-        A4[📢 Org creates Clipping Campaign]
+    subgraph member_tasks [" MEMBER WORKFLOW "]
+        M1[Watch/record livestreams]
+        M2[Review AI clip suggestions]
+        M3[Edit clips in the app]
+        M4[Apply assigned Creator Profile branding]
+        M5[Post to assigned Instagram account]
+        M6[Track their own posts]
+    end
+```
+
+**Important:** Members use the organization's Instagram accounts (assigned by admin), NOT their personal accounts.
+
+---
+
+## 📱 Instagram Account Flow
+
+```mermaid
+flowchart TB
+    subgraph connect [" ADMIN CONNECTS ACCOUNT "]
+        A1[Admin clicks Connect Instagram] --> A2[Redirected to Instagram login]
+        A2 --> A3[Admin authorizes Clippster]
+        A3 --> A4[Account connected to org]
     end
 
-    subgraph phase2 [" PHASE 2: Clipper Joins "]
-        direction TB
-        B1[✂️ Clipper browses campaigns]
-        B2[✂️ Clipper joins campaign]
-        B3[✂️ Clipper gets access to<br/>Creator Profile & assets]
-        B4[📱 Clipper connects THEIR Instagram]
+    subgraph assign [" ADMIN ASSIGNS TO MEMBERS "]
+        B1[Admin opens account settings] --> B2[Selects team members]
+        B2 --> B3[Members can now use this account]
     end
 
-    subgraph phase3 [" PHASE 3: Create Clips "]
-        direction TB
-        C1[📺 Watch/record livestream]
-        C2[🔍 AI detects best moments]
-        C3[✂️ Edit clip in desktop app]
-        C4[🎨 Apply org's branding<br/>intro + outro + watermark]
-        C5[📦 Export final video]
+    subgraph use [" MEMBER POSTS "]
+        C1[Member selects assigned account] --> C2[Writes caption]
+        C2 --> C3[App publishes to Instagram via API]
+        C3 --> C4[Post tracked in dashboard]
     end
 
-    subgraph phase4 [" PHASE 4: Publish & Track "]
-        direction TB
-        D1[📤 Post to Instagram]
-        D2[🔗 Submit link to campaign]
-        D3[✅ Org verifies the post]
-        D4[📊 Views tracked over time]
-        D5[💰 Clipper gets paid based on CPM]
-    end
-
-    phase1 --> phase2 --> phase3 --> phase4
+    connect --> assign --> use
 ```
 
 ---
 
-## 🏢 Organization Flow (Detailed)
-
-### What Organizations Do
+## 🎬 Clip Creation Flow
 
 ```mermaid
 flowchart TB
-    subgraph org_setup [" 1️⃣  ORGANIZATION SETUP "]
-        A1[Create Organization] --> A2[Invite team members<br/>as admin or member]
+    subgraph capture [" CAPTURE "]
+        A1[Add streamer to watch] --> A2[Stream goes live]
+        A2 --> A3[Auto-record video segments]
     end
 
-    subgraph brand_setup [" 2️⃣  BRAND SETUP "]
-        B1[Create Creator Profile] --> B2[Upload intro video]
-        B2 --> B3[Upload outro video]
-        B3 --> B4[Upload watermark/logo]
-        B4 --> B5[Link streaming platforms<br/>Kick, Twitch, YouTube, PumpFun]
+    subgraph detect [" DETECT "]
+        B1[Transcribe audio] --> B2[AI analyzes content]
+        B2 --> B3[Suggests clip moments]
     end
 
-    subgraph social_setup [" 3️⃣  CONNECT SOCIAL ACCOUNTS "]
-        C1[Admin clicks Connect Instagram] --> C2[Log into Instagram]
-        C2 --> C3[Authorize Clippster app]
-        C3 --> C4[Instagram account connected!]
-        C4 --> C5[Optionally assign to<br/>specific team members]
+    subgraph edit [" EDIT "]
+        C1[Select clip] --> C2[Adjust timing]
+        C2 --> C3[Add subtitles]
+        C3 --> C4[Add effects/music]
     end
 
-    subgraph campaign_setup [" 4️⃣  CREATE CAMPAIGN "]
-        D1[Set campaign title & description] --> D2[Link to Creator Profile]
-        D2 --> D3[Set budget & CPM rate]
-        D3 --> D4[Choose allowed platforms<br/>Instagram, TikTok, X]
-        D4 --> D5[Set join type:<br/>Open or Application Required]
-        D5 --> D6[Launch campaign!]
+    subgraph brand [" BRAND "]
+        D1[Select Creator Profile] --> D2[Apply intro video]
+        D2 --> D3[Apply outro video]
+        D3 --> D4[Apply watermark]
     end
 
-    subgraph manage [" 5️⃣  MANAGE SUBMISSIONS "]
-        E1[Review clipper applications] --> E2[Approve/reject clippers]
-        E2 --> E3[Review submitted clips]
-        E3 --> E4[Verify posts are real]
-        E4 --> E5[Track views & pay clippers]
-    end
-
-    org_setup --> brand_setup --> social_setup --> campaign_setup --> manage
-```
-
----
-
-## ✂️ Clipper Flow (Detailed)
-
-### What Clippers Do
-
-```mermaid
-flowchart TB
-    subgraph find_work [" 1️⃣  FIND A CAMPAIGN "]
-        A1[Browse campaign marketplace] --> A2[View campaign details<br/>CPM rate, budget, platforms]
-        A2 --> A3[Apply or Join campaign]
-        A3 --> A4[Wait for approval<br/>or auto-approved if open]
-    end
-
-    subgraph get_access [" 2️⃣  GET ACCESS TO BRAND ASSETS "]
-        B1[Approval granted!] --> B2[Creator Profile appears<br/>in your Creators tab]
-        B2 --> B3[Download intro & outro videos]
-        B3 --> B4[Get watermark settings]
-        B4 --> B5[See which streamers to clip]
-    end
-
-    subgraph connect_social [" 3️⃣  CONNECT YOUR INSTAGRAM "]
-        C1[Go to your profile settings] --> C2[Connect Instagram account]
-        C2 --> C3[Your account = your posts]
-    end
-
-    subgraph create_clips [" 4️⃣  CREATE CLIPS "]
-        D1[Open the desktop app] --> D2[Watch live or recorded streams]
-        D2 --> D3[AI suggests best clip moments]
-        D3 --> D4[Select and refine clips]
-        D4 --> D5[Add subtitles & effects]
-        D5 --> D6[Apply org's intro/outro/watermark]
-        D6 --> D7[Export in 9:16 for Reels]
-    end
-
-    subgraph post_submit [" 5️⃣  POST & SUBMIT "]
-        E1[Post clip to YOUR Instagram] --> E2[Copy the post URL]
-        E2 --> E3[Submit URL to campaign]
-        E3 --> E4[Org verifies your post]
-        E4 --> E5[Views accumulate over time]
-        E5 --> E6[Get paid based on CPM! 💰]
-    end
-
-    find_work --> get_access --> connect_social --> create_clips --> post_submit
-```
-
----
-
-## 🎬 Clip Creation Flow (Desktop App)
-
-### How clips are actually made
-
-```mermaid
-flowchart TB
-    subgraph capture [" 📺 CONTENT CAPTURE "]
-        A1[Add streamer to watch list] --> A2[Detect when stream goes live]
-        A2 --> A3[Auto-record livestream]
-        A3 --> A4[Save video segments locally]
-    end
-
-    subgraph detect [" 🔍 CLIP DETECTION "]
-        B1[Transcribe audio to text] --> B2[AI analyzes transcript]
-        B2 --> B3[AI suggests clip moments<br/>funny, exciting, important]
-        B3 --> B4[You review suggestions]
-        B4 --> B5[Accept, modify, or create manual clips]
-    end
-
-    subgraph edit [" ✂️ CLIP EDITING "]
-        C1[Open clip in editor] --> C2[Trim start & end points]
-        C2 --> C3[Add auto-generated subtitles]
-        C3 --> C4[Adjust subtitle style & position]
-        C4 --> C5[Add music or sound effects]
-        C5 --> C6[Apply video filters & effects]
-    end
-
-    subgraph brand [" 🎨 APPLY BRANDING "]
-        D1[Select Creator Profile] --> D2[Add intro video at start]
-        D2 --> D3[Add outro video at end]
-        D3 --> D4[Apply watermark overlay]
-    end
-
-    subgraph export [" 📦 EXPORT "]
-        E1[Choose aspect ratio:<br/>9:16 Reels, 16:9 YouTube, 1:1 Feed] --> E2[Choose quality: 720p, 1080p, 4K]
-        E2 --> E3[FFmpeg builds final video]
-        E3 --> E4[Video saved to your computer]
+    subgraph export [" EXPORT "]
+        E1[Choose aspect ratio<br/>9:16, 16:9, 1:1] --> E2[Choose quality]
+        E2 --> E3[Build final video]
     end
 
     capture --> detect --> edit --> brand --> export
@@ -204,88 +188,46 @@ flowchart TB
 
 ---
 
-## 📱 Instagram Posting Flow
-
-### How clips get to Instagram
-
-```mermaid
-flowchart TB
-    subgraph org_path [" 🏢 ORGANIZATION MEMBER PATH "]
-        direction TB
-        O1[Click Publish in app] --> O2[Select org's Instagram account]
-        O2 --> O3[Write caption]
-        O3 --> O4[App uploads to Instagram API]
-        O4 --> O5[Posted directly via org's account]
-        O5 --> O6[Analytics tracked in dashboard]
-    end
-
-    subgraph clipper_path [" ✂️ CLIPPER PATH "]
-        direction TB
-        C1[Export clip to computer] --> C2[Open Instagram on phone]
-        C2 --> C3[Post as a Reel manually]
-        C3 --> C4[Copy the post URL]
-        C4 --> C5[Submit URL to campaign]
-        C5 --> C6[Views tracked for payment]
-    end
-```
-
----
-
-## 📊 Analytics & Payment Flow
+## 📊 Analytics Tracking
 
 ```mermaid
 flowchart LR
-    subgraph tracking [" TRACKING "]
-        A1[Clip posted to Instagram] --> A2[Post URL submitted to campaign]
-        A2 --> A3[Org verifies it's real]
-    end
-
-    subgraph analytics [" ANALYTICS "]
-        B1[System checks view count] --> B2[Views tracked over time]
-        B2 --> B3[Reaches minimum threshold?]
-    end
-
-    subgraph payment [" PAYMENT "]
-        C1[Calculate earnings:<br/>Views ÷ 1000 × CPM] --> C2[Clipper sees earnings]
-        C2 --> C3[Org processes payment]
-        C3 --> C4[💰 Money to clipper!]
-    end
-
-    tracking --> analytics --> B3
-    B3 -->|Yes| payment
-    B3 -->|No| B2
+    A[Post published] --> B[Tracked in database]
+    B --> C[Hourly sync with Instagram API]
+    C --> D[Views, likes, comments updated]
+    D --> E[Dashboard shows all metrics]
 ```
 
 ---
 
-## 🔑 Key Differences: Org vs Clipper
+## 🔑 Who Can Do What
 
-| Aspect | 🏢 Organization | ✂️ Clipper |
-|--------|-----------------|------------|
-| **Instagram Account** | Org owns & connects it | Clipper uses their own |
-| **Who Posts** | Org member posts via app | Clipper posts manually |
-| **Branding Assets** | Org creates them | Clipper uses org's assets |
-| **Payment** | Org pays clippers | Clipper receives payment |
-| **Analytics** | Sees all posts in dashboard | Sees only their submissions |
-| **Creator Profile** | Org creates & owns | Clipper gets temporary access |
+| Action | 👑 Admin | 👤 Member |
+|--------|----------|-----------|
+| Create organization | ✅ | ❌ |
+| Invite members | ✅ | ❌ |
+| Connect Instagram accounts | ✅ | ❌ |
+| Assign accounts to members | ✅ | ❌ |
+| Create Creator Profiles | ✅ | ❌ |
+| Record streams | ✅ | ✅ |
+| Create clips | ✅ | ✅ |
+| Post to assigned Instagram | ✅ | ✅ |
+| View all org analytics | ✅ | ❌ |
+| View own posts | ✅ | ✅ |
 
 ---
 
-## 🗂️ Data Summary
+## 🗂️ Key Concepts
 
-### What lives WHERE?
-
-| Data | Location | Owner |
-|------|----------|-------|
-| Video files, clips | Desktop app (local SQLite) | User's computer |
-| Organization info | Server (PostgreSQL) | Organization |
-| Creator Profiles & assets | Server | Organization |
-| Org's Instagram accounts | Server (encrypted) | Organization |
-| Clipper's Instagram accounts | Server (encrypted) | Individual clipper |
-| Campaigns | Server | Organization |
-| Clip submissions | Server | Linked to clipper & campaign |
-| Post analytics | Server | Tracked per post |
-| Payments | Server | Linked to submissions |
+| Concept | Description |
+|---------|-------------|
+| **Organization** | Your team/company that owns Creator Profiles and Instagram accounts |
+| **Admin** | Can manage everything: accounts, profiles, members |
+| **Member** | Can create clips and post to assigned Instagram accounts |
+| **Creator Profile** | Brand package: intro, outro, watermark, platform links |
+| **Social Account** | Connected Instagram account owned by the organization |
+| **Assignment** | Permission for a member to use an org's Instagram account |
+| **Post Submission** | A clip posted to Instagram, tracked with analytics |
 
 ---
 
@@ -300,30 +242,21 @@ flowchart LR
 ```mermaid
 erDiagram
     users ||--o{ organization_members : "joins"
-    users ||--o{ clipper_social_accounts : "owns"
-    users ||--o{ campaign_participants : "participates"
-    users ||--o{ campaign_submissions : "submits"
+    users ||--o{ social_account_assignments : "assigned_to"
+    users ||--o{ post_submissions : "submits"
     
     organizations ||--o{ organization_members : "has"
     organizations ||--o{ organization_creator_profiles : "owns"
     organizations ||--o{ organization_social_accounts : "connects"
-    organizations ||--o{ clipping_campaigns : "creates"
+    organizations ||--o{ post_submissions : "tracks"
     
     organization_creator_profiles ||--o{ organization_profile_assignments : "assigned_to"
-    organization_creator_profiles }o--|| organization_assets : "uses_intro"
-    organization_creator_profiles }o--|| organization_assets : "uses_outro"
-    organization_creator_profiles }o--|| organization_assets : "uses_watermark"
+    organization_creator_profiles }o--|| organization_assets : "intro"
+    organization_creator_profiles }o--|| organization_assets : "outro"
+    organization_creator_profiles }o--|| organization_assets : "watermark"
     
     organization_social_accounts ||--o{ social_account_assignments : "assigned_to"
-    organization_social_accounts ||--o{ post_submissions : "posts_via"
-    
-    clipping_campaigns ||--o{ campaign_participants : "has"
-    clipping_campaigns }o--|| organization_creator_profiles : "uses"
-    
-    campaign_participants ||--o{ campaign_submissions : "submits"
-    campaign_submissions ||--o{ campaign_payments : "earns"
-    
-    clipper_social_accounts ||--o{ campaign_submissions : "posted_from"
+    organization_social_accounts ||--o{ post_submissions : "posted_via"
 
     users {
         int id PK
@@ -357,137 +290,149 @@ erDiagram
     organization_social_accounts {
         int id PK
         int organization_id FK
-        string platform
+        string platform "instagram"
+        string platform_user_id
         string username
         binary access_token_encrypted
+        datetime token_expires_at
+        boolean is_active
     }
 
-    clipper_social_accounts {
+    social_account_assignments {
         int id PK
+        int organization_social_account_id FK
         int user_id FK
-        string platform
-        string username
-        binary access_token_encrypted
+        int assigned_by_user_id FK
+        datetime assigned_at
     }
 
-    clipping_campaigns {
+    post_submissions {
         int id PK
         int organization_id FK
-        int creator_profile_id FK
-        string title
-        decimal budget
-        decimal cpm
-        string status
-    }
-
-    campaign_participants {
-        int id PK
-        int campaign_id FK
-        int user_id FK
-        string status
-    }
-
-    campaign_submissions {
-        int id PK
-        int campaign_id FK
-        int user_id FK
-        int social_account_id FK
-        string clip_url
+        int organization_social_account_id FK
+        int organization_creator_profile_id FK
+        int submitted_by_user_id FK
+        string platform
+        string post_id
+        string post_url
+        string media_type
+        string status "pending|publishing|published|failed"
         int view_count
-        string status
-    }
-
-    campaign_payments {
-        int id PK
-        int submission_id FK
-        decimal amount
-        string status
+        int like_count
+        int comment_count
+        datetime posted_at
     }
 ```
 
 ---
 
-## Instagram OAuth Flow (Technical)
+## Instagram OAuth Flow
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant User as User (Admin/Clipper)
+    participant Admin as Org Admin
     participant App as Tauri Desktop App
     participant Server as Elixir Server
     participant IG as Instagram OAuth
     participant API as Instagram Graph API
 
-    User->>App: Click "Connect Instagram"
+    Admin->>App: Click "Connect Instagram"
+    App->>Server: GET /auth/instagram/start<br/>?organization_id=X&callback_port=Y
     
-    alt Organization Admin
-        App->>Server: GET /auth/instagram/start<br/>?organization_id=X
-    else Individual Clipper
-        App->>Server: GET /auth/instagram/start<br/>?user_account=true
-    end
+    Note over Server: Verify admin permission
     
-    Server->>Server: Generate state token<br/>Store in Cachex
-    Server->>User: Redirect to Instagram
+    Server->>Server: Generate OAuth state
+    Server->>Admin: Redirect to Instagram
     
-    User->>IG: Log in & authorize
+    Admin->>IG: Log in & authorize
     IG->>Server: Callback with auth code
     
     Server->>IG: Exchange code for token
     IG-->>Server: Short-lived token
     
-    Server->>API: Exchange for long-lived token
-    API-->>Server: 60-day token
+    Server->>API: Exchange for long-lived token (60 days)
+    API-->>Server: Long-lived token
     
-    Server->>API: GET /me (profile info)
-    API-->>Server: username, id, picture
+    Server->>API: GET /me (username, id)
+    API-->>Server: Profile info
     
-    Server->>Server: Encrypt token (AES-256-GCM)
-    
-    alt Organization Admin
-        Server->>Server: Create organization_social_account
-    else Individual Clipper
-        Server->>Server: Create clipper_social_account
-    end
+    Server->>Server: Encrypt token (AES-256-GCM)<br/>Create organization_social_account
     
     Server->>App: Redirect with success
-    App->>User: "Connected @username!"
+    App->>Admin: "@username connected!"
 ```
 
 ---
 
-## Clip Build Pipeline (Technical)
+## Post Publishing Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Member as Org Member
+    participant App as Desktop App
+    participant Server as Elixir Server
+    participant CDN as R2 Storage
+    participant IG as Instagram API
+
+    Member->>App: Click Publish
+    App->>Server: GET /organizations/:id/social-accounts
+    Server-->>App: List of assigned accounts
+    
+    Member->>App: Select account, write caption
+    
+    App->>CDN: Upload video file
+    CDN-->>App: Media URL
+    
+    App->>Server: POST /organizations/:id/posts/publish
+    
+    Note over Server: Check has_account_access?<br/>(admin OR assigned)
+    
+    Server->>Server: Create post_submission (pending)
+    
+    Server->>IG: POST /media (create container)
+    IG-->>Server: container_id
+    
+    Server->>IG: Poll status until FINISHED
+    
+    Server->>IG: POST /media_publish
+    IG-->>Server: post_id
+    
+    Server->>Server: Update post_submission (published)
+    
+    Server-->>App: Success + post URL
+    App-->>Member: "Posted successfully!"
+```
+
+---
+
+## Access Control Logic
 
 ```mermaid
 flowchart TB
-    subgraph input [Input]
-        A1[Raw video segments<br/>from livestream]
-        A2[Clip timestamps<br/>start & end times]
-        A3[Transcript words<br/>with timing data]
-    end
+    A[User wants to post to account X] --> B{Is user an admin?}
+    B -->|Yes| C[✅ Access granted]
+    B -->|No| D{Is user assigned to account X?}
+    D -->|Yes| C
+    D -->|No| E[❌ Access denied]
+```
 
-    subgraph processing [Processing Pipeline - Rust/FFmpeg]
-        B1[Concatenate segments] --> B2[Extract clip range]
-        B2 --> B3[Apply video filters<br/>brightness, contrast, etc]
-        B3 --> B4[Render subtitles<br/>word-by-word animation]
-        B4 --> B5[Composite watermark]
-        B5 --> B6[Prepend intro video]
-        B6 --> B7[Append outro video]
-        B7 --> B8[Mix audio tracks]
-        B8 --> B9[Encode final output]
-    end
+**Code reference:** `Social.has_account_access?/3`
 
-    subgraph output [Output]
-        C1[9:16 Reels version]
-        C2[16:9 YouTube version]
-        C3[1:1 Feed version]
-        C4[4:5 Feed version]
-    end
-
-    input --> processing
-    B9 --> C1
-    B9 --> C2
-    B9 --> C3
-    B9 --> C4
+```elixir
+def has_account_access?(organization_id, account_id, user_id) do
+  # Admins always have access
+  if Organizations.is_admin?(organization_id, user_id) do
+    true
+  else
+    # Check if assigned
+    SocialAccountAssignment
+    |> join(:inner, [a], s in SocialAccount, on: ...)
+    |> where([a, s], s.id == ^account_id and a.user_id == ^user_id)
+    |> Repo.exists?()
+  end
+end
 ```
 
 ---
@@ -499,33 +444,33 @@ flowchart TB
     subgraph client [Desktop App - Tauri]
         UI[Vue.js Frontend]
         Rust[Rust Backend]
-        SQLite[(Local SQLite DB)]
-        FFmpeg[FFmpeg Binaries]
-        
-        UI <--> Rust
-        Rust <--> SQLite
-        Rust <--> FFmpeg
+        SQLite[(Local SQLite)]
+        FFmpeg[FFmpeg]
     end
 
-    subgraph server [Backend Server - Elixir/Phoenix]
+    subgraph server [Backend - Elixir/Phoenix]
         API[REST API]
-        PG[(PostgreSQL DB)]
+        PG[(PostgreSQL)]
         Workers[Background Workers]
-        
-        API <--> PG
-        Workers <--> PG
     end
 
-    subgraph external [External Services]
+    subgraph external [External]
         IG[Instagram API]
-        R2[Cloudflare R2<br/>Media Storage]
-        Streams[Streaming Platforms<br/>Kick, Twitch, YouTube]
+        R2[Cloudflare R2]
+        Streams[Kick/Twitch/YouTube/PumpFun]
     end
 
-    UI <-->|HTTP/WebSocket| API
-    Rust -->|Record streams| Streams
+    UI <--> Rust
+    Rust <--> SQLite
+    Rust <--> FFmpeg
+    
+    UI <-->|HTTP| API
+    API <--> PG
+    Workers <--> PG
+    
+    Rust -->|Record| Streams
     API <-->|OAuth & Publish| IG
-    API <-->|Upload media| R2
+    API <-->|Upload| R2
     Workers -->|Sync analytics| IG
 ```
 
@@ -533,56 +478,46 @@ flowchart TB
 
 ## Key API Routes
 
-### Organization Routes
+### Organization Social Accounts
 ```
-POST   /api/organizations                              Create org
-GET    /api/organizations/:id/creator-profiles         List profiles
-POST   /api/organizations/:id/creator-profiles         Create profile
-GET    /api/organizations/:id/social-accounts          List connected accounts
-POST   /api/organizations/:id/posts/publish            Publish to Instagram
-GET    /api/organizations/:id/campaigns                List campaigns
-POST   /api/organizations/:id/campaigns                Create campaign
+GET    /api/organizations/:org_id/social-accounts              List connected accounts
+POST   /api/organizations/:org_id/social-accounts              Connect new account (admin)
+DELETE /api/organizations/:org_id/social-accounts/:id          Disconnect account (admin)
+POST   /api/organizations/:org_id/social-accounts/:id/assign   Assign to members (admin)
+DELETE /api/organizations/:org_id/social-accounts/:id/assign/:user_id  Unassign (admin)
 ```
 
-### Clipper Routes
+### Publishing
 ```
-GET    /api/campaigns                                  Browse campaigns
-POST   /api/campaigns/:id/apply                        Apply to campaign
-GET    /api/user/campaigns                             My campaigns
-POST   /api/campaigns/:id/submissions                  Submit clip URL
-GET    /api/user/submissions                           My submissions
-GET    /api/user/earnings                              My earnings
-CRUD   /api/user/social-accounts                       My Instagram accounts
+POST   /api/organizations/:org_id/posts/publish                Publish clip to Instagram
+GET    /api/organizations/:org_id/posts                        List all posts
+GET    /api/organizations/:org_id/posts/:id                    Get single post
+PUT    /api/organizations/:org_id/posts/:id                    Update analytics (admin)
+GET    /api/organizations/:org_id/posts/analytics              Get analytics summary
 ```
 
-### Instagram Auth Routes
+### Instagram OAuth
 ```
-GET    /api/auth/instagram/start                       Start OAuth flow
-GET    /api/auth/instagram/callback                    OAuth callback
-POST   /api/auth/instagram/exchange                    Exchange code for token
+GET    /api/auth/instagram/start                               Start OAuth flow
+GET    /api/auth/instagram/callback                            OAuth callback
 ```
 
 ---
 
-## Key Files Reference
+## Key Files
 
 | Component | Path |
 |-----------|------|
 | **Server** | |
-| Instagram OAuth | `server/lib/clippster_server_web/controllers/instagram_auth_controller.ex` |
+| Social context | `server/lib/clippster_server/social.ex` |
+| Social account schema | `server/lib/clippster_server/social/social_account.ex` |
+| Account assignment schema | `server/lib/clippster_server/social/social_account_assignment.ex` |
+| Post submission schema | `server/lib/clippster_server/social/post_submission.ex` |
 | Instagram API client | `server/lib/clippster_server/social/platforms/instagram.ex` |
-| Social accounts | `server/lib/clippster_server/social/social_account.ex` |
-| Post submissions | `server/lib/clippster_server/social/post_submission.ex` |
-| Organizations | `server/lib/clippster_server/organizations.ex` |
-| Creator profiles | `server/lib/clippster_server/organizations/organization_creator_profile.ex` |
+| Instagram OAuth controller | `server/lib/clippster_server_web/controllers/instagram_auth_controller.ex` |
+| Post controller | `server/lib/clippster_server_web/controllers/post_submission_controller.ex` |
 | **Client** | |
-| Clip editor | `client/src/components/clip-editor/` |
-| Export tab | `client/src/components/clip-editor/tabs/ExportTab.vue` |
+| Social accounts manager | `client/src/components/organization/SocialAccountsManager.vue` |
 | Publish dialog | `client/src/components/organization/PublishDialog.vue` |
 | Social API service | `client/src/services/socialAccountsApi.ts` |
-| Creator profiles DB | `client/src/services/database/creator-profiles.ts` |
-| **Rust** | |
-| Clip orchestrator | `client/src-tauri/src/clips/orchestrator.rs` |
-| Livestream clips | `client/src-tauri/src/clips/livestream_clip.rs` |
-| Video processor | `client/src-tauri/src/clips/video_processor.rs` |
-| PumpFun recorder | `client/src-tauri/src/pumpfun.rs` |
+| Instagram auth helper | `client/src/lib/instagram-auth.ts` |
