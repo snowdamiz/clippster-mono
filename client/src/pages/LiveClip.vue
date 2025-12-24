@@ -135,6 +135,14 @@
                           <span v-if="streamer.viewerCount" class="text-muted-foreground font-normal">
                             ({{ formatViewerCount(streamer.viewerCount) }} viewers)
                           </span>
+                          <!-- DVR Ready indicator -->
+                          <span
+                            v-if="streamer.hasTempRecording"
+                            class="text-[10px] bg-green-500/20 text-green-400 px-1 py-0.5 rounded border border-green-500/30 font-normal"
+                            title="DVR recording active - rewind available"
+                          >
+                            DVR
+                          </span>
                         </span>
                         <span v-else class="text-muted-foreground/60 flex items-center gap-1.5 text-sm">
                           <span class="w-2 h-2 rounded-full bg-muted-foreground/40"></span>
@@ -157,28 +165,47 @@
 
                 <!-- Row 2: Actions -->
                 <div class="flex items-center justify-between gap-3 px-4 py-2.5 bg-muted/20 border-t border-border/30">
-                  <!-- Left: Segment Duration -->
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs text-muted-foreground">Segment:</span>
-                    <Select
-                      :model-value="String(streamer.segmentDurationMinutes)"
-                      @update:model-value="updateSegmentDuration(streamer, Number($event))"
-                      :disabled="streamer.isDetecting"
-                    >
-                      <SelectTrigger
-                        class="h-8 w-[90px] bg-background border-border/50 text-sm"
-                        :class="{ 'opacity-50': streamer.isDetecting }"
+                  <!-- Left: Segment Duration & Auto DVR -->
+                  <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-muted-foreground">Segment:</span>
+                      <Select
+                        :model-value="String(streamer.segmentDurationMinutes)"
+                        @update:model-value="updateSegmentDuration(streamer, Number($event))"
+                        :disabled="streamer.isDetecting"
                       >
-                        <SelectValue :placeholder="`${streamer.segmentDurationMinutes} min`" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="3">3 min</SelectItem>
-                        <SelectItem value="5">5 min</SelectItem>
-                        <SelectItem value="10">10 min</SelectItem>
-                        <SelectItem value="15">15 min</SelectItem>
-                        <SelectItem value="30">30 min</SelectItem>
-                      </SelectContent>
-                    </Select>
+                        <SelectTrigger
+                          class="h-8 w-[90px] bg-background border-border/50 text-sm"
+                          :class="{ 'opacity-50': streamer.isDetecting }"
+                        >
+                          <SelectValue :placeholder="`${streamer.segmentDurationMinutes} min`" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="3">3 min</SelectItem>
+                          <SelectItem value="5">5 min</SelectItem>
+                          <SelectItem value="10">10 min</SelectItem>
+                          <SelectItem value="15">15 min</SelectItem>
+                          <SelectItem value="30">30 min</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-muted-foreground">Auto DVR:</span>
+                      <button
+                        @click="updateAutoDvr(streamer, !streamer.autoDvr)"
+                        :disabled="streamer.isDetecting && streamer.status === 'STOPPING'"
+                        class="h-8 px-3 rounded-md text-xs font-medium transition-all border"
+                        :class="[
+                          streamer.autoDvr
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                            : 'bg-background text-muted-foreground border-border/50 hover:bg-muted/50',
+                          streamer.isDetecting && streamer.status === 'STOPPING' ? 'opacity-50 cursor-not-allowed' : ''
+                        ]"
+                        title="Automatically start persistent recording when streamer goes live"
+                      >
+                        {{ streamer.autoDvr ? 'On' : 'Off' }}
+                      </button>
+                    </div>
                   </div>
 
                   <!-- Right: Action Buttons -->
@@ -200,6 +227,23 @@
                           title="Refresh live status"
                         >
                           <RefreshCw class="w-4 h-4" />
+                        </button>
+                        <!-- Watch Button (only when live) -->
+                        <button
+                          v-if="streamer.isLive"
+                          @click="openWatchDialog(streamer)"
+                          class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30"
+                          :title="streamer.hasTempRecording ? 'Watch Live (DVR Ready)' : 'Watch Live'"
+                        >
+                          <Eye class="w-4 h-4" />
+                          Watch
+                          <!-- DVR Ready indicator -->
+                          <span
+                            v-if="streamer.hasTempRecording"
+                            class="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded-full border border-green-500/30"
+                          >
+                            DVR
+                          </span>
                         </button>
                         <button
                           @click="startStreamer(streamer, false)"
@@ -349,12 +393,14 @@
         @close="showCreditWarningDialog = false"
         @confirm="confirmCreditWarning"
       />
+
     </div>
   </PageLayout>
 </template>
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+  import { invoke } from '@tauri-apps/api/core';
   import {
     Radio,
     Plus,
@@ -368,6 +414,7 @@
     Sparkles,
     RefreshCw,
     Clock,
+    Eye,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
@@ -378,6 +425,7 @@
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   // import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
+  import { useLivestreamStore } from '@/stores/livestream';
   import {
     getAllMonitoredStreamers,
     createMonitoredStreamer,
@@ -405,6 +453,10 @@
     isCheckingLive?: boolean;
     // Per-streamer segment duration
     segmentDurationMinutes: number;
+    // Temp recording status (for watch-only DVR)
+    hasTempRecording?: boolean;
+    // Auto DVR toggle
+    autoDvr?: boolean;
   };
 
   const streamers = ref<ExtendedStreamer[]>([]);
@@ -417,6 +469,9 @@
   const showSearchDialog = ref(false);
   const isSearching = ref(false);
 
+  // Global livestream store for watch dialog
+  const livestreamStore = useLivestreamStore();
+
   const {
     activeSessions,
     monitoredStreamers,
@@ -425,6 +480,8 @@
     activityLogs,
     addActivityLog,
     clearLogs,
+    dvrSessions,
+    hasDvrRecording,
   } = useLivestreamMonitoring();
 
   const { hoursRemaining, fetchBalance } = useCreditBalance();
@@ -471,6 +528,11 @@
     liveStatusInterval.value = window.setInterval(() => {
       checkAllLiveStatuses();
     }, 60_000);
+    
+    // Listen for clip created events from global livestream dialog
+    window.addEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
+    // Refresh monitored streamers when changes occur elsewhere in the app
+    window.addEventListener('monitored-streamers-updated', handleMonitoredStreamersUpdated);
   });
 
   async function checkAllLiveStatuses() {
@@ -590,14 +652,19 @@
       clearInterval(liveStatusInterval.value);
       liveStatusInterval.value = null;
     }
+    
+    // Remove global clip created listener
+    window.removeEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
+    window.removeEventListener('monitored-streamers-updated', handleMonitoredStreamersUpdated);
   });
 
-  watch([activeSessions, monitoredStreamers], () => syncDetectionState(), { deep: true });
+  watch([activeSessions, monitoredStreamers, dvrSessions], () => syncDetectionState(), { deep: true });
 
   function syncDetectionState() {
     streamers.value = streamers.value.map((streamer) => {
       const monitored = monitoredStreamers.value.get(streamer.id);
       const session = activeSessions.value.get(streamer.id);
+      const dvrSession = dvrSessions.value.get(streamer.id);
 
       return {
         ...streamer,
@@ -606,8 +673,16 @@
         status: session ? (session.isStopping ? 'STOPPING' : 'LIVE') : monitored ? 'WAITING' : 'IDLE',
         // When actively monitoring, derive live status from session state
         isLive: monitored ? (session ? true : streamer.isLive) : streamer.isLive,
+        // Track temp recording status for DVR availability
+        hasTempRecording: !!dvrSession,
       };
     });
+  }
+
+  async function handleMonitoredStreamersUpdated() {
+    await loadStreamers();
+    await refreshStreamerMetadata();
+    await checkAllLiveStatuses();
   }
 
   function getStatusLabel(streamer: ExtendedStreamer) {
@@ -615,6 +690,32 @@
     if (!streamer.isDetecting) return 'IDLE';
     if (streamer.status === 'LIVE') return `LIVE (${streamer.mode === 'Auto-Detect' ? 'AUTO' : 'REC'})`;
     return `WAITING (${streamer.mode === 'Auto-Detect' ? 'AUTO' : 'REC'})`;
+  }
+
+  // Open watch dialog for a live streamer (uses global store for PIP persistence)
+  function openWatchDialog(streamer: ExtendedStreamer) {
+    if (!streamer.isLive) return;
+    livestreamStore.openWatchDialog(
+      streamer.mintId,
+      streamer.id,
+      streamer.displayName,
+      streamer.profileImageUrl
+    );
+  }
+
+  // Handle clip created from watch dialog (called via global event from App.vue)
+  function handleGlobalClipCreated(event: CustomEvent<{ clipPath: string; projectId: string }>) {
+    const { clipPath } = event.detail;
+    const currentStreamer = livestreamStore.currentStreamer;
+    addActivityLog({
+      streamerId: currentStreamer.streamerId || 'system',
+      streamerName: currentStreamer.displayName || 'System',
+      platform: 'PumpFun',
+      message: `Clip created: ${clipPath.split(/[\\/]/).pop()}`,
+      status: 'success',
+      mintId: currentStreamer.mintId,
+      profileImageUrl: currentStreamer.profileImageUrl,
+    });
   }
 
   async function loadStreamers() {
@@ -640,6 +741,7 @@
           mode: monitored ? (monitored.options.detectClips ? 'Auto-Detect' : 'Record Only') : null,
           status: session ? 'LIVE' : monitored ? 'WAITING' : 'IDLE',
           selected: false,
+          autoDvr: Boolean(record.auto_dvr),
         };
       });
     } catch (error) {
@@ -900,6 +1002,20 @@
 
   async function removeStreamer(id: string) {
     try {
+      // Find the streamer to get the mintId for HLS cleanup
+      const streamer = streamers.value.find((s) => s.id === id);
+      
+      if (streamer) {
+        // Stop and cleanup any HLS recordings for this streamer
+        try {
+          await invoke('cleanup_hls_recordings', { mintId: streamer.mintId });
+          console.log('[LiveClip] Cleaned up HLS recordings for', streamer.mintId);
+        } catch (hlsError) {
+          // Log but don't fail if HLS cleanup fails (recordings may not exist)
+          console.warn('[LiveClip] HLS cleanup warning:', hlsError);
+        }
+      }
+      
       await deleteMonitoredStreamer(id);
       streamers.value = streamers.value.filter((s) => s.id !== id);
     } catch (error) {
@@ -992,6 +1108,18 @@
       }
     } catch (error) {
       console.error('[LiveClip] Failed to update segment duration', error);
+    }
+  }
+
+  async function updateAutoDvr(streamer: ExtendedStreamer, enabled: boolean) {
+    try {
+      await updateMonitoredStreamer(streamer.id, { auto_dvr: enabled ? 1 : 0 });
+      const index = streamers.value.findIndex((s) => s.id === streamer.id);
+      if (index !== -1) {
+        streamers.value[index] = { ...streamers.value[index], autoDvr: enabled };
+      }
+    } catch (error) {
+      console.error('[LiveClip] Failed to update auto DVR', error);
     }
   }
 </script>

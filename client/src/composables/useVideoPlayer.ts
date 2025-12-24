@@ -408,6 +408,32 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     stopSegmentedPlayback();
   }
 
+  /**
+   * Load a video directly from a file path.
+   * Used for standalone clip files (DVR/livestream clips) that don't have a raw video.
+   */
+  async function loadVideoFromPath(filePath: string): Promise<boolean> {
+    if (!filePath) {
+      return false;
+    }
+
+    videoError.value = null;
+    videoLoading.value = true;
+
+    try {
+      const port = await invoke<number>('get_video_server_port');
+      const encodedPath = utf8ToBase64(filePath);
+      videoSrc.value = `http://localhost:${port}/video/${encodedPath}`;
+      videoLoading.value = false;
+      return true;
+    } catch (error) {
+      videoError.value = 'Failed to load video. Please try again.';
+      videoSrc.value = null;
+      videoLoading.value = false;
+      return false;
+    }
+  }
+
   // Segmented playback functions
   function playClipSegments(segments: ClipSegment[]) {
     if (!segments || segments.length === 0) {
@@ -622,6 +648,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     onVideoError,
     loadVideos,
     loadVideoForProject,
+    loadVideoFromPath,
     resetVideoState,
     playClipSegments,
     stopSegmentedPlayback,

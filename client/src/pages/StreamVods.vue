@@ -214,10 +214,18 @@
             >
               {{ clip.title }}
             </h3>
-            <div class="flex items-center gap-2 text-xs text-white/70 font-medium">
+            <div class="flex flex-wrap items-center gap-2 text-xs text-white/70 font-medium">
               <span>{{ formatDuration(clip.duration) }}</span>
               <span class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
-              <span class="truncate">{{ clip.createdAt ? formatRelativeTime(clip.createdAt) : 'No timestamp' }}</span>
+              <span class="truncate">
+                {{ clip.createdAt ? formatAbsoluteDate(clip.createdAt) : 'No timestamp' }}
+              </span>
+              <template v-if="clip.createdAt">
+                <span class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
+                <span class="truncate">
+                  {{ formatRelativeTime(clip.createdAt) }}
+                </span>
+              </template>
             </div>
           </div>
           <div
@@ -328,13 +336,17 @@
                 <h3 class="mb-1.5 text-sm font-medium leading-snug text-foreground line-clamp-2">
                   {{ clipToDownload?.title }}
                 </h3>
-                <div class="flex items-center gap-3 text-xs text-muted-foreground">
+                <div class="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                   <span class="flex items-center gap-1">
                     <Clock class="w-3 h-3" />
                     {{ formatDuration(clipToDownload?.duration) }}
                   </span>
                   <span class="text-border">|</span>
-                  <span>{{ formatRelativeTime(clipToDownload?.createdAt) }}</span>
+                  <span>
+                    {{ clipToDownload?.createdAt ? formatAbsoluteDate(clipToDownload?.createdAt, true) : 'No timestamp' }}
+                  </span>
+                  <span v-if="clipToDownload?.createdAt" class="text-border">|</span>
+                  <span v-if="clipToDownload?.createdAt">{{ formatRelativeTime(clipToDownload?.createdAt) }}</span>
                 </div>
               </div>
             </div>
@@ -665,6 +677,28 @@
     if (secondsAgo < 86400) return `Streamed ${Math.floor(secondsAgo / 3600)} hours ago`;
     if (secondsAgo < 604800) return `Streamed ${Math.floor(secondsAgo / 86400)} days ago`;
     return `Streamed ${Math.floor(secondsAgo / 604800)} weeks ago`;
+  }
+
+  function formatAbsoluteDate(timestamp?: number | string | Date, includeTime = false) {
+    if (!timestamp) return 'No timestamp';
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return 'Invalid date';
+
+    const dateOptions: Intl.DateTimeFormatOptions = {
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+    };
+
+    if (includeTime) {
+      return date.toLocaleString(undefined, {
+        ...dateOptions,
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+
+    return date.toLocaleDateString(undefined, dateOptions);
   }
 
   // Pagination

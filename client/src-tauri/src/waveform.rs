@@ -1,51 +1,24 @@
 // Waveform peak data structure
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct WaveformPeak {
-    min: f64,
-    max: f64,
+    pub min: f64,
+    pub max: f64,
 }
 
-// Single resolution level data
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-pub struct WaveformResolution {
-    peaks: Vec<WaveformPeak>,
-    peak_count: u32,
-    samples_per_peak: u32,
-}
-
-// Multi-resolution waveform data structure
+// Simplified single-resolution waveform data structure
+// Frontend will downsample as needed for different zoom levels
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct WaveformData {
-    sample_rate: u32,
-    duration: f64,
-    resolutions: std::collections::HashMap<String, WaveformResolution>,
+    pub sample_rate: u32,
+    pub duration: f64,
+    pub peaks: Vec<WaveformPeak>,
+    pub peak_count: u32,
 }
 
-// Helper function to determine optimal resolution for zoom level
-#[allow(dead_code)]
-pub fn get_optimal_resolution(effective_width: f64, duration: f64) -> String {
-    // Calculate desired samples per pixel at current zoom
-    let samples_per_pixel = (duration * 44100.0) / effective_width;
-
-    // Select resolution based on zoom level
-    if samples_per_pixel > 5000.0 {
-        "low".to_string()       // 500 peaks - very zoomed out
-    } else if samples_per_pixel > 2000.0 {
-        "medium".to_string()    // 1000 peaks - zoomed out
-    } else if samples_per_pixel > 800.0 {
-        "high".to_string()      // 2000 peaks - normal
-    } else if samples_per_pixel > 300.0 {
-        "ultra".to_string()     // 4000 peaks - zoomed in
-    } else if samples_per_pixel > 120.0 {
-        "extreme".to_string()   // 8000 peaks - very zoomed in
-    } else if samples_per_pixel > 50.0 {
-        "maximum".to_string()   // 16000 peaks - maximum zoom
-    } else if samples_per_pixel > 20.0 {
-        "insane".to_string()    // 32000 peaks - extreme detail
-    } else {
-        "godlike".to_string()   // 64000 peaks - sample-level precision
-    }
-}
+// Target peak count - high resolution, frontend will downsample as needed
+const TARGET_PEAKS: u32 = 16000;
+// Sample rate for audio extraction - 16kHz is sufficient for waveform visualization
+const WAVEFORM_SAMPLE_RATE: u32 = 16000;
 
 // Generate a hash for the video path for consistent lookup
 pub fn generate_video_path_hash(video_path: &str) -> String {
@@ -210,7 +183,7 @@ pub async fn save_waveform_to_cache(
     println!("[Rust] Waveform data being saved:");
     println!("[Rust]   Hash: {}", video_path_hash);
     println!("[Rust]   File size: {}", file_size);
-    println!("[Rust]   Resolution count: {}", waveform_data.resolutions.len());
+    println!("[Rust]   Peak count: {}", waveform_data.peak_count);
 
     // Save to file cache
     save_waveform_to_file_cache(&video_path_hash, &waveform_data).await
@@ -220,13 +193,13 @@ pub async fn save_waveform_to_cache(
 pub async fn extract_audio_waveform(
     app: tauri::AppHandle,
     video_path: String,
-    target_samples: Option<u32>
+    _target_samples: Option<u32>
 ) -> Result<WaveformData, String> {
     use tauri_plugin_shell::ShellExt;
 
     println!("[Rust] extract_audio_waveform called with:");
     println!("[Rust]   video_path: {}", video_path);
-    println!("[Rust]   target_samples: {:?}", target_samples);
+    println!("[Rust]   target_peaks: {} (fixed)", TARGET_PEAKS);
 
     // Check cache first
     match get_cached_waveform(video_path.clone()).await {
@@ -242,18 +215,6 @@ pub async fn extract_audio_waveform(
         }
     }
 
-    // Define multiple resolution levels for adaptive rendering
-    let resolution_levels = vec![
-        ("low", 500),           // 500 peaks - very zoomed out
-        ("medium", 1000),       // 1000 peaks - zoomed out
-        ("high", 2000),         // 2000 peaks - normal view
-        ("ultra", 4000),        // 4000 peaks - zoomed in
-        ("extreme", 8000),      // 8000 peaks - very zoomed in
-        ("maximum", 16000),     // 16000 peaks - maximum zoom
-        ("insane", 32000),      // 32000 peaks - extreme detail
-        ("godlike", 64000),     // 64000 peaks - sample-level precision
-    ];
-
     // Generate a hash for the video path for consistent lookup
     let video_path_hash = generate_video_path_hash(&video_path);
 
@@ -266,42 +227,6 @@ pub async fn extract_audio_waveform(
 
     let shell = app.shell();
 
-    // Check/Generate cached OGG audio file first (shared with clip detection)
-    let cached_audio_path = get_audio_cache_file_path(&video_path_hash)?;
-    let audio_source_path: std::path::PathBuf;
-
-    if cached_audio_path.exists() {
-        println!("[Rust] Found cached audio file: {:?}", cached_audio_path);
-        audio_source_path = cached_audio_path.clone();
-    } else {
-        println!("[Rust] Generating cached audio file (MP3) for shared use...");
-        // Extract audio as MP3 (libmp3lame) - same as used in clip detection
-        let extract_output = shell.sidecar("ffmpeg")
-            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-            .args([
-                "-i", &video_path,
-                "-vn",                    // No video
-                "-c:a", "libmp3lame",     // MP3 codec
-                "-q:a", "8",              // Quality level 8 (~85kbps, optimal for speech transcription)
-                "-y",                     // Overwrite output
-                cached_audio_path.to_str().ok_or("Invalid cached audio path")?,
-            ])
-            .output()
-            .await
-            .map_err(|e| format!("Failed to extract audio: {}", e))?;
-
-        if !extract_output.status.success() {
-            let stderr = String::from_utf8_lossy(&extract_output.stderr);
-            return Err(format!("FFmpeg audio extraction failed: {}", stderr));
-        }
-        
-        println!("[Rust] Cached audio file generated successfully");
-        audio_source_path = cached_audio_path.clone();
-    }
-
-    // Now we need a WAV file for waveform processing. 
-    // We can decode the MP3 we just found/created to a temp WAV.
-    
     // Create unique temporary WAV file path
     let temp_wav_path = paths.videos.join(format!("temp_waveform_{}.wav",
         std::time::SystemTime::now()
@@ -310,50 +235,32 @@ pub async fn extract_audio_waveform(
             .as_secs()
     ));
 
-    println!("[Rust] Decoding to temporary WAV for waveform analysis: {}", temp_wav_path.display());
+    println!("[Rust] Extracting audio directly to {}Hz WAV: {}", WAVEFORM_SAMPLE_RATE, temp_wav_path.display());
 
-    // Decode MP3 to WAV (PCM s16le, 44100, mono)
-    let decode_output = shell.sidecar("ffmpeg")
+    // Extract audio directly to low-bitrate WAV (16kHz mono) - single FFmpeg call
+    let extract_output = shell.sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
-            "-i", audio_source_path.to_str().ok_or("Invalid audio source path")?,
+            "-i", &video_path,
+            "-vn",                    // No video
             "-acodec", "pcm_s16le",   // 16-bit PCM
-            "-ar", "44100",           // 44.1kHz sample rate
+            "-ar", &WAVEFORM_SAMPLE_RATE.to_string(), // 16kHz sample rate (sufficient for waveform)
             "-ac", "1",               // Mono
             "-y",                     // Overwrite output
             temp_wav_path.to_str().ok_or("Invalid temporary WAV path")?,
         ])
         .output()
         .await
-        .map_err(|e| format!("Failed to decode to WAV: {}", e))?;
+        .map_err(|e| format!("Failed to extract audio: {}", e))?;
 
-    if !decode_output.status.success() {
-        let _stderr = String::from_utf8_lossy(&decode_output.stderr);
-        // If decoding fails, maybe try extracting from original video directly as fallback?
-        println!("[Rust] Failed to decode cached MP3, trying direct extraction from video...");
-
-        let extract_output = shell.sidecar("ffmpeg")
-            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-            .args([
-                "-i", &video_path,
-                "-vn",                    // No video
-                "-acodec", "pcm_s16le",   // 16-bit PCM
-                "-ar", "44100",           // 44.1kHz sample rate
-                "-ac", "1",               // Mono
-                "-y",                     // Overwrite output
-                temp_wav_path.to_str().ok_or("Invalid temporary WAV path")?,
-            ])
-            .output()
-            .await
-            .map_err(|e| format!("Failed to extract audio: {}", e))?;
-
-        if !extract_output.status.success() {
-            let stderr = String::from_utf8_lossy(&extract_output.stderr);
-            return Err(format!("FFmpeg direct audio extraction failed: {}", stderr));
-        }
+    if !extract_output.status.success() {
+        let stderr = String::from_utf8_lossy(&extract_output.stderr);
+        return Err(format!("FFmpeg audio extraction failed: {}", stderr));
     }
 
-    // First, get video duration using FFmpeg
+    println!("[Rust] Audio extraction completed successfully");
+
+    // Get video duration from FFmpeg output or calculate from WAV
     println!("[Rust] Getting video duration...");
     let duration_output = shell.sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
@@ -377,8 +284,8 @@ pub async fn extract_audio_waveform(
         return Err("Invalid video duration".to_string());
     }
 
-    // Process the WAV file to extract multi-resolution waveform data
-    let waveform_data = process_wav_file_multi_resolution(&temp_wav_path, &resolution_levels, video_duration)
+    // Process the WAV file to extract waveform peaks
+    let waveform_data = process_wav_file(&temp_wav_path, TARGET_PEAKS, video_duration)
         .map_err(|e| format!("Failed to process WAV file: {}", e))?;
 
     // Clean up temporary WAV file
@@ -388,11 +295,7 @@ pub async fn extract_audio_waveform(
         println!("[Rust] Cleaned up temporary WAV file");
     }
 
-    let total_peaks: u32 = waveform_data.resolutions.values()
-        .map(|r| r.peak_count)
-        .sum();
-    println!("[Rust] Multi-resolution waveform extraction completed. Generated {} peaks across {} resolution levels.",
-             total_peaks, waveform_data.resolutions.len());
+    println!("[Rust] Waveform extraction completed. Generated {} peaks.", waveform_data.peak_count);
 
     // Save to cache for future use
     let raw_video_id = format!("waveform_{}", video_path_hash);
@@ -403,16 +306,16 @@ pub async fn extract_audio_waveform(
     Ok(waveform_data)
 }
 
-// Process WAV file to extract multi-resolution waveform peaks
-fn process_wav_file_multi_resolution(
+// Process WAV file to extract waveform peaks (single resolution)
+fn process_wav_file(
     wav_path: &std::path::Path,
-    resolution_levels: &[(&str, u32)],
+    target_peaks: u32,
     duration: f64
 ) -> Result<WaveformData, String> {
     use std::fs::File;
     use std::io::Read;
 
-    println!("[Rust] Processing WAV file for multi-resolution: {}", wav_path.display());
+    println!("[Rust] Processing WAV file: {}", wav_path.display());
 
     // Open and read WAV file
     let mut file = File::open(wav_path)
@@ -436,7 +339,7 @@ fn process_wav_file_multi_resolution(
     let mut data_pos = 12; // After RIFF header
     while data_pos < header.len() - 8 {
         if &header[data_pos..data_pos + 4] == b"data" {
-            // Found data chunk, break without using data_pos since we read from current position
+            // Found data chunk
             break;
         }
         data_pos += 8;
@@ -464,50 +367,39 @@ fn process_wav_file_multi_resolution(
         return Err("No audio samples found".to_string());
     }
 
-    // Generate multi-resolution peaks
-    let mut resolutions = std::collections::HashMap::new();
+    // Generate peaks
+    println!("[Rust] Generating {} peaks", target_peaks);
 
-    for &(level_name, target_peaks) in resolution_levels {
-        println!("[Rust] Generating {} resolution with {} peaks", level_name, target_peaks);
+    let samples_per_peak = (samples.len() as f64 / target_peaks as f64).ceil() as usize;
+    let mut peaks = Vec::with_capacity(target_peaks as usize);
 
-        let samples_per_peak = (samples.len() as f64 / target_peaks as f64).ceil() as usize;
-        let mut peaks = Vec::new();
+    for i in 0..target_peaks {
+        let start_idx = (i as usize * samples_per_peak).min(samples.len());
+        let end_idx = ((i as usize + 1) * samples_per_peak).min(samples.len());
 
-        for i in 0..target_peaks {
-            let start_idx = (i as usize * samples_per_peak).min(samples.len());
-            let end_idx = ((i as usize + 1) * samples_per_peak).min(samples.len());
-
-            if start_idx >= samples.len() {
-                break;
-            }
-
-            let mut min = 0.0;
-            let mut max = 0.0;
-
-            // Find min and max in this chunk
-            for &sample in &samples[start_idx..end_idx] {
-                if sample < min { min = sample; }
-                if sample > max { max = sample; }
-            }
-
-            peaks.push(WaveformPeak { min, max });
+        if start_idx >= samples.len() {
+            break;
         }
 
-        let resolution = WaveformResolution {
-            peak_count: peaks.len() as u32,
-            samples_per_peak: samples_per_peak as u32,
-            peaks: peaks.clone(),
-        };
+        let mut min = 0.0f64;
+        let mut max = 0.0f64;
 
-        resolutions.insert(level_name.to_string(), resolution);
-        println!("[Rust] Generated {} peaks for {} resolution", peaks.len(), level_name);
+        // Find min and max in this chunk
+        for &sample in &samples[start_idx..end_idx] {
+            if sample < min { min = sample; }
+            if sample > max { max = sample; }
+        }
+
+        peaks.push(WaveformPeak { min, max });
     }
 
-    println!("[Rust] Multi-resolution waveform generation completed");
+    let peak_count = peaks.len() as u32;
+    println!("[Rust] Generated {} peaks", peak_count);
 
     Ok(WaveformData {
         sample_rate,
         duration,
-        resolutions,
+        peaks,
+        peak_count,
     })
 }

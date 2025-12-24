@@ -618,6 +618,7 @@
       });
 
       // Open payment window in browser
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:4000';
       await invoke('open_wallet_payment_window', {
         packKey: selectedPack.value.key,
         packName: selectedPack.value.key.charAt(0).toUpperCase() + selectedPack.value.key.slice(1),
@@ -626,6 +627,7 @@
         sol: selectedPack.value.solAmount,
         companyWallet: companyWallet.value,
         authToken: authStore.token,
+        apiBase,
       });
 
       paymentStatus.value = 'Complete payment in your browser...';

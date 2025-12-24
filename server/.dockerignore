@@ -1,0 +1,48 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+_build/
+deps/
+node_modules/
+
+# Environment files (secrets should be in fly secrets)
+.env
+.env.*
+*.env
+
+# Editor/IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test files and coverage
+/test/
+/cover/
+*.coverdata
+
+# Documentation
+/doc/
+.formatter.exs
+
+# Temporary files
+tmp/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Elixir specific
+erl_crash.dump
+*.ez
+
+# Release artifacts (we build fresh in Docker)
+/rel/
+
+# Test database
+*.db
+*.db-journal

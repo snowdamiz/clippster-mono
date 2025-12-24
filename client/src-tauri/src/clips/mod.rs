@@ -1,11 +1,12 @@
 // Module declarations
 mod types;
-mod encoder;
+pub mod encoder;
 mod font_manager;
-mod video_info;
+pub mod video_info;
 mod subtitle;
-mod video_processor;
+pub mod video_processor;
 mod orchestrator;
+pub mod livestream_clip;
 
 // Re-export public types
 pub use types::*;
@@ -52,6 +53,7 @@ pub async fn build_clip_from_segments(
     watermark_settings: Option<WatermarkSettings>,
     audio_settings: Option<AudioSettings>,
     framing_strategy: Option<FramingStrategy>,
+    manual_framing_configs: Option<std::collections::HashMap<String, ManualFramingConfig>>,
     video_filter_segments: Option<Vec<VideoFilterSegment>>,
     text_overlays: Option<Vec<TextOverlaySettings>>,
     stickers: Option<Vec<StickerSettings>>,
@@ -120,6 +122,7 @@ pub async fn build_clip_from_segments(
     let audio_settings_clone = audio_settings.clone();
     let build_id_clone = build_id.clone();
     let framing_strategy_clone = framing_strategy.clone();
+    let manual_framing_configs_clone = manual_framing_configs.clone();
     let video_filter_segments_clone = video_filter_segments.clone();
     let text_overlays_clone = text_overlays.clone();
     let stickers_clone = stickers.clone();
@@ -165,6 +168,7 @@ pub async fn build_clip_from_segments(
             watermark_settings_clone,
             audio_settings_clone,
             framing_strategy_clone,
+            manual_framing_configs_clone,
             video_filter_segments_clone,
             text_overlays_clone,
             stickers_clone,

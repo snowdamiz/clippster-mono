@@ -7,21 +7,17 @@ defmodule ClippsterServer.Application do
 
   @impl true
   def start(_type, _args) do
-    # Load environment variables from .env file
-    env_file = Path.join(File.cwd!(), ".env")
-    
-    if File.exists?(env_file) do
-      try do
-        # Load and parse .env file, then set each environment variable
-        env_vars = Dotenvy.source!(env_file)
-        Enum.each(env_vars, fn {key, value} -> System.put_env(key, value) end)
-      rescue
-        e -> IO.puts("[warning] Failed to load .env file: #{inspect(e)}")
-      end
+    # Load environment variables from .env file in development only
+    # In production (Fly.io), env vars come from fly secrets
+    if Application.get_env(:clippster_server, :load_dotenv, false) do
+      load_dotenv()
     end
 
-    # Run migrations automatically on startup
-    ClippsterServer.Release.migrate()
+    # Run migrations automatically on startup in dev only
+    # In production, migrations are run via release_command in fly.toml
+    if Application.get_env(:clippster_server, :auto_migrate, false) do
+      ClippsterServer.Release.migrate()
+    end
 
     children = [
       ClippsterServerWeb.Telemetry,
@@ -85,5 +81,19 @@ defmodule ClippsterServer.Application do
   def config_change(changed, _new, removed) do
     ClippsterServerWeb.Endpoint.config_change(changed, removed)
     :ok
+  end
+
+  # Load environment variables from .env file
+  defp load_dotenv do
+    env_file = Path.join(File.cwd!(), ".env")
+
+    if File.exists?(env_file) do
+      try do
+        env_vars = Dotenvy.source!(env_file)
+        Enum.each(env_vars, fn {key, value} -> System.put_env(key, value) end)
+      rescue
+        e -> IO.puts("[warning] Failed to load .env file: #{inspect(e)}")
+      end
+    end
   end
 end

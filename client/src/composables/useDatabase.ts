@@ -1,12 +1,12 @@
-import Database from '@tauri-apps/plugin-sql'
+import Database from '@tauri-apps/plugin-sql';
 
-let db: Database | null = null
+let db: Database | null = null;
 
 export async function useDatabase() {
   if (!db) {
-    db = await Database.load('sqlite:clippster.db')
+    db = await Database.load('sqlite:clippster_v25.db');
   }
-  return db
+  return db;
 }
 
 // Example usage:

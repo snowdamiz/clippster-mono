@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 use tauri::Emitter;
 
-use super::types::{SubtitleSettings, SubtitleOverrides, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy, VideoFilterSegment, TextOverlaySettings, StickerSettings, ClipWatermarkSettings};
+use super::types::{SubtitleSettings, SubtitleOverrides, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy, VideoFilterSegment, TextOverlaySettings, StickerSettings, ClipWatermarkSettings, ManualFramingConfig};
 use super::video_info::{get_video_info, parse_aspect_ratio, IntroOutroCache};
 use super::subtitle::{generate_ass_file, generate_text_overlay_ass_file, merge_text_overlays_into_ass};
 use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings, build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy, apply_stickers_to_video, apply_clip_watermarks_to_video};
@@ -138,6 +138,7 @@ pub async fn build_clip_internal_simple(
     watermark_settings: Option<WatermarkSettings>,
     audio_settings: Option<AudioSettings>,
     framing_strategy: Option<FramingStrategy>,
+    manual_framing_configs: Option<std::collections::HashMap<String, ManualFramingConfig>>,
     video_filter_segments: Option<Vec<VideoFilterSegment>>,
     text_overlays: Option<Vec<TextOverlaySettings>>,
     stickers: Option<Vec<StickerSettings>>,
@@ -232,6 +233,7 @@ pub async fn build_clip_internal_simple(
         let watermark_settings = watermark_settings.clone();
         let audio_settings = audio_settings.clone();
         let framing_strategy = framing_strategy.clone();
+        let manual_framing_configs = manual_framing_configs.clone();
         let video_filter_segments = video_filter_segments.clone();
         let text_overlays = text_overlays.clone();
         let stickers = stickers.clone();
@@ -364,12 +366,26 @@ pub async fn build_clip_internal_simple(
             // Build clip based on segments with aspect ratio cropping
             // Check if this is a portrait/square clip (9:16, 4:5, 1:1) with a framing strategy
             // These aspect ratios benefit from speaker-aware framing (split screen, etc.)
+            
+            // Determine framing strategy for this aspect ratio
+            // Priority: Manual Config > Auto Framing Strategy > Default None
+            let effective_framing_strategy = if let Some(configs) = &manual_framing_configs {
+                if let Some(config) = configs.get(&aspect_ratio_str) {
+                    println!("[Rust] Using manual framing config for {}", aspect_ratio_str);
+                    Some(config.to_framing_strategy(video_info.width, video_info.height))
+                } else {
+                    framing_strategy.clone()
+                }
+            } else {
+                framing_strategy.clone()
+            };
+            
             let is_portrait_or_square = aspect_ratio_str == "9:16" || aspect_ratio_str == "4:5" || aspect_ratio_str == "1:1";
-            let use_framing_strategy = is_portrait_or_square && framing_strategy.is_some();
+            let use_framing_strategy = is_portrait_or_square && effective_framing_strategy.is_some();
             
             if use_framing_strategy {
                 // Use speaker-aware framing for portrait clips
-                let strategy = framing_strategy.as_ref().unwrap();
+                let strategy = effective_framing_strategy.as_ref().unwrap();
                 
                 if segments.len() == 1 {
                     println!("[Rust] Building single-segment clip for {} with framing strategy: {:?}", aspect_ratio_str, strategy.mode);

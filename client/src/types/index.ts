@@ -481,21 +481,17 @@ export interface ZoomState {
 }
 
 // Audio Waveform Types
+// Simplified single-resolution structure - frontend downsamples as needed
 export interface WaveformPeak {
   min: number;
   max: number;
 }
 
-export interface WaveformResolution {
-  peaks: WaveformPeak[];
-  peakCount: number;
-  samplesPerPeak: number;
-}
-
 export interface WaveformData {
   sampleRate: number;
   duration: number;
-  resolutions: Record<string, WaveformResolution>;
+  peaks: WaveformPeak[];
+  peakCount: number;
 }
 
 export interface WaveformRenderOptions {

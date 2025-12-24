@@ -21,18 +21,31 @@ import type {
 } from '@/types/livestream';
 import { useLivestreamSegmentProcessing } from './useLivestreamSegmentProcessing';
 import { useCreditBalance } from './useCreditBalance';
+import { useDvrRecording } from './useDvrRecording';
+import { useToast } from './useToast';
 
 const POLL_INTERVAL_MS = 30_000;
 
 // Global State
-const activeSessions = ref<Map<string, LiveSession>>(new Map());
-const failedSessions = ref<Map<string, number>>(new Map()); // streamerId -> timestamp
-const monitoredStreamers = ref<
-  Map<string, { streamer: MonitoredStreamer; options: { detectClips: boolean } }>
->(new Map());
+type MonitoredStreamerEntry = { streamer: MonitoredStreamer; options: { detectClips: boolean } };
+type ActiveSessionsMap = Map<string, LiveSession>;
+type FailedSessionsMap = Map<string, number>;
+type MonitoredStreamersMap = Map<string, MonitoredStreamerEntry>;
+type DvrSessionsMap = Map<string, { mintId: string }>;
+
+const activeSessions = ref<ActiveSessionsMap>(new Map());
+const failedSessions = ref<FailedSessionsMap>(new Map()); // streamerId -> timestamp
+const monitoredStreamers = ref<MonitoredStreamersMap>(new Map());
 const pollingHandle = ref<number | null>(null);
 // isMonitoring is true if we are actively polling any streamers
 const isMonitoring = computed(() => monitoredStreamers.value.size > 0);
+
+// Track DVR sessions for watched (but not persistently recorded) streamers
+// Key: streamerId, Value: { mintId }
+const dvrSessions = ref<DvrSessionsMap>(new Map());
+
+// Get the DVR recording composable instance (shared singleton)
+const dvrRecording = useDvrRecording();
 
 const activityLogs = ref<ActivityLog[]>([]);
 // Key format: `${streamerId}-${segmentNumber}` to avoid collisions between streamers
@@ -42,6 +55,25 @@ const unlistenFunctions: UnlistenFn[] = [];
 
 // Instantiate segment processing once to maintain queue state if needed
 const { handleSegmentReady } = useLivestreamSegmentProcessing();
+const { success: showSuccess } = useToast();
+
+function updateActiveSessionsMap(mutator: (map: ActiveSessionsMap) => void) {
+  const next = new Map(activeSessions.value);
+  mutator(next);
+  activeSessions.value = next;
+}
+
+function updateMonitoredStreamersMap(mutator: (map: MonitoredStreamersMap) => void) {
+  const next = new Map(monitoredStreamers.value);
+  mutator(next);
+  monitoredStreamers.value = next;
+}
+
+function updateDvrSessionsMap(mutator: (map: DvrSessionsMap) => void) {
+  const next = new Map(dvrSessions.value);
+  mutator(next);
+  dvrSessions.value = next;
+}
 
 async function fetchLiveStatus(mintId: string): Promise<LiveStatus> {
   try {
@@ -63,6 +95,21 @@ async function fetchLiveStatus(mintId: string): Promise<LiveStatus> {
     console.warn('[LiveMonitor] Failed to check live status', error);
     return { isLive: false };
   }
+}
+
+async function setAutoDvr(streamerId: string, enabled: boolean) {
+  await updateMonitoredStreamer(streamerId, { auto_dvr: enabled ? 1 : 0 });
+  updateMonitoredStreamersMap((map) => {
+    const existing = map.get(streamerId);
+    if (!existing) return;
+    map.set(streamerId, {
+      ...existing,
+      streamer: {
+        ...existing.streamer,
+        autoDvr: enabled,
+      },
+    });
+  });
 }
 
 // Helper to generate unique IDs
@@ -198,6 +245,66 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
   const newMap = new Map(activeSessions.value);
   newMap.delete(streamer.id);
   activeSessions.value = newMap;
+}
+
+// Handle DVR cleanup when stream ends (for watch-only DVR sessions)
+async function handleDvrStreamEnd(streamerId: string, mintId: string) {
+  const dvrSession = dvrSessions.value.get(streamerId);
+  if (!dvrSession) return;
+
+  console.log('[LiveMonitor] Cleaning up DVR session for', mintId);
+  
+  try {
+    // Stop and cleanup DVR session (including temp files)
+    await dvrRecording.stopDvrSession(mintId);
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to cleanup DVR session', error);
+  }
+
+  // Remove from DVR sessions tracking
+  const newMap = new Map(dvrSessions.value);
+  newMap.delete(streamerId);
+  dvrSessions.value = newMap;
+}
+
+// Start DVR recording for a streamer (for watch-only DVR)
+async function startDvrRecordingForStreamer(streamer: MonitoredStreamer): Promise<boolean> {
+  // Don't start DVR if already has a persistent recording
+  if (activeSessions.value.has(streamer.id)) {
+    console.log('[LiveMonitor] Streamer has persistent recording, skipping DVR:', streamer.id);
+    return false;
+  }
+
+  // Don't start if already has DVR recording
+  if (dvrSessions.value.has(streamer.id)) {
+    console.log('[LiveMonitor] Streamer already has DVR recording:', streamer.id);
+    return true;
+  }
+
+  // Check if DVR session already exists (may have been started by another component)
+  if (dvrRecording.isDvrSessionActive(streamer.mintId)) {
+    // Track it locally
+    const newMap = new Map(dvrSessions.value);
+    newMap.set(streamer.id, { mintId: streamer.mintId });
+    dvrSessions.value = newMap;
+    console.log('[LiveMonitor] DVR already active for', streamer.mintId);
+    return true;
+  }
+
+  try {
+    await dvrRecording.startDvrSession(streamer.mintId, streamer.id, streamer.displayName);
+    
+    // Track the DVR session
+    const newMap = new Map(dvrSessions.value);
+    newMap.set(streamer.id, { mintId: streamer.mintId });
+    dvrSessions.value = newMap;
+
+    console.log('[LiveMonitor] Started DVR recording for', streamer.mintId);
+    return true;
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to start DVR for', streamer.mintId, error);
+    return false;
+  }
 }
 
 // Shared function to finalize a recording session (cleanup empty projects)
@@ -569,6 +676,7 @@ export function useLivestreamMonitoring() {
       });
 
       const sessionActive = activeSessions.value.has(streamer.id);
+      const hasDvrRecording = dvrSessions.value.has(streamer.id);
 
       // Check if failed recently
       const failedAt = failedSessions.value.get(streamer.id);
@@ -581,6 +689,17 @@ export function useLivestreamMonitoring() {
         await handleStreamStart(streamer, status, config.options);
       } else if (!status.isLive && sessionActive) {
         await handleStreamEnd(streamer);
+      }
+
+      // Auto-start DVR recording for live streamers that don't have persistent recording
+      // This enables DVR for users who just want to watch (not record)
+      if (status.isLive && !sessionActive && !hasDvrRecording) {
+        await startDvrRecordingForStreamer(streamer);
+      }
+
+      // Cleanup DVR recording when stream ends (and no persistent session)
+      if (!status.isLive && !sessionActive && hasDvrRecording) {
+        await handleDvrStreamEnd(streamer.id, streamer.mintId);
       }
     }
   }
@@ -636,6 +755,8 @@ export function useLivestreamMonitoring() {
         profileImageUrl: streamer.profileImageUrl,
       });
 
+      showSuccess(`${streamer.displayName} is live`, options.detectClips ? 'Auto-detect recording started.' : 'Recording started.');
+
       // Initial segment start log (use streamerId-1 as key)
       const id = addActivityLog({
         streamerId: streamer.id,
@@ -667,11 +788,23 @@ export function useLivestreamMonitoring() {
   return {
     startMonitoring,
     stopMonitoring,
+    setAutoDvr,
     activeSessions,
     monitoredStreamers,
     isMonitoring,
     activityLogs,
     addActivityLog,
     clearLogs,
+    // DVR recording exports
+    dvrSessions,
+    startDvrRecordingForStreamer,
+    getDvrSession: (streamerId: string) => {
+      const dvrInfo = dvrSessions.value.get(streamerId);
+      if (!dvrInfo) return null;
+      return dvrRecording.getDvrSession(dvrInfo.mintId);
+    },
+    hasDvrRecording: (streamerId: string) => dvrSessions.value.has(streamerId),
+    // Direct access to DVR composable
+    dvrRecording,
   };
 }

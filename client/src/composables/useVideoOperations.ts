@@ -57,21 +57,8 @@ export function useVideoOperations() {
         thumbnailPath = undefined;
       }
 
-      // Pre-generate waveform data before adding to database
-      // This ensures waveform is ready when opening projects
-      try {
-        console.log('[VideoOperations] Pre-generating waveform data for:', result.destination_path);
-        await invoke('extract_audio_waveform', {
-          videoPath: result.destination_path,
-          targetSamples: 2000,
-        });
-        console.log('[VideoOperations] Waveform pre-generation complete');
-      } catch (waveformError) {
-        // Non-blocking - waveform can be generated later if needed
-        console.warn('[VideoOperations] Failed to pre-generate waveform:', waveformError);
-      }
-
       // Create raw_videos record with original filename and thumbnail
+      // Note: Waveform generation is deferred until the user opens the workspace
       await createRawVideo(result.destination_path, {
         originalFilename: result.original_filename,
         thumbnailPath,
@@ -126,21 +113,8 @@ export function useVideoOperations() {
         thumbnailPath = undefined;
       }
 
-      // Pre-generate waveform data before adding to database
-      // This ensures waveform is ready when opening projects
-      try {
-        console.log('[VideoOperations] Pre-generating waveform data for:', result.destination_path);
-        await invoke('extract_audio_waveform', {
-          videoPath: result.destination_path,
-          targetSamples: 2000,
-        });
-        console.log('[VideoOperations] Waveform pre-generation complete');
-      } catch (waveformError) {
-        // Non-blocking - waveform can be generated later if needed
-        console.warn('[VideoOperations] Failed to pre-generate waveform:', waveformError);
-      }
-
       // Create raw_videos record with original filename and thumbnail
+      // Note: Waveform generation is deferred until the user opens the workspace
       const videoId = await createRawVideo(result.destination_path, {
         originalFilename: result.original_filename,
         thumbnailPath,

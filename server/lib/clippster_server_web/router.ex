@@ -44,6 +44,10 @@ defmodule ClippsterServerWeb.Router do
   scope "/api", ClippsterServerWeb do
     pipe_through :api
 
+    # Health check endpoints for Fly.io and load balancers
+    get "/health", HealthController, :check
+    get "/health/deep", HealthController, :deep_check
+
     # Handle OPTIONS requests for CORS preflight
     options "/*path", AuthController, :options
 

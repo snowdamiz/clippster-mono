@@ -53,7 +53,8 @@ export async function createMonitoredStreamer(
   mintId: string,
   displayName: string,
   profileImageUrl?: string,
-  segmentDurationMinutes: number = 5
+  segmentDurationMinutes: number = 5,
+  autoDvr: boolean = false
 ): Promise<string> {
   const db = await getDatabase();
   const id = generateId();
@@ -61,9 +62,27 @@ export async function createMonitoredStreamer(
   const userId = getCurrentUserId();
 
   await db.execute(
-    'INSERT INTO monitored_streamers (id, mint_id, display_name, last_check_timestamp, is_currently_live, current_session_id, profile_image_url, stream_thumbnail_url, segment_duration_minutes, user_id, created_at, updated_at) VALUES (?, ?, ?, NULL, 0, NULL, ?, NULL, ?, ?, ?, ?)',
-    [id, mintId, displayName, profileImageUrl || null, segmentDurationMinutes, userId, now, now]
+    'INSERT INTO monitored_streamers (id, mint_id, display_name, last_check_timestamp, is_currently_live, current_session_id, profile_image_url, stream_thumbnail_url, segment_duration_minutes, auto_dvr, user_id, created_at, updated_at) VALUES (?, ?, ?, NULL, 0, NULL, ?, NULL, ?, ?, ?, ?, ?)',
+    [
+      id,
+      mintId,
+      displayName,
+      profileImageUrl || null,
+      segmentDurationMinutes,
+      autoDvr ? 1 : 0,
+      userId,
+      now,
+      now,
+    ]
   );
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('monitored-streamers-updated', {
+        detail: { action: 'created', streamerId: id, mintId },
+      })
+    );
+  }
 
   return id;
 }
@@ -78,6 +97,7 @@ export async function updateMonitoredStreamer(
     profile_image_url: string | null;
     stream_thumbnail_url: string | null;
     segment_duration_minutes: number;
+    auto_dvr: number | boolean;
   }>
 ): Promise<void> {
   const db = await getDatabase();
@@ -119,6 +139,11 @@ export async function updateMonitoredStreamer(
     values.push(updates.segment_duration_minutes);
   }
 
+  if (updates.auto_dvr !== undefined) {
+    fields.push('auto_dvr = ?');
+    values.push(toSqlBool(updates.auto_dvr));
+  }
+
   if (fields.length === 0) {
     return;
   }
@@ -133,6 +158,14 @@ export async function updateMonitoredStreamer(
 export async function deleteMonitoredStreamer(id: string): Promise<void> {
   const db = await getDatabase();
   await db.execute('DELETE FROM monitored_streamers WHERE id = ?', [id]);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('monitored-streamers-updated', {
+        detail: { action: 'deleted', streamerId: id },
+      })
+    );
+  }
 }
 
 export async function createLivestreamSession(
@@ -411,4 +444,44 @@ export async function updateSegmentStatus(
     status,
     error_message: errorMessage ?? null,
   });
+}
+
+/**
+ * Create a project specifically for clips from watch mode (temp recording).
+ * This is called when a user creates their first clip while watching without recording.
+ * Project name format: "{displayName} - {YYYY-MM-DD}"
+ */
+export async function createLivestreamClipProject(
+  displayName: string,
+  mintId: string
+): Promise<string> {
+  // Format date as YYYY-MM-DD
+  const date = new Date();
+  const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
+  
+  const projectName = `${displayName} - ${dateStr}`;
+  const projectDescription = `Clips from PumpFun livestream ${displayName} (${mintId})`;
+
+  // Reuse an existing project for this stream/day if it already exists
+  const db = await getDatabase();
+  const userId = getCurrentUserId();
+
+  const existing = await db.select<{ id: string }[]>(
+    userId === null
+      ? 'SELECT id FROM projects WHERE name = ? AND platform = ? AND user_id IS NULL LIMIT 1'
+      : 'SELECT id FROM projects WHERE name = ? AND platform = ? AND (user_id = ? OR user_id IS NULL) LIMIT 1',
+    userId === null ? [projectName, 'PumpFun'] : [projectName, 'PumpFun', userId]
+  );
+
+  if (existing[0]?.id) {
+    console.log('[LiveMonitor] Reusing existing clip project for watch mode:', existing[0].id, projectName);
+    return existing[0].id;
+  }
+  
+  // Use the existing createProject function
+  const projectId = await createProject(projectName, projectDescription, undefined, 'PumpFun');
+  
+  console.log('[LiveMonitor] Created clip project for watch mode:', projectId, projectName);
+  
+  return projectId;
 }
