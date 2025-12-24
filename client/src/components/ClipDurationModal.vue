@@ -207,6 +207,9 @@
   import { Scissors, X, Lock, FolderOpen, Check, AlertCircle, ExternalLink } from 'lucide-vue-next';
   import { useRouter } from 'vue-router';
   import { createLivestreamClipProject, createClip as createClipRecord } from '@/services/database';
+  import { createClipVersion } from '@/services/database/clip-versions';
+  import { updateClip } from '@/services/database/clips';
+  import { getOrCreateManualSession } from '@/services/database/clip-detection-sessions';
 
   interface SegmentInfo {
     segmentNumber: number;
@@ -452,9 +455,6 @@
           startTime: clipStartTime,
           endTime: clipEndTime,
         });
-        const { createClipVersion } = await import('@/services/database/clip-versions');
-        const { updateClip } = await import('@/services/database/clips');
-        const { getOrCreateManualSession } = await import('@/services/database/clip-detection-sessions');
 
         // Get or create a manual session for this project (needed for FK constraint on clip_versions)
         const manualSessionId = await getOrCreateManualSession(effectiveProjectId);

@@ -409,12 +409,11 @@
   import { useToast } from '@/composables/useToast';
   import LivestreamSeekBar from './LivestreamSeekBar.vue';
   import ClipDurationModal from './ClipDurationModal.vue';
-  import {
-    getWatermarkImage,
-    resolveWatermarkById,
-    createLivestreamClipProject,
-    createClip as createClipRecord,
-  } from '@/services/database';
+  import { createLivestreamClipProject, createClip as createClipRecord } from '@/services/database';
+  import { getWatermarkImage, resolveWatermarkById } from '@/services/database/watermarks';
+  import { createClipVersion } from '@/services/database/clip-versions';
+  import { updateClip } from '@/services/database/clips';
+  import { getOrCreateManualSession } from '@/services/database/clip-detection-sessions';
 
   interface Props {
     modelValue: boolean;
@@ -802,9 +801,6 @@
           startTime: clipStartTime,
           endTime: clipEndTime,
         });
-        const { createClipVersion } = await import('@/services/database/clip-versions');
-        const { updateClip } = await import('@/services/database/clips');
-        const { getOrCreateManualSession } = await import('@/services/database/clip-detection-sessions');
 
         const manualSessionId = await getOrCreateManualSession(effectiveProjectId);
         const versionId = await createClipVersion(

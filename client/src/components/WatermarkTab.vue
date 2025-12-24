@@ -489,8 +489,6 @@
     Trash2,
   } from 'lucide-vue-next';
   import {
-    getAllWatermarkImages,
-    type WatermarkImage,
     getAllWatermarkPresets,
     createWatermarkPreset,
     updateWatermarkPreset,
@@ -498,6 +496,7 @@
     presetToWatermarkSettings,
     type WatermarkPreset,
   } from '@/services/database';
+  import { getAllWatermarkImages, type WatermarkImage } from '@/services/database/watermarks';
   import type { WatermarkSettings } from '@/types';
   import { invoke } from '@tauri-apps/api/core';
 

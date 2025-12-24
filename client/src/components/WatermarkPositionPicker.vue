@@ -379,7 +379,7 @@
     Upload,
     Loader2,
   } from 'lucide-vue-next';
-  import { getAllWatermarkImages, type WatermarkImage } from '@/services/database';
+  import { getAllWatermarkImages, type WatermarkImage } from '@/services/database/watermarks';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
 
   // Types for watermark settings per aspect ratio
