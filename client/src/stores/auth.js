@@ -81,8 +81,9 @@ export const useAuthStore = defineStore('auth', {
       this.error = null;
 
       try {
-        // Open wallet auth in browser
-        await invoke('open_wallet_auth_window');
+        // Open wallet auth in browser, passing the API base URL
+        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+        await invoke('open_wallet_auth_window', { apiBase });
 
         // Listen for auth result via Tauri event or polling
         const result = await new Promise((resolve, reject) => {
@@ -635,7 +636,7 @@ export const useAuthStore = defineStore('auth', {
         try {
           // Parse user data first (don't set authenticated yet)
           const parsedUser = JSON.parse(userJson);
-          
+
           // Verify token is still valid before setting authenticated state
           const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
           const response = await fetch(`${API_BASE}/api/auth/me`, {

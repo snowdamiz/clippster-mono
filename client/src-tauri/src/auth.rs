@@ -115,7 +115,7 @@ pub static EMAIL_VERIFICATION_SERVER_PORT: u16 = 54322;
 pub static INSTAGRAM_AUTH_SERVER_PORT: u16 = 54323;
 
 #[tauri::command]
-pub async fn open_wallet_auth_window(app: tauri::AppHandle) -> Result<(), String> {
+pub async fn open_wallet_auth_window(app: tauri::AppHandle, api_base: Option<String>) -> Result<(), String> {
     // Clear any previous auth result to prevent stale data from being picked up
     *AUTH_RESULT.lock().unwrap() = None;
 
@@ -123,7 +123,15 @@ pub async fn open_wallet_auth_window(app: tauri::AppHandle) -> Result<(), String
     start_auth_callback_server(app.clone());
 
     // Open the wallet auth page in the user's default browser
-    let auth_url = format!("http://localhost:{}/wallet-auth", AUTH_SERVER_PORT);
+    // Pass api_base as URL parameter if provided
+    let auth_url = match api_base {
+        Some(base) => format!(
+            "http://localhost:{}/wallet-auth?apiBase={}",
+            AUTH_SERVER_PORT,
+            urlencoding::encode(&base)
+        ),
+        None => format!("http://localhost:{}/wallet-auth", AUTH_SERVER_PORT),
+    };
 
     tauri_plugin_opener::open_url(auth_url, None::<&str>)
         .map_err(|e| format!("Failed to open browser: {}", e))?;
@@ -140,14 +148,19 @@ pub async fn open_wallet_payment_window(
     usd: f64,
     sol: f64,
     company_wallet: String,
-    auth_token: String
+    auth_token: String,
+    api_base: Option<String>
 ) -> Result<(), String> {
     // Start payment callback server
     start_payment_callback_server(app.clone());
 
     // Build payment URL with query parameters
+    let api_base_param = api_base
+        .map(|base| format!("&apiBase={}", urlencoding::encode(&base)))
+        .unwrap_or_default();
+    
     let payment_url = format!(
-        "http://localhost:{}/wallet-payment?packKey={}&packName={}&hours={}&usd={}&sol={}&companyWallet={}&authToken={}",
+        "http://localhost:{}/wallet-payment?packKey={}&packName={}&hours={}&usd={}&sol={}&companyWallet={}&authToken={}{}",
         PAYMENT_SERVER_PORT,
         urlencoding::encode(&pack_key),
         urlencoding::encode(&pack_name),
@@ -155,7 +168,8 @@ pub async fn open_wallet_payment_window(
         usd,
         sol,
         urlencoding::encode(&company_wallet),
-        urlencoding::encode(&auth_token)
+        urlencoding::encode(&auth_token),
+        api_base_param
     );
 
     tauri_plugin_opener::open_url(payment_url, None::<&str>)

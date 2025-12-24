@@ -89,25 +89,25 @@
                 </div>
               </div>
 
-            <!-- Auto DVR -->
-            <div class="flex items-start gap-3 bg-zinc-900/60 border border-zinc-800 rounded-lg p-4">
-              <div
-                class="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500/15 to-emerald-400/5 border border-emerald-500/20 flex items-center justify-center flex-shrink-0"
-              >
-                <Sparkles class="w-4 h-4 text-emerald-400" />
-              </div>
-              <div class="flex-1 space-y-1">
-                <div class="flex items-center justify-between gap-3">
-                  <div>
-                    <p class="text-sm font-medium text-white">Auto DVR</p>
-                    <p class="text-xs text-zinc-400">
-                      Automatically start DVR when this creator goes live (uses REC if enabled).
-                    </p>
+              <!-- Auto DVR -->
+              <div class="flex items-start gap-3 bg-zinc-900/60 border border-zinc-800 rounded-lg p-4">
+                <div
+                  class="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500/15 to-emerald-400/5 border border-emerald-500/20 flex items-center justify-center flex-shrink-0"
+                >
+                  <Sparkles class="w-4 h-4 text-emerald-400" />
+                </div>
+                <div class="flex-1 space-y-1">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <p class="text-sm font-medium text-white">Auto DVR</p>
+                      <p class="text-xs text-zinc-400">
+                        Automatically start DVR when this creator goes live (uses REC if enabled).
+                      </p>
+                    </div>
+                    <Switch v-model:checked="formData.auto_dvr_enabled" />
                   </div>
-                  <Switch v-model:checked="formData.auto_dvr_enabled" />
                 </div>
               </div>
-            </div>
 
               <!-- Platform Links Section -->
               <div class="space-y-4">
@@ -621,7 +621,9 @@
     Trash2,
     Users,
     Settings2,
+    Sparkles,
   } from 'lucide-vue-next';
+  import { Switch } from '@/components/ui/switch';
   import {
     createOrganizationCreatorProfile,
     updateOrganizationCreatorProfile,

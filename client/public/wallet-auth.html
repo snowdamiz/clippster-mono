@@ -254,7 +254,9 @@
   </div>
 
   <script>
-    const API_BASE = 'http://localhost:4000';
+    // Get API base URL from URL params (passed from Tauri app)
+    const urlParams = new URLSearchParams(window.location.search);
+    const API_BASE = urlParams.get('apiBase') || 'https://clippster-server.fly.dev';
     let provider = null;
 
     // Check for Phantom
