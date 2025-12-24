@@ -412,6 +412,12 @@ pub fn run() {
                             sql: include_str!("../migrations/065_add_auto_dvr_to_monitored_streamers.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 67,
+                            description: "add_source_id_to_audio_tracks",
+                            sql: include_str!("../migrations/067_add_source_id_to_audio_tracks.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -530,6 +536,7 @@ pub fn run() {
             // Audio commands
             audio::extract_audio_from_video,
             audio::extract_and_chunk_audio,
+            audio::extract_audio_to_file,
 
             // Waveform commands
             waveform::extract_audio_waveform,

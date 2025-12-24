@@ -530,6 +530,7 @@
                   @mouseleave="isCutToolActive && (cutHoverInfo = null)"
                   @mousedown="isCutToolActive ? onSourceClickForCut($event, source) : onSourceMouseDown($event, source)"
                   @click.stop="!isCutToolActive && onSourceClick($event, source)"
+                  @contextmenu.prevent="onSourceContextMenu($event, source)"
                 >
                   <!-- Video thumbnails background -->
                   <div class="absolute inset-0 bg-[#1a1a1a] flex overflow-hidden">
@@ -790,6 +791,41 @@
       :isDragging="isDragging || isResizing || isDraggingPlayhead"
       :isCutToolActive="isCutToolActive"
     />
+
+    <!-- Source Context Menu -->
+    <Teleport to="body">
+      <div
+        v-if="sourceContextMenu.visible"
+        class="fixed z-[9999] bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl py-1 min-w-[180px]"
+        :style="{ left: `${sourceContextMenu.x}px`, top: `${sourceContextMenu.y}px` }"
+        @click.stop
+      >
+        <button
+          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center gap-2"
+          @click="extractAudioFromSource"
+          :disabled="isExtractingAudio"
+        >
+          <Music :size="14" />
+          <span>{{ isExtractingAudio ? 'Extracting...' : 'Extract Audio' }}</span>
+        </button>
+        <div class="h-px bg-white/10 my-1"></div>
+        <button
+          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center gap-2"
+          @click="deleteSourceFromContextMenu"
+        >
+          <X :size="14" />
+          <span>Delete</span>
+        </button>
+      </div>
+    </Teleport>
+
+    <!-- Click outside to close context menu -->
+    <div
+      v-if="sourceContextMenu.visible"
+      class="fixed inset-0 z-[9998]"
+      @click="closeSourceContextMenu"
+      @contextmenu.prevent="closeSourceContextMenu"
+    ></div>
   </div> <!-- end outer bg container -->
 </template>
 
@@ -982,6 +1018,7 @@
     (e: 'dropSource', data: { source: SourceItem; position: number }): void;
     (e: 'transitionsDetected', transitions: VideoEditorTransition[]): void;
     (e: 'splitSource', sourceId: string, cutTimelinePosition: number, cutSourceTime: number): void;
+    (e: 'extractedAudio', data: { sourceId: string; filePath: string; filename: string; duration: number; startTime: number; endTime: number; sourceName: string | null }): void;
   }>();
 
   // Computed: detect transitions between overlapping sources in editor mode
@@ -1088,6 +1125,15 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
     originalTrackIndex: number;
     targetTrackIndex: number;
   } | null>(null);
+
+  // Source context menu state
+  const sourceContextMenu = reactive({
+    visible: false,
+    x: 0,
+    y: 0,
+    source: null as VideoEditorSource | null,
+  });
+  const isExtractingAudio = ref(false);
 
   // Selection state
   const selectedItemKey = ref<string | null>(null);
@@ -2898,6 +2944,81 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
     document.removeEventListener('mouseup', onSourceDragEnd);
   }
 
+  // Source context menu handlers
+  function onSourceContextMenu(e: MouseEvent, source: VideoEditorSource) {
+    sourceContextMenu.visible = true;
+    sourceContextMenu.x = e.clientX;
+    sourceContextMenu.y = e.clientY;
+    sourceContextMenu.source = source;
+  }
+
+  function closeSourceContextMenu() {
+    sourceContextMenu.visible = false;
+    sourceContextMenu.source = null;
+  }
+
+  async function extractAudioFromSource() {
+    if (!sourceContextMenu.source) return;
+    
+    const source = sourceContextMenu.source;
+    closeSourceContextMenu();
+    
+    isExtractingAudio.value = true;
+    
+    try {
+      console.log('[ClipEditorTimeline] Extracting audio from source:', source.id);
+      
+      // Calculate the trim parameters based on the segment's trim settings
+      // trim_start is how far into the source video to start
+      // The segment duration is (end_time - start_time) on the timeline
+      const trimStart = source.trim_start || 0;
+      const segmentDuration = source.end_time - source.start_time;
+      
+      console.log('[ClipEditorTimeline] Extraction params:', {
+        trimStart,
+        segmentDuration,
+        sourceStartTime: source.start_time,
+        sourceEndTime: source.end_time,
+      });
+      
+      // Call Rust command to extract audio from the specific segment
+      const result = await invoke<{ file_path: string; filename: string; duration: number }>('extract_audio_to_file', {
+        videoPath: source.source_path,
+        sourceId: source.id,
+        trimStart: trimStart,
+        trimDuration: segmentDuration,
+      });
+      
+      console.log('[ClipEditorTimeline] Audio extraction complete:', result);
+      
+      // Emit event to create audio track with the extracted audio
+      // The audio track should start at the same position as the video source on the timeline
+      emit('extractedAudio', {
+        sourceId: source.id,
+        filePath: result.file_path,
+        filename: result.filename,
+        duration: result.duration,
+        startTime: source.start_time,
+        endTime: source.end_time,
+        sourceName: source.source_name,
+      });
+      
+    } catch (error) {
+      console.error('[ClipEditorTimeline] Failed to extract audio:', error);
+    } finally {
+      isExtractingAudio.value = false;
+    }
+  }
+
+  function deleteSourceFromContextMenu() {
+    if (!sourceContextMenu.source) return;
+    
+    const sourceId = sourceContextMenu.source.id;
+    closeSourceContextMenu();
+    
+    emit('deleteSource', sourceId);
+  }
+
   function onTimelineDragOver(_e: DragEvent) {
     isDragOverTimeline.value = true;
   }
@@ -3819,31 +3940,26 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       let barWidth: number;
       let barSpacing: number;
 
-      if (numPeaks > canvasWidth) {
-        // More peaks than pixels - downsample to 1 bar per pixel
-        const step = numPeaks / canvasWidth;
+      // Target a specific number of bars for consistent appearance
+      const targetBars = Math.min(numPeaks, Math.floor(canvasWidth / 3)); // ~3px per bar slot
+      
+      if (numPeaks > targetBars) {
+        // Downsample to target number of bars
+        const step = numPeaks / targetBars;
         displayPeaks = [];
-        for (let i = 0; i < canvasWidth; i++) {
+        for (let i = 0; i < targetBars; i++) {
           const idx = Math.floor(i * step);
           if (idx < numPeaks) {
             displayPeaks.push(segmentPeaks[idx]);
           }
         }
-        barWidth = 1;
-        barSpacing = 0;
-      } else {
-        // Fewer peaks than pixels - spread bars across canvas
-        barWidth = 2;
-        const totalBarSpace = numPeaks * barWidth;
-        const remainingSpace = canvasWidth - totalBarSpace;
-        barSpacing = numPeaks > 1 ? remainingSpace / (numPeaks - 1) : 0;
-
-        if (barSpacing > barWidth * 2) {
-          const totalWidth = canvasWidth / numPeaks;
-          barWidth = Math.floor(totalWidth * 0.7);
-          barSpacing = totalWidth - barWidth;
-        }
       }
+      
+      // Calculate bar dimensions for visible vertical bars
+      const numBars = displayPeaks.length;
+      const totalWidth = canvasWidth / numBars;
+      barWidth = Math.max(2, Math.floor(totalWidth * 0.6));
+      barSpacing = totalWidth - barWidth;
 
       // Normalize peaks to use full available height (find max peak value)
       let maxPeakValue = 0;

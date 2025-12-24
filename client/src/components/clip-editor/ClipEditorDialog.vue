@@ -353,6 +353,7 @@
               @drop-source="onDropSource"
               @transitions-detected="onTransitionsDetected"
               @split-source="splitVideoSource"
+              @extracted-audio="onExtractedAudio"
             />
           </div>
         </div>
@@ -1864,6 +1865,68 @@
     } catch (error) {
       console.error('[splitVideoSource] Failed to split source:', error);
       alert(`Failed to split source: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Handle extracted audio from video source
+  async function onExtractedAudio(data: {
+    sourceId: string;
+    filePath: string;
+    filename: string;
+    duration: number;
+    startTime: number;
+    endTime: number;
+    sourceName: string | null;
+  }) {
+    const editId = editorMode.value ? videoEditorEditId.value : clipEditId.value;
+    if (!editId) {
+      console.error('[ClipEditorDialog] No edit ID available for audio track creation');
+      return;
+    }
+
+    try {
+      console.log('[ClipEditorDialog] Creating audio track from extracted audio:', data);
+
+      // Calculate the next track order (put it after existing audio tracks)
+      const maxTrackOrder = audioTracks.value.length > 0
+        ? Math.max(...audioTracks.value.map(t => t.trackOrder)) + 1
+        : 0;
+
+      // Create the audio track in the database
+      const newTrack = await createVideoEditorAudioTrack(editId, {
+        file_path: data.filePath,
+        name: data.sourceName ? `${data.sourceName} (Audio)` : 'Extracted Audio',
+        start_time: data.startTime,
+        end_time: data.endTime,
+        volume: 1.0,
+        fade_in: 0,
+        fade_out: 0,
+        track_order: maxTrackOrder,
+        is_muted: 0,
+        is_solo: 0,
+        source_id: data.sourceId,
+      });
+
+      console.log('[ClipEditorDialog] Audio track created:', newTrack);
+
+      // Add to local state
+      audioTracks.value.push({
+        id: newTrack.id,
+        filePath: newTrack.file_path,
+        name: newTrack.name,
+        startTime: newTrack.start_time,
+        endTime: newTrack.end_time,
+        volume: newTrack.volume,
+        fadeIn: newTrack.fade_in,
+        fadeOut: newTrack.fade_out,
+        trackOrder: newTrack.track_order,
+        isMuted: newTrack.is_muted === 1,
+        isSolo: newTrack.is_solo === 1,
+      });
+
+      triggerAutoSave();
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to create audio track:', error);
     }
   }
 

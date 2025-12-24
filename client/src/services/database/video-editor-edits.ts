@@ -25,6 +25,7 @@ export interface VideoEditorAudioTrackRecord {
   track_order: number;
   is_muted: number;
   is_solo: number;
+  source_id?: string; // ID of the video source this audio was extracted from
   created_at: number;
 }
 
@@ -165,8 +166,8 @@ export async function createVideoEditorAudioTrack(
 
   await db.execute(
     `INSERT INTO video_editor_audio_tracks 
-     (id, edit_id, file_path, name, start_time, end_time, volume, fade_in, fade_out, track_order, is_muted, is_solo, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, edit_id, file_path, name, start_time, end_time, volume, fade_in, fade_out, track_order, is_muted, is_solo, source_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       editId,
@@ -180,6 +181,7 @@ export async function createVideoEditorAudioTrack(
       data.track_order || 0,
       data.is_muted || 0,
       data.is_solo || 0,
+      data.source_id || null,
       now,
     ]
   );
@@ -197,6 +199,7 @@ export async function createVideoEditorAudioTrack(
     track_order: data.track_order || 0,
     is_muted: data.is_muted || 0,
     is_solo: data.is_solo || 0,
+    source_id: data.source_id,
     created_at: now,
   };
 }
