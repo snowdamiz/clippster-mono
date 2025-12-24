@@ -241,7 +241,6 @@
     type IntroOutro,
     getClipsWithVersionsByProjectId,
     deleteClip,
-    getWatermarkImage,
     getWatermarkByServerId,
     getCreatorProfileByProjectId,
     getIntroOutroById,
@@ -250,6 +249,7 @@
     updateClip,
     getOrCreateManualSession,
   } from '@/services/database';
+  import { getWatermarkImage } from '@/services/database/watermarks';
   import { X, Film } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import type { WatermarkSettings } from '@/types';
@@ -1131,7 +1131,7 @@
 
       try {
         // Get or create a manual session for this clip's project (needed for FK constraint)
-        const sessionId = clip.detection_session_id || await getOrCreateManualSession(clip.project_id);
+        const sessionId = clip.detection_session_id || (await getOrCreateManualSession(clip.project_id));
 
         // Create a version for this orphaned clip
         const versionId = await createClipVersion(
@@ -1569,10 +1569,10 @@
         // For standalone clips, we just play from start - the whole file is the clip
         // Wait for the video element to be ready after loading
         await nextTick();
-        
+
         // Wait a bit more for the video element to actually render and be accessible
         await new Promise((resolve) => setTimeout(resolve, 100));
-        
+
         if (videoElement.value) {
           videoElement.value.currentTime = 0;
           videoElement.value.play().catch((err) => {

@@ -1235,7 +1235,8 @@
 
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        const { getWatermarkImage, getWatermarkByServerId } = await import('@/services/database');
+        const { getWatermarkImage } = await import('@/services/database/watermarks');
+        const { getWatermarkByServerId } = await import('@/services/database');
 
         let dataUrl: string | null = null;
         let dimensions: { width: number; height: number } | null = null;

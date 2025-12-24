@@ -291,13 +291,8 @@
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { save } from '@tauri-apps/plugin-dialog';
-  import {
-    getClipBuilds,
-    deleteClipBuild,
-    resolveWatermarkById,
-    type ClipBuild,
-    type VideoEditorSource,
-  } from '@/services/database';
+  import { getClipBuilds, deleteClipBuild, type ClipBuild, type VideoEditorSource } from '@/services/database';
+  import { resolveWatermarkById } from '@/services/database/watermarks';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
 
   /**

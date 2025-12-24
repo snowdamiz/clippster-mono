@@ -446,10 +446,10 @@
     createVideoEditorWatermark,
     updateVideoEditorWatermark,
     deleteVideoEditorWatermark,
-    getWatermarkImage,
     getWatermarkByServerId,
     getProject,
   } from '@/services/database';
+  import { getWatermarkImage } from '@/services/database/watermarks';
   import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
   import { ensureAssetDownloaded } from '@/services/orgAssetSync';
   import type { VideoEditorSource, VideoEditorTab, SourceItem, VideoEditorTransition, IntroOutro } from '@/types';

@@ -390,7 +390,7 @@
     ArrowDownRight,
   } from 'lucide-vue-next';
   import type { ClipWatermark, ManualFramingConfigs } from '@/types';
-  import { getAllWatermarkImages, type WatermarkImage } from '@/services/database';
+  import { getAllWatermarkImages, type WatermarkImage } from '@/services/database/watermarks';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
   import { getUserOrganizationAssets, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
   import { useAuthStore } from '@/stores/auth';

@@ -642,11 +642,10 @@
     addPlatformLink as dbAddPlatformLink,
     deletePlatformLink as dbDeletePlatformLink,
     getAllIntroOutros,
-    getAllWatermarkImages,
     type CreatorProfileWithLinks,
     type IntroOutro,
-    type WatermarkImage,
   } from '@/services/database';
+  import { getAllWatermarkImages, type WatermarkImage } from '@/services/database/watermarks';
   import { extractMintId, searchPumpFunTokens, fetchTokenMetadataFromServer } from '@/services/pumpfun';
   import { extractChannelSlug } from '@/services/kick';
   import { useToast } from '@/composables/useToast';

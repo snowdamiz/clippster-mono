@@ -1550,8 +1550,10 @@
       console.log('[ClipsTab] Starting clip build for:', clip.id, 'with settings:', settings);
       console.log('[ClipsTab] Aspect ratios received:', settings.aspectRatios);
 
-      const { updateClipBuildStatus, getRawVideosByProjectId, resolveWatermarkById, createClipBuild, getClipBuilds } =
-        await import('@/services/database');
+      const { updateClipBuildStatus, getRawVideosByProjectId, createClipBuild, getClipBuilds } = await import(
+        '@/services/database'
+      );
+      const { resolveWatermarkById } = await import('@/services/database/watermarks');
 
       // Update database status to building
       await updateClipBuildStatus(clip.id, 'building', { progress: 0 });

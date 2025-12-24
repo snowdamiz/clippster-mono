@@ -405,7 +405,7 @@
 
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        const { getWatermarkImage } = await import('@/services/database');
+        const { getWatermarkImage } = await import('@/services/database/watermarks');
 
         const watermark = await getWatermarkImage(targetWatermarkId);
         if (watermark) {
