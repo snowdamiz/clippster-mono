@@ -21,6 +21,7 @@ struct RecorderEvent {
     duration: Option<f64>,
     message: Option<String>,
     #[serde(flatten)]
+    #[allow(dead_code)]
     extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
@@ -55,6 +56,7 @@ struct SegmentReadyPayload {
 #[derive(Debug)]
 struct HlsRecordingEntry {
     stop_tx: Option<oneshot::Sender<()>>,
+    #[allow(dead_code)] // Kept alive to prevent task cancellation
     task: tokio::task::JoinHandle<()>,
     output_dir: PathBuf,
 }
@@ -524,10 +526,5 @@ async fn run_hls_recorder(
     }
 
     Ok(())
-}
-
-/// Get count of active HLS recordings
-pub fn get_active_hls_recordings_count() -> usize {
-    HLS_RECORDINGS.lock().unwrap().len()
 }
 
