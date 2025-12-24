@@ -276,6 +276,33 @@
       // Load current clips with versions and build status
       clips.value = await getClipsWithBuildStatus(projectId);
 
+      // Reconcile stuck builds (zombies)
+      // If a clip is marked as 'building' in DB but not active in backend, reset it
+      const buildingClips = clips.value.filter((c) => c.build_status === 'building');
+      if (buildingClips.length > 0) {
+        console.log(`[MediaPanel] Found ${buildingClips.length} clips in building state. Checking backend status...`);
+        const { invoke } = await import('@tauri-apps/api/core');
+        
+        for (const clip of buildingClips) {
+          try {
+            const isActive = await invoke<boolean>('is_clip_build_active', { clipId: clip.id });
+            if (!isActive) {
+              console.warn(`[MediaPanel] Clip ${clip.id} is 'building' in DB but not active. Resetting to pending.`);
+              
+              // Update DB
+              await updateClipBuildStatus(clip.id, 'pending', { error: 'Build interrupted or status mismatch' });
+              
+              // Update local state
+              clip.build_status = 'pending';
+              clip.build_progress = 0;
+              clip.build_error = 'Build interrupted';
+            }
+          } catch (err) {
+            console.error(`[MediaPanel] Failed to check status for clip ${clip.id}:`, err);
+          }
+        }
+      }
+
       // Load detection sessions for history
       detectionSessions.value = await getClipDetectionSessionsByProjectId(projectId);
     } catch (error) {
