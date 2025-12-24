@@ -3096,20 +3096,9 @@
 
       // Get the highest resolution waveform data available for maximum detail
       // For segments, we need more peaks because we're showing a smaller portion of the video
-      const { duration, resolutions } = waveformData.value;
+      const { duration, peaks } = waveformData.value;
 
-      // Try resolutions in order of detail (highest first)
-      const resolutionOrder = ['extreme', 'ultra', 'high', 'medium', 'low'];
-      let peaks: any[] = [];
-
-      for (const res of resolutionOrder) {
-        if (resolutions[res]?.peaks?.length > 0) {
-          peaks = resolutions[res].peaks;
-          break;
-        }
-      }
-
-      if (peaks.length === 0) return;
+      if (!peaks || peaks.length === 0) return;
 
       // Extract peaks for this segment's time range
       const startRatio = absoluteStartTime / duration;

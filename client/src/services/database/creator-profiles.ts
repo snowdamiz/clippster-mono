@@ -2,8 +2,8 @@ import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { CreatorProfile, CreatorPlatformLink, CreatorProfileWithLinks } from './types';
 
 async function ensureAutoDvrColumn(db: any) {
-  const columns = await db.select<{ name: string }[]>('PRAGMA table_info(creator_profiles)');
-  const hasAutoDvr = columns.some((c) => c.name === 'auto_dvr_enabled');
+  const columns = (await db.select('PRAGMA table_info(creator_profiles)')) as { name: string }[];
+  const hasAutoDvr = columns.some((c: { name: string }) => c.name === 'auto_dvr_enabled');
   if (!hasAutoDvr) {
     await db.execute('ALTER TABLE creator_profiles ADD COLUMN auto_dvr_enabled INTEGER DEFAULT 0');
   }
@@ -383,10 +383,7 @@ export async function getCreatorProfileByPlatformId(
   const stripPump = (val: string) => (val.toLowerCase().endsWith('pump') ? val.slice(0, -4) : val);
 
   const candidates = Array.from(
-    new Set([
-      normalize(platformId),
-      normalize(stripPump(platformId)),
-    ])
+    new Set([normalize(platformId), normalize(stripPump(platformId))])
   ).filter(Boolean);
 
   // Try exact normalized matches first
