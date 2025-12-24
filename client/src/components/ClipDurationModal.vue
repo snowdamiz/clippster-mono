@@ -84,7 +84,7 @@
                     View Clip
                   </button>
                   <button
-                    @click="handleClose"
+                    @click="() => handleClose()"
                     class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white font-medium rounded-lg transition-colors"
                   >
                     Done
@@ -177,7 +177,7 @@
                 <!-- Actions -->
                 <div class="flex gap-3">
                   <button
-                    @click="handleClose"
+                    @click="() => handleClose()"
                     class="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium rounded-lg transition-colors"
                   >
                     Cancel
@@ -357,9 +357,17 @@
     }
 
     // Log segment info for debugging
-    console.log('[ClipModal] Segments available:', props.segments.length, 
-      'First:', props.segments[0]?.startTime, '-', props.segments[0]?.endTime,
-      'Last:', props.segments[props.segments.length-1]?.startTime, '-', props.segments[props.segments.length-1]?.endTime
+    console.log(
+      '[ClipModal] Segments available:',
+      props.segments.length,
+      'First:',
+      props.segments[0]?.startTime,
+      '-',
+      props.segments[0]?.endTime,
+      'Last:',
+      props.segments[props.segments.length - 1]?.startTime,
+      '-',
+      props.segments[props.segments.length - 1]?.endTime
     );
 
     // Set creating state AFTER all validation passes
@@ -447,10 +455,10 @@
         const { createClipVersion } = await import('@/services/database/clip-versions');
         const { updateClip } = await import('@/services/database/clips');
         const { getOrCreateManualSession } = await import('@/services/database/clip-detection-sessions');
-        
+
         // Get or create a manual session for this project (needed for FK constraint on clip_versions)
         const manualSessionId = await getOrCreateManualSession(effectiveProjectId);
-        
+
         // Create initial version (version 1) and set as current
         const versionId = await createClipVersion(
           clipId,
