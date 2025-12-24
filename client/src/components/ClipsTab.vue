@@ -1410,6 +1410,19 @@
         showSuccessToast('Build Cancelled', 'Clip build was cancelled. No credits were charged.');
       } else {
         console.log('[ClipsTab] No active build found to cancel:', clipId);
+
+        // Force reset if the UI thinks it's building but backend says no
+        const clip = props.clips.find((c) => c.id === clipId);
+        if (clip && clip.build_status === 'building') {
+          console.warn('[ClipsTab] Clip stuck in building state, forcing reset:', clipId);
+          const { updateClipBuildStatus } = await import('@/services/database');
+          await updateClipBuildStatus(clipId, 'pending', { error: 'Build process not found' });
+          emit('refreshClips');
+
+          const toastComposable = await import('@/composables/useToast');
+          const { success: showSuccessToast } = toastComposable.useToast();
+          showSuccessToast('Build Reset', 'Build was stuck and has been reset.');
+        }
       }
     } catch (error) {
       console.error('[ClipsTab] Failed to cancel clip build:', error);
